@@ -1,4 +1,5 @@
-import type { RequestErrorResponse, RequestSuccessResponse } from '../../http/contract.js';
+import type { RequestErrorResponse } from '../../http/contract.js';
+import type { RequestSuccessResponse } from '../../type/index.js';
 import type { RequestOptions } from '../type/index.js';
 import { notify } from './bus.js';
 

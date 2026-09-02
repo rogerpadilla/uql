@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { JsonRecord } from '../test/index.js';
+import { JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
 /**
@@ -13,6 +13,15 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   /** 2^64-1, the count MySQL's manual gives for "every row from the offset on". */
   protected override expected$skipClause(): string {
     return 'LIMIT 18446744073709551615 OFFSET 30';
+  }
+
+  /** InnoDB's own estimate, off the connection's database where the entity names no schema. */
+  override shouldEstimatedCount() {
+    const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
+    expect(sql).toBe(
+      'SELECT TABLE_ROWS `count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+    );
+    expect(values).toEqual(['User']);
   }
 
   shouldHandleDate() {

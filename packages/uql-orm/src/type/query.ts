@@ -67,6 +67,22 @@ export type QueryPopulate<E> = {
 };
 
 /**
+ * How many rows each named relation holds per parent, `true` for all of them or a filter to narrow
+ * which ones count. One statement per relation named here, batched over every parent at once, so it
+ * stays flat however many rows the read returned. Comes back under `_count`, which keeps it clear of
+ * a relation of the same name that `$populate` filled with rows.
+ */
+/**
+ * The key a read carries its relation tallies under. One spelling for the type and the runtime that
+ * fills it: they sit in different modules, so a drift would type-check and answer `undefined`.
+ */
+export const COUNT_RESULT_KEY = '_count';
+
+export type QueryCount<E> = {
+  [K in ToManyRelationKey<E>]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
+};
+
+/**
  * query conflict paths - subset of field keys used to detect upsert conflicts.
  */
 export type QueryConflictPaths<E> = {
@@ -158,9 +174,20 @@ type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
  * against an intersection is repeated per constituent, which made this the single most expensive
  * type in the package to check.
  */
+/**
+ * Ordering parents by how many rows a to-many relation holds - "the ten users with the most posts".
+ * The tally is computed per parent as a correlated count, never by loading the rows.
+ */
+export type QuerySortByCount = {
+  $count: QuerySortDirection;
+};
+
 export type QuerySortMap<E, Vector extends boolean = true> = {
-  [K in FieldKey<E> | JsonFieldPaths<E> | ToOneRelationKey<E>]?: K extends RelationKey<E>
-    ? QuerySortMap<RelationTarget<E[K]>, false>
+  [K in FieldKey<E> | JsonFieldPaths<E> | RelationKey<E>]?: K extends RelationKey<E>
+    ? // A to-many has no single value to order by, so what it offers instead is its own size.
+      IsMany<E[K]> extends true
+      ? QuerySortByCount
+      : QuerySortMap<RelationTarget<E[K]>, false>
     : K extends FieldKey<E>
       ? Vector extends true
         ? NonNullable<E[K]> extends readonly number[]
@@ -186,8 +213,7 @@ export type QueryPager = {
 };
 
 /**
- * Which rows a statement addresses. `count` takes exactly this: how many rows match is all a count
- * can answer, so an ordering or a page on it is a clause it could only drop or choke on.
+ * Which rows a statement addresses.
  */
 export type QueryFilter<E> = {
   /**
@@ -197,18 +223,23 @@ export type QueryFilter<E> = {
 };
 
 /**
- * A filter plus the ordering and page `updateMany`/`deleteMany` take. Both settle the rows they
- * picked with a SELECT before writing, so the page is portable rather than MySQL-only - and so a
- * vector `$sort` is as valid here as on a read: it ranks the settle query's rows, which has the
- * projection list to hold the distance. `$lock` is the clause that stays off these, declared on
- * {@link Query} instead.
+ * A filter plus the page `count` takes. No `$sort`: ordering picks *which* rows a page holds, never
+ * how many, so a count that accepted one would promise an influence it cannot have.
  */
-export type QuerySearch<E> = QueryFilter<E> & {
+export type QueryPage<E> = QueryFilter<E> & QueryPager;
+
+/**
+ * A filter plus the ordering and page `updateMany`/`deleteMany` take. Both settle the
+ * rows they address with a SELECT first, so the page is portable rather than MySQL-only, and a
+ * vector `$sort` is as valid here as on a read: it ranks the settle query's rows, which has the
+ * projection list to hold the distance. `$lock` stays off these, declared on {@link Query} instead.
+ */
+export type QuerySearch<E> = QueryPage<E> & {
   /**
    * sorting options.
    */
   $sort?: QuerySortMap<E>;
-} & QueryPager;
+};
 
 /**
  * query options.
@@ -225,6 +256,11 @@ export type Query<E> = {
    * relation population options.
    */
   $populate?: QueryPopulate<E>;
+
+  /**
+   * how many rows each named relation holds, under `_count` on every row. See {@link QueryCount}.
+   */
+  $count?: QueryCount<E>;
 
   /**
    * field exclusion - `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
@@ -293,6 +329,13 @@ export const QUERY_OBJECT_CLAUSES = [
   '$sort',
 ] as const satisfies readonly (keyof Query<unknown>)[];
 
+/**
+ * Object clauses only the statement itself takes, never a relation's own query - the mirror of
+ * `$lock`, which neither takes. Counting a relation is batched over the rows a read returned, and a
+ * populated relation's rows are assembled after that, so there is nothing for a nested one to count.
+ */
+export const QUERY_ROOT_OBJECT_CLAUSES = ['$count'] as const satisfies readonly (keyof Query<unknown>)[];
+
 export const QUERY_NUMBER_CLAUSES = ['$skip', '$limit'] as const satisfies readonly (keyof Query<unknown>)[];
 
 export const QUERY_BOOLEAN_CLAUSES = ['$distinct'] as const satisfies readonly (keyof Query<unknown>)[];
@@ -320,17 +363,54 @@ export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$popula
  * populated relation's own query - stays the concrete {@link Query} it is today.
  * @internal
  */
-type QueryProjection<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = {
+type QueryProjection<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+  C extends RelationKey<E>,
+> = QueryStreamProjection<E, S, V, X, P> & {
+  // Intersecting the captured names with {@link QueryCount}'s own leaves a to-one relation no key
+  // here at all, so counting one is an excess property rather than a value to check. Narrowing the
+  // key rather than the value also instantiates `QueryCount<E>` once instead of once per counted
+  // relation, worth ~87k instantiations in a consuming project.
+  $count?: { [K in C & keyof QueryCount<E>]?: QueryCount<E>[K] };
+};
+
+/**
+ * {@link QueryProjection} without `$count`, which a stream cannot honor. Split out rather than
+ * subtracted afterwards: an optional key is a *known* key even when its value maps over `never`, so
+ * a statement that must not take the clause has to be built without it in the first place.
+ * @internal
+ */
+type QueryStreamProjection<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = {
   $select?: { [K in S]?: V } | readonly QueryRaw[];
   $exclude?: { [K in X]?: V };
   $populate?: { [K in P]?: QueryPopulate<E>[K] };
 };
 
 /**
+ * A {@link QueryProjected} a stream can honor: no `$count`, which is batched over a result set a
+ * stream never holds all of.
+ */
+export type QueryStreamProjected<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = Except<
+  Query<E>,
+  '$count'
+> &
+  QueryStreamProjection<E, S, V, X, P>;
+
+/**
  * A {@link Query} whose projection is captured, so {@link QueryFindResult} can shape the row.
  */
-export type QueryProjected<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = Query<E> &
-  QueryProjection<E, S, V, X, P>;
+export type QueryProjected<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+  C extends RelationKey<E> = never,
+> = Query<E> & QueryProjection<E, S, V, X, P, C>;
 
 /**
  * A {@link QueryOne} whose projection is captured, so {@link QueryFindResult} can shape the row.
@@ -341,7 +421,8 @@ export type QueryOneProjected<
   V,
   X extends FieldKey<E>,
   P extends RelationKey<E>,
-> = QueryOne<E> & QueryProjection<E, S, V, X, P>;
+  C extends RelationKey<E> = never,
+> = QueryOne<E> & QueryProjection<E, S, V, X, P, C>;
 
 /**
  * The keys a query comes back with, mirroring what the runtime projects: the fields a positive
@@ -350,12 +431,12 @@ export type QueryOneProjected<
  * why `$exclude` is only read on the branch where there is none.
  * @internal
  */
-type ProjectedKeys<E, S, V, X, P> =
+type ProjectedKeys<E, S, V, X, P, C> =
   | ([V] extends [false | 0] ? Exclude<FieldKey<E>, S> : [S] extends [never] ? Exclude<FieldKey<E>, X> : S)
   | P
-  // Populating a relation keeps the id whatever the projection says, since the rows are assembled
-  // by it (`selectFields` puts it back, as does MongoDB's `pipelineProjection`).
-  | ([P] extends [never] ? never : NamedIdKey<E>);
+  // Populating a relation keeps the id whatever the projection says, and so does counting one: both
+  // assemble their result by it (`selectFields` puts it back, as does MongoDB's `pipelineProjection`).
+  | ([P | C] extends [never] ? never : NamedIdKey<E>);
 
 /**
  * The id key when it can be named, and nothing when it cannot: {@link IdKey} widens to *every* field
@@ -391,17 +472,36 @@ export type QueryFindResult<
   V = true,
   X extends FieldKey<E> = never,
   P extends RelationKey<E> = never,
+  C extends RelationKey<E> = never,
+> = QueryProjectedRow<E, S, V, X, P, C> & CountedRelations<C>;
+
+/**
+ * The `_count` a query asked for, or an inert intersection member when it asked for none - so a read
+ * without `$count` keeps exactly the row type it had.
+ */
+type CountedRelations<C extends PropertyKey> = [C] extends [never]
+  ? unknown
+  : { [K in typeof COUNT_RESULT_KEY]: { [R in C]: number } };
+
+/** @internal */
+type QueryProjectedRow<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+  C extends RelationKey<E>,
 > = [S | X] extends [never]
   ? E
   : IsUniform<V> extends true
     ? [PopulatedToMany<E, P>] extends [never]
-      ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P> ? K : never]: E[K] }
+      ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P, C> ? K : never]: E[K] }
       : // A populated to-many is always a list, empty where the parent has no children, so it maps
         // and counts without a guard. Only that promotion needs a second member, and only a query
         // that populates one pays for it; every other key keeps the modifier the entity declared,
         // a to-one relation included, since a join that finds no row leaves it absent.
         {
-          [K in keyof E as K extends Exclude<ProjectedKeys<E, S, V, X, P>, PopulatedToMany<E, P>> ? K : never]: E[K];
+          [K in keyof E as K extends Exclude<ProjectedKeys<E, S, V, X, P, C>, PopulatedToMany<E, P>> ? K : never]: E[K];
         } & {
           [K in PopulatedToMany<E, P>]-?: NonNullable<E[K]>;
         }

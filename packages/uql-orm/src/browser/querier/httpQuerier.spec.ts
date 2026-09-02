@@ -72,6 +72,22 @@ describe('HttpQuerier', () => {
     expect(http.get).toHaveBeenCalledWith(`/api/user/count${stringifyQuery({ $where: { name: 'Mario' } })}`, undefined);
   });
 
+  /** No endpoint of its own: the `count` route capped at one row, mapped to a yes or no. */
+  it('exists', async () => {
+    vi.mocked(http.get).mockResolvedValueOnce({ data: 1 });
+    const res = await querier.exists(User, { $where: { name: 'Mario' } });
+    expect(http.get).toHaveBeenCalledWith(
+      `/api/user/count${stringifyQuery({ $where: { name: 'Mario' }, $limit: 1 })}`,
+      undefined,
+    );
+    expect(res.data).toBe(true);
+  });
+
+  it('exists reports false when nothing matched', async () => {
+    vi.mocked(http.get).mockResolvedValueOnce({ data: 0 });
+    await expect(querier.exists(User, { $where: { name: 'nobody' } })).resolves.toMatchObject({ data: false });
+  });
+
   it('insertOne', async () => {
     await querier.insertOne(User, { name: 'Mario' });
     expect(http.post).toHaveBeenCalledWith('/api/user', { name: 'Mario' }, undefined);

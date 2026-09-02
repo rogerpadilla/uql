@@ -561,6 +561,37 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
   });
 
+  describe('relation $count sort', () => {
+    it('ranks parents by a correlated count, not by a join', () => {
+      const ctx = dialect.createContext();
+      dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 } });
+      expect(ctx.sql).toBe(
+        ' ORDER BY (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`' +
+          ' AND `MeasureUnit`.`deletedAt` IS NULL) DESC',
+      );
+      expect(ctx.values).toEqual([]);
+    });
+
+    it('counts junction rows for a many-to-many', () => {
+      const ctx = dialect.createContext();
+      dialect.sort(ctx, Item, { tags: { $count: 1 } });
+      expect(ctx.sql).toBe(' ORDER BY (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)');
+    });
+
+    it('composes with an ordering by the parent own columns', () => {
+      const ctx = dialect.createContext();
+      dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 }, name: 1 });
+      expect(ctx.sql).toContain('DESC, `name`');
+    });
+
+    it('rejects a $count combined with other keys', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1, name: 1 } } as never)).toThrow(
+        '$count in a $sort cannot be combined with other keys',
+      );
+    });
+  });
+
   // ─── Relation $size (count) filtering ─────────────────────────────
   describe('relation $size', () => {
     it('OneToMany with exact match', () => {

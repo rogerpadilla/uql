@@ -130,6 +130,15 @@ describe('createRequestHandler', () => {
     expect(resp).toEqual({ status: 200, body: { data: 5, count: 5 } });
   });
 
+  /** What the client's `exists` sends: the cap has to reach the querier, or it counts every match. */
+  it('count honors a $limit from the wire', async () => {
+    mockQuerier.count.mockResolvedValue(1);
+    const handle = createRequestHandler({ pool, include: [User] });
+    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count', query: { $limit: '1' } }));
+    expect(mockQuerier.count).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 1 }));
+    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
+  });
+
   it('findOneById', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const handle = createRequestHandler({ pool, include: [User] });

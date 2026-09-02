@@ -8,14 +8,15 @@ import {
   LedgerAccount,
   MeasureUnit,
   MeasureUnitCategory,
+  Profile,
   type Spec,
   Tag,
   Tax,
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { Querier, QuerierPool, Type } from '../type/index.js';
-import { withDeleted } from '../util/index.js';
+import type { Querier, QuerierPool, QuerySearch, Type } from '../type/index.js';
+import { raw, withDeleted } from '../util/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier!: Q;
@@ -862,6 +863,269 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
+   * Ordering parents by how many rows a to-many holds - "the categories with the most units". A
+   * correlated tally per parent, so no relation rows are loaded and the page still cuts to a top-N.
+   */
+  async shouldSortByARelationCount() {
+    const [many, few, none] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'many units' },
+      { name: 'few units' },
+      { name: 'no units' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'a', categoryId: many },
+      { name: 'b', categoryId: many },
+      { name: 'c', categoryId: many },
+      { name: 'd', categoryId: few },
+    ]);
+
+    const desc = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $sort: { measureUnits: { $count: -1 } },
+    });
+    expect(desc.map((it) => it.id)).toEqual([many, few, none]);
+
+    const asc = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $sort: { measureUnits: { $count: 1 } },
+    });
+    expect(asc.map((it) => it.id)).toEqual([none, few, many]);
+  }
+
+  /** The tally is what the page cuts on, so a top-N never loads the relation rows it ranked by. */
+  async shouldSortByARelationCountAndPage() {
+    const [many, few] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'paged many' },
+      { name: 'paged few' },
+      { name: 'paged none' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'a', categoryId: many },
+      { name: 'b', categoryId: many },
+      { name: 'c', categoryId: few },
+    ]);
+
+    const top = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $sort: { measureUnits: { $count: -1 } },
+      $limit: 2,
+    });
+    expect(top.map((it) => it.id)).toEqual([many, few]);
+  }
+
+  /** A many-to-many ranks on its junction rows, one per pairing. */
+  async shouldSortByAManyToManyRelationCount() {
+    const two = await this.querier.insertOne(Item, {
+      name: 'two tags',
+      createdAt: 1,
+      tags: [
+        { name: 'x1', createdAt: 1 },
+        { name: 'x2', createdAt: 1 },
+      ],
+    });
+    const one = await this.querier.insertOne(Item, {
+      name: 'one tag',
+      createdAt: 1,
+      tags: [{ name: 'x3', createdAt: 1 }],
+    });
+
+    const found = await this.querier.findMany(Item, {
+      $select: { id: true },
+      $sort: { tags: { $count: -1 } },
+    });
+    expect(found.map((it) => it.id)).toEqual([two, one]);
+  }
+
+  /**
+   * `$distinct` collapses rows onto the columns it projects, and a relation tally is not one of
+   * them - so ranking by one is refused rather than answered all-equal, on every backend.
+   */
+  async shouldRejectSortingByARelationCountWithDistinct() {
+    await expect(
+      this.querier.findMany(MeasureUnitCategory, {
+        $select: { name: true },
+        $distinct: true,
+        $sort: { measureUnits: { $count: -1 } },
+      }),
+    ).rejects.toThrow(/\$distinct/);
+  }
+
+  /** The ordering composes with the tally itself: rank by it, and read it. */
+  async shouldSortByARelationCountAndReturnIt() {
+    const [many, few] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'both many' },
+      { name: 'both few' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'a', categoryId: many },
+      { name: 'b', categoryId: many },
+      { name: 'c', categoryId: few },
+    ]);
+
+    const found = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { id: true },
+      $sort: { measureUnits: { $count: -1 } },
+      $count: { measureUnits: true },
+    });
+    expect(found.map((it) => it._count.measureUnits)).toEqual([2, 1]);
+  }
+
+  /**
+   * `$count` answers how many rows a relation holds without loading one, under `_count`. One grouped
+   * aggregate per relation over every parent at once, so the cost does not grow with the page.
+   */
+  async shouldCountAOneToManyRelation() {
+    const [alpha, beta] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'alpha category' },
+      { name: 'beta category' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId: alpha },
+      { name: 'two', categoryId: alpha },
+      { name: 'three', categoryId: beta },
+    ]);
+
+    const found = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { name: true },
+      $sort: { name: 1 },
+      $count: { measureUnits: true },
+    });
+
+    expect(found.map((it) => it._count.measureUnits)).toEqual([2, 1]);
+  }
+
+  /**
+   * A raw `$select` has no map to put the id in, and without it every tally is looked up by
+   * `undefined` and comes back zero. Refused rather than answered wrong.
+   */
+  async shouldRejectCountingWithARawSelect() {
+    await expect(
+      this.querier.findMany(MeasureUnitCategory, {
+        $select: [raw('name')],
+        $count: { measureUnits: true },
+      } as never),
+    ).rejects.toThrow(/raw \$select cannot carry/);
+  }
+
+  /**
+   * The tallies group by each row's id, which would have to join the projection - and that is the
+   * very set `$distinct` collapses on, so adding a `$count` would quietly stop it collapsing.
+   */
+  async shouldRejectCountingWithDistinct() {
+    await expect(
+      this.querier.findMany(MeasureUnitCategory, {
+        $select: { name: true },
+        $distinct: true,
+        $count: { measureUnits: true },
+      }),
+    ).rejects.toThrow(/\$count cannot be combined with \$distinct/);
+  }
+
+  /** A parent the grouped result has no row for counts zero, not a missing key. */
+  async shouldCountARelationHoldingNothing() {
+    await this.querier.insertOne(MeasureUnitCategory, { name: 'empty category' });
+
+    const [found] = await this.querier.findMany(MeasureUnitCategory, {
+      $where: { name: 'empty category' },
+      $count: { measureUnits: true },
+    });
+
+    expect(found._count).toEqual({ measureUnits: 0 });
+  }
+
+  /** A filter narrows what counts, without touching which parents come back. */
+  async shouldCountARelationThroughAFilter() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'filtered category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'keep', categoryId },
+      { name: 'keep', categoryId },
+      { name: 'drop', categoryId },
+    ]);
+
+    const [found] = await this.querier.findMany(MeasureUnitCategory, {
+      $where: { name: 'filtered category' },
+      $count: { measureUnits: { $where: { name: 'keep' } } },
+    });
+
+    expect(found._count.measureUnits).toBe(2);
+  }
+
+  /** A many-to-many counts its junction rows, one per pairing. */
+  async shouldCountAManyToManyRelation() {
+    const id = await this.querier.insertOne(Item, {
+      name: 'counted item',
+      createdAt: 1,
+      tags: [
+        { name: 'tag one', createdAt: 1 },
+        { name: 'tag two', createdAt: 1 },
+      ],
+    });
+
+    const [found] = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { id },
+      $count: { tags: true },
+    });
+
+    expect(found._count.tags).toBe(2);
+  }
+
+  /** Filtering a many-to-many names the target's columns, which the junction does not have. */
+  async shouldCountAManyToManyRelationThroughAFilter() {
+    const id = await this.querier.insertOne(Item, {
+      name: 'filtered item',
+      createdAt: 1,
+      tags: [
+        { name: 'keep me', createdAt: 1 },
+        { name: 'drop me', createdAt: 1 },
+      ],
+    });
+
+    const [found] = await this.querier.findMany(Item, {
+      $where: { id },
+      $count: { tags: { $where: { name: 'keep me' } } },
+    });
+
+    expect(found._count.tags).toBe(1);
+  }
+
+  /** Counting a relation and populating the same one are independent: rows *and* the total. */
+  async shouldCountAndPopulateTheSameRelation() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'both category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'a unit', categoryId },
+      { name: 'b unit', categoryId },
+      { name: 'c unit', categoryId },
+    ]);
+
+    const [found] = await this.querier.findMany(MeasureUnitCategory, {
+      $where: { name: 'both category' },
+      $populate: { measureUnits: { $select: { name: true }, $sort: { name: 1 }, $limit: 2 } },
+      $count: { measureUnits: true },
+    });
+
+    expect(found.measureUnits?.map(({ name }) => name)).toEqual(['a unit', 'b unit']);
+    expect(found._count.measureUnits).toBe(3);
+  }
+
+  /** The inverse side of a many-to-many counts the same junction rows, from the other end. */
+  async shouldCountAnInverseManyToManyRelation() {
+    await this.querier.insertOne(Item, {
+      name: 'inverse item',
+      createdAt: 1,
+      tags: [{ name: 'shared tag', createdAt: 1 }],
+    });
+
+    const [found] = await this.querier.findMany(Tag, {
+      $select: { name: true },
+      $where: { name: 'shared tag' },
+      $count: { items: true },
+    });
+
+    expect(found._count.items).toBe(1);
+  }
+
+  /**
    * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the second query the
    * children are loaded with, which is where "each parent with its children in order" lives. The
    * parent-level `$sort` cannot express it - it orders parents, and a parent has many children.
@@ -1284,6 +1548,67 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, { $where: { companyId: 1 } })).resolves.toBe(0);
   }
 
+  /** `max(0, total - $skip)`, capped at `$limit`. */
+  async shouldCountAPage() {
+    await this.shouldInsertMany(); // 2 Users
+
+    await expect(this.querier.count(User, { $limit: 1 })).resolves.toBe(1);
+    await expect(this.querier.count(User, { $limit: 10 })).resolves.toBe(2);
+
+    await expect(this.querier.count(User, { $skip: 1 })).resolves.toBe(1);
+    await expect(this.querier.count(User, { $skip: 5 })).resolves.toBe(0);
+    await expect(this.querier.count(User, { $skip: 1, $limit: 5 })).resolves.toBe(1);
+  }
+
+  /** A capped count: true the moment one row matches, false when none does. */
+  async shouldExists() {
+    await this.shouldInsertMany(); // 2 Users
+
+    await expect(this.querier.exists(User)).resolves.toBe(true);
+    await expect(this.querier.exists(User, { $where: { name: 'Some Name B' } })).resolves.toBe(true);
+    await expect(this.querier.exists(User, { $where: { name: 'nobody' } })).resolves.toBe(false);
+  }
+
+  /** Nothing inserted, so the same calls answer false rather than throwing on an empty table. */
+  async shouldExistsOnAnEmptyTable() {
+    await expect(this.querier.exists(User)).resolves.toBe(false);
+    await expect(this.querier.exists(User, { $where: { name: 'nobody' } })).resolves.toBe(false);
+  }
+
+  /** The `$entity` form takes the same filter and gives the same answer as the two-argument one. */
+  async shouldExistsInTheEntityAsFieldForm() {
+    await this.shouldInsertMany(); // 2 Users
+
+    await expect(this.querier.exists({ $entity: User, $where: { name: 'Some Name B' } })).resolves.toBe(true);
+    await expect(this.querier.exists({ $entity: User, $where: { name: 'nobody' } })).resolves.toBe(false);
+  }
+
+  /**
+   * `count` no longer takes a `$sort`, but an HTTP caller hands its query over unchecked, so one can
+   * still arrive - on every backend, which is what this covers. That it never reaches the settle
+   * SELECT as an `ORDER BY` is pinned on the emitted SQL, in `shouldCountDroppingASmuggledSort`.
+   */
+  async shouldCountIgnoringASmuggledSort() {
+    await this.shouldInsertMany(); // 2 Users
+
+    const sorted: QuerySearch<User> = { $sort: { name: -1 }, $skip: 1, $limit: 1 };
+
+    await expect(this.querier.count(User, sorted)).resolves.toBe(1);
+    await expect(this.querier.count(User, { $sort: { name: 1 } } as QuerySearch<User>)).resolves.toBe(2);
+  }
+
+  /**
+   * `$limit: 0` asks for no rows on every backend, the same as it has since 0.30.0. MongoDB reads
+   * `limit(0)` as *unlimited*, so a read that handed it to the driver answered with the whole
+   * collection - the one clause where the two engines mean opposite things by the same value.
+   */
+  async shouldReadNoRowsOnAZeroLimit() {
+    await this.shouldInsertMany(); // 2 Users
+
+    await expect(this.querier.findMany(User, { $limit: 0 })).resolves.toEqual([]);
+    await expect(this.querier.count(User, { $limit: 0 })).resolves.toBe(0);
+  }
+
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
@@ -1524,6 +1849,102 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
     expect(foundWithSoftDeleted).toBeDefined();
     expect(foundWithSoftDeleted!.name).toBe('To be soft deleted');
+  }
+
+  /**
+   * The total counts every match, not the page cut out of it. SQL answers both from one statement,
+   * carrying the total in a column of its own, so these also pin that the column never reaches the
+   * entities it rode in on.
+   */
+  async shouldFindManyAndCountAPage() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+      { name: 'Charlie', email: 'charlie@test.com' },
+    ]);
+
+    const [page, total] = await this.querier.findManyAndCount(User, {
+      $select: { name: true },
+      $sort: { name: 1 },
+      $skip: 1,
+      $limit: 1,
+    });
+
+    expect(total).toBe(3);
+    expect(page).toHaveLength(1);
+    expect(page[0].name).toBe('Bob');
+    expect(Object.keys(page[0])).not.toContain('_uql_total');
+  }
+
+  /** No page clauses: the total is the whole result, which the rows themselves already are. */
+  async shouldFindManyAndCountWithoutAPage() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+
+    const [rows, total] = await this.querier.findManyAndCount(User, { $sort: { name: 1 } });
+
+    expect(total).toBe(2);
+    expect(rows.map((it) => it.name)).toEqual(['Alice', 'Bob']);
+  }
+
+  /**
+   * A `$skip` past the end empties the page while leaving the total untouched. No row comes back to
+   * carry a total on, so this is the case the one-statement path has to answer some other way.
+   */
+  async shouldFindManyAndCountPastTheLastPage() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+
+    await expect(this.querier.findManyAndCount(User, { $skip: 10 })).resolves.toEqual([[], 2]);
+    await expect(this.querier.findManyAndCount(User, { $limit: 0 })).resolves.toEqual([[], 2]);
+  }
+
+  /** Nothing matched, so the page is empty and so is the total - not the count of every row. */
+  async shouldFindManyAndCountMatchingNothing() {
+    await this.querier.insertMany(User, [{ name: 'Alice', email: 'alice@test.com' }]);
+
+    await expect(this.querier.findManyAndCount(User, { $where: { name: 'nobody' } })).resolves.toEqual([[], 0]);
+  }
+
+  /** The filter still bounds the total when a page is taken out of it. */
+  async shouldFindManyAndCountAFilteredPage() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com', companyId: 1 },
+      { name: 'Bob', email: 'bob@test.com', companyId: 1 },
+      { name: 'Charlie', email: 'charlie@test.com', companyId: 2 },
+    ]);
+
+    const [page, total] = await this.querier.findManyAndCount(User, {
+      $where: { companyId: 1 },
+      $sort: { name: 1 },
+      $limit: 1,
+    });
+
+    expect(total).toBe(2);
+    expect(page.map((it) => it.name)).toEqual(['Alice']);
+  }
+
+  /**
+   * A `$required` relation drops parents with no match, and the total counts what is left rather than
+   * what the filter alone matched - a page of one out of one, not out of three the read can never
+   * return. SQL reads it off the window in the joined statement; MongoDB counts past the `$unwind`.
+   */
+  async shouldFindManyAndCountThroughARequiredRelation() {
+    const ids = await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+      { name: 'Charlie', email: 'charlie@test.com' },
+    ]);
+    await this.querier.insertOne(Profile, { picture: 'p', creatorId: ids[0] });
+
+    const [rows, total] = await this.querier.findManyAndCount(User, { $populate: { profile: { $required: true } } });
+
+    expect(rows.map((it) => it.name)).toEqual(['Alice']);
+    expect(total).toBe(1);
   }
 
   async shouldFindManyStream() {

@@ -123,12 +123,16 @@ function checkBrowserGraph(): number {
 // pager operand, operator-map classification, settling a paged write on its own rows). The last raise
 // re-baselines both on 0.30.0's delete hooks and their single-read settle, which landed ~+140/~+150
 // over the budget of the day while the check above was being skipped. See the CHANGELOG entries for each.
-// This raise is schema support: ~+155/+80 for qualifying a table behind its schema, aliasing the root so
+// The schema-support raise added ~+155/+80 for qualifying a table behind its schema, aliasing the root so
 // column prefixes stay one identifier, `CREATE SCHEMA` in generated DDL, and the two errors that name the
 // option to use instead (a dotted `name`, two entities on one HTTP path).
+// This raise is the count work: ~+61 on `.` for `exists` and for a paged read carrying its own unpaged
+// total in one statement (the window column, and the required-join case that has to stay on two), and
+// ~+78 on `./postgres` for ordering parents by a relation's size, which reuses the correlated subquery
+// `$size` already emits.
 const BUDGETS: Record<string, number> = {
-  '.': 27_000,
-  './postgres': 23_000,
+  '.': 28_000,
+  './postgres': 24_000,
   './migrate': 43_000,
   './browser': 1_700,
 };

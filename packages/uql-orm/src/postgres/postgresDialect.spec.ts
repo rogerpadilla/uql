@@ -1280,6 +1280,16 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" = ANY($1)');
     expect(values).toEqual([[new Uint8Array([1, 2, 3])]]);
   }
+
+  /**
+   * `GREATEST` guards the `-1` Postgres carries for a table nothing has analyzed yet (its "no
+   * statistic", verified live on PG 18), which raw would read as a negative row count.
+   */
+  override shouldEstimatedCount() {
+    const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
+    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "count" FROM pg_class WHERE oid = to_regclass($1)');
+    expect(values).toEqual(['"User"']);
+  }
 }
 
 createSpec(new PostgresDialectSpec());

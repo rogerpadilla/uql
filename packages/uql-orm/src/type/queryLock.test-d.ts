@@ -51,7 +51,7 @@ export async function lockVocabularyIsClosed(querier: Querier) {
 }
 
 export async function lockIsAbsentWhereItCannotBeHonored(querier: Querier) {
-  // @ts-expect-error a lock belongs to a SELECT, and count takes QuerySearch
+  // @ts-expect-error a lock belongs to a SELECT, and count takes QueryPage
   await querier.count(Employee, { $lock: true });
   // @ts-expect-error same for update
   await querier.updateMany(Employee, { $lock: true }, { name: 'x' });

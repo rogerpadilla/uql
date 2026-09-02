@@ -1,6 +1,11 @@
 import type { Query, QueryOptions } from '../type/index.js';
 // the clause lists themselves, not the barrel: this module is in the browser bundle's graph
-import { QUERY_BOOLEAN_CLAUSES, QUERY_NUMBER_CLAUSES, QUERY_OBJECT_CLAUSES } from '../type/query.js';
+import {
+  QUERY_BOOLEAN_CLAUSES,
+  QUERY_NUMBER_CLAUSES,
+  QUERY_OBJECT_CLAUSES,
+  QUERY_ROOT_OBJECT_CLAUSES,
+} from '../type/query.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
 
@@ -12,6 +17,7 @@ import { getKeys } from '../util/object.util.js';
  */
 const ALLOWED_QUERY_KEYS = new Set<string>([
   ...QUERY_OBJECT_CLAUSES,
+  ...QUERY_ROOT_OBJECT_CLAUSES,
   ...QUERY_NUMBER_CLAUSES,
   ...QUERY_BOOLEAN_CLAUSES,
   'hardDelete',
@@ -41,7 +47,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
     }
   }
 
-  for (const key of QUERY_OBJECT_CLAUSES) {
+  for (const key of [...QUERY_OBJECT_CLAUSES, ...QUERY_ROOT_OBJECT_CLAUSES]) {
     const value = query[key];
     if (typeof value === 'string') {
       try {

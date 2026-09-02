@@ -11,7 +11,7 @@ import {
   Tag,
   User,
 } from '../test/index.js';
-import type { QuerierPool } from '../type/index.js';
+import type { QuerierPool, QuerySearch } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
@@ -501,8 +501,11 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
+  /** One statement, not two: the page carries its own unpaged total in an extra column. */
   async shouldFindManyAndCount() {
-    await this.querier.findManyAndCount(User, {
+    mockAllResolvedValueOnce(this.querier.all, [{ id: 1, name: 'a', _uql_total: 7 }]);
+
+    const [founds, count] = await this.querier.findManyAndCount(User, {
       $select: { id: true, name: true },
       $where: { companyId: 123 },
       $sort: { createdAt: -1 },
@@ -511,16 +514,30 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `id`, `name` FROM `User` WHERE `companyId` = ? ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50',
+      'SELECT `id`, `name`, COUNT(*) OVER () `_uql_total` FROM `User` WHERE `companyId` = ?' +
+        ' ORDER BY `createdAt` DESC LIMIT 100 OFFSET 50',
       [123],
     );
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+    expect(count).toBe(7);
+    expect(founds).toEqual([{ id: 1, name: 'a' }]);
+  }
+
+  /** An empty page carries no row to read the total off, so that one case falls back to a count. */
+  async shouldFindManyAndCountFallingBackOnAnEmptyPage() {
+    mockAllResolvedValueOnce(this.querier.all, []);
+    mockAllResolvedValueOnce(this.querier.all, [{ count: 7 }]);
+
+    const [founds, count] = await this.querier.findManyAndCount(User, { $where: { companyId: 123 }, $skip: 50 });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
       'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = ?',
       [123],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(2);
-    expect(this.querier.run).toHaveBeenCalledTimes(0);
+    expect(founds).toEqual([]);
+    expect(count).toBe(7);
   }
 
   async shouldInsertManyEmpty() {
@@ -1051,6 +1068,60 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  /** A paged count settles ids instead of counting: an `OFFSET` would push a `COUNT(*)` row away. */
+  async shouldCountAPage() {
+    await this.querier.count(User, { $where: { companyId: 123 }, $skip: 2, $limit: 5 });
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      1,
+      'SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5 OFFSET 2',
+      [123],
+    );
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  /**
+   * `count` no longer takes a `$sort`, but an HTTP caller hands its query over unchecked, so one can
+   * still arrive: it must not reach the settle SELECT as an `ORDER BY`.
+   */
+  async shouldCountDroppingASmuggledSort() {
+    const sorted: QuerySearch<User> = { $where: { companyId: 123 }, $sort: { name: 1 }, $limit: 5 };
+    await this.querier.count(User, sorted);
+    expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5', [123]);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+  }
+
+  /** The cheap shape is the point: one capped id scan, never a `COUNT(*)` over every match. */
+  async shouldExistsAsACappedIdScan() {
+    await this.querier.exists(User, { $where: { companyId: 123 } });
+    expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 1', [123]);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
+    expect(this.querier.run).toHaveBeenCalledTimes(0);
+  }
+
+  /**
+   * The whole point of `$count`: one grouped statement per relation over every parent at once, so a
+   * page of three costs the same two statements a page of three hundred does - never one per row.
+   */
+  async shouldCountARelationInOneBatchedStatement() {
+    mockAllResolvedValueOnce(this.querier.all, [{ id: 1 }, { id: 2 }, { id: 3 }]);
+    mockAllResolvedValueOnce(this.querier.all, [
+      { creatorId: 1, _uql_count: 5 },
+      { creatorId: 3, _uql_count: 2 },
+    ]);
+
+    const found = await this.querier.findMany(User, { $select: { id: true }, $count: { users: true } });
+
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT `creatorId`, COUNT(*) `_uql_count` FROM `User` WHERE `creatorId` IN (?, ?, ?) GROUP BY `creatorId`',
+      [1, 2, 3],
+    );
+    // a parent the grouped result has no row for tallies zero, not a gap
+    expect(found.map((it) => it._count.users)).toEqual([5, 0, 2]);
   }
 
   async shouldUseTransaction() {

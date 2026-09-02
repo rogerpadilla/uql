@@ -12,12 +12,15 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFilter,
   QueryFindResult,
   QueryGroupMap,
   QueryOneProjected,
   QueryOptions,
+  QueryPage,
   QueryProjected,
   QuerySearch,
+  QueryStreamProjected,
   QueryUpdateResult,
   RelationKey,
   TransactionOptions,
@@ -73,12 +76,13 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOneProjected<E, S, V, X, P>,
+    q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined> {
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined> {
     return this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
   }
 
@@ -88,11 +92,12 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P>,
+    q: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined> {
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined> {
     return this.withQuerier((querier) => querier.findOne(entity, q, opts));
   }
 
@@ -102,7 +107,12 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
-  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]> {
+    const C extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P, C>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P, C>[]> {
     return this.withQuerier((querier) => querier.findMany(entity, q, opts));
   }
 
@@ -118,7 +128,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const P extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryStreamProjected<E, S, V, X, P>,
     opts?: QueryOptions,
   ): AsyncGenerator<QueryFindResult<E, S, V, X, P>> {
     await using querier = await this.getQuerier();
@@ -131,16 +141,21 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]> {
+  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]> {
     return this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
   }
 
-  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number> {
     return this.withQuerier((querier) => querier.count(entity, q, opts));
+  }
+
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean> {
+    return this.withQuerier((querier) => querier.exists(entity, q, opts));
   }
 
   aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
@@ -149,6 +164,10 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]> {
     return this.withQuerier((querier) => querier.aggregate(entity, q, opts));
+  }
+
+  estimatedCount<E extends object>(entity: Type<E>): Promise<number> {
+    return this.withQuerier((querier) => querier.estimatedCount(entity));
   }
 
   insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {

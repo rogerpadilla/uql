@@ -61,6 +61,20 @@ export function resolveQueryJoins<E>(meta: EntityMeta<E>, q: Query<E>): QueryJoi
   return joins;
 }
 
+/**
+ * Whether a join drops parents that have no match, which is the one thing a join does to *how many*
+ * rows a read returns rather than how wide they are. A count that skips the joins has to be told, or
+ * it counts the parents the read will never hand back.
+ */
+export function hasRequiredJoin<E>(meta: EntityMeta<E>, q: Query<E>): boolean {
+  for (const join of resolveQueryJoins(meta, q).values()) {
+    if (join.required) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function addJoin(
   joins: Map<string, QueryJoin>,
   parent: QueryJoin | undefined,

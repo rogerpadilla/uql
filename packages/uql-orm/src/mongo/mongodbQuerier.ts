@@ -1,4 +1,5 @@
 import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
+import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
@@ -12,6 +13,7 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFilter,
   QueryGroupMap,
   QueryOptions,
   QuerySearch,
@@ -21,6 +23,7 @@ import type {
   UpdatePayload,
 } from '../type/index.js';
 import {
+  COUNT_AGG_ALIAS,
   clone,
   getKeys,
   getRelationRequestSummary,
@@ -35,6 +38,15 @@ import {
 } from '../util/index.js';
 
 import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
+
+/**
+ * `$limit: 0` asks for no rows, the way it does on every SQL dialect - but MongoDB reads `limit(0)`
+ * as *unlimited*, so a read that passed it straight to the driver came back with the whole
+ * collection. The reads answer it here instead, since no cursor can express it.
+ */
+function asksForNoRows<E>(q: Query<E>): boolean {
+  return q.$limit === 0;
+}
 
 export class MongodbQuerier extends AbstractQuerier {
   private session?: ClientSession;
@@ -55,6 +67,9 @@ export class MongodbQuerier extends AbstractQuerier {
 
   protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     this.dialect.assertNoLock(q);
+    if (asksForNoRows(q)) {
+      return [];
+    }
     return this.timed('internalFindMany', undefined, async () => {
       const meta = getMeta(entity);
       const vectorSort = this.dialect.extractVectorSort(q.$sort);
@@ -95,6 +110,9 @@ export class MongodbQuerier extends AbstractQuerier {
     q: Query<E>,
     opts?: QueryOptions,
   ) {
+    if (asksForNoRows(q)) {
+      return;
+    }
     const meta = getMeta(entity);
     const { joinableKeys, toManyKeys } = getRelationRequestSummary(meta, q.$populate);
     if (joinableKeys.length || toManyKeys.length) {
@@ -148,6 +166,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (q.$skip) {
       cursor.skip(q.$skip);
     }
+    // Only a positive limit reaches the driver; `asksForNoRows` took the zero.
     if (q.$limit) {
       cursor.limit(q.$limit);
     }
@@ -211,9 +230,37 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
+  /**
+   * A `$required` relation drops parents that have no match, so the total has to be taken after the
+   * `$unwind` that drops them - which only the read pipeline builds. Every other query counts through
+   * {@link internalCount}, which needs no pipeline of its own.
+   */
+  protected override async internalFindManyAndCount<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): Promise<[E[], number]> {
+    if (!hasRequiredJoin(getMeta(entity), q)) {
+      return super.internalFindManyAndCount(entity, q, opts);
+    }
+    const { $sort: _sort, $skip: _skip, $limit: _limit, ...unpaged } = q;
+    const [founds, counted] = await Promise.all([
+      this.internalFindMany(entity, q, opts),
+      this.execute((session) =>
+        this.collection(entity)
+          .aggregate<Record<typeof COUNT_AGG_ALIAS, number>>(
+            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: COUNT_AGG_ALIAS }],
+            { session },
+          )
+          .toArray(),
+      ),
+    ]);
+    return [founds, counted[0]?.[COUNT_AGG_ALIAS] ?? 0];
+  }
+
   protected override async internalCount<E extends Document>(
     entity: Type<E>,
-    qm: QuerySearch<E> = {},
+    qm: QueryFilter<E> = {},
     opts?: QueryOptions,
   ) {
     return this.timed('internalCount', undefined, async () => {
@@ -221,10 +268,13 @@ export class MongodbQuerier extends AbstractQuerier {
         const { stages, filter } = this.dialect.whereWithRelations(entity, qm.$where, opts);
         const [counted] = await this.execute((session) =>
           this.collection(entity)
-            .aggregate<{ n: number }>([...stages, { $match: filter }, { $count: 'n' }], { session })
+            .aggregate<Record<typeof COUNT_AGG_ALIAS, number>>(
+              [...stages, { $match: filter }, { $count: COUNT_AGG_ALIAS }],
+              { session },
+            )
             .toArray(),
         );
-        return counted?.n ?? 0;
+        return counted?.[COUNT_AGG_ALIAS] ?? 0;
       }
       const filter = this.dialect.where(entity, qm.$where, opts);
       return this.execute((session) =>
@@ -233,6 +283,16 @@ export class MongodbQuerier extends AbstractQuerier {
         }),
       );
     });
+  }
+
+  /**
+   * The collection's metadata count, which the driver exposes as its own call and which takes no
+   * filter - the reason {@link UniversalQuerier.estimatedCount} takes none either.
+   */
+  override async estimatedCount<E extends Document>(entity: Type<E>) {
+    return this.timed('estimatedCount', undefined, async () =>
+      this.execute((session) => this.collection(entity).estimatedDocumentCount({ session })),
+    );
   }
 
   /**

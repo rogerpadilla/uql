@@ -54,6 +54,10 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve([]);
   }
 
+  override estimatedCount(): Promise<number> {
+    return Promise.resolve(0);
+  }
+
   override async beginTransaction() {}
   override async commitTransaction() {}
   override async rollbackTransaction() {}

@@ -5,7 +5,8 @@ Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. 
 ## Conventions
 
 - New string-literal union values are camelCase (`'firstId'`). Older kebab ones are public API - ask before renaming.
-- **A find result is narrowed to what the query projected** (`QueryFindResult`), and the projection is captured as *key sets* - `$select`/`$exclude` field names plus the map's value, `$populate` relation names - never as the maps themselves. TypeScript skips excess-property checking on a naked type parameter, so a captured map would swallow a typo'd key inside it, where a captured key set fails its own `FieldKey`/`RelationKey` constraint. Never capture `$where`, `$sort` or a relation's own query. Shape pinned in `queryFindResult.test-d.ts`; the typo'd-key errors it must not cost, in `queryInput.test-d.ts` and `queryPopulate.test-d.ts`.
+- **A find result is narrowed to what the query projected** (`QueryFindResult`), and the projection is captured as *key sets* - `$select`/`$exclude` field names plus the map's value, `$populate` and `$count` relation names - never as the maps themselves. TypeScript skips excess-property checking on a naked type parameter, so a captured map would swallow a typo'd key inside it, where a captured key set fails its own `FieldKey`/`RelationKey` constraint. Never capture `$where`, `$sort` or a relation's own query. Shape pinned in `queryFindResult.test-d.ts`; the typo'd-key errors it must not cost, in `queryInput.test-d.ts`, `queryPopulate.test-d.ts` and `queryCount.test-d.ts`.
+- **An alias a statement invents is `_uql`-prefixed and declared as a constant**, beside the code that owns it. The prefix keeps it off a user's column; the constant keeps the ends that write and read it from drifting, which nothing would fail on.
 - A vector `$sort` `$project` distance field is not inferred - annotate with `WithDistance<E, K>`.
 
 ## Verifying a change

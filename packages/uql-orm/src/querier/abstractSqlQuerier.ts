@@ -1,3 +1,4 @@
+import { COUNT_ALIAS } from '../dialect/abstractSqlDialect.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
@@ -10,6 +11,8 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryContext,
+  QueryFilter,
   QueryGroupMap,
   QueryOptions,
   QuerySearch,
@@ -41,6 +44,12 @@ import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 import { enrichError } from './queryError.js';
+
+/**
+ * The column a paged read carries its unpaged total in. Prefixed the way the other internal aliases
+ * are, since it rides in the same row as the entity's own columns and must not shadow one.
+ */
+const TOTAL_ALIAS = '_uql_total';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -132,11 +141,44 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+    return this.hydrateRows(entity, q, await this.selectRows(entity, q, opts));
+  }
+
+  /**
+   * One statement for both: the page carries its own unpaged total in an extra column. An empty page
+   * has no row to carry it, which is the one case still needing a count of its own - a `$skip` past
+   * the end, or a filter nothing matched.
+   *
+   * A `$required` relation needs no special case: the window counts what the INNER JOIN left, which
+   * is exactly the total a caller of a filtered read is asking for.
+   */
+  protected override async internalFindManyAndCount<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): Promise<[E[], number]> {
+    const rows = await this.selectRows(entity, q, opts, TOTAL_ALIAS);
+    const total = rows.length ? Number(rows[0][TOTAL_ALIAS]) : await this.internalCount(entity, q, opts);
+    for (const row of rows) {
+      delete row[TOTAL_ALIAS];
+    }
+    return [await this.hydrateRows(entity, q, rows), total];
+  }
+
+  private async selectRows<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+    totalAlias?: string,
+  ): Promise<RawRow[]> {
     this.assertLockable(entity, q);
     const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q, opts);
-    const res = await this.all<RawRow>(ctx.sql, ctx.values);
-    const founds = unflatObjects<E>(res).map((row) => this.hydrateFields(entity, row));
+    this.dialect.find(ctx, entity, q, opts, totalAlias);
+    return this.all<RawRow>(ctx.sql, ctx.values);
+  }
+
+  private async hydrateRows<E extends object>(entity: Type<E>, q: Query<E>, rows: RawRow[]): Promise<E[]> {
+    const founds = unflatObjects<E>(rows).map((row) => this.hydrateFields(entity, row));
     await this.fillToManyRelations(entity, founds, q.$populate);
     return founds;
   }
@@ -233,17 +275,28 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return dto;
   }
 
+  /**
+   * Runs a statement whose one row carries a {@link COUNT_ALIAS} column. `Number` because `COUNT(*)` is BIGINT and
+   * a caller supplying their own `types` replaces the decoding the pools do at the wire; `?? 0` because
+   * a catalog that does not know the table answers with no row, which is nothing counted.
+   */
+  private async runCount(build: (ctx: QueryContext) => void): Promise<number> {
+    const ctx = this.dialect.createContext();
+    build(ctx);
+    const res = await this.all<Record<typeof COUNT_ALIAS, number | null>>(ctx.sql, ctx.values);
+    return Number(res[0]?.[COUNT_ALIAS] ?? 0);
+  }
+
   protected override async internalCount<E extends object>(
     entity: Type<E>,
-    q: QuerySearch<E> = {},
+    q: QueryFilter<E> = {},
     opts?: QueryOptions,
   ) {
-    const ctx = this.dialect.createContext();
-    this.dialect.count(ctx, entity, q, opts);
-    const res = await this.all<{ count: number }>(ctx.sql, ctx.values);
-    // `COUNT(*)` is BIGINT, which the pools decode at the wire - but a caller who supplies their own
-    // `types` replaces that, and the signature promises a number here regardless.
-    return Number(res[0].count);
+    return this.runCount((ctx) => this.dialect.count(ctx, entity, q, opts));
+  }
+
+  override async estimatedCount<E extends object>(entity: Type<E>) {
+    return this.runCount((ctx) => this.dialect.estimatedCount(ctx, entity));
   }
 
   protected override async internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(

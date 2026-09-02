@@ -93,15 +93,6 @@ export function matchRoute(method: string, subPath: string | undefined): RouteMa
   return idOp && subPath !== undefined ? { op: idOp, method: CRUD_ROUTES[idOp].method, id: subPath } : undefined;
 }
 
-export type RequestSuccessResponse<E> = {
-  data: E;
-  count?: number;
-};
-
-export type RequestCountedSuccessResponse<E> = RequestSuccessResponse<E> & {
-  count: number;
-};
-
 export type RequestErrorResponse = {
   readonly error: {
     readonly message: string;

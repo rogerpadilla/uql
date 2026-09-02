@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
 import { Item, User } from '../test/entityMock.js';
+import { COUNT_AGG_ALIAS } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -250,7 +251,7 @@ describe('MongodbQuerier vector search', () => {
 describe('MongodbQuerier relation conditions', () => {
   /** `countDocuments` takes a plain filter, so a relation condition has to count through a pipeline. */
   it('counts through an aggregation when the $where constrains a relation', async () => {
-    const toArray = vi.fn().mockResolvedValue([{ n: 3 }]);
+    const toArray = vi.fn().mockResolvedValue([{ [COUNT_AGG_ALIAS]: 3 }]);
     const aggregate = vi.fn().mockReturnValue({ toArray });
     const countDocuments = vi.fn();
     const querier = new MongodbQuerier(new MongoDialect(), {} as any);
@@ -260,7 +261,7 @@ describe('MongodbQuerier relation conditions', () => {
     expect(countDocuments).not.toHaveBeenCalled();
     const [pipeline] = aggregate.mock.calls[0];
     expect(pipeline[0]).toHaveProperty('$lookup');
-    expect(pipeline.at(-1)).toEqual({ $count: 'n' });
+    expect(pipeline.at(-1)).toEqual({ $count: COUNT_AGG_ALIAS });
   });
 
   it('reports zero when the aggregation matches nothing', async () => {
@@ -270,6 +271,47 @@ describe('MongodbQuerier relation conditions', () => {
     } as any);
 
     expect(await querier.count(Post, { $where: { author: { name: 'nobody' } } })).toBe(0);
+  });
+
+  /** The cheap shape on Mongo too: one capped `find`, never `countDocuments` or an aggregation. */
+  it('checks existence with a capped find rather than a count', async () => {
+    const cursor = {
+      filter: vi.fn(),
+      project: vi.fn(),
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      toArray: vi.fn().mockResolvedValue([{ _id: 1 }]),
+    };
+    const find = vi.fn().mockReturnValue(cursor);
+    const countDocuments = vi.fn();
+    const aggregate = vi.fn();
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({ find, countDocuments, aggregate } as any);
+
+    expect(await querier.exists(Post, { $where: { authorId: 9 } })).toBe(true);
+    expect(countDocuments).not.toHaveBeenCalled();
+    expect(aggregate).not.toHaveBeenCalled();
+    expect(cursor.filter).toHaveBeenCalledWith({ authorId: 9 });
+    expect(cursor.project).toHaveBeenCalledWith({ _id: 1 });
+    expect(cursor.limit).toHaveBeenCalledWith(1);
+    expect(cursor.skip).not.toHaveBeenCalled();
+  });
+
+  /** No matching row means the capped find comes back empty, which is a false rather than a throw. */
+  it('reports false when the capped find matches nothing', async () => {
+    const cursor = {
+      filter: vi.fn(),
+      project: vi.fn(),
+      sort: vi.fn(),
+      skip: vi.fn(),
+      limit: vi.fn(),
+      toArray: vi.fn().mockResolvedValue([]),
+    };
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({ find: vi.fn().mockReturnValue(cursor) } as any);
+
+    expect(await querier.exists(Post, { $where: { authorId: 9 } })).toBe(false);
   });
 
   /** An `updateMany` filter cannot host a `$lookup`, so the ids are resolved first. */

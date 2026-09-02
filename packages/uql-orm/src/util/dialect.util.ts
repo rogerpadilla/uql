@@ -32,6 +32,17 @@ import {
 } from '../type/index.js';
 import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
+/**
+ * The alias an internally-built count answers under - a batched relation tally, a MongoDB relation
+ * lookup, a total taken past a `$required` unwind. Every one of those picks the alias and reads it
+ * back a few lines later, so they share the spelling rather than each repeating it twice.
+ *
+ * Prefixed like every other internal alias here: a batched tally selects it alongside the column it
+ * groups by, so a bare name would collide with a real column of that name and answer the grouped
+ * value twice over, with no statement failing to say so.
+ */
+export const COUNT_AGG_ALIAS = '_uql_count';
+
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
 export function filterFieldKeys<E>(
@@ -393,6 +404,22 @@ export function parseRelationSize(val: unknown): number | QuerySizeComparisonOps
     throw new TypeError(`$size on a relation cannot be combined with other conditions: ${siblings.join(', ')}`);
   }
   return (val as { $size: number | QuerySizeComparisonOps }).$size;
+}
+
+/**
+ * The direction a `$sort` orders a to-many relation by its size, or `undefined` when the value is a
+ * map of the relation's own fields (which only a to-one can be ordered by). Mirrors
+ * {@link parseRelationSize}, the same clause spelled for a filter rather than an ordering.
+ */
+export function parseSortByCount(val: unknown): unknown {
+  if (!val || typeof val !== 'object' || !('$count' in val)) {
+    return undefined;
+  }
+  const siblings = getKeys(val).filter((key) => key !== '$count');
+  if (siblings.length) {
+    throw new TypeError(`$count in a $sort cannot be combined with other keys: ${siblings.join(', ')}`);
+  }
+  return (val as { $count: unknown }).$count;
 }
 
 /**

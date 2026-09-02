@@ -9,8 +9,10 @@ import type {
   QueryFindResult,
   QueryOneProjected,
   QueryOptions,
+  QueryPage,
   QueryProjected,
   QuerySearch,
+  QueryStreamProjected,
   QueryUpdateResult,
 } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
@@ -53,21 +55,23 @@ export interface Querier extends UniversalQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryOneProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryOneProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
   findOne<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P>,
+    q: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
 
   /**
    * Find many records. Supports both entity-as-argument and entity-as-field patterns.
@@ -78,17 +82,23 @@ export interface Querier extends UniversalQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P>[]>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
   findMany<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
-  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]>;
+    const C extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P, C>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
 
   /**
    * Stream records as an async iterable. Supports both patterns.
@@ -101,7 +111,7 @@ export interface Querier extends UniversalQuerier {
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryStreamProjected<E, S, V, X, P> & { $entity: Type<E> },
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
   findManyStream<
@@ -112,7 +122,7 @@ export interface Querier extends UniversalQuerier {
     const P extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryStreamProjected<E, S, V, X, P>,
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
 
@@ -125,27 +135,35 @@ export interface Querier extends UniversalQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
+  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
   findManyAndCount<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
+  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
 
   /**
    * Count records. Supports both patterns.
    */
-  count<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  count<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
+
+  /**
+   * Whether anything matches. Supports both patterns.
+   */
+  exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
 
   /**
    * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).

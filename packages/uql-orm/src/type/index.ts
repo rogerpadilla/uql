@@ -15,3 +15,4 @@ export * from './queryWhere.js';
 export * from './universalQuerier.js';
 export * from './utility.js';
 export * from './vector.js';
+export * from './wire.js';

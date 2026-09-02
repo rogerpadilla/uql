@@ -15,14 +15,17 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
+  QueryFilter,
   QueryFindResult,
   QueryGroupMap,
   QueryOne,
   QueryOneProjected,
   QueryOptions,
+  QueryPage,
   QueryPopulate,
   QueryProjected,
   QuerySearch,
+  QueryStreamProjected,
   QueryUpdateResult,
   QueryWhere,
   RawRow,
@@ -43,14 +46,17 @@ import {
   getRelationRequestSummary,
   idOnlyQuery,
   LoggerWrapper,
+  parentKeyColumn,
   parseRelationAtKey,
   parseRelationQueryValue,
   type RelationQuery,
   runHooks,
   someKey,
+  targetKeyColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
+import { fillRelationCounts, withIdForCounts } from './relationCount.js';
 
 /**
  * Rejects a nullish primary key before it reaches a statement. The by-id methods reduce to
@@ -152,12 +158,13 @@ export abstract class AbstractQuerier implements Querier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOneProjected<E, S, V, X, P>,
+    q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
   async findOneById<E extends object>(
     entity: Type<E>,
     id: IdValue<E>,
@@ -178,21 +185,23 @@ export abstract class AbstractQuerier implements Querier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryOneProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryOneProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
   async findOne<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P>,
+    q: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P> | undefined>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
   async findOne<E extends object>(
     entityOrQuery: Type<E> | (QueryOne<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: QueryOne<E> | QueryOptions,
@@ -213,17 +222,23 @@ export abstract class AbstractQuerier implements Querier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P>[]>;
+  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
   findMany<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
-  >(entity: Type<E>, q: QueryProjected<E, S, V, X, P>, opts?: QueryOptions): Promise<QueryFindResult<E, S, V, X, P>[]>;
+    const C extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryProjected<E, S, V, X, P, C>,
+    opts?: QueryOptions,
+  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
   async findMany<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,
@@ -231,7 +246,8 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<E[]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    const founds = await this.internalFindMany(entity, q, opts);
+    const founds = await this.internalFindMany(entity, withIdForCounts(entity, q), opts);
+    await fillRelationCounts(this, entity, founds, q.$count);
     await this.emitHook(entity, 'afterLoad', founds);
     return founds;
   }
@@ -261,7 +277,7 @@ export abstract class AbstractQuerier implements Querier {
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryStreamProjected<E, S, V, X, P> & { $entity: Type<E> },
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
   findManyStream<
@@ -272,7 +288,7 @@ export abstract class AbstractQuerier implements Querier {
     const P extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryStreamProjected<E, S, V, X, P>,
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
   findManyStream<E extends object>(
@@ -301,21 +317,23 @@ export abstract class AbstractQuerier implements Querier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
+  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
   findManyAndCount<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P>[], number]>;
+  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
   async findManyAndCount<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,
@@ -323,35 +341,72 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<[E[], number]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    const { $sort: _, $limit: _l, $skip: _s, ...qCount } = q;
-    const [founds, count] = await Promise.all([
-      this.internalFindMany(entity, q, opts),
-      this.internalCount(entity, qCount, opts),
-    ]);
+    const [founds, count] = await this.internalFindManyAndCount(entity, withIdForCounts(entity, q), opts);
+    await fillRelationCounts(this, entity, founds, q.$count);
     await this.emitHook(entity, 'afterLoad', founds);
     return [founds, count];
   }
 
   /**
-   * Count records matching the query.
-   * Supports both entity-as-argument and entity-as-field patterns.
+   * The page and how many rows the filter matched beyond it. Two statements here, which is what a
+   * backend with no way to answer both at once is left with; SQL overrides it to answer from one.
    */
-  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-  count<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  count<E extends object>(
-    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: QuerySearch<E> | QueryOptions,
+  protected async internalFindManyAndCount<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): Promise<[E[], number]> {
+    return Promise.all([
+      this.internalFindMany(entity, q, opts),
+      this.internalCount(entity, { $where: q.$where }, opts),
+    ]);
+  }
+
+  /**
+   * Count records matching the query, in both the entity-as-argument and entity-as-field patterns.
+   * A `$skip`/`$limit` settles the matching ids and counts those, rather than scanning every match;
+   * `$sort` never reaches that SELECT, since it changes which rows a page holds, never how many.
+   */
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
+  count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
+  async count<E extends object>(
+    entityOrQuery: Type<E> | (QueryPage<E> & { $entity: Type<E> }),
+    maybeQueryOrOpts?: QueryPage<E> | QueryOptions,
     maybeOpts?: QueryOptions,
   ): Promise<number> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    if (q.$skip !== undefined || q.$limit !== undefined) {
+      const meta = getMeta(entity);
+      const rows = await this.internalFindMany(
+        entity,
+        idOnlyQuery(meta, { $where: q.$where, $skip: q.$skip, $limit: q.$limit }),
+        opts,
+      );
+      return rows.length;
+    }
     return this.internalCount(entity, q, opts);
   }
 
   protected abstract internalCount<E extends object>(
     entity: Type<E>,
-    q: QuerySearch<E>,
+    q: QueryFilter<E>,
     opts?: QueryOptions,
   ): Promise<number>;
+
+  /**
+   * Whether anything matches, in both the entity-as-argument and entity-as-field patterns. A count
+   * capped at one row, so the engine stops at the first match instead of scanning every other one.
+   */
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
+  exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
+  async exists<E extends object>(
+    entityOrQuery: Type<E> | (QueryFilter<E> & { $entity: Type<E> }),
+    maybeQueryOrOpts?: QueryFilter<E> | QueryOptions,
+    maybeOpts?: QueryOptions,
+  ): Promise<boolean> {
+    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+    return (await this.count(entity, { $where: q.$where, $limit: 1 }, opts)) > 0;
+  }
 
   /**
    * Run an aggregate query.
@@ -369,6 +424,9 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]>;
+
+  /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
+  abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
   async insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);
@@ -573,11 +631,11 @@ export abstract class AbstractQuerier implements Querier {
     relOpts: RelationMeta,
     relationQuery: RelationQuery,
   ): Promise<void> {
-    const localField = relOpts.references[0].local;
+    const localField = parentKeyColumn(relOpts);
     const throughEntity = relOpts.through!();
     const throughMeta = getMeta(throughEntity);
     const targetRelKey = getKeys(throughMeta.relations).find((key) =>
-      throughMeta.relations[key]?.references.some(({ local }) => local === relOpts.references[1].local),
+      throughMeta.relations[key]?.references.some(({ local }) => local === targetKeyColumn(relOpts)),
     );
     const ids = payload.map((it) => it[meta.id]);
     // A relation query names the target's columns, not the join table's, so the projection and the
@@ -615,7 +673,7 @@ export abstract class AbstractQuerier implements Querier {
     relationQuery: RelationQuery,
     relEntity: Type<object>,
   ): Promise<void> {
-    const foreignField = relOpts.references[0].foreign;
+    const foreignField = parentKeyColumn(relOpts);
     // The FK is what putChildrenInParents groups on, so it outlives the relation's projection
     // either way: added to a whitelisting `$select` (the raw-array form has nothing to augment),
     // dropped from a subtractive `$exclude`. `relationQuery` is already a clone.
@@ -699,14 +757,9 @@ export abstract class AbstractQuerier implements Querier {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;
       const relEntity = relOpts.entity();
-      const localField = relOpts.references[0].local;
-      if (relOpts.through) {
-        const throughEntity = relOpts.through();
-        await this.deleteMany(throughEntity, { $where: { [localField]: ids } }, opts);
-      } else {
-        const foreignField = relOpts.references[0].foreign;
-        await this.deleteMany(relEntity, { $where: { [foreignField]: ids } }, opts);
-      }
+      const parentKey = parentKeyColumn(relOpts);
+      const target = relOpts.through ? relOpts.through() : relEntity;
+      await this.deleteMany(target, { $where: { [parentKey]: ids } }, opts);
     }
   }
 
@@ -746,9 +799,9 @@ export abstract class AbstractQuerier implements Querier {
     relPayload: object[],
     isUpdate?: boolean,
   ) {
-    const { references, through } = relOpts;
+    const { through } = relOpts;
     if (through) {
-      const localField = references[0].local;
+      const localField = parentKeyColumn(relOpts);
       const throughEntity = through();
       if (isUpdate) {
         await this.deleteMany(throughEntity, { $where: { [localField]: ids } as QueryWhere<object> });
@@ -760,13 +813,13 @@ export abstract class AbstractQuerier implements Querier {
           const savedIds = await this.saveMany(relEntity, relPayload);
           await this.insertMany(
             throughEntity,
-            savedIds.map((relId) => ({ [references[0].local]: id, [references[1].local]: relId })),
+            savedIds.map((relId) => ({ [localField]: id, [targetKeyColumn(relOpts)]: relId })),
           );
         }
       }
       return;
     }
-    const foreignField = references[0].foreign;
+    const foreignField = parentKeyColumn(relOpts);
     if (isUpdate) {
       await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
     }
@@ -779,7 +832,7 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   private async saveOneToOne(relEntity: Type<object>, relOpts: RelationMeta, ids: unknown[], relPayload: object) {
-    const foreignField = relOpts.references[0].foreign;
+    const foreignField = parentKeyColumn(relOpts);
     if (relPayload === null) {
       await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
       return;
@@ -797,6 +850,8 @@ export abstract class AbstractQuerier implements Querier {
     ids: IdValue<E>[],
     relPayload: object,
   ) {
+    // Not `parentKeyColumn`: a many-to-one points the other way, so this is the *parent's* own column
+    // holding the child's id - the one place `references[0].local` does not name a key of the parent.
     const localField = relOpts.references[0].local;
     // Per parent: each gets its own reference row, so each `SET` carries a different value.
     for (const id of ids) {

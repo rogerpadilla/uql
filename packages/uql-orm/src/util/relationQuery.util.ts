@@ -25,6 +25,21 @@ export function isToManyRelation(relation: Pick<RelationMeta, 'cardinality'>): b
 }
 
 /**
+ * The column holding the parent's id: a junction's own for a relation that goes through one, the
+ * child's foreign key otherwise. The two are spelled from opposite ends - `local` names a column of
+ * the table the relation is declared to write, `foreign` a column of the other one - and getting
+ * that backwards reads a real column of the wrong table, so it is answered once here.
+ */
+export function parentKeyColumn(relOpts: Pick<RelationMeta, 'references' | 'through'>): string {
+  return relOpts.through ? relOpts.references[0].local : relOpts.references[0].foreign;
+}
+
+/** The column on a junction table holding the target's id, the other half of {@link parentKeyColumn}. */
+export function targetKeyColumn(relOpts: Pick<RelationMeta, 'references'>): string {
+  return relOpts.references[1].local;
+}
+
+/**
  * What a joined relation cannot carry, and why. A to-many is loaded by a query of its own, which is
  * what gives these four a meaning there; a to-one is one row of the parent's, so every backend used
  * to drop them without a word. `satisfies` ties each key to {@link RelationQuery}, so renaming one

@@ -1,11 +1,10 @@
 /**
  * Type-level regression tests keeping {@link ClientQuerier} in sync with {@link UniversalQuerier}.
  *
- * The two interfaces cannot share a definition (client returns are wrapped in
- * `RequestSuccessResponse` and TypeScript lacks higher-kinded type wrappers), so parity is locked
- * mechanically: two-way key coverage against an explicit reviewed server-only list, plus
- * representative calls passing the same query literals to both interfaces so a parameter-shape
- * drift on any method breaks this file.
+ * Both take their shared operations from one `SharedQuerier` declaration, so those cannot drift.
+ * What is still hand-written per side, and so still checked here: the key coverage each way against
+ * an explicit reviewed server-only list, and the writes the server declares without options
+ * (`insertOne`/`insertMany`/`saveOne`/`saveMany`), passed the same payload literals on both.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
  * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
@@ -24,6 +23,12 @@ class Article {
   tags?: string[];
   kind?: Json<{ public?: number }>;
   author?: Author;
+
+  // a write payload is `EntityData<E>`, never `E`: typed as `E` the calls below stop compiling,
+  // since a plain object owes back every method the class declares
+  slug(): string {
+    return this.title;
+  }
 }
 
 type AssertEmpty<T extends never> = T;
@@ -35,7 +40,9 @@ type ServerOnlyOperation =
   | 'upsertOne'
   | 'upsertMany'
   | 'restoreOneById'
-  | 'restoreMany';
+  | 'restoreMany'
+  // reads the engine's own statistics, which a browser has no business asking a server to go read
+  | 'estimatedCount';
 
 /** A server method (other than the reviewed server-only ones) is missing on the client. */
 export type MissingOnClient = AssertEmpty<Exclude<keyof UniversalQuerier, ServerOnlyOperation | keyof ClientQuerier>>;
@@ -64,6 +71,11 @@ export async function clientServerParity() {
   await client.count(Article);
   await server.count(Article, { $where: { id: 1 } });
   await client.count(Article, { $where: { id: 1 } });
+
+  const serverExists: boolean = await server.exists(Article, { $where: { id: 1 } });
+  const clientExists: boolean = (await client.exists(Article, { $where: { id: 1 } })).data;
+  void serverExists;
+  void clientExists;
 
   const serverInsertedId: number | undefined = await server.insertOne(Article, { id: 1, title: 'a' });
   const clientInserted = await client.insertOne(Article, { id: 1, title: 'a' });

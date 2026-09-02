@@ -72,6 +72,7 @@ import {
   normalizeScalarFieldSelection,
   parseGroupMap,
   parseRelationSize,
+  parseSortByCount,
   populatesRelations,
   raw,
   someValue,
@@ -111,6 +112,12 @@ type LikeOp = { readonly pattern: (value: string) => string; readonly insensitiv
 type HydratableField = readonly [string, HydrateKind];
 
 export type { HydrateKind };
+
+/**
+ * The column a counting statement answers in. Shared rather than spelled at each end: the dialects
+ * emit it and `runCount` reads it back, and a rename on one side alone would quietly count zero.
+ */
+export const COUNT_ALIAS = 'count';
 
 export abstract class AbstractSqlDialect extends IndexSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
@@ -318,7 +325,14 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 
-  select<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QueryOptions = {}, joins = NO_JOINS): void {
+  select<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E>,
+    opts: QueryOptions = {},
+    joins = NO_JOINS,
+    totalAlias?: string,
+  ): void {
     const meta = getMeta(entity);
     const { alias, ref } = this.tableRef(meta);
     const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
@@ -333,6 +347,9 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
         ctx.append(', ');
         this.appendVectorProjection(ctx, meta, key, val);
       }
+    }
+    if (totalAlias) {
+      ctx.append(`, ${this.totalOverExpr} ${this.escapeId(totalAlias, true)}`);
     }
     ctx.append(` FROM ${ref}`);
     // Add JOINs AFTER FROM clause
@@ -997,6 +1014,20 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       const relation = meta.relations[key as RelationKey<E>];
       if (relation) {
         const relPath = path ? `${path}.${key}` : key;
+        const countDirection = parseSortByCount(value);
+        if (countDirection !== undefined) {
+          // A correlated count, not a join: a parent has many of these, so what is being ordered by
+          // is how many, and `SELECT DISTINCT` cannot order by an expression it did not select.
+          if (opts.distinct) {
+            throw new TypeError(`cannot $sort by '${relPath}.$count' with $distinct: it is not a selected column`);
+          }
+          columns.push(
+            this.buildFragment(ctx, (fragmentCtx) =>
+              this.appendRelationSubquery(fragmentCtx, meta, relation, { prefix }, 'COUNT(*)', {}),
+            ) + this.resolveSortDirection(countDirection),
+          );
+          continue;
+        }
         const { join, sort: relationSort } = resolveSortableJoin(
           relation,
           relPath,
@@ -1092,11 +1123,23 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     ctx.append(` FOR UPDATE${target}${suffix}`);
   }
 
-  // `QueryFilter`, not `QuerySearch`: a count orders nothing and pages nothing, and an `OFFSET`
-  // would push its single row out of the result set. The parameter type is what keeps them away.
+  // `QueryFilter`, not `QueryPage`: a count orders nothing and pages nothing, and an `OFFSET`
+  // would push its single row out of the result set. The type only stops a statically-checked
+  // caller though - the HTTP handler hands this `q` straight from the wire - so `$where` is read
+  // off it explicitly rather than forwarding `q` itself into `search()`, which would honor a
+  // `$sort`/`$skip`/`$limit` an untyped caller snuck in regardless of what TypeScript allowed them.
   count<E>(ctx: QueryContext, entity: Type<E>, q: QueryFilter<E>, opts?: QueryOptions): void {
-    this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', 'count')] });
-    this.search(ctx, entity, q, opts);
+    this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', COUNT_ALIAS)] });
+    this.search(ctx, entity, { $where: q.$where }, opts);
+  }
+
+  /**
+   * The statistic the engine already keeps, as a `count` column. Overridden by the dialects that
+   * keep one; the rest throw, because falling back to `COUNT(*)` would run exactly the scan the
+   * caller reached for this to avoid, and only say so by taking a long time.
+   */
+  estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
+    throw new TypeError(`${this.dialectName} does not support estimatedCount`);
   }
 
   /** `$group` aggregate operator → SQL function name. An allowlist, not a formatter: the op key
@@ -1227,11 +1270,17 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     });
   }
 
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions): void {
+  /**
+   * How many rows the filter matched, on every row of the page. A window function runs before
+   * LIMIT/OFFSET, so what it counts is the whole match rather than the page cut out of it.
+   */
+  protected readonly totalOverExpr = 'COUNT(*) OVER ()';
+
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string): void {
     // The one statement that can join, so the one that resolves the join set; everything else renders
     // against `NO_JOINS` and rejects a `$sort` that would need one.
     const joins = resolveQueryJoins(getMeta(entity), q);
-    this.select(ctx, entity, q, opts, joins);
+    this.select(ctx, entity, q, opts, joins, totalAlias);
     this.search(ctx, entity, q, opts, joins);
     // Appended here rather than in `search`, which `count`/`update`/`delete` share: a lock belongs
     // to a SELECT alone. Every engine spells it after LIMIT/OFFSET, so it goes last.
@@ -1842,13 +1891,12 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    */
   private appendRelationSubquery<E>(
     ctx: QueryContext,
-    entity: Type<E>,
+    meta: EntityMeta<E>,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
     projection: '1' | 'COUNT(*)',
     val: QueryWhereMap<unknown>,
   ): void {
-    const meta = getMeta(entity);
     // Aliases, not paths, everywhere a column is prefixed; `tableRef` declares them in the FROM.
     const parentAlias = this.resolveTableAlias(meta);
     const references = rel.references;
@@ -1901,7 +1949,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     opts: QueryComparisonOptions,
   ): void {
     ctx.append('EXISTS ');
-    this.appendRelationSubquery(ctx, entity, rel, opts, '1', val);
+    this.appendRelationSubquery(ctx, getMeta(entity), rel, opts, '1', val);
   }
 
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */
@@ -1912,7 +1960,11 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
-    this.buildSizeComparison(ctx, () => this.appendRelationSubquery(ctx, entity, rel, opts, 'COUNT(*)', {}), sizeVal);
+    this.buildSizeComparison(
+      ctx,
+      () => this.appendRelationSubquery(ctx, getMeta(entity), rel, opts, 'COUNT(*)', {}),
+      sizeVal,
+    );
   }
 
   /**

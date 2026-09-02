@@ -3,7 +3,7 @@ import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
 import { Company, createSpec, Item, MeasureUnitCategory, type Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { raw } from '../util/index.js';
+import { COUNT_AGG_ALIAS, raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
 declare module '../type/index.js' {
@@ -289,10 +289,10 @@ class MongoDialectSpec implements Spec {
 
   /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
   shouldCompareRelationSize() {
-    const count = { $ifNull: [{ $arrayElemAt: ['$__uql_rel_0.n', 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$__uql_rel_0.${COUNT_AGG_ALIAS}`, 0] }, 0] };
 
     const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
-    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: 'n' }]);
+    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_AGG_ALIAS }]);
     expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
 
     const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });

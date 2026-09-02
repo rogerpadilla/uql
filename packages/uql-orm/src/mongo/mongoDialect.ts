@@ -37,6 +37,7 @@ import {
   assertNonNegativeInteger,
   buildQueryWhereAsMap,
   type CallbackKey,
+  COUNT_AGG_ALIAS,
   fillOnFields,
   filterFieldKeys,
   getKeys,
@@ -50,6 +51,7 @@ import {
   type ParsedGroupEntry,
   parseGroupMap,
   parseRelationSize,
+  parseSortByCount,
   someKey,
 } from '../util/index.js';
 
@@ -106,7 +108,15 @@ export class MongoDialect extends AbstractDialect {
   private static readonly ID_KEY = '_id';
   /** Temporary lookup fields for relation conditions, dropped with `$unset` after the `$match`. */
   private static readonly REL_TEMP_PREFIX = '__uql_rel_';
-  private static readonly REL_COUNT_KEY = 'n';
+
+  /**
+   * Where a `$sort` by a relation's size parks its tally, until the ordering has run. One spelling
+   * for both ends: the `$sort` names this field and {@link sortCountStages} produces it, and MongoDB
+   * ranks a field that is not there as all-equal rather than failing, so a drift would go unnoticed.
+   */
+  private static sortCountField(relKey: string): string {
+    return `__uql_sort_count_${relKey}`;
+  }
   private static readonly REL_NESTED_KEY = '__uql_target';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
@@ -249,7 +259,7 @@ export class MongoDialect extends AbstractDialect {
     const temp = `${MongoDialect.REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
     // `$count` for a size test, `$limit: 1` for existence: neither returns the matched documents.
-    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: MongoDialect.REL_COUNT_KEY }];
+    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_AGG_ALIAS }];
     // Scope first, render once - merging the target's filters into an already-rendered filter would
     // leave their own keys unmapped. The caller's filter bypass is deliberately *not* passed down:
     // `withDeleted()` or `hardDelete` on the parent must not un-hide trashed rows of the target, the
@@ -258,22 +268,38 @@ export class MongoDialect extends AbstractDialect {
     const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, targetCondition), opts);
 
     lookups.temps.push(temp);
-    lookups.stages.push(
-      relOpts.cardinality === 'mm' && relOpts.through
-        ? this.junctionLookup(relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
-        : {
-            $lookup: {
-              from: this.resolveTableName(relMeta),
-              ...this.joinKeys(meta, relMeta, relOpts),
-              pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), ...tail],
-              as: temp,
-            },
-          },
-    );
+    lookups.stages.push(this.relationLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts));
 
     return sizeVal === undefined
       ? { [`${temp}.0`]: { $exists: true } }
       : { $expr: this.compareRelationCount(temp, sizeVal) };
+  }
+
+  /**
+   * The correlated `$lookup` for one relation, as `temp`: through its junction for a ManyToMany, or
+   * straight at the target otherwise. `tail` decides what the lookup leaves behind - a row to test
+   * for existence, or a `$count` - so a filter and an ordering build the same stage.
+   */
+  private relationLookup<E>(
+    meta: EntityMeta<E>,
+    relOpts: RelationMeta,
+    relMeta: EntityMeta<Document>,
+    relEntity: Type<Document>,
+    targetScope: Filter<Document>,
+    temp: string,
+    tail: Record<string, unknown>[],
+    opts: QueryOptions | undefined,
+  ): MongoAggregationPipelineEntry<Document> {
+    return relOpts.cardinality === 'mm' && relOpts.through
+      ? this.junctionLookup(relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
+      : {
+          $lookup: {
+            from: this.resolveTableName(relMeta),
+            ...this.joinKeys(meta, relMeta, relOpts),
+            pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), ...tail],
+            as: temp,
+          },
+        };
   }
 
   /**
@@ -323,7 +349,7 @@ export class MongoDialect extends AbstractDialect {
    * the `$ifNull` fallback to 0, so `{ $size: 0 }` matches parents with no related row at all.
    */
   private compareRelationCount(temp: string, sizeVal: number | QuerySizeComparisonOps): Record<string, unknown> {
-    const count = { $ifNull: [{ $arrayElemAt: [`$${temp}.${MongoDialect.REL_COUNT_KEY}`, 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_AGG_ALIAS}`, 0] }, 0] };
     if (typeof sizeVal === 'number') {
       return { $eq: [count, sizeVal] };
     }
@@ -546,6 +572,17 @@ export class MongoDialect extends AbstractDialect {
       // one: ordering by a relation nothing looked up reads a field that is not there, which MongoDB
       // ranks as all-equal rather than rejecting. The SQL dialects can add the join themselves.
       const relPath = `${path}${key}`;
+      const countDirection = parseSortByCount(value);
+      if (countDirection !== undefined) {
+        // The tally rides on a field {@link sortCountStages} adds, which only the queried entity's
+        // own pipeline has: a nested one is built inside its parent's `$lookup`, where there is no
+        // parent document left to hang it off.
+        if (path) {
+          throw new TypeError(`$sort by '${relPath}.$count' is only supported on the queried entity`);
+        }
+        out[MongoDialect.sortCountField(key)] = sortDirection(countDirection);
+        continue;
+      }
       const { join, sort: relationSort } = resolveSortableJoin(
         relation,
         relPath,
@@ -555,6 +592,40 @@ export class MongoDialect extends AbstractDialect {
       );
       this.collectSort(join.meta, relationSort, joins, `${relPath}.`, out);
     }
+  }
+
+  /**
+   * The stages a `$sort` by a relation's size needs: one correlated `$lookup` tallying the relation
+   * per parent, and the `$set` that lifts the tally onto the document as the field the `$sort` then
+   * orders by. A parent with no related row gets no lookup result at all, which is a zero.
+   */
+  public sortCountStages<E extends Document>(
+    entity: Type<E>,
+    sort: QuerySortMap<E> | undefined,
+    opts?: QueryOptions,
+  ): { readonly stages: MongoAggregationPipelineEntry<Document>[]; readonly fields: string[] } {
+    const meta = getMeta(entity);
+    const stages: MongoAggregationPipelineEntry<Document>[] = [];
+    const fields: string[] = [];
+
+    for (const [key, value] of Object.entries(sort ?? {})) {
+      const relOpts = meta.relations[key as RelationKey<E>];
+      if (!relOpts || parseSortByCount(value) === undefined) {
+        continue;
+      }
+      const relEntity = relOpts.entity();
+      const relMeta = getMeta(relEntity);
+      const temp = MongoDialect.sortCountField(key);
+      const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, {}), opts);
+      const tail = [{ $count: COUNT_AGG_ALIAS }];
+
+      stages.push(this.relationLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts), {
+        $addFields: { [temp]: { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_AGG_ALIAS}`, 0] }, 0] } },
+      });
+      fields.push(temp);
+    }
+
+    return { stages, fields };
   }
 
   /** Whether a `$sort` reads a relation, which is what forces the lookups to run before it. */
@@ -628,7 +699,10 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
     const joins = resolveQueryJoins(meta, q);
-    const lookups = this.lookupStages(meta, joins, undefined, opts);
+    // The tally an ordering by a relation's size reads, and the field it parks it on: both belong
+    // with the lookups, since the `$sort` right after them is what they exist for.
+    const counted = this.sortCountStages(entity, q.$sort, opts);
+    const lookups = [...this.lookupStages(meta, joins, undefined, opts), ...counted.stages];
     const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
     const pager = extra.pager ?? [];
 
@@ -642,11 +716,17 @@ export class MongoDialect extends AbstractDialect {
     // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
     // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
     const sortOnly = [...joins.values()].filter((join) => !join.projected).map((join) => join.path);
-    const unset = sortOnly.length ? [{ $unset: sortOnly }] : [];
+    const dropped = [...sortOnly, ...counted.fields];
+    const unset = dropped.length ? [{ $unset: dropped }] : [];
 
     // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
     // that reads a lookup those columns do not carry. Refused rather than answered all-equal, and in
     // the same terms the SQL dialects refuse `SELECT DISTINCT` ordered by an unselected column.
+    if (q.$distinct && counted.fields.length) {
+      throw new TypeError(
+        `cannot $sort by a relation's $count with $distinct: the grouping keeps only the columns it projects`,
+      );
+    }
     if (q.$distinct && sortOnly.length) {
       throw new TypeError(
         `cannot $sort by relation '${sortOnly[0]}' with $distinct unless '${sortOnly[0]}' is populated: the grouping keeps only the columns it projects`,

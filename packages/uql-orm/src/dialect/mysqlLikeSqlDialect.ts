@@ -16,7 +16,7 @@ import type {
 } from '../type/index.js';
 import { getFieldKeys } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { AbstractSqlDialect, COUNT_ALIAS } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
 
 /** The row count MySQL's manual gives for "all rows from the offset on": the largest `BIGINT UNSIGNED`. */
@@ -50,6 +50,26 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     defaultStringAsText: false,
   };
+
+  /**
+   * `information_schema` keeps InnoDB's own row estimate, which is live enough to answer before
+   * anything has been analyzed. `DATABASE()` where the entity names no schema, so the estimate comes
+   * from the connection's own database rather than a same-named table in another one.
+   */
+  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+    const meta = getMeta(entity);
+    const schema = this.resolveSchema(meta);
+    ctx.append(
+      `SELECT TABLE_ROWS ${this.escapeId(COUNT_ALIAS, true)} FROM information_schema.TABLES WHERE TABLE_SCHEMA = `,
+    );
+    if (schema) {
+      ctx.addValue(schema);
+    } else {
+      ctx.append('DATABASE()');
+    }
+    ctx.append(' AND TABLE_NAME = ');
+    ctx.addValue(this.resolveTableAlias(meta));
+  }
 
   /** `OFFSET` is only legal after a `LIMIT` here, so a bare `$skip` needs one. */
   override pager(ctx: QueryContext, opts: QueryPager): void {

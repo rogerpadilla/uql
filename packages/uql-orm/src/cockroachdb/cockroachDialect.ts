@@ -1,5 +1,7 @@
+import { COUNT_ALIAS } from '../dialect/abstractSqlDialect.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
-import type { IndexFeature, IndexSchema, VectorDistance } from '../type/index.js';
+import { getMeta } from '../entity/index.js';
+import type { IndexFeature, IndexSchema, QueryContext, Type, VectorDistance } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -61,5 +63,18 @@ export class CockroachDialect extends PgLikeSqlDialect {
 
   protected override indexTuning(index: IndexSchema): string {
     return this.isNativeVectorIndex(index) ? '' : super.indexTuning(index);
+  }
+
+  /**
+   * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an
+   * `ANALYZE` (verified live on v26.2) - it keeps its optimizer's row counts in its own statistics
+   * instead, and `SHOW STATISTICS` is how they are read. Bracketed so it can be selected from; the
+   * newest row wins, and a table never analyzed has none at all, which reads as `0`.
+   */
+  override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
+    const table = this.escapedTableName(getMeta(entity));
+    ctx.append(
+      `SELECT row_count ${this.escapeId(COUNT_ALIAS, true)} FROM [SHOW STATISTICS FOR TABLE ${table}] ORDER BY created DESC LIMIT 1`,
+    );
   }
 }

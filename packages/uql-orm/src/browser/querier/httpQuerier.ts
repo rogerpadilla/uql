@@ -1,22 +1,20 @@
-import {
-  CRUD_ROUTES,
-  entityPath,
-  type HttpMethod,
-  type RequestCountedSuccessResponse,
-  type RequestSuccessResponse,
-} from '../../http/contract.js';
+import { CRUD_ROUTES, entityPath, type HttpMethod } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
 import type {
   EntityData,
   FieldKey,
   IdValue,
   Query,
+  QueryFilter,
   QueryFindResult,
   QueryOneProjected,
   QueryOptions,
+  QueryPage,
   QueryProjected,
   QuerySearch,
   RelationKey,
+  RequestCountedSuccessResponse,
+  RequestSuccessResponse,
   Type,
   UpdatePayload,
 } from '../../type/index.js';
@@ -49,15 +47,16 @@ export class HttpQuerier implements ClientQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
     id: IdValue<E>,
-    q?: QueryOneProjected<E, S, V, X, P>,
+    q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>> {
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<QueryFindResult<E, S, V, X, P> | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
+    return get<QueryFindResult<E, S, V, X, P, C> | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
   }
 
   findOne<
@@ -66,12 +65,13 @@ export class HttpQuerier implements ClientQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P>,
+    q: QueryOneProjected<E, S, V, X, P, C>,
     opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P> | undefined>> {
-    return this.read<QueryFindResult<E, S, V, X, P> | undefined>(
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
+    return this.read<QueryFindResult<E, S, V, X, P, C> | undefined>(
       `${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`,
       q,
       opts,
@@ -84,16 +84,17 @@ export class HttpQuerier implements ClientQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: RequestFindOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P>[]>> {
+  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
     const data: Query<E> & { count?: boolean } = { ...q };
     if (opts?.count) {
       data.count = true;
     }
-    return this.read<QueryFindResult<E, S, V, X, P>[]>(this.getBasePath(entity), data, opts);
+    return this.read<QueryFindResult<E, S, V, X, P, C>[]>(this.getBasePath(entity), data, opts);
   }
 
   async findManyAndCount<
@@ -102,11 +103,12 @@ export class HttpQuerier implements ClientQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: RequestFindOptions,
-  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P>[]>> {
+  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
     const response = await this.findMany(entity, q, { ...opts, count: true });
     if (typeof response.count !== 'number') {
       throw new TypeError('findManyAndCount response has an invalid count');
@@ -114,8 +116,14 @@ export class HttpQuerier implements ClientQuerier {
     return { ...response, count: response.count };
   }
 
-  count<E extends object>(entity: Type<E>, q?: QuerySearch<E>, opts?: RequestOptions) {
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: RequestOptions) {
     return this.read<number>(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
+  }
+
+  /** The `count` route capped at one row, so existence needs no endpoint of its own. */
+  async exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: RequestOptions) {
+    const res = await this.count(entity, { ...q, $limit: 1 }, opts);
+    return { ...res, data: res.data > 0 };
   }
 
   insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {

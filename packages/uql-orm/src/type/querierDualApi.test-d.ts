@@ -1,6 +1,6 @@
 /**
  * Type-level regression tests for the dual-API pattern on `Querier`: `findOne`/`findMany`/
- * `findManyStream`/`findManyAndCount`/`count`/`deleteMany` each take either the classic
+ * `findManyStream`/`findManyAndCount`/`count`/`exists`/`deleteMany` each take either the classic
  * entity-as-argument form or a single entity-as-field (`{ $entity }`) object, useful for a query built
  * elsewhere (RPC/REST) that cannot carry the entity class itself until it lands back in code.
  *
@@ -33,6 +33,7 @@ export async function dualApiOnQuerier() {
   await querier.findMany(Article, { $where: { title: 'x' } });
   await querier.findManyAndCount(Article, { $where: { title: 'x' } });
   await querier.count(Article, { $where: { title: 'x' } });
+  await querier.exists(Article, { $where: { title: 'x' } });
   await querier.deleteMany(Article, { $where: { title: 'x' } });
   for await (const _row of querier.findManyStream(Article, {})) break;
 
@@ -41,6 +42,7 @@ export async function dualApiOnQuerier() {
   await querier.findMany({ $entity: Article, $where: { title: 'x' } });
   await querier.findManyAndCount({ $entity: Article, $where: { title: 'x' } });
   await querier.count({ $entity: Article, $where: { title: 'x' } });
+  await querier.exists({ $entity: Article, $where: { title: 'x' } });
   await querier.deleteMany({ $entity: Article, $where: { title: 'x' } });
   for await (const _row of querier.findManyStream({ $entity: Article, $where: {} })) break;
 

@@ -2,6 +2,37 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.37.0] - 2026-09-02
+
+**Counting, everywhere it was missing** - a page, a yes or no, a relation's size, a table too big to scan:
+
+```ts
+await querier.count(User, { $limit: 1000 }); // capped: "1,000+ matches", no full scan
+await querier.exists(User, { $where: { email } }); // stops at the first match
+await querier.estimatedCount(User); // the engine's own statistic, no scan
+
+await querier.findMany(User, {
+  $count: { posts: true, comments: { $where: { approved: true } } },
+  $sort: { posts: { $count: -1 } }, // the users with the most posts
+  $limit: 10,
+});
+// [{ ...user, _count: { posts: 42, comments: 7 } }]
+```
+
+- `count` takes `$skip`/`$limit`, settling the matching ids rather than scanning every match.
+- **`findManyAndCount` is one statement on SQL**, down from two: the page carries its own unpaged total, so the two can no longer disagree. Its total also counts past a `$required` relation now - it used to include rows the INNER JOIN drops.
+- **`$count` costs one grouped statement per relation**, batched over the whole page, so it stays flat however large the page is. Ordering is a correlated tally, so a top-N never loads the rows it ranked by. Counting and populating the same relation are independent - ask for both.
+- `count` no longer takes a `$sort`. It never changed the number.
+- `estimatedCount` is approximate and whole-table: no filter, so every entity filter and soft-deleted row is inside it, and it is as stale as the last `ANALYZE`. SQLite throws. Server-side only.
+
+Fixes:
+
+- **A client write takes plain data again.** On an entity declaring any method, `client.insertOne(Article, { title: 'Hello' })` was rejected for not handing the method back too.
+- **`$limit: 0` reads no rows on MongoDB**, as everywhere else - it came back with the whole collection.
+- **A bare `$skip` works on SQLite**: `findMany(User, { $skip: 20 })` crashed.
+
+`RequestSuccessResponse` and `RequestCountedSuccessResponse` moved to `uql-orm/type` from `uql-orm/http`.
+
 ## [0.36.1] - 2026-09-01
 
 - README only: the decorators need no compiler flags or `reflect-metadata`, and plain classes work through `defineEntity`.

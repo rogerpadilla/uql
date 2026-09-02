@@ -1,5 +1,5 @@
 import type { UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOptions, QuerySearch } from './query.js';
+import type { Query, QueryConflictPaths, QueryFilter, QueryOptions, QuerySearch } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
 
@@ -121,8 +121,9 @@ export interface QueryDialect {
    * @param entity the target entity
    * @param q the criteria options
    * @param opts the query options
+   * @param totalAlias when given, carry the unpaged match count on every row under this alias
    */
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions): void;
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions, totalAlias?: string): void;
 
   /**
    * counts the number of records matching the given search parameters.
@@ -131,7 +132,7 @@ export interface QueryDialect {
    * @param q the criteria options
    * @param opts the query options
    */
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void;
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryFilter<E>, opts?: QueryOptions): void;
 
   /**
    * insert records.

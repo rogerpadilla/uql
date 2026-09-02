@@ -324,6 +324,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(this.exec((ctx) => this.dialect.count(ctx, User, q)).sql).not.toContain('FOR UPDATE');
   }
 
+  /**
+   * The statistic each engine keeps, or the refusal where it keeps none. Overridden by every family
+   * that has one; the default asserts the throw, which is what SQLite inherits - and what it must
+   * do, since falling back to `COUNT(*)` would run the scan `estimatedCount` exists to avoid.
+   */
+  shouldEstimatedCount() {
+    expect(() => this.exec((ctx) => this.dialect.estimatedCount(ctx, User))).toThrow(
+      `${this.dialect.dialectName} does not support estimatedCount`,
+    );
+  }
+
   shouldNotEmitLockOnUpdate() {
     const q = { $where: { id: 1 }, $lock: true } as never;
     expect(this.exec((ctx) => this.dialect.update(ctx, User, q, { name: 'x' })).sql).not.toContain('FOR UPDATE');

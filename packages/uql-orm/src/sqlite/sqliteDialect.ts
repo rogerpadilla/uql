@@ -13,6 +13,7 @@ import type {
   EntityMeta,
   FieldOptions,
   QueryContext,
+  QueryPager,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
   Type,
@@ -98,6 +99,17 @@ export class SqliteDialect extends AbstractSqlDialect {
   override normalizeValue(value: unknown): unknown {
     if (value instanceof Date) return value.getTime();
     return super.normalizeValue(value);
+  }
+
+  /**
+   * `OFFSET` is only legal after a `LIMIT` here too, so a bare `$skip` needs one - `-1` being
+   * SQLite's own spelling of "no limit", where the MySQL family uses its largest `BIGINT`.
+   */
+  override pager(ctx: QueryContext, opts: QueryPager): void {
+    if (opts.$limit === undefined && opts.$skip !== undefined) {
+      ctx.append(' LIMIT -1');
+    }
+    super.pager(ctx, opts);
   }
 
   /**
