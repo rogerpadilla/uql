@@ -2,6 +2,10 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.36.1] - 2026-09-01
+
+- README only: the decorators need no compiler flags or `reflect-metadata`, and plain classes work through `defineEntity`.
+
 ## [0.36.0] - 2026-09-01
 
 **`expr` defaults resolve per dialect**, so `expr.uuid()` is `gen_random_uuid()` on Postgres and `UUID()` on MySQL from one migration. Where an engine has no equivalent, generation throws instead of emitting DDL it would reject.
