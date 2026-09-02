@@ -17,18 +17,10 @@ type CountingQuerier = Pick<Querier, 'aggregate' | 'findMany'>;
 
 /**
  * A row of an entity reached through relation metadata rather than through the caller's type: its
- * columns are known only as the strings that metadata names them by.
+ * columns are known only as the strings that metadata names them by. Casting to it is where the
+ * counting path crosses from a checked type to a structural one; everything past that is checked.
  */
 type CountedRow = Record<string, string | number>;
-
-/**
- * The one place the counting path crosses from the caller's type to a structural one: a relation's
- * entity comes from metadata, which names its columns only as strings. Everything past this is
- * checked against {@link CountedRow} normally.
- */
-function countable(entity: Type<object>): Type<CountedRow> {
-  return entity as Type<CountedRow>;
-}
 
 /**
  * A `$count` groups its tallies by the parent's id, so the id has to outlive the projection - the
@@ -117,10 +109,10 @@ async function countPerParent(
 ): Promise<Record<string, number>> {
   const through = relOpts.through;
   if (through) {
-    return countThroughPerParent(querier, relOpts, countable(through()), ids, where);
+    return countThroughPerParent(querier, relOpts, through() as Type<CountedRow>, ids, where);
   }
   const foreign = parentKeyColumn(relOpts);
-  return groupedCount(querier, countable(relOpts.entity()), foreign, { ...where, [foreign]: ids });
+  return groupedCount(querier, relOpts.entity() as Type<CountedRow>, foreign, { ...where, [foreign]: ids });
 }
 
 /**
@@ -139,7 +131,7 @@ async function countThroughPerParent(
   const throughWhere: QueryWhereMap<CountedRow> = { [local]: ids };
 
   if (where) {
-    const target = countable(relOpts.entity());
+    const target = relOpts.entity() as Type<CountedRow>;
     const targetId = getMeta(target).id;
     const targets = await querier.findMany(target, { $select: { [targetId]: true }, $where: where });
     throughWhere[targetKeyColumn(relOpts)] = targets.map((it) => it[targetId]);
