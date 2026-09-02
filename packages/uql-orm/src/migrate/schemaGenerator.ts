@@ -27,7 +27,7 @@ import type {
 } from '../type/index.js';
 import { getKeys, isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedForeignKeyName } from '../util/sql.util.js';
-import { formatDefaultValue } from './builder/expressions.js';
+import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
@@ -329,14 +329,21 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (column.isUnique && !column.isPrimaryKey) {
       def += ' UNIQUE';
     }
-    if (column.defaultValue !== undefined) {
-      def += ` DEFAULT ${this.formatDefaultValue(column.defaultValue)}`;
-    }
+    def += this.defaultClause(column);
+
     if (column.comment) {
       def += this.generateColumnComment(column.name, column.comment);
     }
 
     return def;
+  }
+
+  /** ` DEFAULT <sql>`, or nothing where the column declares none. Empty rather than `DEFAULT NULL`
+   * so an absent default stays absent - `defaultValue: null` is the way to ask for one. */
+  private defaultClause(column: { defaultValue?: unknown; type: string }): string {
+    return column.defaultValue === undefined
+      ? ''
+      : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
 
   public getSqlType(field: FieldOptions, fieldType?: unknown): string {
@@ -388,9 +395,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       }
 
       if (column.defaultValue !== undefined) {
-        statements.push(
-          `ALTER TABLE ${table} ALTER COLUMN ${colName} SET DEFAULT ${this.formatDefaultValue(column.defaultValue)};`,
-        );
+        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} SET${this.defaultClause(column)};`);
       } else {
         statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP DEFAULT;`);
       }
@@ -409,16 +414,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       return ` COMMENT '${escapedComment}'`;
     }
     return '';
-  }
-
-  /**
-   * Format a default value for SQL
-   */
-  public formatDefaultValue(value: unknown): string {
-    if (this.dialect.booleanLiteral === 'integer' && typeof value === 'boolean') {
-      return value ? '1' : '0';
-    }
-    return formatDefaultValue(value);
   }
 
   /**
@@ -588,8 +583,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (current === desired) return true;
     if (current === undefined || desired === undefined) return current === desired;
 
-    const normalize = (val: unknown): string => {
-      if (val === null) return 'null';
+    const normalize = (value: unknown): string => {
+      if (value === null) return 'null';
+      // Render first: the desired side may be a symbolic expression, the current side is always the
+      // engine's own text, and `{"kind":"now"}` matches no spelling of `CURRENT_TIMESTAMP`.
+      const val = SqlExpression.isExpression(value) ? formatDefaultValue(value, this.dialect) : value;
       if (typeof val === 'string') {
         let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
         s = s.replace(/^'(.*)'$/, '$1');

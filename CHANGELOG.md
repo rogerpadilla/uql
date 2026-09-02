@@ -1,6 +1,13 @@
 # Changelog
 
-What changed and worth it documenting here concisely and straight to the point. Newest first, `[yyyy-mm-dd]`.
+What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
+
+## [0.36.0] - 2026-09-01
+
+**`expr` defaults resolve per dialect**, so `expr.uuid()` is `gen_random_uuid()` on Postgres and `UUID()` on MySQL from one migration. Where an engine has no equivalent, generation throws instead of emitting DDL it would reject.
+
+- `expr.mysqlUuid()` is gone, `expr.uuid()` covers both. `expr.emptyObject()`/`emptyArray()` too: `defaultValue: {}` and `[]` emit the same SQL.
+- **New `expr.uuidv7()`** for time-ordered keys: `uuidv7()` on Postgres 18+, `UUID_v7()` on MariaDB 11.7+.
 
 ## [0.35.0] - 2026-09-01
 

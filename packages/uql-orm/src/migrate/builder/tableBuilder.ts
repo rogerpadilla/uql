@@ -182,11 +182,15 @@ export class TableBuilder implements ITableBuilder {
   }
 
   createdAt(): IColumnBuilder {
-    return this.add('createdAt', { category: 'timestamp' }, { defaultValue: expr.now() });
+    return this.timestampNow('createdAt');
   }
 
   updatedAt(): IColumnBuilder {
-    return this.add('updatedAt', { category: 'timestamp' }, { defaultValue: expr.now() });
+    return this.timestampNow('updatedAt');
+  }
+
+  private timestampNow(name: string): IColumnBuilder {
+    return this.add(name, { category: 'timestamp' }, { defaultValue: expr.now() });
   }
 
   timestamps(): void {

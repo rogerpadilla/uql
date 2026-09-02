@@ -5,14 +5,6 @@ import { SqlSchemaGenerator } from '../schemaGenerator.js';
 describe('PostgresSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
 
-  it('should format default values correctly', () => {
-    expect(generator.formatDefaultValue('test')).toBe("'test'");
-    expect(generator.formatDefaultValue(123)).toBe('123');
-    expect(generator.formatDefaultValue(true)).toBe('TRUE');
-    expect(generator.formatDefaultValue(false)).toBe('FALSE');
-    expect(generator.formatDefaultValue(null)).toBe('NULL');
-  });
-
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
     expect(generator.getSqlType({}, String)).toBe('TEXT');

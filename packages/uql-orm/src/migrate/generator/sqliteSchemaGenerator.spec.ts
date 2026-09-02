@@ -24,13 +24,6 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(() => generator.generateAlterColumnStatements('users', col, '`age` INTEGER')).toThrow('Cannot alter column');
   });
 
-  it('should format default values correctly', () => {
-    expect(generator.formatDefaultValue('test')).toBe("'test'");
-    expect(generator.formatDefaultValue(123)).toBe('123');
-    expect(generator.formatDefaultValue(true)).toBe('1');
-    expect(generator.formatDefaultValue(false)).toBe('0');
-  });
-
   it('should return empty string for column comment', () => {
     expect(generator.generateColumnComment('name', 'comment')).toBe('');
   });

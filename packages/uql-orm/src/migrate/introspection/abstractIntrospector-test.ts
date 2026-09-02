@@ -316,6 +316,36 @@ export abstract class AbstractIntrospectorIt implements Spec {
     }
   }
 
+  /**
+   * Every literal default kind, executed rather than string-compared. Each of these was once DDL that
+   * read fine and the engine rejected: MySQL answers `Invalid default value` to `toISOString`'s `T`
+   * and `Z`, demands `DEFAULT ('x')` on a `TEXT` column, and reads `'a\b'` as a backspace.
+   */
+  async shouldCreateATableWithEveryLiteralDefault() {
+    const querier = await this.pool.getQuerier();
+    const table = 'introspect_defaults';
+    try {
+      const builder = new MigrationBuilder(querier);
+      await builder.createTable(table, (t) => {
+        t.id();
+        t.text('note').defaultValue('none');
+        t.text('escaped').defaultValue('a\\b');
+        t.timestamp('at').defaultValue(new Date('2024-01-15T10:30:00.000Z'));
+        t.string('label', { length: 20 }).defaultValue("it's");
+        t.integer('score').defaultValue(0);
+        t.boolean('enabled').defaultValue(true);
+      });
+
+      const schema = await this.getTableSchema(table);
+      expect(schema.columns.map((column) => column.name)).toEqual(
+        expect.arrayContaining(['note', 'escaped', 'at', 'label', 'score', 'enabled']),
+      );
+    } finally {
+      await querier.run(`DROP TABLE ${querier.dialect.escapeId(table)}`);
+      await querier.release();
+    }
+  }
+
   async shouldIntrospectAutoIncrement() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
