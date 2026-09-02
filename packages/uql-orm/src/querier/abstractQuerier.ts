@@ -6,7 +6,6 @@ import type {
   ExtraOptions,
   FieldKey,
   HookEvent,
-  IdKey,
   IdValue,
   LoggingOptions,
   Querier,
@@ -572,13 +571,11 @@ export abstract class AbstractQuerier implements Querier {
     const toUpdate: EntityData<E>[] = [];
     const existingIds: IdValue<E>[] = [];
 
-    const idKey = (meta.id ?? 'id') as IdKey<E>;
-
     for (const it of payload) {
-      const id = it[idKey];
+      const id = it[meta.id];
       if (!id) {
         toInsert.push(it);
-      } else if (!someKey(it, (key) => key !== idKey)) {
+      } else if (!someKey(it, (key) => key !== meta.id)) {
         existingIds.push(id);
       } else {
         toUpdate.push(it);
@@ -589,9 +586,9 @@ export abstract class AbstractQuerier implements Querier {
       toInsert.length ? this.insertMany(entity, toInsert) : ([] as IdValue<E>[]),
       Promise.all(
         toUpdate.map(async (it) => {
-          const id = it[idKey];
+          const id = it[meta.id];
           const data = { ...it };
-          delete data[idKey];
+          delete data[meta.id];
           await this.updateOneById(entity, id, data as E);
           return id;
         }),

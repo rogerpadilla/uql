@@ -3,7 +3,6 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
-  type IdKey,
   type IsolationLevel,
   type JsonColumnType,
   type JsonUpdateOp,
@@ -228,8 +227,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
 
   returningId<E>(entity: Type<E>): string {
     const meta = getMeta(entity);
-    const idKey = (meta.id ?? 'id') as IdKey<E>;
-    const idName = this.columnOf(meta, idKey);
+    const idName = this.columnOf(meta, meta.id);
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
