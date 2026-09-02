@@ -1,9 +1,10 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
+import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
 import { Company, createSpec, Item, MeasureUnitCategory, type Spec, Tax, TaxCategory, User } from '../test/index.js';
-import { COUNT_AGG_ALIAS, raw } from '../util/index.js';
+import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
 declare module '../type/index.js' {
@@ -248,12 +249,12 @@ class MongoDialectSpec implements Spec {
             localField: '_id',
             foreignField: 'categoryId',
             pipeline: [{ $match: { name: 'kg', deletedAt: null } }, { $limit: 1 }],
-            as: '__uql_rel_0',
+            as: '_uql_rel_0',
           },
         },
       ],
-      filter: { '__uql_rel_0.0': { $exists: true }, deletedAt: null },
-      unset: ['__uql_rel_0'],
+      filter: { '_uql_rel_0.0': { $exists: true }, deletedAt: null },
+      unset: ['_uql_rel_0'],
     });
   }
 
@@ -273,26 +274,26 @@ class MongoDialectSpec implements Spec {
                 localField: 'tagId',
                 foreignField: '_id',
                 pipeline: [{ $match: { name: 'urgent' } }, { $limit: 1 }],
-                as: '__uql_target',
+                as: '_uql_target',
               },
             },
-            { $match: { '__uql_target.0': { $exists: true } } },
+            { $match: { '_uql_target.0': { $exists: true } } },
             { $limit: 1 },
           ],
-          as: '__uql_rel_0',
+          as: '_uql_rel_0',
         },
       },
     ]);
-    expect(filter).toEqual({ '__uql_rel_0.0': { $exists: true } });
-    expect(unset).toEqual(['__uql_rel_0']);
+    expect(filter).toEqual({ '_uql_rel_0.0': { $exists: true } });
+    expect(unset).toEqual(['_uql_rel_0']);
   }
 
   /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
   shouldCompareRelationSize() {
-    const count = { $ifNull: [{ $arrayElemAt: [`$__uql_rel_0.${COUNT_AGG_ALIAS}`, 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${COUNT_ALIAS}`, 0] }, 0] };
 
     const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
-    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_AGG_ALIAS }]);
+    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_ALIAS }]);
     expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
 
     const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
@@ -331,7 +332,7 @@ class MongoDialectSpec implements Spec {
     });
     expect(stages).toHaveLength(1);
     expect(filter).toEqual({
-      $or: [{ name: 'weight' }, { '__uql_rel_0.0': { $exists: true } }],
+      $or: [{ name: 'weight' }, { '_uql_rel_0.0': { $exists: true } }],
       deletedAt: null,
     });
   }

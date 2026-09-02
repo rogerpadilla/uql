@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
+import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
 import { Item, User } from '../test/entityMock.js';
-import { COUNT_AGG_ALIAS } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -251,7 +251,7 @@ describe('MongodbQuerier vector search', () => {
 describe('MongodbQuerier relation conditions', () => {
   /** `countDocuments` takes a plain filter, so a relation condition has to count through a pipeline. */
   it('counts through an aggregation when the $where constrains a relation', async () => {
-    const toArray = vi.fn().mockResolvedValue([{ [COUNT_AGG_ALIAS]: 3 }]);
+    const toArray = vi.fn().mockResolvedValue([{ [COUNT_ALIAS]: 3 }]);
     const aggregate = vi.fn().mockReturnValue({ toArray });
     const countDocuments = vi.fn();
     const querier = new MongodbQuerier(new MongoDialect(), {} as any);
@@ -261,7 +261,7 @@ describe('MongodbQuerier relation conditions', () => {
     expect(countDocuments).not.toHaveBeenCalled();
     const [pipeline] = aggregate.mock.calls[0];
     expect(pipeline[0]).toHaveProperty('$lookup');
-    expect(pipeline.at(-1)).toEqual({ $count: COUNT_AGG_ALIAS });
+    expect(pipeline.at(-1)).toEqual({ $count: COUNT_ALIAS });
   });
 
   it('reports zero when the aggregation matches nothing', async () => {
@@ -315,6 +315,30 @@ describe('MongodbQuerier relation conditions', () => {
   });
 
   /** An `updateMany` filter cannot host a `$lookup`, so the ids are resolved first. */
+  /**
+   * The total has to be counted past the stages that collapse rows, which only the read pipeline
+   * builds - so a `$distinct` read counts through the pipeline rather than through `countDocuments`.
+   */
+  it('counts a $distinct read past the stages that collapse it', async () => {
+    // both reads run against the same collection: the page first, then the count
+    const aggregate = vi
+      .fn()
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'a' }]) })
+      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ _uql_count: 2 }]) });
+    const countDocuments = vi.fn();
+    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
+    vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, countDocuments } as any);
+
+    const [, total] = await querier.findManyAndCount(Item, { $select: { name: true }, $distinct: true });
+
+    expect(countDocuments).not.toHaveBeenCalled();
+    const [pipeline] = aggregate.mock.calls.at(-1) as [Record<string, unknown>[]];
+    expect(pipeline.at(-1)).toEqual({ $count: '_uql_count' });
+    // the grouping that deduplicates has to run before the count, or it counts the rows it collapses
+    expect(pipeline.some((stage) => stage['$group'])).toBe(true);
+    expect(total).toBe(2);
+  });
+
   it('resolves ids before updating when the $where constrains a relation', async () => {
     const updateMany = vi.fn().mockResolvedValue({ matchedCount: 2 });
     const querier = new MongodbQuerier(new MongoDialect(), {} as any);

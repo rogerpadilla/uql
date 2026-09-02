@@ -1,4 +1,5 @@
 import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
+import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
@@ -23,7 +24,6 @@ import type {
   UpdatePayload,
 } from '../type/index.js';
 import {
-  COUNT_AGG_ALIAS,
   clone,
   getKeys,
   getRelationRequestSummary,
@@ -231,16 +231,16 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   /**
-   * A `$required` relation drops parents that have no match, so the total has to be taken after the
-   * `$unwind` that drops them - which only the read pipeline builds. Every other query counts through
-   * {@link internalCount}, which needs no pipeline of its own.
+   * A `$required` relation drops parents that have no match, and `$distinct` collapses them, so both
+   * totals have to be taken after the stage that does it - which only the read pipeline builds. Every
+   * other query counts through {@link internalCount}, which needs no pipeline of its own.
    */
   protected override async internalFindManyAndCount<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ): Promise<[E[], number]> {
-    if (!hasRequiredJoin(getMeta(entity), q)) {
+    if (!q.$distinct && !hasRequiredJoin(getMeta(entity), q)) {
       return super.internalFindManyAndCount(entity, q, opts);
     }
     const { $sort: _sort, $skip: _skip, $limit: _limit, ...unpaged } = q;
@@ -248,14 +248,14 @@ export class MongodbQuerier extends AbstractQuerier {
       this.internalFindMany(entity, q, opts),
       this.execute((session) =>
         this.collection(entity)
-          .aggregate<Record<typeof COUNT_AGG_ALIAS, number>>(
-            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: COUNT_AGG_ALIAS }],
+          .aggregate<Record<typeof COUNT_ALIAS, number>>(
+            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: COUNT_ALIAS }],
             { session },
           )
           .toArray(),
       ),
     ]);
-    return [founds, counted[0]?.[COUNT_AGG_ALIAS] ?? 0];
+    return [founds, counted[0]?.[COUNT_ALIAS] ?? 0];
   }
 
   protected override async internalCount<E extends Document>(
@@ -268,13 +268,12 @@ export class MongodbQuerier extends AbstractQuerier {
         const { stages, filter } = this.dialect.whereWithRelations(entity, qm.$where, opts);
         const [counted] = await this.execute((session) =>
           this.collection(entity)
-            .aggregate<Record<typeof COUNT_AGG_ALIAS, number>>(
-              [...stages, { $match: filter }, { $count: COUNT_AGG_ALIAS }],
-              { session },
-            )
+            .aggregate<Record<typeof COUNT_ALIAS, number>>([...stages, { $match: filter }, { $count: COUNT_ALIAS }], {
+              session,
+            })
             .toArray(),
         );
-        return counted?.[COUNT_AGG_ALIAS] ?? 0;
+        return counted?.[COUNT_ALIAS] ?? 0;
       }
       const filter = this.dialect.where(entity, qm.$where, opts);
       return this.execute((session) =>

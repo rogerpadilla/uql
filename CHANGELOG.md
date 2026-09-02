@@ -2,6 +2,13 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.37.1] - 2026-09-02
+
+Two fixes to `findManyAndCount`, both from the total it now carries in the read's own statement:
+
+- **A `$lock` no longer errors on the Postgres family.** `FOR UPDATE` and a window function cannot share a statement there ("FOR UPDATE is not allowed with window functions"), so a locked page takes its total from a count of its own. MySQL and MariaDB run the pair and keep the single statement.
+- **A `$distinct` total counts the deduplicated rows.** It counted them before the deduplication, so three rows over two names reported three - a total that did not describe the page beside it. This was wrong in 0.36.1 too.
+
 ## [0.37.0] - 2026-09-02
 
 **Counting, everywhere it was missing** - a page, a yes or no, a relation's size, a table too big to scan:

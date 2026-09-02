@@ -1,5 +1,6 @@
 import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
+import { COUNT_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
 import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexType } from '../schema/types.js';
@@ -37,7 +38,6 @@ import {
   assertNonNegativeInteger,
   buildQueryWhereAsMap,
   type CallbackKey,
-  COUNT_AGG_ALIAS,
   fillOnFields,
   filterFieldKeys,
   getKeys,
@@ -106,18 +106,6 @@ export class MongoDialect extends AbstractDialect {
   override readonly insertIdSource = 'returning';
 
   private static readonly ID_KEY = '_id';
-  /** Temporary lookup fields for relation conditions, dropped with `$unset` after the `$match`. */
-  private static readonly REL_TEMP_PREFIX = '__uql_rel_';
-
-  /**
-   * Where a `$sort` by a relation's size parks its tally, until the ordering has run. One spelling
-   * for both ends: the `$sort` names this field and {@link sortCountStages} produces it, and MongoDB
-   * ranks a field that is not there as all-equal rather than failing, so a drift would go unnoticed.
-   */
-  private static sortCountField(relKey: string): string {
-    return `__uql_sort_count_${relKey}`;
-  }
-  private static readonly REL_NESTED_KEY = '__uql_target';
   private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
 
   /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
@@ -256,10 +244,10 @@ export class MongoDialect extends AbstractDialect {
     const relOpts = meta.relations[relKey]!;
     const relEntity = relOpts.entity();
     const relMeta = getMeta(relEntity);
-    const temp = `${MongoDialect.REL_TEMP_PREFIX}${lookups.temps.length}`;
+    const temp = `${REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
     // `$count` for a size test, `$limit: 1` for existence: neither returns the matched documents.
-    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_AGG_ALIAS }];
+    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_ALIAS }];
     // Scope first, render once - merging the target's filters into an already-rendered filter would
     // leave their own keys unmapped. The caller's filter bypass is deliberately *not* passed down:
     // `withDeleted()` or `hardDelete` on the parent must not un-hide trashed rows of the target, the
@@ -318,7 +306,7 @@ export class MongoDialect extends AbstractDialect {
     const throughEntity = relOpts.through!();
     const throughMeta = getMeta(throughEntity);
     const junctionScope = this.renderFilter(throughEntity, this.scopedWhereMap(throughMeta, {}), opts);
-    const nested = MongoDialect.REL_NESTED_KEY;
+    const nested = REL_NESTED_KEY;
 
     return {
       $lookup: {
@@ -349,7 +337,7 @@ export class MongoDialect extends AbstractDialect {
    * the `$ifNull` fallback to 0, so `{ $size: 0 }` matches parents with no related row at all.
    */
   private compareRelationCount(temp: string, sizeVal: number | QuerySizeComparisonOps): Record<string, unknown> {
-    const count = { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_AGG_ALIAS}`, 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_ALIAS}`, 0] }, 0] };
     if (typeof sizeVal === 'number') {
       return { $eq: [count, sizeVal] };
     }
@@ -580,7 +568,7 @@ export class MongoDialect extends AbstractDialect {
         if (path) {
           throw new TypeError(`$sort by '${relPath}.$count' is only supported on the queried entity`);
         }
-        out[MongoDialect.sortCountField(key)] = sortDirection(countDirection);
+        out[sortCountField(key)] = sortDirection(countDirection);
         continue;
       }
       const { join, sort: relationSort } = resolveSortableJoin(
@@ -615,12 +603,12 @@ export class MongoDialect extends AbstractDialect {
       }
       const relEntity = relOpts.entity();
       const relMeta = getMeta(relEntity);
-      const temp = MongoDialect.sortCountField(key);
+      const temp = sortCountField(key);
       const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, {}), opts);
-      const tail = [{ $count: COUNT_AGG_ALIAS }];
+      const tail = [{ $count: COUNT_ALIAS }];
 
       stages.push(this.relationLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts), {
-        $addFields: { [temp]: { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_AGG_ALIAS}`, 0] }, 0] } },
+        $addFields: { [temp]: { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_ALIAS}`, 0] }, 0] } },
       });
       fields.push(temp);
     }

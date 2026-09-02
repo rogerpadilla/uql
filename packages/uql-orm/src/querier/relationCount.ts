@@ -1,3 +1,4 @@
+import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { getMeta } from '../entity/index.js';
 import type {
   Querier,
@@ -10,7 +11,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/index.js';
-import { asSelectMap, COUNT_AGG_ALIAS, getKeys, parentKeyColumn, targetKeyColumn } from '../util/index.js';
+import { asSelectMap, getKeys, parentKeyColumn, targetKeyColumn } from '../util/index.js';
 
 /** What counting asks of a querier, rather than the whole interface: two reads, both batched. */
 type CountingQuerier = Pick<Querier, 'aggregate' | 'findMany'>;
@@ -147,11 +148,11 @@ async function groupedCount(
   groupKey: string,
   where: QueryWhereMap<CountedRow>,
 ): Promise<Record<string, number>> {
-  const $agg: QueryAggMap<CountedRow> = { [COUNT_AGG_ALIAS]: { $count: '*' } };
+  const $agg: QueryAggMap<CountedRow> = { [COUNT_ALIAS]: { $count: '*' } };
   const rows = await querier.aggregate(entity, { $group: { [groupKey]: true }, $agg, $where: where });
   const byParent: Record<string, number> = {};
   for (const row of rows) {
-    byParent[String(row[groupKey])] = Number(row[COUNT_AGG_ALIAS]);
+    byParent[String(row[groupKey])] = Number(row[COUNT_ALIAS]);
   }
   return byParent;
 }

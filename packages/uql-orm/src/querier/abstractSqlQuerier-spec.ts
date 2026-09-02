@@ -186,7 +186,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= ?',
+      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`) >= ?',
       [10],
     );
 
@@ -212,7 +212,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
+        ', (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`deletedAt` IS NULL' +
@@ -234,7 +234,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id`, (SELECT COUNT(*) `count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`',
+      'SELECT `id`, (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `id`) `itemsCount` FROM `Tag`',
       [],
     );
 
@@ -524,15 +524,45 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(founds).toEqual([{ id: 1, name: 'a' }]);
   }
 
+  /**
+   * A `$distinct` read counts its deduplicated set through a derived table, because `COUNT(*)` counts
+   * before the deduplication and a window function does too. Two statements, and the inner one takes
+   * the projection and the filter but never the page - the total is what lies beyond it.
+   */
+  async shouldFindManyAndCountDistinctThroughADerivedTable() {
+    mockAllResolvedValueOnce(this.querier.all, [{ name: 'a' }]);
+    mockAllResolvedValueOnce(this.querier.all, [{ _uql_count: 2 }]);
+
+    const [, total] = await this.querier.findManyAndCount(User, {
+      $select: { name: true },
+      $where: { companyId: 123 },
+      $distinct: true,
+      $limit: 1,
+    });
+
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      1,
+      'SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ? LIMIT 1',
+      [123],
+    );
+    expect(this.querier.all).toHaveBeenNthCalledWith(
+      2,
+      'SELECT COUNT(*) `_uql_count` FROM (SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ?) `_uql_distinct`',
+      [123],
+    );
+    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(total).toBe(2);
+  }
+
   /** An empty page carries no row to read the total off, so that one case falls back to a count. */
   async shouldFindManyAndCountFallingBackOnAnEmptyPage() {
     mockAllResolvedValueOnce(this.querier.all, []);
-    mockAllResolvedValueOnce(this.querier.all, [{ count: 7 }]);
+    mockAllResolvedValueOnce(this.querier.all, [{ _uql_count: 7 }]);
 
     const [founds, count] = await this.querier.findManyAndCount(User, { $where: { companyId: 123 }, $skip: 50 });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = ?',
+      'SELECT COUNT(*) `_uql_count` FROM `User` WHERE `companyId` = ?',
       [123],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(2);
@@ -1063,7 +1093,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.count(User, { $where: { companyId: 123 } });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT COUNT(*) `count` FROM `User` WHERE `companyId` = ?',
+      'SELECT COUNT(*) `_uql_count` FROM `User` WHERE `companyId` = ?',
       [123],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);

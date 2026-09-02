@@ -1,4 +1,4 @@
-import { COUNT_ALIAS } from '../dialect/abstractSqlDialect.js';
+import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { IndexFeature, IndexSchema, QueryContext, Type, VectorDistance } from '../type/index.js';

@@ -16,8 +16,9 @@ import type {
 } from '../type/index.js';
 import { getFieldKeys } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { AbstractSqlDialect, COUNT_ALIAS } from './abstractSqlDialect.js';
-import { JSON_PULL_ALIAS, jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
+import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { COUNT_ALIAS, JSON_PULL_ALIAS } from './aliases.js';
+import { jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
 
 /** The row count MySQL's manual gives for "all rows from the offset on": the largest `BIGINT UNSIGNED`. */
 const MAX_LIMIT = BigInt.asUintN(64, -1n);

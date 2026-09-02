@@ -16,7 +16,8 @@ import {
 } from '../type/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { JSON_PULL_ALIAS, jsonSetTarget } from './jsonSql.js';
+import { JSON_PULL_ALIAS } from './aliases.js';
+import { jsonSetTarget } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /**
@@ -29,6 +30,9 @@ import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
  * syntax; CockroachDB's vector type and `CREATE VECTOR INDEX` syntax are both native).
  */
 export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
+  /** `FOR UPDATE` and a window function cannot share a statement here. See the base declaration. */
+  override readonly supportsWindowWithRowLock = false;
+
   /** Default {@link DialectFeatures} for Postgres-wire dialects. */
   protected override readonly featureDefaults: DialectFeatures = {
     explicitJsonCast: false,

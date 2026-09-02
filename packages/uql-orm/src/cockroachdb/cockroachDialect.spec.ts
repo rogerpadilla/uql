@@ -13,11 +13,15 @@ describe('CockroachDialect', () => {
    * Not Postgres' `reltuples`, which CockroachDB answers `NULL` for even straight after an `ANALYZE`
    * (verified live on v26.2) - deleting this override would silently start estimating every table at 0.
    */
+  it('refuses a window function under a row lock, as Postgres does', () => {
+    expect(dialect.supportsWindowWithRowLock).toBe(false);
+  });
+
   it('estimatedCount should read its own statistics, not pg_class.reltuples', () => {
     const ctx = dialect.createContext();
     dialect.estimatedCount(ctx, User);
     expect(ctx.sql).toBe(
-      'SELECT row_count "count" FROM [SHOW STATISTICS FOR TABLE "User"] ORDER BY created DESC LIMIT 1',
+      'SELECT row_count "_uql_count" FROM [SHOW STATISTICS FOR TABLE "User"] ORDER BY created DESC LIMIT 1',
     );
     expect(ctx.values).toEqual([]);
   });

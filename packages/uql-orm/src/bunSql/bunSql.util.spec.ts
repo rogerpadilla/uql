@@ -105,7 +105,7 @@ describe('bunSql.util', () => {
       expect(getAffectedRows(Object.assign([], { affectedRows: 2, count: 1 }) as any)).toBe(2);
     });
     test('uses count when affectedRows absent', () => {
-      expect(getAffectedRows(Object.assign([], { count: 3 }) as any)).toBe(3);
+      expect(getAffectedRows(Object.assign([], { count: 3 }))).toBe(3);
     });
     test('defaults to 0', () => {
       expect(getAffectedRows([] as any)).toBe(0);

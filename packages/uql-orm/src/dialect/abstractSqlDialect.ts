@@ -12,6 +12,7 @@ import {
   type QueryAggMap,
   type QueryAggregate,
   type QueryAggregateOp,
+  type QueryBuildFn,
   type QueryCompareOp,
   type QueryComparisonOptions,
   type QueryConflictPaths,
@@ -79,10 +80,11 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
+import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS_PREFIX } from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
 import { IndexSqlDialect } from './indexSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
-import { isJsonbOp, JSON_ELEM_ALIAS_PREFIX, jsonCompareMode, jsonElemExists } from './jsonSql.js';
+import { isJsonbOp, jsonCompareMode, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
   NO_JOINS,
@@ -111,12 +113,6 @@ type LikeOp = { readonly pattern: (value: string) => string; readonly insensitiv
 type HydratableField = readonly [string, HydrateKind];
 
 export type { HydrateKind };
-
-/**
- * The column a counting statement answers in. Shared rather than spelled at each end: the dialects
- * emit it and `runCount` reads it back, and a rename on one side alone would quietly count zero.
- */
-export const COUNT_ALIAS = 'count';
 
 export abstract class AbstractSqlDialect extends IndexSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
@@ -184,7 +180,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    * bound value on `$n`-placeholder dialects once `ctx` isn't otherwise empty. Generated aliases are
    * shared for the same reason - see {@link SqlQueryContext}.
    */
-  protected buildFragment(ctx: QueryContext, build: (fragmentCtx: QueryContext) => void): string {
+  protected buildFragment(ctx: QueryContext, build: QueryBuildFn): string {
     const fragmentCtx = ctx.createFragment();
     build(fragmentCtx);
     return fragmentCtx.sql;
@@ -1084,6 +1080,13 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   /** Whether this engine has row locks at all. The SQLite family locks the database instead. */
   readonly supportsRowLocks: boolean = true;
 
+  /**
+   * Whether a `FOR UPDATE` may share a statement with a window function. The MySQL family runs the
+   * pair; the Postgres family rejects it outright ("FOR UPDATE is not allowed with window functions"),
+   * which is what a paged read carrying its own `COUNT(*) OVER ()` total becomes under a `$lock`.
+   */
+  readonly supportsWindowWithRowLock: boolean = true;
+
   /** MariaDB is the one engine here that cannot narrow a lock to one table of a join. */
   readonly supportsLockOf: boolean = true;
 
@@ -1129,6 +1132,22 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   count<E>(ctx: QueryContext, entity: Type<E>, q: QueryFilter<E>, opts?: QueryOptions): void {
     this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', COUNT_ALIAS)] });
     this.search(ctx, entity, { $where: q.$where }, opts);
+  }
+
+  /**
+   * How many rows a `$distinct` read returns, which `COUNT(*)` cannot answer: the deduplication
+   * happens after it counts, and a window function is no better - it counts before `DISTINCT` too.
+   * So the deduplicated set is made a derived table and its rows are counted. Every engine here
+   * supports one; MySQL is the reason it is aliased.
+   *
+   * The inner query takes the projection and the filter but never the page: the caller is asking how
+   * many rows there are beyond the page it already has.
+   */
+  countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions): void {
+    ctx.append(`SELECT COUNT(*) ${this.escapeId(COUNT_ALIAS, true)} FROM (`);
+    this.select(ctx, entity, q, opts);
+    this.search(ctx, entity, { $where: q.$where }, opts);
+    ctx.append(`) ${this.escapeId(DISTINCT_DERIVED_ALIAS, true)}`);
   }
 
   /**

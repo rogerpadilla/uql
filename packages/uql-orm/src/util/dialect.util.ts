@@ -32,17 +32,6 @@ import {
 } from '../type/index.js';
 import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
-/**
- * The alias an internally-built count answers under - a batched relation tally, a MongoDB relation
- * lookup, a total taken past a `$required` unwind. Every one of those picks the alias and reads it
- * back a few lines later, so they share the spelling rather than each repeating it twice.
- *
- * Prefixed like every other internal alias here: a batched tally selects it alongside the column it
- * groups by, so a bare name would collide with a real column of that name and answer the grouped
- * value twice over, with no statement failing to say so.
- */
-export const COUNT_AGG_ALIAS = '_uql_count';
-
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
 export function filterFieldKeys<E>(

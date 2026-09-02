@@ -19,9 +19,14 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toBe(
-      'SELECT TABLE_ROWS `count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+      'SELECT TABLE_ROWS `_uql_count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
     );
     expect(values).toEqual(['User']);
+  }
+
+  /** InnoDB runs `FOR UPDATE` beside a window function, so a locked paged read stays one statement. */
+  shouldRunAWindowUnderARowLock() {
+    expect(this.dialect.supportsWindowWithRowLock).toBe(true);
   }
 
   shouldHandleDate() {

@@ -1748,7 +1748,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE (SELECT COUNT(*) ${e}count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}id${e}) >= ${this.ph(1)}`,
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}id${e}) >= ${this.ph(1)}`,
     );
     expect(res.values).toEqual([10]);
 
@@ -1770,7 +1770,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
     );
   }
 

@@ -1903,6 +1903,44 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.findManyAndCount(User, { $limit: 0 })).resolves.toEqual([[], 2]);
   }
 
+  /**
+   * The total counts the rows the read returns, so `$distinct` has to dedup it too: three rows over
+   * two names is a total of two, not three. `COUNT(*)` alone counts before the deduplication, which
+   * is why this needs a count of its own.
+   */
+  async shouldFindManyAndCountDistinctRows() {
+    await this.querier.insertMany(User, [
+      { name: 'dup', email: 'dc1@test.com' },
+      { name: 'dup', email: 'dc2@test.com' },
+      { name: 'uniq', email: 'dc3@test.com' },
+    ]);
+
+    const [rows, total] = await this.querier.findManyAndCount(User, { $select: { name: true }, $distinct: true });
+
+    expect(rows).toHaveLength(2);
+    expect(total).toBe(2);
+  }
+
+  /** The filter bounds the deduplicated total as well, and a page never shrinks it. */
+  async shouldFindManyAndCountDistinctRowsOfAPage() {
+    await this.querier.insertMany(User, [
+      { name: 'a', email: 'dp1@test.com', companyId: 1 },
+      { name: 'a', email: 'dp2@test.com', companyId: 1 },
+      { name: 'b', email: 'dp3@test.com', companyId: 1 },
+      { name: 'c', email: 'dp4@test.com', companyId: 2 },
+    ]);
+
+    const [rows, total] = await this.querier.findManyAndCount(User, {
+      $select: { name: true },
+      $where: { companyId: 1 },
+      $distinct: true,
+      $limit: 1,
+    });
+
+    expect(rows).toHaveLength(1);
+    expect(total).toBe(2);
+  }
+
   /** Nothing matched, so the page is empty and so is the total - not the count of every row. */
   async shouldFindManyAndCountMatchingNothing() {
     await this.querier.insertMany(User, [{ name: 'Alice', email: 'alice@test.com' }]);

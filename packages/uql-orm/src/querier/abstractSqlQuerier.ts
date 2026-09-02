@@ -1,4 +1,4 @@
-import { COUNT_ALIAS } from '../dialect/abstractSqlDialect.js';
+import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
@@ -10,8 +10,8 @@ import type {
   QueryAggMap,
   QueryAggregate,
   QueryAggregateResult,
+  QueryBuildFn,
   QueryConflictPaths,
-  QueryContext,
   QueryFilter,
   QueryGroupMap,
   QueryOptions,
@@ -44,12 +44,6 @@ import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 import { enrichError } from './queryError.js';
-
-/**
- * The column a paged read carries its unpaged total in. Prefixed the way the other internal aliases
- * are, since it rides in the same row as the entity's own columns and must not shadow one.
- */
-const TOTAL_ALIAS = '_uql_total';
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -150,13 +144,40 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * the end, or a filter nothing matched.
    *
    * A `$required` relation needs no special case: the window counts what the INNER JOIN left, which
-   * is exactly the total a caller of a filtered read is asking for.
+   * is exactly the total a caller of a filtered read is asking for. A `$lock` is the one clause an
+   * engine may refuse to have in the same statement, which {@link AbstractSqlDialect.supportsWindowWithRowLock}
+   * answers; where it does, the total comes from a count of its own. A `$distinct` read needs one
+   * too, and a deduplicating one: see {@link AbstractSqlDialect.countDistinct}.
    */
+  /**
+   * How to count when the total cannot ride along in the read's own `COUNT(*) OVER ()` column, or
+   * `undefined` when it can. Two clauses rule the window out: `$distinct`, because a window counts
+   * before the deduplication and so overstates the page, and `$lock` on an engine that refuses the
+   * pair outright. Both then cost a second statement; only the counting differs.
+   */
+  private countedSeparately<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): QueryBuildFn | undefined {
+    if (q.$distinct) {
+      return (ctx) => this.dialect.countDistinct(ctx, entity, q, opts);
+    }
+    if (q.$lock && !this.dialect.supportsWindowWithRowLock) {
+      return (ctx) => this.dialect.count(ctx, entity, q, opts);
+    }
+    return undefined;
+  }
+
   protected override async internalFindManyAndCount<E extends object>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ): Promise<[E[], number]> {
+    const separately = this.countedSeparately(entity, q, opts);
+    if (separately) {
+      return Promise.all([this.internalFindMany(entity, q, opts), this.runCount(separately)]);
+    }
     const rows = await this.selectRows(entity, q, opts, TOTAL_ALIAS);
     const total = rows.length ? Number(rows[0][TOTAL_ALIAS]) : await this.internalCount(entity, q, opts);
     for (const row of rows) {
@@ -280,7 +301,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * a caller supplying their own `types` replaces the decoding the pools do at the wire; `?? 0` because
    * a catalog that does not know the table answers with no row, which is nothing counted.
    */
-  private async runCount(build: (ctx: QueryContext) => void): Promise<number> {
+  private async runCount(build: QueryBuildFn): Promise<number> {
     const ctx = this.dialect.createContext();
     build(ctx);
     const res = await this.all<Record<typeof COUNT_ALIAS, number | null>>(ctx.sql, ctx.values);

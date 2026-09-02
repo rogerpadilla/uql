@@ -25,6 +25,13 @@ export type QueryWhereOptions = QueryComparisonOptions & {
   clause?: 'WHERE' | 'AND' | false;
 };
 
+/**
+ * Emits a statement, or a fragment of one, into the context it is handed. What a caller passes when
+ * it knows *what* to build but not *where*: the statement is assembled into whichever context the
+ * receiver opens, so the two ends cannot disagree about which one it went into.
+ */
+export type QueryBuildFn = (ctx: QueryContext) => void;
+
 export interface QueryContext {
   append(sql: string): this;
   addValue(value: unknown): this;

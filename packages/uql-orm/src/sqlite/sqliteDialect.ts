@@ -1,13 +1,6 @@
 import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import {
-  JSON_ELEM_ALIAS_PREFIX,
-  JSON_PULL_ALIAS,
-  jsonAssignCall,
-  jsonElemExists,
-  jsonPath,
-  jsonRemoveCall,
-  jsonSetTarget,
-} from '../dialect/jsonSql.js';
+import { JSON_ELEM_ALIAS_PREFIX, JSON_PULL_ALIAS } from '../dialect/aliases.js';
+import { jsonAssignCall, jsonElemExists, jsonPath, jsonRemoveCall, jsonSetTarget } from '../dialect/jsonSql.js';
 import type {
   DialectFeatures,
   EntityMeta,

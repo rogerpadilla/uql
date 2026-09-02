@@ -47,6 +47,11 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.getBeginTransactionStatements()).toEqual(['BEGIN']);
   }
 
+  /** Postgres rejects `FOR UPDATE` beside a window function, so a locked paged read takes two. */
+  shouldNotRunAWindowUnderARowLock() {
+    expect(this.dialect.supportsWindowWithRowLock).toBe(false);
+  }
+
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
       'BEGIN ISOLATION LEVEL READ COMMITTED',
@@ -1287,7 +1292,7 @@ class PostgresDialectSpec extends AbstractSqlDialectSpec {
    */
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
-    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "count" FROM pg_class WHERE oid = to_regclass($1)');
+    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_count" FROM pg_class WHERE oid = to_regclass($1)');
     expect(values).toEqual(['"User"']);
   }
 }

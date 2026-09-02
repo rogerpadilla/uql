@@ -30,6 +30,26 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
+   * A locked read that also asks for its unpaged total: the total rides in a `COUNT(*) OVER ()`
+   * column, and the Postgres family rejects `FOR UPDATE` alongside a window function outright.
+   */
+  async shouldFindManyAndCountUnderALock() {
+    if (!this.querier.dialect.supportsRowLocks) {
+      return;
+    }
+    await this.querier.insertOne(LedgerAccount, { name: 'locked-count' });
+
+    await this.querier.beginTransaction();
+    try {
+      const [rows, total] = await this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true });
+      expect(rows.length).toBeLessThanOrEqual(2);
+      expect(total).toBeGreaterThanOrEqual(1);
+    } finally {
+      await this.querier.rollbackTransaction();
+    }
+  }
+
+  /**
    * The case the feature exists for: two workers draw from one queue and must not get the same row.
    * Needs two real connections, since a lock is only visible to a different transaction, which is
    * also why no generated-SQL assertion can stand in for it. Skipped on a shared-handle pool, which has
