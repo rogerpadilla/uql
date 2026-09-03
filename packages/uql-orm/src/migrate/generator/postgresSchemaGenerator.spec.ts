@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { PostgresDialect } from '../../dialect/index.js';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {

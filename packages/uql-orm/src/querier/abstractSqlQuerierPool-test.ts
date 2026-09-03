@@ -9,7 +9,7 @@ import type { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
  * (`pool.all`/`pool.run`), mirroring {@link AbstractSqlQuerierPool} over {@link AbstractQuerierPoolIt}.
  */
 export abstract class AbstractSqlQuerierPoolIt<Q extends SqlQuerier> extends AbstractQuerierPoolIt<Q> {
-  protected declare pool: AbstractSqlQuerierPool<Q, AbstractSqlDialect>;
+  declare protected pool: AbstractSqlQuerierPool<Q, AbstractSqlDialect>;
 
   // biome-ignore lint/complexity/noUselessConstructor: narrows the accepted pool type to SQL pools, keeping the `declare` retype of `this.pool` sound
   constructor(pool: AbstractSqlQuerierPool<Q, AbstractSqlDialect>) {

@@ -1,6 +1,6 @@
 import { expect, it, vi } from 'vitest';
 import { getContext, withContext } from '../context/context.js';
-import { PostgresDialect } from '../dialect/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, User } from '../test/index.js';
 import type { Querier, QueryUpdateResult, SqlQuerier, Type, UqlContext } from '../type/index.js';
 import { AbstractQuerierPool } from './abstractQuerierPool.js';

@@ -367,7 +367,7 @@ describe('MigrationBuilder', () => {
   });
 
   describe('alterTable execution', () => {
-    /** `alterTable`'s callback is synchronous, so each nested change runs through `recordOperationSync`. */
+    /** Every nested change has run by the time `alterTable` resolves, in the order it was declared. */
     it('should record and run each nested column change', async () => {
       const mockQuerier = createMockQuerier();
       const builder = new MigrationBuilder(mockQuerier as any);
@@ -378,7 +378,7 @@ describe('MigrationBuilder', () => {
       });
 
       expect(builder.getOperations().map((op) => op.type)).toEqual(['addColumn', 'dropColumn']);
-      await vi.waitFor(() => expect(mockQuerier.run).toHaveBeenCalledTimes(2));
+      expect(mockQuerier.run).toHaveBeenCalledTimes(2);
       expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
         'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255)',
         'ALTER TABLE "users" DROP COLUMN "legacy"',

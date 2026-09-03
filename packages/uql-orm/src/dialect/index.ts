@@ -1,9 +1,6 @@
-export { MariaDialect } from '../maria/mariaDialect.js';
-export { MySqlDialect } from '../mysql/mysqlDialect.js';
-export { PostgresDialect } from '../postgres/postgresDialect.js';
-export { SqliteDialect } from '../sqlite/sqliteDialect.js';
+// The concrete dialects are behind their own entries (`uql-orm/postgres`, `/mysql`, `/maria`,
+// `/sqlite`, `/cockroachdb`): importing the root should not carry four engines' worth of SQL.
 export * from './abstractDialect.js';
 export * from './abstractSqlDialect.js';
-export * from './indexSqlDialect.js';
 export * from './mysqlLikeSqlDialect.js';
 export * from './queryContext.js';

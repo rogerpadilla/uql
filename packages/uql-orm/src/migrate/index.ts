@@ -28,6 +28,9 @@ export { loadConfig } from './cli-config.js';
 // Entity code generation
 export * from './codegen/index.js';
 
+// `CREATE INDEX`, per dialect family
+export * from './ddl/index.js';
+
 // Drift detection
 export * from './drift/index.js';
 // Schema introspection

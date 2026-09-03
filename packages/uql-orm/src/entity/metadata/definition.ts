@@ -14,6 +14,7 @@ import type {
   RelationOptions,
   Type,
 } from '../../type/index.js';
+import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import { getKeys, hasKeys, isToManyRelation, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
@@ -84,7 +85,7 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
  * Declares a composite index. `unique` and the authored column sugar are normalized here, which is what
  * lets the dialects render one shape instead of re-parsing it.
  */
-export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>>): EntityMeta<E> {
+export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>, E>): EntityMeta<E> {
   const meta = ensureMeta(entity);
   if (!meta.indexes) meta.indexes = [];
   meta.indexes.push({ ...index, unique: index.unique ?? false, columns: index.columns.map(normalizeIndexColumn) });
@@ -93,9 +94,9 @@ export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey
 
 export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptions<E>): EntityMeta<E> {
   const meta = ensureMeta(entity);
-  if (name === 'softDelete') {
+  if (name === SOFT_DELETE_FILTER) {
     throw TypeError(
-      `'${entity.name}' filter name 'softDelete' is reserved; it is auto-registered from @Field({ softDelete })`,
+      `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; it is auto-registered from @Field({ softDelete })`,
     );
   }
   if (opts.security && opts.onMissing === 'skip') {
@@ -197,7 +198,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   if (softDeleteKeys.length) {
     meta.softDelete = softDeleteKeys[0];
     if (!meta.filters) meta.filters = {};
-    meta.filters['softDelete'] = { condition: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
+    meta.filters[SOFT_DELETE_FILTER] = { condition: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
   const id = getIdKey(meta);

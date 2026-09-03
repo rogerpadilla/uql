@@ -101,11 +101,11 @@ export interface EngineFeatures {
   /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
   readonly columnComment: boolean;
   /**
-   * Whether a vector index is declared inline in `CREATE TABLE` (MySQL/MariaDB) rather than as its own
-   * `CREATE INDEX` statement. The statement's shape itself is the dialect's business, see
-   * `AbstractSqlDialect.getCreateIndexStatement`.
+   * Whether every column of a vector index has to be `NOT NULL`, which MariaDB 12.3 enforces ("All
+   * parts of a VECTOR index must be NOT NULL") and CockroachDB 26.3 does not - so being indexed, not
+   * the entity, decides the column's nullability there.
    */
-  readonly inlineVectorIndex: boolean;
+  readonly vectorIndexRequiresNotNull: boolean;
   /** Whether the dialect requires/allows (n) length constraints on vector types. */
   readonly vectorSupportsLength: boolean;
   /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
@@ -258,19 +258,26 @@ export interface SqlQueryDialect extends QueryDialect {
  * indexes exist everywhere but MariaDB 12.3 (which needs a generated column); prefix lengths are
  * MySQL-family only and *required* there to index `TEXT`; `NULLS FIRST/LAST` and operator classes are
  * Postgres-only (CockroachDB 26.2 answers "unimplemented"); `INCLUDE` is Postgres-wire only; the
- * MySQL family is alone in having no partial indexes.
+ * MySQL family is alone in having no partial indexes. The two JSON ones split the other way: the
+ * engines that index a path inside a document are the ones whose planner matches the query's own
+ * extraction back to it (Postgres, CockroachDB, SQLite - MySQL matches neither
+ * `CAST(col->>'$.x' AS CHAR(n))` nor `JSON_VALUE(... RETURNING ...)`, verified on 26.7, and needs a
+ * generated column instead), while MySQL alone has the multi-valued index a JSON array needs.
  *
  * Introspectors reuse the vocabulary for what they can read *back*, which is what diffing may
  * compare. The two sets are deliberately not the same object and must not be unified: Postgres can
  * emit an expression index and read one back, but MySQL emits one it cannot describe afterwards.
  */
-export type IndexFeature = 'expression' | 'partial' | 'prefixLength' | 'nullsOrder' | 'opsClass' | 'include';
-
-export const INDEX_FEATURE_LABELS: Record<IndexFeature, string> = {
+export const INDEX_FEATURE_LABELS = {
   expression: 'expression indexes',
   partial: 'partial indexes',
   prefixLength: 'index prefix lengths',
   nullsOrder: 'NULLS FIRST/LAST in an index',
   opsClass: 'index operator classes',
   include: 'covering indexes (INCLUDE)',
-};
+  jsonPath: 'indexes over a path inside a JSON column',
+  jsonArray: 'multi-valued indexes over a JSON array',
+} as const;
+
+/** Derived from the labels, so a feature cannot be added without the words an error reports it in. */
+export type IndexFeature = keyof typeof INDEX_FEATURE_LABELS;

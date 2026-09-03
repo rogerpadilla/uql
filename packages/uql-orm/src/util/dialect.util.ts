@@ -28,9 +28,10 @@ import {
   type QueryWhereMap,
   type RelationKey,
   resolveAggregateOp,
+  SOFT_DELETE_FILTER,
   type UqlContext,
 } from '../type/index.js';
-import { getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
+import { entityName, getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -276,7 +277,7 @@ export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<
 
 /** Returns a `QueryOptions.filters` value with the built-in soft-delete filter disabled (used by hard delete). */
 export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): QueryOptions['filters'] {
-  return filters === false ? false : { ...filters, softDelete: false };
+  return filters === false ? false : { ...filters, [SOFT_DELETE_FILTER]: false };
 }
 
 /**
@@ -325,7 +326,7 @@ export function applyFilters<E>(
     if (condition === undefined) {
       const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
       if (onMissing === 'throw') {
-        throw new UqlSecurityError(`filter '${name}' on '${meta.name ?? ''}' could not resolve (missing context)`);
+        throw new UqlSecurityError(`filter '${name}' on '${entityName(meta)}' could not resolve (missing context)`);
       }
       continue;
     }

@@ -42,7 +42,7 @@ export function Filter<E>(name: string, opts: FilterOptions<E>) {
  * @example `@Index(['email'], { unique: true })`
  * @example `@Index(['status'], { where: "status = 'active'" })`
  */
-export function Index<E>(columns: readonly IndexColumnInput<FieldKey<E>>[], options: IndexOptions = {}) {
+export function Index<E>(columns: readonly IndexColumnInput<FieldKey<E>, E>[], options: IndexOptions<E> = {}) {
   return (entity: Type<E>): void => {
     defineIndex(entity, { ...options, columns });
   };

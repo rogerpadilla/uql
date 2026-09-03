@@ -1,9 +1,11 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
-import { MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { User } from '../test/entityMock.js';
 import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';

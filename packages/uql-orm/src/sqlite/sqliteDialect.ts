@@ -26,7 +26,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
     columnComment: false, // SQLite does not support column comments
-    inlineVectorIndex: false,
+    vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: true,

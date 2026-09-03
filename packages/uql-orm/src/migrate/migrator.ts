@@ -33,6 +33,7 @@ import {
 import { runMongoCommand } from './generator/mongoCommand.js';
 import {
   CockroachSchemaIntrospector,
+  MariadbSchemaIntrospector,
   MongoSchemaIntrospector,
   MysqlSchemaIntrospector,
   PostgresSchemaIntrospector,
@@ -122,8 +123,9 @@ export class Migrator {
       case 'cockroachdb':
         return new CockroachSchemaIntrospector(this.pool, schema);
       case 'mysql':
-      case 'mariadb':
         return new MysqlSchemaIntrospector(this.pool, schema);
+      case 'mariadb':
+        return new MariadbSchemaIntrospector(this.pool, schema);
       case 'sqlite':
         return new SqliteSchemaIntrospector(this.pool);
       case 'mongodb':

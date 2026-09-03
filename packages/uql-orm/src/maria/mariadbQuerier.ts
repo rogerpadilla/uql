@@ -31,6 +31,11 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
     }
   }
 
+  /**
+   * No `discard` branch, unlike mysql2's: this driver resets the connection on release, so one taken
+   * back mid-transaction rolls back rather than handing the next caller an open one. Verified on
+   * 12.3 - same `threadId` on reacquire, `@@in_transaction` 0, the uncommitted row gone.
+   */
   protected override async releaseConn(conn: PoolConnection) {
     await conn.release();
   }

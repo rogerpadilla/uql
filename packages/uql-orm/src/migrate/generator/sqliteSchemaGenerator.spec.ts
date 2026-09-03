@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { SqliteDialect } from '../../dialect/index.js';
+import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('SqliteSchemaGenerator Specifics', () => {

@@ -58,5 +58,15 @@ export type VectorIndexOptions = {
   lists?: number;
 };
 
-/** Index types whose emitted DDL depends on the distance metric. */
-export type VectorIndexType = Extract<IndexType, 'hnsw' | 'ivfflat' | 'vector'>;
+/**
+ * Index types whose emitted DDL depends on the distance metric. The runtime list is the source, so
+ * the type and every dialect's "do I have this one?" answer cannot drift from each other.
+ */
+export const VECTOR_INDEX_TYPES = ['hnsw', 'ivfflat', 'vector'] as const satisfies readonly IndexType[];
+
+export type VectorIndexType = (typeof VECTOR_INDEX_TYPES)[number];
+
+/** Whether an index type is one of {@link VECTOR_INDEX_TYPES}; narrows an optional `IndexSchema.type`. */
+export function isVectorIndexType(type: IndexType | undefined): type is VectorIndexType {
+  return type !== undefined && (VECTOR_INDEX_TYPES as readonly IndexType[]).includes(type);
+}

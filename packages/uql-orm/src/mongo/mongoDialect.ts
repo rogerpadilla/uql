@@ -38,6 +38,7 @@ import {
   assertNonNegativeInteger,
   buildQueryWhereAsMap,
   type CallbackKey,
+  entityName,
   fillOnFields,
   filterFieldKeys,
   getKeys,
@@ -91,7 +92,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   renameColumn: false,
   foreignKeyAlter: false,
   columnComment: false,
-  inlineVectorIndex: false,
+  vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
   supportsTimestamptz: false,
   defaultStringAsText: false,
@@ -388,7 +389,7 @@ export class MongoDialect extends AbstractDialect {
     if (root === MongoDialect.ID_KEY || root === meta.id || meta.fields[root as keyof typeof meta.fields & string]) {
       return;
     }
-    throw new TypeError(`path ${key} does not exist in ${meta.name ?? ''}`);
+    throw new TypeError(`path ${key} does not exist in ${entityName(meta)}`);
   }
 
   protected mapTableNameRow(row: { table_name: string }): string {

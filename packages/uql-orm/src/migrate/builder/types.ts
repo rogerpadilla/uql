@@ -527,6 +527,4 @@ export interface IMigrationBuilder {
   // === Operation Access ===
   /** Get all recorded operations */
   getOperations(): AnyMigrationOperation[];
-  /** Record an operation synchronously */
-  recordOperationSync(operation: AnyMigrationOperation): void;
 }

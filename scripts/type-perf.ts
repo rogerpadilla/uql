@@ -17,7 +17,7 @@ import { $ } from 'bun';
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const calls = Number(process.argv[2] ?? 200);
 
-const entities = `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+const entities = /*ts*/ `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity() export class Company {
   @Id({ type: Number }) id?: number;
@@ -37,7 +37,7 @@ const entities = `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-o
 `;
 
 /** One block per call site, mixing the clauses a real query does: projection, filter, sort, relation. */
-const block = (i: number) => `
+const block = (i: number) => /*ts*/ `
 export async function q${i}(q: Querier) {
   const a = await q.findMany(User, { $select: { id: true, name: true }, $where: { age: { $gte: ${i} } }, $sort: { createdAt: -1 } });
   const b = await q.findOne(User, { $exclude: { email: true }, $where: { name: 'x' } });
@@ -52,9 +52,9 @@ async function measure(blocks: number): Promise<string> {
     writeFileSync(
       resolve(dir, 'calls.ts'),
       [
-        `import type { Querier } from 'uql-orm';`,
-        `import { Company, User } from './entities.js';`,
-        `void (0 as unknown as [Querier, typeof Company, typeof User]);`,
+        /*ts*/ `import type { Querier } from 'uql-orm';`,
+        /*ts*/ `import { Company, User } from './entities.js';`,
+        /*ts*/ `void (0 as unknown as [Querier, typeof Company, typeof User]);`,
         ...Array.from({ length: blocks }, (_, i) => block(i)),
       ].join('\n'),
     );

@@ -82,9 +82,8 @@ import {
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS_PREFIX } from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
-import { IndexSqlDialect } from './indexSqlDialect.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
-import { isJsonbOp, jsonCompareMode, jsonElemExists } from './jsonSql.js';
+import { isJsonbOp, type JsonAccessMode, jsonCompareMode, jsonElemExists } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
   NO_JOINS,
@@ -94,6 +93,7 @@ import {
   resolveSortableJoin,
 } from './queryJoins.js';
 import { isVectorFieldType, resolveVectorCast } from './vectorCast.js';
+import { VectorSqlDialect } from './vectorSqlDialect.js';
 
 /** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
 type JsonUpdateOperators = {
@@ -114,7 +114,7 @@ type HydratableField = readonly [string, HydrateKind];
 
 export type { HydrateKind };
 
-export abstract class AbstractSqlDialect extends IndexSqlDialect implements QueryDialect, SqlQueryDialect {
+export abstract class AbstractSqlDialect extends VectorSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 
@@ -804,38 +804,39 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
    */
   protected buildJsonFieldCondition(
     ctx: QueryContext,
-    fieldAccessor: (f: string) => string,
+    fieldAccessor: (path: string, mode: JsonAccessMode) => string,
     jsonPath: string,
     op: string,
     value: unknown,
     asJson = false,
   ): string {
-    const jsonField = fieldAccessor(jsonPath);
+    const jsonField = fieldAccessor(jsonPath, asJson ? 'json' : 'text');
+    // The left side of a comparison reads the path the way its operand is compared: a numeric one
+    // cast to a number, a boolean as the JSON value.
+    const comparand = (val: unknown) => fieldAccessor(jsonPath, jsonCompareMode(val));
     // The `$like` family reads a JSON path exactly as it reads a column, case folding included.
     const like = this.likeCondition(ctx, jsonField, op, value);
     if (like) {
       return like;
     }
+    // The ordered comparisons read the path as a number whatever the operand is, and spell their
+    // operator out of the same table a comparison against a column does.
+    const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
+    if (compareOp) {
+      return `${fieldAccessor(jsonPath, 'numeric')}${compareOp}${this.addValue(ctx.values, value)}`;
+    }
     switch (op) {
       case '$eq':
         if (value === null) return `${jsonField} IS NULL`;
-        return `${this.jsonComparand(jsonField, value)} = ${this.jsonOperand(ctx, value, asJson)}`;
+        return `${comparand(value)} = ${this.jsonOperand(ctx, value, asJson)}`;
       case '$ne':
         if (value === null) return `${jsonField} IS NOT NULL`;
-        return this.neExpr(this.jsonComparand(jsonField, value), this.jsonOperand(ctx, value, asJson));
-      case '$gt':
-        return `${this.numericCast(jsonField)} > ${this.addValue(ctx.values, value)}`;
-      case '$gte':
-        return `${this.numericCast(jsonField)} >= ${this.addValue(ctx.values, value)}`;
-      case '$lt':
-        return `${this.numericCast(jsonField)} < ${this.addValue(ctx.values, value)}`;
-      case '$lte':
-        return `${this.numericCast(jsonField)} <= ${this.addValue(ctx.values, value)}`;
+        return this.neExpr(comparand(value), this.jsonOperand(ctx, value, asJson));
       case '$regex':
         return `${jsonField} ${this.regexpOp} ${this.addValue(ctx.values, value)}`;
       case '$in':
       case '$nin':
-        return this.jsonInNin(ctx, jsonField, op, value, asJson);
+        return this.jsonInNin(ctx, jsonField, comparand, op, value, asJson);
       case '$all':
         return this.jsonAll(ctx, jsonField, value);
       case '$size':
@@ -847,11 +848,18 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     }
   }
 
-  private jsonInNin(ctx: QueryContext, jsonField: string, op: string, value: unknown, asJson: boolean): string {
+  private jsonInNin(
+    ctx: QueryContext,
+    jsonField: string,
+    comparand: (value: unknown) => string,
+    op: string,
+    value: unknown,
+    asJson: boolean,
+  ): string {
     const values = Array.isArray(value) ? value : [];
     const negate = op === '$nin';
     if (!asJson) {
-      return `${this.jsonComparand(jsonField, values)}${this.formatIn(ctx, values, negate)}`;
+      return `${comparand(values)}${this.formatIn(ctx, values, negate)}`;
     }
     // JSON values have no portable array literal, so the set expands into explicit comparisons.
     const comparisons = values.map((val) => `${jsonField} ${negate ? '<>' : '='} ${this.jsonScalarParam(ctx, val)}`);
@@ -861,14 +869,6 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
   /** The bound operand of a JSON comparison: JSON-encoded when comparing against the JSON value. */
   protected jsonOperand(ctx: QueryContext, value: unknown, asJson: boolean): string {
     return asJson ? this.jsonScalarParam(ctx, value) : this.addValue(ctx.values, value);
-  }
-
-  /**
-   * The left side of a comparison against a JSON scalar, cast when the operand is numeric - see
-   * {@link jsonCompareMode} for why each mode exists.
-   */
-  protected jsonComparand(jsonField: string, value: unknown): string {
-    return jsonCompareMode(value) === 'numeric' ? this.numericCast(jsonField) : jsonField;
   }
 
   /** `$all`: the JSON array at `jsonField` contains every value (also serves element containment). */
@@ -931,7 +931,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
       const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => isJsonbOp(op, val));
       const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
       const conditions = entries.map(([op, val]) =>
-        this.buildJsonFieldCondition(ctx, () => this.jsonElemRef(alias, undefined, asJson), '', op, val, asJson),
+        this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), '', op, val, asJson),
       );
       return jsonElemExists(this.jsonElemFrom(jsonField, [], alias, asJson), conditions);
     }
@@ -948,9 +948,21 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
     const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
       const asJson = isJsonbOp(op, opVal);
-      return this.buildJsonFieldCondition(ctx, (f) => this.jsonElemRef(alias, f, asJson), field, op, opVal, asJson);
+      return this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), field, op, opVal, asJson);
     });
     return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match), alias), conditions);
+  }
+
+  /**
+   * How a `$elemMatch` reads one exploded element: {@link jsonPathExpr}'s counterpart, over a column
+   * of the derived table rather than a path of the document. An empty field names the element itself,
+   * which is what the operator-only form matches on.
+   */
+  private elemAccessor(alias: string, asJson: boolean): (field: string, mode: JsonAccessMode) => string {
+    return (field, mode) => {
+      const ref = this.jsonElemRef(alias, field || undefined, asJson);
+      return mode === 'numeric' ? this.numericCast(ref) : ref;
+    };
   }
 
   /**
@@ -1064,7 +1076,8 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     if (field) {
       return field.virtual ? this.escapeId(key) : this.columnWithPrefix(key, field, prefix);
     }
-    return this.resolveJsonDotPath(meta, key, prefix)?.accessor() ?? this.escapeId(key);
+    const json = this.resolveJsonDotPath(meta, key, prefix);
+    return json ? this.jsonPathExpr(json.column, json.jsonPath, 'text') : this.escapeId(key);
   }
 
   pager(ctx: QueryContext, opts: QueryPager): void {
@@ -1775,7 +1788,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     meta: EntityMeta<E>,
     key: string,
     prefix?: string,
-  ): { jsonPath: string; accessor: (asJsonb?: boolean) => string } | undefined {
+  ): { jsonPath: string; column: string } | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -1785,29 +1798,31 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     if (!field || !isJsonType(field.type)) {
       return undefined;
     }
-    const jsonPath = key.slice(dotIndex + 1);
     const colName = this.resolveColumnName(root, field);
-    const escapedCol = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    return {
-      jsonPath,
-      accessor: (asJsonb?: boolean) =>
-        asJsonb ? this.getJsonPathJsonbExpr(escapedCol, jsonPath) : this.getJsonPathScalarExpr(escapedCol, jsonPath),
-    };
+    const prefixed = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
+    return { jsonPath: key.slice(dotIndex + 1), column: prefixed };
+  }
+
+  /**
+   * One JSON path, read the way `mode` asks for: the one place the three readings are chosen between,
+   * so `$where`, `$sort` and every operator reach a path the same way. Public because a JSON index
+   * is matched back by its own text, so the migrator's `CREATE INDEX` has to spell it from here too.
+   */
+  jsonPathExpr(escapedColumn: string, jsonPath: string, mode: JsonAccessMode): string {
+    if (mode === 'json') {
+      return this.getJsonPathJsonbExpr(escapedColumn, jsonPath);
+    }
+    const scalar = this.getJsonPathScalarExpr(escapedColumn, jsonPath);
+    return mode === 'numeric' ? this.numericCast(scalar) : scalar;
   }
 
   /**
    * Compare a JSONB dot-notation path, e.g. `'settings.isArchived': { $ne: true }`.
    * Receives a pre-resolved `resolveJsonDotPath` result to avoid redundant computation.
    */
-  protected compareJsonPath(
-    ctx: QueryContext,
-    resolved: {
-      jsonPath: string;
-      accessor: (asJsonb?: boolean) => string;
-    },
-    val: unknown,
-  ): void {
-    const { jsonPath, accessor } = resolved;
+  protected compareJsonPath(ctx: QueryContext, resolved: { jsonPath: string; column: string }, val: unknown): void {
+    const { jsonPath, column } = resolved;
+    const accessor = (path: string, mode: JsonAccessMode) => this.jsonPathExpr(column, path, mode);
     const value = this.normalizeWhereValue(val);
     const operators = getKeys(value);
 
@@ -1818,7 +1833,7 @@ export abstract class AbstractSqlDialect extends IndexSqlDialect implements Quer
     operators.forEach((op, index) => {
       if (index > 0) ctx.append(' AND ');
       const asJson = isJsonbOp(op, value[op]);
-      const sql = this.buildJsonFieldCondition(ctx, () => accessor(asJson), jsonPath, op, value[op], asJson);
+      const sql = this.buildJsonFieldCondition(ctx, accessor, jsonPath, op, value[op], asJson);
       if (sql) {
         ctx.append(sql);
       }

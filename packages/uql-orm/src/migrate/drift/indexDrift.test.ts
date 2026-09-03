@@ -1,9 +1,9 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { CrdbQuerierPool } from '../../cockroachdb/crdbQuerierPool.js';
-import { PostgresDialect } from '../../dialect/index.js';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
 import { provisioningTimeout } from '../../test/index.js';
 import { raw } from '../../util/index.js';

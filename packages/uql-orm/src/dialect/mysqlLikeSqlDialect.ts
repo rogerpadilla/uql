@@ -4,8 +4,6 @@ import type {
   EntityMeta,
   FieldKey,
   FieldOptions,
-  IndexFeature,
-  IndexSchema,
   InsertIdSource,
   QueryConflictPaths,
   QueryContext,
@@ -32,6 +30,9 @@ const MAX_LIMIT = BigInt.asUintN(64, -1n);
  * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
  * - the update operators `$set` (JSON_SET), `$unset` (JSON_REMOVE), `$push` (JSON_MERGE_PRESERVE)
  *   and `$pull` (JSON_REPLACE over JSON_TABLE)
+ *
+ * Neither has `FOR NO KEY UPDATE`/`FOR KEY SHARE`, PostgreSQL's weaker pair, so asking for one is
+ * rejected rather than served a stronger lock.
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
@@ -46,7 +47,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     columnComment: true,
-    inlineVectorIndex: false,
+    vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: false,
@@ -114,25 +115,22 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    * unique index for you.
    *
    * The update assignments are built into their own context and pushed afterwards, since they read
-   * `VALUES(col)` rather than binding, and any value they *do* bind (an `onUpdate` field absent from the
-   * payload) has to land after the insert's for a `?`-placeholder driver.
+   * the inserted row rather than binding, and any value they *do* bind (an `onUpdate` field absent from
+   * the payload) has to land after the insert's for a `?`-placeholder driver.
    */
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
+    const alias = this.upsertNewRowAlias && this.escapeId(this.upsertNewRowAlias, true);
     const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(
-      updateCtx,
-      meta,
-      conflictPaths,
-      payload,
-      (name) => `VALUES(${name})`,
+    const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, (name) =>
+      alias ? `${alias}.${name}` : `VALUE(${name})`,
     );
 
     const returning = this.upsertReturning(entity);
 
     if (update) {
       this.appendInsertValues(ctx, entity, payload);
-      ctx.append(` ON DUPLICATE KEY UPDATE ${update}${returning}`);
+      ctx.append(`${alias ? ` AS ${alias}` : ''} ON DUPLICATE KEY UPDATE ${update}${returning}`);
       ctx.pushValue(...updateCtx.values);
       return;
     }
@@ -150,6 +148,14 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   protected upsertReturning<E>(_entity: Type<E>): string {
     return '';
   }
+
+  /**
+   * The alias the inserted row is given after the values list, and read back by the assignments.
+   * Undefined where the dialect has no such syntax - MariaDB, which reads that row through
+   * `VALUE(col)` instead: it renamed `VALUES()` in 10.3.3, the old name clashing with the standard
+   * table value constructors, where MySQL deprecated the function outright in favour of the alias.
+   */
+  protected readonly upsertNewRowAlias: string | undefined = undefined;
 
   override readonly maxBindValues: number = 65535;
 
@@ -173,25 +179,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(`MATCH(${columns.join(', ')}) AGAINST(`);
     ctx.addValue(search.$value);
     ctx.append(')');
-  }
-
-  /**
-   * A full-text index is its own keyword here (`CREATE FULLTEXT INDEX ... (cols)`); `USING fulltext`
-   * is a syntax error, so it is the keyword that changes rather than the access method.
-   */
-  protected override indexKeyword(index: IndexSchema): string {
-    return index.type === 'fulltext' ? 'FULLTEXT INDEX' : super.indexKeyword(index);
-  }
-
-  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'prefixLength']);
-
-  /**
-   * No `FOR NO KEY UPDATE`/`FOR KEY SHARE`: those are PostgreSQL's weaker pair and the family has
-   * no equivalent, so asking for one is rejected rather than served a stronger lock.
-   */
-
-  protected override indexAccessMethod(index: IndexSchema): string {
-    return index.type && index.type !== 'fulltext' ? ` USING ${index.type}` : '';
   }
 
   protected override numericCast(expr: string): string {

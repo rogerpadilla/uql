@@ -1,7 +1,10 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { MariaDialect, MySqlDialect, PostgresDialect, SqliteDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
+import { MariaDialect } from '../maria/mariaDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({ name: 'users' })

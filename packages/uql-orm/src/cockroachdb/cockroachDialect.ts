@@ -1,7 +1,7 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import type { IndexFeature, IndexSchema, QueryContext, Type, VectorDistance } from '../type/index.js';
+import type { QueryContext, Type, VectorDistance } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -9,10 +9,9 @@ import type { IndexFeature, IndexSchema, QueryContext, Type, VectorDistance } fr
  * {@link PgLikeSqlDialect} (wire- and SQL-compatible for all of that, including pgvector's
  * `<=>`/`<->`/`<#>` operators, which CockroachDB implements natively). Unlike Postgres, CockroachDB
  * has no `xmax`/`ctid` system columns, so it uses `PgLikeSqlDialect.upsert`'s default as-is (no
- * `created` detection) rather than Postgres's `xmax`-based override; no `vectorExtension` either,
- * since the vector type is native (no `CREATE EXTENSION` needed); and vector indexes use
- * CockroachDB's own `CREATE VECTOR INDEX` syntax (no access-method keyword) rather than pgvector's
- * `CREATE INDEX ... USING ivfflat/hnsw`.
+ * `created` detection) rather than Postgres's `xmax`-based override; and no `vectorExtension`
+ * either, since the vector type is native (no `CREATE EXTENSION` needed). Its `CREATE VECTOR INDEX`
+ * syntax is the migrator's `CockroachIndexDdl`.
  */
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
@@ -29,41 +28,10 @@ export class CockroachDialect extends PgLikeSqlDialect {
   ]);
 
   /**
-   * `NULLS FIRST/LAST` answers "unimplemented: this syntax" and `jsonb_path_ops` "operator class is
-   * not supported" (both verified on v26.2), so neither is offered here.
-   */
-  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include']);
-
-  /**
    * `noKeyUpdate`/`keyShare` are omitted on purpose, not by oversight: CockroachDB parses both and
    * treats them as aliases of `FOR UPDATE`/`FOR SHARE`, so offering them would hand back a stronger
    * lock than was asked for, with nothing signalling it.
    */
-
-  /**
-   * CockroachDB's vector index is native and has its own syntax: `CREATE VECTOR INDEX ... ("col"
-   * vector_cosine_ops)`, with no access-method keyword, and tuning knobs of its own names that UQL
-   * does not map. `type: 'vector'` is its trigger, the same generic value MariaDB's inline index uses.
-   */
-  private isNativeVectorIndex(index: IndexSchema): boolean {
-    return index.type === 'vector';
-  }
-
-  protected override isVectorIndex(index: IndexSchema): boolean {
-    return this.isNativeVectorIndex(index) || super.isVectorIndex(index);
-  }
-
-  protected override indexKeyword(index: IndexSchema): string {
-    return this.isNativeVectorIndex(index) ? 'VECTOR INDEX' : super.indexKeyword(index);
-  }
-
-  protected override indexAccessMethod(index: IndexSchema): string {
-    return this.isNativeVectorIndex(index) ? '' : super.indexAccessMethod(index);
-  }
-
-  protected override indexTuning(index: IndexSchema): string {
-    return this.isNativeVectorIndex(index) ? '' : super.indexTuning(index);
-  }
 
   /**
    * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an

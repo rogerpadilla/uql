@@ -168,7 +168,13 @@ function addAlterColumnDrifts(colDiff: ColumnDiff, drifts: Drift[], opts: DriftD
     return;
   }
 
-  if (opts.checkTypes) {
+  // An auto-increment key is created through the dialect's `serialPrimaryKey`, whose spelling the
+  // entity never states - `BIGINT UNSIGNED AUTO_INCREMENT` on the MySQL family, where the column then
+  // reads back as `BIGINT UNSIGNED` against an entity that can only say `BIGINT`. Comparing the two
+  // reported every table uql created itself as drifting on its own id.
+  const dialectOwnsType = colDiff.expected.isPrimaryKey && colDiff.expected.isAutoIncrement;
+
+  if (opts.checkTypes && !dialectOwnsType) {
     const expectedType = formatType(colDiff.expected.type, opts.dialect);
     const actualType = formatType(colDiff.actual.type, opts.dialect);
     if (expectedType !== actualType) {

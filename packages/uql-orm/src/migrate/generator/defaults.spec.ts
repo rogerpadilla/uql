@@ -1,14 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
-import {
-  type AbstractSqlDialect,
-  MariaDialect,
-  MySqlDialect,
-  PostgresDialect,
-  SqliteDialect,
-} from '../../dialect/index.js';
+import type { AbstractSqlDialect } from '../../dialect/index.js';
+import { MariaDialect } from '../../maria/mariaDialect.js';
+import { MySqlDialect } from '../../mysql/mysqlDialect.js';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
 import type { TypeCategory } from '../../schema/types.js';
+import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { DIALECT_DEFAULTS, expr, formatDefaultValue } from '../builder/expressions.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 

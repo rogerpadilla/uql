@@ -4,7 +4,7 @@ import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospecto
 
 /**
  * Shared expectations for MySQL-wire-compatible introspectors (MySQL, MariaDB): both go through
- * {@link MysqlSchemaIntrospector} (`MariadbSchemaIntrospector` is an alias for it) and need FK
+ * {@link MysqlSchemaIntrospector} (which `MariadbSchemaIntrospector` extends) and need FK
  * checks disabled around DDL.
  */
 export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
@@ -45,6 +45,32 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
     const isEnabledCol = this.getColumn(schema, 'is_enabled');
     expect(isEnabledCol.type.toUpperCase()).toContain('TINYINT');
     expect(isEnabledCol.defaultValue).toBe(1);
+  }
+
+  /**
+   * MariaDB has no JSON type: `JSON` there is `LONGTEXT` plus a `json_valid()` check, so the column
+   * reads back as `longtext` unless the introspector looks that check up. Both engines have to
+   * answer the same thing - what the column was declared as - or every JSON column on MariaDB drifts
+   * against the entity that declared it.
+   */
+  protected override async addDialectSpecificColumnsA(querier: SqlQuerier): Promise<void> {
+    await querier.run(`ALTER TABLE ${INTROSPECT_TABLES.A} ADD COLUMN kind JSON NULL, ADD COLUMN notes LONGTEXT NULL`);
+  }
+
+  async shouldIntrospectJsonColumn() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
+
+    expect(this.getColumn(schema, 'kind').type.toUpperCase()).toBe('JSON');
+  }
+
+  /**
+   * The column MariaDB stores a JSON one as. It has no `json_valid()` check, which is the whole
+   * difference, and reading it as JSON would turn a plain text column into one on every round trip.
+   */
+  async shouldIntrospectLongtextColumnAsLongtext() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
+
+    expect(this.getColumn(schema, 'notes').type.toUpperCase()).toBe('LONGTEXT');
   }
 
   async shouldIntrospectTimestampDefault() {

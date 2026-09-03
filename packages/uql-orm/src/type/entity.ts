@@ -10,6 +10,14 @@ import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vect
 export const idKey = Symbol('idKey');
 
 /**
+ * The one filter name uql registers itself, from `@Field({ softDelete })`. Four ends have to agree on
+ * it and none would fail if they drifted: the field that registers it, the decorator that reserves
+ * the name against a user's own filter, the hard delete that switches it off, and the bypass check
+ * that lets it through on an entity which never declared one.
+ */
+export const SOFT_DELETE_FILTER = 'softDelete';
+
+/**
  * Infers the key names of an entity
  */
 export type Key<E> = keyof E & string;
@@ -686,10 +694,64 @@ export type IndexTypeOptions =
  * ```
  *
  * `C` is the entity's `FieldKey` on the `@Index`/`defineEntity` paths, where the decorated class says
- * which columns exist. It defaults to `string` for the migration builder's `table.index(...)`, which
- * names raw table columns with no entity in scope.
+ * which columns exist, and `E` the entity itself, which is what checks a JSON entry's path. Both
+ * default to the unchecked form for the migration builder's `table.index(...)`, which names raw
+ * table columns with no entity in scope.
  */
-export type IndexColumnInput<C extends string = string> = C | QueryRaw | IndexColumnOptions<C>;
+export type IndexColumnInput<C extends string = string, E = unknown> =
+  | C
+  | QueryRaw
+  | IndexColumnOptions<C>
+  | IndexJsonColumnOptions<C, E>;
+
+/**
+ * The JSON entries, whose `path` is checked against the payload of the column the same entry names -
+ * a mapped union, one arm per JSON field, so `{ column: 'kind', jsonPath: { path: 'thema.color' } }`
+ * cannot compile. It matters more here than anywhere else in the index API: a path that is merely
+ * *misspelled* still builds a perfectly valid index, one no query will ever match, and nothing at
+ * runtime can tell that from the index you meant.
+ *
+ * `jsonArray`'s path is the array's own, so on a column that *is* the array (`Json<string[]>`) it
+ * resolves to `never` and the property can only be omitted, which is exactly the truth.
+ *
+ * Falls back to the unchecked shape only where there is no entity to check against - the migration
+ * builder. An entity with no JSON field at all offers no arm, which is also the truth.
+ */
+type IndexJsonColumnOptions<C extends string, E> = unknown extends E
+  ? IndexColumnModifiers & { readonly column: C | QueryRaw }
+  : {
+      [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: K } & (
+          | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
+          | { readonly jsonArray: WithCheckedPath<IndexJsonArray, E, K>; readonly jsonPath?: never }
+        );
+    }[JsonColumnKey<E>];
+
+/**
+ * The JSON columns an index can address, which is a wider set than {@link JsonFieldKey}: that one
+ * unwraps arrays to find the brand, so a column that *is* an array (`Json<string[]>`) reads as a
+ * plain one - right for `$where`, which has no path into it, and wrong for `jsonArray`, whose whole
+ * subject is that column.
+ */
+type JsonColumnKey<E> = {
+  readonly [K in keyof E]-?: IsJson<NonNullable<E[K]>> extends true
+    ? K
+    : IsJson<JsonElement<E[K]>> extends true
+      ? K
+      : never;
+}[Key<E>];
+
+/** The payload a path is checked against: the column's own brand, or that of the documents it holds. */
+type JsonColumnPayload<V> = IsJson<NonNullable<V>> extends true ? UnwrapJson<NonNullable<V>> : JsonPayload<V>;
+
+/**
+ * A JSON modifier with its `path` narrowed to the ones that column's payload actually has. Everything
+ * else - and `path`'s own optionality, which `jsonArray` needs and `jsonPath` does not - is taken
+ * from the declared type rather than restated, so a property added to either cannot miss the checked
+ * form.
+ */
+type WithCheckedPath<T extends { path?: string }, E, K extends Key<E>> = Except<T, 'path' & keyof T> & {
+  [P in keyof Pick<T, Extract<keyof T, 'path'>>]: DeepJsonKeys<JsonColumnPayload<E[K]>>;
+};
 
 /**
  * What an index entry can carry besides the thing being indexed. Shared with the normalized
@@ -707,9 +769,60 @@ export type IndexColumnModifiers = {
   readonly nulls?: 'first' | 'last';
   /** Operator class, e.g. `jsonb_path_ops` for a smaller GIN index. Postgres only. */
   readonly opsClass?: string;
+  /** Index a path inside a JSON column. See {@link IndexJsonPath}. */
+  readonly jsonPath?: IndexJsonPath;
+  /** Index every element of a JSON array. See {@link IndexJsonArray}. */
+  readonly jsonArray?: IndexJsonArray;
 };
 
-export type IndexColumnOptions<C extends string = string> = IndexColumnModifiers & {
+/**
+ * An index over one path inside a JSON column, compiled by the same code a `$where` on that path is:
+ * an expression index is matched by its own text, so an index spelled even slightly differently is
+ * one the planner never reaches for.
+ *
+ * `type` picks the reading the way an operand's own type does (`jsonCompareMode`): compared as a
+ * number, indexed as a number. Which engines have it is `IndexFeature`'s `jsonPath`.
+ *
+ * @example
+ * ```ts
+ * @Index([{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }]) // 'kind.theme.color': 'red'
+ * @Index([{ column: 'kind', jsonPath: { path: 'rating', type: Number } }])      // 'kind.rating': { $gte: 4 }
+ * ```
+ */
+export type IndexJsonPath = {
+  /** The path inside the column, spelled as a `$where` key spells it: `'theme.color'`. */
+  readonly path: string;
+  /** How the value is read, matching what the queries over it compare against. */
+  readonly type: FieldType;
+};
+
+/**
+ * MySQL's multi-valued index: one key per *element* of the JSON array at `path` (the column itself
+ * when there is none), which is the only index `$all`/`$elemMatch` containment can use. `type` is
+ * the element's, and a string or binary one needs a `length`, since the cast is what sizes the key.
+ *
+ * MySQL is alone in having it - `IndexFeature`'s `jsonArray` - and an index asking for it elsewhere
+ * is refused rather than silently built.
+ *
+ * @example
+ * ```ts
+ * @Index([{ column: 'tags', jsonArray: { type: String, length: 64 } }]) // tags: { $all: [...] }
+ * @Index([{ column: 'kind', jsonArray: { path: 'ids', type: Number } }]) // 'kind.ids': { $all: [...] }
+ * ```
+ */
+export type IndexJsonArray = {
+  /** The array's path inside the column, spelled as a `$where` key spells it; omit for the column. */
+  readonly path?: string;
+  /** The element type, matching what the queries over the array compare against. */
+  readonly type: FieldType;
+  /** Length of a string or binary element, which MySQL's `CHAR(n) ARRAY` cast requires. */
+  readonly length?: number;
+};
+
+/** The modifiers that do not name a JSON path, and so need no entity to be checked against. */
+type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'jsonArray'>;
+
+export type IndexColumnOptions<C extends string = string> = IndexColumnPlainModifiers & {
   /** The column to index, or `raw(...)` for an expression. */
   readonly column: C | QueryRaw;
 };
@@ -785,7 +898,7 @@ export type EntityOptions<E = unknown> = {
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: { readonly [K in FieldKey<E>]?: FieldOptionsFor<E[K]> };
   readonly relations?: { readonly [K in RelationKey<E>]?: RelationOptionsFor<E[K]> };
-  readonly indexes?: readonly EntityIndexInput<FieldKey<E>>[];
+  readonly indexes?: readonly EntityIndexInput<FieldKey<E>, E>[];
   /** Map hook events to method names on the entity class. */
   readonly hooks?: Partial<Record<HookEvent, readonly MethodKey<E>[]>>;
 };
@@ -795,11 +908,17 @@ export type EntityOptions<E = unknown> = {
  * migration builder's `table.index(...)`. `Except` (not plain `Omit`) keeps `type`/`distance` a
  * discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions = Except<EntityIndexMeta, 'columns'>;
+export type IndexOptions<E = unknown> = Except<EntityIndexMeta, 'columns' | 'include'> & {
+  /** Non-key columns stored in the index; a typo builds nothing, the server refusing the statement. */
+  readonly include?: readonly IndexFieldKey<E>[];
+};
+
+/** A field of `E`, or any name where there is no entity to check it against - the migration builder. */
+type IndexFieldKey<E> = unknown extends E ? string : FieldKey<E>;
 
 /**
  * An index as authored, before `defineIndex` normalizes its columns.
  */
-export type EntityIndexInput<C extends string = string> = IndexOptions & {
-  readonly columns: readonly IndexColumnInput<C>[];
+export type EntityIndexInput<C extends string = string, E = unknown> = IndexOptions<E> & {
+  readonly columns: readonly IndexColumnInput<C, E>[];
 };

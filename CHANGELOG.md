@@ -2,6 +2,24 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.38.0] - 2026-09-03
+
+**Indexes can go inside a JSON column**, declared the way the query reads them:
+
+```ts
+@Index([{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }]) // 'kind.theme.color': 'red'
+@Index([{ column: 'kind', jsonPath: { path: 'thema.color', type: String } }]) // error: no such path
+@Index([{ column: 'tags', jsonArray: { type: String, length: 64 } }])         // tags: { $all: [...] }
+```
+
+Postgres, CockroachDB and SQLite index a path; MySQL only the multi-valued index `$all` needs; MariaDB neither. Each refuses the form it lacks, and `include`'s columns are checked against the entity too.
+
+- **MariaDB's vector index is its own statement**, so `autoSync` adds one to a table that already exists.
+- **A MariaDB JSON column reads back as JSON**, not the `LONGTEXT` that reported drift as data loss.
+- **MySQL upserts read the inserted row through a row alias**, MariaDB through `VALUE(col)`: `VALUES(col)` is deprecated on both.
+- **Drift no longer reports an auto-increment key**, nor a MySQL functional index.
+- **Breaking:** the dialects moved to their own entries (`uql-orm/postgres`, `/mysql`, `/maria`, `/sqlite`) and `CREATE INDEX` to `uql-orm/migrate` as `IndexDdl`. Root entry 25.1 KB gzipped, from 28.5 KB.
+
 ## [0.37.1] - 2026-09-02
 
 Two `findManyAndCount` fixes, both from the total it now carries in the read's own statement:

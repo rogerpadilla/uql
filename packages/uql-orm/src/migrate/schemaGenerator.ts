@@ -29,6 +29,7 @@ import { getKeys, isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedForeignKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
+import { type IndexDdl, indexDdlFor } from './ddl/index.js';
 import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 
@@ -37,10 +38,15 @@ import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
  * Parameterized by dialect to handle Postgres, MySQL, MariaDB, and SQLite.
  */
 export class SqlSchemaGenerator implements SqlDdlGenerator {
+  /** `CREATE INDEX` for this dialect: the migrator's, so a runtime import carries none of it. */
+  protected readonly indexDdl: IndexDdl;
+
   constructor(
     protected readonly dialect: AbstractSqlDialect,
     protected readonly defaultForeignKeyAction: ForeignKeyAction = 'NO ACTION',
-  ) {}
+  ) {
+    this.indexDdl = indexDdlFor(dialect);
+  }
 
   get namingStrategy(): NamingStrategy | undefined {
     return this.dialect.namingStrategy;
@@ -256,7 +262,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
-    return this.dialect.getCreateIndexStatement(tableName, index, options);
+    return this.indexDdl.getCreateIndexStatement(tableName, index, options);
   }
 
   /**
@@ -489,6 +495,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    *
    * Only ever additive. An index the entity does not name is left alone: it may well have been
    * created deliberately outside the ORM, and dropping it is a decision for a reviewed migration.
+   *
+   * A vector index is one of these like any other: MariaDB's `CREATE VECTOR INDEX ... ON t (col)`
+   * adds one to a table that already exists, which the inline `CREATE TABLE` form it also has cannot.
    */
   private missingIndexes<E>(entity: Type<E>, currentTable: TableNode): IndexSchema[] {
     // Keyed by the qualified name, so a table in a schema finds itself rather than reporting that
@@ -496,18 +505,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const desired =
       buildEntityAST(this, [entity]).getTable(qualifyName(currentTable.name, currentTable.schema))?.indexes ?? [];
     const present = new Set(currentTable.indexes.map((index) => index.name));
-    return desired
-      .filter((index) => !present.has(index.name) && !this.isInlineVectorIndex(index))
-      .map(indexNodeToSchema);
-  }
-
-  /**
-   * A vector index this dialect declares inside `CREATE TABLE` rather than as a statement of its own,
-   * which MariaDB is alone in doing. It has no `CREATE INDEX` form, so it can only ever be created
-   * with its table, never added to one.
-   */
-  private isInlineVectorIndex(index: IndexNode): boolean {
-    return this.features.inlineVectorIndex && index.type === 'vector';
+    return desired.filter((index) => !present.has(index.name)).map(indexNodeToSchema);
   }
 
   private columnNodeToSchema(col: ColumnNode): ColumnSchema {
@@ -604,11 +602,13 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const columns: string[] = [];
     const constraints: string[] = [];
 
-    const vectorIndexes = table.indexes.filter((index) => this.isInlineVectorIndex(index));
-    const regularIndexes = table.indexes.filter((index) => !this.isInlineVectorIndex(index));
     // MariaDB rejects a `VECTOR INDEX` whose column is nullable ("All parts of a VECTOR index must
     // be NOT NULL"), so being indexed decides it rather than the entity's own nullability.
-    const indexedVectorColumns = new Set(vectorIndexes.flatMap((idx) => idx.entries.map((entry) => entry.column)));
+    const indexedVectorColumns = new Set(
+      this.features.vectorIndexRequiresNotNull
+        ? table.indexes.filter((index) => index.type === 'vector').flatMap((idx) => idx.entries.map((e) => e.column))
+        : [],
+    );
 
     for (const col of table.columns.values()) {
       const colDef = this.generateColumnFromNode(
@@ -643,13 +643,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       createSql += constraints.map((c) => `  ${c}`).join(',\n');
     }
 
-    if (vectorIndexes.length > 0) {
-      createSql += ',\n';
-      createSql += vectorIndexes
-        .map((idx) => `  ${this.dialect.getInlineVectorIndexDeclaration(indexNodeToSchema(idx))}`)
-        .join(',\n');
-    }
-
     createSql += '\n)';
 
     if (this.dialect.tableOptions) {
@@ -666,7 +659,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       }
     }
     statements.push(createSql);
-    for (const idx of regularIndexes) {
+    for (const idx of table.indexes) {
       statements.push(this.generateCreateIndexFromNode(idx));
     }
     return statements;

@@ -6,6 +6,7 @@ import type {
   QueryVectorSearch,
   VectorDistance,
 } from '../type/index.js';
+import { entityName } from '../util/object.util.js';
 import { AbstractDialect } from './abstractDialect.js';
 import { MULTI_VECTOR_TYPE_DIALECTS, type VectorCast } from './vectorCast.js';
 
@@ -61,7 +62,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
    * The vector type this dialect actually has for a declared one, so the cast follows the column
    * rather than naming a type the engine does not define. See {@link MULTI_VECTOR_TYPE_DIALECTS}.
    */
-  protected supportedVectorType(cast: VectorCast): VectorCast {
+  supportedVectorType(cast: VectorCast): VectorCast {
     return MULTI_VECTOR_TYPE_DIALECTS.has(this.dialectName) ? cast : 'vector';
   }
 
@@ -100,7 +101,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     // under that name and the driver keeps whichever it read last. Checked here rather than in the
     // type because TypeScript cannot say "any string except these".
     if (meta.fields[alias as FieldKey<E>]) {
-      throw new TypeError(`$project '${alias}' collides with a field of '${meta.name ?? String(meta.entity.name)}'`);
+      throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
     }
     this.appendVectorSort(ctx, meta, key, search);
     ctx.append(` AS ${this.escapeId(alias)}`);

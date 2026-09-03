@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
-import { PostgresDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MySqlDialect } from '../../dialect/index.js';
+import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import { mockTableNode } from '../../test/index.js';
 import { detectDrift } from './driftDetector.js';

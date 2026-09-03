@@ -26,7 +26,7 @@ class L2Item {
  * metric, combined sort, field default, projection, rejection - are identical everywhere.
  *
  * Every mapping here was verified against a live engine (pgvector 0.8, CockroachDB 26, MariaDB 12.3,
- * sqlite-vec 0.1.9, `@libsql/client` 0.17, `@tursodatabase/database` 0.7, MySQL 9.7), because a wrong
+ * sqlite-vec 0.1.9, `@libsql/client` 0.17, `@tursodatabase/database` 0.7, MySQL 26.7), because a wrong
  * function name or a missing conversion only surfaces at runtime.
  */
 type Engine = {

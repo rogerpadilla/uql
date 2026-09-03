@@ -116,7 +116,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     const key: MongoIndexKey = {};
     for (const entry of index.entries) {
-      if (entry.expression || entry.length !== undefined || entry.nulls || entry.opsClass) {
+      if (entry.expression || entry.jsonArray || entry.length !== undefined || entry.nulls || entry.opsClass) {
         throw new TypeError(`mongodb does not support that index column option (index "${index.name}")`);
       }
       key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;

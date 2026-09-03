@@ -31,6 +31,13 @@ export const REL_TEMP_PREFIX = '_uql_rel_';
 export const REL_NESTED_KEY = '_uql_target';
 
 /**
+ * The alias MySQL's upsert gives the row being inserted, so its `ON DUPLICATE KEY UPDATE`
+ * assignments read `_uql_new.col` instead of the deprecated `VALUES(col)`. MariaDB has no such
+ * syntax and keeps `VALUES(col)`.
+ */
+export const UPSERT_NEW_ROW_ALIAS = '_uql_new';
+
+/**
  * Where a `$sort` by a relation's size parks its tally until the ordering has run. A function, so the
  * `$sort` that names the field and the stage that produces it cannot spell it differently - MongoDB
  * ranks a field that is not there as all-equal rather than failing, so a drift would go unnoticed.

@@ -1,4 +1,4 @@
-import type { FieldKey, FieldOptions } from '../type/index.js';
+import type { EntityMeta, FieldKey, FieldOptions } from '../type/index.js';
 
 export function throwPendingTransaction(): never {
   throw TypeError('pending transaction');
@@ -59,6 +59,15 @@ export function isOperatorOnlyObject(value: unknown): value is Record<string, un
 
 export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
+}
+
+/**
+ * The entity's own name for a message to carry, declared or its class's. `defineEntity` always sets
+ * one, so the fallback is for a meta a decorator is still building - which is why the sites spelling
+ * this out reached for three different fallbacks, `?? ''` among them, and named nothing at all.
+ */
+export function entityName<E>(meta: EntityMeta<E>): string {
+  return meta.name ?? meta.entity.name;
 }
 
 export function getFieldKeys<E>(

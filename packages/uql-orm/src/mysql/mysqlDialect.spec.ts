@@ -15,6 +15,26 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     return `CAST(${operand} AS JSON)`;
   }
 
+  /** The inserted row is read through its alias here; `VALUES(col)` is deprecated since MySQL 8.0.20. */
+  override shouldUpsert() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.upsert(
+        ctx,
+        User,
+        { email: true },
+        {
+          name: 'Some Name',
+          email: 'someemail@example.com',
+          createdAt: 123,
+        },
+      ),
+    );
+    expect(sql).toMatch(
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\) AS `_uql_new` ON DUPLICATE KEY UPDATE .*`name` = `_uql_new`\.`name`.*`createdAt` = `_uql_new`\.`createdAt`.*`updatedAt` = \?.*$/,
+    );
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
+  }
+
   shouldThrowForVectorSort() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {

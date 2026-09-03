@@ -19,7 +19,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     columnComment: true,
-    inlineVectorIndex: true,
+    vectorIndexRequiresNotNull: true,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
     defaultStringAsText: false,

@@ -614,7 +614,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUES\(`name`\).*`createdAt` = VALUES\(`createdAt`\).*`updatedAt` = \?.*$/,
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUE\(`name`\).*`createdAt` = VALUE\(`createdAt`\).*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
   }

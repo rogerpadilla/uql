@@ -20,7 +20,8 @@ export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'incl
  * `status = ANY (ARRAY['a'::text, 'b'::text])`, `LIKE` as `~~`, and a date literal with its time zone
  * spelled out. Folding that back needs a SQL parser, and every near-miss reports drift that no
  * migration can settle. So a partial index's predicate is never compared, and an index over an
- * expression has its entries left alone while the rest of it still compares.
+ * expression - a `raw()` one, or a JSON path, which the engines report as an expression too - has
+ * its entries left alone while the rest of it still compares.
  */
 export function describeIndexDifferences(
   source: IndexNode,
@@ -28,7 +29,9 @@ export function describeIndexDifferences(
   facets: ReadonlySet<IndexFacet>,
 ): string[] {
   const differences: string[] = [];
-  const comparableEntries = ![...source.entries, ...target.entries].some((entry) => entry.expression);
+  const comparableEntries = ![...source.entries, ...target.entries].some(
+    (entry) => entry.expression || entry.jsonPath || entry.jsonArray,
+  );
 
   if (comparableEntries) {
     const [sourceColumns, targetColumns] = [source.entries, target.entries].map((entries) =>

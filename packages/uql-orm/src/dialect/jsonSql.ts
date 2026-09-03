@@ -1,4 +1,5 @@
-import type { FieldOptions } from '../type/index.js';
+import type { FieldOptions, FieldType } from '../type/index.js';
+import { isBooleanType, isNumericType } from '../util/field.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 
 /**
@@ -48,6 +49,13 @@ export function jsonElemExists(from: string, conditions: readonly string[]): str
 }
 
 /**
+ * How a JSON value is read out of its document: as the JSON value itself, as a number to compare
+ * against, or as the text a path yields. One vocabulary for every operand of a comparison, so the
+ * left side is read the way the right side is compared - see {@link jsonCompareMode}.
+ */
+export type JsonAccessMode = 'json' | 'numeric' | 'text';
+
+/**
  * How a JSON scalar has to be compared against `value` (or, for `$in`/`$nin`, against every element
  * of it). Extracting a JSON value yields *text*, which loses the type, so each operand type is
  * compared in the representation every engine agrees on:
@@ -59,7 +67,7 @@ export function jsonElemExists(from: string, conditions: readonly string[]): str
  *
  * Mixed operand types fall back to `text`, since one comparison cannot be two shapes at once.
  */
-export function jsonCompareMode(value: unknown): 'json' | 'numeric' | 'text' {
+export function jsonCompareMode(value: unknown): JsonAccessMode {
   const operands = Array.isArray(value) ? value : [value];
   if (operands.length === 0) {
     return 'text';
@@ -68,6 +76,21 @@ export function jsonCompareMode(value: unknown): 'json' | 'numeric' | 'text' {
     return 'json';
   }
   return operands.every((operand) => typeof operand === 'number') ? 'numeric' : 'text';
+}
+
+/**
+ * The mode a *declared* type asks for: {@link jsonCompareMode}'s twin, reading the type instead of an
+ * operand. An index over a JSON path is only reachable by a comparison that extracts it the same way,
+ * so the two have to answer alike - which is why they are one pair over one vocabulary.
+ *
+ * Reads the type through `util/field.util`'s predicates, which the dialects already carry: resolving
+ * it through `schema/canonicalType` instead pulls that whole module into every consumer bundle.
+ */
+export function jsonTypeMode(type: FieldType): JsonAccessMode {
+  if (isNumericType(type)) {
+    return 'numeric';
+  }
+  return isBooleanType(type) ? 'json' : 'text';
 }
 
 /**

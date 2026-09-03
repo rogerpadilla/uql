@@ -61,7 +61,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT
         INDEX_NAME as index_name,
-        GROUP_CONCAT(COLUMN_NAME ORDER BY SEQ_IN_INDEX) as columns,
+        GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
         NOT NON_UNIQUE as is_unique
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -131,7 +131,10 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
-      entries: (row.columns || '').split(',').map((column) => ({ column })),
+      // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
+      // place in the list, and it is reported as the expression it is, which is what stops diffing
+      // from comparing an entry list the server cannot state against the entity's own.
+      entries: (row.columns ?? '').split(',').map((column) => (column ? { column } : { column, expression: true })),
       unique: Boolean(row.is_unique),
     }));
   }
@@ -198,7 +201,34 @@ type MysqlColumnRow = {
 };
 
 /**
- * Alias for MysqlSchemaIntrospector.
- * MariaDB uses the same information_schema structure as MySQL.
+ * MariaDB reads out of the same `information_schema` as MySQL, save for one column type it does not
+ * have: `JSON` there is an alias for `LONGTEXT` plus a `json_valid()` check constraint named after
+ * the column, and the catalogue reports the column as `longtext`. That check is the only thing
+ * telling one from a column somebody really declared `LONGTEXT`, so it is what the type is read back
+ * through - without it every JSON column drifts against the entity that declared it ("expected
+ * JSON, got LONGTEXT", flagged as data loss) on a table uql created itself.
  */
-export const MariadbSchemaIntrospector = MysqlSchemaIntrospector;
+export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
+  protected override async mapColumnsResult(
+    read: TableRowReader,
+    tableName: string,
+    results: MysqlColumnRow[],
+  ): Promise<ColumnSchema[]> {
+    const columns = await super.mapColumnsResult(read, tableName, results);
+    const checks = await read<{ column_name: string }>(
+      /*sql*/ `
+      SELECT CONSTRAINT_NAME as column_name
+      FROM information_schema.CHECK_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr}
+        AND TABLE_NAME = ?
+        AND CHECK_CLAUSE = CONCAT('json_valid(\`', CONSTRAINT_NAME, '\`)')
+    `,
+      [tableName],
+    );
+    const jsonColumns = new Set(checks.map((row) => row.column_name));
+    // The reported `LONGTEXT` length is that type's maximum, which means nothing for a JSON column.
+    return columns.map((column) =>
+      jsonColumns.has(column.name) ? { ...column, type: 'JSON', length: undefined } : column,
+    );
+  }
+}

@@ -150,7 +150,7 @@ const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
       uuid: 'CHAR(36)',
       blob: 'BLOB',
     },
-    // MySQL 9.x does have a `VECTOR` type, but no distance function outside HeatWave and no vector
+    // MySQL does have a `VECTOR` type (26.7), but no distance function outside HeatWave and no vector
     // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
     'JSON',
   ),
@@ -223,44 +223,44 @@ const PG_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string
   },
 };
 
+/**
+ * MariaDB is a MySQL fork and spells every one of these the same way, so both take the one map.
+ * Listed per-dialect, MariaDB's had only `integer`: a `double` column was created `FLOAT` there, four
+ * bytes where the entity asked for eight, and a `big` string or blob lost its `LONG` prefix.
+ */
+const MYSQL_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string>>> = {
+  integer: {
+    tiny: 'TINYINT',
+    small: 'SMALLINT',
+    medium: 'MEDIUMINT',
+    big: 'BIGINT',
+  },
+  float: {
+    tiny: 'FLOAT',
+    small: 'FLOAT',
+    medium: 'DOUBLE',
+    big: 'DOUBLE',
+  },
+  string: {
+    tiny: 'TINYTEXT',
+    small: 'TEXT',
+    medium: 'MEDIUMTEXT',
+    big: 'LONGTEXT',
+  },
+  blob: {
+    tiny: 'TINYBLOB',
+    small: 'BLOB',
+    medium: 'MEDIUMBLOB',
+    big: 'LONGBLOB',
+  },
+};
+
 const SIZE_MODIFIERS: Record<DialectName, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
   postgres: PG_SIZE_MODIFIERS,
   cockroachdb: PG_SIZE_MODIFIERS,
-  mysql: {
-    integer: {
-      tiny: 'TINYINT',
-      small: 'SMALLINT',
-      medium: 'MEDIUMINT',
-      big: 'BIGINT',
-    },
-    float: {
-      tiny: 'FLOAT',
-      small: 'FLOAT',
-      medium: 'DOUBLE',
-      big: 'DOUBLE',
-    },
-    string: {
-      tiny: 'TINYTEXT',
-      small: 'TEXT',
-      medium: 'MEDIUMTEXT',
-      big: 'LONGTEXT',
-    },
-    blob: {
-      tiny: 'TINYBLOB',
-      small: 'BLOB',
-      medium: 'MEDIUMBLOB',
-      big: 'LONGBLOB',
-    },
-  },
+  mysql: MYSQL_SIZE_MODIFIERS,
   sqlite: {}, // SQLite uses affinity, no size modifiers
-  mariadb: {
-    integer: {
-      tiny: 'TINYINT',
-      small: 'SMALLINT',
-      medium: 'MEDIUMINT',
-      big: 'BIGINT',
-    },
-  },
+  mariadb: MYSQL_SIZE_MODIFIERS,
   mongodb: {},
 };
 

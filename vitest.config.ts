@@ -41,6 +41,9 @@ export default defineConfig({
   test: {
     globals: true,
     environment: 'node',
+    // Vitest 5 defaults this to `true`; bun's runner has no equivalent, and the shared suites run under
+    // both. Pinning it keeps one mock semantics, so a suite cannot come to lean on clearing only one does.
+    clearMocks: false,
     // The same 10s `bunfig.toml` settled on, and for the same reason: these suites drive the Docker
     // databases, and on a cold CI runner the slowest of them lands on vitest's 5s default rather than
     // past it. One CockroachDB drift check failed at 5007ms while the other two matrix legs passed the

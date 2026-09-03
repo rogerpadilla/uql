@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MySqlDialect } from '../../dialect/index.js';
+import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MysqlSchemaGenerator Specifics', () => {
