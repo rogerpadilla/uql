@@ -4,10 +4,10 @@ What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
 ## [0.37.1] - 2026-09-02
 
-Two fixes to `findManyAndCount`, both from the total it now carries in the read's own statement:
+Two `findManyAndCount` fixes, both from the total it now carries in the read's own statement:
 
-- **A `$lock` no longer errors on the Postgres family.** `FOR UPDATE` and a window function cannot share a statement there ("FOR UPDATE is not allowed with window functions"), so a locked page takes its total from a count of its own. MySQL and MariaDB run the pair and keep the single statement.
-- **A `$distinct` total counts the deduplicated rows.** It counted them before the deduplication, so three rows over two names reported three - a total that did not describe the page beside it. This was wrong in 0.36.1 too.
+- **A `$lock` no longer errors on the Postgres family**, where `FOR UPDATE` and a window function cannot share a statement: a locked page takes its total from a count of its own. MySQL and MariaDB keep the single statement.
+- **A `$distinct` total counts the deduplicated rows**, not the rows before deduplication - three rows over two names reported three.
 
 ## [0.37.0] - 2026-09-02
 
@@ -26,17 +26,15 @@ await querier.findMany(User, {
 // [{ ...user, _count: { posts: 42, comments: 7 } }]
 ```
 
-- `count` takes `$skip`/`$limit`, settling the matching ids rather than scanning every match.
-- **`findManyAndCount` is one statement on SQL**, down from two: the page carries its own unpaged total, so the two can no longer disagree. Its total also counts past a `$required` relation now - it used to include rows the INNER JOIN drops.
-- **`$count` costs one grouped statement per relation**, batched over the whole page, so it stays flat however large the page is. Ordering is a correlated tally, so a top-N never loads the rows it ranked by. Counting and populating the same relation are independent - ask for both.
-- `count` no longer takes a `$sort`. It never changed the number.
-- `estimatedCount` is approximate and whole-table: no filter, so every entity filter and soft-deleted row is inside it, and it is as stale as the last `ANALYZE`. SQLite throws. Server-side only.
+- **`$count` costs one grouped statement per relation**, batched over the whole page, so it stays flat however large the page is. Ordering is a correlated tally, so a top-N never loads the rows it ranked by.
+- **`findManyAndCount` is one statement on SQL**, down from two: the page carries its own unpaged total, so the two can no longer disagree. That total counts past a `$required` relation now.
+- `count` takes `$skip`/`$limit`, settling the matching ids rather than scanning every match, and no longer takes a `$sort` - it never changed the number.
+- `estimatedCount` is approximate and whole-table: no filter, so entity filters and soft-deleted rows are inside it, and it is as stale as the last `ANALYZE`. SQLite throws. Server-side only.
 
 Fixes:
 
 - **A client write takes plain data again.** On an entity declaring any method, `client.insertOne(Article, { title: 'Hello' })` was rejected for not handing the method back too.
-- **`$limit: 0` reads no rows on MongoDB**, as everywhere else - it came back with the whole collection.
-- **A bare `$skip` works on SQLite**: `findMany(User, { $skip: 20 })` crashed.
+- **`$limit: 0` reads no rows on MongoDB**, as everywhere else, and a bare `$skip` no longer crashes SQLite.
 
 `RequestSuccessResponse` and `RequestCountedSuccessResponse` moved to `uql-orm/type` from `uql-orm/http`.
 
