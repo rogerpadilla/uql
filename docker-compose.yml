@@ -1,6 +1,6 @@
 services:
   mysql:
-    image: mysql:9.7
+    image: mysql:26.7
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -9,7 +9,7 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3316:3306
-    container_name: uql-mysql-9
+    container_name: uql-mysql-26
     healthcheck:
       test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
       interval: 5s
@@ -74,7 +74,7 @@ services:
         condition: service_healthy
 
   cockroachdb:
-    image: cockroachdb/cockroach:latest-v26.2
+    image: cockroachdb/cockroach:latest-v26.3
     restart: always
     container_name: uql-cockroachdb-26
     # `--cache` and `--max-sql-memory` default to a quarter of visible RAM *each*, so left alone this
