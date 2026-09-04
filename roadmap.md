@@ -111,10 +111,19 @@ touching a call site. Drizzle makes these two unrelated APIs. Postgres 12+, MySQ
 const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 }), q.count(User)]);
 ```
 
-Depends on R5. `q` records lazy descriptors, so variadic tuples give exact per-element types.
-One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips on `pg`,
-`mysql2`, `mariadb` - correct, not faster. The win lands exactly where round trips are HTTP
-requests, which is the edge story. D1's driver already declares `batch`; nothing public reaches it.
+Depends on R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips
+on `pg`, `mysql2`, `mariadb` - correct, not faster.
+
+**The entity-level API cannot keep its promise.** Most querier methods are not one statement:
+`findMany` issues extra queries for to-many relations, `$count` tallies and `$candidates` tuning;
+`updateMany` and `deleteMany` run lifecycle hooks - arbitrary user code that may itself query - and
+deletes cascade. Only `count`, `exists` and the inserts are reliably single. A caller cannot tell
+which from the call site: add `$populate` of a to-many and a "batch" quietly becomes several round
+trips, or throws at run time.
+
+So the honest shape is statement-level - `pool.batch([{ sql, values }, ...])` over `compile()` -
+which guarantees the round trip but gives up the typing that makes the rest of the API worth using.
+Decide which of those is wanted before building either.
 
 ## 7. Server-side prepared statements
 
@@ -157,11 +166,12 @@ graph LR
 
 ## Order
 
-1. **Composite PKs** (R1) - unblocks real schemas; the type changes are additive.
-2. **Batching** (R5) - defends the edge differentiator.
-3. **Views** (R2), then **generated stored columns**.
-4. **Cursor pagination** (R6), **triggers** (diff-visible first).
-5. **Prepared statements** last: narrowest benefit, most driver-specific risk.
+1. **Composite PKs** (R1) - the one outright blocker. `meta.id` is a single string in 46 runtime
+   places across 11 files, so it wants a session of its own.
+2. **Views** (R2), then **generated stored columns**.
+3. **Cursor pagination** (R6), **triggers** (diff-visible first).
+4. **Batching** (R5), then **prepared statements**: both are round-trip optimizations with a narrow
+   benefit and driver-specific risk, and neither unblocks anything else.
 
 `$window` / `$whereWindow` sits outside this list and is the one feature that would let real
 applications delete their hand-written CTE queries. Depends on R6.
