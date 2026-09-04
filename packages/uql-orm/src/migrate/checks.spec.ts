@@ -89,6 +89,17 @@ class Quoted {
   @Field({ type: String, enum: ["it's", 'plain'] as const }) label?: "it's" | 'plain';
 }
 
+enum Status {
+  Draft = 'draft',
+  Paid = 'paid',
+}
+
+@Entity()
+class TsEnumInvoice {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, enum: Object.values(Status) }) status?: Status;
+}
+
 describe('enum fields', () => {
   it('constrains the column to its values', () => {
     expect(ddl(new PostgresDialect(), Invoice)).toContain(
@@ -107,6 +118,10 @@ describe('enum fields', () => {
   it('escapes a value that would close the literal, the way each dialect does it', () => {
     expect(ddl(new PostgresDialect(), Quoted)).toContain(`IN ('it''s', 'plain')`);
     expect(ddl(new MariaDialect(), Quoted)).toContain(`IN ('it\\'s', 'plain')`);
+  });
+
+  it('states a TypeScript string enum by its values, not its member names', () => {
+    expect(ddl(new PostgresDialect(), TsEnumInvoice)).toContain(`CHECK ("status" IN ('draft', 'paid'))`);
   });
 
   it('emits the same constraint on MariaDB and SQLite', () => {

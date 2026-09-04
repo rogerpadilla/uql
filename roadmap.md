@@ -39,32 +39,47 @@ wait for a second kind, so the shape is derived rather than guessed.
 ## Composite primary keys
 
 ```ts
-@Id({ type: String }) transcriptChunkId?: UUID;
-@Id({ type: String }) captionId?: UUID;
+@Id({ type: Number }) userId?: number;
+@Id({ type: Number }) groupId?: number;
+
+await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
 ```
 
-Depends on R1. `TableDefinition.primaryKey` already takes a list, so the DDL is nearly free; the work
-is relations, where `references` resolves to a single column. Reject composite + auto-increment:
-MySQL's `insertMany` id inference cannot serve it. The only outright blocker on this list.
+**Done:** `meta.ids` as the only stored form, `@Id` twice declaring a composite, composite
+`PRIMARY KEY` DDL, by-id `$where`, and a refusal naming its own path everywhere composites are not
+supported yet.
 
-**`@Id` twice is the spelling**, decided. It is what people already try, and a typo announces itself:
-`IdValue<E>` turns from a scalar into an object, so every `findOneById(X, 1)` call site fails to
-compile. That replaces today's contract, where the second `@Id` re-identifies the entity and drops the
-first as a column - `defineId` deletes it, and the test `a second @Id replaces the first one` pins it.
-Both have to go.
+**The id is a plain object**, as TypeORM and MikroORM take. Prisma's named compound
+(`where: { userId_groupId: {...} }`) exists to say _which_ unique constraint `findUnique` should use;
+`findOneById` is unambiguous, so the convention would buy nothing and break on a rename. A tuple is
+positionally fragile. The object also _is_ a `$where` map, so `buildQueryWhereAsMap` needs no special
+case.
 
-Order within the feature, because a half-done composite key is worse than none: a composite
-`PRIMARY KEY` in the DDL while `deleteOneById` still filters on one column would delete the wrong
-rows. So the by-id path and the DDL land together, or neither does.
+### Where we already beat them
 
-1. `defineId` stops deleting, `meta.ids` alongside `meta.id` (which stays `ids[0]` for the 46 call
-   sites that read it).
-2. `IdValue<E>` conditional on key count; `assertIdValue` checks every key is present.
-3. The by-id methods and `$where` building from an id object.
-4. Composite `PRIMARY KEY` DDL, which `TableDefinition.primaryKey` already accepts.
-5. Relations: `references` resolves to a column list. The bulk of the work.
+- **No reachable singular key.** TypeORM keeps `primaryColumns[0]`, MikroORM keeps `compositePK`
+  beside the list; either lets a caller silently take the first of two.
+- **Every key is required.** TypeORM's `ensureEntityIdMap` passes any object through, so
+  `{ userId: 1 }` on a two-key entity addresses every row sharing it. `assertIdValue` refuses.
+- **Refusals name the path**, rather than a generic "composite not supported".
 
-Reject composite + auto-increment at registration: MySQL's `insertMany` id inference cannot serve it.
+### Left, in order
+
+Every path below refuses a composite by name rather than guessing, so the feature is inert where it is unfinished rather than wrong.
+
+1. **Relation filtering** (`abstractSqlDialect`, 4 sites) - the correlated `EXISTS`/`IN` sub-query
+   correlates on one column (`t.a = p.a`) and reads a junction's pairs positionally. A composite needs every key anded, and the pair groups sliced at the parent's key count as `parentKeyColumns` does.
+2. **`insertMany` id return** - `RETURNING <col> AS id` names one column. A composite returns the map `EntityId` already describes, which is TypeORM's `getEntityIdMixedMap`.
+3. **`$count` tallies** - groups per parent by one column; needs `rowKey` as the loaders now use it.
+4. **MongoDB** - a compound `_id` is a different document shape, not a translation.
+5. **The HTTP `/:id` route** - one path segment. No ORM above ships an HTTP layer, so the serialization is ours to invent.
+
+Done since: `meta.ids` as the only stored form, composite `PRIMARY KEY` and foreign-key DDL with each column typed from its own referenced key, by-id addressing through `EntityId`, `assertIdValue` requiring every key, one-to-many loading, and every key column surviving a projection so children
+group correctly.
+
+Types stay permissive for composites: accumulating `@Id` across properties into the class type is not
+something TypeScript can do, so the `idKey` brand remains the opt-in for compile-time enforcement and
+`assertIdValue` is the guarantee everyone else gets.
 
 ## Views and materialized views
 
