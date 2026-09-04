@@ -2,6 +2,10 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.39.1] - 2026-09-04
+
+No runtime changes: Linting moved from biome to oxlint and updated readme.
+
 ## [0.39.0] - 2026-09-03
 
 **Vector search filters, not just ranks.** `$near` bounds the distance in `$where`, where `$sort` orders by it:
