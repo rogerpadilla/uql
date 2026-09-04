@@ -47,11 +47,24 @@ Depends on R1. `TableDefinition.primaryKey` already takes a list, so the DDL is 
 is relations, where `references` resolves to a single column. Reject composite + auto-increment:
 MySQL's `insertMany` id inference cannot serve it. The only outright blocker on this list.
 
-**Start by deciding what `@Id` twice means.** Today the second one _replaces_ the first and drops it
-as a column - deliberate, tested as `a second @Id replaces the first one`, and the natural spelling
-for a composite key. Supporting composites means changing that contract, so it is the first decision,
-not a detail: either a new spelling (`@Entity({ primaryKey: ['a', 'b'] })`) or re-identification
-becomes opt-in.
+**`@Id` twice is the spelling**, decided. It is what people already try, and a typo announces itself:
+`IdValue<E>` turns from a scalar into an object, so every `findOneById(X, 1)` call site fails to
+compile. That replaces today's contract, where the second `@Id` re-identifies the entity and drops the
+first as a column - `defineId` deletes it, and the test `a second @Id replaces the first one` pins it.
+Both have to go.
+
+Order within the feature, because a half-done composite key is worse than none: a composite
+`PRIMARY KEY` in the DDL while `deleteOneById` still filters on one column would delete the wrong
+rows. So the by-id path and the DDL land together, or neither does.
+
+1. `defineId` stops deleting, `meta.ids` alongside `meta.id` (which stays `ids[0]` for the 46 call
+   sites that read it).
+2. `IdValue<E>` conditional on key count; `assertIdValue` checks every key is present.
+3. The by-id methods and `$where` building from an id object.
+4. Composite `PRIMARY KEY` DDL, which `TableDefinition.primaryKey` already accepts.
+5. Relations: `references` resolves to a column list. The bulk of the work.
+
+Reject composite + auto-increment at registration: MySQL's `insertMany` id inference cannot serve it.
 
 ## Views and materialized views
 
