@@ -48,7 +48,7 @@
     "@arethetypeswrong/cli": "^0.18.5",
     "@commitlint/cli": "21.2.2",
     "@commitlint/config-conventional": "21.2.2",
-    "@types/bun": "^1.4.0",
+    "@types/bun": "^1.4.1",
     "@types/supertest": "^7.2.1",
     "@vitest/coverage-v8": "^5.0.0",
     "esbuild": "^0.28.2",
