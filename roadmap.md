@@ -47,6 +47,12 @@ Depends on R1. `TableDefinition.primaryKey` already takes a list, so the DDL is 
 is relations, where `references` resolves to a single column. Reject composite + auto-increment:
 MySQL's `insertMany` id inference cannot serve it. The only outright blocker on this list.
 
+**Start by deciding what `@Id` twice means.** Today the second one _replaces_ the first and drops it
+as a column - deliberate, tested as `a second @Id replaces the first one`, and the natural spelling
+for a composite key. Supporting composites means changing that contract, so it is the first decision,
+not a detail: either a new spelling (`@Entity({ primaryKey: ['a', 'b'] })`) or re-identification
+becomes opt-in.
+
 ## Views and materialized views
 
 ```ts
