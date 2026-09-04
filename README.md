@@ -68,14 +68,6 @@ The query is just JSON: build it dynamically, store it, diff it, or send it from
 
 Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md).
 
-## Made with UQL
-
-**[Variability.ai](https://variability.ai)** - AI meeting notetaker and video summarizer for Zoom, Meet, Slack, and Teams. Instant summaries with action items in 35+ languages. Built by UQL's author.
-
-Built something? [Open a PR](https://github.com/rogerpadilla/uql/blob/main/CONTRIBUTING.md) and add it here.
-
-[![Made with UQL](https://img.shields.io/badge/made%20with-UQL-3282b5?style=flat)](https://uql-orm.dev)
-
 ---
 
 ## ⭐ Like what we're doing? Give us a star
