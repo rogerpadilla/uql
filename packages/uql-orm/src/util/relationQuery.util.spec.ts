@@ -96,3 +96,14 @@ it('parseRelationQueryValue', () => {
   expect(parseRelationQueryValue(1)).toEqual({ query: {}, required: false, nested: false });
   expect(() => parseRelationQueryValue({ $select: 123 })).toThrow('Invalid relation query value');
 });
+
+/**
+ * A statement-level clause inside a populated relation is caught before the shape check, so the
+ * message names the key rather than reporting the whole object as an unrecognized relation query.
+ * Neither clause had a runtime test before `$candidates` joined `$lock` here.
+ */
+it.each([['$lock'], ['$candidates']])('rejects %s inside a populated relation', (clause) => {
+  expect(() => parseRelationQueryValue({ [clause]: 1 })).toThrow(
+    `'${clause}' applies to the whole statement, not to a populated relation`,
+  );
+});

@@ -1,5 +1,5 @@
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
-import type { VectorDistance } from '../type/index.js';
+import type { VectorDistance, VectorMetric } from '../type/index.js';
 
 /**
  * SQLite Dialect specialization for Turso Database.
@@ -12,9 +12,9 @@ import type { VectorDistance } from '../type/index.js';
  */
 export class TursoDialect extends LibsqlDialect {
   /** The Rust engine adds a dot-product distance to libSQL's cosine and L2. */
-  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
-    ['cosine', 'vector_distance_cos'],
-    ['l2', 'vector_distance_l2'],
-    ['inner', 'vector_distance_dot'],
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+    ['cosine', { fn: 'vector_distance_cos' }],
+    ['l2', { fn: 'vector_distance_l2' }],
+    ['inner', { fn: 'vector_distance_dot' }],
   ]);
 }

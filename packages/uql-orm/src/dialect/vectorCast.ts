@@ -3,19 +3,8 @@
  * pulled all ~18 KB of its type-mapping tables into every consumer's bundle.
  */
 
-import type { DialectName } from '../type/querier.js';
-
 /** Vector cast types supported by pgvector. */
 export type VectorCast = 'vector' | 'halfvec' | 'sparsevec';
-
-/**
- * The dialects that have more than one vector column type. pgvector is the only one: `halfvec` and
- * `sparsevec` exist nowhere else (`HALFVEC(3)` is a syntax error on CockroachDB 26.2 and MariaDB 12.3,
- * not merely unsupported at runtime), so a field declaring one is stored - and therefore cast - as
- * plain `vector`. Both halves of that used to be stated separately, in this dialect layer and in the
- * migration type maps.
- */
-export const MULTI_VECTOR_TYPE_DIALECTS: ReadonlySet<DialectName> = new Set<DialectName>(['postgres']);
 
 /**
  * Whether a declared field type is a vector of any width. Every dialect that treats vectors specially

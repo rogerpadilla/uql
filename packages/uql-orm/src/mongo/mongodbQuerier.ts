@@ -206,6 +206,7 @@ export class MongodbQuerier extends AbstractQuerier {
         q.$where,
         q.$limit ?? 10,
         opts,
+        q.$candidates,
       ),
       // The score becomes a real field before anything reads it, so the lookups and the projection
       // that follow treat it like any other - and a query with no projection keeps its own columns.

@@ -237,6 +237,18 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
+   * Every other dialect compiles `$near` to a distance expression. Atlas has none - it scores by the
+   * index's own `similarity`, which UQL never sees - so this refuses rather than guessing the scale
+   * and filtering the wrong rows. Without the explicit arm, `transformOperators` would have passed
+   * `$near` through to the server as a bogus operator name.
+   */
+  shouldThrowOnNearInWhere() {
+    expect(() => this.dialect.where(Item, { name: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } as never)).toThrow(
+      '$near is not supported on MongoDB',
+    );
+  }
+
+  /**
    * A relation condition becomes one correlated `$lookup` into a temporary field plus a condition on
    * it. `$limit: 1` is enough for existence, and the target's own filters scope the lookup.
    */

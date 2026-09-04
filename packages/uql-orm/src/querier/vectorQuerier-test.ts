@@ -58,6 +58,79 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     expect(results[1].distance).toBeCloseTo(1, 5); // orthogonal vectors → cosine distance 1
   }
 
+  async shouldFilterByDistance() {
+    await this.querier.insertMany(VectorItem, [
+      { name: 'same', vec: [1, 0, 0] }, // cosine distance 0
+      { name: 'near', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] }, // ~0.29
+      { name: 'orthogonal', vec: [0, 1, 0] }, // 1
+    ]);
+
+    const results = await this.querier.findMany(VectorItem, {
+      $select: { name: true },
+      $where: { vec: { $near: { $vector: [1, 0, 0], $lt: 0.5 } } },
+      $sort: { vec: { $vector: [1, 0, 0] } },
+    });
+
+    expect(results.map((r) => r.name)).toEqual(['same', 'near']);
+  }
+
+  /** Two bounds spell the distance twice, so this is where a half-applied expression would show up. */
+  async shouldFilterByDistanceRange() {
+    await this.querier.insertMany(VectorItem, [
+      { name: 'same', vec: [1, 0, 0] },
+      { name: 'near', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
+      { name: 'orthogonal', vec: [0, 1, 0] },
+    ]);
+
+    const results = await this.querier.findMany(VectorItem, {
+      $select: { name: true },
+      $where: { vec: { $near: { $vector: [1, 0, 0], $gt: 0.1, $lt: 0.9 } } },
+    });
+
+    expect(results.map((r) => r.name)).toEqual(['near']);
+  }
+
+  /**
+   * Every other live predicate case runs on the default cosine, so this is the one that would catch an
+   * l2 bound being compared against a cosine value. `[0,1,0]` to `[1,0,0]` is sqrt(2) apart in l2 and
+   * 1.0 in cosine, so a bound of 1.2 keeps one row under l2 and both under cosine.
+   */
+  async shouldFilterByANonDefaultMetric() {
+    await this.querier.insertMany(VectorItem, [
+      { name: 'same', vec: [1, 0, 0] },
+      { name: 'orthogonal', vec: [0, 1, 0] },
+    ]);
+
+    const results = await this.querier.findMany(VectorItem, {
+      $select: { name: true },
+      $where: { vec: { $near: { $vector: [1, 0, 0], $distance: 'l2', $lt: 1.2 } } },
+      $sort: { vec: { $vector: [1, 0, 0], $distance: 'l2' } },
+    });
+
+    expect(results.map((r) => r.name)).toEqual(['same']);
+  }
+
+  /** The RAG shape: threshold, rank and project the score, all against one engine. */
+  async shouldFilterAndRankByDistance() {
+    await this.querier.insertMany(VectorItem, [
+      { name: 'keep-same', vec: [1, 0, 0] },
+      { name: 'keep-near', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
+      { name: 'drop-far', vec: [0, 1, 0] },
+      { name: 'skip', vec: [1, 0, 0] },
+    ]);
+
+    const results = (await this.querier.findMany(VectorItem, {
+      $select: { name: true },
+      $where: { name: { $startsWith: 'keep' }, vec: { $near: { $vector: [1, 0, 0], $lt: 0.5 } } },
+      $sort: { vec: { $vector: [1, 0, 0], $project: 'score' } },
+      $limit: 10,
+    })) as WithDistance<VectorItem, 'score'>[];
+
+    expect(results.map((r) => r.name)).toEqual(['keep-same', 'keep-near']);
+    expect(results[0].score).toBeCloseTo(0, 5);
+    expect(results[1].score).toBeCloseTo(1 - Math.SQRT1_2, 5);
+  }
+
   async shouldCombineFilterWithVectorSort() {
     await this.querier.insertMany(VectorItem, [
       { name: 'keep-close', vec: [1, 0, 0] },

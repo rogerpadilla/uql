@@ -94,6 +94,16 @@ describe('parseQueryParams', () => {
     it('coerces NaN for non-numeric $limit', () => {
       expect(parseQueryParams({ $limit: 'DROP TABLE' }).$limit).toBeNaN();
     });
+
+    // `$candidates` is spelled into a `SET`, not bound, so the wire has to hand the dialect a number
+    // for its own check to mean anything. Unlike `$lock`, it is allowed over HTTP.
+    it('coerces valid numeric strings for $candidates', () => {
+      expect(parseQueryParams({ $candidates: '200' }).$candidates).toBe(200);
+    });
+
+    it('coerces NaN for non-numeric $candidates', () => {
+      expect(parseQueryParams({ $candidates: '1; DROP TABLE users' }).$candidates).toBeNaN();
+    });
   });
 
   describe('boolean coercion defense', () => {

@@ -1,5 +1,5 @@
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { VectorDistance } from '../type/index.js';
+import type { VectorDistance, VectorMetric } from '../type/index.js';
 
 /**
  * SQLite Dialect specialization for the `@libsql/client` driver.
@@ -16,8 +16,8 @@ export class LibsqlDialect extends SqliteDialect {
    * engine (see `TursoDialect`) and no libSQL build has an L1 metric. Both raise the same
    * "does not support vector distance metric" error as any other unsupported metric.
    */
-  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
-    ['cosine', 'vector_distance_cos'],
-    ['l2', 'vector_distance_l2'],
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+    ['cosine', { fn: 'vector_distance_cos' }],
+    ['l2', { fn: 'vector_distance_l2' }],
   ]);
 }

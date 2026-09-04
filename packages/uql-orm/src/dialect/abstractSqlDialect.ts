@@ -36,6 +36,8 @@ import {
   type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
+  type QueryVectorNear,
+  type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOperatorMap,
@@ -49,6 +51,7 @@ import {
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
+  VECTOR_QUERY_KEYS,
 } from '../type/index.js';
 import {
   asSelectMap,
@@ -625,6 +628,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ['$lte', ' <= '],
   ]);
 
+  /** What a `$near` says about the search itself; everything else in it is a bound. */
+  private static readonly VECTOR_QUERY_KEYS: ReadonlySet<string> = new Set<string>(VECTOR_QUERY_KEYS);
+
+  /**
+   * The runtime half of {@link QueryVectorNear}'s bounds, derived from the map above rather than
+   * spelled again: both are `QueryOrderedOp`, so `$near` can never accept a comparison the renderer
+   * below has no operator for.
+   */
+  private static readonly NEAR_BOUND_OPS: ReadonlySet<string> = new Set<string>([
+    ...AbstractSqlDialect.COMPARE_OP_MAP.keys(),
+    '$between',
+  ]);
+
   /**
    * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.
    * Each case-sensitive operator is paired here with the `$i` twin that shares its pattern, so the
@@ -729,6 +745,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         break;
       case '$elemMatch':
         ctx.append(this.jsonElemMatch(ctx, field, val as Record<string, unknown>));
+        break;
+      case '$near':
+        this.compareVectorNear(ctx, getMeta(entity), key as string, val as QueryVectorNear);
         break;
       default:
         throw TypeError(`unknown operator: ${op}`);
@@ -2000,8 +2019,38 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
+   * `<expr> <op> <value>` for each operator, AND-joined and parenthesized when there is more than
+   * one. `exprFn` is re-run per operator because what it appends is an expression, not a column:
+   * a `WHERE` has no output alias to refer back to, so the only way to compare it twice is to spell
+   * it twice. Shared by `$size`, which counts, and `$near`, which measures a distance.
+   */
+  private buildExprComparison(
+    ctx: QueryContext,
+    exprFn: () => void,
+    ops: Record<string, unknown>,
+    appendOp: (op: string, val: unknown) => void,
+  ): void {
+    const entries = Object.entries(ops).filter(([, v]) => v !== undefined);
+
+    if (entries.length > 1) {
+      ctx.append('(');
+    }
+
+    entries.forEach(([op, val], index) => {
+      if (index > 0) {
+        ctx.append(' AND ');
+      }
+      exprFn();
+      appendOp(op, val);
+    });
+
+    if (entries.length > 1) {
+      ctx.append(')');
+    }
+  }
+
+  /**
    * Build a complete `$size` comparison expression.
-   * Handles both single and multiple comparison operators by repeating the size expression.
    * @param sizeExprFn - function that appends the size expression to ctx (e.g. `jsonb_array_length("col")`)
    */
   protected buildSizeComparison(
@@ -2015,24 +2064,45 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       ctx.addValue(sizeVal);
       return;
     }
+    this.buildExprComparison(ctx, sizeExprFn, sizeVal, (op, val) => this.appendSizeOp(ctx, op, val));
+  }
 
-    const entries = Object.entries(sizeVal).filter(([, v]) => v !== undefined);
-
-    if (entries.length > 1) {
-      ctx.append('(');
-    }
-
-    entries.forEach(([op, val], index) => {
-      if (index > 0) {
-        ctx.append(' AND ');
+  /**
+   * `<distance expr> <op> ?` - the `$where` half of vector search, where `$sort` is the ranking half.
+   *
+   * The bounds are validated here rather than left to the shared renderer, which also knows `$like`
+   * and `$in`; and `$eq`/`$ne` are absent on purpose, since a distance is a float. `/http` casts
+   * client JSON straight to `Query`, so an unknown key has to be refused rather than ignored.
+   */
+  protected compareVectorNear<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, near: QueryVectorNear): void {
+    const bounds: Record<string, unknown> = {};
+    for (const [op, val] of Object.entries(near)) {
+      if (AbstractSqlDialect.VECTOR_QUERY_KEYS.has(op) || val === undefined) {
+        continue;
       }
-      sizeExprFn();
-      this.appendSizeOp(ctx, op, val);
-    });
-
-    if (entries.length > 1) {
-      ctx.append(')');
+      if (!AbstractSqlDialect.NEAR_BOUND_OPS.has(op)) {
+        throw TypeError(`unsupported $near bound: ${op}`);
+      }
+      bounds[op] = val;
     }
+    if (!hasKeys(bounds)) {
+      const boundOps = [...AbstractSqlDialect.NEAR_BOUND_OPS].join(', ');
+      throw TypeError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
+    }
+    // Required by the type, so this only fires for a query that never met it: `/http` casts client
+    // JSON straight to `Query`. A `$near` never borrows the `$sort`'s vector, which is what keeps the
+    // predicate meaning the same thing in a `count`, or in an entity filter merged into a `$where`.
+    const { $vector, $distance } = near;
+    if (!$vector) {
+      throw TypeError(`$near on '${key}' needs its own $vector`);
+    }
+    const search: QueryVectorSearch = { $vector, $distance };
+    this.buildExprComparison(
+      ctx,
+      () => this.appendVectorSort(ctx, meta, key, search),
+      bounds,
+      (op, val) => this.appendOperatorCondition(ctx, '', op, val),
+    );
   }
 
   /** The runtime half of {@link QuerySizeComparisonOps}: what a count can sensibly be compared with. */

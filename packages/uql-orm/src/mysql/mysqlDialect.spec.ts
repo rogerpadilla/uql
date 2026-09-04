@@ -49,7 +49,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
           $limit: 10,
         }),
       ),
-    ).toThrow('mysql does not support vector similarity sort');
+    ).toThrow('mysql does not support vector similarity search');
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {

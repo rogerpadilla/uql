@@ -82,4 +82,26 @@ describe('MariaDB vector index', () => {
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
   });
+
+  /**
+   * `$candidates` prefixes the SELECT with `SET STATEMENT mhnsw_ef_search=N FOR`, which needs no
+   * transaction and cannot leak to the next query on this pooled connection. Only the server can say
+   * the variable exists and that the prefix parses ahead of a SELECT this shape.
+   */
+  it('runs a tuned vector search through SET STATEMENT', async () => {
+    await new Migrator(pool, { entities: [MariaVectorIndexed] }).autoSync({ logging: false });
+    await pool.insertMany(MariaVectorIndexed, [{ vec: [0, 1, 0] }, { vec: [1, 0, 0] }]);
+
+    const rows = await pool.findMany(MariaVectorIndexed, {
+      $select: { vec: true },
+      $sort: { vec: { $vector: [0, 1, 0] } },
+      $limit: 2,
+      $candidates: 40,
+    });
+
+    expect(rows.map((row) => row.vec)).toEqual([
+      [0, 1, 0],
+      [1, 0, 0],
+    ]);
+  });
 });

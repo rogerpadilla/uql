@@ -47,6 +47,18 @@ export async function countSettlesAPageLikeAWrite(querier: Querier) {
   await querier.count(Member, { $lock: true });
 }
 
+/**
+ * `$candidates` tunes the index behind a vector search, and a vector search only ranks the rows the
+ * statement itself returns - so like `$lock` it is statement-level, and a populated relation's own
+ * query has nothing to tune.
+ */
+export async function candidatesIsStatementLevel(querier: Querier) {
+  await querier.findMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } }, $limit: 10, $candidates: 200 });
+
+  // @ts-expect-error a relation's rows are assembled after the ranking, so there is no index to tune
+  await querier.findMany(Member, { $populate: { team: { $candidates: 200 } } });
+}
+
 /** `exists` caps the count itself, so it takes the filter alone: no page of its own to set. */
 export async function existsTakesTheFilterAlone(querier: Querier) {
   await querier.exists(Member);

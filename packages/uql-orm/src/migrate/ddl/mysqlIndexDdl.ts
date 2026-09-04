@@ -2,7 +2,7 @@ import { jsonPath } from '../../dialect/jsonSql.js';
 import { MARIA_VECTOR_METRICS } from '../../maria/mariaVectorMetrics.js';
 import type { IndexType } from '../../schema/types.js';
 import type { IndexFeature, IndexJsonArray, IndexSchema } from '../../type/index.js';
-import { isVectorIndexType } from '../../type/vector.js';
+import { isVectorIndexType, unsupportedVectorMetric } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
 /**
@@ -87,9 +87,7 @@ export class MariaIndexDdl extends MysqlLikeIndexDdl {
     if (index.distance) {
       const metric = MARIA_VECTOR_METRICS.get(index.distance);
       if (!metric) {
-        throw new TypeError(
-          `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
-        );
+        throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
       }
       tuning += ` DISTANCE=${metric}`;
     }

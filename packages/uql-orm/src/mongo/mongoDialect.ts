@@ -3,7 +3,6 @@ import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { COUNT_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
 import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
 import { getMeta } from '../entity/index.js';
-import type { IndexType } from '../schema/types.js';
 import type {
   DialectFeatures,
   EntityData,
@@ -41,6 +40,8 @@ import {
   entityName,
   fillOnFields,
   filterFieldKeys,
+  findVectorIndex,
+  findVectorSort,
   getKeys,
   getRelationRequestSummary,
   hasKeys,
@@ -107,8 +108,6 @@ export class MongoDialect extends AbstractDialect {
   override readonly insertIdSource = 'returning';
 
   private static readonly ID_KEY = '_id';
-  private static readonly VECTOR_INDEX_TYPES = new Set<IndexType>(['vectorSearch', 'hnsw', 'ivfflat', 'vector']);
-
   /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
   private static readonly MAX_NUM_CANDIDATES = 10_000;
 
@@ -467,6 +466,18 @@ export class MongoDialect extends AbstractDialect {
         case '$text':
           result['$text'] = { $search: val };
           break;
+        case '$near':
+          // Atlas has no distance operator. The only threshold it offers is a `$match` on
+          // `{$meta:'vectorSearchScore'}`, which is a *similarity* on a scale set by the index's own
+          // `similarity` - and that lives in the Atlas index definition, which UQL neither emits nor
+          // reads (the same reason `$distance` is index-defined for `$text` above). Converting a
+          // distance to that scale would mean guessing which metric produced the score, and guessing
+          // wrong filters the wrong rows silently. So this refuses, the way an unsupported
+          // `DISTANCE=` does rather than defaulting.
+          throw new TypeError(
+            '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
+              "Project the score with $sort's $project and filter on it instead.",
+          );
         default:
           result[op] = val;
           break;
@@ -1190,23 +1201,21 @@ export class MongoDialect extends AbstractDialect {
    * Returns `undefined` if no vector sort is present.
    */
   extractVectorSort<E extends Document>(sort: QuerySortMap<E> | undefined): ExtractedVectorSort<E> | undefined {
-    if (!sort) return undefined;
-    let vectorKey: string | undefined;
-    let vectorSearch: QueryVectorSearch | undefined;
-    const regularSort = {} as QuerySortMap<E>;
-
-    for (const [key, value] of Object.entries(sort)) {
-      if (isVectorSearch(value)) {
-        vectorKey = key;
-        vectorSearch = value;
-      } else {
-        (regularSort as Record<string, unknown>)[key] = value;
+    const found = sort && findVectorSort(sort);
+    if (!found) {
+      return undefined;
+    }
+    // The remaining entries order the rows the vector stage already picked, so they stay a `$sort`.
+    // Copied in one pass rather than `entries().filter().fromEntries()`, which walks the map three
+    // times over. Every key of the map is optional, so dropping one leaves a valid map - which
+    // neither `Omit` nor a computed-key rest can say over a mapped type with no index signature.
+    const regularSort = {} as Record<string, unknown>;
+    for (const key of getKeys(sort)) {
+      if (key !== found.key) {
+        regularSort[key] = sort[key];
       }
     }
-
-    if (!vectorKey || !vectorSearch) return undefined;
-
-    return { vectorKey, vectorSearch, regularSort };
+    return { vectorKey: found.key, vectorSearch: found.search, regularSort: regularSort as QuerySortMap<E> };
   }
 
   /**
@@ -1220,6 +1229,7 @@ export class MongoDialect extends AbstractDialect {
     where: QueryWhere<E> | undefined,
     limit: number,
     opts?: QueryOptions,
+    candidates?: number,
   ): Record<string, unknown> {
     const meta = getMeta(entity);
     const field = meta.fields[key];
@@ -1229,10 +1239,7 @@ export class MongoDialect extends AbstractDialect {
     const colName = this.resolveColumnName(key, field);
 
     // Resolve index name from @Index metadata, or fall back to convention
-    const indexMeta = meta.indexes?.find(
-      (idx) => idx.columns.some((entry) => entry.column === key) && MongoDialect.VECTOR_INDEX_TYPES.has(idx.type!),
-    );
-    const indexName = indexMeta?.name ?? `${colName}_index`;
+    const indexName = findVectorIndex(meta, key)?.name ?? `${colName}_index`;
 
     if (!limit) {
       throw new TypeError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);
@@ -1242,8 +1249,9 @@ export class MongoDialect extends AbstractDialect {
       index: indexName,
       path: colName,
       queryVector: [...search.$vector],
-      // Atlas caps `numCandidates` at 10000 and wants roughly 10x the limit below that.
-      numCandidates: Math.min(limit * 10, MongoDialect.MAX_NUM_CANDIDATES),
+      // `$candidates` is the caller's own budget; the fallback is 10x the limit, which is what Atlas
+      // suggests as a floor. Either way it is clamped: Atlas rejects a stage asking for more.
+      numCandidates: Math.min(candidates ?? limit * 10, MongoDialect.MAX_NUM_CANDIDATES),
       limit,
     };
 

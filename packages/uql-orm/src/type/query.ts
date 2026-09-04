@@ -291,6 +291,19 @@ export type Query<E> = {
    */
   $lock?: QueryLock;
 
+  /**
+   * how many candidates an approximate-nearest-neighbour index explores before ranking, for a vector
+   * search. Higher trades speed for recall; the default is whatever the engine's own is, which is
+   * tuned for speed. Ignored where the search is exact (SQLite, libSQL and Turso scan every row) and
+   * where the field carries no ANN index, since there is nothing to widen.
+   *
+   * The units are the index's, not UQL's, so the number is not comparable across index types: it
+   * becomes `hnsw.ef_search` or `ivfflat.probes` on Postgres, `mhnsw_ef_search` on MariaDB, and
+   * `numCandidates` on MongoDB Atlas. On Postgres it needs an open transaction, since a `SET LOCAL`
+   * outside one applies to nothing.
+   */
+  $candidates?: number;
+
   // `$where`, `$skip` and `$limit` are declared here rather than intersected in from
   // {@link QueryFilter} and {@link QueryPager}: an assignability check against an intersection is
   // repeated per constituent, and every query in a consuming codebase pays that. The two shapes are
@@ -337,6 +350,13 @@ export const QUERY_OBJECT_CLAUSES = [
 export const QUERY_ROOT_OBJECT_CLAUSES = ['$count'] as const satisfies readonly (keyof Query<unknown>)[];
 
 export const QUERY_NUMBER_CLAUSES = ['$skip', '$limit'] as const satisfies readonly (keyof Query<unknown>)[];
+
+/**
+ * Number clauses only the statement itself takes - the numeric mirror of {@link QUERY_ROOT_OBJECT_CLAUSES}.
+ * `$candidates` tunes the index behind a vector search, and a vector search only ever ranks the rows
+ * the statement returns, so a relation's own query has nothing to tune.
+ */
+export const QUERY_ROOT_NUMBER_CLAUSES = ['$candidates'] as const satisfies readonly (keyof Query<unknown>)[];
 
 export const QUERY_BOOLEAN_CLAUSES = ['$distinct'] as const satisfies readonly (keyof Query<unknown>)[];
 

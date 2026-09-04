@@ -115,6 +115,30 @@ export async function whereOperatorGating() {
   // compile time - union excess-property checking accepts keys from either union arm. The
   // dialect's exact-shape runtime check covers it.
 
+  // `$near` filters by distance where `$sort`'s `$vector` ranks by it, and is gated to vector fields
+  // the same way. Without its own arm in `QueryAllowedOp` it would fall into the common bucket and
+  // be offered on every field, `active: { $near: ... }` included.
+  await querier.findMany(Person, { $where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } });
+  await querier.findMany(Person, {
+    $where: { embedding: { $near: { $vector: [1, 2, 3], $between: [0.1, 0.5] } } },
+  });
+  await querier.findMany(Person, {
+    $where: { embedding: { $near: { $vector: [1, 2, 3], $distance: 'l2', $lt: 0.35 } } },
+  });
+  // @ts-expect-error $near requires a vector field, not a string
+  await querier.findMany(Person, { $where: { name: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } });
+  // @ts-expect-error $near requires a vector field, not a boolean
+  await querier.findMany(Person, { $where: { active: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } });
+  // Each clause states its own search: a `$near` never borrows the `$sort`'s vector, even when there is
+  // one on the same field. That is what keeps the predicate meaning the same thing in a `count`, or in
+  // an entity filter merged into someone else's `$where`.
+  // @ts-expect-error a $near carries its own query vector
+  await querier.findMany(Person, { $where: { embedding: { $near: { $lt: 0.35 } } } });
+  // @ts-expect-error a distance is a float, so equality against one is never meant
+  await querier.findMany(Person, { $where: { embedding: { $near: { $vector: [1, 2, 3], $eq: 0.35 } } } });
+  // @ts-expect-error naming the distance is `$sort`'s job; `$near` only filters
+  await querier.findMany(Person, { $where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 1, $project: 's' } } } });
+
   // Vector search sorts only on number[] fields, and only on the queried entity: it ranks the rows
   // the statement returns, so a relation of theirs has nothing to rank.
   await querier.findMany(Person, { $sort: { embedding: { $vector: [1, 2, 3] }, name: 'asc' } });

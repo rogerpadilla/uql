@@ -1,7 +1,7 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryContext, Type, VectorDistance } from '../type/index.js';
+import type { QueryContext, Type, VectorDistance, VectorOperatorMetric } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -21,7 +21,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
   // list under "Known limitations": https://www.cockroachlabs.com/docs/stable/vector-indexes -
   // tracked upstream at https://github.com/cockroachdb/cockroach/issues/147839. Re-check that issue
   // before adding `l1` here; it is omitted on purpose, not an oversight.
-  override readonly vectorMetrics: ReadonlyMap<VectorDistance, { op: string; opsSuffix: string }> = new Map([
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorOperatorMetric> = new Map([
     ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
     ['l2', { op: '<->', opsSuffix: 'l2' }],
     ['inner', { op: '<#>', opsSuffix: 'ip' }],

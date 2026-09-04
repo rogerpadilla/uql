@@ -1,16 +1,19 @@
+import type { IndexType } from '../schema/types.js';
 import {
   type DialectFeatures,
   type EntityMeta,
   type FieldOptions,
   type JsonColumnType,
+  type Query,
   type QueryContext,
   QueryRaw,
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
-  type QueryVectorSearch,
   type Type,
   type VectorDistance,
+  type VectorOperatorMetric,
 } from '../type/index.js';
+import { hasVectorNear } from '../util/dialect.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS } from './aliases.js';
@@ -70,12 +73,45 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * place so a dialect cannot end up with the operator but not the opclass. The key set is the single
    * source of truth for which metrics the dialect supports at all: CockroachDB narrows it to three.
    */
-  readonly vectorMetrics: ReadonlyMap<VectorDistance, { op: string; opsSuffix: string }> = new Map([
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorOperatorMetric> = new Map([
     ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
     ['l2', { op: '<->', opsSuffix: 'l2' }],
     ['inner', { op: '<#>', opsSuffix: 'ip' }],
     ['l1', { op: '<+>', opsSuffix: 'l1' }],
   ]);
+
+  /** `SET LOCAL` applies to the enclosing transaction and to nothing at all without one. */
+  override readonly vectorTuningNeedsTransaction = true;
+
+  /**
+   * The GUC each pgvector index type reads for "how much of the index to explore". They are not the
+   * same quantity - `ef_search` is a candidate-list size, `probes` a count of lists - which is why
+   * `$candidates` is documented in the index's own units rather than as a portable number.
+   */
+  private static readonly ANN_SETTINGS: ReadonlyMap<IndexType, string> = new Map<IndexType, string>([
+    ['hnsw', 'hnsw.ef_search'],
+    ['ivfflat', 'ivfflat.probes'],
+  ]);
+
+  /**
+   * `SET LOCAL hnsw.ef_search = N`, plus `hnsw.iterative_scan` when the query also filters by
+   * distance. Without iterative scan, HNSW returns its candidate list and the predicate then removes
+   * from it, so a `$near` can hand back fewer rows than qualify - the recall bug `$candidates`
+   * exists to answer. `strict_order`, never `relaxed_order`: the latter returns rows out of distance
+   * order, which would quietly contradict the `ORDER BY` the caller asked for.
+   */
+  override vectorTuningStatements<E>(meta: EntityMeta<E>, q: Query<E>): readonly string[] {
+    const indexType = this.tunedVectorIndex(meta, q)?.type;
+    const setting = indexType ? PgLikeSqlDialect.ANN_SETTINGS.get(indexType) : undefined;
+    if (!setting) {
+      return [];
+    }
+    const statements = [`SET LOCAL ${setting} = ${q.$candidates}`];
+    if (indexType === 'hnsw' && hasVectorNear(q.$where)) {
+      statements.push('SET LOCAL hnsw.iterative_scan = strict_order');
+    }
+    return statements;
+  }
 
   override normalizeValue(value: unknown): unknown {
     if (value != null && typeof value === 'object' && Array.isArray(value)) {
@@ -222,22 +258,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const json = JSON.stringify(value);
     const ph = this.addValue(ctx.values, json);
     return this.features.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
-  }
-
-  /** Emit a pgvector-style distance expression: `"col" <op> $N::<vectorType>`. */
-  protected override appendVectorSort<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-  ): void {
-    const { colName, distance, field } = this.resolveVectorSortParams(meta, key, search);
-    const metric = this.vectorMetrics.get(distance);
-    if (!metric) {
-      throw new TypeError(`${this.dialectName} does not support vector distance metric: ${distance}`);
-    }
-    ctx.append(`${this.escapeId(colName)} ${metric.op} `);
-    this.appendVectorValue(ctx, search.$vector, field);
   }
 }
 

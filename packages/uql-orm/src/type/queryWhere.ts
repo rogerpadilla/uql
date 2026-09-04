@@ -1,6 +1,7 @@
 import type { FieldKey, IdValue, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
+import type { QueryVectorQuery } from './vector.js';
 
 /**
  * options for full-text-search operator.
@@ -99,6 +100,35 @@ export type QueryNegateOp = keyof Pick<QueryWhereRootOperator<unknown>, '$not' |
  */
 export type QuerySizeComparisonOps = {
   [K in QueryHavingOp | '$between']?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
+};
+
+/**
+ * Filter by distance to a query vector: `$where`'s counterpart to `$sort`'s ranking, so "the closest
+ * ten" and "everything closer than 0.35" stay separate asks.
+ *
+ * Bounded by {@link QueryOrderedOp} - what {@link QuerySizeComparisonOps} ranges over, minus
+ * `$eq`/`$ne`. A distance is a float, so exact equality against one is a bug every time, where
+ * `$size` compares an integer `COUNT`. No `$project` either: naming the distance is `$sort`'s job,
+ * since the `SELECT` list is built from `$sort` alone and a `$near` nested inside an `$or` has no
+ * business projecting a column.
+ *
+ * `$distance` is here for the same reason `$sort` has it: each clause states its own search
+ * completely, so neither depends on the other. Omitted, it falls back to the field's declared metric,
+ * which is where the metric belongs - beside the index it has to match. Naming a different one per
+ * query mostly buys a full scan, since an ANN index is built for exactly one operator class.
+ *
+ * `$vector` is required, and repeating it beside a `$sort` that ranks by the same field is the point:
+ * every other `$where` operator means the same thing wherever it appears, and inheriting one from a
+ * sibling clause would make this the first whose validity depends on what else the query contains -
+ * unfixable in the type, and carried into merged entity filters and `/http` payloads alike. Naming
+ * the vector in a `const` is what removes the repetition, at the call site where it belongs.
+ *
+ * A `$near` carrying no bound is a `WHERE` that is always true. The dialect rejects that rather than
+ * the type: `/http` casts client JSON straight to `Query`, so the check has to exist there anyway,
+ * and an "at least one of these five" union would cost every caller worse errors for a second copy.
+ */
+export type QueryVectorNear = QueryVectorQuery & {
+  [K in QueryOrderedOp]?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
 };
 
 export type QueryWhereFieldOperatorMap<T> = {
@@ -214,6 +244,12 @@ export type QueryWhereFieldOperatorMap<T> = {
     : NonNullable<T> extends readonly (infer U)[]
       ? QueryWhereElemMatch<U>
       : never;
+  /**
+   * whether a vector is within a given distance of the query vector. `$sort` ranks by distance;
+   * this filters by it, so "the closest ten" and "everything closer than 0.35" are separate asks.
+   * @example { embedding: { $near: { $vector: queryVec, $lt: 0.35 } } }
+   */
+  $near?: QueryVectorNear;
 };
 
 /**
@@ -267,9 +303,22 @@ type QueryArrayOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$all' | '$s
 type QueryOrderedOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$between'>;
 
 /**
- * Operators applicable to every field type: equality, membership, negation, and null checks.
+ * Vector-only operators. `Pick`'s constraint ties this back to {@link QueryWhereFieldOperatorMap}
+ * so a rename there breaks this union at compile time.
  */
-type QueryCommonOp = Exclude<keyof QueryWhereFieldOperatorMap<unknown>, QueryStringOp | QueryArrayOp | QueryOrderedOp>;
+type QueryVectorOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$near'>;
+
+/**
+ * Operators applicable to every field type: equality, membership, negation, and null checks.
+ *
+ * @remarks This is a subtraction, not a list, so an operator added to
+ * {@link QueryWhereFieldOperatorMap} without also being classified above lands here and is offered
+ * on every field - `$near` on a `boolean`, say. Classify first, then add.
+ */
+type QueryCommonOp = Exclude<
+  keyof QueryWhereFieldOperatorMap<unknown>,
+  QueryStringOp | QueryArrayOp | QueryOrderedOp | QueryVectorOp
+>;
 
 /**
  * Operator keys applicable to a field of type `T`. Brackets prevent union distribution so an
@@ -279,6 +328,7 @@ type QueryAllowedOp<T> =
   | QueryCommonOp
   | ([NonNullable<T>] extends [QueryComparableScalar] ? QueryOrderedOp : never)
   | ([NonNullable<T>] extends [string] ? QueryStringOp : never)
+  | ([NonNullable<T>] extends [readonly number[] | Uint8Array] ? QueryVectorOp : never)
   | (IsMany<T> extends true ? QueryArrayOp : never);
 
 /**

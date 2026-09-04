@@ -1,7 +1,9 @@
 import { getContext, UqlSecurityError } from '../context/context.js';
+import type { IndexType } from '../schema/types.js';
 import {
   type CascadeType,
   type EntityData,
+  type EntityIndexMeta,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -23,6 +25,7 @@ import {
   type QuerySelect,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
+  type QuerySortMap,
   type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereMap,
@@ -31,6 +34,7 @@ import {
   SOFT_DELETE_FILTER,
   type UqlContext,
 } from '../type/index.js';
+import { VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { entityName, getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
@@ -230,6 +234,59 @@ export function normalizeScalarFieldSelection<E>(
 /** Type guard: checks whether a sort value is a vector similarity search. */
 export function isVectorSearch(value: unknown): value is QueryVectorSearch {
   return value !== null && typeof value === 'object' && '$vector' in (value as Record<string, unknown>);
+}
+
+/**
+ * The vector search a `$sort` carries, if it ranks by one. First entry wins when two fields are
+ * ranked at once - one scan for every dialect, so the SQL side and MongoDB cannot disagree about
+ * which, as they did when one took the first and the other the last.
+ */
+export function findVectorSort<E>(
+  sort: QuerySortMap<E> | undefined,
+): { key: string; search: QueryVectorSearch } | undefined {
+  for (const key of getKeys(sort ?? {})) {
+    const search = sort?.[key];
+    // The guard narrows here, where a `.find()` over entries would hand back an untyped tuple.
+    if (isVectorSearch(search)) {
+      return { key, search };
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Every index type that means "vector" to some engine: pgvector's two, the generic one MariaDB and
+ * CockroachDB share, and Atlas's. Wider than {@link VECTOR_INDEX_TYPES}, which is the set whose DDL
+ * depends on a distance metric - Atlas takes its metric from the index definition instead.
+ */
+const VECTOR_INDEX_MATCH: ReadonlySet<IndexType> = new Set<IndexType>([...VECTOR_INDEX_TYPES, 'vectorSearch']);
+
+/**
+ * The vector index declared on `key`, if any. Answers both "is there an ANN index to tune here" and
+ * "which kind", which decide the name Atlas is queried by and the setting Postgres is tuned with.
+ */
+export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityIndexMeta | undefined {
+  return meta.indexes?.find(
+    (index) => index.type !== undefined && VECTOR_INDEX_MATCH.has(index.type) && indexCoversColumn(index, key),
+  );
+}
+
+/**
+ * Whether a `$where` filters by vector distance anywhere in its tree, `$and`/`$or`/`$not` included.
+ * What tells Postgres that an HNSW scan needs to iterate rather than return one candidate list.
+ */
+export function hasVectorNear(where: unknown): boolean {
+  if (where === null || typeof where !== 'object') {
+    return false;
+  }
+  if (Array.isArray(where)) {
+    return where.some(hasVectorNear);
+  }
+  return Object.entries(where).some(([key, value]) => key === '$near' || hasVectorNear(value));
+}
+
+function indexCoversColumn(index: EntityIndexMeta, key: string): boolean {
+  return index.columns.some((entry) => !(entry instanceof QueryRaw) && entry.column === key);
 }
 
 /** `satisfies` ties this to {@link JsonUpdateOp}, so renaming an operator breaks it at compile time. */

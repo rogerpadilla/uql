@@ -1,5 +1,6 @@
 import type { PgLikeSqlDialect } from '../../dialect/pgLikeSqlDialect.js';
 import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/index.js';
+import { unsupportedVectorMetric } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
 /** `CREATE INDEX ... USING hnsw ("embedding" vector_cosine_ops) WITH (m = ...)`, pgvector's form. */
@@ -35,9 +36,7 @@ export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
     }
     const metric = this.dialect.vectorMetrics.get(index.distance);
     if (!metric) {
-      throw new TypeError(
-        `${this.dialect.dialectName} does not support vector distance metric: ${index.distance} (index "${index.name}")`,
-      );
+      throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
     }
     const vectorType = this.dialect.supportedVectorType(index.vectorType ?? 'vector');
     const opsClass = `${vectorType}_${metric.opsSuffix}_ops`;

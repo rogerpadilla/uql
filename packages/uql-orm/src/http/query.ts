@@ -4,6 +4,7 @@ import {
   QUERY_BOOLEAN_CLAUSES,
   QUERY_NUMBER_CLAUSES,
   QUERY_OBJECT_CLAUSES,
+  QUERY_ROOT_NUMBER_CLAUSES,
   QUERY_ROOT_OBJECT_CLAUSES,
 } from '../type/query.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
@@ -19,6 +20,7 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
   ...QUERY_OBJECT_CLAUSES,
   ...QUERY_ROOT_OBJECT_CLAUSES,
   ...QUERY_NUMBER_CLAUSES,
+  ...QUERY_ROOT_NUMBER_CLAUSES,
   ...QUERY_BOOLEAN_CLAUSES,
   'hardDelete',
   'count',
@@ -63,7 +65,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
   // A query string carries every value as text, so what decodes a clause is the shape its group
   // declares. `'false'` is the reason the boolean pass exists rather than the raw value being taken:
   // it is a non-empty string, so a `$distinct=false` would otherwise read as asking for one.
-  for (const key of QUERY_NUMBER_CLAUSES) {
+  for (const key of [...QUERY_NUMBER_CLAUSES, ...QUERY_ROOT_NUMBER_CLAUSES]) {
     if (query[key] !== undefined) {
       query[key] = Number(query[key]);
     }

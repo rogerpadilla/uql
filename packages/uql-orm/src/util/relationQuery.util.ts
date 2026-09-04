@@ -7,7 +7,12 @@ import type {
   RelationKey,
   RelationMeta,
 } from '../type/index.js';
-import { QUERY_BOOLEAN_CLAUSES, QUERY_NUMBER_CLAUSES, QUERY_OBJECT_CLAUSES } from '../type/query.js';
+import {
+  QUERY_BOOLEAN_CLAUSES,
+  QUERY_NUMBER_CLAUSES,
+  QUERY_OBJECT_CLAUSES,
+  QUERY_ROOT_NUMBER_CLAUSES,
+} from '../type/query.js';
 import { getKeys, someKey } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
@@ -107,9 +112,18 @@ export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopul
   return someKey(populate, (key) => !!populate[key] && key in meta.relations);
 }
 
-// `$lock` is statement-level, so it is not part of a relation query: `parseRelationQueryValue`
-// rejects it explicitly rather than letting it fall through as an unrecognized shape.
-export type RelationQuery<E extends object = object> = Except<Query<E>, '$lock'> & { $required?: boolean };
+// `$lock` and `$candidates` are statement-level, so they are not part of a relation query:
+// `parseRelationQueryValue` rejects them explicitly rather than letting one fall through as an
+// unrecognized shape.
+export type RelationQuery<E extends object = object> = Except<Query<E>, StatementOnlyClause> & {
+  $required?: boolean;
+};
+
+/** The clauses that describe the statement rather than what a query selects. */
+type StatementOnlyClause = '$lock' | '$candidates';
+
+/** Their runtime half, so the check below cannot drift from the type above. */
+const STATEMENT_ONLY_CLAUSES: readonly StatementOnlyClause[] = ['$lock', ...QUERY_ROOT_NUMBER_CLAUSES];
 
 // Taken from the clause groups declared beside `Query` itself, so a renamed clause fails to compile
 // here instead of quietly narrowing what a relation query accepts. `$required` is the one key that
@@ -137,10 +151,13 @@ export type ParsedRelationQuery<E extends object = object> = {
 export function parseRelationQueryValue<E extends object = object>(value: unknown): ParsedRelationQuery<E> {
   // Caught before the shape check so the message names the key, rather than reporting the whole
   // object as an unrecognized relation query value.
-  if (isRecord(value) && '$lock' in value) {
-    throw new TypeError(
-      "'$lock' applies to the whole statement, not to a populated relation. Move it to the top level of the query.",
-    );
+  if (isRecord(value)) {
+    const statementOnly = STATEMENT_ONLY_CLAUSES.find((clause) => clause in value);
+    if (statementOnly) {
+      throw new TypeError(
+        `'${statementOnly}' applies to the whole statement, not to a populated relation. Move it to the top level of the query.`,
+      );
+    }
   }
   if (isRelationQueryObject(value)) {
     return { query: value, required: value.$required === true, nested: true };

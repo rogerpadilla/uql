@@ -134,6 +134,34 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
+  /**
+   * Run the `SET`s that tune an ANN index for this query, and refuse the ones that would not apply.
+   *
+   * Same shape as {@link assertLockable} and for the same reason: a `SET LOCAL` outside a transaction
+   * is accepted, applies to nothing, and leaves the query running at the engine's default recall -
+   * correct SQL, silently untuned. Only the querier knows whether a transaction is open.
+   *
+   * The statements go through `internalRun`, sharing this querier's single connection with the query
+   * they precede; `SET LOCAL` then expires with the transaction, so nothing is left behind.
+   */
+  private async applyVectorTuning<E>(entity: Type<E>, q: Query<E>): Promise<void> {
+    // Resolved before the transaction check, so the refusal fires only where the tuning would have
+    // meant something: a query with no vector search, or on a field carrying no ANN index, has
+    // nothing to set and no reason to demand a transaction for it.
+    const statements = this.dialect.vectorTuningStatements(getMeta(entity), q);
+    if (!statements.length) {
+      return;
+    }
+    if (this.dialect.vectorTuningNeedsTransaction && !this.hasOpenTransaction) {
+      throw new TypeError(
+        `$candidates requires an open transaction on ${this.dialect.dialectName}; run the query inside pool.transaction(...)`,
+      );
+    }
+    for (const statement of statements) {
+      await this.internalRun(statement);
+    }
+  }
+
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     return this.hydrateRows(entity, q, await this.selectRows(entity, q, opts));
   }
@@ -193,6 +221,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     totalAlias?: string,
   ): Promise<RawRow[]> {
     this.assertLockable(entity, q);
+    // Guarded rather than awaited unconditionally, here and in the stream below: an `await` on this
+    // path defers a microtask on every read, which reorders the two statements `findManyAndCount`
+    // issues concurrently. Keep the guard at any new call site.
+    if (q.$candidates !== undefined) {
+      await this.applyVectorTuning(entity, q);
+    }
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts, totalAlias);
     return this.all<RawRow>(ctx.sql, ctx.values);
@@ -210,6 +244,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     this.assertLockable(entity, q);
+    // Guarded for the reason `selectRows` above spells out.
+    if (q.$candidates !== undefined) {
+      await this.applyVectorTuning(entity, q);
+    }
     const meta = getMeta(entity);
     const { toManyKeys } = getRelationRequestSummary(meta, q.$populate);
     if (toManyKeys.length) {

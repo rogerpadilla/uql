@@ -104,7 +104,7 @@ type ScalarTypeMap = Record<Exclude<TypeCategory, VectorCast>, string>;
 
 /**
  * pgvector is the only engine with three vector column types, so every other dialect maps all three
- * canonical categories onto the single type it does have (see {@link MULTI_VECTOR_TYPE_DIALECTS}, the
+ * canonical categories onto the single type it does have (see `hasNarrowVectorTypes` on the dialect, the
  * dialect-side half of the same fact).
  */
 function withVectorType(scalars: ScalarTypeMap, vector: string): Record<TypeCategory, string> {

@@ -1,7 +1,17 @@
 import { jsonPath } from '../dialect/jsonSql.js';
 import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { isVectorFieldType } from '../dialect/vectorCast.js';
-import type { DialectFeatures, FieldOptions, QueryContext, Type, VectorDistance } from '../type/index.js';
+import { getMeta } from '../entity/index.js';
+import type {
+  DialectFeatures,
+  FieldOptions,
+  Query,
+  QueryContext,
+  QueryOptions,
+  Type,
+  VectorDistance,
+  VectorMetric,
+} from '../type/index.js';
 import { MARIA_VECTOR_METRICS } from './mariaVectorMetrics.js';
 
 export class MariaDialect extends MysqlLikeSqlDialect {
@@ -58,8 +68,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /** `VEC_DISTANCE_COSINE`/`VEC_DISTANCE_EUCLIDEAN`, 11.7+: the metric's own name, uppercased. */
-  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map(
-    [...MARIA_VECTOR_METRICS].map(([metric, name]) => [metric, `VEC_DISTANCE_${name.toUpperCase()}`]),
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map(
+    [...MARIA_VECTOR_METRICS].map(([metric, name]) => [metric, { fn: `VEC_DISTANCE_${name.toUpperCase()}` }]),
   );
 
   /**
@@ -72,6 +82,21 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     ctx.append('VEC_FromText(');
     super.appendVectorValue(ctx, value);
     ctx.append(')');
+  }
+
+  /**
+   * `SET STATEMENT mhnsw_ef_search=N FOR SELECT ...` - MariaDB scopes a variable to one statement, so
+   * the tuning needs neither a transaction nor a restore afterwards, and cannot leak to the next
+   * query on this pooled connection. That is why it prefixes the SQL here instead of coming back
+   * from `vectorTuningStatements`, which is Postgres's `SET LOCAL` shape.
+   */
+  override find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string) {
+    // `$candidates` first: `getMeta` would otherwise be resolved on every read, to discover that
+    // almost none of them tune anything.
+    if (q.$candidates !== undefined && this.tunedVectorIndex(getMeta(entity), q)) {
+      ctx.append(`SET STATEMENT mhnsw_ef_search=${q.$candidates} FOR `);
+    }
+    super.find(ctx, entity, q, opts, totalAlias);
   }
 
   /** The reverse: selecting a `VECTOR` column raw yields that blob, so it is read back as text. */

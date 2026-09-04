@@ -11,6 +11,7 @@ import type {
   QueryTextSearchOptions,
   Type,
   VectorDistance,
+  VectorMetric,
 } from '../type/index.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
@@ -63,10 +64,10 @@ export class SqliteDialect extends AbstractSqlDialect {
    * loaded on the connection (see `Sqlite3QuerierPool`'s `extensions` option). libSQL and Turso ship
    * their own vector functions instead, so `LibsqlDialect` overrides this.
    */
-  protected override readonly vectorDistanceFns: ReadonlyMap<VectorDistance, string> = new Map([
-    ['cosine', 'vec_distance_cosine'],
-    ['l2', 'vec_distance_L2'],
-    ['l1', 'vec_distance_L1'],
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+    ['cosine', { fn: 'vec_distance_cosine' }],
+    ['l2', { fn: 'vec_distance_L2' }],
+    ['l1', { fn: 'vec_distance_L1' }],
   ]);
 
   /**

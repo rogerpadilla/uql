@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -158,6 +158,111 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     );
   });
 
+  it.each(supported)('should filter by %s distance', (metric) => {
+    const { sql, values } = find(VectorItem, {
+      $select: { id: true },
+      $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 0.35 } } },
+    });
+
+    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance(metric, ph(1))} < ${ph(2)}`);
+    expect(values).toEqual(['[1,2,3]', 0.35]);
+  });
+
+  // Two bounds means the distance is spelled twice: a WHERE has no output alias to point back at,
+  // so there is nothing to reuse the way `$project` lets ORDER BY reuse its own.
+  it('should repeat the expression for each bound', () => {
+    const { sql, values } = find(VectorItem, {
+      $select: { id: true },
+      $where: { vec: { $near: { $vector: [1, 2, 3], $gt: 0.1, $lte: 0.5 } } },
+    });
+
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
+        `WHERE (${distance('cosine', ph(1))} > ${ph(2)} AND ${distance('cosine', ph(3))} <= ${ph(4)})`,
+    );
+    expect(values).toEqual(['[1,2,3]', 0.1, '[1,2,3]', 0.5]);
+  });
+
+  it('should filter by a distance range', () => {
+    const { sql, values } = find(VectorItem, {
+      $select: { id: true },
+      $where: { vec: { $near: { $vector: [1, 2, 3], $between: [0.1, 0.5] } } },
+    });
+
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance('cosine', ph(1))} BETWEEN ${ph(2)} AND ${ph(3)}`,
+    );
+    expect(values).toEqual(['[1,2,3]', 0.1, 0.5]);
+  });
+
+  // The RAG shape: threshold in `$where`, ranking in `$sort`, both on the same field. This is what
+  // the docs used to do by over-fetching and filtering the rows in JavaScript.
+  it('should filter and rank in one statement', () => {
+    const { sql, values } = find(VectorItem, {
+      $select: { id: true },
+      $where: { name: 'docs', vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } },
+      $sort: { vec: { $vector: [1, 2, 3], $project: 'score' } },
+      $limit: 30,
+    });
+
+    expect(sql).toBe(
+      `SELECT ${q('id')}, ${distance('cosine', ph(1))} AS ${q('score')} FROM ${q('VectorItem')} ` +
+        `WHERE ${q('name')} = ${ph(2)} AND ${distance('cosine', ph(3))} < ${ph(4)} ` +
+        `ORDER BY ${q('score')} LIMIT 30`,
+    );
+    expect(values).toEqual(['[1,2,3]', 'docs', '[1,2,3]', 0.35]);
+  });
+
+  it("should take the field's own default metric for a predicate", () => {
+    const { sql } = find(L2Item, { $select: { id: true }, $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 1 } } } });
+
+    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('L2Item')} WHERE ${distance('l2', ph(1))} < ${ph(2)}`);
+  });
+
+  // A `$near` with only a vector is a WHERE that is always true, which is a silent no-op rather than
+  // the filter the caller asked for. `/http` casts client JSON straight to `Query`, so it gets here.
+  it('should reject a $near with no bound', () => {
+    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3] } } } })).toThrow(
+      "$near on 'vec' needs a bound",
+    );
+  });
+
+  it('should reject a bound that is not an ordering comparison', () => {
+    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } } as never)).toThrow(
+      'unsupported $near bound: $like',
+    );
+  });
+
+  // `$where` operators mean the same thing at any depth, so a predicate nested under a logical
+  // operator compiles like a top-level one - and the parenthesization is the surrounding clause's.
+  it('should compile inside a logical operator', () => {
+    const { sql, values } = find(VectorItem, {
+      $select: { id: true },
+      $where: { $or: [{ vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } }, { name: 'x' }] },
+    });
+
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
+        `WHERE ${distance('cosine', ph(1))} < ${ph(2)} OR ${q('name')} = ${ph(3)}`,
+    );
+    expect(values).toEqual(['[1,2,3]', 0.35, 'x']);
+  });
+
+  it('should compile under a negation', () => {
+    const { sql } = find(VectorItem, {
+      $select: { id: true },
+      $where: { vec: { $not: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } },
+    });
+
+    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE NOT (${distance('cosine', ph(1))} < ${ph(2)})`);
+  });
+
+  it.each(unsupported)('should reject a %s predicate', (metric) => {
+    expect(() =>
+      find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 1 } } } }),
+    ).toThrow(`does not support vector distance metric: ${metric}`);
+  });
+
   it.each(unsupported)('should reject %s', (metric) => {
     expect(() => find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: metric } } })).toThrow(
       `does not support vector distance metric: ${metric}`,
@@ -178,7 +283,7 @@ describe('dialects without vector search', () => {
     const dialect = new MySqlDialect();
     const ctx = dialect.createContext();
     expect(() => dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3] } } })).toThrow(
-      'mysql does not support vector similarity sort',
+      'mysql does not support vector similarity search',
     );
   });
 
@@ -188,6 +293,17 @@ describe('dialects without vector search', () => {
     expect(() => dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3] } } })).toThrow(
       'Cloudflare D1 has no vector functions',
     );
+  });
+
+  it('should reject a $near predicate on the same dialects, through the same expression', () => {
+    const mysql = new MySqlDialect();
+    const d1 = new D1SqliteDialect();
+    const near = { $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 1 } } } };
+
+    expect(() => mysql.find(mysql.createContext(), VectorItem, near)).toThrow(
+      'mysql does not support vector similarity search',
+    );
+    expect(() => d1.find(d1.createContext(), VectorItem, near)).toThrow('Cloudflare D1 has no vector functions');
   });
 });
 
@@ -249,5 +365,133 @@ describe('vector $project', () => {
 
   it('accepts a name of its own', () => {
     expect(exec('score')).toContain('AS "score"');
+  });
+});
+
+/**
+ * `$candidates` widens an ANN index's search for one query. The knob is the index's own, so which
+ * statement it becomes depends on the index type declared on the field - and where there is no ANN
+ * index, or no vector search to rank, there is nothing to widen and nothing is emitted.
+ */
+@Entity({ name: 'HnswItem' })
+@Index(['vec'], { type: 'hnsw', distance: 'cosine' })
+class HnswItem {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+}
+
+@Entity({ name: 'IvfflatItem' })
+@Index(['vec'], { type: 'ivfflat', distance: 'cosine' })
+class IvfflatItem {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+}
+
+describe('vector query-time tuning', () => {
+  const pg = new PostgresDialect();
+  const rank = { $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10, $candidates: 200 };
+
+  it('sets the candidate list for an HNSW index', () => {
+    expect(pg.vectorTuningStatements(getMeta(HnswItem), rank)).toEqual(['SET LOCAL hnsw.ef_search = 200']);
+  });
+
+  it('sets the probe count for an IVFFlat index, which measures a different thing', () => {
+    expect(pg.vectorTuningStatements(getMeta(IvfflatItem), rank)).toEqual(['SET LOCAL ivfflat.probes = 200']);
+  });
+
+  /**
+   * Without iterative scan, HNSW hands back one candidate list and the predicate removes from it, so
+   * a bounded search can return fewer rows than qualify. `strict_order` keeps the rows in distance
+   * order, which `relaxed_order` would not - and the statement still orders by that distance.
+   */
+  it('adds iterative scan when the query also filters by distance', () => {
+    const bounded = { ...rank, $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } };
+
+    expect(pg.vectorTuningStatements(getMeta(HnswItem), bounded)).toEqual([
+      'SET LOCAL hnsw.ef_search = 200',
+      'SET LOCAL hnsw.iterative_scan = strict_order',
+    ]);
+  });
+
+  it('finds a $near nested inside a logical operator', () => {
+    const bounded = { ...rank, $where: { $or: [{ vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } }] } };
+
+    expect(pg.vectorTuningStatements(getMeta(HnswItem), bounded)).toHaveLength(2);
+  });
+
+  // Two ranked vector fields is ambiguous; the first wins. Pinned because the SQL side and MongoDB
+  // used to disagree here - one took the first entry and the other the last.
+  it('takes the first vector sort when more than one field is ranked', () => {
+    @Entity({ name: 'TwoVectorItem' })
+    @Index(['a'], { type: 'hnsw', distance: 'cosine' })
+    class TwoVectorItem {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) a!: number[];
+      @Field({ type: 'vector', dimensions: 3 }) b!: number[];
+    }
+
+    const tuned = pg.vectorTuningStatements(getMeta(TwoVectorItem), {
+      $sort: { a: { $vector: [1, 2, 3] }, b: { $vector: [4, 5, 6] } },
+      $candidates: 200,
+    });
+
+    expect(tuned).toEqual(['SET LOCAL hnsw.ef_search = 200']);
+  });
+
+  it('emits nothing for a field with no ANN index', () => {
+    expect(pg.vectorTuningStatements(getMeta(VectorItem), rank)).toEqual([]);
+  });
+
+  it('emits nothing without $candidates', () => {
+    expect(pg.vectorTuningStatements(getMeta(HnswItem), { $sort: { vec: { $vector: [1, 2, 3] } } })).toEqual([]);
+  });
+
+  // The ANN index is what ranks: pgvector reaches for HNSW on an `ORDER BY distance LIMIT`, so a
+  // query that never orders by distance would be setting a knob for a scan that does not use it.
+  it('emits nothing when the query does not rank by distance', () => {
+    expect(pg.vectorTuningStatements(getMeta(HnswItem), { $candidates: 200 })).toEqual([]);
+  });
+
+  /**
+   * The number is spelled into the statement, not bound - neither engine takes a placeholder in a
+   * `SET`. `/http` casts client JSON straight to `Query`, so anything can arrive here; `Number()`
+   * alone would turn `'abc'` into a `NaN` the server rejects with a message about nothing.
+   */
+  it.each([['abc'], ['1; DROP TABLE users'], [-5], [1.7], [0], [null], [Number.NaN]])(
+    'should refuse %p as a candidate count',
+    (candidates) => {
+      expect(() =>
+        pg.vectorTuningStatements(getMeta(HnswItem), { ...rank, $candidates: candidates as number }),
+      ).toThrow('$candidates must be a positive integer');
+    },
+  );
+
+  it('needs a transaction on Postgres and nowhere else', () => {
+    expect(pg.vectorTuningNeedsTransaction).toBe(true);
+    expect(new SqliteDialect().vectorTuningNeedsTransaction).toBe(false);
+    expect(new MariaDialect().vectorTuningNeedsTransaction).toBe(false);
+  });
+
+  // SQLite, libSQL and Turso compute every distance, so there is no candidate list to widen.
+  it('emits nothing where the search is exact', () => {
+    expect(new SqliteDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
+    expect(new TursoDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
+  });
+
+  /** MariaDB scopes the variable to the one statement, so it prefixes the SQL instead of preceding it. */
+  it('prefixes the statement on MariaDB rather than running a SET of its own', () => {
+    @Entity({ name: 'MariaVecItem' })
+    @Index(['vec'], { type: 'vector', distance: 'cosine' })
+    class MariaVecItem {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+    }
+    const maria = new MariaDialect();
+    const ctx = maria.createContext();
+
+    maria.find(ctx, MariaVecItem, rank);
+
+    expect(ctx.sql.startsWith('SET STATEMENT mhnsw_ef_search=200 FOR SELECT ')).toBe(true);
+    expect(maria.vectorTuningStatements(getMeta(MariaVecItem), rank)).toEqual([]);
   });
 });

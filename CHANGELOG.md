@@ -2,6 +2,23 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.39.0] - 2026-09-03
+
+**Vector search filters, not just ranks.** `$near` bounds the distance in `$where`, where `$sort` orders by it:
+
+```ts
+$where: { embedding: { $near: { $vector: queryVec, $lt: 0.35 } } },
+$sort: { embedding: { $vector: queryVec, $project: 'score' } },
+$candidates: 200,
+```
+
+Bounds are `$lt`/`$lte`/`$gt`/`$gte`/`$between`, at least one; no `$eq`, a distance is a float. Each clause stands alone, so `$near` works in a `count` or `exists`, and you can filter by similarity while ordering by recency.
+
+- **`$candidates` sets ANN recall per query**, in the index's own units: `hnsw.ef_search`/`ivfflat.probes` on Postgres, `mhnsw_ef_search` on MariaDB, `numCandidates` on Atlas. Postgres needs an open transaction - a `SET LOCAL` outside one applies to nothing - and a `$near` over HNSW adds `iterative_scan = strict_order` so the scan fills its limit.
+- **`$near` throws on MongoDB**, which scores by index-defined similarity rather than distance. Project the score with `$project` and filter on that.
+- **Unsupported metrics throw `TypeError` everywhere**; MariaDB and the SQLite family threw a bare `Error`. Their `vectorDistanceFns` folded into `vectorMetrics`, one map per dialect.
+- Entry budgets, nothing newly reachable: root 26.4 KB gzipped (was 25.6), `./postgres` 23.7 KB (was 22.9).
+
 ## [0.38.0] - 2026-09-03
 
 **Indexes can go inside a JSON column**, declared the way the query reads them:

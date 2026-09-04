@@ -14,6 +14,21 @@ import type { IndexType } from '../schema/types.js';
 export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1';
 
 /**
+ * The vector and the metric: the half of a similarity search that names *what* distance to compute,
+ * shared by `$sort`'s ranking ({@link QueryVectorSearch}) and `$where`'s threshold
+ * ({@link QueryVectorNear}) so the two cannot describe the same distance differently.
+ */
+export interface QueryVectorQuery {
+  /** The query vector to compare against. */
+  readonly $vector: readonly number[];
+  /** Distance metric. Overrides entity-level default. Falls back to `'cosine'`. */
+  readonly $distance?: VectorDistance;
+}
+
+/** The keys that describe the search rather than bound it, so `$near`'s bounds are what is left. */
+export const VECTOR_QUERY_KEYS = ['$vector', '$distance'] as const satisfies readonly (keyof QueryVectorQuery)[];
+
+/**
  * Vector similarity search options - used inside `$sort` on vector fields.
  *
  * @example
@@ -24,11 +39,7 @@ export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1';
  * });
  * ```
  */
-export interface QueryVectorSearch {
-  /** The query vector to compare against. */
-  readonly $vector: readonly number[];
-  /** Distance metric. Overrides entity-level default. Falls back to `'cosine'`. */
-  readonly $distance?: VectorDistance;
+export interface QueryVectorSearch extends QueryVectorQuery {
   /** Project the computed distance as a named field in the result. */
   readonly $project?: string;
 }
@@ -43,6 +54,28 @@ export interface QueryVectorSearch {
  * ```
  */
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
+
+/**
+ * How one dialect spells one distance metric. Two shapes exist across engines - an infix operator
+ * (`"col" <=> $1`, pgvector) or a function call (`VEC_DISTANCE_COSINE(col, ?)`, MariaDB and the
+ * SQLite family) - so they are one discriminated map rather than two parallel ones. That is what
+ * lets a single `appendVectorSort` serve every engine, and makes the map's key set the one answer
+ * to "does this dialect have this metric".
+ *
+ * `opsSuffix` rides along on the operator form because pgvector's index operator class is named from
+ * the same metric (`vector_cosine_ops`): keeping them together is what stops a dialect from having
+ * the operator but not the class it indexes with.
+ */
+export type VectorMetric = { readonly op: string; readonly opsSuffix: string } | { readonly fn: string };
+
+/** The operator form, for the pgvector-family dialects whose index DDL also needs `opsSuffix`. */
+export type VectorOperatorMetric = Extract<VectorMetric, { op: string }>;
+
+/** Every dialect words this the same, and one of them used to throw a bare `Error` for it. */
+export function unsupportedVectorMetric(dialectName: string, distance: VectorDistance, indexName?: string): TypeError {
+  const where = indexName === undefined ? '' : ` (index "${indexName}")`;
+  return new TypeError(`${dialectName} does not support vector distance metric: ${distance}${where}`);
+}
 
 /**
  * Vector-specific tuning options shared by `@Index` decorator, entity metadata, and migration schema.
