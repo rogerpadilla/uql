@@ -1,8 +1,9 @@
 # Roadmap
 
-Next feature block. Groundwork first, so the features that depend on it stay small.
+Next feature block, in the order it should be built. Groundwork first, so the features that
+depend on it stay small.
 
-## 0. Foundational refactors
+## Foundational refactors
 
 | #   | Refactor                                                  | Unlocks                                      | State      |
 | :-- | :-------------------------------------------------------- | :------------------------------------------- | :--------- |
@@ -35,7 +36,7 @@ wait for a second kind, so the shape is derived rather than guessed.
 
 ---
 
-## 1. Composite primary keys
+## Composite primary keys
 
 ```ts
 @Id({ type: String }) transcriptChunkId?: UUID;
@@ -46,38 +47,7 @@ Depends on R1. `TableDefinition.primaryKey` already takes a list, so the DDL is 
 is relations, where `references` resolves to a single column. Reject composite + auto-increment:
 MySQL's `insertMany` id inference cannot serve it. The only outright blocker on this list.
 
-## 2. Check constraints
-
-```ts
-@Entity({ checks: [{ expression: raw`"spent" <= "balance"` }] }) // named ck_<table>_<position>
-```
-
-**Done:** authoring through `CREATE TABLE` on every SQL dialect. A bound value is refused, per R3.
-
-**Deliberately no diff.** A check is added with its table; changing one is a hand-written migration.
-The sync path was built and reverted: a check is SQL text, and a database reprints text from its
-parse tree (`CHECK ("balance" >= 0)` comes back as `CHECK ((balance >= (0)::numeric))`), so a diff
-could only ever match names - and only Postgres reads them back at all, so `missingChecks` cannot
-tell "none exist" from "cannot see them". Enums need none of this: SQLite lowers one to a
-column-level `CHECK (col IN (...))`.
-
-## 3. Enum fields
-
-```ts
-@Field({ type: String, enum: ['draft', 'paid', 'void'] as const })
-status?: 'draft' | 'paid' | 'void';
-```
-
-**Done.** The values are typed against the field's own union, and emitted as a column
-`CHECK (col IN (...))` on every SQL dialect.
-
-Deliberately not a native enum type. `CREATE TYPE` is a second schema object needing its own
-ordering, and Postgres's `ALTER TYPE ... ADD VALUE` is irreversible while removing a value recreates
-the type and rewrites every dependent column - the asymmetry that draws most of the complaints
-against both competitors. A column check has none of that: adding a value is an ordinary column
-change. `native: true` can be an opt-in later for anyone who wants the pg type's ordering.
-
-## 4. Views and materialized views
+## Views and materialized views
 
 ```ts
 export const WorkspaceUsage = defineView({
@@ -94,7 +64,7 @@ nothing is restated; writes are a compile error; the definition is the migration
 hidden in a migration file. `REFRESH ... CONCURRENTLY` on Postgres/CockroachDB, refused elsewhere
 rather than silently downgraded.
 
-## 5. Generated stored columns
+## Generated stored columns
 
 ```ts
 @Field({ type: String, virtual: raw`...`, stored: true }) fullName?: string;
@@ -105,7 +75,26 @@ trades disk for a real, **indexable** column, so it is a dial you flip after pro
 touching a call site. Drizzle makes these two unrelated APIs. Postgres 12+, MySQL 5.7+, MariaDB
 5.2+, SQLite 3.31+; Mongo refuses.
 
-## 6. Batching
+## Cursor pagination
+
+```ts
+await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after: cursor });
+```
+
+Depends on R6. A row-value comparison where available, an OR-chain elsewhere, a compound `$lt` on
+Mongo. **Throw when the sort is not total** (last key not a primary or unique key): a keyset page
+that silently skips or repeats rows under concurrent writes is worse than an error, and fail-closed
+matches how `security` filters behave.
+
+## Triggers
+
+Variability maintains ~20 counter columns via trigger functions written as raw SQL in migrations,
+invisible to `uql-migrate` diff and drift. Depends on R7. Make them **visible to the diff** first so
+drift is reported, before making them authorable.
+
+---
+
+## Batching
 
 ```ts
 const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 }), q.count(User)]);
@@ -125,53 +114,35 @@ So the honest shape is statement-level - `pool.batch([{ sql, values }, ...])` ov
 which guarantees the round trip but gives up the typing that makes the rest of the API worth using.
 Decide which of those is wanted before building either.
 
-## 7. Server-side prepared statements
+## Server-side prepared statements
 
 Opt-in per pool, **default off**: session-level prepared statements break transaction-mode poolers,
 which is currently advertised as a feature. Depends on R5 - the same query shape compiles to a
 byte-identical string, so that string is the cache key with no fingerprinting. `IN`-list arity and
 `insertMany` chunking would thrash the cache; cap it and skip variadic statements.
 
-## 8. Cursor pagination
-
-```ts
-await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after: cursor });
-```
-
-Depends on R6. A row-value comparison where available, an OR-chain elsewhere, a compound `$lt` on
-Mongo. **Throw when the sort is not total** (last key not a primary or unique key): a keyset page
-that silently skips or repeats rows under concurrent writes is worse than an error, and fail-closed
-matches how `security` filters behave.
-
-## 9. Triggers
-
-Variability maintains ~20 counter columns via trigger functions written as raw SQL in migrations,
-invisible to `uql-migrate` diff and drift. Depends on R7. Make them **visible to the diff** first so
-drift is reported, before making them authorable.
-
----
-
 ## Dependencies
 
 ```mermaid
 graph LR
-  R1[R1 IdKeys] --> F1[1 Composite PKs]
-  R2[R2 Capabilities] --> F4[4 Views]
-  R5[R5 compile split] --> F6[6 Batching]
-  R5 --> F7[7 Prepared]
-  R6[R6 Aliases] --> F8[8 Cursor]
-  R7[R7 Schema graph] --> F4
-  R7 --> F9[9 Triggers]
+  R1[R1 IdKeys] --> CompositePKs
+  R2[R2 Capabilities] --> Views
+  R7[R7 Schema graph] --> Views
+  R7 --> Triggers
+  R3[R3 Expression] --> GeneratedColumns
+  R6[R6 Aliases] --> CursorPagination
+  R5[R5 compile split] --> Batching
+  R5 --> PreparedStatements
 ```
 
-## Order
+## Shipped
 
-1. **Composite PKs** (R1) - the one outright blocker. `meta.id` is a single string in 46 runtime
-   places across 11 files, so it wants a session of its own.
-2. **Views** (R2), then **generated stored columns**.
-3. **Cursor pagination** (R6), **triggers** (diff-visible first).
-4. **Batching** (R5), then **prepared statements**: both are round-trip optimizations with a narrow
-   benefit and driver-specific risk, and neither unblocks anything else.
+**Enum fields** and **check constraints** landed in 0.41.1; `raw` as a tagged template and the one
+expression type in 0.40.0. Two decisions from those worth not re-litigating:
 
-`$window` / `$whereWindow` sits outside this list and is the one feature that would let real
-applications delete their hand-written CTE queries. Depends on R6.
+- **A check is never diffed.** It is SQL text, and a database reprints text from its parse tree, so a
+  diff could only match names - and only PostgreSQL reports checks at all. A check is created with its
+  table; changing one is a hand-written migration. The sync path was built and reverted.
+- **An enum is a column check, not a native type.** `CREATE TYPE` is a second schema object needing
+  its own ordering, and Postgres's `ALTER TYPE ... ADD VALUE` is irreversible while removing a value
+  rewrites every dependent column. A column check makes adding a value an ordinary column change.
