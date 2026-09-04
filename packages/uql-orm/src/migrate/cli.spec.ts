@@ -8,8 +8,8 @@ import { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { QuerierPool } from '../type/index.js';
-import * as cli from './cli.js';
 import * as cliConfig from './cli-config.js';
+import * as cli from './cli.js';
 import type { Migrator } from './migrator.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 

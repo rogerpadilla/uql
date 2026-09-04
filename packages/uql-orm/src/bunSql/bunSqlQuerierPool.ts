@@ -14,9 +14,9 @@ import {
   normalizeRows,
 } from './bunSql.util.js';
 import { BunSqlCockroachDialect } from './bunSqlCockroachDialect.js';
-import { BunSqliteDialect } from './bunSqliteDialect.js';
 import { BunSqlPostgresDialect } from './bunSqlPostgresDialect.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
+import { BunSqliteDialect } from './bunSqliteDialect.js';
 
 type DialectConstructor = new (options: DialectOptions) => AbstractSqlDialect;
 

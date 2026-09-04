@@ -3,5 +3,10 @@
   "printWidth": 120,
   "singleQuote": true,
   "sortPackageJson": false,
+  "sortImports": {
+    "newlinesBetween": false,
+    "partitionByNewline": true,
+    "ignoreCase": false
+  },
   "ignorePatterns": ["CHANGELOG.md", "**/CHANGELOG.md"]
 }
