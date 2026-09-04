@@ -88,7 +88,7 @@ for (const entry of entries) {
 }
 
 const root = await import(pkg.name);
-for (const name of ['Entity', 'Field', 'Id', 'getMeta', 'defineEntity', 'PostgresDialect']) {
+for (const name of ['Entity', 'Field', 'Id', 'getMeta', 'defineEntity']) {
   if (!(name in root)) broken.push(`missing root export: ${name}`);
 }
 
@@ -97,7 +97,10 @@ class User {}
 root.defineEntity(User, {
   fields: { id: { type: Number, isId: true }, email: { type: String } },
 });
-const dialect = new root.PostgresDialect();
+// The dialects left the root entry in 0.38.0, and every entry but this family needs a driver peer
+// the smoke install deliberately does not have - so SQLite is the one that proves the code runs.
+const { SqliteDialect } = await import(`${pkg.name}/sqlite`);
+const dialect = new SqliteDialect();
 const ctx = dialect.createContext();
 dialect.find(ctx, User, {
   $select: { id: true, email: true },
@@ -105,7 +108,7 @@ dialect.find(ctx, User, {
   $limit: 10,
 });
 
-const expected = 'SELECT "id", "email" FROM "User" WHERE "email" LIKE $1 LIMIT 10';
+const expected = 'SELECT `id`, `email` FROM `User` WHERE `email` LIKE ? LIMIT 10';
 if (ctx.sql !== expected) broken.push(`generated SQL: ${ctx.sql}`);
 if (ctx.values[0] !== '%@uql-orm.dev') broken.push(`bound values: ${JSON.stringify(ctx.values)}`);
 
