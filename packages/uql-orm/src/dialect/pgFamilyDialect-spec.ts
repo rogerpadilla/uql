@@ -409,7 +409,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
+        $where: { $and: [{ companyId: 1 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "creatorId" FROM "Item" WHERE "companyId" = $1 AND SUM(salePrice) > 500');
@@ -418,7 +418,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw('SUM(salePrice) > 500')] },
+        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "companyId" = $1 OR "id" = $2 OR SUM(salePrice) > 500');
@@ -427,7 +427,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ id: 1 }, raw('SUM(salePrice) > 500')] },
+        $where: { $or: [{ id: 1 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "id" = $1 OR SUM(salePrice) > 500');
@@ -436,7 +436,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [raw('SUM(salePrice) > 500'), { id: 1 }, { companyId: 1 }] },
+        $where: { $or: [raw`SUM(salePrice) > 500`, { id: 1 }, { companyId: 1 }] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500 OR "id" = $1 OR "companyId" = $2');
@@ -445,7 +445,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $and: [raw('SUM(salePrice) > 500')] },
+        $where: { $and: [raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500');
@@ -453,7 +453,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: raw('SUM(salePrice) > 500'),
+        $where: raw`SUM(salePrice) > 500`,
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500');
@@ -765,7 +765,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         Company,
         { $where: { id: 1 } },
         {
-          kind: raw("jsonb_set(kind, '{open}', to_jsonb(1))"),
+          kind: raw`jsonb_set(kind, '{open}', to_jsonb(1))`,
           updatedAt: 123,
         },
       ),

@@ -488,7 +488,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Company,
         { $where: { id: 1 } },
         {
-          kind: raw("'value'"),
+          kind: raw`'value'`,
           updatedAt: 123,
         },
       ),
@@ -1951,7 +1951,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
+        $select: [raw`*`, raw`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2048,7 +2048,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw('*'), raw('LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt', 'hotness')],
+        $select: [raw`*`, raw`LOG10(numberOfVotes + 1) * 287014.5873982681 + createdAt`.as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2062,7 +2062,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $and: [{ companyId: 1 }, raw('SUM(salePrice) > 500')] },
+        $where: { $and: [{ companyId: 1 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = ? AND SUM(salePrice) > 500');
@@ -2071,7 +2071,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw('SUM(salePrice) > 500')] },
+        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `companyId` = ? OR `id` = ? OR SUM(salePrice) > 500');
@@ -2080,7 +2080,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ id: 1 }, raw('SUM(salePrice) > 500')] },
+        $where: { $or: [{ id: 1 }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `id` = ? OR SUM(salePrice) > 500');
@@ -2089,7 +2089,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [raw('SUM(salePrice) > 500'), { id: 1 }, { companyId: 1 }] },
+        $where: { $or: [raw`SUM(salePrice) > 500`, { id: 1 }, { companyId: 1 }] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = ? OR `companyId` = ?');
@@ -2098,7 +2098,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $and: [raw('SUM(salePrice) > 500')] },
+        $where: { $and: [raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
@@ -2106,7 +2106,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: raw('SUM(salePrice) > 500'),
+        $where: raw`SUM(salePrice) > 500`,
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');

@@ -77,7 +77,7 @@ export function buildIndexDecoratorSource(index: IndexNode, propertyName: (colum
     options.push(`type: '${index.type}'`);
   }
   if (distance) options.push(`distance: '${distance}'`);
-  if (index.where) options.push(`where: ${quote(index.where)}`);
+  if (index.where) options.push(`where: ${rawTag(index.where)}`);
   if (index.include?.length) {
     options.push(`include: [${index.include.map((column) => `'${propertyName(column)}'`).join(', ')}]`);
   }
@@ -87,12 +87,12 @@ export function buildIndexDecoratorSource(index: IndexNode, propertyName: (colum
 
 /** Whether emitting this index needs `raw` imported alongside `Index`. */
 export function indexNeedsRaw(index: IndexNode): boolean {
-  return index.entries.some((entry) => entry.expression);
+  return Boolean(index.where) || index.entries.some((entry) => entry.expression);
 }
 
 function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: string) => string): string {
   if (entry.expression) {
-    return `raw(${quote(entry.column)})`;
+    return rawTag(entry.column);
   }
 
   const modifiers = significantModifiers(entry);
@@ -103,11 +103,11 @@ function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: strin
 }
 
 /**
- * SQL as a TypeScript string literal. `JSON.stringify` rather than hand-rolled quoting: a reprinted
- * expression is arbitrary text, and it arrives multi-line, carrying quotes of both kinds and
- * backslashes (`name ~ '\\d+'`), each of which a naive wrapper turns into source that does not
- * compile or, worse, compiles to a different index.
+ * SQL as a `raw` tagged template. A database reprints an expression as arbitrary text, and exactly
+ * three sequences can end or interpolate a template literal, so escaping those is the whole job.
+ * Newlines need none, which keeps a multi-line expression readable in the generated entity.
  */
-function quote(sql: string): string {
-  return JSON.stringify(sql);
+function rawTag(sql: string): string {
+  const escaped = sql.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+  return `raw\`${escaped}\``;
 }

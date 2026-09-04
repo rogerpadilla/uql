@@ -32,6 +32,7 @@ export async function introspectSchema(introspector: SchemaIntrospector): Promis
   return introspector.introspect();
 }
 // SchemaAST class
+export { createOrder, dropOrder, findCycles, type DependenciesOf } from './dependencyGraph.js';
 export { SchemaAST } from './schemaAST.js';
 export type { BuildSchemaASTOptions } from './schemaASTBuilder.js';
 

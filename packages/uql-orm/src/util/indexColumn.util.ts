@@ -15,14 +15,19 @@ export function normalizeIndexColumn(entry: IndexColumnInput): IndexColumnSchema
   return column instanceof QueryRaw ? { ...rest, column: rawSql(column), expression: true } : { ...rest, column };
 }
 
+/** The partial-index predicate, as authored: `raw` for new code, a bare string for old. */
+export function normalizeIndexWhere(where: string | QueryRaw | undefined): string | undefined {
+  return where instanceof QueryRaw ? rawSql(where, 'a partial-index predicate') : where;
+}
+
 /**
- * An index expression is DDL, evaluated once at creation time, so it cannot take the dialect-aware
- * callback form of `raw()` - there is no query context to hand it.
+ * Index DDL is evaluated once at creation time, so it cannot take the dialect-aware callback form of
+ * `raw()` - there is no query context to hand it, and no placeholder a `CREATE INDEX` could bind.
  */
-function rawSql(value: QueryRaw): string {
+function rawSql(value: QueryRaw, what = 'an index expression'): string {
   const sql = value[RAW_VALUE];
   if (typeof sql !== 'string') {
-    throw new TypeError('an index expression needs raw() with a string, not a function');
+    throw new TypeError(`${what} needs raw() with no interpolation, not a function or a bound value`);
   }
   return sql;
 }

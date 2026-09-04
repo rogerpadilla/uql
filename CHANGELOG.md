@@ -2,6 +2,20 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.40.0] - 2026-09-04
+
+**`raw` is a tagged template.** Static SQL is the literal, every interpolation is bound:
+
+```ts
+raw`"stock" - ${quantity}`
+raw`CONCAT(${col('firstName')}, ' ', ${col('lastName')})`
+raw`LOG10(${points})`.as('score')
+```
+
+- **`raw('sql')` is deprecated**, since it emits verbatim and cannot bind. `npx uql-codemod` rewrites it, moving an alias argument onto the new `.as()`. The callback form is unchanged.
+- **New `col(column)`**: the alias-qualified, escaped column of the statement being built. Replaces `${escapedPrefix}.column`, which emitted a double dot.
+- **Partial-index predicates take `raw`**: ``@Index(['email'], { where: raw`"deletedAt" IS NULL` })``. A bare string still works; one carrying a value is refused, since `CREATE INDEX` cannot bind.
+
 ## [0.39.1] - 2026-09-04
 
 No runtime changes: Linting moved from biome to oxlint and updated readme.

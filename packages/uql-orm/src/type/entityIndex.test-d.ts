@@ -19,7 +19,7 @@ import { raw } from '../util/index.js';
 @Index(['title'], { type: 'gin' })
 @Index(['title'], { where: "title <> ''" })
 // Column entry sugar: a raw expression, and the object form's length/order/nulls/opsClass modifiers.
-@Index([raw('lower(title)')], { unique: true })
+@Index([raw`lower(title)`], { unique: true })
 @Index([{ column: 'title', length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
 @Entity()
 export class Article {

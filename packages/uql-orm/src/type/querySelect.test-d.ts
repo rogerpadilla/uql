@@ -33,13 +33,13 @@ export async function selectShapes() {
 
   // Raw-projection array form.
   await querier.findMany(Story, {
-    $select: [raw('*'), raw('LOG10(points + 1) * 287014.58 + id', 'hotness')],
+    $select: [raw`*`, raw`LOG10(points + 1) * 287014.58 + id`.as('hotness')],
     $sort: { points: -1 },
   });
 
   // Both `$select` forms flow into a populated relation's own query.
   await querier.findMany(Story, { $populate: { writer: { $select: { name: true } } } });
-  await querier.findMany(Story, { $populate: { writer: { $select: [raw('COUNT(*)', 'n')] } } });
+  await querier.findMany(Story, { $populate: { writer: { $select: [raw`COUNT(*)`.as('n')] } } });
 
   // @ts-expect-error $select array entries must be QueryRaw instances
   await querier.findMany(Story, { $select: [1] });

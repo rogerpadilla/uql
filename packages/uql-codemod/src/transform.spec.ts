@@ -398,3 +398,42 @@ type ParentOf<T> = Relation<T>;
     expect(unresolved[0]).toContain("cannot infer 'entity'");
   });
 });
+
+describe('raw()', () => {
+  const codemodRaw = (body: string) => codemodFile(`import { raw } from 'uql-orm';\n${body}`).text;
+
+  it('rewrites a string expression into a tagged template', () => {
+    expect(codemodRaw(`const a = raw('"salePrice" > "cost" * 2');`)).toContain(
+      'const a = raw`"salePrice" > "cost" * 2`;',
+    );
+  });
+
+  it('moves a second alias argument onto as()', () => {
+    expect(codemodRaw(`const a = raw('LOG10(points)', 'score');`)).toContain(
+      "const a = raw`LOG10(points)`.as('score');",
+    );
+  });
+
+  it('escapes a backtick that would end the template', () => {
+    expect(codemodRaw('const a = raw("`points` > 1");')).toContain('const a = raw`\\`points\\` > 1`;');
+  });
+
+  it('escapes a dollar-brace that would interpolate', () => {
+    expect(codemodRaw(`const a = raw('cost > \${x}');`)).toContain('raw`cost > \\${x}`');
+  });
+
+  it('leaves the callback form alone', () => {
+    const body = 'const a = raw(({ ctx }) => ctx.append("x"));';
+    expect(codemodRaw(body)).toContain(body);
+  });
+
+  it("leaves another library's function of the same name alone", () => {
+    const body = `import { raw } from 'express';\nconst a = raw('"a" > 1');`;
+    expect(codemodFile(body).text).toContain(`const a = raw('"a" > 1');`);
+  });
+
+  it('leaves a computed string alone, having no literal to inline', () => {
+    const body = 'declare const sql: string;\nconst a = raw(sql);';
+    expect(codemodRaw(body)).toContain('const a = raw(sql);');
+  });
+});

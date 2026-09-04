@@ -115,7 +115,7 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnRawSelectArray() {
-    expect(() => this.dialect.select(Tax, [raw('*')])).toThrow('raw $select is not supported on MongoDB');
+    expect(() => this.dialect.select(Tax, [raw`*`])).toThrow('raw $select is not supported on MongoDB');
   }
 
   /** Reads address the stored column, never the property key. */
@@ -228,10 +228,10 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnRawInWhere() {
-    expect(() => this.dialect.where(Item, { $and: [raw('code IS NOT NULL')] })).toThrow(
+    expect(() => this.dialect.where(Item, { $and: [raw`code IS NOT NULL`] })).toThrow(
       'raw() in $where is not supported on MongoDB',
     );
-    expect(() => this.dialect.where(Item, { name: raw('lower(code)') as never })).toThrow(
+    expect(() => this.dialect.where(Item, { name: raw`lower(code)` as never })).toThrow(
       'raw() in $where is not supported on MongoDB',
     );
   }

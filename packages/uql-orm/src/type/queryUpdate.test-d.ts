@@ -26,8 +26,8 @@ declare const querier: Querier;
 
 export async function updatePayloadSafety() {
   // Plain field values and a raw SQL expression in their place.
-  await querier.updateOneById(Employee, 1, { name: 'x', salary: raw('salary + 100') });
-  await querier.updateMany(Employee, { $where: { id: 1 } }, { salary: raw('salary * 1.1') });
+  await querier.updateOneById(Employee, 1, { name: 'x', salary: raw`salary + 100` });
+  await querier.updateMany(Employee, { $where: { id: 1 } }, { salary: raw`salary * 1.1` });
 
   // Relations are settable via their own entity shape, not a foreign-key scalar.
   await querier.updateOneById(Employee, 1, { company: { id: 1, name: 'Acme' } });

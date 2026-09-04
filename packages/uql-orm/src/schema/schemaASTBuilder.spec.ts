@@ -344,7 +344,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class VirtualUser {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, virtual: raw('TRUE') }) secret?: string;
+        @Field({ type: String, virtual: raw`TRUE` }) secret?: string;
       }
       const ast = buildSchemaAST([VirtualUser]);
       expect(ast.getTable('VirtualUser')?.columns.has('secret')).toBe(false);
@@ -473,7 +473,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Other2 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, virtual: raw('true') }) virtual?: number;
+        @Field({ type: Number, virtual: raw`true` }) virtual?: number;
       }
       @Entity()
       class Main2 {

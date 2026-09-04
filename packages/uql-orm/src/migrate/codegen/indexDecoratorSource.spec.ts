@@ -9,6 +9,20 @@ function indexNode(entries: IndexColumnSchema[], rest: Partial<IndexNode> = {}):
   return { name: 'idx', table: { name: 't' } as TableNode, entries, unique: false, ...rest };
 }
 
+/**
+ * The cooked value of the first `raw` template in generated source, by running it as TypeScript
+ * would. Comparing emitted text against an expected escaping would only restate the implementation;
+ * this proves the source reads back as the SQL the database reported.
+ */
+function evaluateFirstTag(source: string): string {
+  const start = source.indexOf('raw`');
+  let end = start + 4;
+  while (source[end] !== '`') {
+    end += source[end] === '\\' ? 2 : 1;
+  }
+  return new Function(`return ${source.slice(start + 3, end + 1)};`)();
+}
+
 describe('buildIndexDecoratorSource', () => {
   /**
    * A database reprints an expression as arbitrary text: multi-line, either quote, backslashes. Every
@@ -20,8 +34,15 @@ describe('buildIndexDecoratorSource', () => {
 
     const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs);
 
-    const literal = source.slice(source.indexOf('raw(') + 4, source.lastIndexOf(')]'));
-    expect(JSON.parse(literal)).toBe(sql);
+    expect(evaluateFirstTag(source)).toBe(sql);
+  });
+
+  it('should emit SQL that would otherwise end or interpolate the template', () => {
+    const sql = 'name = `a` || ${b}';
+
+    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs);
+
+    expect(evaluateFirstTag(source)).toBe(sql);
   });
 
   it('should emit a predicate the same way', () => {
@@ -29,7 +50,7 @@ describe('buildIndexDecoratorSource', () => {
 
     const source = buildIndexDecoratorSource(indexNode([{ column: 'name' }], { where }), asIs);
 
-    expect(source).toContain(`where: ${JSON.stringify(where)}`);
+    expect(evaluateFirstTag(source)).toBe(where);
   });
 
   it('should give a vector index the distance its operator class carries', () => {

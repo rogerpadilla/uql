@@ -280,7 +280,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         if (!field) return;
         if (field.virtual) {
           this.getRawValue(ctx, {
-            value: raw(field.virtual[RAW_VALUE], key),
+            value: field.virtual.as(key),
             prefix: opts.prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -1162,7 +1162,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   // off it explicitly rather than forwarding `q` itself into `search()`, which would honor a
   // `$sort`/`$skip`/`$limit` an untyped caller snuck in regardless of what TypeScript allowed them.
   count<E>(ctx: QueryContext, entity: Type<E>, q: QueryFilter<E>, opts?: QueryOptions): void {
-    this.select<E>(ctx, entity, { $select: [raw('COUNT(*)', COUNT_ALIAS)] });
+    this.select<E>(ctx, entity, { $select: [raw`COUNT(*)`.as(COUNT_ALIAS)] });
     this.search(ctx, entity, { $where: q.$where }, opts);
   }
 
@@ -1775,21 +1775,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
     const { value, prefix = '', escapedPrefix, autoPrefixAlias } = opts;
-    const rawValue = value[RAW_VALUE];
-    if (typeof rawValue === 'function') {
-      const res = rawValue({
-        ...opts,
-        ctx,
-        dialect: this,
-        prefix,
-        escapedPrefix: escapedPrefix ?? this.escapeId(prefix, true, true),
-      });
-      if (typeof res === 'string' || (typeof res === 'number' && !Number.isNaN(res))) {
-        ctx.append(String(res));
-      }
-    } else {
-      ctx.append(prefix + String(rawValue));
-    }
+    value.render({
+      ...opts,
+      ctx,
+      dialect: this,
+      prefix,
+      escapedPrefix: escapedPrefix ?? this.escapeId(prefix, true, true),
+    });
     const alias = value[RAW_ALIAS];
     if (alias) {
       const fullAlias = autoPrefixAlias && prefix ? `${prefix}.${alias}` : alias;

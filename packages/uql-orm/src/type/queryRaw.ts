@@ -46,4 +46,30 @@ export class QueryRaw {
     this[RAW_VALUE] = value;
     this[RAW_ALIAS] = alias;
   }
+
+  /** The same expression under an alias, for a `$select` projection. */
+  as(alias: string): QueryRaw {
+    return new QueryRaw(this[RAW_VALUE], alias);
+  }
+
+  /**
+   * Emit this expression into `opts.ctx`. How a raw value becomes SQL is the raw value's own
+   * business, which is what lets a `raw` tagged template resolve an interpolated fragment without
+   * the dialect having to expose a method for it.
+   *
+   * The alias is not emitted here: it belongs to a `$select` projection, not to an expression, and
+   * a fragment nested inside another would otherwise emit one mid-expression. `getRawValue` appends
+   * it around this call.
+   */
+  render(opts: Required<QueryRawFnOptions>): void {
+    const value = this[RAW_VALUE];
+    if (typeof value !== 'function') {
+      opts.ctx.append(opts.prefix + String(value));
+      return;
+    }
+    const emitted = value(opts);
+    if (typeof emitted === 'string' || (typeof emitted === 'number' && !Number.isNaN(emitted))) {
+      opts.ctx.append(String(emitted));
+    }
+  }
 }

@@ -193,7 +193,7 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
 
 /**
  * Accepted value for a single field in an update payload: the value itself, `null` where the column
- * is nullable, `QueryRaw` for a raw SQL expression (e.g. `raw('NOW()')`), and - for JSON object
+ * is nullable, `QueryRaw` for a raw SQL expression (e.g. ``raw`NOW()` ``), and - for JSON object
  * fields - the JSON operators.
  *
  * An optional property is a nullable column, and clearing one is what an update is for, so `null`
@@ -688,7 +688,7 @@ export type IndexTypeOptions =
  * @example
  * ```ts
  * @Index(['tenantId', { column: 'createdAt', order: 'desc' }])   // keyset pagination
- * @Index([raw('lower("email")')], { unique: true })              // case-insensitive uniqueness
+ * @Index([raw`lower("email")`], { unique: true })                // case-insensitive uniqueness
  * @Index([{ column: 'body', length: 64 }])                       // MySQL needs a prefix on TEXT
  * @Index(['data'], { type: 'gin' })                              // JSONB containment
  * ```
@@ -908,9 +908,14 @@ export type EntityOptions<E = unknown> = {
  * migration builder's `table.index(...)`. `Except` (not plain `Omit`) keeps `type`/`distance` a
  * discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions<E = unknown> = Except<EntityIndexMeta, 'columns' | 'include'> & {
+export type IndexOptions<E = unknown> = Except<EntityIndexMeta, 'columns' | 'include' | 'where'> & {
   /** Non-key columns stored in the index; a typo builds nothing, the server refusing the statement. */
   readonly include?: readonly IndexFieldKey<E>[];
+  /**
+   * Partial-index predicate. `raw` with no interpolation, like an index expression: this is DDL, so
+   * there is no placeholder for a bound value. A bare string is the older spelling and still works.
+   */
+  readonly where?: string | QueryRaw;
 };
 
 /** A field of `E`, or any name where there is no entity to check it against - the migration builder. */

@@ -10,7 +10,7 @@ import type { ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
 import type { SqlDdlGenerator } from '../../type/migration.js';
 import type { SqlQuerier } from '../../type/querier.js';
-import { normalizeIndexColumn } from '../../util/index.js';
+import { normalizeIndexColumn, normalizeIndexWhere } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
 import { splitSqlStatements } from './splitSqlStatements.js';
@@ -53,6 +53,7 @@ function createIndexOperation(
           tableName,
           entries.map((entry) => entry.column),
         ),
+      where: normalizeIndexWhere(index.where),
       entries,
       unique: unique ?? false,
     },

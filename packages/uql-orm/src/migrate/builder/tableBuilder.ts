@@ -6,7 +6,7 @@
 
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
-import { normalizeIndexColumn } from '../../util/index.js';
+import { normalizeIndexColumn, normalizeIndexWhere } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { expr } from './expressions.js';
@@ -228,6 +228,7 @@ export class TableBuilder implements ITableBuilder {
     this._indexes.push({
       ...rest,
       name: name ?? `${prefix}_${this._name}_${entries.map((entry) => entry.column).join('_')}`,
+      where: normalizeIndexWhere(rest.where),
       entries,
       unique,
     });

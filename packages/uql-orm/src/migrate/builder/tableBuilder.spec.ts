@@ -273,7 +273,7 @@ describe('TableBuilder', () => {
 
     it('should take the same entries and options as the @Index decorator', () => {
       const table = new TableBuilder('notes');
-      table.index([raw('lower("email")'), { column: 'body', length: 64 }], {
+      table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
         name: 'idx_notes_lookup',
         type: 'gin',
         where: '"deletedAt" IS NULL',
@@ -396,5 +396,24 @@ describe('TableBuilder', () => {
       // Should not duplicate the index
       expect(def.indexes.filter((i) => i.name === 'idx_users_email').length).toBe(1);
     });
+  });
+});
+
+describe('partial-index predicate', () => {
+  it('takes raw with no interpolation and normalizes it to text', () => {
+    const table = new TableBuilder('Item');
+    table.index(['name'], { where: raw`"isActive" IS TRUE` });
+    expect(table.build().indexes[0]?.where).toBe('"isActive" IS TRUE');
+  });
+
+  it('still takes the older bare string', () => {
+    const table = new TableBuilder('Item');
+    table.index(['name'], { where: '"isActive" IS TRUE' });
+    expect(table.build().indexes[0]?.where).toBe('"isActive" IS TRUE');
+  });
+
+  it('refuses a predicate that would need a bound value, which DDL cannot carry', () => {
+    const table = new TableBuilder('Item');
+    expect(() => table.index(['name'], { where: raw`"stock" > ${0}` })).toThrow(/needs raw\(\) with no interpolation/);
   });
 });

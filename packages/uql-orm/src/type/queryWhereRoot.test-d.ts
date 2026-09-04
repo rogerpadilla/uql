@@ -25,7 +25,7 @@ export async function rootClauseArrays() {
   await querier.findMany(Person, { $where: { $and: [{ name: 'x' }, { age: { $gt: 1 } }] } });
   await querier.findMany(Person, { $where: { $or: [{ id: 1 }, { id: 2 }] } });
   await querier.findMany(Person, { $where: { $not: [{ active: true }] } });
-  await querier.findMany(Person, { $where: { $nor: [{ active: true }, raw('deleted_at IS NOT NULL')] } });
+  await querier.findMany(Person, { $where: { $nor: [{ active: true }, raw`deleted_at IS NOT NULL`] } });
 
   // The clauses inside are checked against the same entity.
   // @ts-expect-error 'naem' is not a field of Person
@@ -48,8 +48,8 @@ export async function fullTextSearch() {
 }
 
 export async function existsSubqueries() {
-  await querier.findMany(Person, { $where: { $exists: raw('SELECT 1 FROM sessions WHERE person_id = id') } });
-  await querier.findMany(Person, { $where: { $nexists: raw('SELECT 1 FROM bans WHERE person_id = id') } });
+  await querier.findMany(Person, { $where: { $exists: raw`SELECT 1 FROM sessions WHERE person_id = id` } });
+  await querier.findMany(Person, { $where: { $nexists: raw`SELECT 1 FROM bans WHERE person_id = id` } });
 
   // @ts-expect-error $exists takes a raw subquery, not a plain string
   await querier.findMany(Person, { $where: { $exists: 'SELECT 1' } });
@@ -57,6 +57,6 @@ export async function existsSubqueries() {
 
 export async function rawFieldValue() {
   // A field may compare against a raw SQL expression instead of a literal value.
-  await querier.findMany(Person, { $where: { age: raw('EXTRACT(YEAR FROM birth_date)') } });
-  await querier.updateOneById(Person, 1, { age: raw('age + 1') });
+  await querier.findMany(Person, { $where: { age: raw`EXTRACT(YEAR FROM birth_date)` } });
+  await querier.updateOneById(Person, 1, { age: raw`age + 1` });
 }

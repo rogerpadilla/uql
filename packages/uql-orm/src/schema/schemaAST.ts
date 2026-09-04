@@ -6,6 +6,7 @@
  */
 
 import { qualifyName } from '../util/sql.util.js';
+import { createOrder, dropOrder, findCycles } from './dependencyGraph.js';
 import type {
   ColumnNode,
   IndexNode,
@@ -145,35 +146,7 @@ export class SchemaAST implements ISchemaAST {
    * Returns arrays of tables that form cycles.
    */
   detectCircularDependencies(): TableNode[][] {
-    const cycles: TableNode[][] = [];
-    const visited = new Set<TableNode>();
-    const stack = new Set<TableNode>();
-
-    const dfs = (table: TableNode, path: TableNode[]): void => {
-      if (stack.has(table)) {
-        const cycleStart = path.indexOf(table);
-        if (cycleStart !== -1) {
-          cycles.push(path.slice(cycleStart));
-        }
-        return;
-      }
-      if (visited.has(table)) return;
-
-      visited.add(table);
-      stack.add(table);
-
-      for (const dep of this.getDependencies(table)) {
-        dfs(dep, [...path, table]);
-      }
-
-      stack.delete(table);
-    };
-
-    for (const table of this.tables.values()) {
-      dfs(table, []);
-    }
-
-    return cycles;
+    return findCycles(this.tables.values(), (table) => this.getDependencies(table));
   }
 
   /**
@@ -188,7 +161,7 @@ export class SchemaAST implements ISchemaAST {
    * Tables with no dependencies come first, then tables that depend on them, etc.
    */
   getCreateOrder(): TableNode[] {
-    return this.topologicalSort();
+    return createOrder(this.tables.values(), (table) => this.getDependencies(table));
   }
 
   /**
@@ -196,35 +169,7 @@ export class SchemaAST implements ISchemaAST {
    * Tables that depend on others come first, then the tables they depend on.
    */
   getDropOrder(): TableNode[] {
-    return this.topologicalSort().reverse();
-  }
-
-  /**
-   * Topological sort respecting FK dependencies.
-   * Uses Kahn's algorithm for stable ordering.
-   */
-  private topologicalSort(): TableNode[] {
-    const result: TableNode[] = [];
-    const visited = new Set<TableNode>();
-
-    const visit = (table: TableNode): void => {
-      if (visited.has(table)) return;
-      visited.add(table);
-
-      // Visit dependencies first (tables this table references)
-      for (const dep of this.getDependencies(table)) {
-        visit(dep);
-      }
-
-      result.push(table);
-    };
-
-    // Visit all tables
-    for (const table of this.tables.values()) {
-      visit(table);
-    }
-
-    return result;
+    return dropOrder(this.tables.values(), (table) => this.getDependencies(table));
   }
 
   /**

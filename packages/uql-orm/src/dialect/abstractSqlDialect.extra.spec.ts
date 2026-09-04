@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, User } from '../test/index.js';
 import type { DialectFeatures, SqlDialectName } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { col, raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
@@ -208,7 +208,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('raw string in $and should not be prefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $and: [raw("(kind->>'public')::boolean IS TRUE")],
+        $and: [raw`(kind->>'public')::boolean IS TRUE`],
       });
       expect(ctx.sql).toBe(" WHERE (kind->>'public')::boolean IS TRUE");
     });
@@ -216,7 +216,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     it('raw string in $or should not be prefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
-        $or: [raw('kind IS NULL'), raw("kind = '{}'")],
+        $or: [raw`kind IS NULL`, raw`kind = '{}'`],
       });
       expect(ctx.sql).toBe(" WHERE kind IS NULL OR kind = '{}'");
     });
@@ -233,10 +233,104 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         name: 'Acme',
-        $and: [raw('kind IS NOT NULL')],
+        $and: [raw`kind IS NOT NULL`],
       });
       expect(ctx.sql).toBe(' WHERE `name` = ? AND kind IS NOT NULL');
       expect(ctx.values).toEqual(['Acme']);
+    });
+  });
+
+  describe('raw() as a tagged template', () => {
+    it('binds an interpolated value instead of inlining it', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw`kind = ${'public'}`],
+      });
+      expect(ctx.sql).toBe(' WHERE kind = ?');
+      expect(ctx.values).toEqual(['public']);
+    });
+
+    it('binds a value carrying SQL syntax rather than emitting it', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw`name = ${"' OR 1=1 --"}`],
+      });
+      expect(ctx.sql).toBe(' WHERE name = ?');
+      expect(ctx.values).toEqual(["' OR 1=1 --"]);
+    });
+
+    it('binds every interpolation of a multi-value fragment in order', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw`GREATEST(0, ${10} - ${3}) > ${1}`],
+      });
+      expect(ctx.sql).toBe(' WHERE GREATEST(0, ? - ?) > ?');
+      expect(ctx.values).toEqual([10, 3, 1]);
+    });
+
+    it('resolves an interpolated raw in place so fragments compose', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw`kind = ${'public'} AND ${raw`deleted_at IS NULL`}`],
+      });
+      expect(ctx.sql).toBe(' WHERE kind = ? AND deleted_at IS NULL');
+      expect(ctx.values).toEqual(['public']);
+    });
+
+    it('shares the statement values array with the rest of the query', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        name: 'Acme',
+        $and: [raw`kind = ${'public'}`],
+      });
+      expect(ctx.sql).toBe(' WHERE `name` = ? AND kind = ?');
+      expect(ctx.values).toEqual(['Acme', 'public']);
+    });
+
+    it('aliases a projection built as a template', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Company, { $select: [raw`LOG10(${100})`.as('score')] });
+      expect(ctx.sql).toContain('LOG10(?) `score`');
+      expect(ctx.values).toEqual([100]);
+    });
+
+    it('resolves an interpolated callback against the render options', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, {
+        value: raw`${raw(({ escapedPrefix }) => `${escapedPrefix}kind`)} = ${'public'}`,
+        prefix: 'c',
+      });
+      expect(ctx.sql).toBe('`c`.kind = ?');
+      expect(ctx.values).toEqual(['public']);
+    });
+
+    it('qualifies and escapes a col() reference against the statement prefix', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`${col('kind')} = ${'public'}`, prefix: 'c' });
+      expect(ctx.sql).toBe('`c`.`kind` = ?');
+      expect(ctx.values).toEqual(['public']);
+    });
+
+    it('leaves a col() reference unqualified where no prefix is in scope', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { $and: [raw`${col('kind')} = ${'public'}`] });
+      expect(ctx.sql).toBe(' WHERE `kind` = ?');
+      expect(ctx.values).toEqual(['public']);
+    });
+
+    it("drops an interpolated fragment's alias, which belongs to a projection not an expression", () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { $and: [raw`kind = ${raw`'x'`.as('ignored')}`] });
+      expect(ctx.sql).toBe(" WHERE kind = 'x'");
+    });
+
+    it('emits a fragment with no interpolation unchanged', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, {
+        $and: [raw`kind IS NOT NULL`],
+      });
+      expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
+      expect(ctx.values).toEqual([]);
     });
   });
 
@@ -456,7 +550,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       dialect.where(ctx, Item, {
         companyId: 1,
         tags: { name: 'test' },
-        $and: [raw('code IS NOT NULL')],
+        $and: [raw`code IS NOT NULL`],
       });
       expect(ctx.sql).toContain('`companyId` = ?');
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');

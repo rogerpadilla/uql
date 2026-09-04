@@ -17,7 +17,7 @@ const TABLE = 'drift_index_user';
  * Everything an index carries that Postgres reprints in its own words: an expression, a partial
  * predicate, a stored order, `INCLUDE` columns, an operator class.
  */
-@Index([raw('lower("email")')], { unique: true, where: '"deletedAt" IS NULL', name: 'idx_drift_email_live' })
+@Index([raw`lower("email")`], { unique: true, where: '"deletedAt" IS NULL', name: 'idx_drift_email_live' })
 @Index(['status', { column: 'createdAt', order: 'desc' }], { name: 'idx_drift_status_recent' })
 @Index(['tenantId'], { include: ['status'], name: 'idx_drift_tenant_covering' })
 @Index([{ column: 'data', opsClass: 'jsonb_path_ops' }], { type: 'gin', name: 'idx_drift_data' })
@@ -33,7 +33,7 @@ class DriftIndexUser {
 }
 
 /** The same table, with one index no longer unique and one covering column dropped. */
-@Index([raw('lower("email")')], { where: '"deletedAt" IS NULL', name: 'idx_drift_email_live' })
+@Index([raw`lower("email")`], { where: '"deletedAt" IS NULL', name: 'idx_drift_email_live' })
 @Index(['tenantId'], { name: 'idx_drift_tenant_covering' })
 @Entity({ name: TABLE })
 class DriftIndexUserEdited {
@@ -95,7 +95,7 @@ const CRDB_TABLE = 'drift_index_crdb';
  * `CREATE UNIQUE INDEX` too, so a catalogue filter written for Postgres hides it and reports it
  * missing on every run.
  */
-@Index([raw('lower("email")')], { unique: true, where: '"deletedAt" IS NULL', name: 'idx_crdb_email_live' })
+@Index([raw`lower("email")`], { unique: true, where: '"deletedAt" IS NULL', name: 'idx_crdb_email_live' })
 @Index(['status'], { unique: true, name: 'idx_crdb_status_unique' })
 @Index(['tenantId'], { include: ['status'], name: 'idx_crdb_tenant_covering' })
 @Entity({ name: CRDB_TABLE })

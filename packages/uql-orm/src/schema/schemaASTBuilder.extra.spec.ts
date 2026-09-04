@@ -144,7 +144,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     class VirtualSource {
       @Id({ type: Number }) id?: number;
 
-      @Field({ type: Number, virtual: raw('1') })
+      @Field({ type: Number, virtual: raw`1` })
       targetId?: number;
 
       @ManyToOne({ entity: () => VirtualTarget, references: [{ local: 'targetId', foreign: 'id' }] })
@@ -185,7 +185,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     class VirtualIndex {
       @Id({ type: Number }) id?: number;
 
-      @Field({ type: Number, virtual: raw('1'), index: true })
+      @Field({ type: Number, virtual: raw`1`, index: true })
       virtualField?: number;
     }
 

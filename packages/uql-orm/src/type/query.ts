@@ -49,7 +49,7 @@ export type QuerySelect<E> = {
 
 /**
  * Accepted `$select` value: a field map, or raw SQL projections built with `raw()`
- * (e.g. `[raw('*'), raw('LOG10(points)', 'score')]`). The raw form is SQL-only.
+ * (e.g. ``[raw`*`, raw`LOG10(points)`.as('score')]``). The raw form is SQL-only.
  */
 export type QuerySelectValue<E> = QuerySelect<E> | readonly QueryRaw[];
 
@@ -247,7 +247,7 @@ export type QuerySearch<E> = QueryPage<E> & {
 export type Query<E> = {
   /**
    * field selection - `{ name: true }` whitelists fields, or raw SQL projections
-   * (`[raw('LOG10(points)', 'score')]`, SQL dialects only - MongoDB rejects the raw-array form).
+   * (``[raw`LOG10(points)`.as('score')]``, SQL dialects only - MongoDB rejects the raw-array form).
    * Mutually exclusive with `$exclude`.
    */
   $select?: QuerySelectValue<E>;

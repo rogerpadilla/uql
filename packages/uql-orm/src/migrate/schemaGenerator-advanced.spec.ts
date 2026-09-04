@@ -25,7 +25,7 @@ class DefaultsEntity {
 @Entity()
 class VirtualEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, virtual: raw('1 + 1') }) computed?: number;
+  @Field({ type: Number, virtual: raw`1 + 1` }) computed?: number;
 }
 
 describe('SqlSchemaGenerator Advanced', () => {

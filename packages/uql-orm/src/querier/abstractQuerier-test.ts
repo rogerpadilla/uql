@@ -1001,7 +1001,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldRejectCountingWithARawSelect() {
     await expect(
       this.querier.findMany(MeasureUnitCategory, {
-        $select: [raw('name')],
+        $select: [raw`name`],
         $count: { measureUnits: true },
       } as never),
     ).rejects.toThrow(/raw \$select cannot carry/);

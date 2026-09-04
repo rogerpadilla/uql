@@ -112,7 +112,7 @@ export async function unprojectedRows() {
   story.writer;
 
   // Raw projections name columns rather than fields, so the row keeps the entity's shape.
-  const [rawRow] = await querier.findMany(Story, { $select: [raw('*'), raw('LOG10(points)', 'score')] });
+  const [rawRow] = await querier.findMany(Story, { $select: [raw`*`, raw`LOG10(points)`.as('score')] });
   rawRow.points;
 
   // A query assembled elsewhere carries no static projection, and a wrapper over one still compiles.

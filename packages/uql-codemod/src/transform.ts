@@ -334,6 +334,50 @@ function reportRemovedExports(node: ts.Node, ctx: Context): void {
   }
 }
 
+/** Whether this file's `raw` is the ORM's, so another library's function of that name is left alone. */
+function importsRaw(source: ts.SourceFile): boolean {
+  return source.statements.some((statement) => {
+    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+      return false;
+    }
+    if (statement.moduleSpecifier.text !== 'uql-orm') {
+      return false;
+    }
+    const bindings = statement.importClause?.namedBindings;
+    return (
+      !!bindings &&
+      ts.isNamedImports(bindings) &&
+      bindings.elements.some((element) => (element.propertyName ?? element.name).text === 'raw')
+    );
+  });
+}
+
+/**
+ * Rewrites `raw('sql')` into the tagged template, and a second alias argument into `.as()`. Only a
+ * string-literal first argument qualifies: the callback form is unchanged, and a computed string is
+ * left alone because a template cannot be built from a value that is not known here.
+ */
+function rewriteRawCall(node: ts.Node, ctx: Context, source: ts.SourceFile): void {
+  if (!ts.isCallExpression(node) || !ts.isIdentifier(node.expression) || node.expression.text !== 'raw') {
+    return;
+  }
+  const [expression, alias] = node.arguments;
+  if (!expression || !ts.isStringLiteral(expression) || node.arguments.length > 2) {
+    return;
+  }
+  const suffix = alias ? `.as(${alias.getText(source)})` : '';
+  ctx.edits.push({
+    start: node.getStart(source),
+    end: node.getEnd(),
+    text: `raw\`${escapeForTemplate(expression.text)}\`${suffix}`,
+  });
+}
+
+/** A backtick or a `${` inside the old string literal would end or interpolate the template. */
+function escapeForTemplate(text: string): string {
+  return text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
+}
+
 /** Rewrites one source file for the standard decorator spec. */
 export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): FileResult {
   const ctx: Context = {
@@ -346,10 +390,15 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
   };
   const lineOf = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart()).line;
 
+  const rewritesRaw = importsRaw(source);
+
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
     reportRemovedExports(node, ctx);
     countRelationAlias(node, ctx);
+    if (rewritesRaw) {
+      rewriteRawCall(node, ctx, source);
+    }
     if (ts.isPropertyDeclaration(node)) {
       rewriteProperty(node, ctx);
     }

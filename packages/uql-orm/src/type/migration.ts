@@ -161,7 +161,7 @@ export interface IndexSchema extends VectorIndexOptions {
   readonly name: string;
   /**
    * What the index is over, in order. Named `entries` and not `columns` because an entry need not be
-   * a column at all: `raw('lower(email)')` is one, and so is a column carrying a prefix length or a
+   * a column at all: ``raw`lower(email)` `` is one, and so is a column carrying a prefix length or a
    * stored order. The authored form, `@Index([...])`, still spells this `columns`, since that is what
    * it reads like at the call site.
    */

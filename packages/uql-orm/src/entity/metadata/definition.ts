@@ -15,7 +15,15 @@ import type {
   Type,
 } from '../../type/index.js';
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
-import { getKeys, hasKeys, isToManyRelation, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
+import {
+  getKeys,
+  hasKeys,
+  isToManyRelation,
+  lowerFirst,
+  normalizeIndexColumn,
+  normalizeIndexWhere,
+  upperFirst,
+} from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
@@ -88,7 +96,12 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
 export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>, E>): EntityMeta<E> {
   const meta = ensureMeta(entity);
   if (!meta.indexes) meta.indexes = [];
-  meta.indexes.push({ ...index, unique: index.unique ?? false, columns: index.columns.map(normalizeIndexColumn) });
+  meta.indexes.push({
+    ...index,
+    unique: index.unique ?? false,
+    where: normalizeIndexWhere(index.where),
+    columns: index.columns.map(normalizeIndexColumn),
+  });
   return meta;
 }
 

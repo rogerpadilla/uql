@@ -57,7 +57,7 @@ describe('generate:from-db (PostgreSQL)', () => {
 
   it('should write the expression whole, however long the catalogue prints it', () => {
     expect(code).toContain(
-      `@Index([raw(${JSON.stringify("to_tsvector('english'::regconfig, (name || ' '::text) || status)")})], { name: 'cfd_expr' })`,
+      "@Index([raw`to_tsvector('english'::regconfig, (name || ' '::text) || status)`], { name: 'cfd_expr' })",
     );
   });
 
@@ -74,7 +74,7 @@ describe('generate:from-db (PostgreSQL)', () => {
   });
 
   it('should write a partial predicate and a covering list', () => {
-    expect(code).toContain(`where: ${JSON.stringify('"deletedAt" IS NULL')}`);
+    expect(code).toContain('where: raw`"deletedAt" IS NULL`');
     expect(code).toContain("{ name: 'cfd_covering', include: ['status'] }");
   });
 });
