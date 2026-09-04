@@ -24,7 +24,7 @@ Unnamed ones are named `ck_<table>_<position>`. A check is created with its tabl
 
 **Partial-index predicates** and check expressions share one rule: `raw` with no interpolation, since DDL has no placeholder to bind a value into.
 
-`0.41.0` was published from a stale build and carries `0.40.0`'s code; use this instead. `prepack` now builds, so the published artifacts cannot lag the version again.
+Skip `0.41.0`: it shipped a stale build. `prepack` now builds.
 
 ## [0.40.0] - 2026-09-04
 
