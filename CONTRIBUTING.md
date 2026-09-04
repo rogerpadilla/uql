@@ -49,7 +49,7 @@ Versioning and publishing are separate on purpose: `lerna publish`'s npm step 40
 - Keep the changelog.md very concise, short (only put what worth it for end-users), human, clear, and concrete. Newest first, `[yyyy-mm-dd]`. Headed with the version the bump will produce; nothing checks that the two agree - not one line per commit.
 - `bun run release.patch` (`.minor`/`.major`) runs `check`, `lerna version`, `git push --follow-tags`, `release.github`. The `lerna version` prompt is kept on purpose - a non-interactive shell needs `bun run release patch --yes`, then push tags separately.
 - `release.github` opens the GitHub Release from the CHANGELOG entry (a tag alone notifies nobody). Idempotent, and it throws when the entry is missing. The codemod is deliberately not released.
-- Then `bun run publish.orm` / `publish.codemod` for whichever package `lerna version` reported as changed. Re-publishing an existing version exits non-zero, so the exit code can be trusted.
+- Then `bun run publish.orm` / `publish.codemod` for whichever package `lerna version` reported as changed. Each package's `prepack` builds first, so `dist` cannot lag the version being published. Re-publishing an existing version exits non-zero, so the exit code can be trusted.
 - npm auth needs no setup: `.npmrc` holds the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` must export it.
 
 ## Questions?

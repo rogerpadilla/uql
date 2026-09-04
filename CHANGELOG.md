@@ -2,7 +2,7 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
-## [0.41.0] - 2026-09-04
+## [0.41.1] - 2026-09-04
 
 **Enum fields.** The values a column accepts, enforced by the database and by TypeScript:
 
@@ -23,6 +23,8 @@ status?: 'draft' | 'paid' | 'void';
 Unnamed ones are named `ck_<table>_<position>`. A check is created with its table; changing one later is a hand-written migration, since a database reprints SQL text from its parse tree and could only ever be diffed by name.
 
 **Partial-index predicates** and check expressions share one rule: `raw` with no interpolation, since DDL has no placeholder to bind a value into.
+
+`0.41.0` was published from a stale build and carries `0.40.0`'s code; use this instead. `prepack` now builds, so the published artifacts cannot lag the version again.
 
 ## [0.40.0] - 2026-09-04
 
