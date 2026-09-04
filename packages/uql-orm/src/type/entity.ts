@@ -1,4 +1,4 @@
-import type { ForeignKeyAction, IndexType } from '../schema/types.js';
+import type { CheckSchema, EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
@@ -403,6 +403,20 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    * @example `@Field({ references: () => Company, onDelete: 'CASCADE' }) companyId?: string;`
    */
   readonly onDelete?: ForeignKeyAction;
+  /**
+   * The values the column accepts, enforced by the database as well as by TypeScript.
+   *
+   * Emitted as a column `CHECK (col IN (...))` on every SQL dialect rather than a native enum type:
+   * one code path, no separate schema object to order, and adding a value stays an ordinary column
+   * change instead of Postgres's irreversible `ALTER TYPE ... ADD VALUE`.
+   *
+   * Not constrained against the field's own type here: the decorator narrows the property to these
+   * values instead, which reports a mismatch where the mistake is rather than as an unrelated
+   * `never`. `as const` is what makes them literal, and so what makes any of it check.
+   *
+   * @example `@Field({ type: String, enum: ['draft', 'paid'] as const })`
+   */
+  readonly enum?: EnumValues;
   readonly virtual?: QueryRaw;
   readonly updatable?: boolean;
   readonly eager?: boolean;
@@ -875,6 +889,8 @@ export type EntityMeta<E> = {
   } & { [key: string]: RelationMeta | undefined };
   /** Composite indexes defined via @Index decorator */
   indexes?: EntityIndexMeta[];
+  /** `CHECK` constraints, their expressions already reduced to text. */
+  checks?: CheckSchema[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
   processed?: boolean;
@@ -886,6 +902,16 @@ export type EntityMeta<E> = {
  * Optional `fields`, `relations`, `indexes`, and `hooks` register metadata in one call for
  * decorator-free setups. Omit them when using `@Field` / `@ManyToOne` / etc.
  */
+/**
+ * A table-level `CHECK`. The expression is `raw` with no interpolation, like an index expression:
+ * this is DDL, so there is no placeholder a bound value could go into.
+ */
+export type CheckOptions = {
+  /** Derived from the table and the constraint's position when absent. */
+  readonly name?: string;
+  readonly expression: QueryRaw;
+};
+
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
   /**
@@ -899,6 +925,8 @@ export type EntityOptions<E = unknown> = {
   readonly fields?: { readonly [K in FieldKey<E>]?: FieldOptionsFor<E[K]> };
   readonly relations?: { readonly [K in RelationKey<E>]?: RelationOptionsFor<E[K]> };
   readonly indexes?: readonly EntityIndexInput<FieldKey<E>, E>[];
+  /** Table-level `CHECK` constraints. See {@link CheckOptions}. */
+  readonly checks?: readonly CheckOptions[];
   /** Map hook events to method names on the entity class. */
   readonly hooks?: Partial<Record<HookEvent, readonly MethodKey<E>[]>>;
 };

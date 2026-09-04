@@ -9,7 +9,15 @@ import {
 } from '../schema/canonicalType.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, TableNode } from '../schema/types.js';
+import type {
+  CanonicalType,
+  CheckSchema,
+  ColumnNode,
+  EnumValues,
+  ForeignKeyAction,
+  IndexNode,
+  TableNode,
+} from '../schema/types.js';
 import type {
   ColumnSchema,
   CreateSchemaOptions,
@@ -26,7 +34,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { getKeys, isAutoIncrement, qualifyName } from '../util/index.js';
-import { derivedForeignKeyName } from '../util/sql.util.js';
+import { derivedCheckName, derivedForeignKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor } from './ddl/index.js';
@@ -322,6 +330,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     isUnique: boolean;
     declaresPrimaryKey: boolean;
     defaultValue?: unknown;
+    enum?: EnumValues;
     comment?: string;
   }): string {
     let def = `${this.escapeId(column.name)} ${column.type}`;
@@ -334,6 +343,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     }
     if (column.isUnique && !column.isPrimaryKey) {
       def += ' UNIQUE';
+    }
+    if (column.enum?.length) {
+      const values = column.enum.map((value) => this.dialect.escape(value)).join(', ');
+      def += ` CHECK (${this.escapeId(column.name)} IN (${values}))`;
     }
     def += this.defaultClause(column);
 
@@ -621,6 +634,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       const pkCols = table.primaryKey.map((c) => this.escapeId(c.name)).join(', ');
       constraints.push(`PRIMARY KEY (${pkCols})`);
     }
+
+    (table.checks ?? []).forEach((check, i) => {
+      const name = check.name ?? derivedCheckName(table.name, i + 1);
+      constraints.push(`CONSTRAINT ${this.escapeId(name)} CHECK (${check.expression})`);
+    });
 
     for (const rel of table.outgoingRelations) {
       if (rel.from.columns.length > 0) {

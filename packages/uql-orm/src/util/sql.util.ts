@@ -80,6 +80,11 @@ export function derivedIndexName(table: string, columns: readonly string[]): str
   return `idx_${table}_${columns.join('_')}`;
 }
 
+/** The constraint name a check gets when nothing named it: `ck_Order_1`, by declaration order. */
+export function derivedCheckName(table: string, position: number): string {
+  return `ck_${table}_${position}`;
+}
+
 /** The constraint name a foreign key gets when nothing named it: `fk_Order_customerId`. */
 export function derivedForeignKeyName(table: string, columns: readonly string[]): string {
   return `fk_${table}_${columns.join('_')}`;

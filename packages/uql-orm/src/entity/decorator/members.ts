@@ -28,11 +28,28 @@ type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext
  * primary key's own type. Which is what makes `@Field({ references: () => User })` on a `number`, where
  * `User.id` is a `uuid`, a compile error rather than a column that disagrees with its property.
  */
+/**
+ * The value type the options declare, which the decorated property is then checked against.
+ *
+ * `enum` narrows it to its own values, so the property must spell out the same set. Only the values
+ * the declared `type` admits count, which is what keeps `enum: [2]` off a `String` field.
+ */
 type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
-  ? TsTypeOf<T>
+  ? O extends { readonly enum: infer E extends readonly unknown[] }
+    ? EnumValue<Extract<E[number], TsTypeOf<T>>, TsTypeOf<T>>
+    : TsTypeOf<T>
   : O extends { readonly references: EntityGetter<infer E> }
     ? IdValue<E>
     : never;
+
+/**
+ * The enum's members, or a named complaint when they widened.
+ *
+ * `['a', 'b']` without `as const` infers `string[]`, whose member type is the field's own type and
+ * so narrows nothing - the check would be silently off. Resolving to a type no property can hold
+ * makes that a compile error that says why, rather than a decoration.
+ */
+type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enumNeedsAsConst: true } : Members;
 
 /**
  * Declares a persisted field.

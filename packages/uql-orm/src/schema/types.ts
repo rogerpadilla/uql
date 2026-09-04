@@ -61,6 +61,28 @@ export interface CanonicalType {
 export type ForeignKeyAction = 'CASCADE' | 'SET NULL' | 'SET DEFAULT' | 'RESTRICT' | 'NO ACTION';
 
 /**
+ * The values a column accepts, rendered as `CHECK (col IN (...))`.
+ *
+ * Strings and numbers only: those are what `IN (...)` can state, and each is escaped by the
+ * dialect's own literal rules, so a number stays bare where a string is quoted.
+ */
+export type EnumValues = readonly (string | number)[];
+
+/**
+ * A `CHECK` constraint as the schema holds it, its expression already text. Declared here rather
+ * than beside the entity types because a table node also comes from introspection, where there is
+ * no entity to have authored one.
+ *
+ * Only ever compared by presence, never by content: a check is SQL text, and a database reprints
+ * text from its parse tree, so `CHECK ("balance" >= 0)` reads back as `CHECK ((balance >= (0)::numeric))`.
+ */
+export interface CheckSchema {
+  /** Absent when nothing named it, which the generator fills in with `derivedCheckName`. */
+  readonly name?: string;
+  readonly expression: string;
+}
+
+/**
  * Default action for foreign key ON DELETE and ON UPDATE clauses.
  */
 export const DEFAULT_FOREIGN_KEY_ACTION: ForeignKeyAction = 'NO ACTION';
@@ -127,6 +149,8 @@ export interface ColumnNode {
   readonly isAutoIncrement: boolean;
   /** Whether this column has a unique constraint */
   readonly isUnique: boolean;
+  /** The values the column accepts. See {@link EnumValues}. */
+  readonly enum?: EnumValues;
   /** Column comment/description */
   readonly comment?: string;
 
@@ -161,6 +185,8 @@ export interface TableNode {
   readonly primaryKey: ColumnNode[];
   /** Indexes on this table */
   readonly indexes: IndexNode[];
+  /** `CHECK` constraints on this table. Optional: a node can be built without ever naming one. */
+  readonly checks?: CheckSchema[];
   /** Optional table comment */
   readonly comment?: string;
 

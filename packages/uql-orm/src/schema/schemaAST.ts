@@ -30,6 +30,7 @@ export function createTableNode(name: string, schema?: string, comment?: string)
     columns: new Map(),
     primaryKey: [],
     indexes: [],
+    checks: [],
     incomingRelations: [],
     outgoingRelations: [],
   };

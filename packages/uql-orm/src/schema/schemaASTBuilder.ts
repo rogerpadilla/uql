@@ -114,6 +114,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
 
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
   const { columns, primaryKey } = table;
+  table.checks?.push(...(meta.checks ?? []));
 
   // Add columns from fields
   const fields = meta.fields;
@@ -139,6 +140,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
       isAutoIncrement: field.autoIncrement ?? (isPrimaryKey && type.category === 'integer'),
       isUnique: field.unique ?? false,
       comment: field.comment,
+      enum: field.enum,
       table,
       referencedBy: [],
       references: undefined,

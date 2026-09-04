@@ -17,11 +17,11 @@ import type {
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import {
   getKeys,
+  ddlText,
   hasKeys,
   isToManyRelation,
   lowerFirst,
   normalizeIndexColumn,
-  normalizeIndexWhere,
   upperFirst,
 } from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
@@ -99,7 +99,7 @@ export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey
   meta.indexes.push({
     ...index,
     unique: index.unique ?? false,
-    where: normalizeIndexWhere(index.where),
+    where: ddlText(index.where, 'a partial-index predicate'),
     columns: index.columns.map(normalizeIndexColumn),
   });
   return meta;
@@ -172,6 +172,10 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   // after class decorators return; draining empties the bag, so whichever runs second is a no-op.
   applyMembers(entity, ownRegistrations(entity));
   applyMembers(entity, opts);
+  // Unnamed checks are named by the generator, as unnamed indexes are.
+  for (const check of opts.checks ?? []) {
+    (meta.checks ??= []).push({ name: check.name, expression: ddlText(check.expression, 'a check constraint') });
+  }
   for (const index of opts.indexes ?? []) {
     defineIndex(entity, index);
   }
