@@ -34,6 +34,17 @@ type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext
  * `enum` narrows it to its own values, so the property must spell out the same set. Only the values
  * the declared `type` admits count, which is what keeps `enum: [2]` off a `String` field.
  */
+/**
+ * Maps any option the type does not declare to `never`, turning a typo into a compile error.
+ *
+ * Needed because the decorators capture their options as a naked type parameter, and TypeScript
+ * skips excess-property checking on one of those: `@Field({ nulable: true })` compiled and was
+ * silently ignored. Resolves to `unknown` - an inert intersection member - when there are none.
+ */
+type RejectUnknown<O, Known> = [Exclude<keyof O, keyof Known>] extends [never]
+  ? unknown
+  : Record<Exclude<keyof O, keyof Known> & string, never>;
+
 type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
   ? O extends { readonly enum: infer E extends readonly unknown[] }
     ? EnumValue<Extract<E[number], TsTypeOf<T>>, TsTypeOf<T>>
@@ -60,9 +71,11 @@ type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enum
  * @example `@Field({ type: String }) name?: string;`
  * @example `@Field({ references: () => User }) userId?: string;` (where `User.id` is a `uuid`)
  */
-export function Field<O extends FieldOptions<DeclaredValue<O>> & ({ type: FieldType } | { references: EntityGetter })>(
-  opts: O,
-): MemberDecorator<DeclaredValue<O> | undefined> {
+export function Field<
+  O extends FieldOptions<DeclaredValue<O>> &
+    ({ type: FieldType } | { references: EntityGetter }) &
+    RejectUnknown<O, FieldOptions>,
+>(opts: O): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = opts;
   };
@@ -74,7 +87,7 @@ export function Field<O extends FieldOptions<DeclaredValue<O>> & ({ type: FieldT
  * @example `@Id({ type: Number }) id?: number;`
  * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
  */
-export function Id<O extends FieldOptions<DeclaredValue<O>> & { type: FieldType }>(
+export function Id<O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectUnknown<O, FieldOptions>>(
   opts: O,
 ): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
