@@ -2,6 +2,28 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.41.0] - 2026-09-04
+
+**Enum fields.** The values a column accepts, enforced by the database and by TypeScript:
+
+```ts
+@Field({ type: String, enum: ['draft', 'paid', 'void'] as const })
+status?: 'draft' | 'paid' | 'void';
+```
+
+- Emitted as a column `CHECK (col IN (...))` on every SQL dialect, not a native enum type: adding a value stays an ordinary column change rather than Postgres's irreversible `ALTER TYPE ... ADD VALUE`.
+- The property is checked against the values, so a member the column would reject is a compile error. `as const` is what makes them literal; without it you get a `__enumNeedsAsConst` error rather than a silently disabled check.
+
+**Table-level `CHECK` constraints**, emitted with the table:
+
+```ts
+@Entity({ checks: [{ expression: raw`"spent" <= "balance"` }] })
+```
+
+Unnamed ones are named `ck_<table>_<position>`. A check is created with its table; changing one later is a hand-written migration, since a database reprints SQL text from its parse tree and could only ever be diffed by name.
+
+**Partial-index predicates** and check expressions share one rule: `raw` with no interpolation, since DDL has no placeholder to bind a value into.
+
 ## [0.40.0] - 2026-09-04
 
 **`raw` is a tagged template.** Static SQL is the literal, every interpolation is bound:
