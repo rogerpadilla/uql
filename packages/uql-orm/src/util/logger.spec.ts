@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } fr
 import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.js';
 
 // Helper to strip ANSI escape codes
-// biome-ignore lint/suspicious/noControlCharactersInRegex: ANSI escape codes are necessary for testing color output
+// oxlint-disable-next-line no-control-regex -- ANSI escape codes are necessary for testing color output
 const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('DefaultLogger', () => {

@@ -1,0 +1,60 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "categories": {
+    "correctness": "error"
+  },
+  "rules": {
+    "default-param-last": "error",
+    "eqeqeq": [
+      "error",
+      "always",
+      {
+        "null": "ignore"
+      }
+    ],
+    "no-async-promise-executor": "error",
+    "no-compare-neg-zero": "error",
+    "no-constant-binary-expression": "error",
+    "no-debugger": "error",
+    "no-duplicate-case": "error",
+    "no-else-return": "error",
+    "no-ex-assign": "error",
+    "no-fallthrough": "error",
+    "no-prototype-builtins": "error",
+    "no-self-compare": "error",
+    "no-unused-labels": "error",
+    "no-unused-vars": "off",
+    "no-var": "error",
+    "object-shorthand": "error",
+    "one-var": ["error", "never"],
+    "typescript/no-explicit-any": "error",
+    "typescript/no-extra-non-null-assertion": "error",
+    "typescript/no-inferrable-types": "error",
+    "typescript/no-misused-new": "error",
+    "typescript/no-namespace": "error",
+    "typescript/no-non-null-asserted-optional-chain": "error",
+    "typescript/no-this-alias": "error",
+    "typescript/no-unsafe-declaration-merging": "error",
+    "typescript/prefer-as-const": "error",
+    "typescript/prefer-enum-initializers": "error",
+    "unicorn/no-document-cookie": "error",
+    "unicorn/no-instanceof-builtins": "error",
+    "unicorn/no-new-array": "off",
+    "unicorn/no-thenable": "error",
+    "unicorn/prefer-number-properties": "error"
+  },
+  "overrides": [
+    {
+      "files": ["**/*.spec.ts", "**/*-spec.ts", "**/*.test.ts", "**/*-test.ts", "**/*.test-d.ts"],
+      "rules": {
+        "typescript/no-explicit-any": "off"
+      }
+    },
+    {
+      "files": ["**/*.test-d.ts"],
+      "rules": {
+        "no-unused-expressions": "off"
+      }
+    }
+  ]
+}

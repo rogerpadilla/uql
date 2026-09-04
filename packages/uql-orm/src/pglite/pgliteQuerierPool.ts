@@ -32,7 +32,7 @@ export type PglitePoolOptions = Omit<PGliteOptions, 'dataDir'>;
  */
 export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PgliteDialect> {
   constructor(
-    readonly dataDir: string = 'memory://',
+    readonly dataDir = 'memory://',
     readonly opts?: PglitePoolOptions,
     extra?: ExtraOptions,
   ) {

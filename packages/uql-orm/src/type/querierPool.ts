@@ -35,8 +35,10 @@ export interface PoolRunOptions {
  * @typeParam Q - Querier implementation returned from the pool.
  * @typeParam D - Concrete dialect class held by the pool.
  */
-export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDialect = AbstractDialect>
-  extends UniversalQuerier {
+export interface QuerierPool<
+  Q extends Querier = Querier,
+  D extends AbstractDialect = AbstractDialect,
+> extends UniversalQuerier {
   /**
    * Database dialect instance (single source of truth for dialect id and SQL/NoSQL behavior).
    */
@@ -84,15 +86,14 @@ export interface QuerierPool<Q extends Querier = Querier, D extends AbstractDial
  * Raw `all`/`run` bypass query generation, so they are **not** scoped by `security` filters/context.
  */
 export interface SqlQuerierPool<Q extends SqlQuerier = SqlQuerier, D extends AbstractSqlDialect = AbstractSqlDialect>
-  extends QuerierPool<Q, D>,
-    Pick<SqlQuerier, 'all' | 'run'> {}
+  extends QuerierPool<Q, D>, Pick<SqlQuerier, 'all' | 'run'> {}
 
 /** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
-// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction - `any` is required to match all pool instantiations
+// oxlint-disable-next-line typescript/no-explicit-any -- conditional type extraction - `any` is required to match all pool instantiations
 export type QuerierPoolDialect<P> = P extends QuerierPool<any, infer D> ? D : never;
 
 /** Querier type produced by pool `P`. */
-// biome-ignore lint/suspicious/noExplicitAny: conditional type extraction - `any` is required to match all pool instantiations
+// oxlint-disable-next-line typescript/no-explicit-any -- conditional type extraction - `any` is required to match all pool instantiations
 export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, any> ? Q : never;
 
 /**

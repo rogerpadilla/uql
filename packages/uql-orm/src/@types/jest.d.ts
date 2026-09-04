@@ -1,4 +1,4 @@
-/** biome-ignore-all lint/style/noNamespace: compat */
+/* oxlint-disable typescript/no-namespace -- compat */
 declare namespace jest {
   export interface Expect {
     toMatch: (received: RegExp) => void;

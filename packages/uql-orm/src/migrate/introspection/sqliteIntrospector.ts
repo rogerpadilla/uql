@@ -78,21 +78,19 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     // Get unique columns from indexes
     const uniqueColumns = await this.getUniqueColumns(read, tableName);
 
-    return results.map(
-      (row): ColumnSchema => ({
-        name: row.name,
-        type: this.normalizeType(row.type),
-        nullable: row.notnull === 0,
-        defaultValue: this.parseDefaultValue(row.dflt_value),
-        isPrimaryKey: row.pk > 0,
-        isAutoIncrement: row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
-        isUnique: uniqueColumns.has(row.name),
-        length: this.extractLength(row.type),
-        precision: undefined,
-        scale: undefined,
-        comment: undefined, // SQLite doesn't support column comments
-      }),
-    );
+    return results.map((row): ColumnSchema => ({
+      name: row.name,
+      type: this.normalizeType(row.type),
+      nullable: row.notnull === 0,
+      defaultValue: this.parseDefaultValue(row.dflt_value),
+      isPrimaryKey: row.pk > 0,
+      isAutoIncrement: row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
+      isUnique: uniqueColumns.has(row.name),
+      length: this.extractLength(row.type),
+      precision: undefined,
+      scale: undefined,
+      comment: undefined, // SQLite doesn't support column comments
+    }));
   }
 
   protected async mapIndexesResult(

@@ -12,24 +12,28 @@ First off, thank you for considering contributing to UQL! It's people like you w
 ## How to Contribute
 
 ### Bug Reports
+
 Open an issue and include:
+
 - A clear description of the bug.
 - Steps to reproduce (a minimal reproduction case is highly appreciated).
 - Your environment (Node/Bun version, OS, Database used).
 
 ### Feature Requests
+
 Open an issue describing the desired behavior and the "why" behind it. We prefer detailed proposals over "add X feature" requests.
 
 ### Pull Requests
+
 - **Small, focused PRs**: Keep changes atomic.
 - **Commit Messages**: Use conventional commits (e.g., `feat: add X`, `fix: resolve Y`).
 - **Testing**: Ensure all tests pass and add new tests for any new functionality.
-- **Linting**: Run `bun run lint` (Biome) to ensure code style consistency.
+- **Linting**: Run `bun run lint` (Oxlint and Oxfmt) to ensure code style consistency.
 
 ## Coding Standards
 
 - **TypeScript**: Strict typing is required. Avoid `any` whenever possible.
-- **Formatting**: We use Biome for linting and formatting.
+- **Formatting**: We use Oxlint for linting and Oxfmt for formatting.
 - **Simplicity**: KISS: Prefer readable, maintainable code over "clever" optimizations unless performance is the primary goal.
 
 ## Packaging
@@ -49,4 +53,5 @@ Versioning and publishing are separate on purpose: `lerna publish`'s npm step 40
 - npm auth needs no setup: `.npmrc` holds the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` must export it.
 
 ## Questions?
+
 Feel free to open an issue or reach out via the community channels.

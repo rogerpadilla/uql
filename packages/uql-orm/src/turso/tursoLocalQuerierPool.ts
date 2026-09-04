@@ -26,7 +26,7 @@ export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
   TursoDialect
 > {
   constructor(
-    readonly filename: string = ':memory:',
+    readonly filename = ':memory:',
     readonly opts?: TursoLocalOptions,
     extra?: ExtraOptions,
   ) {

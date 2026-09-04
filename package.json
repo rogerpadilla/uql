@@ -18,8 +18,8 @@
     "ts": "tsc --noEmit",
     "ts.perf": "bun scripts/type-perf.ts",
     "build": "bun run --filter '*' build",
-    "lint": "biome check .",
-    "lint.fix": "biome check . --fix",
+    "lint": "oxlint && oxfmt --check",
+    "lint.fix": "oxlint --fix && oxfmt",
     "test": "bun run test:vitest && bun run test:bun",
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --timeout 10000 --coverage-dir=coverage/bun ./packages/uql-orm/src/bunSql/ ./packages/uql-orm/src/sqlite/sqliteQuerier.bun.test.ts",
@@ -46,7 +46,6 @@
   },
   "devDependencies": {
     "@arethetypeswrong/cli": "^0.18.5",
-    "@biomejs/biome": "2.5.12",
     "@commitlint/cli": "21.2.2",
     "@commitlint/config-conventional": "21.2.2",
     "@types/bun": "^1.4.0",
@@ -56,6 +55,8 @@
     "lerna": "^10.0.1",
     "lint-staged": "^17.4.1",
     "mongodb-memory-server": "11.2.0",
+    "oxfmt": "^0.66.0",
+    "oxlint": "^1.81.0",
     "publint": "^0.3.24",
     "rimraf": "6.1.3",
     "supertest": "^7.2.2",
@@ -64,8 +65,9 @@
     "vitest": "^5.0.0"
   },
   "lint-staged": {
-    "*.{js,ts,tsx,json,css,md}": [
-      "biome check --fix --no-errors-on-unmatched"
+    "*.{js,ts,tsx,json,css,md,yml,yaml}": [
+      "oxlint --fix --no-ignore",
+      "oxfmt"
     ]
   }
 }

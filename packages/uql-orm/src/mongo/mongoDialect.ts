@@ -1050,14 +1050,11 @@ export class MongoDialect extends AbstractDialect {
     const payloads = fillOnFields(meta, payload, callbackKey);
     // Keys are resolved per document so heterogeneous payloads keep every provided field.
     return payloads.map((it) =>
-      filterFieldKeys(meta, it, callbackKey).reduce<Partial<E>>(
-        (acc, key) => {
-          const field = meta.fields[key];
-          (acc as Record<string, unknown>)[this.resolveColumnName(key, field!)] = it[key];
-          return acc;
-        },
-        {} as Partial<E>,
-      ),
+      filterFieldKeys(meta, it, callbackKey).reduce<Partial<E>>((acc, key) => {
+        const field = meta.fields[key];
+        (acc as Record<string, unknown>)[this.resolveColumnName(key, field!)] = it[key];
+        return acc;
+      }, {} as Partial<E>),
     );
   }
 

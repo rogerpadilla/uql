@@ -18,7 +18,7 @@ import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import { getKeys, hasKeys, isToManyRelation, lowerFirst, normalizeIndexColumn, upperFirst } from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
-// biome-ignore lint/suspicious/noExplicitAny: heterogeneous registry - stores EntityMeta for all entity types
+// oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
 // Held on `globalThis` via the global symbol registry so a single metadata map survives multiple
 // evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading). Version-suffixed
@@ -42,7 +42,7 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // column from the referenced primary key (picking up its `columnType`, length and chained keys)
   // instead of treating whatever ends up in `type` as deliberate.
   const resolved = opts.type ? opts : { ...opts, typeFromReference: true as const };
-  meta.fields[fieldKey] = { ...meta.fields[fieldKey], ...{ name: key, ...resolved } };
+  meta.fields[fieldKey] = { ...meta.fields[fieldKey], name: key, ...resolved };
   return meta;
 }
 

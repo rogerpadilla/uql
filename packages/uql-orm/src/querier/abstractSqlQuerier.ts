@@ -365,7 +365,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   ): Promise<QueryAggregateResult<E, G, A>[]> {
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q, opts);
-    // biome-ignore lint/suspicious/noExplicitAny: raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify
+    // oxlint-disable-next-line typescript/no-explicit-any -- raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify
     const res = await this.all<any>(ctx.sql, ctx.values);
     const hydratable = this.dialect.hydratableAggregates(entity, q);
     for (const row of res) {

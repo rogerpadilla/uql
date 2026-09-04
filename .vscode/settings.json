@@ -1,13 +1,12 @@
 {
-  // Biome is the default formatter for every language it parses, so no per-language entry is needed:
+  // Oxfmt is the default formatter for every language it parses, so no per-language entry is needed:
   // one would only be here to name a different formatter, and nothing in this repo uses one.
-  "editor.defaultFormatter": "biomejs.biome",
+  "editor.defaultFormatter": "oxc.oxc-vscode",
   "editor.formatOnSave": true,
   "js.preferences.quoteStyle": "single",
   "ts.preferences.quoteStyle": "single",
   "editor.codeActionsOnSave": {
-    "source.organizeImports.biome": "explicit",
-    "source.fixAll.biome": "explicit"
+    "source.fixAll.oxc": "explicit"
   },
   "terminal.integrated.env.osx": {
     "CLAUDE_CONFIG_DIR": "${env:HOME}/.claude-personal"

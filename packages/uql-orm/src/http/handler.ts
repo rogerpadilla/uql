@@ -80,9 +80,9 @@ export type ResponseHook<Ctx = unknown> = <E extends object>(
 ) => void | Promise<void>;
 
 export type RequestHandlerOptions<Ctx = unknown> = {
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
+  // oxlint-disable-next-line typescript/no-explicit-any -- accepts any entity constructor
   include?: Type<any>[];
-  // biome-ignore lint/suspicious/noExplicitAny: accepts any entity constructor
+  // oxlint-disable-next-line typescript/no-explicit-any -- accepts any entity constructor
   exclude?: Type<any>[];
   /**
    * Allow augment any kind of request before it runs. Hooks may be async
@@ -153,7 +153,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
         "A route is the kebab-cased class name. Rename a class, or pass only one of them in 'include'.",
     );
   }
-  // biome-ignore lint/suspicious/noExplicitAny: heterogeneous entity map
+  // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous entity map
   const entityByPath = new Map<string, Type<any>>([...byPath].map(([path, [entity]]) => [path, entity]));
 
   return (req) => {

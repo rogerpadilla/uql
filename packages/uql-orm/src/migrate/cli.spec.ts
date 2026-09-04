@@ -55,7 +55,7 @@ const mockMigrator = {
 
 vi.mock('./migrator.js', () => {
   return {
-    // biome-ignore lint/complexity/useArrowFunction: we need to return a function for the mock implementation
+    // We need to return a function for the mock implementation
     Migrator: vi.fn().mockImplementation(function () {
       return mockMigrator;
     }),

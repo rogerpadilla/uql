@@ -711,7 +711,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldGenerateRestoreUpdate() {
     // Restore = UPDATE set the soft-delete field to null, with the soft-delete read filter disabled.
-    const field: string = 'deletedAt';
+    const field = 'deletedAt';
     const payload = { [field]: null } as UpdatePayload<MeasureUnit>;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(ctx, MeasureUnit, { $where: { id: 1, deletedAt: { $ne: null } } }, payload, {

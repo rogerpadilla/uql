@@ -552,12 +552,12 @@ export type MethodKey<E> = {
  * entity graph almost always has. Nothing about the standard decorator spec changes that; it only removed
  * the reflected `design:type` that used to make `entity` optional.
  */
-// biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
+// oxlint-disable-next-line typescript/no-explicit-any -- public generic default - changing would break callers
 export type EntityGetter<E = any> = () => Type<E>;
 
 export type CascadeType = 'persist' | 'delete';
 
-// biome-ignore lint/suspicious/noExplicitAny: public generic default - changing would break callers
+// oxlint-disable-next-line typescript/no-explicit-any -- public generic default - changing would break callers
 export type RelationOptions<E = any> = {
   entity: EntityGetter<E>;
   cardinality: RelationCardinality;
@@ -591,7 +591,7 @@ export type RelationOptions<E = any> = {
  * from "declared, but an inverse side too, so neither owns the foreign key" needs the unresolved shape
  * still there to find. A phase-split metadata map costs more than the call parentheses it saves.
  */
-// biome-ignore lint/suspicious/noExplicitAny: mirrors RelationOptions' public generic default
+// oxlint-disable-next-line typescript/no-explicit-any -- mirrors RelationOptions' public generic default
 export type RelationMeta<E = any> = Omit<RelationOptions<E>, 'mappedBy' | 'references'> & {
   mappedBy?: Key<E>;
   references: RelationReferences;

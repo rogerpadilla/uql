@@ -70,10 +70,8 @@ export function entityName<E>(meta: EntityMeta<E>): string {
   return meta.name ?? meta.entity.name;
 }
 
-export function getFieldKeys<E>(
-  fields: {
-    [K in FieldKey<E>]?: FieldOptions;
-  },
-): FieldKey<E>[] {
+export function getFieldKeys<E>(fields: {
+  [K in FieldKey<E>]?: FieldOptions;
+}): FieldKey<E>[] {
   return getKeys(fields).filter((field) => fields[field]!.eager ?? true);
 }

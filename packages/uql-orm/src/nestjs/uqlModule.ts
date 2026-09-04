@@ -67,7 +67,7 @@ class UqlPoolLifecycle implements OnApplicationShutdown {
  * it as an option rather than reading a process-wide default.
  */
 @Module({})
-// biome-ignore lint/complexity/noStaticOnlyClass: NestJS needs a decorated class as the module token; the shutdown hook that once made this an instance now lives on its own provider.
+// NestJS needs a decorated class as the module token; the shutdown hook that once made this an instance now lives on its own provider.
 export class UqlModule {
   /** Configure with an already-built pool. */
   static forRoot<Req = unknown>({ pool, global = true, getContext }: UqlModuleOptions<Req>): DynamicModule {

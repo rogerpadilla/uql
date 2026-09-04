@@ -24,7 +24,7 @@ export function escapeSingleQuotes(val: string): string {
 const ansiStringLiteral: StringLiteralEscaper = (val) => `'${escapeSingleQuotes(val)}'`;
 
 // MySQL/MariaDB backslash-escape rather than doubling the quote. Mirrors the `sqlstring` map it replaced.
-// biome-ignore lint/suspicious/noControlCharactersInRegex: MySQL string literals must escape NUL, backspace and SUB
+// oxlint-disable-next-line no-control-regex -- MySQL string literals must escape NUL, backspace and SUB
 const MYSQL_SPECIALS = /[\0\b\t\n\r\x1a"'\\]/g;
 const MYSQL_ESCAPES: Record<string, string> = {
   '\0': '\\0',

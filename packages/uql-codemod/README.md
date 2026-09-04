@@ -14,11 +14,11 @@ npx uql-codemod --dry-run
 npx uql-codemod
 ```
 
-| Flag | |
-|---|---|
+| Flag               |                                                                                                                                                                                                                                                       |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `--project=<path>` | `tsconfig.json` to read, defaulting to `./tsconfig.json`. It is a real program and not a parser, because the codemod writes down the types `design:type` used to report at runtime, so a config that covers your entities is what makes the run work. |
-| `--dry-run` | Report what would change and touch nothing. |
-| `--include=<a,b>` | Only files whose path contains one of these fragments. |
+| `--dry-run`        | Report what would change and touch nothing.                                                                                                                                                                                                           |
+| `--include=<a,b>`  | Only files whose path contains one of these fragments.                                                                                                                                                                                                |
 
 Only the `--flag=value` form is read, and anything unrecognised is an error: a misspelled `--dry-run` would otherwise rewrite the project for real. It exits `0` when nothing is left for you, `1` when something is, and `2` when it could not start at all - a bad argument, or a project it cannot read.
 
@@ -39,11 +39,11 @@ It reports rather than guesses, and exits non-zero when anything is left for you
 - **`@Log()`, `@Serialized()`, `@Transactional()` and `@InjectQuerier()`** are reported and left in place. They no longer exist, and what to do instead is a judgement call - a `@Transactional()` method becomes a `pool.transaction(async (querier) => { ... })` around its body, and the codemod cannot know which pool.
 - **Options it cannot read** (`@Field(sharedOptions)`, a spread, or a `@Field` never called at all) are left exactly as written. Replacing an argument it cannot parse would silently drop the options.
 - **A property whose type it cannot map to a column** (a `Json<T>`, a vector, a union that disagrees with itself) is reported as `needs a decision`. Those always had to declare `type` by hand anyway, because `design:type` reported the useless `Object`/`Array` for them.
-- **A branded string id**, e.g. `type UUID = \`${string}-${string}\``, gets `type: String` plus a `worth a look` note. That is a real fork: `String` generates a text column, `'uuid'` generates a native one, and only you know which the database has.
+- **A branded string id**, e.g. `type UUID = \`${string}-${string}\``, gets `type: String`plus a`worth a look`note. That is a real fork:`String`generates a text column,`'uuid'` generates a native one, and only you know which the database has.
 
 ## After it runs
 
-`tsc` is the rest of the migration, and that is the point: the annotations the codemod inserts are now *checked* against the properties they describe, so anything it got wrong is a compile error rather than a silently wrong column. See the [upgrade guide](https://uql-orm.dev/upgrade-guide).
+`tsc` is the rest of the migration, and that is the point: the annotations the codemod inserts are now _checked_ against the properties they describe, so anything it got wrong is a compile error rather than a silently wrong column. See the [upgrade guide](https://uql-orm.dev/upgrade-guide).
 
 ## Why TypeScript 6
 
