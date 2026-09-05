@@ -13,7 +13,7 @@ a read-only relation expressible and brands it on the type, so writing to a view
 Unlocks views, matviews, future CTEs.
 
 **R5 — `dialect.compile(query) -> { sql, values }`.** Makes the SQL text a memoizable identity, which
-is the whole prerequisite for prepared statements and batching.
+is the whole prerequisite for batching.
 
 **R6 — one projection-alias concept.** `$agg` aliases, `_count`, and the proposed `$window` aliases and
 cursor metadata each carry their own result-type derivation. Unify, or `$window` adds a third. Unlocks
@@ -89,13 +89,6 @@ site: add `$populate` of a to-many and the batch quietly becomes several round t
 The honest shape is statement-level, `pool.batch([{ sql, values }, ...])` over `compile()`, which
 guarantees the round trip but gives up the typing that makes the rest of the API worth using. Decide
 which is wanted before building either.
-
-## Server-side prepared statements
-
-Opt-in per pool, **default off**: session-level prepared statements break transaction-mode poolers,
-which is currently advertised as a feature. Depends on R5 - the same query shape compiles to a
-byte-identical string, so that string is the cache key with no fingerprinting. `IN`-list arity and
-`insertMany` chunking would thrash the cache; cap it and skip variadic statements.
 
 ## Where a composite key still refuses
 
