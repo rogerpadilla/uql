@@ -88,6 +88,10 @@ const NAME_HASH_LENGTH = 6;
  *
  * The kind goes last, as Postgres spells its own (`users_pkey`, `users_email_idx`), so a table's
  * constraints sort together under the table they belong to.
+ *
+ * Not overridable, deliberately: a `NamingStrategy` hook would have to reach the eight call sites
+ * these have, an introspector and two builders among them, to replace a name any declaration can
+ * already set outright with `name:`. Worth revisiting only for a case that option cannot express.
  */
 export function derivedConstraintName(
   table: string,
