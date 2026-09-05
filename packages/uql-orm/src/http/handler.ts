@@ -1,5 +1,5 @@
 import { withContext } from '../context/context.js';
-import { getEntities, getMeta } from '../entity/index.js';
+import { getEntities, getMeta, soleIdOf } from '../entity/index.js';
 import type {
   EntityMeta,
   IdValue,
@@ -283,8 +283,8 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
             const founds = await querier.findMany(entity, query);
             let ids: IdValue<E>[] = [];
             let count = 0;
-            if (founds.length && meta.id) {
-              const idKey = meta.id;
+            if (founds.length) {
+              const idKey = soleIdOf(meta, 'the HTTP handler');
               ids = founds.map((found) => found[idKey]);
               count = await querier.deleteMany(entity, { $where: ids }, { hardDelete });
             }
@@ -300,7 +300,7 @@ function ok(body: unknown): HandlerResponse {
 }
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
-  const idKey = meta.id as string;
+  const idKey = soleIdOf(meta, 'the HTTP handler');
   const where = query.$where;
   if (Array.isArray(where)) {
     query.$where = { $and: [{ [idKey]: { $in: where } }, { [idKey]: id }] } as Query<E>['$where'];

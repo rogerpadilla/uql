@@ -1,4 +1,4 @@
-import { getMeta } from '../entity/index.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import {
   type EntityMeta,
   type FieldKey,
@@ -73,6 +73,8 @@ import {
   isOperatorOnlyObject,
   isVectorSearch,
   normalizeScalarFieldSelection,
+  parentJoins,
+  targetKeyColumns,
   parseGroupMap,
   parseRelationSize,
   parseSortByCount,
@@ -224,9 +226,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return '?';
   }
 
-  returningId<E>(entity: Type<E>): string {
-    const meta = getMeta(entity);
-    const idName = this.columnOf(meta, meta.id);
+  returningId<E>(meta: EntityMeta<E>): string {
+    const idName = this.columnOf(meta, soleIdOf(meta, 'returning an inserted id'));
     return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
   }
 
@@ -258,8 +259,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
     // A prefix means relations are in play: rows arrive keyed by the id and `fillToManyRelations`
     // groups children by it, so it outlives any subtraction - `$exclude` or falsy `$select` alike.
-    const id = meta.id;
-    const selectArr = id && opts.prefix && !scalars.includes(id) ? [id, ...scalars] : scalars;
+    // Every key of a composite, since grouping by part of one would gather the wrong rows together.
+    const missingIds = opts.prefix ? meta.ids.filter((key) => !scalars.includes(key)) : [];
+    const selectArr = missingIds.length ? [...missingIds, ...scalars] : scalars;
 
     if (!selectArr.length) {
       ctx.append(escapedPrefix + '*');
@@ -1340,9 +1342,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     this.appendInsertValues(ctx, entity, payload);
 
     // Every engine whose ids come back from the statement itself wants the same clause, so it is
-    // appended once here instead of in an identical `insert` override per dialect.
-    if (this.insertIdSource === 'returning') {
-      ctx.append(` ${this.returningId(entity)}`);
+    // appended once here instead of in an identical `insert` override per dialect. A composite key
+    // has nothing to ask for: the alias names one column, and every column of it came from the
+    // caller, so there is no id the statement could report that the payload does not already carry.
+    const meta = getMeta(entity);
+    if (this.insertIdSource === 'returning' && meta.ids.length === 1) {
+      ctx.append(` ${this.returningId(meta)}`);
     }
   }
 
@@ -1461,7 +1466,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(entity)}${extraReturning}`);
+    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(meta)}${extraReturning}`);
     if (updateCtx !== ctx) {
       ctx.pushValue(...updateCtx.values);
     }
@@ -1942,8 +1947,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   ): void {
     // Aliases, not paths, everywhere a column is prefixed; `tableRef` declares them in the FROM.
     const parentAlias = this.resolveTableAlias(meta);
-    const references = rel.references;
-    const escapedParentId = this.escapedParentColumn(parentAlias, meta, opts, meta.id);
     const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
     const { alias: relatedAlias, ref: relatedRef } = this.tableRef(relatedMeta);
@@ -1952,31 +1955,38 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
     ctx.append(`(SELECT ${projection} FROM `);
 
+    // One equality per key of the parent, anded: a composite correlates on every column, and matching
+    // on part of one would find the rows of a different parent. `parentJoins` is what keeps the two
+    // ends the right way round, whether the join lands on the junction or on the target.
+    const correlation = (alias: string, joinedMeta: EntityMeta<unknown>) =>
+      parentJoins(rel, meta.ids.length)
+        .map(
+          ({ parent, joined }) =>
+            `${this.escapedColumn(alias, joinedMeta, joined)} = ${this.escapedParentColumn(parentAlias, meta, opts, parent)}`,
+        )
+        .join(' AND ');
+
     if (rel.cardinality === 'mm' && rel.through) {
       const throughEntity = rel.through();
       const throughMeta = getMeta(throughEntity);
       const { alias: throughAlias, ref: throughRef } = this.tableRef(throughMeta);
 
       ctx.append(throughRef);
-      ctx.append(` WHERE ${this.escapedColumn(throughAlias, throughMeta, references[0].local)} = ${escapedParentId}`);
+      ctx.append(` WHERE ${correlation(throughAlias, throughMeta)}`);
       // The junction is a row being read too: a soft-deleted link is not a link.
       this.where(ctx, throughEntity, {}, { prefix: throughAlias, clause: 'AND' });
 
       if (hasKeys(targetWhere)) {
-        ctx.append(` AND ${this.escapedColumn(throughAlias, throughMeta, references[1].local)} IN (`);
-        ctx.append(`SELECT ${this.escapedColumn(relatedAlias, relatedMeta, relatedMeta.id)} FROM ${relatedRef}`);
+        const targetKey = soleIdOf(relatedMeta, 'a many-to-many target');
+        const [targetColumn] = targetKeyColumns(rel, meta.ids.length);
+        ctx.append(` AND ${this.escapedColumn(throughAlias, throughMeta, targetColumn)} IN (`);
+        ctx.append(`SELECT ${this.escapedColumn(relatedAlias, relatedMeta, targetKey)} FROM ${relatedRef}`);
         this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'WHERE' });
         ctx.append(')');
       }
     } else {
-      const joinLeft = this.escapedColumn(relatedAlias, relatedMeta, references[0].foreign);
-      const joinRight =
-        rel.cardinality === '1m'
-          ? escapedParentId
-          : this.escapedParentColumn(parentAlias, meta, opts, references[0].local);
-
       ctx.append(relatedRef);
-      ctx.append(` WHERE ${joinLeft} = ${joinRight}`);
+      ctx.append(` WHERE ${correlation(relatedAlias, relatedMeta)}`);
       this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'AND' });
     }
 

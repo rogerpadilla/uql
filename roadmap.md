@@ -45,37 +45,60 @@ wait for a second kind, so the shape is derived rather than guessed.
 await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
 ```
 
-**Done:** `meta.ids` as the only stored form, `@Id` twice declaring a composite, composite
-`PRIMARY KEY` DDL, by-id `$where`, and a refusal naming its own path everywhere composites are not
-supported yet.
+**Everything that can address a row by several columns works**: declaration, DDL, inserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by. Cascading a delete does too, by an OR of key maps where a single key is one `IN`. What is left is the places that identify a row through a single slot - the id an insert returns, the id `saveMany` reads as proof a row exists, one `_id`, one URL segment - which a composite row does not fit. Each throws naming itself rather than falling back to the first key column, so the feature fails loudly where it is unfinished instead of quietly addressing the wrong rows.
 
 **The id is a plain object**, as TypeORM and MikroORM take. Prisma's named compound
 (`where: { userId_groupId: {...} }`) exists to say _which_ unique constraint `findUnique` should use;
 `findOneById` is unambiguous, so the convention would buy nothing and break on a rename. A tuple is
 positionally fragile. The object also _is_ a `$where` map, so `buildQueryWhereAsMap` needs no special
-case.
+case, and a list of them is the OR that `QueryWhereArray` always claimed to be.
 
 ### Where we already beat them
 
 - **No reachable singular key.** TypeORM keeps `primaryColumns[0]`, MikroORM keeps `compositePK`
-  beside the list; either lets a caller silently take the first of two.
+  beside the list; either lets a caller silently take the first of two. `assertSoleId` is the only
+  way past `meta.ids`, and it throws.
 - **Every key is required.** TypeORM's `ensureEntityIdMap` passes any object through, so
-  `{ userId: 1 }` on a two-key entity addresses every row sharing it. `assertIdValue` refuses.
+  `{ userId: 1 }` on a two-key entity addresses every row sharing it. `assertIdValue` refuses - and
+  refuses `{}` on a single key too, which is otherwise a statement with no `WHERE`.
 - **Refusals name the path**, rather than a generic "composite not supported".
 
 ### Left, in order
 
-Every path below refuses a composite by name rather than guessing, so the feature is inert where it is unfinished rather than wrong.
+1. **The id an insert reports.** The statement needs nothing: every column of a composite comes from
+   the caller, so `insertMany` inserts and reports `undefined` per row - the same "no id to give" its
+   contract already carries for a key MySQL's header cannot speak for. Reporting the id itself means
+   returning the map `EntityId` describes (TypeORM's `getEntityIdMixedMap`), which widens `insertOne`'s
+   _return_ type for **every** entity: measured at 139 errors across this repo alone, all of them
+   single-key code doing `const id = await insertOne(User, u)`. Not worth it for the composite case;
+   revisit only with a way to keep the single-key return narrow.
+2. **`saveMany`** - it reads an id as proof the row exists and inserts the rest. A composite is
+   supplied whole on an insert too, so every row would look like an update and a new one would
+   silently update nothing. Telling them apart takes a read, which is upsert's job.
+3. **Saving a relation** - `saveToMany`/`saveOneToOne` write the parent's key into one child column,
+   the same value for the whole page. A composite writes several columns per parent, which is a
+   statement per parent rather than one over a list. Cascading a delete already takes every column,
+   through `childrenOf`.
+4. **MongoDB** - a compound `_id` is a sub-document, whose field order decides equality: a different
+   document shape rather than a translation. Refused on both sides today, because refusing only reads
+   would let a write store the columns flat where no read would look for them.
+5. **The HTTP `/:id` route** - one path segment. No ORM above ships an HTTP layer, so the
+   serialization is ours to invent; client and server both refuse until it is. Two things to settle
+   first, in this order:
+   - **The adapters disagree about percent-decoding.** `fetchHandler` splits `url.pathname`, which is
+     still encoded; express hands over `req.params`, which is decoded. Invisible while ids are numbers
+     and uuids, load-bearing the moment a segment carries punctuation. Normalize that first, or the
+     payload has to avoid `%`, `{` and `/` altogether (base64url of the JSON).
+   - **A by-id route does not check the id.** `buildIdQuery` builds a `$where` and the handler calls
+     `findOne`/`updateMany`/`deleteMany`, so `assertIdValue` never runs. Harmless while the segment is
+     one value, but a partial composite arriving there would address every row agreeing on the columns
+     it did name - and on a `DELETE`. The check moves into `buildIdQuery` as part of this.
 
-1. **Relation filtering** (`abstractSqlDialect`, 4 sites) - the correlated `EXISTS`/`IN` sub-query
-   correlates on one column (`t.a = p.a`) and reads a junction's pairs positionally. A composite needs every key anded, and the pair groups sliced at the parent's key count as `parentKeyColumns` does.
-2. **`insertMany` id return** - `RETURNING <col> AS id` names one column. A composite returns the map `EntityId` already describes, which is TypeORM's `getEntityIdMixedMap`.
-3. **`$count` tallies** - groups per parent by one column; needs `rowKey` as the loaders now use it.
-4. **MongoDB** - a compound `_id` is a different document shape, not a translation.
-5. **The HTTP `/:id` route** - one path segment. No ORM above ships an HTTP layer, so the serialization is ours to invent.
-
-Done since: `meta.ids` as the only stored form, composite `PRIMARY KEY` and foreign-key DDL with each column typed from its own referenced key, by-id addressing through `EntityId`, `assertIdValue` requiring every key, one-to-many loading, and every key column surviving a projection so children
-group correctly.
+   Then the format itself: JSON, since that is already the wire everywhere else here. The client
+   encodes an id object with `JSON.stringify`; `buildIdQuery` parses iff `meta.ids.length > 1`, so the
+   shape is decided by metadata rather than by sniffing the string - an id that merely starts with `{`
+   stays unambiguous. JSON also keeps `1` a number, where a delimiter-joined segment (`1~maths`) hands
+   every part back as a string and breaks on a value containing the delimiter.
 
 Types stay permissive for composites: accumulating `@Id` across properties into the class type is not
 something TypeScript can do, so the `idKey` brand remains the opt-in for compile-time enforcement and

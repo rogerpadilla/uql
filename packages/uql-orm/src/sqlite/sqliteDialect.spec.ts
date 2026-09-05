@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
+import { getMeta } from '../entity/index.js';
 import {
   Company,
   createSpec,
@@ -21,7 +22,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   }
 
   protected override returningClause<E>(entity: Type<E>): string {
-    return ' ' + this.dialect.returningId(entity);
+    return ' ' + this.dialect.returningId(getMeta(entity));
   }
 
   override shouldBeginTransaction() {

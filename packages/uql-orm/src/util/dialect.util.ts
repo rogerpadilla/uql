@@ -1,4 +1,5 @@
 import { getContext, UqlSecurityError } from '../context/context.js';
+import { soleIdOf } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type CascadeType,
@@ -8,9 +9,7 @@ import {
   type FieldKey,
   type FieldOptions,
   type FilterOnMissing,
-  type IdValue,
   type JsonUpdateOp,
-  type MongoId,
   type OnFieldCallback,
   type Query,
   type QueryAggMap,
@@ -35,7 +34,7 @@ import {
   type UqlContext,
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
-import { entityName, getFieldKeys, getKeys, hasKeys, someKey } from './object.util.js';
+import { entityName, getFieldKeys, getKeys, hasKeys, isScalarId, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -177,7 +176,7 @@ export function isPagedQuery<E>(q: QuerySearch<E>): boolean {
  * compiler - so it is spelled once here rather than in each querier.
  */
 export function idOnlyQuery<E>(meta: EntityMeta<E>, q: QuerySearch<E>): Query<E> {
-  return { ...q, $select: { [meta.id]: true } } as Query<E>;
+  return { ...q, $select: Object.fromEntries(meta.ids.map((key) => [key, true])) } as Query<E>;
 }
 
 /**
@@ -324,10 +323,18 @@ export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<
   if (filter instanceof QueryRaw) {
     return { $and: [filter] } as QueryWhereMap<E>;
   }
-  if (isIdValue(filter)) {
-    return {
-      [meta.id]: filter,
-    } as QueryWhereMap<E>;
+  if (Array.isArray(filter)) {
+    // A list of bare ids is an `IN` over the one key column; a list of anything else is a list of
+    // `$where`s, which is an OR - and that is how a composite's id objects name a settled set of rows.
+    return filter.every(isScalarId)
+      ? ({ [soleIdOf(meta, 'addressing by a bare id value')]: filter } as QueryWhereMap<E>)
+      : ({ $or: filter } as QueryWhereMap<E>);
+  }
+  if (isScalarId(filter)) {
+    // A scalar can only name one column, so on a composite it would address every row agreeing on
+    // that one. A composite is addressed by a map, which falls through below as the `$where` it
+    // already is - an id object and a where map are the same shape by design.
+    return { [soleIdOf(meta, 'addressing by a bare id value')]: filter } as QueryWhereMap<E>;
   }
   return filter as QueryWhereMap<E>;
 }
@@ -409,17 +416,6 @@ export function applyFilters<E>(
   }
 
   return result as QueryWhereMap<E>;
-}
-
-function isIdValue<E>(filter: QueryWhere<E>): filter is IdValue<E> | IdValue<E>[] {
-  const type = typeof filter;
-  return (
-    type === 'string' ||
-    type === 'number' ||
-    type === 'bigint' ||
-    typeof (filter as MongoId).toHexString === 'function' ||
-    Array.isArray(filter)
-  );
 }
 
 /**

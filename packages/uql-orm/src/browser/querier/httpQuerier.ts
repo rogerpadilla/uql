@@ -2,6 +2,7 @@ import { CRUD_ROUTES, entityPath, type HttpMethod } from '../../http/contract.js
 import { stringifyQuery } from '../../http/query.js';
 import type {
   EntityData,
+  EntityId,
   FieldKey,
   IdValue,
   Query,
@@ -18,6 +19,7 @@ import type {
   Type,
   UpdatePayload,
 } from '../../type/index.js';
+import { isScalarId } from '../../util/object.util.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
 import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
 
@@ -35,13 +37,28 @@ export type HttpQuerierDefaults = {
   readonly readMethod?: Extract<HttpMethod, 'GET' | 'QUERY'>;
 };
 
+/**
+ * The id as one path segment.
+ *
+ * A composite key has no spelling here yet - the route is `/:id`, and how several columns share one
+ * segment is a serialization to invent rather than copy. Refused rather than interpolated, which
+ * would have sent `[object Object]` for the server to reject. Its callers are `async` so this
+ * surfaces as a rejection, like every other failure they can hand back.
+ */
+function idSegment<E>(entity: Type<E>, id: EntityId<E>): string {
+  if (!isScalarId(id)) {
+    throw new TypeError(`'${entity.name}' was addressed by an id object, which the HTTP route cannot carry.`);
+  }
+  return String(id);
+}
+
 export class HttpQuerier implements ClientQuerier {
   constructor(
     readonly basePath: string,
     readonly defaults: HttpQuerierDefaults = {},
   ) {}
 
-  findOneById<
+  async findOneById<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
@@ -50,13 +67,16 @@ export class HttpQuerier implements ClientQuerier {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
-    return get<QueryFindResult<E, S, V, X, P, C> | undefined>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
+    return get<QueryFindResult<E, S, V, X, P, C> | undefined>(
+      `${basePath}/${idSegment(entity, id)}${qs}`,
+      this.buildOptions(opts),
+    );
   }
 
   findOne<
@@ -136,9 +156,14 @@ export class HttpQuerier implements ClientQuerier {
     return post<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.insertMany.path}`, payload, this.buildOptions(opts));
   }
 
-  updateOneById<E extends object>(entity: Type<E>, id: IdValue<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
+  async updateOneById<E extends object>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    payload: UpdatePayload<E>,
+    opts?: RequestOptions,
+  ) {
     const basePath = this.getBasePath(entity);
-    return patch<number>(`${basePath}/${id}`, payload, this.buildOptions(opts));
+    return patch<number>(`${basePath}/${idSegment(entity, id)}`, payload, this.buildOptions(opts));
   }
 
   updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
@@ -157,10 +182,10 @@ export class HttpQuerier implements ClientQuerier {
     return put<IdValue<E>[]>(`${basePath}${CRUD_ROUTES.saveMany.path}`, payload, this.buildOptions(opts));
   }
 
-  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts: QueryOptions & RequestOptions = {}) {
+  async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = opts.hardDelete ? stringifyQuery({ hardDelete: opts.hardDelete }) : '';
-    return remove<number>(`${basePath}/${id}${qs}`, this.buildOptions(opts));
+    return remove<number>(`${basePath}/${idSegment(entity, id)}${qs}`, this.buildOptions(opts));
   }
 
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {

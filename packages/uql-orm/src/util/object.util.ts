@@ -75,3 +75,16 @@ export function getFieldKeys<E>(fields: {
 }): FieldKey<E>[] {
   return getKeys(fields).filter((field) => fields[field]!.eager ?? true);
 }
+
+/**
+ * Whether `value` addresses a row by itself rather than naming columns: every primitive, and the
+ * object ids a driver deals in (`ObjectId`, `Date`, bytes). Only a plain object names columns, which
+ * is what a `$where` map and a composite key's id object both are; an array is a list of either.
+ */
+export function isScalarId(value: unknown): boolean {
+  return (
+    typeof value !== 'object' ||
+    value === null ||
+    (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype)
+  );
+}

@@ -4,6 +4,7 @@ import { isVectorFieldType } from '../dialect/vectorCast.js';
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
+  EntityMeta,
   FieldOptions,
   Query,
   QueryContext,
@@ -33,8 +34,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     indexIfNotExists: true,
   };
 
-  protected override upsertReturning<E>(entity: Type<E>): string {
-    return ` ${this.returningId(entity)}`;
+  protected override upsertReturning<E>(meta: EntityMeta<E>): string {
+    return ` ${this.returningId(meta)}`;
   }
 
   /**

@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
+import { getMeta } from '../entity/index.js';
 import { Company, ItemTag, VectorItem } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import type { Type } from '../type/index.js';
@@ -16,7 +17,7 @@ export class MariaDialectSpec extends MySqlFamilySpec {
   }
 
   protected override returningClause<E>(entity: Type<E>): string {
-    return ' ' + this.dialect.returningId(entity);
+    return ' ' + this.dialect.returningId(getMeta(entity));
   }
 
   shouldFilterByJsonDotNotation() {

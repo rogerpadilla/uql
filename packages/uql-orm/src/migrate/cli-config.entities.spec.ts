@@ -44,6 +44,6 @@ export default { pool: { dialect: { dialectName: 'sqlite' } }, entities: [UqlCon
 
   expect(entity?.name).toBe('UqlConfigProbe');
   expect(meta.name).toBe('UqlConfigProbe');
-  expect(meta.id).toBe('id');
+  expect(meta.ids[0]).toBe('id');
   expect(Object.keys(meta.fields)).toEqual(['id', 'name']);
 });

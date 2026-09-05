@@ -1,17 +1,26 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
-import { getMeta } from '../entity/index.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import type {
   Querier,
   Query,
   QueryAggMap,
   QueryCount,
   QueryExclude,
+  QueryGroupMap,
   QueryWhereMap,
   RelationMeta,
   Type,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/index.js';
-import { asSelectMap, getKeys, parentKeyColumn, targetKeyColumn } from '../util/index.js';
+import {
+  asSelectMap,
+  getKeys,
+  type ParentJoin,
+  parentJoins,
+  parentsIn,
+  rowKey,
+  targetKeyColumns,
+} from '../util/index.js';
 
 /** What counting asks of a querier, rather than the whole interface: two reads, both batched. */
 type CountingQuerier = Pick<Querier, 'aggregate' | 'findMany'>;
@@ -30,31 +39,37 @@ type CountedRow = Record<string, string | number>;
  */
 export function withIdForCounts<E extends object>(entity: Type<E>, q: Query<E>): Query<E> {
   const meta = getMeta(entity);
-  if (!q.$count || !meta.id) {
+  if (!q.$count) {
     return q;
   }
+  const { ids } = meta;
+  const named = ids.join(', ');
   if (q.$distinct) {
-    // The id would have to join the projection for the tallies to group by, and that is the set
-    // `$distinct` collapses on: adding it silently stops the grouping collapsing anything at all.
+    // The keys would have to join the projection for the tallies to group by, and that is the set
+    // `$distinct` collapses on: adding them silently stops the grouping collapsing anything at all.
     throw new TypeError(
-      `$count cannot be combined with $distinct: the tallies group by each row's '${String(meta.id)}', which the grouping does not keep.`,
+      `$count cannot be combined with $distinct: the tallies group by each row's '${named}', which the grouping does not keep.`,
     );
   }
   if (Array.isArray(q.$select)) {
-    // Nothing to add the id to, and without it every tally would be looked up by `undefined` and
+    // Nothing to add the keys to, and without them every tally would be looked up by `undefined` and
     // come back zero. Refused rather than answered wrong, the way an unorderable clause is.
     throw new TypeError(
-      `$count needs the '${String(meta.id)}' of each row to group its tallies by, which a raw $select cannot carry. Use a $select map, or drop the $count.`,
+      `$count needs the '${named}' of each row to group its tallies by, which a raw $select cannot carry. Use a $select map, or drop the $count.`,
     );
   }
   const next: Query<E> = { ...q };
   const select = asSelectMap(q.$select);
-  if (select && !select[meta.id]) {
-    next.$select = { ...select, [meta.id]: true };
+  const missing = select ? ids.filter((key) => !select[key]) : [];
+  if (missing.length) {
+    next.$select = { ...select, ...Object.fromEntries(missing.map((key) => [key, true])) };
   }
-  if (q.$exclude?.[meta.id]) {
+  const excluded = ids.filter((key) => q.$exclude?.[key]);
+  if (excluded.length) {
     const kept: QueryExclude<E> = { ...q.$exclude };
-    delete kept[meta.id];
+    for (const key of excluded) {
+      delete kept[key];
+    }
     next.$exclude = kept;
   }
   return next;
@@ -75,9 +90,6 @@ export async function fillRelationCounts<E>(
     return;
   }
   const meta = getMeta(entity);
-  // The ids cross the same boundary the entity does: past here every column is named by metadata,
-  // so they are read as {@link CountedRow}'s values rather than as this entity's own id type.
-  const ids = payload.map((it) => it[meta.id]) as CountedRow[string][];
   const counted = new Map<string, Record<string, number>>();
 
   for (const relKey of getKeys(count)) {
@@ -87,11 +99,12 @@ export async function fillRelationCounts<E>(
       continue;
     }
     const where = typeof value === 'object' ? (value.$where as QueryWhereMap<CountedRow> | undefined) : undefined;
-    counted.set(relKey, await countPerParent(querier, relOpts, ids, where));
+    const joins = parentJoins(relOpts, meta.ids.length);
+    counted.set(relKey, await countPerParent(querier, relOpts, joins, payload, where));
   }
 
   for (const parent of payload) {
-    const id = String(parent[meta.id]);
+    const id = rowKey(meta.ids.map((key) => parent[key]));
     const row: Record<string, number> = {};
     for (const [relKey, byParent] of counted) {
       // A parent the grouped result has no row for matched nothing, which is a zero rather than a
@@ -105,15 +118,18 @@ export async function fillRelationCounts<E>(
 async function countPerParent(
   querier: CountingQuerier,
   relOpts: RelationMeta,
-  ids: CountedRow[string][],
+  joins: readonly ParentJoin[],
+  parents: readonly unknown[],
   where: QueryWhereMap<CountedRow> | undefined,
 ): Promise<Record<string, number>> {
   const through = relOpts.through;
   if (through) {
-    return countThroughPerParent(querier, relOpts, through() as Type<CountedRow>, ids, where);
+    return countThroughPerParent(querier, relOpts, through() as Type<CountedRow>, joins, parents, where);
   }
-  const foreign = parentKeyColumn(relOpts);
-  return groupedCount(querier, relOpts.entity() as Type<CountedRow>, foreign, { ...where, [foreign]: ids });
+  return groupedCount(querier, relOpts.entity() as Type<CountedRow>, joins, {
+    ...where,
+    ...parentsIn(joins, parents),
+  } as QueryWhereMap<CountedRow>);
 }
 
 /**
@@ -125,34 +141,38 @@ async function countThroughPerParent(
   querier: CountingQuerier,
   relOpts: RelationMeta,
   throughEntity: Type<CountedRow>,
-  ids: CountedRow[string][],
+  joins: readonly ParentJoin[],
+  parents: readonly unknown[],
   where: QueryWhereMap<CountedRow> | undefined,
 ): Promise<Record<string, number>> {
-  const local = parentKeyColumn(relOpts);
-  const throughWhere: QueryWhereMap<CountedRow> = { [local]: ids };
+  const throughWhere = parentsIn(joins, parents) as QueryWhereMap<CountedRow>;
 
   if (where) {
     const target = relOpts.entity() as Type<CountedRow>;
-    const targetId = getMeta(target).id;
+    const targetId = soleIdOf(getMeta(target), 'a many-to-many target');
     const targets = await querier.findMany(target, { $select: { [targetId]: true }, $where: where });
-    throughWhere[targetKeyColumn(relOpts)] = targets.map((it) => it[targetId]);
+    const [targetColumn] = targetKeyColumns(relOpts, joins.length);
+    throughWhere[targetColumn] = targets.map((it) => it[targetId]);
   }
 
-  return groupedCount(querier, throughEntity, local, throughWhere);
+  return groupedCount(querier, throughEntity, joins, throughWhere);
 }
 
-/** `SELECT <key>, COUNT(*) ... GROUP BY <key>`, as a lookup from parent key to tally. */
+/** `SELECT <keys>, COUNT(*) ... GROUP BY <keys>`, as a lookup from parent key to tally. */
 async function groupedCount(
   querier: CountingQuerier,
   entity: Type<CountedRow>,
-  groupKey: string,
+  joins: readonly ParentJoin[],
   where: QueryWhereMap<CountedRow>,
 ): Promise<Record<string, number>> {
   const $agg: QueryAggMap<CountedRow> = { [COUNT_ALIAS]: { $count: '*' } };
-  const rows = await querier.aggregate(entity, { $group: { [groupKey]: true }, $agg, $where: where });
+  const $group = Object.fromEntries(joins.map(({ joined }) => [joined, true])) as QueryGroupMap<CountedRow>;
+  const rows = await querier.aggregate(entity, { $group, $agg, $where: where });
   const byParent: Record<string, number> = {};
   for (const row of rows) {
-    byParent[String(row[groupKey])] = Number(row[COUNT_ALIAS]);
+    // Keyed by every joined column, which is how a tally finds the one parent whose whole key it
+    // matches - and how the rows an over-selecting `IN` brought back find no parent at all.
+    byParent[rowKey(joins.map(({ joined }) => row[joined]))] = Number(row[COUNT_ALIAS]);
   }
   return byParent;
 }

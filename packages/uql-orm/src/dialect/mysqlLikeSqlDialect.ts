@@ -126,7 +126,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
       alias ? `${alias}.${name}` : `VALUE(${name})`,
     );
 
-    const returning = this.upsertReturning(entity);
+    const returning = this.upsertReturning(meta);
 
     if (update) {
       this.appendInsertValues(ctx, entity, payload);
@@ -145,7 +145,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    * Appended to both branches above. Empty on MySQL, which has no `INSERT ... RETURNING`; MariaDB
    * 10.5+ has it, and used to restate this whole method just to add it.
    */
-  protected upsertReturning<E>(_entity: Type<E>): string {
+  protected upsertReturning<E>(_meta: EntityMeta<E>): string {
     return '';
   }
 

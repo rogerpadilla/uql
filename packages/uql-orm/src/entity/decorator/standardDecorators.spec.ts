@@ -34,7 +34,8 @@ describe('standard decorators', () => {
 
     const meta = getMeta(Basic);
     expect(meta.name).toBe('Basic');
-    expect(meta.id).toBe('id');
+    expect(meta.ids.length).toBe(1);
+    expect(meta.ids[0]).toBe('id');
     expect(Object.keys(meta.fields)).toEqual(['id', 'title']);
     expect(meta.fields['title']!.type).toBe(String);
   });
@@ -53,7 +54,7 @@ describe('standard decorators', () => {
     const meta = getMeta(Child);
     // Order matters: it decides generated DDL column order.
     expect(Object.keys(meta.fields)).toEqual(['id', 'createdAt', 'name']);
-    expect(meta.id).toBe('id');
+    expect(meta.ids[0]).toBe('id');
   });
 
   it('keeps sibling subclasses of one base independent', () => {
@@ -151,7 +152,7 @@ describe('standard decorators', () => {
 
     const meta = getMeta(Child);
     expect(Object.keys(meta.fields)).toEqual(['id', 'name']);
-    expect(meta.id).toBe('id');
+    expect(meta.ids[0]).toBe('id');
   });
 
   // The compile-time guard is covered by `type/entityOptions.test-d.ts`; this is the runtime backstop

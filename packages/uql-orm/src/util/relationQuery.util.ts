@@ -29,19 +29,72 @@ export function isToManyRelation(relation: Pick<RelationMeta, 'cardinality'>): b
   return relation.cardinality === '1m' || relation.cardinality === 'mm';
 }
 
+/** One column of a parent's key, paired with the column matching it on the table being joined. */
+export type ParentJoin = { readonly parent: string; readonly joined: string };
+
 /**
- * The column holding the parent's id: a junction's own for a relation that goes through one, the
- * child's foreign key otherwise. The two are spelled from opposite ends - `local` names a column of
- * the table the relation is declared to write, `foreign` a column of the other one - and getting
- * that backwards reads a real column of the wrong table, so it is answered once here.
+ * How a relation joins to its parent: `parent` is a column of the parent's own table, `joined` the
+ * column matching it on the table the relation reads - a junction's own column for a relation that
+ * goes through one, the child's foreign key otherwise.
+ *
+ * The two are spelled from opposite ends of `references` (`local` names a column of the table the
+ * relation is declared on, `foreign` a column of the other one), and getting that backwards reads a
+ * real column of the wrong table, so it is answered once here. One pair per key of the parent.
  */
-export function parentKeyColumn(relOpts: Pick<RelationMeta, 'references' | 'through'>): string {
-  return relOpts.through ? relOpts.references[0].local : relOpts.references[0].foreign;
+export function parentJoins(
+  relOpts: Pick<RelationMeta, 'references' | 'through'>,
+  parentKeyCount: number,
+): ParentJoin[] {
+  if (!relOpts.through) {
+    return relOpts.references.map(({ local, foreign }) => ({ parent: local, joined: foreign }));
+  }
+  // A junction's pairs are the parent's followed by the target's, and how many the parent has is
+  // something its caller already knows - so the boundary is passed rather than stored on a relation.
+  return relOpts.references.slice(0, parentKeyCount).map(({ local, foreign }) => ({ parent: foreign, joined: local }));
 }
 
-/** The column on a junction table holding the target's id, the other half of {@link parentKeyColumn}. */
-export function targetKeyColumn(relOpts: Pick<RelationMeta, 'references'>): string {
-  return relOpts.references[1].local;
+/**
+ * The junction columns holding the target's key, the other half of {@link parentJoins}.
+ *
+ * `parentKeyCount` is required: the target's columns start after the parent's, so guessing the
+ * boundary returned the parent's *second* column as the target's - a real column of the wrong side,
+ * which is the mistake this module exists to prevent.
+ */
+export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, parentKeyCount: number): string[] {
+  return relOpts.references.slice(parentKeyCount).map(({ local }) => local);
+}
+
+/**
+ * `{ joined column: every parent's value for it }`, the filter that fetches a whole page of parents'
+ * children in one statement.
+ *
+ * A composite over-selects, because the lists are independent and a pairing no parent has can still
+ * match. Regrouping the rows keys on every column, so those rows find no parent and are dropped -
+ * cheaper than the row-value comparison no engine spells the same way.
+ */
+export function parentsIn(joins: readonly ParentJoin[], parents: readonly unknown[]): Record<string, unknown[]> {
+  return Object.fromEntries(
+    joins.map(({ parent, joined }) => [joined, parents.map((it) => (it as Record<string, unknown>)[parent])]),
+  );
+}
+
+/**
+ * The `$where` naming exactly the children of the rows `parentIds` identifies: an `IN` over the one
+ * column a single key contributes, an OR of key maps for several.
+ *
+ * Exact, unlike {@link parentsIn}: a read absorbs over-selection by regrouping its rows, and a write
+ * has nothing to regroup - a pairing no parent has would delete a child of a parent that survives.
+ */
+export function childrenOf(joins: readonly ParentJoin[], parentIds: readonly unknown[]): Record<string, unknown> {
+  const [first] = joins;
+  if (joins.length === 1) {
+    return { [first.joined]: parentIds };
+  }
+  return {
+    $or: parentIds.map((id) =>
+      Object.fromEntries(joins.map(({ parent, joined }) => [joined, (id as Record<string, unknown>)[parent]])),
+    ),
+  };
 }
 
 /**

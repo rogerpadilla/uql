@@ -2,6 +2,7 @@ import { withContext } from '../context/context.js';
 import type { AbstractDialect } from '../dialect/index.js';
 import type {
   EntityData,
+  EntityId,
   ExtraOptions,
   FieldKey,
   IdValue,
@@ -79,7 +80,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined> {
@@ -174,13 +175,13 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.insertOne(entity, payload));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.insertMany(entity, payload));
   }
 
   updateOneById<E extends object>(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ): Promise<number> {
@@ -212,15 +213,15 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E>> {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
     return this.withQuerier((querier) => querier.saveOne(entity, payload));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.saveMany(entity, payload));
   }
 
-  deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions): Promise<number> {
+  deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions): Promise<number> {
     return this.withQuerier((querier) => querier.deleteOneById(entity, id, opts));
   }
 
@@ -228,7 +229,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.deleteMany(entity, q, opts));
   }
 
-  restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number> {
+  restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number> {
     return this.withQuerier((querier) => querier.restoreOneById(entity, id));
   }
 

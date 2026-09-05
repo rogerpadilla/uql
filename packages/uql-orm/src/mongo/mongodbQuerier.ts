@@ -1,7 +1,7 @@
 import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { getMeta } from '../entity/index.js';
+import { getMeta, idOf, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
   EntityData,
@@ -306,7 +306,9 @@ export class MongodbQuerier extends AbstractQuerier {
     const founds = await this.execute((session) =>
       this.collection(entity).aggregate<Document>(pipeline, { session }).toArray(),
     );
-    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => found[meta.id]);
+    // `normalizeIds` has already spread a compound `_id` back into its columns, so the settled rows
+    // are named the same way every other driver names them.
+    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => idOf(meta, found));
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: EntityData<E>[]) {
@@ -326,8 +328,9 @@ export class MongodbQuerier extends AbstractQuerier {
 
       const ids = Object.values(insertedIds) as IdValue<E>[];
 
+      const idKey = soleIdOf(meta, 'insert');
       for (const [index, it] of payloads.entries()) {
-        it[meta.id] = ids[index];
+        it[idKey] = ids[index];
       }
 
       await this.insertRelations(entity, payloads);
@@ -475,7 +478,7 @@ export class MongodbQuerier extends AbstractQuerier {
         const softDeleteColumn = this.dialect.resolveColumnName(meta.softDelete as string, field);
         const updateResult = await this.execute((session) =>
           this.collection(entity).updateMany(
-            { _id: { $in: ids } },
+            { _id: { $in: ids } } as Filter<E>,
             { $set: { [softDeleteColumn]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
             {
               session,
@@ -485,7 +488,7 @@ export class MongodbQuerier extends AbstractQuerier {
         changes = updateResult.matchedCount;
       } else {
         const deleteResult = await this.execute((session) =>
-          this.collection(entity).deleteMany({ _id: { $in: ids } }, { session }),
+          this.collection(entity).deleteMany({ _id: { $in: ids } } as Filter<E>, { session }),
         );
         changes = deleteResult.deletedCount;
       }

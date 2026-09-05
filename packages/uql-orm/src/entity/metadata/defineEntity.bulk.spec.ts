@@ -5,10 +5,10 @@ import { defineEntity, defineField, defineFilter, defineId, defineRelation, getM
 /** Stable projection for parity assertions (drops `entity` and `processed`). */
 function metaCore<E>(
   entity: Type<E>,
-): Pick<EntityMeta<E>, 'id' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
+): Pick<EntityMeta<E>, 'ids' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
   const m = getMeta(entity);
   return {
-    id: m.id,
+    ids: m.ids,
     name: m.name,
     fields: m.fields,
     relations: m.relations,
@@ -41,7 +41,7 @@ it('defineEntity bulk fields match incremental defineField + defineEntity', () =
   });
 
   expect(metaCore(Incremental).fields).toEqual(metaCore(Bulk).fields);
-  expect(metaCore(Incremental).id).toBe(metaCore(Bulk).id);
+  expect(metaCore(Incremental).ids).toEqual(metaCore(Bulk).ids);
 });
 
 it('defineEntity bulk relations and FK fields match incremental registration', () => {
@@ -186,7 +186,7 @@ it('child class inherits parent fields when parent finalized first', () => {
   expect(m.fields['id']!.isId).toBe(true);
   expect(m.fields['baseCol']!.type).toBe(String);
   expect(m.fields['childCol']!.type).toBe(Boolean);
-  expect(m.id).toBe('id');
+  expect(m.ids).toEqual(['id']);
 });
 
 it('defineEntity bulk throws when no id field is declared', () => {
@@ -197,7 +197,7 @@ it('defineEntity bulk throws when no id field is declared', () => {
     defineEntity(MissingId, {
       fields: { title: { type: String } },
     }),
-  ).toThrow(/exactly one id field/);
+  ).toThrow(/at least one id field/);
 });
 
 it('defineId path via bulk isId matches defineId helper', () => {
@@ -216,8 +216,8 @@ it('defineId path via bulk isId matches defineId helper', () => {
   defineField(B, 'x', { type: Number });
   defineEntity(B, {});
 
-  expect(getMeta(A).id).toBe('pk');
-  expect(getMeta(B).id).toBe('pk');
+  expect(getMeta(A).ids[0]).toBe('pk');
+  expect(getMeta(B).ids[0]).toBe('pk');
   expect(getMeta(A).fields).toEqual(getMeta(B).fields);
 });
 

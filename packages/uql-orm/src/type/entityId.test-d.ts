@@ -79,3 +79,22 @@ export async function idPrecedenceIgnoresLowerPriorityShapes() {
   // @ts-expect-error `id` exists on the class, but `_id` outranks it for key resolution
   await querier.findOneById(WithBoth, 1);
 }
+
+/**
+ * The keys stay optional, so `{}` compiles here too: `IdKey` cannot be made precise (see `EntityId`),
+ * and requiring them would demand fields that are not keys. `assertIdValue` is what refuses it, on a
+ * single key as much as on a composite - an unchecked one reaches `deleteMany` as no filter at all.
+ */
+export async function compositeKeyIsAddressedByAnObject() {
+  class Enrolment {
+    studentId?: number;
+    courseId?: number;
+  }
+  // An object carrying the keys, with no cast: it is also the `$where` map it reduces to.
+  await querier.findOneById(Enrolment, { studentId: 1, courseId: 2 });
+  await querier.deleteOneById(Enrolment, { studentId: 1, courseId: 2 });
+  // @ts-expect-error - a key the entity does not declare
+  await querier.findOneById(Enrolment, { studentId: 1, moduleId: 2 });
+  // @ts-expect-error - the wrong type for a declared key
+  await querier.findOneById(Enrolment, { studentId: 'one' });
+}

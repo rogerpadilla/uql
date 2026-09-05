@@ -1,7 +1,7 @@
 import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta } from '../entity/index.js';
+import { getMeta, idOf, soleIdOf } from '../entity/index.js';
 import type {
   EntityData,
   ExtraOptions,
@@ -384,15 +384,20 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     payload = clone(payload);
     const meta = getMeta(entity);
-    const idKey = meta.id;
-    const idField = meta.fields[idKey];
+    // A composite key is supplied whole by the caller, so nothing is generated and nothing comes
+    // back: the rows insert, and their ids are `undefined` for the reason MySQL's are below - there
+    // is no id to report. `idOf` names such a row for the caller that wants one.
+    const [idKey] = meta.ids;
+    const sole = meta.ids.length === 1;
+    const idField = sole ? meta.fields[idKey] : undefined;
     // RETURNING-based IDs are exact per row. Header-derived IDs (LAST_INSERT_ID /
     // lastInsertRowid arithmetic) are only sound when the primary key is database-generated
     // and no record supplies an explicit ID (a mixed batch shifts the positional mapping and
     // MySQL stops guaranteeing consecutive values); otherwise generated IDs stay `undefined`.
     const idsReliable =
-      this.dialect.insertIdSource === 'returning' ||
-      (!!idField && isAutoIncrement(idField, true) && payload.every((it) => it[idKey] === undefined));
+      sole &&
+      (this.dialect.insertIdSource === 'returning' ||
+        (!!idField && isAutoIncrement(idField, true) && payload.every((it) => it[idKey] === undefined)));
     // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
     // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
     if (idsReliable && payload.length > 1 && this.dialect.insertIdSource === 'firstId') {
@@ -401,7 +406,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // `DEFAULT` cells bind no parameter, so fields-per-record is a safe upper bound per row.
     const fieldsPerRecord = getInsertFieldKeys(meta, payload).length || 1;
     const chunkSize = Math.max(1, Math.floor(this.dialect.maxBindValues / fieldsPerRecord));
-    const payloadIds: IdValue<E>[] = [];
+    const payloadIds: (IdValue<E> | undefined)[] = [];
     for (let start = 0; start < payload.length; start += chunkSize) {
       const chunk = payload.slice(start, start + chunkSize);
       const ctx = this.dialect.createContext();
@@ -411,7 +416,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
         if (idsReliable) {
           it[idKey] ??= ids[index] as E[typeof idKey];
         }
-        payloadIds.push(it[idKey]);
+        payloadIds.push(sole ? it[idKey] : undefined);
       });
     }
     await this.insertRelations(entity, payload);
@@ -448,7 +453,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, idOnlyQuery(meta, q), opts);
     const founds = await this.all<E>(ctx.sql, ctx.values);
-    return founds.map((it) => it[meta.id]);
+    return founds.map((found) => idOf(meta, found));
   }
 
   override async upsertOne<E extends object>(

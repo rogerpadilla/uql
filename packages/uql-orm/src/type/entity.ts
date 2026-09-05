@@ -232,7 +232,7 @@ export type FieldValue<E> = E[FieldKey<E>];
 /**
  * Infers the name of the key identifier on an entity
  */
-export type IdKey<E> = E extends { [idKey]?: infer K }
+export type IdKey<E> = (E extends { [idKey]?: infer K }
   ? K & FieldKey<E>
   : E extends { _id?: unknown }
     ? '_id' & FieldKey<E>
@@ -240,16 +240,42 @@ export type IdKey<E> = E extends { [idKey]?: infer K }
       ? 'id' & FieldKey<E>
       : E extends { uuid?: unknown }
         ? 'uuid' & FieldKey<E>
-        : FieldKey<E>;
+        : FieldKey<E>) &
+  // Every arm resolves through `FieldKey`, which is already `keyof E & string` - but a generic `E`
+  // leaves that unresolved, so a key could not be used where a string was wanted without a cast.
+  string;
 
 /**
  * Infers the value of the key identifier on an entity.
+ *
+ * A composite key is addressed by an object carrying every key, which is also the `$where` map it
+ * reduces to - so both spellings are one type. Completeness is checked at run time by
+ * `assertIdValue`: TypeScript cannot accumulate `@Id` across properties into the class type, so it
+ * cannot know how many keys there are.
  *
  * Nullable, because an entity declares its id optional - nothing has assigned one before the
  * insert. That puts `undefined` inside every by-id method's parameter, where it would mean "no
  * filter"; `assertIdValue` is what rejects it.
  */
 export type IdValue<E> = E[IdKey<E>];
+
+/**
+ * How a row is addressed by its primary key: the value for a single key, an object carrying every
+ * key for a composite - which is also the `$where` map it reduces to, so both spellings are one type.
+ *
+ * Distinct from {@link IdValue}, the *column's* value, which stays a scalar: an id column holds a
+ * number, never an object. The two read alike on a single-key entity and are not the same thing -
+ * `findOneById` takes an `EntityId`, while the inserts return `IdValue | undefined`, which is why a
+ * composite insert reports no id rather than the map.
+ *
+ * The keys stay optional, and completeness is checked at run time by `assertIdValue`. Requiring them
+ * needs `IdKey` to be precise, which it is not: with no `id`/`_id`/`uuid` and no `idKey` brand it
+ * falls back to every field, so `IdKey<Membership>` accepts `'role'` and requiring the map would
+ * demand fields that are not keys. Making it conditional on the brand was tried and reverted - a
+ * conditional type does not reduce for an unresolved `E`, which left `QueryWhere<E>` opaque and broke
+ * assignability across the dialects.
+ */
+export type EntityId<E> = IdValue<E> | { [K in IdKey<E>]?: E[K] };
 
 /**
  * Infers the values of the relations on an entity
@@ -365,22 +391,35 @@ export type TypeFor<V, T = NonNullable<V>> =
                     : FieldType;
 
 /**
+ * A field as the registry holds it: what the user authored, plus what registration worked out.
+ *
+ * Separate from {@link FieldOptions} so neither of these can be written in a decorator. They used to
+ * live there behind an `@internal` tag and a "do not set this" note, which is a comment standing in
+ * for a type boundary.
+ */
+export type FieldMeta<V = TsTypeOf<FieldType>> = FieldOptions<V> & {
+  /**
+   * Set by `defineField` when the field gave `references` but no `type`, so schema generation resolves
+   * the column from the referenced primary key rather than from whatever ended up in `type`. That is
+   * what keeps a `uuid` primary key from becoming TEXT on every foreign key pointing at it.
+   */
+  readonly typeFromReference?: boolean;
+  /**
+   * Which key of the referenced entity this column points at, where that entity has more than one.
+   * Set by `fillOwningSide`; without it a composite target's columns would all take the first key's type.
+   */
+  readonly referencedKey?: string;
+};
+
+/**
  * Configurable options for a field, carrying `V`, the value the column holds: what a generator returns
  * and what a default is has to be that value, checked the same way the declared `type` is. `Scalar` by
- *  by default, for the places that handle a field without knowing which one it is.
+ * default, for the places that handle a field without knowing which one it is.
  */
 export type FieldOptions<V = TsTypeOf<FieldType>> = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
-  /**
-   * Set by `defineField` when the field gave `references` but no `type`, so schema generation resolves
-   * the column from the referenced primary key rather than from whatever ended up in `type`. That is
-   * what keeps a `uuid` primary key from becoming TEXT on every foreign key pointing at it.
-   * Internal bookkeeping - do not set this from a decorator.
-   * @internal
-   */
-  readonly typeFromReference?: boolean;
   /**
    * Dimensions for vector fields. Used in schema generation.
    * @example `@Field({ type: 'vector', dimensions: 1536 })`
@@ -877,13 +916,20 @@ export type EntityMeta<E> = {
   name?: string;
   /** Set only when the entity named one; unset defers to the pool where it is used. See `AbstractDialect.resolveSchema`. */
   schema?: string;
-  id: IdKey<E>;
+  /**
+   * Every key of the primary key, in declaration order. One unless the entity declares a composite.
+   *
+   * The only stored form: a single `id` beside it could only ever be right for a single-key entity,
+   * so every reader had to know whether it was safe. Asking whether *this* field is part of the key
+   * is `fields[key].isId`, which is O(1) and the source this list is derived from.
+   */
+  ids: readonly IdKey<E>[];
   softDelete?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
   filters?: Record<string, FilterOptions<E>>;
   fields: {
-    [K in FieldKey<E>]?: FieldOptions;
-  } & { [key: string]: FieldOptions | undefined };
+    [K in FieldKey<E>]?: FieldMeta;
+  } & { [key: string]: FieldMeta | undefined };
   relations: {
     [K in RelationKey<E>]?: RelationMeta;
   } & { [key: string]: RelationMeta | undefined };

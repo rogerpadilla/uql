@@ -2,7 +2,7 @@ import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } fr
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { COUNT_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
 import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
-import { getMeta } from '../entity/index.js';
+import { assertSoleId, getMeta, soleIdOf } from '../entity/index.js';
 import type {
   DialectFeatures,
   EntityData,
@@ -126,7 +126,14 @@ export class MongoDialect extends AbstractDialect {
    * the document does not use.
    */
   override columnOf<E>(meta: EntityMeta<E>, key: string): string {
-    if (key === MongoDialect.ID_KEY || key === meta.id) {
+    if (key === MongoDialect.ID_KEY) {
+      return MongoDialect.ID_KEY;
+    }
+    if (meta.fields[key]?.isId) {
+      // A document has one `_id`. A composite key is a different document shape - a sub-document,
+      // whose field order decides equality - rather than a translation, so it is refused here, which
+      // every read reaches, and in `getPersistables`, which every write reaches.
+      assertSoleId(meta, 'MongoDB');
       return MongoDialect.ID_KEY;
     }
     return super.columnOf(meta, key);
@@ -385,7 +392,7 @@ export class MongoDialect extends AbstractDialect {
    */
   private assertKnownPathRoot<E>(meta: EntityMeta<E>, key: string): void {
     const root = key.includes('.') ? key.slice(0, key.indexOf('.')) : key;
-    if (root === MongoDialect.ID_KEY || root === meta.id || meta.fields[root as keyof typeof meta.fields & string]) {
+    if (root === MongoDialect.ID_KEY || meta.fields[root as keyof typeof meta.fields & string]) {
       return;
     }
     throw new TypeError(`path ${key} does not exist in ${entityName(meta)}`);
@@ -523,7 +530,7 @@ export class MongoDialect extends AbstractDialect {
     // MongoDB returns `_id` unless it is explicitly excluded, so subtracting the primary key needs
     // `_id: 0` - the one inclusion/exclusion mix MongoDB allows - or `$exclude: { id: true }` would
     // have no effect at all.
-    if (this.subtractsKey(meta.id as string, selectMap, exclude)) {
+    if (this.subtractsKey(soleIdOf(meta, 'MongoDB'), selectMap, exclude)) {
       projection[MongoDialect.ID_KEY] = 0;
     }
     return projection;
@@ -907,8 +914,9 @@ export class MongoDialect extends AbstractDialect {
     const _id = MongoDialect.ID_KEY;
 
     if (res[_id]) {
-      res[meta.id as string] = res[_id];
-      if (meta.id !== _id) {
+      const idKey = soleIdOf(meta, 'MongoDB');
+      res[idKey] = res[_id];
+      if (idKey !== _id) {
         delete res[_id];
       }
     }
@@ -1047,6 +1055,9 @@ export class MongoDialect extends AbstractDialect {
     payload: EntityData<E> | EntityData<E>[],
     callbackKey: CallbackKey,
   ): Partial<E>[] {
+    // Not `columnOf`, which maps the primary key to `_id`: an update may not touch `_id` at all, and
+    // an insert leaves it to the driver. What that mapping refuses, a write has to refuse too.
+    assertSoleId(meta, 'MongoDB');
     const payloads = fillOnFields(meta, payload, callbackKey);
     // Keys are resolved per document so heterogeneous payloads keep every provided field.
     return payloads.map((it) =>

@@ -21,6 +21,22 @@ describe('createRequestHandler', () => {
     pool = createMockQuerierPool(new PostgresDialect(), async () => mockQuerier);
   });
 
+  /** The route is one path segment, which a composite key has no spelling for on either side yet. */
+  it('refuses a by-id route on a composite key, naming the handler', async () => {
+    class Enrolment {
+      studentId?: number;
+      courseId?: string;
+    }
+    defineEntity(Enrolment, {
+      fields: { studentId: { type: Number, isId: true }, courseId: { type: String, isId: true } },
+    });
+    const handle = createRequestHandler({ include: [Enrolment], pool });
+
+    await expect(handle(req({ method: 'GET', entityPath: 'enrolment', subPath: '1' }))).rejects.toThrow(
+      /composite primary key \(studentId, courseId\), which the HTTP handler does not support/,
+    );
+  });
+
   it('runs on the pool it is given', async () => {
     const ownQuerier = createMockQuerier();
     const handle = createRequestHandler({

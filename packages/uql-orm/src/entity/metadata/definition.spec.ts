@@ -35,7 +35,7 @@ it('User', () => {
   const expectedMeta = {
     entity: User,
     name: 'User',
-    id: 'id' as const,
+    ids: ['id'] as const,
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -78,7 +78,7 @@ it('User', () => {
         references: [{ local: 'id', foreign: 'creatorId' }],
       },
     },
-  } satisfies EntityMeta<User>;
+  } satisfies Partial<EntityMeta<User>>;
 
   expect(meta).toMatchObject(expectedMeta);
 });
@@ -88,7 +88,7 @@ it('Profile', () => {
   const expectedMeta = {
     entity: Profile,
     name: 'user_profile',
-    id: 'pk' as IdKey<Profile>,
+    ids: ['pk' as IdKey<Profile>],
     processed: true as const,
     fields: {
       pk: { name: 'pk', type: Number, isId: true as const },
@@ -116,7 +116,7 @@ it('Profile', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<Profile>;
+  } satisfies Partial<EntityMeta<Profile>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -125,7 +125,7 @@ it('Item', () => {
   const expectedMeta = {
     entity: Item,
     name: 'Item',
-    id: 'id' as const,
+    ids: ['id' as const],
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -208,7 +208,7 @@ it('Item', () => {
         ],
       },
     },
-  } satisfies EntityMeta<Item>;
+  } satisfies Partial<EntityMeta<Item>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -216,7 +216,7 @@ it('Tag', () => {
   const meta = getMeta(Tag);
   const expectedMeta = {
     entity: Tag,
-    id: 'id' as const,
+    ids: ['id' as const],
     name: 'Tag',
     processed: true as const,
     fields: {
@@ -277,7 +277,7 @@ it('Tag', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<Tag>;
+  } satisfies Partial<EntityMeta<Tag>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -286,7 +286,7 @@ it('ItemTag', () => {
   const expectedMeta = {
     entity: ItemTag,
     name: 'ItemTag',
-    id: 'id' as const,
+    ids: ['id' as const],
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -311,7 +311,7 @@ it('ItemTag', () => {
         references: [{ local: 'tagId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<ItemTag>;
+  } satisfies Partial<EntityMeta<ItemTag>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -320,7 +320,7 @@ it('TaxCategory', () => {
   const expectedMeta = {
     entity: TaxCategory,
     name: 'TaxCategory',
-    id: 'pk' as const,
+    ids: ['pk' as const],
     processed: true as const,
     fields: {
       pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.anything() },
@@ -349,7 +349,7 @@ it('TaxCategory', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<TaxCategory>;
+  } satisfies Partial<EntityMeta<TaxCategory>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -358,7 +358,7 @@ it('Tax', () => {
   const expectedMeta = {
     entity: Tax,
     name: 'Tax',
-    id: 'id' as const,
+    ids: ['id' as const],
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -405,7 +405,7 @@ it('Tax', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<Tax>;
+  } satisfies Partial<EntityMeta<Tax>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -414,7 +414,7 @@ it('ItemAdjustment', () => {
   const expectedMeta = {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
-    id: 'id' as const,
+    ids: ['id' as const],
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -481,7 +481,7 @@ it('ItemAdjustment', () => {
         ],
       },
     },
-  } satisfies EntityMeta<ItemAdjustment>;
+  } satisfies Partial<EntityMeta<ItemAdjustment>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -490,7 +490,7 @@ it('InventoryAdjustment', () => {
   const expectedMeta = {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
-    id: 'id' as const,
+    ids: ['id' as const],
     processed: true as const,
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
@@ -526,7 +526,7 @@ it('InventoryAdjustment', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<InventoryAdjustment>;
+  } satisfies Partial<EntityMeta<InventoryAdjustment>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -535,7 +535,7 @@ it('MeasureUnitCategory', () => {
   const expectedMeta = {
     entity: MeasureUnitCategory,
     name: 'MeasureUnitCategory',
-    id: 'id' as const,
+    ids: ['id' as const],
     softDelete: 'deletedAt' as const,
     processed: true as const,
     fields: {
@@ -571,7 +571,7 @@ it('MeasureUnitCategory', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<MeasureUnitCategory>;
+  } satisfies Partial<EntityMeta<MeasureUnitCategory>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -580,7 +580,7 @@ it('MeasureUnit', () => {
   const expectedMeta = {
     entity: MeasureUnit,
     name: 'MeasureUnit',
-    id: 'id' as const,
+    ids: ['id' as const],
     softDelete: 'deletedAt' as const,
     processed: true as const,
     fields: {
@@ -620,7 +620,7 @@ it('MeasureUnit', () => {
         references: [{ local: 'creatorId', foreign: 'id' }],
       },
     },
-  } satisfies EntityMeta<MeasureUnit>;
+  } satisfies Partial<EntityMeta<MeasureUnit>>;
   expect(meta).toMatchObject(expectedMeta);
 });
 
@@ -670,7 +670,7 @@ it('no @Id', () => {
       id!: string;
     }
   }).toThrow(
-    `'SomeEntity' must have exactly one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
+    `'SomeEntity' must have at least one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
   );
 });
 
@@ -878,21 +878,146 @@ it('a security filter cannot opt into skipping when its condition is unresolved'
 });
 
 /** The last `@Id` wins, and the one it replaces stops being a field altogether. */
-it('a second @Id replaces the first one', () => {
+it('a second @Id makes the primary key composite', () => {
   @Entity()
-  class ReIdentified {
+  class Membership {
     @Id({ type: Number })
-    legacyId?: number;
+    userId?: number;
     @Id({ type: Number })
-    id?: number;
+    groupId?: number;
     @Field({ type: String })
-    name?: string;
+    role?: string;
   }
 
-  const meta = getMeta(ReIdentified);
-  expect(meta.id).toBe('id');
-  expect(meta.fields.legacyId).toBeUndefined();
-  expect(getKeys(meta.fields)).toEqual(['id', 'name']);
+  const meta = getMeta(Membership);
+  expect(meta.ids).toEqual(['userId', 'groupId']);
+  expect(getKeys(meta.fields)).toEqual(['userId', 'groupId', 'role']);
+  // Membership is the field's own flag, never a lookup in `ids`.
+  expect(meta.fields.userId?.isId).toBe(true);
+  expect(meta.fields.role?.isId).toBeUndefined();
+});
+
+/**
+ * Both sides of a junction contribute one column per key, in their own order. The inverse side swaps
+ * the two groups whole; reversing the array would pair a composite's columns crosswise.
+ */
+it('a junction pairs every key of both sides, and the inverse side swaps the groups', () => {
+  @Entity()
+  class Enrolment {
+    @Id({ type: Number }) studentId?: number;
+    @Id({ type: String }) courseId?: string;
+    @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
+    badges?: Badge[];
+  }
+  @Entity()
+  class Badge {
+    @Id({ type: Number }) id?: number;
+    @ManyToMany({ entity: () => Enrolment, mappedBy: (it) => it.badges })
+    enrolments?: Enrolment[];
+  }
+  @Entity()
+  class EnrolmentBadge {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) enrolmentStudentId?: number;
+    @Field({ type: String }) enrolmentCourseId?: string;
+    @Field({ type: Number }) badgeId?: number;
+  }
+
+  expect(getMeta(Enrolment).relations.badges?.references).toEqual([
+    { local: 'enrolmentStudentId', foreign: 'studentId' },
+    { local: 'enrolmentCourseId', foreign: 'courseId' },
+    { local: 'badgeId', foreign: 'id' },
+  ]);
+  expect(getMeta(Badge).relations.enrolments?.references).toEqual([
+    { local: 'badgeId', foreign: 'id' },
+    { local: 'enrolmentStudentId', foreign: 'studentId' },
+    { local: 'enrolmentCourseId', foreign: 'courseId' },
+  ]);
+});
+
+/** `mappedBy` names one column, which one key fits: guessing which of several would join wrong rows. */
+it('refuses an inverse relation mapped by a field when the key is composite', () => {
+  @Entity()
+  class Note {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) enrolmentStudentId?: number;
+  }
+  @Entity()
+  class Enrolment {
+    @Id({ type: Number }) studentId?: number;
+    @Id({ type: String }) courseId?: string;
+    @OneToMany({ entity: () => Note, mappedBy: (it) => it.enrolmentStudentId })
+    notes?: Note[];
+  }
+
+  const error = getError(() => getMeta(Enrolment));
+  expect(error).toContain(`'Enrolment.notes' is mapped by 'Note.enrolmentStudentId', one column`);
+  expect(error).toContain('composite (studentId, courseId)');
+});
+
+/** The pair reads the same way round as every other: the parent's own key on the left. */
+it('pairs an inverse relation mapped by a field from the parent side', () => {
+  @Entity()
+  class Note {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) ownerId?: number;
+  }
+  @Entity()
+  class Owner {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({ entity: () => Note, mappedBy: (it) => it.ownerId })
+    notes?: Note[];
+  }
+
+  expect(getMeta(Owner).relations.notes?.references).toEqual([{ local: 'id', foreign: 'ownerId' }]);
+});
+
+/** The message a registration error carries, for a test that pins what it says and not how. */
+function getError(run: () => unknown): string {
+  try {
+    run();
+  } catch (error) {
+    return (error as Error).message;
+  }
+  throw new Error('expected a registration error');
+}
+
+/** One column cannot reference a two-column key; the relation decorators make one column per key. */
+it('refuses a plain foreign key pointing at a composite key', () => {
+  @Entity()
+  class Enrolment {
+    @Id({ type: Number }) studentId?: number;
+    @Id({ type: String }) courseId?: string;
+  }
+  @Entity()
+  class Note {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Enrolment }) enrolmentStudentId?: number;
+  }
+
+  // The column, the key it cannot reach, and the decorator that can: the rest is wording.
+  const error = getError(() => getMeta(Note));
+  expect(error).toContain(`'Note.enrolmentStudentId'`);
+  expect(error).toContain('composite (studentId, courseId)');
+  expect(error).toContain('@ManyToOne({ entity: () => Enrolment })');
+});
+
+/** Every column of the parent's key, or the ones it did not replace would widen the child's. */
+it('a subclass declaring its own key drops every key of a composite parent', () => {
+  @Entity()
+  class Pair {
+    @Id({ type: Number }) left?: number;
+    @Id({ type: Number }) right?: number;
+    @Field({ type: String }) label?: string;
+  }
+  @Entity()
+  class Single extends Pair {
+    @Id({ type: Number }) id?: number;
+  }
+
+  const meta = getMeta(Single);
+  expect(meta.ids).toEqual(['id']);
+  expect(getKeys(meta.fields).sort()).toEqual(['id', 'label']);
 });
 
 it('subclass declaring the only @Id inherits the parent fields', () => {
@@ -908,7 +1033,7 @@ it('subclass declaring the only @Id inherits the parent fields', () => {
   }
 
   const meta = getMeta(IdentifiedChild);
-  expect(meta.id).toBe('id');
+  expect(meta.ids[0]).toBe('id');
   expect(getKeys(meta.fields).sort()).toEqual(['id', 'name']);
 });
 

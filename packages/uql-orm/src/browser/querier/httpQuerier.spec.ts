@@ -29,6 +29,14 @@ describe('HttpQuerier', () => {
     expect(http.get).toHaveBeenCalledWith(`/api/user/1${stringifyQuery({ $select: { name: true } })}`, undefined);
   });
 
+  /** The route is one path segment, and `[object Object]` in it is a request no server can answer. */
+  it('refuses an id object, which the `/:id` route has no spelling for', async () => {
+    await expect(querier.findOneById(User, { id: 1 } as never)).rejects.toThrow(
+      /'User' was addressed by an id object, which the HTTP route cannot carry/,
+    );
+    expect(http.get).not.toHaveBeenCalled();
+  });
+
   it('findOne', async () => {
     await querier.findOne(User, { $where: { name: 'Mario' } });
     expect(http.get).toHaveBeenCalledWith(`/api/user/one${stringifyQuery({ $where: { name: 'Mario' } })}`, undefined);

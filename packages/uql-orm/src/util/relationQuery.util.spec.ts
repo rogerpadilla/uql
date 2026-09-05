@@ -1,13 +1,18 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
+import type { RelationMeta } from '../type/index.js';
 import type { QueryPopulate } from '../type/index.js';
 import {
+  childrenOf,
   getRelationRequestSummary,
   type JoinedRelationRejectedKey,
   parseRelationAtKey,
   parseRelationQueryValue,
+  parentJoins,
+  parentsIn,
   populatesRelations,
+  targetKeyColumns,
 } from './relationQuery.util.js';
 
 it('getRelationRequestSummary', () => {
@@ -106,4 +111,59 @@ it.each([['$lock'], ['$candidates']])('rejects %s inside a populated relation', 
   expect(() => parseRelationQueryValue({ [clause]: 1 })).toThrow(
     `'${clause}' applies to the whole statement, not to a populated relation`,
   );
+});
+
+describe('the columns a relation joins its parent by', () => {
+  /** A junction's pairs are the parent's followed by the target's, so the boundary decides both. */
+  const through = {
+    through: () => class {},
+    references: [
+      { local: 'membershipUserId', foreign: 'userId' },
+      { local: 'membershipGroupId', foreign: 'groupId' },
+      { local: 'tagId', foreign: 'id' },
+    ],
+  } as unknown as RelationMeta;
+
+  it('splits a junction at the parent key count', () => {
+    expect(parentJoins(through, 2)).toEqual([
+      { parent: 'userId', joined: 'membershipUserId' },
+      { parent: 'groupId', joined: 'membershipGroupId' },
+    ]);
+    expect(targetKeyColumns(through, 2)).toEqual(['tagId']);
+  });
+
+  /** Guessing 1 returned the parent's second column as the target's - a real column of the wrong side. */
+  it('does not take a parent column for a target one', () => {
+    expect(targetKeyColumns(through, 2)).not.toContain('membershipGroupId');
+  });
+
+  /** The ends swap between the two shapes, which is the whole reason this is answered in one place. */
+  it('reads a direct relation from the other end', () => {
+    const direct = { references: [{ local: 'id', foreign: 'userId' }] } as unknown as RelationMeta;
+    expect(parentJoins(direct, 1)).toEqual([{ parent: 'id', joined: 'userId' }]);
+  });
+
+  /** Exact where `parentsIn` over-selects: a delete has no chance to drop the rows it did not mean. */
+  it('names the children of a set of parents by whole keys, not by independent lists', () => {
+    const joins = parentJoins(through, 2);
+    expect(childrenOf(joins, [{ userId: 1, groupId: 2 }])).toEqual({
+      $or: [{ membershipUserId: 1, membershipGroupId: 2 }],
+    });
+    // One column takes the `IN` it always did, rather than an OR of one-key maps.
+    expect(childrenOf(parentJoins({ references: [{ local: 'id', foreign: 'userId' }] } as never, 1), [1, 2])).toEqual({
+      userId: [1, 2],
+    });
+  });
+
+  it('lists every parent value under the column that matches it', () => {
+    expect(
+      parentsIn(parentJoins(through, 2), [
+        { userId: 1, groupId: 2 },
+        { userId: 3, groupId: 4 },
+      ]),
+    ).toEqual({
+      membershipUserId: [1, 3],
+      membershipGroupId: [2, 4],
+    });
+  });
 });

@@ -1,7 +1,8 @@
-import { getMeta } from '../entity/index.js';
+import { getMeta, idOf, soleIdOf } from '../entity/index.js';
 
 import type {
   EntityData,
+  EntityId,
   EntityMeta,
   ExtraOptions,
   FieldKey,
@@ -38,20 +39,25 @@ import type {
 import {
   asSelectMap,
   augmentWhere,
+  childrenOf,
   clone,
   filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
   getRelationRequestSummary,
   idOnlyQuery,
+  isScalarId,
   LoggerWrapper,
-  parentKeyColumn,
+  type ParentJoin,
+  parentJoins,
+  parentsIn,
   parseRelationAtKey,
   parseRelationQueryValue,
   type RelationQuery,
+  rowKey,
   runHooks,
   someKey,
-  targetKeyColumn,
+  targetKeyColumns,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
@@ -66,10 +72,36 @@ import { fillRelationCounts, withIdForCounts } from './relationCount.js';
  * Its callers are all `async` so this surfaces as a rejection on every one of them: a guard that
  * threw synchronously from some and rejected from others would escape a caller's `.catch()`.
  */
-function assertIdValue<E>(entity: Type<E>, id: IdValue<E>): void {
+function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   if (id === undefined || id === null) {
     throw new TypeError(`'${entity.name}' was addressed by id, but the id is ${String(id)}`);
   }
+  if (isScalarId(id)) {
+    // One value names one column, which `buildQueryWhereAsMap` refuses on a composite.
+    return;
+  }
+  // Every key, or the `$where` names only some of the columns and addresses each row that agrees on
+  // those - which for an update or a delete is silently far more than the one row asked for. `{}`
+  // reaches here too, and would otherwise be an unfiltered statement over the whole table.
+  const given = id as Record<string, unknown>;
+  const { ids } = getMeta(entity);
+  const missing = ids.filter((key) => given[key] == null);
+  if (missing.length) {
+    throw new TypeError(
+      `'${entity.name}' is addressed by an object carrying every key of its primary key (${ids.join(', ')}); missing ${missing.join(', ')}.`,
+    );
+  }
+}
+
+/**
+ * The one column a write path matches a parent's key against.
+ *
+ * Every caller reaches its parents through a sole id - `soleIdOf` refused a composite before any of
+ * them - so the parent contributes exactly one column here, whether the relation goes through a
+ * junction or straight to the child.
+ */
+function soleParentColumn(relOpts: RelationMeta): string {
+  return parentJoins(relOpts, 1)[0].joined;
 }
 
 /**
@@ -160,13 +192,13 @@ export abstract class AbstractQuerier implements Querier {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     q?: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
   async findOneById<E extends object>(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     q: QueryOne<E> = {},
     opts?: QueryOptions,
   ): Promise<E | undefined> {
@@ -432,7 +464,7 @@ export abstract class AbstractQuerier implements Querier {
     return id;
   }
 
-  async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<IdValue<E>[]> {
+  async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
     await this.emitHook(entity, 'beforeInsert', payload);
     const ids = await this.internalInsertMany(entity, payload);
     await this.emitHook(entity, 'afterInsert', payload);
@@ -442,11 +474,11 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalInsertMany<E extends object>(
     entity: Type<E>,
     payload: EntityData<E>[],
-  ): Promise<IdValue<E>[]>;
+  ): Promise<(IdValue<E> | undefined)[]>;
 
   async updateOneById<E extends object>(
     entity: Type<E>,
-    id: IdValue<E>,
+    id: EntityId<E>,
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ) {
@@ -473,7 +505,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async restoreOneById<E extends object>(entity: Type<E>, id: IdValue<E>): Promise<number> {
+  async restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number> {
     assertIdValue(entity, id);
     return this.restoreMany(entity, { $where: id });
   }
@@ -501,7 +533,7 @@ export abstract class AbstractQuerier implements Querier {
     payload: EntityData<E>[],
   ): Promise<QueryUpdateResult>;
 
-  async deleteOneById<E extends object>(entity: Type<E>, id: IdValue<E>, opts?: QueryOptions) {
+  async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions) {
     assertIdValue(entity, id);
     return this.deleteMany(entity, { $where: id }, opts);
   }
@@ -526,7 +558,11 @@ export abstract class AbstractQuerier implements Querier {
     // Where a snapshot was taken, the statement names those rows rather than resolving `q` a second
     // time. Two reads of one `$limit` with no total order are free to disagree, which would fire the
     // hooks for one row and delete another; naming them also spares the second read.
-    const target: QuerySearch<E> = doomed ? { $where: doomed.map((it) => it[getMeta(entity).id]) } : q;
+    let target: QuerySearch<E> = q;
+    if (doomed) {
+      const meta = getMeta(entity);
+      target = { $where: doomed.map((it) => idOf(meta, it)) };
+    }
     await this.emitHook(entity, 'beforeDelete', doomed ?? []);
     const changes = await this.internalDeleteMany(entity, target, opts);
     await this.emitHook(entity, 'afterDelete', doomed ?? []);
@@ -560,7 +596,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E>> {
+  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
     const [id] = await this.saveMany(entity, [payload]);
     return id;
   }
@@ -569,13 +605,18 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const toInsert: EntityData<E>[] = [];
     const toUpdate: EntityData<E>[] = [];
-    const existingIds: IdValue<E>[] = [];
+    const existingIds: (IdValue<E> | undefined)[] = [];
+
+    // Save reads an id as proof the row exists, and inserts the rest. A composite key is supplied by
+    // the caller on every row, insert included, so that proof does not exist for one: telling the two
+    // apart takes a read, which is `upsertMany`'s job and not this one's.
+    const idKey = soleIdOf(meta, 'saving a row');
 
     for (const it of payload) {
-      const id = it[meta.id];
+      const id = it[idKey];
       if (!id) {
         toInsert.push(it);
-      } else if (!someKey(it, (key) => key !== meta.id)) {
+      } else if (!someKey(it, (key) => key !== idKey)) {
         existingIds.push(id);
       } else {
         toUpdate.push(it);
@@ -583,12 +624,12 @@ export abstract class AbstractQuerier implements Querier {
     }
 
     const [insertedIds, updatedIds] = await Promise.all([
-      toInsert.length ? this.insertMany(entity, toInsert) : ([] as IdValue<E>[]),
+      toInsert.length ? this.insertMany(entity, toInsert) : ([] as (IdValue<E> | undefined)[]),
       Promise.all(
         toUpdate.map(async (it) => {
-          const id = it[meta.id];
+          const id = it[idKey];
           const data = { ...it };
-          delete data[meta.id];
+          delete data[idKey];
           await this.updateOneById(entity, id, data as E);
           return id;
         }),
@@ -628,13 +669,13 @@ export abstract class AbstractQuerier implements Querier {
     relOpts: RelationMeta,
     relationQuery: RelationQuery,
   ): Promise<void> {
-    const localField = parentKeyColumn(relOpts);
+    const joins = parentJoins(relOpts, meta.ids.length);
+    const [targetColumn] = targetKeyColumns(relOpts, meta.ids.length);
     const throughEntity = relOpts.through!();
     const throughMeta = getMeta(throughEntity);
     const targetRelKey = getKeys(throughMeta.relations).find((key) =>
-      throughMeta.relations[key]?.references.some(({ local }) => local === targetKeyColumn(relOpts)),
+      throughMeta.relations[key]?.references.some(({ local }) => local === targetColumn),
     );
-    const ids = payload.map((it) => it[meta.id]);
     // A relation query names the target's columns, not the join table's, so the projection and the
     // filter belong on the populate below - resolved there against the entity that has them. Spread
     // onto the through query they asked `ItemTag` for `Tag`'s columns: `$where`/`$sort` failed with
@@ -642,24 +683,20 @@ export abstract class AbstractQuerier implements Querier {
     const { $select: _select, $exclude: _exclude, $where: _where, ...throughQuery } = relationQuery;
     const throughFounds = await this.findMany(throughEntity, {
       ...throughQuery,
-      $select: {
-        [localField]: true,
-      },
+      $select: Object.fromEntries(joins.map(({ joined }) => [joined, true])),
       $populate: {
         [targetRelKey!]: {
           ...relationQuery,
           $required: true,
         },
       },
-      $where: {
-        [localField]: ids,
-      },
+      $where: parentsIn(joins, payload),
     });
     const founds = (throughFounds as unknown as RawRow[]).map((it) => ({
       ...(it[targetRelKey!] as RawRow),
-      [localField]: it[localField],
+      ...Object.fromEntries(joins.map(({ joined }) => [joined, it[joined]])),
     }));
-    this.putChildrenInParents(payload, founds, meta.id, localField, relKey);
+    this.putChildrenInParents(payload, founds, joins, relKey);
   }
 
   private async fillToManyOneToMany<E>(
@@ -670,39 +707,42 @@ export abstract class AbstractQuerier implements Querier {
     relationQuery: RelationQuery,
     relEntity: Type<object>,
   ): Promise<void> {
-    const foreignField = parentKeyColumn(relOpts);
+    const joins = parentJoins(relOpts, meta.ids.length);
     // The FK is what putChildrenInParents groups on, so it outlives the relation's projection
     // either way: added to a whitelisting `$select` (the raw-array form has nothing to augment),
     // dropped from a subtractive `$exclude`. `relationQuery` is already a clone.
     const select = asSelectMap(relationQuery.$select) as Record<string, unknown> | undefined;
-    if (select && !select[foreignField]) {
-      select[foreignField] = true;
+    const exclude = relationQuery.$exclude as Record<string, unknown> | undefined;
+    for (const { joined } of joins) {
+      if (select && !select[joined]) {
+        select[joined] = true;
+      }
+      delete exclude?.[joined];
     }
-    delete (relationQuery.$exclude as Record<string, unknown> | undefined)?.[foreignField];
-    const ids = payload.map((it) => it[meta.id]);
-    relationQuery.$where = { ...relationQuery.$where, [foreignField]: ids };
+    relationQuery.$where = { ...relationQuery.$where, ...parentsIn(joins, payload) };
     const founds = await this.findMany(relEntity, relationQuery);
-    this.putChildrenInParents(payload, founds as RawRow[], meta.id, foreignField, relKey);
+    this.putChildrenInParents(payload, founds as RawRow[], joins, relKey);
   }
 
   protected putChildrenInParents<E>(
     parents: E[],
     children: RawRow[],
-    parentIdKey: keyof E & string,
-    referenceKey: string,
+    joins: readonly ParentJoin[],
     relKey: keyof E & string,
   ): void {
     const childrenByParentId: Record<string, RawRow[]> = {};
     for (const child of children) {
-      const parentId = String(child[referenceKey]);
-      if (!childrenByParentId[parentId]) childrenByParentId[parentId] = [];
-      childrenByParentId[parentId].push(child);
+      // Every joined column, so two children agreeing on one column of a composite key are not
+      // gathered under the same parent.
+      const parentId = rowKey(joins.map(({ joined }) => child[joined]));
+      (childrenByParentId[parentId] ??= []).push(child);
     }
     for (const parent of parents) {
       // `[]` rather than nothing for a parent with no children: a populated to-many is a list the
       // caller asked for, so it maps and counts without a guard, and its type can say so. An
       // unpopulated one stays absent, which is what tells the two apart.
-      parent[relKey] = (childrenByParentId[String(parent[parentIdKey])] ?? []) as E[keyof E & string];
+      const key = rowKey(joins.map(({ parent: parentKey }) => parent[parentKey as keyof E & string]));
+      parent[relKey] = (childrenByParentId[key] ?? []) as E[keyof E & string];
     }
   }
 
@@ -714,9 +754,10 @@ export abstract class AbstractQuerier implements Querier {
       return acc;
     }, []);
     if (!entries.length) return;
+    const idKey = soleIdOf(meta, 'saving a relation');
     await Promise.all(
       entries.map(({ it, relKeys }) =>
-        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, [it[meta.id]], it[relKey], relKey))),
+        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, [it[idKey]], it[relKey], relKey))),
       ),
     );
   }
@@ -734,8 +775,9 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
 
+    const idKey = soleIdOf(meta, 'saving a relation');
     const founds = await this.findMany(entity, idOnlyQuery(meta, q), opts);
-    const ids = founds.map((found) => found[meta.id]);
+    const ids = founds.map((found) => found[idKey]);
 
     if (!ids.length) {
       return;
@@ -746,7 +788,11 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  protected async deleteRelations<E extends object>(entity: Type<E>, ids: IdValue<E>[], opts?: QueryOptions) {
+  /**
+   * `EntityId` because a settled set names composite rows as objects, which is also what the parent's
+   * own delete takes - and what {@link childrenOf} reads each child's foreign key columns out of.
+   */
+  protected async deleteRelations<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
     const relKeys = filterPersistableRelationKeys(meta, meta.relations, 'delete');
     // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
@@ -754,9 +800,9 @@ export abstract class AbstractQuerier implements Querier {
       const relOpts = meta.relations[relKey];
       if (!relOpts) continue;
       const relEntity = relOpts.entity();
-      const parentKey = parentKeyColumn(relOpts);
       const target = relOpts.through ? relOpts.through() : relEntity;
-      await this.deleteMany(target, { $where: { [parentKey]: ids } }, opts);
+      const where = childrenOf(parentJoins(relOpts, meta.ids.length), ids) as QueryWhere<object>;
+      await this.deleteMany(target, { $where: where }, opts);
     }
   }
 
@@ -798,7 +844,8 @@ export abstract class AbstractQuerier implements Querier {
   ) {
     const { through } = relOpts;
     if (through) {
-      const localField = parentKeyColumn(relOpts);
+      const localField = soleParentColumn(relOpts);
+      const [targetColumn] = targetKeyColumns(relOpts, 1);
       const throughEntity = through();
       if (isUpdate) {
         await this.deleteMany(throughEntity, { $where: { [localField]: ids } as QueryWhere<object> });
@@ -810,13 +857,13 @@ export abstract class AbstractQuerier implements Querier {
           const savedIds = await this.saveMany(relEntity, relPayload);
           await this.insertMany(
             throughEntity,
-            savedIds.map((relId) => ({ [localField]: id, [targetKeyColumn(relOpts)]: relId })),
+            savedIds.map((relId) => ({ [localField]: id, [targetColumn]: relId })),
           );
         }
       }
       return;
     }
-    const foreignField = parentKeyColumn(relOpts);
+    const foreignField = soleParentColumn(relOpts);
     if (isUpdate) {
       await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
     }
@@ -829,7 +876,7 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   private async saveOneToOne(relEntity: Type<object>, relOpts: RelationMeta, ids: unknown[], relPayload: object) {
-    const foreignField = parentKeyColumn(relOpts);
+    const foreignField = soleParentColumn(relOpts);
     if (relPayload === null) {
       await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
       return;
@@ -847,7 +894,7 @@ export abstract class AbstractQuerier implements Querier {
     ids: IdValue<E>[],
     relPayload: object,
   ) {
-    // Not `parentKeyColumn`: a many-to-one points the other way, so this is the *parent's* own column
+    // Not `soleParentColumn`: a many-to-one points the other way, so this is the *parent's* own column
     // holding the child's id - the one place `references[0].local` does not name a key of the parent.
     const localField = relOpts.references[0].local;
     // Per parent: each gets its own reference row, so each `SET` carries a different value.

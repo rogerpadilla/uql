@@ -29,12 +29,6 @@ type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext
  * `User.id` is a `uuid`, a compile error rather than a column that disagrees with its property.
  */
 /**
- * The value type the options declare, which the decorated property is then checked against.
- *
- * `enum` narrows it to its own values, so the property must spell out the same set. Only the values
- * the declared `type` admits count, which is what keeps `enum: [2]` off a `String` field.
- */
-/**
  * Maps any option the type does not declare to `never`, turning a typo into a compile error.
  *
  * Needed because the decorators capture their options as a naked type parameter, and TypeScript
@@ -45,6 +39,12 @@ type RejectUnknown<O, Known> = [Exclude<keyof O, keyof Known>] extends [never]
   ? unknown
   : Record<Exclude<keyof O, keyof Known> & string, never>;
 
+/**
+ * The value type the options declare, which the decorated property is then checked against.
+ *
+ * `enum` narrows it to its own values, so the property must spell out the same set. Only the values
+ * the declared `type` admits count, which is what keeps `enum: [2]` off a `String` field.
+ */
 type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
   ? O extends { readonly enum: infer E extends readonly unknown[] }
     ? EnumValue<Extract<E[number], TsTypeOf<T>>, TsTypeOf<T>>

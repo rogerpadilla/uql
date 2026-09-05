@@ -10,4 +10,7 @@ export {
   defineRelation,
   getEntities,
   getMeta,
+  assertSoleId,
+  idOf,
+  soleIdOf,
 } from './metadata/definition.js';

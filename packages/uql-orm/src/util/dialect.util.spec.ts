@@ -1,4 +1,4 @@
-import { expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
@@ -6,6 +6,7 @@ import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../
 import {
   applyFilters,
   augmentWhere,
+  buildQueryWhereAsMap,
   fillOnFields,
   filterFieldKeys,
   getFieldCallbackValue,
@@ -251,4 +252,39 @@ it('parseGroupMap skips falsy and non-object values', () => {
   const entries = parseGroupMap(malformedGroupMapFixture());
   // Only `true` is a valid group key; false/0/'' are ignored
   expect(entries).toEqual([{ kind: 'key', alias: 'd' }]);
+});
+
+@Entity()
+class Enrolled {
+  @Id({ type: Number }) studentId?: number;
+  @Id({ type: String }) courseId?: string;
+  @Field({ type: String }) grade?: string;
+}
+
+describe('buildQueryWhereAsMap', () => {
+  it('names the one key column for a bare value, and an `IN` for a list of them', () => {
+    expect(buildQueryWhereAsMap(getMeta(User), 1)).toEqual({ id: 1 });
+    expect(buildQueryWhereAsMap(getMeta(User), [1, 2])).toEqual({ id: [1, 2] });
+    expect(buildQueryWhereAsMap(getMeta(User), [])).toEqual({ id: [] });
+  });
+
+  /** The documented array `$where`, which used to be read as a list of bare ids and mangled. */
+  it('reads a list of maps as the OR it is', () => {
+    const where = [{ name: 'a' }, { name: 'b' }];
+    expect(buildQueryWhereAsMap(getMeta(User), where)).toEqual({ $or: where });
+  });
+
+  it('returns a map unchanged, which is what a composite id already is', () => {
+    const where = { studentId: 1, courseId: 'maths' };
+    expect(buildQueryWhereAsMap(getMeta(Enrolled), where)).toBe(where);
+    expect(buildQueryWhereAsMap(getMeta(Enrolled), [where])).toEqual({ $or: [where] });
+  });
+
+  /** A scalar names one column, which on a composite would address every row agreeing on it. */
+  it('refuses a bare value where the key is composite', () => {
+    expect(() => buildQueryWhereAsMap(getMeta(Enrolled), 1)).toThrow(
+      /composite primary key \(studentId, courseId\), which addressing by a bare id value does not support/,
+    );
+    expect(() => buildQueryWhereAsMap(getMeta(Enrolled), [1, 2])).toThrow(/addressing by a bare id value/);
+  });
 });

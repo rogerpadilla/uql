@@ -1,8 +1,10 @@
 import type {
+  EntityId,
   EntityIndexInput,
   EntityMeta,
   EntityOptions,
   FieldKey,
+  FieldMeta,
   FieldOptions,
   FilterOptions,
   HookEvent,
@@ -55,12 +57,6 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
 }
 
 export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): EntityMeta<E> {
-  const meta = ensureMeta(entity);
-  const id = getIdKey(meta);
-  if (id) {
-    // A subclass narrowing the inherited primary key: drop the old one so exactly one stays marked.
-    delete meta.fields[id];
-  }
   return defineField(entity, key, { ...opts, isId: true });
 }
 
@@ -218,20 +214,60 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     meta.filters[SOFT_DELETE_FILTER] = { condition: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
-  const id = getIdKey(meta);
-  if (!id) {
+  const ids = getIdKeys(meta);
+  if (!ids.length) {
     throw TypeError(
-      `'${entity.name}' must have exactly one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
+      `'${entity.name}' must have at least one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
     );
   }
-  meta.id = id;
+  meta.ids = ids;
 
   return meta;
 }
 
+/**
+ * Refuses an entity whose primary key is not one column, naming the path that cannot express it.
+ *
+ * Refusing rather than taking the first of several is the whole guarantee: pairing one column of a
+ * two-column key is how a statement silently addresses rows that merely agree on it.
+ */
+export function assertSoleId<E>(meta: EntityMeta<E>, what: string): void {
+  const { ids } = meta;
+  if (ids.length === 1) {
+    return;
+  }
+  throw new TypeError(
+    ids.length
+      ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support yet.`
+      : // An entity registered with `@Field` but no `@Entity` never ran the check in `defineEntity`.
+        `'${meta.entity.name}' has no primary key, which ${what} needs.`,
+  );
+}
+
+/** The entity's one primary key, for a path that cannot express a composite. See {@link assertSoleId}. */
+export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
+  assertSoleId(meta, what);
+  return meta.ids[0];
+}
+
+/**
+ * A row's primary key in the shape a `$where` takes: the value itself for a single key, an object
+ * carrying every key for a composite - which is exactly {@link EntityId}.
+ *
+ * What a settled write names its rows by, and what an insert hands back. Naming a composite row by
+ * one of its columns would address every row agreeing on that one.
+ */
+export function idOf<E>(meta: EntityMeta<E>, row: E): EntityId<E> {
+  const { ids } = meta;
+  if (ids.length === 1) {
+    return row[ids[0]];
+  }
+  return Object.fromEntries(ids.map((key) => [key, row[key]])) as EntityId<E>;
+}
+
 export function getEntities(): Type<unknown>[] {
   return [...metas.entries()].reduce((acc, [key, val]) => {
-    if (val.id) {
+    if (val.ids.length) {
       acc.push(key);
     }
     return acc;
@@ -243,7 +279,7 @@ function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta) {
     return meta;
   }
-  meta = { entity, id: '', fields: {}, relations: {} };
+  meta = { entity, ids: [], fields: {}, relations: {} };
   metas.set(entity, meta);
   return meta;
 }
@@ -268,7 +304,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
     const at = `'${meta.entity.name}.${relKey}'`;
 
     if (relOpts.mappedBy) {
-      fillInverseSide(at, relOpts);
+      fillInverseSide(at, meta, relOpts);
     } else if (!relOpts.references) {
       fillOwningSide(at, meta, relKey, relOpts);
     }
@@ -294,14 +330,14 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
 
 function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relOpts: RelationOptions): void {
   const relMeta = ensureMeta(relOpts.entity());
-  const relIdKey = relMeta.id;
 
   if (relOpts.through) {
     // Both columns live on the junction, whatever the cardinality: `fillToManyThroughRelation`,
-    // `deleteRelations` and every dialect read them as junction columns.
+    // `deleteRelations` and every dialect read them as junction columns. A composite key contributes
+    // one pair per column of it, which is what makes the join address a whole key rather than part.
     relOpts.references = [
-      { local: junctionColumn(meta, meta.id), foreign: meta.id },
-      { local: junctionColumn(relMeta, relIdKey), foreign: relIdKey },
+      ...meta.ids.map((key) => ({ local: junctionColumn(meta, key), foreign: key })),
+      ...relMeta.ids.map((key) => ({ local: junctionColumn(relMeta, key), foreign: key })),
     ];
     return;
   }
@@ -313,23 +349,31 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
     );
   }
 
-  const fkKey = `${relKey}Id` as FieldKey<E>;
-  relOpts.references = [{ local: fkKey, foreign: relIdKey }];
+  // `<rel>Id` for the one-key case it has always been; `<rel><Key>` per column otherwise. Both name a
+  // property, so both are spelled from the referenced *property* - a column name is what the naming
+  // strategy makes of this afterwards.
+  const sole = relMeta.ids.length === 1;
+  relOpts.references = relMeta.ids.map((key) => ({
+    local: sole ? `${relKey}Id` : `${relKey}${upperFirst(key)}`,
+    foreign: key,
+  }));
 
   // `typeFromReference` so schema generation resolves the referenced primary key's exact type
   // (columnType, length, chained keys) rather than trusting the fallback, as it does for an
   // explicit `@Field({ references })`.
-  if (!meta.fields[fkKey]) {
-    (meta.fields as Record<string, FieldOptions>)[fkKey] = {
-      name: fkKey,
-      type: relMeta.fields[relIdKey]?.type ?? Number,
+  const fields: Record<string, FieldMeta | undefined> = meta.fields;
+  for (const { local, foreign } of relOpts.references) {
+    fields[local] ??= {
+      name: local,
+      type: relMeta.fields[foreign]?.type ?? Number,
       references: relOpts.entity,
+      referencedKey: foreign,
       typeFromReference: true,
     };
   }
 }
 
-function fillInverseSide(at: string, relOpts: RelationOptions): void {
+function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationOptions): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
   const mappedBy = getMappedByKey(relOpts);
@@ -337,7 +381,15 @@ function fillInverseSide(at: string, relOpts: RelationOptions): void {
   if (relOpts.references) return;
 
   if (relMeta.fields[mappedBy]) {
-    relOpts.references = [{ local: relMeta.id, foreign: mappedBy }];
+    if (meta.ids.length > 1) {
+      throw new TypeError(
+        `${at} is mapped by '${relEntity.name}.${mappedBy}', one column, but the primary key of ` +
+          `'${meta.entity.name}' is composite (${meta.ids.join(', ')}). Map it by the relation on the other side ` +
+          'instead, which joins every column of the key.',
+      );
+    }
+    // `local` is this entity's own key, as in every other pair.
+    relOpts.references = [{ local: meta.ids[0], foreign: mappedBy }];
     return;
   }
 
@@ -355,11 +407,12 @@ function fillInverseSide(at: string, relOpts: RelationOptions): void {
     );
   }
 
-  // Two different flips: a junction pair is `[thisSide, otherSide]`, so the array reverses; a plain
-  // foreign key is one pair whose ends swap.
+  // Two different flips: a junction's pairs are the owner's group followed by ours, so the two groups
+  // swap - `toReversed` would also reverse each group, pairing a composite's columns crosswise. A
+  // plain foreign key is one pair per key whose ends swap.
   relOpts.references =
     relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm'
-      ? owner.references.toReversed()
+      ? [...owner.references.slice(relMeta.ids.length), ...owner.references.slice(0, relMeta.ids.length)]
       : owner.references.map(({ local, foreign }) => ({ local: foreign, foreign: local }));
   relOpts.through = owner.through;
 }
@@ -378,7 +431,17 @@ function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
   for (const fieldKey of getKeys(meta.fields)) {
     const references = meta.fields[fieldKey]?.references;
     if (!references || joined.has(fieldKey)) continue;
-    const foreign = ensureMeta(references()).id;
+    const target = ensureMeta(references());
+    // Nothing to derive from an entity that has not registered its own fields yet.
+    if (!target.ids.length) continue;
+    if (target.ids.length > 1) {
+      throw new TypeError(
+        `'${meta.entity.name}.${fieldKey}' cannot reference '${target.entity.name}', whose primary key is composite ` +
+          `(${target.ids.join(', ')}): a column points at one. Use ` +
+          `'@ManyToOne({ entity: () => ${target.entity.name} })', which declares one column per key.`,
+      );
+    }
+    const [foreign] = target.ids;
     // The relation takes the column's name minus the key it points at (`itemId` -> `item`); a column
     // named anything else has no name to take, so it stays a plain foreign key.
     const suffix = upperFirst(foreign);
@@ -407,17 +470,19 @@ function getMappedByKey<E>(relOpts: RelationOptions<E>): Key<E> {
     : relOpts.mappedBy!;
 }
 
-function getIdKey<E>(meta: EntityMeta<E>): IdKey<E> | undefined {
-  const id = getKeys(meta.fields).find((key) => meta.fields[key]?.isId);
-  return id as IdKey<E> | undefined;
+/** Every key the entity marks, in declaration order. More than one is a composite primary key. */
+function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
+  return getKeys(meta.fields).filter((key) => meta.fields[key]?.isId) as IdKey<E>[];
 }
 
 function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   const sourceFields = { ...source.fields };
-  const sourceId = getIdKey(source);
-  // A subclass that declares its own primary key drops the parent's, so exactly one stays marked.
-  if (sourceId && getIdKey(target)) {
-    delete sourceFields[sourceId];
+  // A subclass declaring its own primary key drops the parent's - every column of it, or a composite
+  // parent would leave its remaining keys marked and silently widen the child's key.
+  if (getIdKeys(target).length) {
+    for (const key of getIdKeys(source)) {
+      delete sourceFields[key];
+    }
   }
   target.fields = { ...sourceFields, ...target.fields };
   target.relations = { ...source.relations, ...target.relations };

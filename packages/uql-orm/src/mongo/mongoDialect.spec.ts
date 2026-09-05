@@ -1347,6 +1347,29 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
+  /**
+   * A document has one `_id`, and a compound key under it is a sub-document whose field order decides
+   * equality - a different document shape rather than a translation. Refused on both sides, or a write
+   * would store the columns flat while every read looked for them under `_id`.
+   */
+  shouldRefuseACompositeKey() {
+    @Entity()
+    class Enrolment {
+      @Id({ type: Number }) studentId?: number;
+      @Id({ type: String }) courseId?: string;
+      @Field({ type: String }) grade?: string;
+    }
+    const meta = getMeta(Enrolment);
+    expect(() => this.dialect.columnOf(meta, 'studentId')).toThrow(
+      /composite primary key \(studentId, courseId\), which MongoDB does not support/,
+    );
+    expect(() => this.dialect.getPersistables(meta, [{ studentId: 1, courseId: 'c' }], 'onInsert')).toThrow(
+      /which MongoDB does not support/,
+    );
+    // A field that is not part of the key still resolves, so the refusal is about the key alone.
+    expect(this.dialect.columnOf(meta, 'grade')).toBe('grade');
+  }
+
   /** `$unset` is a later stage than `$set`, so it wins on a shared path - as it does in SQL. */
   shouldUsePipelineForSetAndUnsetOnSamePath() {
     expect(this.dialect.getUpdateFilter({ kind: { $set: { public: 1 }, $unset: ['public'] } })).toEqual([

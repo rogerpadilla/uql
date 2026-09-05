@@ -2,6 +2,23 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.42.0] - 2026-09-04
+
+**Composite primary keys.** A second `@Id` makes the key composite, and a row is addressed by an object naming every key:
+
+```ts
+@Id({ type: Number }) userId?: number;
+@Id({ type: Number }) groupId?: number;
+
+await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
+```
+
+- Composite `PRIMARY KEY` and foreign-key DDL, with each column typed from the key it points at.
+- Every key is taken wherever a row is named: inserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by.
+- An insert reports `undefined` for a composite id, as a key the driver cannot report already does; `idOf(meta, row)` names such a row. `saveMany`, saving a relation, MongoDB and the HTTP `/:id` route refuse one by name.
+- An array `$where` of maps is now the OR it was documented to be.
+- **Breaking:** `EntityMeta.id` is now `ids`; `typeFromReference` moved to the new `FieldMeta`; the insert and save methods return `IdValue<E> | undefined`, which they already did on MySQL. A second `@Id` composes the key rather than replacing the first.
+
 ## [0.41.1] - 2026-09-04
 
 **Enum fields.** The values a column accepts, enforced by the database and by TypeScript:

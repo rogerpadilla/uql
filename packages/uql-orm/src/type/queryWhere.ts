@@ -1,4 +1,4 @@
-import type { FieldKey, IdValue, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
+import type { EntityId, FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
@@ -363,4 +363,9 @@ export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
 /**
  * query filter.
  */
-export type QueryWhere<E> = IdValue<E> | IdValue<E>[] | QueryWhereMap<E> | QueryWhereArray<E> | QueryRaw;
+/**
+ * `EntityId` rather than `IdValue`: a by-id method reduces to `$where: id`, and a composite key is
+ * addressed by an object carrying every key. That object is a where map naming those columns, so the
+ * two spellings meet here rather than needing a conversion.
+ */
+export type QueryWhere<E> = EntityId<E> | EntityId<E>[] | QueryWhereMap<E> | QueryWhereArray<E> | QueryRaw;

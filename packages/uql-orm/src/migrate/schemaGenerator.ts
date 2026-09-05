@@ -1,5 +1,5 @@
 import { type AbstractDialect, AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta } from '../entity/index.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import {
   areTypesEqual,
   canonicalToSql,
@@ -25,6 +25,7 @@ import type {
   DropSchemaOptions,
   EntityMeta,
   FieldKey,
+  FieldMeta,
   FieldOptions,
   IndexSchema,
   NamingStrategy,
@@ -365,12 +366,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
 
-  public getSqlType(field: FieldOptions, fieldType?: unknown): string {
+  public getSqlType(field: FieldMeta, fieldType?: unknown): string {
     // If field has a reference, inherit type from the target primary key
     if (field.references) {
       const refEntity = field.references();
       const refMeta = getMeta(refEntity);
-      const refIdField = refMeta.fields[refMeta.id];
+      const refIdField = refMeta.fields[field.referencedKey ?? soleIdOf(refMeta, 'a foreign key')];
       return this.getSqlType(
         { ...refIdField, references: undefined, isId: undefined, autoIncrement: false },
         refIdField!.type,
@@ -539,7 +540,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * would create for this field, against what it reported for the existing column.
    */
   protected fieldToColumnSchema<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): ColumnSchema {
-    const isPrimaryKey = field.isId === true && meta.id === fieldKey;
+    const isPrimaryKey = field.isId === true;
 
     return {
       name: this.dialect.resolveColumnName(fieldKey, field),
