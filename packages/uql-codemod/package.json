@@ -1,6 +1,6 @@
 {
   "name": "uql-codemod",
-  "description": "Migrates uql-orm entities from legacy decorators to the TC39 standard spec",
+  "description": "Upgrade uql-orm across versions that introduce breaking changes",
   "license": "MIT",
   "version": "0.28.0",
   "type": "module",
