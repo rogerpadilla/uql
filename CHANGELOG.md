@@ -19,6 +19,8 @@ await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
 - An array `$where` of maps is now the OR it was documented to be.
 - **Breaking:** `EntityMeta.id` is now `ids`; `typeFromReference` moved to the new `FieldMeta`; the insert and save methods return `IdValue<E> | undefined`, which they already did on MySQL. A second `@Id` composes the key rather than replacing the first.
 
+**A typo'd `@Field` / `@Id` option is now a compile error.** `@Field({ nulable: true })` used to compile and be ignored, because TypeScript skips excess-property checking on a naked type parameter.
+
 ## [0.41.1] - 2026-09-04
 
 **Enum fields.** The values a column accepts, enforced by the database and by TypeScript:
