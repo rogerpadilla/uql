@@ -5,19 +5,16 @@ depend on it stay small.
 
 ## Foundational refactors
 
-| #   | Refactor                                                  | Unlocks                                      | State      |
-| :-- | :-------------------------------------------------------- | :------------------------------------------- | :--------- |
-| R1  | `IdKeys<E>`: an entity has _zero or more_ key columns     | composite PKs, views                         | to do      |
-| R2  | Entity capabilities (`readable`/`writable`/`refreshable`) | views, matviews, future CTEs                 | to do      |
-| R3  | One expression type wherever SQL is accepted              | checks, generated columns, views, windows    | **0.40.0** |
-| R4  | `raw` is a tagged template                                | R3's ergonomics, injection safety            | **0.40.0** |
-| R5  | `dialect.compile(query) -> { sql, values }`               | prepared statements, batching                | to do      |
-| R6  | One projection-alias concept for derived result keys      | `$window`, cursor metadata, `$agg`, `_count` | to do      |
-| R7  | Schema objects as a dependency-ordered graph              | enums, views, triggers                       | step 1     |
+| #   | Refactor                                                  | Unlocks                                      | State  |
+| :-- | :-------------------------------------------------------- | :------------------------------------------- | :----- |
+| R1  | Zero key columns, for a relation nothing identifies       | views                                        | to do  |
+| R2  | Entity capabilities (`readable`/`writable`/`refreshable`) | views, matviews, future CTEs                 | to do  |
+| R5  | `dialect.compile(query) -> { sql, values }`               | prepared statements, batching                | to do  |
+| R6  | One projection-alias concept for derived result keys      | `$window`, cursor metadata, `$agg`, `_count` | to do  |
+| R7  | Schema objects as a dependency-ordered graph              | enums, views, triggers                       | step 1 |
 
-**R1.** `IdKey<E>` assumes one key. It becomes `IdKeys<E>`, a union; `IdValue<E>` stays a scalar for
-one key and becomes an object for several. Every `*ById` already takes `IdValue<E>`, so no signature
-changes. Zero keys is the view case.
+**R1.** The composite half shipped: `meta.ids` is the only stored form and `EntityId<E>` is a scalar
+for one key, an object for several. Left is zero keys, for a relation nothing identifies.
 
 **R2.** `@Entity` means "table". A capability set (`readable`/`writable`/`refreshable`) makes a
 read-only relation expressible and brands it on the type, so writing to a view is a compile error.
@@ -35,74 +32,6 @@ tolerance is deliberate - a cyclic FK is legal SQL, handled by deferring the con
 wait for a second kind, so the shape is derived rather than guessed.
 
 ---
-
-## Composite primary keys
-
-```ts
-@Id({ type: Number }) userId?: number;
-@Id({ type: Number }) groupId?: number;
-
-await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
-```
-
-**Everything that can address a row by several columns works**: declaration, DDL and migrations, inserts, upserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by. Cascading a delete does too, by an OR of key maps where a single key is one `IN`. What is left is the places that identify a row through a single slot - the id an insert returns, the id `saveMany` reads as proof a row exists, one `_id`, one URL segment - which a composite row does not fit. Each throws naming itself rather than falling back to the first key column, so the feature fails loudly where it is unfinished instead of quietly addressing the wrong rows.
-
-**The id is a plain object**, as TypeORM and MikroORM take. Prisma's named compound
-(`where: { userId_groupId: {...} }`) exists to say _which_ unique constraint `findUnique` should use;
-`findOneById` is unambiguous, so the convention would buy nothing and break on a rename. A tuple is
-positionally fragile. The object also _is_ a `$where` map, so `buildQueryWhereAsMap` needs no special
-case, and a list of them is the OR that `QueryWhereArray` always claimed to be.
-
-### Where we already beat them
-
-- **No reachable singular key.** TypeORM keeps `primaryColumns[0]`, MikroORM keeps `compositePK`
-  beside the list; either lets a caller silently take the first of two. `assertSoleId` is the only
-  way past `meta.ids`, and it throws.
-- **Every key is required.** TypeORM's `ensureEntityIdMap` passes any object through, so
-  `{ userId: 1 }` on a two-key entity addresses every row sharing it. `assertIdValue` refuses - and
-  refuses `{}` on a single key too, which is otherwise a statement with no `WHERE`.
-- **Refusals name the path**, rather than a generic "composite not supported".
-
-### Left, in order
-
-1. **The id an insert reports.** The statement needs nothing: every column of a composite comes from
-   the caller, so `insertMany` inserts and reports `undefined` per row - the same "no id to give" its
-   contract already carries for a key MySQL's header cannot speak for. Reporting the id itself means
-   returning the map `EntityId` describes (TypeORM's `getEntityIdMixedMap`), which widens `insertOne`'s
-   _return_ type for **every** entity: measured at 139 errors across this repo alone, all of them
-   single-key code doing `const id = await insertOne(User, u)`. Not worth it for the composite case;
-   revisit only with a way to keep the single-key return narrow.
-2. **`saveMany`** - it reads an id as proof the row exists and inserts the rest. A composite is
-   supplied whole on an insert too, so every row would look like an update and a new one would
-   silently update nothing. Telling them apart takes a read, which is upsert's job.
-3. **Saving a relation** - `saveToMany`/`saveOneToOne` write the parent's key into one child column,
-   the same value for the whole page. A composite writes several columns per parent, which is a
-   statement per parent rather than one over a list. Cascading a delete already takes every column,
-   through `childrenOf`.
-4. **MongoDB** - a compound `_id` is a sub-document, whose field order decides equality: a different
-   document shape rather than a translation. Refused on both sides today, because refusing only reads
-   would let a write store the columns flat where no read would look for them.
-5. **The HTTP `/:id` route** - one path segment. No ORM above ships an HTTP layer, so the
-   serialization is ours to invent; client and server both refuse until it is. Two things to settle
-   first, in this order:
-   - **The adapters disagree about percent-decoding.** `fetchHandler` splits `url.pathname`, which is
-     still encoded; express hands over `req.params`, which is decoded. Invisible while ids are numbers
-     and uuids, load-bearing the moment a segment carries punctuation. Normalize that first, or the
-     payload has to avoid `%`, `{` and `/` altogether (base64url of the JSON).
-   - **A by-id route does not check the id.** `buildIdQuery` builds a `$where` and the handler calls
-     `findOne`/`updateMany`/`deleteMany`, so `assertIdValue` never runs. Harmless while the segment is
-     one value, but a partial composite arriving there would address every row agreeing on the columns
-     it did name - and on a `DELETE`. The check moves into `buildIdQuery` as part of this.
-
-   Then the format itself: JSON, since that is already the wire everywhere else here. The client
-   encodes an id object with `JSON.stringify`; `buildIdQuery` parses iff `meta.ids.length > 1`, so the
-   shape is decided by metadata rather than by sniffing the string - an id that merely starts with `{`
-   stays unambiguous. JSON also keeps `1` a number, where a delimiter-joined segment (`1~maths`) hands
-   every part back as a string and breaks on a value containing the delimiter.
-
-Types stay permissive for composites: accumulating `@Id` across properties into the class type is not
-something TypeScript can do, so the `idKey` brand remains the opt-in for compile-time enforcement and
-`assertIdValue` is the guarantee everyone else gets.
 
 ## Views and materialized views
 
@@ -149,8 +78,6 @@ Variability maintains ~20 counter columns via trigger functions written as raw S
 invisible to `uql-migrate` diff and drift. Depends on R7. Make them **visible to the diff** first so
 drift is reported, before making them authorable.
 
----
-
 ## Batching
 
 ```ts
@@ -178,24 +105,43 @@ which is currently advertised as a feature. Depends on R5 - the same query shape
 byte-identical string, so that string is the cache key with no fingerprinting. `IN`-list arity and
 `insertMany` chunking would thrash the cache; cap it and skip variadic statements.
 
-## Dependencies
+## Where a composite key still refuses
 
-```mermaid
-graph LR
-  R1[R1 IdKeys] --> CompositePKs
-  R2[R2 Capabilities] --> Views
-  R7[R7 Schema graph] --> Views
-  R7 --> Triggers
-  R3[R3 Expression] --> GeneratedColumns
-  R6[R6 Aliases] --> CursorPagination
-  R5[R5 compile split] --> Batching
-  R5 --> PreparedStatements
-```
+Composite keys shipped ([the design](https://uql-orm.dev/blog/composite-primary-keys)). These five
+paths identify a row through a single slot, so each refuses by name rather than falling back to the
+first key column.
+
+1. **The id an insert reports.** Returning the key map widens `insertOne`'s _return_ type for every
+   entity - 139 errors across this repo alone, all single-key code doing `const id = await insertOne(...)`.
+   Revisit only with a way to keep the single-key return narrow.
+2. **`saveMany`** reads an id as proof the row exists, which a composite carries on an insert too.
+   Telling an insert from an update takes a read, which is upsert's job.
+3. **Saving a relation** writes the parent's key into one child column for a whole page. Several
+   columns per parent is a statement per parent.
+4. **MongoDB** - a compound `_id` is a sub-document whose field order decides equality, so a write
+   would store the columns flat where no read looks for them.
+5. **The HTTP `/:id` route** - one path segment, and two bugs to settle first. The adapters disagree
+   about percent-decoding (`fetchHandler` splits an encoded `url.pathname`, express hands over a
+   decoded `req.params`), and a by-id route never runs `assertIdValue` at all, so a partial composite
+   would address every row agreeing on the columns it named - on a `DELETE` too. Move the check into
+   `buildIdQuery`, then encode as JSON, parsed iff `meta.ids.length > 1` so metadata decides the shape
+   rather than sniffing the string.
+
+Types stay permissive: TypeScript cannot accumulate `@Id` across properties into the class type, so the
+`idKey` brand is the opt-in for compile-time enforcement and `assertIdValue` is what everyone else gets.
 
 ## Shipped
 
-**Enum fields** and **check constraints** landed in 0.41.1; `raw` as a tagged template and the one
-expression type in 0.40.0. Two decisions from those worth not re-litigating:
+**Composite primary keys** landed in 0.42.0, and migrations that can change one in 0.42.1. **Enum
+fields** and **check constraints** in 0.41.1; `raw` as a tagged template and the one expression type in
+0.40.0. Decisions from those worth not re-litigating:
+
+- **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a
+  `compositePK` flag; either lets a path take the first of two columns and address every row agreeing
+  on it. `assertSoleId` is the only way past `meta.ids`, and it throws.
+- **Keys and indexes are compared by their columns, never by name.** The engine named every constraint
+  that already exists, so matching on names would rewrite every table the first time a naming
+  convention changed - and would never match a name an engine truncated or invented.
 
 - **A check is never diffed.** It is SQL text, and a database reprints text from its parse tree, so a
   diff could only match names - and only PostgreSQL reports checks at all. A check is created with its
