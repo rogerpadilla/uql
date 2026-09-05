@@ -67,9 +67,22 @@ matches how `security` filters behave.
 
 ## Triggers
 
-Variability maintains ~20 counter columns via trigger functions written as raw SQL in migrations,
-invisible to `uql-migrate` diff and drift. Depends on R7. Make them **visible to the diff** first so
-drift is reported, before making them authorable.
+```ts
+@Entity({
+  triggers: [
+    {
+      on: 'afterInsert',
+      run: raw`UPDATE "Post" SET "comments" = "comments" + 1 WHERE "id" = NEW."postId"`,
+    },
+  ],
+})
+class Comment {}
+```
+
+A counter column maintained by a trigger is the common case, and today that means a trigger function
+written as raw SQL in a migration - invisible to `uql-migrate` diff and drift, so nothing reports it
+drifting or missing. Depends on R7. Make them **visible to the diff** first, before making them
+authorable.
 
 ## Batching
 
