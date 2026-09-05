@@ -245,11 +245,11 @@ describe('TableBuilder', () => {
       const table = new TableBuilder('users');
       table.string('email');
       table.string('username');
-      table.unique(['email', 'username'], 'uq_users_email_username');
+      table.unique(['email', 'username'], 'users_email_username_uk');
       const def = table.build();
 
       expect(def.indexes.length).toBe(1);
-      expect(def.indexes[0].name).toBe('uq_users_email_username');
+      expect(def.indexes[0].name).toBe('users_email_username_uk');
       expect(def.indexes[0].unique).toBe(true);
     });
 
@@ -258,15 +258,15 @@ describe('TableBuilder', () => {
       table.unique(['email']);
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('uq_users_email');
+      expect(def.indexes[0].name).toBe('users__email_uk');
     });
 
     it('should add composite index', () => {
       const table = new TableBuilder('users');
-      table.index(['lastName', 'firstName'], 'idx_users_name');
+      table.index(['lastName', 'firstName'], 'users__name_idx');
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('idx_users_name');
+      expect(def.indexes[0].name).toBe('users__name_idx');
       expect(def.indexes[0].entries).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
       expect(def.indexes[0].unique).toBe(false);
     });
@@ -274,7 +274,7 @@ describe('TableBuilder', () => {
     it('should take the same entries and options as the @Index decorator', () => {
       const table = new TableBuilder('notes');
       table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
-        name: 'idx_notes_lookup',
+        name: 'notes_lookup_idx',
         type: 'gin',
         where: '"deletedAt" IS NULL',
         include: ['title'],
@@ -282,7 +282,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.indexes[0]).toEqual({
-        name: 'idx_notes_lookup',
+        name: 'notes_lookup_idx',
         entries: [
           { column: 'lower("email")', expression: true },
           { column: 'body', length: 64 },
@@ -298,7 +298,7 @@ describe('TableBuilder', () => {
       const table = new TableBuilder('notes');
       table.index([{ column: 'tenantId' }, { column: 'createdAt', order: 'desc' }]);
 
-      expect(table.build().indexes[0].name).toBe('idx_notes_tenantId_createdAt');
+      expect(table.build().indexes[0].name).toBe('notes__tenantId_createdAt_idx');
     });
 
     it('should add table-level foreign key with options', () => {
@@ -309,7 +309,7 @@ describe('TableBuilder', () => {
         .references('users', ['id'])
         .onDelete('CASCADE')
         .onUpdate('CASCADE')
-        .name('fk_posts_author');
+        .name('posts_author_fk');
       const def = table.build();
 
       expect(def.foreignKeys.length).toBe(1);
@@ -317,18 +317,18 @@ describe('TableBuilder', () => {
       expect(def.foreignKeys[0].referencesTable).toBe('users');
       expect(def.foreignKeys[0].onDelete).toBe('CASCADE');
       expect(def.foreignKeys[0].onUpdate).toBe('CASCADE');
-      expect(def.foreignKeys[0].name).toBe('fk_posts_author');
+      expect(def.foreignKeys[0].name).toBe('posts_author_fk');
     });
   });
 
   describe('column-level indexes', () => {
     it('should collect column-level indexes', () => {
       const table = new TableBuilder('users');
-      table.string('email').index('idx_email');
+      table.string('email').index('email_idx');
       const def = table.build();
 
       expect(def.indexes.length).toBe(1);
-      expect(def.indexes[0].name).toBe('idx_email');
+      expect(def.indexes[0].name).toBe('email_idx');
     });
 
     it('should auto-generate index name', () => {
@@ -336,7 +336,7 @@ describe('TableBuilder', () => {
       table.string('email').index();
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('idx_users_email');
+      expect(def.indexes[0].name).toBe('users__email_idx');
     });
   });
 
@@ -374,7 +374,7 @@ describe('TableBuilder', () => {
       table.index(['email']);
       const def = table.build();
 
-      expect(def.indexes[0].name).toBe('idx_users_email');
+      expect(def.indexes[0].name).toBe('users__email_idx');
       expect(def.indexes[0].unique).toBe(false);
     });
 
@@ -389,12 +389,12 @@ describe('TableBuilder', () => {
 
     it('should skip duplicate column-level index if table-level index exists', () => {
       const table = new TableBuilder('users');
-      table.string('email').index('idx_users_email');
-      table.index(['email'], 'idx_users_email'); // same name as column-level
+      table.string('email').index('users__email_idx');
+      table.index(['email'], 'users__email_idx'); // same name as column-level
       const def = table.build();
 
       // Should not duplicate the index
-      expect(def.indexes.filter((i) => i.name === 'idx_users_email').length).toBe(1);
+      expect(def.indexes.filter((i) => i.name === 'users__email_idx').length).toBe(1);
     });
   });
 });

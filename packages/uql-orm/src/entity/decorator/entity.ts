@@ -38,7 +38,7 @@ export function Filter<E>(name: string, opts: FilterOptions<E>) {
  * `E` is inferred from the class the returned decorator is applied to, which is what lets the column
  * names be checked against it: `@Index(['nope'])` does not compile.
  *
- * @example `@Index(['lastName', 'firstName'], { name: 'idx_users_fullname' })`
+ * @example `@Index(['lastName', 'firstName'], { name: 'users_fullname_idx' })`
  * @example `@Index(['email'], { unique: true })`
  * @example `@Index(['status'], { where: "status = 'active'" })`
  */

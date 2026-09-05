@@ -18,7 +18,7 @@ describe('PostgresSchemaGenerator Specifics', () => {
   });
 
   it('should generate DROP INDEX statement', () => {
-    expect(generator.generateDropIndex('users', 'idx_test')).toBe('DROP INDEX IF EXISTS "idx_test";');
+    expect(generator.generateDropIndex('users', 'test_idx')).toBe('DROP INDEX IF EXISTS "test_idx";');
   });
 
   it('should generate ALTER COLUMN statements', () => {

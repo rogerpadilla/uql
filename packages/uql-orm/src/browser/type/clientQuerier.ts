@@ -19,19 +19,19 @@ export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, Q
     entity: Type<E>,
     payload: EntityData<E>[],
     opts?: RequestOptions,
-  ): QuerierResult<'client', IdValue<E>[]>;
+  ): QuerierResult<'client', (IdValue<E> | undefined)[]>;
 
   saveOne<E extends object>(
     entity: Type<E>,
     payload: EntityData<E>,
     opts?: RequestOptions,
-  ): QuerierResult<'client', IdValue<E>>;
+  ): QuerierResult<'client', IdValue<E> | undefined>;
 
   saveMany<E extends object>(
     entity: Type<E>,
     payload: EntityData<E>[],
     opts?: RequestOptions,
-  ): QuerierResult<'client', IdValue<E>[]>;
+  ): QuerierResult<'client', (IdValue<E> | undefined)[]>;
 }
 
 type AssertEmpty<T extends never> = T;

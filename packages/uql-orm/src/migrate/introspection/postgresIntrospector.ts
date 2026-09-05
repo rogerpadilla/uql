@@ -172,7 +172,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected getPrimaryKeyQuery(_tableName: string): string {
     return /*sql*/ `
-      SELECT kcu.column_name
+      SELECT kcu.column_name, tc.constraint_name
       FROM information_schema.table_constraints tc
       JOIN information_schema.key_column_usage kcu
         ON tc.constraint_name = kcu.constraint_name

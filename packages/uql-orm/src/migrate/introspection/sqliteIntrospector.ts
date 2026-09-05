@@ -1,4 +1,5 @@
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import { derivedForeignKeyName } from '../../util/sql.util.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
@@ -139,11 +140,14 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       grouped.set(id, existing);
     }
 
-    return Array.from(grouped.entries()).map(([id, rows]) => {
+    return Array.from(grouped.entries()).map(([, rows]) => {
       const first = rows[0];
+      const columns = rows.map((r) => r.from);
       return {
-        name: `fk_${tableName}_${id}`,
-        columns: rows.map((r) => r.from),
+        // `PRAGMA foreign_key_list` reports no name, so one is derived the same way the entity side
+        // derives it. Seeded from the columns, not the PRAGMA's row id, which nothing else knows.
+        name: derivedForeignKeyName(tableName, columns),
+        columns,
         referencedTable: first.table,
         referencedColumns: rows.map((r) => r.to),
         onDelete: this.normalizeReferentialAction(first.on_delete),

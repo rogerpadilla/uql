@@ -169,7 +169,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(posts);
 
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -196,7 +196,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(posts);
 
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -221,7 +221,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(posts);
 
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -246,7 +246,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(posts);
 
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -293,11 +293,11 @@ describe('EntityCodeGenerator', () => {
         { name: 'email', type: { category: 'string' } },
       ]);
       ast.addTable(table);
-      ast.addIndex({ name: 'idx_email', table, entries: [{ column: 'email' }], unique: false });
+      ast.addIndex({ name: 'email_idx', table, entries: [{ column: 'email' }], unique: false });
 
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
-      expect(result!.code).toContain("index: 'idx_email'");
+      expect(result!.code).toContain("index: 'email_idx'");
     });
 
     // `@Field({ index })` builds a plain index, so writing a unique one there would silently drop the
@@ -309,12 +309,12 @@ describe('EntityCodeGenerator', () => {
         { name: 'email', type: { category: 'string' } },
       ]);
       ast.addTable(table);
-      ast.addIndex({ name: 'idx_email', table, entries: [{ column: 'email' }], unique: true });
+      ast.addIndex({ name: 'email_idx', table, entries: [{ column: 'email' }], unique: true });
 
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
-      expect(result!.code).toContain("@Index(['email'], { name: 'idx_email', unique: true })");
-      expect(result!.code).not.toContain("index: 'idx_email'");
+      expect(result!.code).toContain("@Index(['email'], { name: 'email_idx', unique: true })");
+      expect(result!.code).not.toContain("index: 'email_idx'");
     });
 
     it('should generate composite index', () => {
@@ -326,7 +326,7 @@ describe('EntityCodeGenerator', () => {
       ]);
       ast.addTable(table);
       ast.addIndex({
-        name: 'idx_name',
+        name: 'name_idx',
         table,
         entries: [{ column: 'first_name' }, { column: 'last_name' }],
         unique: false,
@@ -335,7 +335,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result!.code).toContain("@Index(['firstName', 'lastName'], { name: 'idx_name' })");
+      expect(result!.code).toContain("@Index(['firstName', 'lastName'], { name: 'name_idx' })");
       expect(result!.code).toContain('import { Entity, Field, Id, Index }');
     });
 
@@ -438,7 +438,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(users);
       ast.addTable(posts);
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -446,7 +446,7 @@ describe('EntityCodeGenerator', () => {
         onUpdate: 'CASCADE',
       });
       ast.addIndex({
-        name: 'idx_posts_title',
+        name: 'posts_title_idx',
         table: posts,
         entries: [{ column: 'title' }],
         unique: false,
@@ -490,7 +490,7 @@ describe('EntityCodeGenerator', () => {
     it('should declare a non-nullable column as required', () => {
       const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
 
-      expect(result!.code).toContain("@Field({ columnType: 'varchar', length: 255, index: 'idx_posts_title' })");
+      expect(result!.code).toContain("@Field({ columnType: 'varchar', length: 255, index: 'posts_title_idx' })");
       expect(result!.code).toContain('title: string;');
     });
 
@@ -531,7 +531,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(users);
       ast.addTable(posts);
       ast.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('owner')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -578,7 +578,7 @@ describe('EntityCodeGenerator', () => {
       ast.addTable(users);
       ast.addTable(profiles);
       ast.addRelationship({
-        name: 'fk_profiles_users',
+        name: 'profiles_users_fk',
         type: 'OneToOne',
         from: { table: profiles, columns: [profiles.columns.get('user_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },

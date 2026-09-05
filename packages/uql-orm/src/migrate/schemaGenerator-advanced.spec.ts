@@ -96,7 +96,7 @@ describe('SqlSchemaGenerator Advanced', () => {
     const diff = generator.diffSchema(DiffUser, currentSchema);
 
     expect(diff?.columnsToAdd).toBeUndefined();
-    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['idx_DiffUser_status']);
+    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['DiffUser__status_idx']);
   });
 
   it('diffSchema should leave an index the entity never declared alone', () => {
@@ -106,12 +106,70 @@ describe('SqlSchemaGenerator Advanced', () => {
       { name: 'email', sql: 'VARCHAR', length: 100 },
       { name: 'status', sql: 'VARCHAR', length: 255 },
     ]);
+    // With their real entries, as an introspector reports them: an index is recognised by the
+    // columns it covers, so the one the entity declares is already present under any name.
     currentSchema.indexes.push(
-      { name: 'idx_DiffUser_status', table: currentSchema, entries: [], unique: false },
-      { name: 'idx_made_by_a_dba', table: currentSchema, entries: [], unique: false },
+      { name: 'DiffUser__status_idx', table: currentSchema, entries: [{ column: 'status' }], unique: false },
+      { name: 'made_by_a_dba_idx', table: currentSchema, entries: [{ column: 'email' }], unique: false },
     );
 
     expect(generator.diffSchema(DiffUser, currentSchema)).toBeUndefined();
+  });
+
+  /**
+   * The reason an index is recognised by its shape. Renaming the convention, an engine truncating a
+   * name past its identifier limit, and SQLite reporting a name it made up all produce the same
+   * thing: an index that is already there under a name we did not choose. Keying on the name
+   * re-created it on every migration, forever.
+   */
+  it('diffSchema should leave an index it would have named differently alone', () => {
+    const currentSchema = createTableNode('DiffUser', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    currentSchema.indexes.push({
+      name: 'whatever_the_dba_called_it',
+      table: currentSchema,
+      entries: [{ column: 'status' }],
+      unique: false,
+    });
+
+    expect(generator.diffSchema(DiffUser, currentSchema)).toBeUndefined();
+  });
+
+  /** Same columns, different uniqueness: a different index, which no engine can alter into the other. */
+  it('diffSchema should still create an index whose uniqueness differs', () => {
+    const currentSchema = createTableNode('DiffUser', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    currentSchema.indexes.push({
+      name: 'DiffUser__status_idx',
+      table: currentSchema,
+      entries: [{ column: 'status' }],
+      unique: true,
+    });
+
+    expect(generator.diffSchema(DiffUser, currentSchema)?.indexesToAdd).toHaveLength(1);
+  });
+
+  /**
+   * Engines disagree on how they report "no default": MariaDB says `null` where MySQL says nothing at
+   * all. Read as different values, that asked to `MODIFY` every nullable column on every sync.
+   */
+  it('diffSchema should read a reported null default and an absent one as the same', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+
+    expect(generator['isDefaultValueEqual'](null, undefined)).toBe(true);
+    expect(generator['isDefaultValueEqual'](undefined, null)).toBe(true);
+    expect(generator['isDefaultValueEqual'](null, null)).toBe(true);
+    // A real default is still a difference from having none.
+    expect(generator['isDefaultValueEqual'](null, 'active')).toBe(false);
+    expect(generator['isDefaultValueEqual'](undefined, 0)).toBe(false);
   });
 
   it('diffSchema should treat engine-spelled defaults as unchanged', () => {
@@ -181,14 +239,14 @@ describe('SqlSchemaGenerator Advanced', () => {
         },
       ],
       columnsToDrop: ['old_name'],
-      indexesToAdd: [{ name: 'idx_age', entries: [{ column: 'age' }], unique: false }],
-      indexesToDrop: ['idx_old'],
+      indexesToAdd: [{ name: 'age_idx', entries: [{ column: 'age' }], unique: false }],
+      indexesToDrop: ['old_idx'],
     });
 
     expect(sql).toContain('ALTER TABLE "users" ADD COLUMN "age" INTEGER;');
     expect(sql).toContain('ALTER TABLE "users" DROP COLUMN "old_name";');
-    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "idx_age" ON "users" ("age");');
-    expect(sql).toContain('DROP INDEX IF EXISTS "idx_old";');
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "age_idx" ON "users" ("age");');
+    expect(sql).toContain('DROP INDEX IF EXISTS "old_idx";');
   });
 });
 
@@ -234,6 +292,10 @@ function createTableNode(
       referencedBy: [],
     });
   }
+
+  // As every real producer does - the AST builder, the introspector and `definitionToNode` all fill
+  // this. A node with flagged columns but an empty key is a shape nothing else builds.
+  table.primaryKey.push(...[...columns.values()].filter((column) => column.isPrimaryKey));
 
   return table;
 }

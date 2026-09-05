@@ -26,6 +26,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     dropTableCascade: false,
     renameColumn: true,
     foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
+    primaryKeyAlter: false, // nor changing a key: the only route is rebuilding the table
     columnComment: false, // SQLite does not support column comments
     vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
@@ -37,7 +38,10 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly escapeIdChar = '`';
 
-  override readonly serialPrimaryKey = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+  override readonly serialType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+
+  // `AUTOINCREMENT` is only legal in that exact phrase, so the key cannot be lifted to table level.
+  override readonly serialDeclaresPrimaryKey = true;
 
   override readonly tableOptions = '';
 

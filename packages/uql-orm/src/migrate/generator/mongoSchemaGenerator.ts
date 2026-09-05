@@ -5,6 +5,7 @@ import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.
 import type {
   CreateSchemaOptions,
   DialectName,
+  EntityMeta,
   FieldOptions,
   IndexSchema,
   InsertIdSource,
@@ -54,24 +55,33 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return entities.filter((entity) => wanted.has(this.resolveTableName(getMeta(entity))));
   }
 
+  /**
+   * The indexes `@Field({ index })` declares, as the collection would hold them.
+   *
+   * One owner because two paths need it: creating a collection, and working out which of its indexes
+   * are missing. Derived twice, they drifted the moment either changed how a name is settled.
+   */
+  private fieldIndexes<E>(meta: EntityMeta<E>, collectionName: string): IndexSchema[] {
+    return getKeys(meta.fields).flatMap((key) => {
+      const field = meta.fields[key];
+      if (!field?.index) {
+        return [];
+      }
+      const columnName = this.resolveColumnName(key, field);
+      return [
+        {
+          name: typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]),
+          entries: [{ column: columnName }],
+          unique: !!field.unique,
+        },
+      ];
+    });
+  }
+
   generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(meta);
-    const indexes: IndexSchema[] = [];
-
-    for (const key of getKeys(meta.fields)) {
-      const field = meta.fields[key];
-      if (field?.index) {
-        const columnName = this.resolveColumnName(key, field);
-        const indexName =
-          typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]);
-        indexes.push({
-          name: indexName,
-          entries: [{ column: columnName }],
-          unique: !!field.unique,
-        });
-      }
-    }
+    const indexes = this.fieldIndexes(meta, collectionName);
 
     // One `createIndex` command each, mirroring the SQL generator's `[CREATE TABLE, ...CREATE INDEX]`,
     // so the key spec is built here and the migrator only executes it.
@@ -175,24 +185,8 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       return { tableName: collectionName, type: 'create' };
     }
 
-    const indexesToAdd: IndexSchema[] = [];
     const existingIndexes = new Set(currentTable.indexes?.map((i) => i.name) ?? []);
-
-    for (const key of getKeys(meta.fields)) {
-      const field = meta.fields[key];
-      if (field?.index) {
-        const columnName = this.resolveColumnName(key, field);
-        const indexName =
-          typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]);
-        if (!existingIndexes.has(indexName)) {
-          indexesToAdd.push({
-            name: indexName,
-            entries: [{ column: columnName }],
-            unique: !!field.unique,
-          });
-        }
-      }
-    }
+    const indexesToAdd = this.fieldIndexes(meta, collectionName).filter((index) => !existingIndexes.has(index.name));
 
     if (indexesToAdd.length === 0) {
       return undefined;

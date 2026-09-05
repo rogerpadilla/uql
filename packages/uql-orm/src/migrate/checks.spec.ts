@@ -10,7 +10,7 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
   checks: [
-    { name: 'ck_wallet_non_negative', expression: raw`"balance" >= 0` },
+    { name: 'wallet_non_negative_ck', expression: raw`"balance" >= 0` },
     { expression: raw`"spent" <= "balance"` },
   ],
 })
@@ -36,15 +36,15 @@ const ddl = (dialect: AbstractSqlDialect, entity: Type<unknown>) =>
 
 describe('check constraints', () => {
   it('emits an authored name verbatim', () => {
-    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "ck_wallet_non_negative" CHECK ("balance" >= 0)');
+    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "wallet_non_negative_ck" CHECK ("balance" >= 0)');
   });
 
   it('names an unnamed check from the table and its position', () => {
-    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "ck_Wallet_2" CHECK ("spent" <= "balance")');
+    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "Wallet__2_ck" CHECK ("spent" <= "balance")');
   });
 
   it('derives that name from the table the entity was renamed to, not from the class', () => {
-    expect(ddl(new PostgresDialect(), RenamedWallet)).toContain('CONSTRAINT "ck_purse_1"');
+    expect(ddl(new PostgresDialect(), RenamedWallet)).toContain('CONSTRAINT "purse__1_ck"');
   });
 
   it('emits none for an entity that declares none', () => {
@@ -52,8 +52,8 @@ describe('check constraints', () => {
   });
 
   it('emits the constraint on MariaDB and SQLite, quoting the name for each', () => {
-    expect(ddl(new MariaDialect(), Wallet)).toContain('CONSTRAINT `ck_wallet_non_negative` CHECK ("balance" >= 0)');
-    expect(ddl(new SqliteDialect(), Wallet)).toContain('CONSTRAINT `ck_Wallet_2` CHECK ("spent" <= "balance")');
+    expect(ddl(new MariaDialect(), Wallet)).toContain('CONSTRAINT `wallet_non_negative_ck` CHECK ("balance" >= 0)');
+    expect(ddl(new SqliteDialect(), Wallet)).toContain('CONSTRAINT `Wallet__2_ck` CHECK ("spent" <= "balance")');
   });
 });
 

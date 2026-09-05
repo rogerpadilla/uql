@@ -1,4 +1,4 @@
-import type { FieldOptions, JsonColumnType, NumericColumnType } from '../type/index.js';
+import type { EntityMeta, FieldOptions, JsonColumnType, NumericColumnType } from '../type/index.js';
 
 const NUMERIC_COLUMN_TYPES = {
   int: true,
@@ -55,6 +55,19 @@ export function isJsonType(type: unknown): boolean {
     return type.toLowerCase() in JSON_COLUMN_TYPES;
   }
   return false;
+}
+
+/**
+ * Whether the field is the entity's *whole* primary key - the only kind a serial can stand in for,
+ * and the only one that may state `PRIMARY KEY` in its own column definition.
+ *
+ * One column of a composite is a value the caller supplies, and the table states the key over every
+ * column at once. Asked in one place because the two schema paths - the AST that builds a
+ * `CREATE TABLE` and the diff that builds an `ALTER` - have to answer it the same way, and each
+ * answering for itself is what put a serial `PRIMARY KEY` on both columns of a composite.
+ */
+export function isSoleIdField<E>(meta: EntityMeta<E>, field: FieldOptions): boolean {
+  return field.isId === true && meta.ids.length === 1;
 }
 
 /**

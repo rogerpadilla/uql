@@ -148,7 +148,7 @@ describe('MysqlSchemaIntrospector', () => {
     // getForeignKeys
     mockAll.mockResolvedValueOnce([
       {
-        constraint_name: 'fk_posts_user_id',
+        constraint_name: 'posts_user_id_fk',
         columns: 'user_id',
         referenced_table: 'users',
         referenced_columns: 'id',
@@ -164,7 +164,7 @@ describe('MysqlSchemaIntrospector', () => {
     expect(schema).toBeDefined();
     expect(schema!.foreignKeys).toHaveLength(1);
     expect(schema!.foreignKeys![0]).toMatchObject({
-      name: 'fk_posts_user_id',
+      name: 'posts_user_id_fk',
       columns: ['user_id'],
       referencedTable: 'users',
       referencedColumns: ['id'],

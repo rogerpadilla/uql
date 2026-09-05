@@ -51,10 +51,12 @@ import {
   isVectorSearch,
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
+  parentJoins,
   parseGroupMap,
   parseRelationSize,
   parseSortByCount,
   someKey,
+  targetKeyColumns,
 } from '../util/index.js';
 
 /**
@@ -92,6 +94,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   dropTableCascade: false,
   renameColumn: false,
   foreignKeyAlter: false,
+  primaryKeyAlter: false,
   columnComment: false,
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
@@ -286,7 +289,7 @@ export class MongoDialect extends AbstractDialect {
     opts: QueryOptions | undefined,
   ): MongoAggregationPipelineEntry<Document> {
     return relOpts.cardinality === 'mm' && relOpts.through
-      ? this.junctionLookup(relOpts, relMeta, relEntity, targetScope, temp, tail, opts)
+      ? this.junctionLookup(meta, relOpts, relMeta, targetScope, temp, tail, opts)
       : {
           $lookup: {
             from: this.resolveTableName(relMeta),
@@ -301,10 +304,10 @@ export class MongoDialect extends AbstractDialect {
    * ManyToMany counts/tests junction rows, so the target is reached from inside the junction's own
    * lookup - the junction's filters apply too, since a soft-deleted link is not a link.
    */
-  private junctionLookup(
+  private junctionLookup<E>(
+    meta: EntityMeta<E>,
     relOpts: RelationMeta,
     relMeta: EntityMeta<Document>,
-    relEntity: Type<Document>,
     targetScope: Filter<Document>,
     temp: string,
     tail: Record<string, unknown>[],
@@ -314,18 +317,25 @@ export class MongoDialect extends AbstractDialect {
     const throughMeta = getMeta(throughEntity);
     const junctionScope = this.renderFilter(throughEntity, this.scopedWhereMap(throughMeta, {}), opts);
     const nested = REL_NESTED_KEY;
+    // Both ends are one column here - each `$lookup` matches one field against `_id` - so both sides
+    // must be sole-keyed. Sliced rather than indexed positionally: `references[1]` is the parent's
+    // *second* column on a composite, a real column of the wrong side.
+    assertSoleId(meta, 'MongoDB');
+    assertSoleId(relMeta, 'MongoDB');
+    const [parentJoin] = parentJoins(relOpts, meta.ids.length);
+    const [targetColumn] = targetKeyColumns(relOpts, meta.ids.length);
 
     return {
       $lookup: {
         from: this.resolveTableName(throughMeta),
         localField: MongoDialect.ID_KEY,
-        foreignField: this.columnOf(throughMeta, relOpts.references[0].local),
+        foreignField: this.columnOf(throughMeta, parentJoin.joined),
         pipeline: [
           ...(hasKeys(junctionScope) ? [{ $match: junctionScope }] : []),
           {
             $lookup: {
               from: this.resolveTableName(relMeta),
-              localField: this.columnOf(throughMeta, relOpts.references[1].local),
+              localField: this.columnOf(throughMeta, targetColumn),
               foreignField: MongoDialect.ID_KEY,
               pipeline: [...(hasKeys(targetScope) ? [{ $match: targetScope }] : []), { $limit: 1 }],
               as: nested,
@@ -881,9 +891,15 @@ export class MongoDialect extends AbstractDialect {
     relMeta: EntityMeta<R>,
     relOpts: RelationMeta,
   ): { localField: string; foreignField: string } {
-    return relOpts.cardinality === 'm1'
-      ? { localField: this.columnOf(meta, relOpts.references[0].local), foreignField: MongoDialect.ID_KEY }
-      : { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
+    if (relOpts.cardinality === 'm1') {
+      // The target's side, not this entity's: a lookup matches one `localField` against one
+      // `foreignField`, so a composite target would join on its first column alone and gather the
+      // rows of every key that agrees on it. The other branch is refused by `columnOf` below, whose
+      // key *is* an id column; this one names a plain foreign key, so it has to say so itself.
+      assertSoleId(relMeta, 'MongoDB');
+      return { localField: this.columnOf(meta, relOpts.references[0].local), foreignField: MongoDialect.ID_KEY };
+    }
+    return { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
   }
 
   /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */

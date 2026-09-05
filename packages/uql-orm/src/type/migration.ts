@@ -149,7 +149,14 @@ export interface ColumnSchema {
 export interface TableSchema {
   readonly name: string;
   readonly columns: ColumnSchema[];
+  /** The key's columns **in order**, which is what a composite is: `(a, b)` is not `(b, a)`. */
   readonly primaryKey?: string[];
+  /**
+   * What the engine calls the key's constraint, where it names one at all - Postgres's `Member_pkey`,
+   * MySQL's literal `PRIMARY`, nothing on SQLite. Only a `DROP` needs it, and only the name the
+   * database actually reported will do: a derived one would name a constraint that is not there.
+   */
+  readonly primaryKeyName?: string;
   readonly indexes?: IndexSchema[];
   readonly foreignKeys?: ForeignKeySchema[];
 }
@@ -205,6 +212,14 @@ export interface SchemaDiff {
    */
   readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
+  /**
+   * The key the table has against the key the entity declares, set only when they differ.
+   *
+   * Compared by columns, never by name: the engine named the existing one, so requiring a derived
+   * name to match would rewrite the primary key of every table on the first migration after
+   * upgrading. `fromName` is what the database reported, and the only name a `DROP` can use.
+   */
+  readonly primaryKey?: { readonly from: string[]; readonly to: string[]; readonly fromName?: string };
   readonly columnsToAdd?: ColumnSchema[];
   readonly columnsToAlter?: { from: ColumnSchema; to: ColumnSchema }[];
   readonly columnsToDrop?: string[];

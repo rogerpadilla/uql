@@ -98,6 +98,12 @@ export interface EngineFeatures {
   readonly dropTableCascade: boolean;
   readonly renameColumn: boolean;
   readonly foreignKeyAlter: boolean;
+  /**
+   * Whether a table's primary key can be changed on an existing table. False on SQLite, whose only
+   * route is rebuilding the table - so a migration that would change one is refused by name rather
+   * than emitting DDL the engine rejects.
+   */
+  readonly primaryKeyAlter: boolean;
   /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
   readonly columnComment: boolean;
   /**

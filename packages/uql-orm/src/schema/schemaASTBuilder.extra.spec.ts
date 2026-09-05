@@ -41,7 +41,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     const ast = buildSchemaAST([DefaultIndex]);
     const table = ast.getTable('DefaultIndex');
     const index = table?.indexes.find((i) => i.entries[0]?.column === 'name');
-    expect(index?.name).toBe('idx_DefaultIndex_name');
+    expect(index?.name).toBe('DefaultIndex__name_idx');
   });
 
   it('should default relation references if not provided (Implicit FK)', () => {

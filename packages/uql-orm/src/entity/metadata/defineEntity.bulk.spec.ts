@@ -140,7 +140,7 @@ it('defineEntity bulk indexes and hooks', () => {
       status: { type: String },
     },
     indexes: [
-      { columns: ['email', 'status'], name: 'idx_email_status', unique: false },
+      { columns: ['email', 'status'], name: 'email_status_idx', unique: false },
       { columns: ['email'], unique: true },
     ],
     hooks: {
@@ -153,7 +153,7 @@ it('defineEntity bulk indexes and hooks', () => {
   expect(m.indexes).toHaveLength(2);
   expect(m.indexes![0]).toMatchObject({
     columns: [{ column: 'email' }, { column: 'status' }],
-    name: 'idx_email_status',
+    name: 'email_status_idx',
     unique: false,
   });
   expect(m.indexes![1]).toMatchObject({ columns: [{ column: 'email' }], unique: true });

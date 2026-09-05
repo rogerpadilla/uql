@@ -15,8 +15,8 @@ describe('MysqlSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
     expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('TINYINT(1)');
     expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 }, Number)).toBe('DECIMAL(10, 2)');
-    expect(generator.getSqlType({ columnType: 'serial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY');
-    expect(generator.getSqlType({ columnType: 'bigserial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY');
+    expect(generator.getSqlType({ columnType: 'serial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
+    expect(generator.getSqlType({ columnType: 'bigserial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
   });
 
   it('should generate ALTER COLUMN statements', () => {
@@ -40,6 +40,6 @@ describe('MysqlSchemaGenerator Specifics', () => {
   });
 
   it('should generate DROP INDEX statement', () => {
-    expect(generator.generateDropIndex('users', 'idx_test')).toBe('DROP INDEX `idx_test` ON `users`;');
+    expect(generator.generateDropIndex('users', 'test_idx')).toBe('DROP INDEX `test_idx` ON `users`;');
   });
 });

@@ -9,7 +9,7 @@ import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 class MongoUser {
   @Id({ type: String }) id?: string;
   @Field({ type: String, index: true }) username?: string;
-  @Field({ type: String, index: 'idx_email', unique: true }) email?: string;
+  @Field({ type: String, index: 'email_idx', unique: true }) email?: string;
 }
 
 describe('MongoSchemaGenerator', () => {
@@ -28,16 +28,16 @@ describe('MongoSchemaGenerator', () => {
       {
         action: 'createIndex',
         collection: 'MongoUser',
-        name: 'idx_MongoUser_username',
+        name: 'MongoUser__username_idx',
         key: { username: 1 },
-        options: { name: 'idx_MongoUser_username', unique: false },
+        options: { name: 'MongoUser__username_idx', unique: false },
       },
       {
         action: 'createIndex',
         collection: 'MongoUser',
-        name: 'idx_email',
+        name: 'email_idx',
         key: { email: 1 },
-        options: { name: 'idx_email', unique: true },
+        options: { name: 'email_idx', unique: true },
       },
     ]);
   });
@@ -45,14 +45,14 @@ describe('MongoSchemaGenerator', () => {
   it('should map a descending entry to -1 and a fulltext index to a text key', () => {
     const descending = JSON.parse(
       generator.generateCreateIndex('MongoUser', {
-        name: 'idx_recent',
+        name: 'recent_idx',
         entries: [{ column: 'createdAt', order: 'desc' }],
         unique: false,
       }),
     );
     const text = JSON.parse(
       generator.generateCreateIndex('MongoUser', {
-        name: 'idx_text',
+        name: 'text_idx',
         entries: [{ column: 'username' }, { column: 'email' }],
         unique: false,
         type: 'fulltext',
@@ -66,7 +66,7 @@ describe('MongoSchemaGenerator', () => {
   it('should reject index options MongoDB has no equivalent for', () => {
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
-        name: 'idx_expr',
+        name: 'expr_idx',
         entries: [{ column: 'lower(username)', expression: true }],
         unique: false,
       }),
@@ -74,7 +74,7 @@ describe('MongoSchemaGenerator', () => {
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
-        name: 'idx_partial',
+        name: 'partial_idx',
         entries: [{ column: 'username' }],
         unique: false,
         where: 'deletedAt IS NULL',
@@ -94,7 +94,7 @@ describe('MongoSchemaGenerator', () => {
 
   it('should generate createIndex statement', () => {
     const json = generator.generateCreateIndex('MongoUser', {
-      name: 'idx_test',
+      name: 'test_idx',
       entries: [{ column: 'test' }],
       unique: true,
     });
@@ -103,20 +103,20 @@ describe('MongoSchemaGenerator', () => {
     expect(cmd).toMatchObject({
       action: 'createIndex',
       collection: 'MongoUser',
-      name: 'idx_test',
+      name: 'test_idx',
       key: { test: 1 },
-      options: { unique: true, name: 'idx_test' },
+      options: { unique: true, name: 'test_idx' },
     });
   });
 
   it('should generate dropIndex statement', () => {
-    const json = generator.generateDropIndex('MongoUser', 'idx_test');
+    const json = generator.generateDropIndex('MongoUser', 'test_idx');
     const cmd = JSON.parse(json);
 
     expect(cmd).toMatchObject({
       action: 'dropIndex',
       collection: 'MongoUser',
-      name: 'idx_test',
+      name: 'test_idx',
     });
   });
 
@@ -132,7 +132,7 @@ describe('MongoSchemaGenerator', () => {
     const currentSchema: TableNode = {
       name: 'MongoUser',
       columns: new Map(),
-      indexes: [{ name: 'idx_MongoUser_username', table: {} as any, entries: [], unique: false }],
+      indexes: [{ name: 'MongoUser__username_idx', table: {} as any, entries: [], unique: false }],
       schema: undefined as any,
       incomingRelations: [],
       outgoingRelations: [],
@@ -146,7 +146,7 @@ describe('MongoSchemaGenerator', () => {
     });
     expect(diff).toBeDefined();
     expect(diff!.indexesToAdd).toHaveLength(1);
-    expect(diff!.indexesToAdd![0].name).toBe('idx_email');
+    expect(diff!.indexesToAdd![0].name).toBe('email_idx');
   });
 
   it('diffSchema should return undefined if in sync', () => {
@@ -154,8 +154,8 @@ describe('MongoSchemaGenerator', () => {
       name: 'MongoUser',
       columns: new Map(),
       indexes: [
-        { name: 'idx_MongoUser_username', table: {} as any, entries: [], unique: false },
-        { name: 'idx_email', table: {} as any, entries: [], unique: true },
+        { name: 'MongoUser__username_idx', table: {} as any, entries: [], unique: false },
+        { name: 'email_idx', table: {} as any, entries: [], unique: true },
       ],
       schema: undefined as any,
       incomingRelations: [],
@@ -171,7 +171,7 @@ describe('MongoSchemaGenerator', () => {
     const diff = {
       tableName: 'MongoUser',
       type: 'alter' as const,
-      indexesToAdd: [{ name: 'idx_test', entries: [{ column: 'test' }], unique: false }],
+      indexesToAdd: [{ name: 'test_idx', entries: [{ column: 'test' }], unique: false }],
     };
     const statements = generator.generateAlterTable(diff);
     expect(statements).toHaveLength(1);
@@ -182,7 +182,7 @@ describe('MongoSchemaGenerator', () => {
     const diff = {
       tableName: 'MongoUser',
       type: 'alter' as const,
-      indexesToAdd: [{ name: 'idx_test', entries: [{ column: 'test' }], unique: false }],
+      indexesToAdd: [{ name: 'test_idx', entries: [{ column: 'test' }], unique: false }],
     };
     const statements = generator.generateAlterTableDown(diff);
     expect(statements).toHaveLength(1);
@@ -220,7 +220,7 @@ describe('MongoSchemaGenerator', () => {
 
     it('should generate createIndex from node', () => {
       const indexNode: IndexNode = {
-        name: 'idx_test',
+        name: 'test_idx',
         table: tableNode,
         entries: [{ column: 'col1' }],
         unique: true,
@@ -228,9 +228,9 @@ describe('MongoSchemaGenerator', () => {
       expect(JSON.parse(generator.generateCreateIndexFromNode(indexNode))).toMatchObject({
         action: 'createIndex',
         collection: 'users',
-        name: 'idx_test',
+        name: 'test_idx',
         key: { col1: 1 },
-        options: { unique: true, name: 'idx_test' },
+        options: { unique: true, name: 'test_idx' },
       });
     });
   });
@@ -241,7 +241,7 @@ describe('MongoSchemaGenerator', () => {
         name: 'posts',
         columns: [],
         foreignKeys: [],
-        indexes: [{ name: 'idx_posts_slug', entries: [{ column: 'slug' }], unique: true }],
+        indexes: [{ name: 'posts_slug_idx', entries: [{ column: 'slug' }], unique: true }],
       };
       const statements = generator.generateCreateTableFromDefinition(def).map((sql) => JSON.parse(sql));
 
@@ -250,7 +250,7 @@ describe('MongoSchemaGenerator', () => {
         action: 'createIndex',
         collection: 'posts',
         key: { slug: 1 },
-        options: { unique: true, name: 'idx_posts_slug' },
+        options: { unique: true, name: 'posts_slug_idx' },
       });
     });
 

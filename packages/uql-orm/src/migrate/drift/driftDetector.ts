@@ -86,6 +86,7 @@ export function detectDrift(
     ...detectTableDrifts(diff),
     ...detectColumnDrifts(diff, opts),
     ...detectIndexDrifts(diff),
+    ...detectPrimaryKeyDrifts(diff),
     ...detectRelationshipDrifts(diff),
   ];
 
@@ -95,6 +96,22 @@ export function detectDrift(
     summary: createSummary(drifts),
     generatedAt: new Date(),
   };
+}
+
+/**
+ * A table whose key holds different columns than the entity declares.
+ *
+ * Critical, and reported as a `constraint_mismatch` like any other: rows the database will accept
+ * are not the rows the ORM believes are unique, so it addresses by a key nothing enforces.
+ */
+function detectPrimaryKeyDrifts(diff: SchemaDiffResult): Drift[] {
+  return diff.primaryKeyDiffs.map((pkDiff) => ({
+    type: 'constraint_mismatch' as const,
+    severity: 'critical' as const,
+    table: pkDiff.table,
+    details: `Primary key of "${pkDiff.table}" is (${pkDiff.actual.join(', ') || 'none'}) in the database but (${pkDiff.expected.join(', ') || 'none'}) in the entity`,
+    suggestion: 'Generate a migration to change the primary key',
+  }));
 }
 
 /**

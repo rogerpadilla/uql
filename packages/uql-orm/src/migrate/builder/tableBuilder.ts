@@ -204,11 +204,11 @@ export class TableBuilder implements ITableBuilder {
   }
 
   unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    return this.addIndex('uq', columns, options, true);
+    return this.addIndex(columns, options, true);
   }
 
   index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    return this.addIndex('idx', columns, options, false);
+    return this.addIndex(columns, options, false);
   }
 
   /**
@@ -218,7 +218,6 @@ export class TableBuilder implements ITableBuilder {
    * Object]`.
    */
   private addIndex(
-    prefix: string,
     columns: readonly IndexColumnInput[],
     options: string | IndexOptions | undefined,
     unique: boolean,
@@ -227,7 +226,13 @@ export class TableBuilder implements ITableBuilder {
     const entries = columns.map(normalizeIndexColumn);
     this._indexes.push({
       ...rest,
-      name: name ?? `${prefix}_${this._name}_${entries.map((entry) => entry.column).join('_')}`,
+      name:
+        name ??
+        derivedIndexName(
+          this._name,
+          entries.map((entry) => entry.column),
+          unique,
+        ),
       where: ddlText(rest.where, 'a partial-index predicate'),
       entries,
       unique,

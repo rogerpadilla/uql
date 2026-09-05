@@ -199,7 +199,7 @@ describe('Migrator Core Methods', () => {
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
 
     const createSql = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY\n);';
-    const indexSql = 'CREATE INDEX `idx_Article_id` ON `Article` (`id`);';
+    const indexSql = 'CREATE INDEX `Article_id_idx` ON `Article` (`id`);';
     const dropSql = 'DROP TABLE IF EXISTS `Article`;';
     const generator = {
       resolveTableName: vi.fn().mockReturnValue('Article'),
@@ -228,7 +228,7 @@ describe('Migrator Core Methods', () => {
 
     const written = lastWriteFileUtf8(writeFile as Mock);
     expect(written).toContain('await querier.run("CREATE TABLE `Article` (\\n  `id` INTEGER PRIMARY KEY\\n);");');
-    expect(written).toContain('await querier.run("CREATE INDEX `idx_Article_id` ON `Article` (`id`);");');
+    expect(written).toContain('await querier.run("CREATE INDEX `Article_id_idx` ON `Article` (`id`);");');
     expect(written).toContain('await querier.run("DROP TABLE IF EXISTS `Article`;");');
   });
 
@@ -558,6 +558,32 @@ describe('Migrator Core Methods', () => {
       await migrator.autoSync({ safe: false, drop: true });
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.objectContaining({ columnsToDrop: ['old_col'] }),
+      );
+    });
+
+    /**
+     * Rewriting a key drops a constraint and rebuilds an index over the whole table, and fails
+     * outright where the new columns are null on rows that already exist - so safe mode, which
+     * exists to keep a sync additive, has to hold it back like any other alteration.
+     */
+    it('autoSync should not change a primary key in safe mode', async () => {
+      const diff: SchemaDiff = {
+        type: 'alter',
+        tableName: 'Member',
+        primaryKey: { from: ['userId'], to: ['userId', 'groupId'], fromName: 'Member_pkey' },
+      };
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      vi.spyOn(migrator.schemaGenerator!, 'generateAlterTable').mockReturnValue([]);
+
+      await migrator.autoSync();
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.not.objectContaining({ primaryKey: expect.anything() }),
+      );
+
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      await migrator.autoSync({ safe: false });
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.objectContaining({ primaryKey: diff.primaryKey }),
       );
     });
 

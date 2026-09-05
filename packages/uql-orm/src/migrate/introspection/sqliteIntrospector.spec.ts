@@ -98,7 +98,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('index_list')) {
         return Promise.resolve([
           {
-            name: 'idx_users_name',
+            name: 'users__name_idx',
             unique: 0,
             origin: 'c',
           },
@@ -129,7 +129,7 @@ describe('SqliteSchemaIntrospector', () => {
     });
     expect(schema!.columns[1].defaultValue).toBe('Guest');
     expect(schema!.indexes).toHaveLength(1);
-    expect(schema!.indexes![0].name).toBe('idx_users_name');
+    expect(schema!.indexes![0].name).toBe('users__name_idx');
     expect(schema!.indexes![0].entries).toEqual([{ column: 'name' }]);
   });
 
@@ -163,6 +163,9 @@ describe('SqliteSchemaIntrospector', () => {
       referencedTable: 'users',
       onUpdate: 'CASCADE',
       onDelete: 'RESTRICT',
+      // `PRAGMA foreign_key_list` reports no name, so one is derived the same way the entity side
+      // derives it. Seeded from the columns, never the PRAGMA's row id, which nothing else knows.
+      name: 'posts__user_id_fk',
     });
     expect(schema!.primaryKey).toBeUndefined();
   });
@@ -213,7 +216,7 @@ describe('SqliteSchemaIntrospector', () => {
         return Promise.resolve([{ name: 'email', type: 'TEXT', notnull: 0, pk: 0 }]);
       }
       if (sql.includes('index_list')) {
-        return Promise.resolve([{ name: 'idx_email', unique: 1, origin: 'u' }]);
+        return Promise.resolve([{ name: 'email_idx', unique: 1, origin: 'u' }]);
       }
       if (sql.includes('index_info')) {
         return Promise.resolve([{ name: 'email' }]);
@@ -237,7 +240,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('index_list')) {
         return Promise.resolve([
           { name: 'sqlite_autoindex_users_1', unique: 1, origin: 'pk' },
-          { name: 'idx_custom', unique: 0, origin: 'c' },
+          { name: 'custom_idx', unique: 0, origin: 'c' },
         ]);
       }
       if (sql.includes('index_info')) {
@@ -249,7 +252,7 @@ describe('SqliteSchemaIntrospector', () => {
     const schema = await introspector.getTableSchema('users');
     expect(schema).toBeDefined();
     expect(schema!.indexes).toHaveLength(1);
-    expect(schema!.indexes![0].name).toBe('idx_custom');
+    expect(schema!.indexes![0].name).toBe('custom_idx');
   });
 
   it('getColumns should skip multi-column unique constraints', async () => {
@@ -261,7 +264,7 @@ describe('SqliteSchemaIntrospector', () => {
         return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 0, pk: 0 }]);
       }
       if (sql.includes('index_list')) {
-        return Promise.resolve([{ name: 'idx_multi', unique: 1, origin: 'u' }]);
+        return Promise.resolve([{ name: 'multi_idx', unique: 1, origin: 'u' }]);
       }
       if (sql.includes('index_info')) {
         return Promise.resolve([{ name: 'col1' }, { name: 'col2' }]);

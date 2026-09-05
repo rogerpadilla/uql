@@ -35,7 +35,8 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   };
 
   protected override upsertReturning<E>(meta: EntityMeta<E>): string {
-    return ` ${this.returningId(meta)}`;
+    const returning = this.returningId(meta);
+    return returning ? ` ${returning}` : '';
   }
 
   /**

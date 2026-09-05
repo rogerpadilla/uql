@@ -14,6 +14,7 @@ import {
   QUERY_ROOT_NUMBER_CLAUSES,
 } from '../type/query.js';
 import { getKeys, someKey } from './object.util.js';
+import { rowKey } from './rowKey.util.js';
 
 export type RelationRequestSummary<E> = {
   readonly requestedKeys: RelationKey<E>[];
@@ -64,6 +65,25 @@ export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, pare
   return relOpts.references.slice(parentKeyCount).map(({ local }) => local);
 }
 
+/** `{ joined column: true }`: the projection or grouping that keeps a parent's key on the rows read. */
+export function joinedColumns(joins: readonly ParentJoin[]): Record<string, true> {
+  return Object.fromEntries(joins.map(({ joined }) => [joined, true]));
+}
+
+/**
+ * A parent row keyed by the columns a relation joins *from*, and a child or tally row keyed by the
+ * columns it carries that key in. The two halves of matching children to parents: they must agree on
+ * every column, so each is read through `joins` rather than through the parent's own key list - which
+ * is the same set only for a to-many, and silently a different one otherwise.
+ */
+export function parentRowKey(joins: readonly ParentJoin[], parent: unknown): string {
+  return rowKey(joins.map(({ parent: key }) => read(parent, key)));
+}
+
+export function joinedRowKey(joins: readonly ParentJoin[], row: unknown): string {
+  return rowKey(joins.map(({ joined }) => read(row, joined)));
+}
+
 /**
  * `{ joined column: every parent's value for it }`, the filter that fetches a whole page of parents'
  * children in one statement.
@@ -73,9 +93,7 @@ export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, pare
  * cheaper than the row-value comparison no engine spells the same way.
  */
 export function parentsIn(joins: readonly ParentJoin[], parents: readonly unknown[]): Record<string, unknown[]> {
-  return Object.fromEntries(
-    joins.map(({ parent, joined }) => [joined, parents.map((it) => (it as Record<string, unknown>)[parent])]),
-  );
+  return Object.fromEntries(joins.map(({ parent, joined }) => [joined, parents.map((it) => read(it, parent))]));
 }
 
 /**
@@ -91,10 +109,12 @@ export function childrenOf(joins: readonly ParentJoin[], parentIds: readonly unk
     return { [first.joined]: parentIds };
   }
   return {
-    $or: parentIds.map((id) =>
-      Object.fromEntries(joins.map(({ parent, joined }) => [joined, (id as Record<string, unknown>)[parent]])),
-    ),
+    $or: parentIds.map((id) => Object.fromEntries(joins.map(({ parent, joined }) => [joined, read(id, parent)]))),
   };
+}
+
+function read(row: unknown, key: string): unknown {
+  return (row as Record<string, unknown>)[key];
 }
 
 /**

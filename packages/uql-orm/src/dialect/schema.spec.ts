@@ -4,7 +4,7 @@
 // One distinction runs through all of it. A qualified name is two identifiers; a column prefix, an
 // index name and a constraint name are each one. Conflating them is what made
 // `@Entity({ name: 'sales.Order' })` emit `"sales.Order"."id"` against a table nothing declared, and
-// later what made `CREATE INDEX "idx_crm"."Customer_name"` a syntax error.
+// later what made `CREATE INDEX "crm_idx"."Customer_name"` a syntax error.
 
 import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
@@ -142,16 +142,16 @@ describe('schema', () => {
   });
 
   // A name derived from a qualified table used to carry the dot into it, and `escapeId` split that
-  // into two identifiers: `CREATE INDEX "idx_crm"."Customer_name"`, which Postgres rejects outright.
+  // into two identifiers: `CREATE INDEX "crm_idx"."Customer_name"`, which Postgres rejects outright.
   // An index or constraint name is one identifier, and needs no schema - it lives in the table's.
   it('derives an index name from the table alone, against the qualified table', () => {
     const [sql] = ddlOf([Customer], 'CREATE INDEX');
-    expect(sql).toBe('CREATE INDEX "idx_Customer_name" ON "crm"."Customer" ("name");');
+    expect(sql).toBe('CREATE INDEX "Customer__name_idx" ON "crm"."Customer" ("name");');
   });
 
   it('derives a foreign key name from the table alone, across two schemas', () => {
     const [sql] = ddlOf([Customer, Order], 'ALTER TABLE');
-    expect(sql).toContain('ALTER TABLE "sales"."Order" ADD CONSTRAINT "fk_Order_customerId" ');
+    expect(sql).toContain('ALTER TABLE "sales"."Order" ADD CONSTRAINT "Order__customerId_fk" ');
     expect(sql).toContain('REFERENCES "crm"."Customer" ("id")');
   });
 
@@ -166,7 +166,7 @@ describe('schema', () => {
   it('emits unqualified DDL on an engine that has no schemas', () => {
     const statements = new SqlSchemaGenerator(new SqliteDialect()).generateCreateSchema([Customer]);
     expect(statements.some((sql) => sql.includes('crm'))).toBe(false);
-    expect(statements).toContain('CREATE INDEX `idx_Customer_name` ON `Customer` (`name`);');
+    expect(statements).toContain('CREATE INDEX `Customer__name_idx` ON `Customer` (`name`);');
   });
 
   // Two tables of one name in different schemas are two tables. Keying the AST by the bare name
@@ -201,19 +201,19 @@ describe('schema', () => {
   it('finds the indexes an entity declares for a table that lives in a schema', () => {
     const current = mockTableNode('Customer', [{ name: 'id', isPrimaryKey: true }, { name: 'name' }], 'crm');
     const diff = new SqlSchemaGenerator(dialect).diffSchema(Customer, current);
-    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['idx_Customer_name']);
+    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['Customer__name_idx']);
   });
 
   // A Postgres index lives in its table's schema and is dropped as `schema.index`. Bare, it resolved
   // through `search_path`, so it either found nothing or dropped a same-named index in `public`.
   it('drops an index inside the schema of the table it is on', () => {
-    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('crm.Customer', 'idx_Customer_name', 'crm');
-    expect(sql).toBe('DROP INDEX IF EXISTS "crm"."idx_Customer_name";');
+    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('crm.Customer', 'Customer__name_idx', 'crm');
+    expect(sql).toBe('DROP INDEX IF EXISTS "crm"."Customer__name_idx";');
   });
 
   it('leaves an index unqualified when its table is', () => {
-    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('Plain', 'idx_Plain_total');
-    expect(sql).toBe('DROP INDEX IF EXISTS "idx_Plain_total";');
+    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('Plain', 'Plain_total_idx');
+    expect(sql).toBe('DROP INDEX IF EXISTS "Plain_total_idx";');
   });
 
   it('rejects a dotted name, naming the option that replaces it', () => {

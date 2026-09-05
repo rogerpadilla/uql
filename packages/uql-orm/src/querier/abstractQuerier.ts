@@ -1,4 +1,4 @@
-import { getMeta, idOf, soleIdOf } from '../entity/index.js';
+import { assertSoleId, getMeta, idOf, soleIdOf } from '../entity/index.js';
 
 import type {
   EntityData,
@@ -47,14 +47,16 @@ import {
   getRelationRequestSummary,
   idOnlyQuery,
   isScalarId,
+  joinedColumns,
+  joinedRowKey,
   LoggerWrapper,
   type ParentJoin,
   parentJoins,
+  parentRowKey,
   parentsIn,
   parseRelationAtKey,
   parseRelationQueryValue,
   type RelationQuery,
-  rowKey,
   runHooks,
   someKey,
   targetKeyColumns,
@@ -683,7 +685,7 @@ export abstract class AbstractQuerier implements Querier {
     const { $select: _select, $exclude: _exclude, $where: _where, ...throughQuery } = relationQuery;
     const throughFounds = await this.findMany(throughEntity, {
       ...throughQuery,
-      $select: Object.fromEntries(joins.map(({ joined }) => [joined, true])),
+      $select: joinedColumns(joins),
       $populate: {
         [targetRelKey!]: {
           ...relationQuery,
@@ -692,6 +694,8 @@ export abstract class AbstractQuerier implements Querier {
       },
       $where: parentsIn(joins, payload),
     });
+    // The junction's own columns carried onto the target's row, which is where `putChildrenInParents`
+    // reads them back from - a junction row holds the parent's key under `joined`, not under `parent`.
     const founds = (throughFounds as unknown as RawRow[]).map((it) => ({
       ...(it[targetRelKey!] as RawRow),
       ...Object.fromEntries(joins.map(({ joined }) => [joined, it[joined]])),
@@ -734,15 +738,13 @@ export abstract class AbstractQuerier implements Querier {
     for (const child of children) {
       // Every joined column, so two children agreeing on one column of a composite key are not
       // gathered under the same parent.
-      const parentId = rowKey(joins.map(({ joined }) => child[joined]));
-      (childrenByParentId[parentId] ??= []).push(child);
+      (childrenByParentId[joinedRowKey(joins, child)] ??= []).push(child);
     }
     for (const parent of parents) {
       // `[]` rather than nothing for a parent with no children: a populated to-many is a list the
       // caller asked for, so it maps and counts without a guard, and its type can say so. An
       // unpopulated one stays absent, which is what tells the two apart.
-      const key = rowKey(joins.map(({ parent: parentKey }) => parent[parentKey as keyof E & string]));
-      parent[relKey] = (childrenByParentId[key] ?? []) as E[keyof E & string];
+      parent[relKey] = (childrenByParentId[parentRowKey(joins, parent)] ?? []) as E[keyof E & string];
     }
   }
 
@@ -821,6 +823,11 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const relOpts = meta.relations[relKey];
     if (!relOpts) return;
+    // Here rather than only in the callers below: writing the parent's key into a child is one column
+    // per key, so a composite takes a statement per parent. `soleParentColumn` and the sole
+    // `targetKeyColumns` under it read the *first* pair, which is a real column of a wrong pairing
+    // unless this has run - and this method is `protected`, so a caller can arrive without them.
+    assertSoleId(meta, 'saving a relation');
     const relEntity = relOpts.entity();
     const relPayload = relValue as RelationValue<E>[];
 
@@ -855,6 +862,14 @@ export abstract class AbstractQuerier implements Querier {
         // would link every parent to a single shared row instead.
         for (const id of ids) {
           const savedIds = await this.saveMany(relEntity, relPayload);
+          // A link needs the target's id, and a driver that cannot report one (a MySQL batch mixing
+          // supplied and generated keys) would otherwise write a row pointing at `undefined`.
+          if (savedIds.some((relId) => relId === undefined)) {
+            throw new TypeError(
+              `'${relEntity.name}' rows saved through '${throughEntity.name}' reported no id, so they cannot be linked. ` +
+                'Insert them with their own ids, or save the relation in its own statement.',
+            );
+          }
           await this.insertMany(
             throughEntity,
             savedIds.map((relId) => ({ [localField]: id, [targetColumn]: relId })),

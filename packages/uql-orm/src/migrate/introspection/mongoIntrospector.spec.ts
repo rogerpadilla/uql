@@ -51,7 +51,7 @@ describe('MongoSchemaIntrospector', () => {
     db.collection.mockReturnValueOnce({
       indexes: vi.fn().mockResolvedValue([
         { name: '_id_', key: { _id: 1 } },
-        { name: 'idx_username', key: { username: 1 }, unique: true },
+        { name: 'username_idx', key: { username: 1 }, unique: true },
       ]),
     });
 
@@ -61,7 +61,7 @@ describe('MongoSchemaIntrospector', () => {
     expect(schema!.name).toBe('users');
     expect(schema!.indexes).toHaveLength(2);
     expect(schema!.indexes![1]).toMatchObject({
-      name: 'idx_username',
+      name: 'username_idx',
       entries: [{ column: 'username' }],
       unique: true,
     });
@@ -122,8 +122,8 @@ describe('MongoSchemaIntrospector', () => {
       .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'users' }]) });
     db.collection.mockReturnValueOnce({
       indexes: vi.fn().mockResolvedValue([
-        { name: 'idx_email', key: { email: 1 }, unique: true },
-        { name: 'idx_email_status', key: { email: 1, status: 1 } },
+        { name: 'email_idx', key: { email: 1 }, unique: true },
+        { name: 'email_status_idx', key: { email: 1, status: 1 } },
       ]),
     });
 
@@ -132,8 +132,8 @@ describe('MongoSchemaIntrospector', () => {
 
     expect([...table.columns.keys()]).toEqual(['email', 'status']);
     expect(table.indexes.map((idx) => ({ name: idx.name, unique: idx.unique }))).toEqual([
-      { name: 'idx_email', unique: true },
-      { name: 'idx_email_status', unique: false },
+      { name: 'email_idx', unique: true },
+      { name: 'email_status_idx', unique: false },
     ]);
     // The shared column is one node, referenced by both indexes.
     expect(indexColumns(table.indexes[1])[0]).toBe(table.columns.get('email'));

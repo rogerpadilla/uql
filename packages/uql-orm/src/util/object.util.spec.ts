@@ -46,5 +46,7 @@ describe('isScalarId', () => {
     expect(isScalarId({ studentId: 1 })).toBe(false);
     expect(isScalarId({})).toBe(false);
     expect(isScalarId([1, 2])).toBe(false);
+    // What a query-string parser hands back (`qs`, express's `req.params`): still a map of columns.
+    expect(isScalarId(Object.assign(Object.create(null), { studentId: 1 }))).toBe(false);
   });
 });

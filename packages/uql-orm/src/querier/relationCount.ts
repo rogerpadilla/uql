@@ -15,10 +15,12 @@ import { COUNT_RESULT_KEY } from '../type/index.js';
 import {
   asSelectMap,
   getKeys,
+  joinedColumns,
+  joinedRowKey,
   type ParentJoin,
   parentJoins,
+  parentRowKey,
   parentsIn,
-  rowKey,
   targetKeyColumns,
 } from '../util/index.js';
 
@@ -90,7 +92,10 @@ export async function fillRelationCounts<E>(
     return;
   }
   const meta = getMeta(entity);
-  const counted = new Map<string, Record<string, number>>();
+  // The tallies come back keyed by the columns *this relation* joins from, so its `joins` are kept
+  // beside them: reading the parent through `meta.ids` instead matches only where the two coincide,
+  // which is a to-many and nothing else.
+  const counted = new Map<string, { joins: readonly ParentJoin[]; byParent: Record<string, number> }>();
 
   for (const relKey of getKeys(count)) {
     const value = count[relKey];
@@ -100,16 +105,15 @@ export async function fillRelationCounts<E>(
     }
     const where = typeof value === 'object' ? (value.$where as QueryWhereMap<CountedRow> | undefined) : undefined;
     const joins = parentJoins(relOpts, meta.ids.length);
-    counted.set(relKey, await countPerParent(querier, relOpts, joins, payload, where));
+    counted.set(relKey, { joins, byParent: await countPerParent(querier, relOpts, joins, payload, where) });
   }
 
   for (const parent of payload) {
-    const id = rowKey(meta.ids.map((key) => parent[key]));
     const row: Record<string, number> = {};
-    for (const [relKey, byParent] of counted) {
+    for (const [relKey, { joins, byParent }] of counted) {
       // A parent the grouped result has no row for matched nothing, which is a zero rather than a
       // gap: `_count` names what the caller asked to count, so every key it asked for is present.
-      row[relKey] = byParent[id] ?? 0;
+      row[relKey] = byParent[parentRowKey(joins, parent)] ?? 0;
     }
     (parent as Record<string, unknown>)[COUNT_RESULT_KEY] = row;
   }
@@ -166,13 +170,13 @@ async function groupedCount(
   where: QueryWhereMap<CountedRow>,
 ): Promise<Record<string, number>> {
   const $agg: QueryAggMap<CountedRow> = { [COUNT_ALIAS]: { $count: '*' } };
-  const $group = Object.fromEntries(joins.map(({ joined }) => [joined, true])) as QueryGroupMap<CountedRow>;
+  const $group = joinedColumns(joins) as QueryGroupMap<CountedRow>;
   const rows = await querier.aggregate(entity, { $group, $agg, $where: where });
   const byParent: Record<string, number> = {};
   for (const row of rows) {
     // Keyed by every joined column, which is how a tally finds the one parent whose whole key it
     // matches - and how the rows an over-selecting `IN` brought back find no parent at all.
-    byParent[rowKey(joins.map(({ joined }) => row[joined]))] = Number(row[COUNT_ALIAS]);
+    byParent[joinedRowKey(joins, row)] = Number(row[COUNT_ALIAS]);
   }
   return byParent;
 }

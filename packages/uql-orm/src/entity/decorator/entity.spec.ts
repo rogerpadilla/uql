@@ -59,7 +59,7 @@ describe('@Index decorator', () => {
 
   it('should register a named index', () => {
     @Entity()
-    @Index(['email'], { name: 'idx_user_email' })
+    @Index(['email'], { name: 'user_email_idx' })
     class User {
       @Id({ type: Number })
       id?: number;
@@ -70,7 +70,7 @@ describe('@Index decorator', () => {
 
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
-    expect(meta.indexes?.[0].name).toBe('idx_user_email');
+    expect(meta.indexes?.[0].name).toBe('user_email_idx');
   });
 
   it('should register multiple indexes', () => {

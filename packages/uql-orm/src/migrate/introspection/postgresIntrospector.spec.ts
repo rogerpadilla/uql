@@ -122,7 +122,7 @@ describe('PostgresSchemaIntrospector', () => {
         ]);
       }
       if (sql.includes("constraint_type = 'PRIMARY KEY'")) {
-        return Promise.resolve([{ column_name: 'id' }]);
+        return Promise.resolve([{ column_name: 'id', constraint_name: 'users_pkey' }]);
       }
       return Promise.resolve([]);
     });
@@ -134,6 +134,8 @@ describe('PostgresSchemaIntrospector', () => {
     expect(schema!.columns).toHaveLength(1);
     expect(schema!.foreignKeys).toHaveLength(1);
     expect(schema!.primaryKey).toEqual(['id']);
+    // Only the name the engine gave the constraint can drop it, so it has to survive the read.
+    expect(schema!.primaryKeyName).toBe('users_pkey');
   });
 
   it('getTableSchema should read the index shapes only the catalogue functions report', async () => {
@@ -144,7 +146,7 @@ describe('PostgresSchemaIntrospector', () => {
       if (sql.includes('pg_index')) {
         return Promise.resolve([
           {
-            index_name: 'idx_users_lower_email',
+            index_name: 'users_lower_email_idx',
             is_unique: true,
             method: 'gin',
             predicate: 'deleted_at IS NULL',
@@ -156,7 +158,7 @@ describe('PostgresSchemaIntrospector', () => {
             ops_class: 'gin_trgm_ops',
           },
           {
-            index_name: 'idx_users_lower_email',
+            index_name: 'users_lower_email_idx',
             is_unique: true,
             method: 'gin',
             predicate: 'deleted_at IS NULL',
@@ -176,7 +178,7 @@ describe('PostgresSchemaIntrospector', () => {
 
     expect(schema!.indexes).toEqual([
       {
-        name: 'idx_users_lower_email',
+        name: 'users_lower_email_idx',
         unique: true,
         type: 'gin',
         where: 'deleted_at IS NULL',

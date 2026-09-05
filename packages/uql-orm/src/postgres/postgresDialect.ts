@@ -20,7 +20,7 @@ export class PostgresDialect extends PgLikeSqlDialect {
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     // The xmax system column is 0 for a newly inserted row and non-zero for an updated one (MVCC).
-    super.upsert(ctx, entity, conflictPaths, payload, `, (xmax = 0) AS ${this.escapeId('_created')}`);
+    super.upsert(ctx, entity, conflictPaths, payload, `(xmax = 0) AS ${this.escapeId('_created')}`);
   }
 
   /**

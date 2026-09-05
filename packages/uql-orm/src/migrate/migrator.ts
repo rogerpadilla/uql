@@ -541,6 +541,15 @@ export class Migrator {
         delete filteredDiff.columnsToAlter;
       }
 
+      if (filteredDiff.primaryKey) {
+        // Rewriting a key drops a constraint and rebuilds an index over the whole table, and fails
+        // outright where the new columns are null on rows that already exist. Firmly not additive.
+        this.logger.logSkippedMigration(
+          `[AutoSync] Skipped changing the primary key of '${diff.tableName}' from (${filteredDiff.primaryKey.from.join(', ')}) to (${filteredDiff.primaryKey.to.join(', ')}) (safe mode active). Use a migration or { safe: false } to apply.`,
+        );
+        delete filteredDiff.primaryKey;
+      }
+
       delete filteredDiff.indexesToDrop;
       delete filteredDiff.foreignKeysToDrop;
     }

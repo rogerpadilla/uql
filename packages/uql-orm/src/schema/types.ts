@@ -170,7 +170,7 @@ export interface ColumnNode {
 export interface TableNode {
   /**
    * The table's own name, never qualified. Everything derived from a table reads this: an index or
-   * constraint name is a single identifier, and `idx_sales.Order_total` is a syntax error.
+   * constraint name is a single identifier, and `sales.Order_total_idx` is a syntax error.
    */
   readonly name: string;
   /**
@@ -181,8 +181,14 @@ export interface TableNode {
   readonly schema?: string;
   /** Map of column name to column node */
   readonly columns: Map<string, ColumnNode>;
-  /** Primary key columns (supports composite keys) */
+  /** Primary key columns, in key order (supports composite keys) */
   readonly primaryKey: ColumnNode[];
+  /**
+   * What the constraint is called, where a name is known: read back from the database on an
+   * introspected table, absent on one built from entities, where nothing has named it yet. A `DROP`
+   * is the only thing that needs it - see {@link TableSchema.primaryKeyName}.
+   */
+  primaryKeyName?: string;
   /** Indexes on this table */
   readonly indexes: IndexNode[];
   /** `CHECK` constraints on this table. Optional: a node can be built without ever naming one. */
@@ -202,7 +208,7 @@ export interface TableNode {
  * Represents a foreign key relationship between tables.
  */
 export interface RelationshipNode {
-  /** Constraint name (e.g., fk_posts_author_id) */
+  /** Constraint name (e.g., posts_author_id_fk) */
   readonly name: string;
   /** Type of relationship */
   readonly type: RelationshipType;
@@ -264,13 +270,22 @@ export interface SchemaAST {
 
 /**
  * Difference between two column definitions.
+ *
+ * A union rather than one shape with two optional sides, so which node is present follows from the
+ * kind of difference: an added column has only the `expected` one, a dropped column only the
+ * `actual` one, and an altered column both. Stated as optionals, every reader had to assert its way
+ * past a `undefined` the kind had already ruled out.
  */
-export interface ColumnDiff {
+export type ColumnDiff = ColumnDiffBase &
+  (
+    | { readonly type: 'add'; readonly expected: ColumnNode; readonly actual?: undefined }
+    | { readonly type: 'drop'; readonly expected?: undefined; readonly actual: ColumnNode }
+    | { readonly type: 'alter'; readonly expected: ColumnNode; readonly actual: ColumnNode }
+  );
+
+interface ColumnDiffBase {
   readonly table: string;
   readonly column: string;
-  readonly type: 'add' | 'drop' | 'alter';
-  readonly expected?: ColumnNode;
-  readonly actual?: ColumnNode;
   /** Whether this change could cause data loss */
   readonly isBreaking?: boolean;
   readonly description?: string;
@@ -284,6 +299,22 @@ export interface TableDiff {
   readonly type: 'create' | 'drop' | 'alter';
   readonly columnDiffs?: ColumnDiff[];
   readonly indexDiffs?: IndexDiff[];
+  /** Set only where the two keys hold different columns. See {@link PrimaryKeyDiff}. */
+  readonly primaryKeyDiff?: PrimaryKeyDiff;
+}
+
+/**
+ * Two primary keys that hold different columns.
+ *
+ * By columns and in order, never by name: `(a, b)` is a different key from `(b, a)`, while the same
+ * key called `Member_pkey` on one side and `Member__userId_pk` on the other is one key, not two.
+ */
+export interface PrimaryKeyDiff {
+  readonly table: string;
+  readonly expected: string[];
+  readonly actual: string[];
+  /** What the *actual* side calls its constraint, which is the only name a `DROP` can use. */
+  readonly actualName?: string;
 }
 
 /**
@@ -325,6 +356,8 @@ export interface SchemaDiffResult {
   readonly columnDiffs: ColumnDiff[];
   /** All index diffs */
   readonly indexDiffs: IndexDiff[];
+  /** Every table whose primary key holds different columns than the entity declares. */
+  readonly primaryKeyDiffs: PrimaryKeyDiff[];
   /** All relationship/FK diffs */
   readonly relationshipDiffs: RelationshipDiff[];
 

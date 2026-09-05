@@ -189,30 +189,30 @@ describe('CREATE INDEX', () => {
 
   it('should generate CREATE INDEX statement', () => {
     const sql = pgDdl.getCreateIndexStatement('users', {
-      name: 'idx_users_email',
+      name: 'users__email_idx',
       entries: [{ column: 'email' }],
       unique: true,
     });
 
-    expect(sql).toBe('CREATE UNIQUE INDEX IF NOT EXISTS "idx_users_email" ON "users" ("email");');
+    expect(sql).toBe('CREATE UNIQUE INDEX IF NOT EXISTS "users__email_idx" ON "users" ("email");');
   });
 
   it('should generate CREATE INDEX for HNSW vector index', () => {
     const sql = pgDdl.getCreateIndexStatement('articles', {
-      name: 'idx_articles_embedding_hnsw',
+      name: 'articles_embedding_hnsw_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
       distance: 'cosine',
     });
     expect(sql).toBe(
-      'CREATE INDEX IF NOT EXISTS "idx_articles_embedding_hnsw" ON "articles" USING hnsw ("embedding" vector_cosine_ops);',
+      'CREATE INDEX IF NOT EXISTS "articles_embedding_hnsw_idx" ON "articles" USING hnsw ("embedding" vector_cosine_ops);',
     );
   });
 
   it('should generate CREATE INDEX for HNSW with tuning params', () => {
     const sql = pgDdl.getCreateIndexStatement('articles', {
-      name: 'idx_embedding',
+      name: 'embedding_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
@@ -221,13 +221,13 @@ describe('CREATE INDEX', () => {
       efConstruction: 64,
     });
     expect(sql).toBe(
-      'CREATE INDEX IF NOT EXISTS "idx_embedding" ON "articles" USING hnsw ("embedding" vector_l2_ops) WITH (m = 16, ef_construction = 64);',
+      'CREATE INDEX IF NOT EXISTS "embedding_idx" ON "articles" USING hnsw ("embedding" vector_l2_ops) WITH (m = 16, ef_construction = 64);',
     );
   });
 
   it('should generate CREATE INDEX for IVFFlat', () => {
     const sql = pgDdl.getCreateIndexStatement('articles', {
-      name: 'idx_embedding_ivf',
+      name: 'embedding_ivf_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type: 'ivfflat',
@@ -235,14 +235,14 @@ describe('CREATE INDEX', () => {
       lists: 100,
     });
     expect(sql).toBe(
-      'CREATE INDEX IF NOT EXISTS "idx_embedding_ivf" ON "articles" USING ivfflat ("embedding" vector_ip_ops) WITH (lists = 100);',
+      'CREATE INDEX IF NOT EXISTS "embedding_ivf_idx" ON "articles" USING ivfflat ("embedding" vector_ip_ops) WITH (lists = 100);',
     );
   });
 
   it('should not emit operator classes or WITH params for non-Postgres dialects', () => {
     const ddl = indexDdlFor(new MySqlDialect());
     const sql = ddl.getCreateIndexStatement('articles', {
-      name: 'idx_title',
+      name: 'title_idx',
       entries: [{ column: 'title' }],
       unique: false,
       type: 'btree',
@@ -250,7 +250,7 @@ describe('CREATE INDEX', () => {
       efConstruction: 64,
     });
     // MySQL: no operator class, no WITH params - just USING
-    expect(sql).toBe('CREATE INDEX `idx_title` ON `articles` USING btree (`title`);');
+    expect(sql).toBe('CREATE INDEX `title_idx` ON `articles` USING btree (`title`);');
   });
 
   // `USING fulltext` is a syntax error on both, and it is the index `MATCH ... AGAINST` needs, so
@@ -260,13 +260,13 @@ describe('CREATE INDEX', () => {
     ['mariadb', new MariaDialect()],
   ] as const)('should emit CREATE FULLTEXT INDEX on %s', (_name, dialect) => {
     const sql = indexDdlFor(dialect).getCreateIndexStatement('articles', {
-      name: 'idx_text',
+      name: 'text_idx',
       entries: [{ column: 'title' }, { column: 'body' }],
       unique: false,
       type: 'fulltext',
     });
     expect(sql).toBe(
-      `CREATE FULLTEXT INDEX ${dialect.features.indexIfNotExists ? 'IF NOT EXISTS ' : ''}\`idx_text\` ON \`articles\` (\`title\`, \`body\`);`,
+      `CREATE FULLTEXT INDEX ${dialect.features.indexIfNotExists ? 'IF NOT EXISTS ' : ''}\`text_idx\` ON \`articles\` (\`title\`, \`body\`);`,
     );
   });
 
@@ -276,13 +276,13 @@ describe('CREATE INDEX', () => {
     const ddl = indexDdlFor(new MySqlDialect());
     expect(() =>
       ddl.getCreateIndexStatement('articles', {
-        name: 'idx_embedding',
+        name: 'embedding_idx',
         entries: [{ column: 'embedding' }],
         unique: false,
         type,
         distance: 'cosine',
       }),
-    ).toThrow(`mysql has no ${type} index (index "idx_embedding"). Vector search on MySQL needs HeatWave`);
+    ).toThrow(`mysql has no ${type} index (index "embedding_idx"). Vector search on MySQL needs HeatWave`);
   });
 
   // SQLite's CREATE INDEX grammar has no `USING` clause at all, so emitting one made every typed
@@ -290,13 +290,13 @@ describe('CREATE INDEX', () => {
   it.each(['hnsw', 'btree'] as const)('should drop the USING clause on SQLite for a %s index', (type) => {
     const ddl = indexDdlFor(new SqliteDialect());
     const sql = ddl.getCreateIndexStatement('articles', {
-      name: 'idx_embedding',
+      name: 'embedding_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type,
       distance: 'cosine',
     });
-    expect(sql).toBe('CREATE INDEX IF NOT EXISTS `idx_embedding` ON `articles` (`embedding`);');
+    expect(sql).toBe('CREATE INDEX IF NOT EXISTS `embedding_idx` ON `articles` (`embedding`);');
   });
 
   // pgvector's operator classes are named `{type}_{metric}_ops`, so an index on a narrower vector
@@ -307,14 +307,14 @@ describe('CREATE INDEX', () => {
     ['sparsevec', 'sparsevec_cosine_ops'],
   ] as const)('should name the %s operator class', (vectorType, opsClass) => {
     const sql = pgDdl.getCreateIndexStatement('articles', {
-      name: 'idx_embedding',
+      name: 'embedding_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type: 'hnsw',
       distance: 'cosine',
       vectorType,
     });
-    expect(sql).toBe(`CREATE INDEX IF NOT EXISTS "idx_embedding" ON "articles" USING hnsw ("embedding" ${opsClass});`);
+    expect(sql).toBe(`CREATE INDEX IF NOT EXISTS "embedding_idx" ON "articles" USING hnsw ("embedding" ${opsClass});`);
   });
 
   it.each([
@@ -323,7 +323,7 @@ describe('CREATE INDEX', () => {
   ] as const)('should reject an ivfflat index on %s/%s', (vectorType, distance, opsClass) => {
     expect(() =>
       pgDdl.getCreateIndexStatement('articles', {
-        name: 'idx_embedding',
+        name: 'embedding_idx',
         entries: [{ column: 'embedding' }],
         unique: false,
         type: 'ivfflat',
@@ -348,13 +348,13 @@ describe('CREATE INDEX', () => {
   it('should emit a partial index predicate on SQLite', () => {
     const ddl = indexDdlFor(new SqliteDialect());
     const sql = ddl.getCreateIndexStatement('users', {
-      name: 'idx_live_email',
+      name: 'live_email_idx',
       entries: [{ column: 'email' }],
       unique: true,
       where: '`deletedAt` IS NULL',
     });
     expect(sql).toBe(
-      'CREATE UNIQUE INDEX IF NOT EXISTS `idx_live_email` ON `users` (`email`) WHERE `deletedAt` IS NULL;',
+      'CREATE UNIQUE INDEX IF NOT EXISTS `live_email_idx` ON `users` (`email`) WHERE `deletedAt` IS NULL;',
     );
   });
 
@@ -364,18 +364,18 @@ describe('CREATE INDEX', () => {
     const ddl = indexDdlFor(new MySqlDialect());
     expect(() =>
       ddl.getCreateIndexStatement('users', {
-        name: 'idx_live_email',
+        name: 'live_email_idx',
         entries: [{ column: 'email' }],
         unique: true,
         where: '`deletedAt` IS NULL',
       }),
-    ).toThrow('mysql does not support partial indexes (index "idx_live_email"');
+    ).toThrow('mysql does not support partial indexes (index "live_email_idx"');
   });
 
   it('should generate CREATE VECTOR INDEX for CockroachDB (native syntax, no USING/WITH)', () => {
     const ddl = indexDdlFor(new CockroachDialect());
     const sql = ddl.getCreateIndexStatement('articles', {
-      name: 'idx_articles_embedding',
+      name: 'articles_embedding_idx',
       entries: [{ column: 'embedding' }],
       unique: false,
       type: 'vector',
@@ -385,26 +385,26 @@ describe('CREATE INDEX', () => {
       efConstruction: 64,
     });
     expect(sql).toBe(
-      'CREATE VECTOR INDEX IF NOT EXISTS "idx_articles_embedding" ON "articles" ("embedding" vector_cosine_ops);',
+      'CREATE VECTOR INDEX IF NOT EXISTS "articles_embedding_idx" ON "articles" ("embedding" vector_cosine_ops);',
     );
   });
 
   it('should not add an operator class to a CockroachDB index with a non-vector type', () => {
     const ddl = indexDdlFor(new CockroachDialect());
     const sql = ddl.getCreateIndexStatement('articles', {
-      name: 'idx_articles_name',
+      name: 'articles_name_idx',
       entries: [{ column: 'name' }],
       unique: false,
       type: 'btree',
     });
-    expect(sql).toBe('CREATE INDEX IF NOT EXISTS "idx_articles_name" ON "articles" USING btree ("name");');
+    expect(sql).toBe('CREATE INDEX IF NOT EXISTS "articles_name_idx" ON "articles" USING btree ("name");');
   });
 
   it('should throw for a CockroachDB vector index with an unsupported distance metric, not silently drop the opclass', () => {
     const ddl = indexDdlFor(new CockroachDialect());
     expect(() =>
       ddl.getCreateIndexStatement('articles', {
-        name: 'idx_articles_embedding',
+        name: 'articles_embedding_idx',
         entries: [{ column: 'embedding' }],
         unique: false,
         type: 'vector',
@@ -417,7 +417,7 @@ describe('CREATE INDEX', () => {
     const ddl = indexDdlFor(new CockroachDialect());
     expect(() =>
       ddl.getCreateIndexStatement('articles', {
-        name: 'idx_articles_embedding',
+        name: 'articles_embedding_idx',
         entries: [{ column: 'embedding' }],
         unique: false,
         type: 'vector',

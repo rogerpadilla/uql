@@ -45,7 +45,7 @@ wait for a second kind, so the shape is derived rather than guessed.
 await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
 ```
 
-**Everything that can address a row by several columns works**: declaration, DDL, inserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by. Cascading a delete does too, by an OR of key maps where a single key is one `IN`. What is left is the places that identify a row through a single slot - the id an insert returns, the id `saveMany` reads as proof a row exists, one `_id`, one URL segment - which a composite row does not fit. Each throws naming itself rather than falling back to the first key column, so the feature fails loudly where it is unfinished instead of quietly addressing the wrong rows.
+**Everything that can address a row by several columns works**: declaration, DDL and migrations, inserts, upserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by. Cascading a delete does too, by an OR of key maps where a single key is one `IN`. What is left is the places that identify a row through a single slot - the id an insert returns, the id `saveMany` reads as proof a row exists, one `_id`, one URL segment - which a composite row does not fit. Each throws naming itself rather than falling back to the first key column, so the feature fails loudly where it is unfinished instead of quietly addressing the wrong rows.
 
 **The id is a plain object**, as TypeORM and MikroORM take. Prisma's named compound
 (`where: { userId_groupId: {...} }`) exists to say _which_ unique constraint `findUnique` should use;

@@ -260,17 +260,17 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   async shouldCreateAnIndex() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
-      await builder.createIndex(BUILDER_TABLES.MAIN, ['name'], { name: 'idx_builder_name' });
+      await builder.createIndex(BUILDER_TABLES.MAIN, ['name'], { name: 'builder_name_idx' });
     });
 
-    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['idx_builder_name']);
+    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['builder_name_idx']);
   }
 
   async shouldDropAnIndex() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
-      await builder.createIndex(BUILDER_TABLES.MAIN, ['name'], { name: 'idx_builder_dropped' });
-      await builder.dropIndex(BUILDER_TABLES.MAIN, 'idx_builder_dropped');
+      await builder.createIndex(BUILDER_TABLES.MAIN, ['name'], { name: 'builder_dropped_idx' });
+      await builder.dropIndex(BUILDER_TABLES.MAIN, 'builder_dropped_idx');
     });
 
     expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual([]);
@@ -281,13 +281,13 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       await this.givenMainTable(builder);
 
       await builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
-        t.addIndex(['name'], { name: 'idx_builder_kept' });
-        t.addIndex(['id', 'name'], { name: 'idx_builder_transient' });
-        t.dropIndex('idx_builder_transient');
+        t.addIndex(['name'], { name: 'builder_kept_idx' });
+        t.addIndex(['id', 'name'], { name: 'builder_transient_idx' });
+        t.dropIndex('builder_transient_idx');
       });
     });
 
-    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['idx_builder_kept']);
+    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['builder_kept_idx']);
   }
 
   async shouldCreateATableDeclaringItsOwnIndexes() {
@@ -296,14 +296,17 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
         t.id();
         t.string('email', { length: 100 }).nullable();
         t.string('region', { length: 20 }).nullable();
-        t.index(['region'], 'idx_builder_region');
-        t.unique(['email'], 'uq_builder_email');
+        t.index(['region'], 'builder_region_idx');
+        t.unique(['email'], 'builder_email_uk');
       });
     });
 
     const schema = await this.getTableSchema(BUILDER_TABLES.MAIN);
-    const unique = schema.indexes?.find((index) => index.name === 'uq_builder_email');
-    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['idx_builder_region', 'uq_builder_email']);
+    const unique = schema.indexes?.find((index) => index.name === 'builder_email_uk');
+    // Sorted: which indexes exist is the claim, and engines report them in their own order.
+    expect((await this.getIndexNames(BUILDER_TABLES.MAIN)).toSorted()).toEqual(
+      ['builder_region_idx', 'builder_email_uk'].toSorted(),
+    );
     expect(unique?.unique).toBe(true);
   }
 
@@ -392,9 +395,9 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
         BUILDER_TABLES.CHILD,
         ['parentId'],
         { table: BUILDER_TABLES.PARENT, columns: ['id'] },
-        { name: 'fk_builder_child_parent' },
+        { name: 'builder_child_parent_fk' },
       );
-      await builder.dropForeignKey(BUILDER_TABLES.CHILD, 'fk_builder_child_parent');
+      await builder.dropForeignKey(BUILDER_TABLES.CHILD, 'builder_child_parent_fk');
     });
 
     const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);

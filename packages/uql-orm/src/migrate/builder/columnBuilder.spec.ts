@@ -81,8 +81,8 @@ describe('ColumnBuilder', () => {
     });
 
     it('should set index', () => {
-      const col = new ColumnBuilder('email', { category: 'string' }).index('idx_email');
-      expect(col.build().index).toBe('idx_email');
+      const col = new ColumnBuilder('email', { category: 'string' }).index('email_idx');
+      expect(col.build().index).toBe('email_idx');
     });
 
     it('should set index with auto name', () => {

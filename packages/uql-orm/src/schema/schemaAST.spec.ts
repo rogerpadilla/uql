@@ -24,7 +24,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       expect(ast.relationships.length).toBe(1);
@@ -40,7 +40,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
 
       const idx: IndexNode = {
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: users,
         entries: [],
         unique: false,
@@ -72,7 +72,7 @@ describe('SchemaAST', () => {
     it('should get referenced column', () => {
       const users = createTable('users');
       const posts = createTable('posts');
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addTable(users);
       ast.addTable(posts);
       ast.addRelationship(rel);
@@ -86,7 +86,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       const dependents = ast.getDependentTables(users);
@@ -99,7 +99,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       const deps = ast.getDependencies(posts);
@@ -112,7 +112,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       expect(ast.getRelationship(posts, users)).toBe(rel);
@@ -127,8 +127,8 @@ describe('SchemaAST', () => {
       ast.addTable(posts);
       ast.addTable(comments);
 
-      const rel1 = createRelationship('fk_posts_user', posts, users);
-      const rel2 = createRelationship('fk_comments_user', comments, users);
+      const rel1 = createRelationship('posts_user_fk', posts, users);
+      const rel2 = createRelationship('comments_user_fk', comments, users);
       ast.addRelationship(rel1);
       ast.addRelationship(rel2);
 
@@ -146,8 +146,8 @@ describe('SchemaAST', () => {
       ast.addTable(posts);
       ast.addTable(comments);
 
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
-      ast.addRelationship(createRelationship('fk_comments_post', comments, posts));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
+      ast.addRelationship(createRelationship('comments_post_fk', comments, posts));
 
       expect(ast.hasCircularDependencies()).toBe(false);
       expect(ast.detectCircularDependencies()).toEqual([]);
@@ -160,8 +160,8 @@ describe('SchemaAST', () => {
       ast.addTable(tableB);
 
       // A -> B and B -> A creates a cycle
-      ast.addRelationship(createRelationship('fk_a_b', tableA, tableB));
-      ast.addRelationship(createRelationship('fk_b_a', tableB, tableA));
+      ast.addRelationship(createRelationship('a_b_fk', tableA, tableB));
+      ast.addRelationship(createRelationship('b_a_fk', tableB, tableA));
 
       expect(ast.hasCircularDependencies()).toBe(true);
       const cycles = ast.detectCircularDependencies();
@@ -178,8 +178,8 @@ describe('SchemaAST', () => {
       ast.addTable(posts);
       ast.addTable(users);
 
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
-      ast.addRelationship(createRelationship('fk_comments_post', comments, posts));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
+      ast.addRelationship(createRelationship('comments_post_fk', comments, posts));
 
       const order = ast.getCreateOrder();
       const names = order.map((t) => t.name);
@@ -195,7 +195,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
 
       const order = ast.getDropOrder();
       const names = order.map((t) => t.name);
@@ -220,13 +220,13 @@ describe('SchemaAST', () => {
       ast.addTable(users);
 
       const idx1: IndexNode = {
-        name: 'idx_duplicate',
+        name: 'duplicate_idx',
         table: users,
         entries: [],
         unique: false,
       };
       const idx2: IndexNode = {
-        name: 'idx_duplicate',
+        name: 'duplicate_idx',
         table: users,
         entries: [],
         unique: false,
@@ -245,7 +245,7 @@ describe('SchemaAST', () => {
       ast.addTable(posts);
       // users is NOT added to ast
 
-      const rel = createRelationship('fk_posts_users', posts, users);
+      const rel = createRelationship('posts_users_fk', posts, users);
       ast.relationships.push(rel);
 
       const errors = ast.validate();
@@ -257,8 +257,8 @@ describe('SchemaAST', () => {
       const b = createTable('b');
       ast.addTable(a);
       ast.addTable(b);
-      ast.addRelationship(createRelationship('fk_a_b', a, b));
-      ast.addRelationship(createRelationship('fk_b_a', b, a));
+      ast.addRelationship(createRelationship('a_b_fk', a, b));
+      ast.addRelationship(createRelationship('b_a_fk', b, a));
 
       const errors = ast.validate();
       expect(errors.some((e) => e.type === 'circular_dependency')).toBe(true);
@@ -274,8 +274,8 @@ describe('SchemaAST', () => {
       ast.addTable(roles);
       ast.addTable(userRoles);
 
-      ast.addRelationship(createRelationship('fk_user', userRoles, users));
-      ast.addRelationship(createRelationship('fk_role', userRoles, roles));
+      ast.addRelationship(createRelationship('user_fk', userRoles, users));
+      ast.addRelationship(createRelationship('role_fk', userRoles, roles));
 
       expect(ast.isJunctionTable(userRoles)).toBe(true);
       expect(ast.isJunctionTable(users)).toBe(false);
@@ -289,8 +289,8 @@ describe('SchemaAST', () => {
       ast.addTable(roles);
       ast.addTable(userRoles);
 
-      ast.addRelationship(createRelationship('fk_user', userRoles, users));
-      ast.addRelationship(createRelationship('fk_role', userRoles, roles));
+      ast.addRelationship(createRelationship('user_fk', userRoles, users));
+      ast.addRelationship(createRelationship('role_fk', userRoles, roles));
 
       expect(ast.isJunctionTable(userRoles)).toBe(false);
     });
@@ -303,8 +303,8 @@ describe('SchemaAST', () => {
       ast.addTable(roles);
       ast.addTable(assignments);
 
-      ast.addRelationship(createRelationship('fk_user', assignments, users));
-      ast.addRelationship(createRelationship('fk_role', assignments, roles));
+      ast.addRelationship(createRelationship('user_fk', assignments, users));
+      ast.addRelationship(createRelationship('role_fk', assignments, roles));
 
       // columnCount ≤ 5, so still detected as junction
       expect(ast.isJunctionTable(assignments)).toBe(true);
@@ -316,7 +316,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      ast.addRelationship(createRelationship('fk_user', posts, users));
+      ast.addRelationship(createRelationship('user_fk', posts, users));
 
       expect(ast.isJunctionTable(posts)).toBe(false);
     });
@@ -329,7 +329,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       expect(ast.inferRelationType(rel)).toBe('ManyToOne');
@@ -341,7 +341,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(profiles);
 
-      const rel = createRelationship('fk_profiles_user', profiles, users, true);
+      const rel = createRelationship('profiles_user_fk', profiles, users, true);
       ast.addRelationship(rel);
 
       expect(ast.inferRelationType(rel)).toBe('OneToOne');
@@ -355,8 +355,8 @@ describe('SchemaAST', () => {
       ast.addTable(tags);
       ast.addTable(postTags);
 
-      const rel1 = createRelationship('fk_pt_posts', postTags, posts);
-      const rel2 = createRelationship('fk_pt_tags', postTags, tags);
+      const rel1 = createRelationship('pt_posts_fk', postTags, posts);
+      const rel2 = createRelationship('pt_tags_fk', postTags, tags);
       ast.addRelationship(rel1);
       ast.addRelationship(rel2);
 
@@ -377,7 +377,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
 
       const idx: IndexNode = {
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: users,
         entries: [],
         unique: true,
@@ -385,7 +385,7 @@ describe('SchemaAST', () => {
 
       ast.addIndex(idx);
 
-      expect(ast.getIndex('idx_users_email')).toBe(idx);
+      expect(ast.getIndex('users__email_idx')).toBe(idx);
       expect(ast.getTableIndexes('users')).toContain(idx);
     });
   });
@@ -397,12 +397,12 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       expect(ast.relationships.length).toBe(1);
 
-      ast.removeRelationship('fk_posts_user');
+      ast.removeRelationship('posts_user_fk');
 
       expect(ast.relationships.length).toBe(0);
     });
@@ -418,9 +418,9 @@ describe('SchemaAST', () => {
       const posts = createTable('posts');
       ast.addTable(users);
       ast.addTable(posts);
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
       ast.addIndex({
-        name: 'idx_users_name',
+        name: 'users__name_idx',
         table: users,
         entries: [{ column: 'col1' }],
         unique: false,
@@ -433,15 +433,15 @@ describe('SchemaAST', () => {
       expect(clone.indexes.length).toBe(1);
       expect(clone.getTable('users') === users).toBe(false);
       expect(clone.getTable('users')?.name).toBe('users');
-      expect(clone.getIndex('idx_users_name')).toBeDefined();
-      expect(clone.getIndex('idx_users_name')?.table.name).toBe('users');
+      expect(clone.getIndex('users__name_idx')).toBeDefined();
+      expect(clone.getIndex('users__name_idx')?.table.name).toBe('users');
     });
 
     it('should handle cloning relationships with missing tables defensively', () => {
       const users = createTable('users');
       const posts = createTable('posts');
       ast.addTable(users);
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users)); // 'posts' is not added to ast.tables!
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users)); // 'posts' is not added to ast.tables!
       const clone = ast.clone();
       expect(clone.relationships.length).toBe(0); // The relationship is skipped because fromTable doesn't exist
     });
@@ -453,7 +453,7 @@ describe('SchemaAST', () => {
       const posts = createTable('posts');
       ast.addTable(users);
       ast.addTable(posts);
-      const rel = createRelationship('fk_posts_user', posts, users);
+      const rel = createRelationship('posts_user_fk', posts, users);
       ast.addRelationship(rel);
 
       // Corrupt the relationships manually to test the defense branch
@@ -462,7 +462,7 @@ describe('SchemaAST', () => {
       rel.from.columns.forEach((c) => (c.references = undefined));
       rel.to.columns.forEach((c) => (c.referencedBy = []));
 
-      expect(ast.removeRelationship('fk_posts_user')).toBe(true);
+      expect(ast.removeRelationship('posts_user_fk')).toBe(true);
     });
   });
 
@@ -470,7 +470,7 @@ describe('SchemaAST', () => {
     it('should ignore duplicate addIndex calls on table.indexes', () => {
       const users = createTable('users');
       ast.addTable(users);
-      const idx: IndexNode = { name: 'idx_users_email', table: users, entries: [], unique: false };
+      const idx: IndexNode = { name: 'users__email_idx', table: users, entries: [], unique: false };
       ast.addIndex(idx);
       // add the identical object again
       ast.addIndex(idx);
@@ -486,7 +486,7 @@ describe('SchemaAST', () => {
       ast.addTable(users);
       ast.addTable(posts);
 
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
 
       const stats = ast.getStats();
 
@@ -502,9 +502,9 @@ describe('SchemaAST', () => {
       const posts = createTable('posts');
       ast.addTable(users);
       ast.addTable(posts);
-      ast.addRelationship(createRelationship('fk_posts_user', posts, users));
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
       ast.addIndex({
-        name: 'idx_users_name',
+        name: 'users__name_idx',
         table: users,
         entries: [{ column: 'col1' }],
         unique: false,

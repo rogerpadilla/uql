@@ -124,7 +124,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   abstract override readonly dialectName: SqlDialectName;
 
   abstract readonly escapeIdChar: '"' | '`';
-  abstract readonly serialPrimaryKey: string;
+  /**
+   * The column type of a database-generated key: only the type, never the key itself, which the table
+   * declares over its columns as one named constraint. SQLite is the exception - see
+   * {@link serialDeclaresPrimaryKey}.
+   */
+  abstract readonly serialType: string;
+
+  /**
+   * Whether {@link serialType} states `PRIMARY KEY` itself, so the table must not state it again.
+   *
+   * True on SQLite alone, where `AUTOINCREMENT` is legal only in the exact phrase
+   * `INTEGER PRIMARY KEY AUTOINCREMENT` - the key cannot be lifted out of the column there.
+   */
+  readonly serialDeclaresPrimaryKey: boolean = false;
   abstract readonly tableOptions: string;
   abstract readonly beginTransactionCommand: string;
   abstract readonly commitTransactionCommand: string;
@@ -146,6 +159,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none' = 'ALTER COLUMN';
 
   readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
+
+  /**
+   * `DROP CONSTRAINT <name>` where a primary key is a named constraint like any other; MySQL spells
+   * it `DROP PRIMARY KEY` and takes no name, since a table's key is always called `PRIMARY` there.
+   */
+  readonly dropPrimaryKeySyntax: 'DROP CONSTRAINT' | 'DROP PRIMARY KEY' = 'DROP CONSTRAINT';
 
   readonly dropIndexSyntax: 'on-table' | 'standalone' = 'standalone';
 
@@ -226,9 +245,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return '?';
   }
 
+  /**
+   * `RETURNING <id column> AS id`, or nothing at all for a composite key.
+   *
+   * The alias names one column, and every column of a composite came from the caller, so there is no
+   * id the statement could report that the payload does not already carry - the same "no id to give"
+   * a `firstId` dialect already answers with. Empty rather than a refusal, so an insert and an upsert
+   * of a composite row both run; `idOf(meta, row)` names such a row.
+   */
   returningId<E>(meta: EntityMeta<E>): string {
-    const idName = this.columnOf(meta, soleIdOf(meta, 'returning an inserted id'));
-    return `RETURNING ${this.escapeId(idName)} ${this.escapeId('id')}`;
+    const expression = this.returningIdExpression(meta);
+    return expression ? `RETURNING ${expression}` : '';
+  }
+
+  /** `<id column> AS id` on its own, for a statement composing a `RETURNING` list of several items. */
+  protected returningIdExpression<E>(meta: EntityMeta<E>): string {
+    const [idKey] = meta.ids;
+    return meta.ids.length === 1 ? `${this.escapeId(this.columnOf(meta, idKey))} ${this.escapeId('id')}` : '';
   }
 
   search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, joins = NO_JOINS): void {
@@ -1342,12 +1375,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     this.appendInsertValues(ctx, entity, payload);
 
     // Every engine whose ids come back from the statement itself wants the same clause, so it is
-    // appended once here instead of in an identical `insert` override per dialect. A composite key
-    // has nothing to ask for: the alias names one column, and every column of it came from the
-    // caller, so there is no id the statement could report that the payload does not already carry.
-    const meta = getMeta(entity);
-    if (this.insertIdSource === 'returning' && meta.ids.length === 1) {
-      ctx.append(` ${this.returningId(meta)}`);
+    // appended once here instead of in an identical `insert` override per dialect. `returningId` is
+    // empty on a composite key, which has no id to ask for.
+    if (this.insertIdSource === 'returning') {
+      const returning = this.returningId(getMeta(entity));
+      if (returning) {
+        ctx.append(` ${returning}`);
+      }
     }
   }
 
@@ -1458,6 +1492,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
+    /** One more `RETURNING` item, as a bare expression: this joins the list and adds the keyword. */
     extraReturning = '',
   ): void {
     const meta = getMeta(entity);
@@ -1465,8 +1500,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, this.upsertExcluded);
     const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    // Composed rather than concatenated: a composite key contributes no id item, and a dialect's own
+    // item (Postgres's `_created`) still has to be the *first* thing after the keyword when it is.
+    const returning = [this.returningIdExpression(meta), extraReturning].filter(Boolean).join(', ');
     this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keys}) ${onConflict} ${this.returningId(meta)}${extraReturning}`);
+    ctx.append(` ON CONFLICT (${keys}) ${onConflict}${returning ? ` RETURNING ${returning}` : ''}`);
     if (updateCtx !== ctx) {
       ctx.pushValue(...updateCtx.values);
     }

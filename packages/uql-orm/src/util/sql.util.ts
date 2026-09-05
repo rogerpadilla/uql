@@ -63,31 +63,110 @@ export function obtainAttrsPaths<T extends object>(row: T) {
  * A name behind its namespace, or bare where there is none: the one place the two are joined, so a
  * table's key, its statement operand and its escaped form cannot spell it differently. Never the
  * seed for a derived identifier - an index or constraint name is a single identifier, and
- * `idx_sales.Order_total` is a syntax error.
+ * `sales.Order_total_idx` is a syntax error.
  */
 export function qualifyName(name: string, schema?: string): string {
   return schema ? `${schema}.${name}` : name;
 }
 
 /**
- * The name a derived index or constraint gets when nothing named it: `idx_Order_total`.
- *
- * One owner, because it is a rule two layers apply and a third has to match: the entity AST derives
- * it, the DDL generator falls back to it, and a diff compares what the database reports against it.
- * `table` is the table's own name, never qualified - the result is a single identifier.
+ * The longest identifier every engine here accepts. Postgres truncates silently at 63 bytes and
+ * MySQL errors at 64, so one conservative limit needs no per-dialect plumbing to be safe on both -
+ * and SQLite, which has no limit, loses nothing by observing it.
  */
-export function derivedIndexName(table: string, columns: readonly string[]): string {
-  return `idx_${table}_${columns.join('_')}`;
+const MAX_IDENTIFIER_LENGTH = 63;
+
+/** Hex chars of hash kept when a name has to be shortened. 24 bits over one table's constraints. */
+const NAME_HASH_LENGTH = 6;
+
+/**
+ * The name a derived index or constraint gets when nothing named it: `Order__total_idx`.
+ *
+ * One owner for all four kinds, because it is a rule two layers apply and a third has to match: the
+ * entity AST derives it, the DDL generator falls back to it, and a `DROP` names what it drops.
+ * `table` is the table's own name, never qualified - the result is a single identifier.
+ *
+ * The kind goes last, as Postgres spells its own (`users_pkey`, `users_email_idx`), so a table's
+ * constraints sort together under the table they belong to.
+ */
+export function derivedConstraintName(
+  table: string,
+  parts: readonly (string | number)[],
+  kind: ConstraintKind,
+): string {
+  const body = parts.length ? `${table}${TABLE_SEPARATOR}${parts.join('_')}` : table;
+  return clampIdentifier(`${body}_${kind}`);
 }
 
-/** The constraint name a check gets when nothing named it: `ck_Order_1`, by declaration order. */
+/**
+ * What separates the table from the columns, doubled where every other join is single.
+ *
+ * Postgres and SQLite keep index and constraint names in one flat namespace across the whole
+ * database rather than scoping them to a table, so a single underscore lets two tables collide:
+ * `user` + `profile_id` and `user_profile` + `id` both reduce to `user_profile_id_idx`. Doubling the
+ * one ambiguous boundary settles it, on the same assumption Drupal made for the same engines - that
+ * nothing sane carries `__` in a table or column name.
+ */
+const TABLE_SEPARATOR = '__';
+
+/** The kinds of derived name, which is also what `indexNameStem` strips to compare them. */
+export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'ck' | 'uk';
+
+/**
+ * A name the engine will store whole, shortened around a hash of the full one when it is too long.
+ *
+ * Truncating alone collides - two long names over the same table differ only in their tail - and a
+ * collision means one constraint silently replacing another. The hash is of the *whole* name, so it
+ * stays the same on every run, which is what lets a later migration still recognise what it made.
+ */
+function clampIdentifier(name: string): string {
+  if (name.length <= MAX_IDENTIFIER_LENGTH) {
+    return name;
+  }
+  const suffix = `_${hashIdentifier(name)}`;
+  return name.slice(0, MAX_IDENTIFIER_LENGTH - suffix.length) + suffix;
+}
+
+/**
+ * FNV-1a, by hand: the package ships zero runtime dependencies, and `node:crypto` is not reachable
+ * from the browser and edge entries this module is bundled into. Not a security hash - it only has
+ * to spread the names of one table's constraints.
+ */
+function hashIdentifier(value: string): string {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash.toString(16).padStart(NAME_HASH_LENGTH, '0').slice(-NAME_HASH_LENGTH);
+}
+
+/**
+ * The name a derived index gets when nothing named it: `Order__total_idx`, or `Order__total_uk` for a
+ * unique one - which the builder has always spelled apart, and which reads as what it enforces.
+ */
+export function derivedIndexName(table: string, columns: readonly string[], unique = false): string {
+  return derivedConstraintName(table, columns, unique ? 'uk' : 'idx');
+}
+
+/**
+ * The constraint name a primary key gets when we name one: `Enrolment__studentId_courseId_pk`.
+ *
+ * Only ever used to *emit* a key. Which columns a key holds is what decides whether two keys are the
+ * same, so an existing constraint keeps whatever the engine called it - see `SchemaDiff.primaryKey`.
+ */
+export function derivedPrimaryKeyName(table: string, columns: readonly string[]): string {
+  return derivedConstraintName(table, columns, 'pk');
+}
+
+/** The constraint name a check gets when nothing named it: `Order__1_ck`, by declaration order. */
 export function derivedCheckName(table: string, position: number): string {
-  return `ck_${table}_${position}`;
+  return derivedConstraintName(table, [position], 'ck');
 }
 
-/** The constraint name a foreign key gets when nothing named it: `fk_Order_customerId`. */
+/** The constraint name a foreign key gets when nothing named it: `Order__customerId_fk`. */
 export function derivedForeignKeyName(table: string, columns: readonly string[]): string {
-  return `fk_${table}_${columns.join('_')}`;
+  return derivedConstraintName(table, columns, 'fk');
 }
 
 /**

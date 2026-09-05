@@ -82,9 +82,15 @@ export function getFieldKeys<E>(fields: {
  * is what a `$where` map and a composite key's id object both are; an array is a list of either.
  */
 export function isScalarId(value: unknown): boolean {
-  return (
-    typeof value !== 'object' ||
-    value === null ||
-    (!Array.isArray(value) && Object.getPrototypeOf(value) !== Object.prototype)
-  );
+  if (typeof value !== 'object' || value === null) {
+    return true;
+  }
+  if (Array.isArray(value)) {
+    return false;
+  }
+  // `null` as well as `Object.prototype`: an object with no prototype is what a query-string parser
+  // hands back (`qs`, express's `req.params`), and reading one as a bare id would name one column
+  // with a map of several.
+  const proto = Object.getPrototypeOf(value);
+  return proto !== Object.prototype && proto !== null;
 }

@@ -79,10 +79,15 @@ export abstract class BaseSqlIntrospector {
           referencedBy: [],
         };
         columns.set(col.name, column);
-        if (col.isPrimaryKey) {
-          table.primaryKey.push(column);
-        }
       }
+
+      // From the ordered list the query returned, not from the per-column flags: `(a, b)` is a
+      // different key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back
+      // to the flags for an introspector that reports no key of its own.
+      const keyColumns = schema.primaryKey ?? schema.columns.filter((col) => col.isPrimaryKey).map((col) => col.name);
+      table.primaryKey.push(...keyColumns.flatMap((name) => columns.get(name) ?? []));
+      table.primaryKeyName = schema.primaryKeyName;
+
       tableNodes.set(schema.name, table);
       ast.addTable(table);
     }

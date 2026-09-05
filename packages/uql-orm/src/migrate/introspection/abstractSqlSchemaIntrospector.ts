@@ -90,7 +90,8 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
       return {
         name: tableName,
         columns,
-        primaryKey,
+        primaryKey: primaryKey.columns,
+        primaryKeyName: primaryKey.name,
         indexes,
         foreignKeys,
       };
@@ -141,9 +142,12 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return this.mapForeignKeysResult(read, tableName, results);
   }
 
-  protected async getPrimaryKey(read: TableRowReader, tableName: string): Promise<string[] | undefined> {
+  protected async getPrimaryKey(
+    read: TableRowReader,
+    tableName: string,
+  ): Promise<{ columns?: string[]; name?: string }> {
     const results = await read<RawRow>(this.getPrimaryKeyQuery(tableName), this.getPrimaryKeyParams(tableName));
-    return this.mapPrimaryKeyResult(results);
+    return { columns: this.mapPrimaryKeyResult(results), name: this.mapPrimaryKeyName(results) };
   }
 
   protected tableExistsParams(tableName: string): unknown[] {
@@ -255,6 +259,15 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected mapPrimaryKeyResult(results: RawRow[]): string[] | undefined {
     const columns = results.map((row) => String(row['column_name']));
     return columns.length ? columns : undefined;
+  }
+
+  /**
+   * What the engine calls the key's constraint, where the query reported one. Only a `DROP` needs it,
+   * and only the reported name will do - see {@link TableSchema.primaryKeyName}.
+   */
+  protected mapPrimaryKeyName(results: RawRow[]): string | undefined {
+    const name = results[0]?.['constraint_name'];
+    return name === undefined || name === null ? undefined : String(name);
   }
 
   /** Parse default value string to appropriate type. */

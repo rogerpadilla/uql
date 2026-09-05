@@ -1,7 +1,9 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, idOf, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { raw } from '../util/index.js';
@@ -54,6 +56,14 @@ class Note {
   @Field({ type: String }) body?: string;
 }
 
+/** Its own table, so the writes below cannot disturb the row counts the reads further down assert. */
+@Entity()
+class Attempt {
+  @Id({ type: Number }) studentId?: number;
+  @Id({ type: String }) task?: string;
+  @Field({ type: String }) score?: string;
+}
+
 @Entity()
 class Term {
   @Id({ type: Number }) year?: number;
@@ -84,6 +94,7 @@ beforeAll(async () => {
     Session,
     Badge,
     EnrolmentBadge,
+    Attempt,
   ])) {
     await pool.run(stmt);
   }
@@ -139,6 +150,62 @@ describe('writing composite rows', () => {
       /composite primary key \(studentId, courseId\), which saving a row does not support/,
     );
   });
+
+  /**
+   * What `saveMany` cannot do, an upsert can: it asks the database which rows exist rather than
+   * reading an id as proof. The statement wants no id back - every column of the key was supplied -
+   * so `RETURNING` is dropped rather than the whole upsert refused.
+   */
+  it('upserts on the whole key, inserting what is new and updating what is not', async () => {
+    await pool.insertMany(Attempt, [{ studentId: 1, task: 'essay', score: 'B' }]);
+
+    await pool.upsertMany(Attempt, { studentId: true, task: true }, [
+      { studentId: 1, task: 'essay', score: 'A' },
+      { studentId: 1, task: 'viva', score: 'C' },
+    ]);
+
+    const founds = await pool.findMany(Attempt, { $where: { studentId: 1 }, $sort: { task: 1 } });
+    expect(founds).toEqual([
+      { studentId: 1, task: 'essay', score: 'A' },
+      { studentId: 1, task: 'viva', score: 'C' },
+    ]);
+  });
+
+  it('updates one row by its whole key, and nothing that only shares a column', async () => {
+    await pool.insertMany(Attempt, [
+      { studentId: 2, task: 'oral', score: 'D' },
+      { studentId: 2, task: 'written', score: 'D' },
+      { studentId: 3, task: 'oral', score: 'D' },
+    ]);
+
+    await pool.updateOneById(Attempt, { studentId: 2, task: 'oral' }, { score: 'A' });
+
+    expect((await pool.findOneById(Attempt, { studentId: 2, task: 'oral' }))?.score).toBe('A');
+    // One shares the student, the other the task; neither is the row that was named.
+    expect((await pool.findOneById(Attempt, { studentId: 2, task: 'written' }))?.score).toBe('D');
+    expect((await pool.findOneById(Attempt, { studentId: 3, task: 'oral' }))?.score).toBe('D');
+  });
+
+  /** A paged update settles its rows first, and names them by every key, as a paged delete does. */
+  it('updates the page it settled on', async () => {
+    await pool.insertMany(Attempt, [
+      { studentId: 4, task: 'lab', score: 'D' },
+      { studentId: 5, task: 'lab', score: 'D' },
+    ]);
+
+    const changes = await pool.updateMany(
+      Attempt,
+      { $where: { task: 'lab' }, $sort: { studentId: -1 }, $limit: 1 },
+      { score: 'E' },
+    );
+
+    expect(changes).toBe(1);
+    const founds = await pool.findMany(Attempt, { $where: { task: 'lab' }, $sort: { studentId: 1 } });
+    expect(founds.map((it) => [it.studentId, it.score])).toEqual([
+      [4, 'D'],
+      [5, 'E'],
+    ]);
+  });
 });
 
 describe('addressing a composite primary key', () => {
@@ -172,14 +239,128 @@ describe('addressing a composite primary key', () => {
 describe('a composite primary key in DDL', () => {
   const ddl = new SqlSchemaGenerator(new PostgresDialect()).generateCreateSchema([Enrolment]).join('\n');
 
-  it('declares every key in one table-level PRIMARY KEY', () => {
-    expect(ddl).toContain('PRIMARY KEY ("studentId", "courseId")');
+  it('declares every key in one named table-level PRIMARY KEY', () => {
+    expect(ddl).toContain('CONSTRAINT "Enrolment__studentId_courseId_pk" PRIMARY KEY ("studentId", "courseId")');
   });
 
   /** Auto-increment defaults on a sole integer key; on a composite it would make each column serial. */
   it('leaves the columns alone rather than making each one serial', () => {
     expect(ddl).toContain('"studentId" BIGINT,');
     expect(ddl).not.toContain('IDENTITY');
+  });
+
+  /**
+   * Adding one column of a composite key to a table that already has the other. The serial type is
+   * for a sole key only - one per column would make each of them a generated key - and the key itself
+   * is the table's, declared as its own constraint rather than on a column.
+   */
+  it('adds a key column as a plain one, leaving the key to the table', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+    const existing = buildSchemaAST([Enrolment]).getTable('Enrolment')!;
+    existing.columns.delete('courseId');
+    existing.primaryKey.length = 0;
+    existing.primaryKey.push(existing.columns.get('studentId')!);
+    existing.primaryKeyName = 'Enrolment_pkey'; // as introspection reports it
+
+    const statements = generator.generateAlterTable(generator.diffSchema(Enrolment, existing)!);
+
+    expect(statements).toContain('ALTER TABLE "Enrolment" ADD COLUMN "courseId" TEXT;');
+    expect(statements).toContain(
+      'ALTER TABLE "Enrolment" ADD CONSTRAINT "Enrolment__studentId_courseId_pk" PRIMARY KEY ("studentId", "courseId");',
+    );
+  });
+
+  /** A sole key still gets the serial type, and still does not declare the key on the column. */
+  it('adds a sole integer key as a serial, without declaring the key on it', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+    const existing = buildSchemaAST([Note]).getTable('Note')!;
+    existing.columns.delete('id');
+    existing.primaryKey.length = 0;
+
+    const statements = generator.generateAlterTable(generator.diffSchema(Note, existing)!);
+
+    expect(statements).toContain('ALTER TABLE "Note" ADD COLUMN "id" BIGINT GENERATED BY DEFAULT AS IDENTITY;');
+  });
+});
+
+/**
+ * Adding a second `@Id` to an entity already in the database - the upgrade the 0.42.0 guide
+ * documents. The column used to be added and the key left alone, so the table went on enforcing
+ * uniqueness on one column while uql addressed rows by two.
+ */
+describe('changing the primary key of an existing table', () => {
+  @Entity({ name: 'Member' })
+  class MemberBefore {
+    @Id({ type: Number }) userId?: number;
+    @Field({ type: String }) note?: string;
+  }
+  @Entity({ name: 'Member' })
+  class MemberAfter {
+    @Id({ type: Number }) userId?: number;
+    @Id({ type: Number }) groupId?: number;
+    @Field({ type: String }) note?: string;
+  }
+
+  /** As introspection reports it: the columns it has, under the name the engine gave the constraint. */
+  const existingTable = () => {
+    const table = buildSchemaAST([MemberBefore]).getTable('Member')!;
+    table.primaryKeyName = 'Member_pkey';
+    return table;
+  };
+
+  it('drops the old key, adds the column, then declares the new key', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+
+    expect(diff.primaryKey).toEqual({ from: ['userId'], to: ['userId', 'groupId'], fromName: 'Member_pkey' });
+    expect(generator.generateAlterTable(diff)).toEqual([
+      // The drop comes first: a column the new key names does not exist yet, and the old key has to
+      // be gone before the table can take another.
+      'ALTER TABLE "Member" DROP CONSTRAINT "Member_pkey";',
+      'ALTER TABLE "Member" ADD COLUMN "groupId" BIGINT;',
+      'ALTER TABLE "Member" ADD CONSTRAINT "Member__userId_groupId_pk" PRIMARY KEY ("userId", "groupId");',
+    ]);
+  });
+
+  /** MySQL names every table's key `PRIMARY`, so its drop takes no name at all. */
+  it('drops by shape rather than by name where the engine has no name to give', () => {
+    const generator = new SqlSchemaGenerator(new MySqlDialect());
+    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+    expect(generator.generateAlterTable(diff)[0]).toBe('ALTER TABLE `Member` DROP PRIMARY KEY;');
+  });
+
+  /**
+   * The whole reason the comparison is by columns: the engine named the constraint on every table
+   * that already exists, so matching on names would rewrite every one of them on the first migration
+   * after upgrading.
+   */
+  it('says nothing about a key whose columns are unchanged, whatever it is called', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+    const table = buildSchemaAST([MemberBefore]).getTable('Member')!;
+    table.primaryKeyName = 'some_legacy_name';
+
+    expect(generator.diffSchema(MemberBefore, table)).toBeUndefined();
+  });
+
+  it('reverses itself, restoring the key under the name the database had for it', () => {
+    const generator = new SqlSchemaGenerator(new PostgresDialect());
+    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+
+    expect(generator.generateAlterTableDown(diff)).toEqual([
+      'ALTER TABLE "Member" DROP CONSTRAINT "Member__userId_groupId_pk";',
+      'ALTER TABLE "Member" DROP COLUMN "groupId";',
+      'ALTER TABLE "Member" ADD CONSTRAINT "Member_pkey" PRIMARY KEY ("userId");',
+    ]);
+  });
+
+  /** SQLite's only route is rebuilding the table, so it refuses by name rather than emitting DDL. */
+  it('refuses on an engine that cannot alter a key at all', () => {
+    const generator = new SqlSchemaGenerator(new SqliteDialect());
+    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+
+    expect(() => generator.generateAlterTable(diff)).toThrow(
+      /Cannot change the primary key of "Member" - this database has no ALTER for it/,
+    );
   });
 });
 

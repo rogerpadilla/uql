@@ -176,7 +176,7 @@ describe('DriftDetector', () => {
       actual.addTable(table2);
 
       expected.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table1,
         entries: [{ column: 'email' }],
         unique: true,
@@ -204,14 +204,14 @@ describe('DriftDetector', () => {
       actual.addTable(table2);
 
       expected.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table1,
         entries: [{ column: 'email' }],
         unique: true,
       });
       // The same name over the same column, but the database's is not unique.
       actual.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table2,
         entries: [{ column: 'email' }],
         unique: false,
@@ -220,7 +220,7 @@ describe('DriftDetector', () => {
       const report = detectDrift(expected, actual, { checkIndexes: true });
 
       const drift = report.drifts.find((d) => d.type === 'index_mismatch');
-      expect(drift?.index).toBe('idx_email');
+      expect(drift?.index).toBe('email_idx');
       expect(drift?.details).toContain('unique');
     });
 
@@ -240,7 +240,7 @@ describe('DriftDetector', () => {
       actual.addTable(posts);
 
       expected.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -288,7 +288,7 @@ describe('DriftDetector', () => {
       actual.addTable(table2);
 
       actual.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table2,
         entries: [{ column: 'email' }],
         unique: true,
@@ -315,7 +315,7 @@ describe('DriftDetector', () => {
       actual.addTable(posts);
 
       actual.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -426,11 +426,11 @@ describe('DriftDetector', () => {
       const actual = new SchemaAST();
       const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
       expected.addTable(t1);
-      expected.addIndex({ name: 'idx_1', table: t1, entries: [], unique: false });
+      expected.addIndex({ name: '1_idx', table: t1, entries: [], unique: false });
 
       const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
       actual.addTable(t2);
-      actual.addIndex({ name: 'idx_2', table: t2, entries: [], unique: false });
+      actual.addIndex({ name: '2_idx', table: t2, entries: [], unique: false });
 
       const report = detectDrift(expected, actual);
       expect(report.drifts.some((d) => d.type === 'missing_index')).toBe(true);
@@ -443,7 +443,7 @@ describe('DriftDetector', () => {
       const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]);
       expected.addTable(t1);
       expected.addRelationship({
-        name: 'fk_1',
+        name: '1_fk',
         type: 'ManyToOne',
         from: { table: t1, columns: [t1.columns.get('role_id')!] },
         to: { table: t1, columns: [t1.columns.get('id')!] },
@@ -452,7 +452,7 @@ describe('DriftDetector', () => {
       const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'dept_id' }]);
       actual.addTable(t2);
       actual.addRelationship({
-        name: 'fk_2',
+        name: '2_fk',
         type: 'ManyToOne',
         from: { table: t2, columns: [t2.columns.get('dept_id')!] },
         to: { table: t2, columns: [t2.columns.get('id')!] },
@@ -468,7 +468,7 @@ describe('DriftDetector', () => {
       const actual = new SchemaAST();
       const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
       expected.addTable(t1);
-      expected.addIndex({ name: 'idx_1', table: t1, entries: [], unique: false });
+      expected.addIndex({ name: '1_idx', table: t1, entries: [], unique: false });
 
       actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]));
 
@@ -482,7 +482,7 @@ describe('DriftDetector', () => {
       const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]);
       expected.addTable(t1);
       expected.addRelationship({
-        name: 'fk_1',
+        name: '1_fk',
         type: 'ManyToOne',
         from: { table: t1, columns: [t1.columns.get('role_id')!] },
         to: { table: t1, columns: [t1.columns.get('id')!] },

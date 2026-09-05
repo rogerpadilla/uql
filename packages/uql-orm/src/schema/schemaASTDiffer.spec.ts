@@ -143,13 +143,18 @@ describe('SchemaASTDiffer', () => {
       expect(diff.hasDifferences).toBe(true);
     });
 
-    it('should detect auto-increment change', () => {
+    /**
+     * No engine turns a column into an identity, or out of one, without rewriting the table, and
+     * there is no DDL here that does it - so reporting the difference could only ever produce drift
+     * nothing settles, and the statements emitted for it did not change it either.
+     */
+    it('should not report an auto-increment change it has no way to settle', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();
       source.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, isAutoIncrement: true }]));
       target.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, isAutoIncrement: false }]));
-      const result = diffSchemas(source, target);
-      expect(result.columnDiffs[0].description).toContain('autoIncrement: false → true');
+
+      expect(diffSchemas(source, target).columnDiffs).toEqual([]);
     });
 
     it('should detect default value changes', () => {
@@ -264,7 +269,7 @@ describe('SchemaASTDiffer', () => {
       ]);
       const emailColumn = sourceTable.columns.get('email');
       source.addIndex({
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: sourceTable,
         entries: [{ column: 'email' }],
         unique: true,
@@ -282,7 +287,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
       expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.name === 'idx_users_email' && i.type === 'create')).toBe(true);
+      expect(diff.indexDiffs.some((i) => i.name === 'users__email_idx' && i.type === 'create')).toBe(true);
     });
 
     it('should detect indexes to drop', () => {
@@ -300,7 +305,7 @@ describe('SchemaASTDiffer', () => {
       ]);
       const targetEmailColumn = targetTable.columns.get('email');
       target.addIndex({
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: targetTable,
         entries: [{ column: 'email' }],
         unique: true,
@@ -313,7 +318,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
       expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.name === 'idx_users_email' && i.type === 'drop')).toBe(true);
+      expect(diff.indexDiffs.some((i) => i.name === 'users__email_idx' && i.type === 'drop')).toBe(true);
     });
 
     it('should detect altered index', () => {
@@ -327,14 +332,14 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table2);
 
       source.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table1,
         entries: [{ column: 'email' }],
         unique: true,
       });
 
       target.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table2,
         entries: [{ column: 'email' }],
         unique: false, // Changed uniqueness
@@ -356,14 +361,14 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table2);
 
       source.addIndex({
-        name: 'idx_unique',
+        name: 'unique_idx',
         table: table1,
         entries: [{ column: 'email' }],
         unique: true,
       });
 
       target.addIndex({
-        name: 'idx_unique',
+        name: 'unique_idx',
         table: table2,
         // Changed column
         entries: [{ column: 'login' }],
@@ -386,7 +391,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table2);
 
       source.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table1,
         entries: [{ column: 'email' }],
         unique: true,
@@ -394,7 +399,7 @@ describe('SchemaASTDiffer', () => {
       });
 
       target.addIndex({
-        name: 'idx_email',
+        name: 'email_idx',
         table: table2,
         entries: [{ column: 'email' }],
         unique: true,
@@ -423,7 +428,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(posts);
 
       source.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -433,7 +438,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target, { compareRelationships: true });
 
       expect(diff.hasDifferences).toBe(true);
-      expect(diff.relationshipDiffs.some((r) => r.name === 'fk_posts_users' && r.type === 'create')).toBe(true);
+      expect(diff.relationshipDiffs.some((r) => r.name === 'posts_users_fk' && r.type === 'create')).toBe(true);
     });
 
     it('should detect relationships to drop', () => {
@@ -452,7 +457,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(posts);
 
       target.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [posts.columns.get('author_id')!] },
         to: { table: users, columns: [users.columns.get('id')!] },
@@ -462,7 +467,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target, { compareRelationships: true });
 
       expect(diff.hasDifferences).toBe(true);
-      expect(diff.relationshipDiffs.some((r) => r.name === 'fk_posts_users' && r.type === 'drop')).toBe(true);
+      expect(diff.relationshipDiffs.some((r) => r.name === 'posts_users_fk' && r.type === 'drop')).toBe(true);
     });
 
     it('should detect relationship action changes', () => {
@@ -482,7 +487,7 @@ describe('SchemaASTDiffer', () => {
       const sourceAuthor = posts.columns.get('author_id');
       const sourceId = users.columns.get('id');
       source.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [sourceAuthor!] },
         to: { table: users, columns: [sourceId!] },
@@ -493,7 +498,7 @@ describe('SchemaASTDiffer', () => {
       const targetAuthor = posts.columns.get('author_id');
       const targetId = users.columns.get('id');
       target.addRelationship({
-        name: 'fk_posts_users',
+        name: 'posts_users_fk',
         type: 'ManyToOne',
         from: { table: posts, columns: [targetAuthor!] },
         to: { table: users, columns: [targetId!] },
@@ -514,14 +519,14 @@ describe('SchemaASTDiffer', () => {
       source.addTable(t1);
       target.addTable(t2);
       const idx1 = {
-        name: 'idx_email',
+        name: 'email_idx',
         table: t1,
         columns: [t1.columns.get('email')!],
         entries: [{ column: 'email' }],
         unique: true,
       };
       const idx2 = {
-        name: 'idx_email',
+        name: 'email_idx',
         table: t2,
         columns: [t2.columns.get('email')!],
         entries: [{ column: 'email' }],
@@ -541,13 +546,13 @@ describe('SchemaASTDiffer', () => {
       source.addTable(t1);
       target.addTable(t2);
       const rel1 = {
-        name: 'fk_1',
+        name: '1_fk',
         from: { table: t1, columns: [t1.columns.get('id')!] },
         to: { table: t1, columns: [t1.columns.get('id')!] },
         onDelete: 'CASCADE',
       };
       const rel2 = {
-        name: 'fk_1',
+        name: '1_fk',
         from: { table: t2, columns: [t2.columns.get('id')!] },
         to: { table: t2, columns: [t2.columns.get('id')!] },
         onDelete: 'CASCADE',
@@ -568,13 +573,13 @@ describe('SchemaASTDiffer', () => {
 
       // One has explicit 'NO ACTION', other has undefined (which defaults to 'NO ACTION')
       const rel1 = {
-        name: 'fk_1',
+        name: '1_fk',
         from: { table: t1, columns: [t1.columns.get('id')!] },
         to: { table: t1, columns: [t1.columns.get('id')!] },
         onDelete: 'NO ACTION',
       };
       const rel2 = {
-        name: 'fk_1',
+        name: '1_fk',
         from: { table: t2, columns: [t2.columns.get('id')!] },
         to: { table: t2, columns: [t2.columns.get('id')!] },
         // onDelete undefined
@@ -651,14 +656,14 @@ describe('SchemaASTDiffer', () => {
       sourceSchema.addTable(sourceTable);
       targetSchema.addTable(targetTable);
       sourceSchema.addIndex({
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: sourceTable,
         entries: [],
         unique: false,
         ...source,
       });
       targetSchema.addIndex({
-        name: 'idx_users_email',
+        name: 'users__email_idx',
         table: targetTable,
         entries: [],
         unique: false,

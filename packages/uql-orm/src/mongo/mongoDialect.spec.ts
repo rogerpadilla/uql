@@ -1370,6 +1370,28 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.columnOf(meta, 'grade')).toBe('grade');
   }
 
+  /**
+   * The one path whose columns are never id columns, so `columnOf` never sees the key: a many-to-one
+   * names its own foreign key on this side and `_id` on the other. Left to itself it joined the first
+   * FK column against `_id` and gathered the rows of every key agreeing on that column.
+   */
+  shouldRefuseAJoinToACompositeTarget() {
+    @Entity()
+    class Enrolment {
+      @Id({ type: Number }) studentId?: number;
+      @Id({ type: String }) courseId?: string;
+    }
+    @Entity()
+    class Attendance {
+      @Id({ type: Number }) id?: number;
+      @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+    }
+
+    expect(() => this.dialect.aggregationPipeline(Attendance, { $where: { enrolment: { studentId: 1 } } })).toThrow(
+      /composite primary key \(studentId, courseId\), which MongoDB does not support/,
+    );
+  }
+
   /** `$unset` is a later stage than `$set`, so it wins on a shared path - as it does in SQL. */
   shouldUsePipelineForSetAndUnsetOnSamePath() {
     expect(this.dialect.getUpdateFilter({ kind: { $set: { public: 1 }, $unset: ['public'] } })).toEqual([

@@ -3,6 +3,10 @@ import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
+  derivedCheckName,
+  derivedForeignKeyName,
+  derivedIndexName,
+  derivedPrimaryKeyName,
   escapeSqlId,
   isPrimaryKey,
   obtainAttrsPaths,
@@ -197,6 +201,62 @@ it('escapeSqlId', () => {
   expect(escapeSqlId('schema.table', '`', false, true)).toBe('`schema`.`table`.');
   expect(escapeSqlId('')).toBe('');
   expect(escapeSqlId(undefined as any)).toBe('');
+});
+
+describe('derived constraint names', () => {
+  it('names each kind after the table and its columns, kind last', () => {
+    expect(derivedIndexName('Order', ['total'])).toBe('Order__total_idx');
+    expect(derivedIndexName('User', ['email'], true)).toBe('User__email_uk');
+    expect(derivedForeignKeyName('Order', ['customerId'])).toBe('Order__customerId_fk');
+    expect(derivedPrimaryKeyName('Enrolment', ['studentId', 'courseId'])).toBe('Enrolment__studentId_courseId_pk');
+    expect(derivedCheckName('Order', 1)).toBe('Order__1_ck');
+  });
+
+  /**
+   * Postgres and SQLite name indexes in one namespace across the whole database rather than per
+   * table, so the boundary between the table and its columns is the one that has to be unambiguous.
+   * A single underscore let two different tables reduce to the same name.
+   */
+  it('keeps two tables apart where one name is a prefix of another plus a column', () => {
+    expect(derivedIndexName('user_profile', ['id'])).toBe('user_profile__id_idx');
+    expect(derivedIndexName('user', ['profile_id'])).toBe('user__profile_id_idx');
+    expect(derivedIndexName('user_profile', ['id'])).not.toBe(derivedIndexName('user', ['profile_id']));
+  });
+
+  /** Postgres truncates at 63 bytes and MySQL errors at 64, so nothing may reach them longer. */
+  it('keeps a name within the length every engine accepts', () => {
+    const name = derivedPrimaryKeyName('ProductVariantInventory', [
+      'warehouseIdentifier',
+      'variantIdentifier',
+      'locationIdentifier',
+    ]);
+    expect(name.length).toBeLessThanOrEqual(63);
+  });
+
+  it('derives the same shortened name every time, so a later run still recognises it', () => {
+    const columns = ['warehouseIdentifier', 'variantIdentifier', 'locationIdentifier'];
+    expect(derivedPrimaryKeyName('ProductVariantInventory', columns)).toBe(
+      derivedPrimaryKeyName('ProductVariantInventory', columns),
+    );
+  });
+
+  /**
+   * Truncating alone would collide here - the two differ only past the cut - and a collision means
+   * one constraint silently replacing another.
+   */
+  it('keeps two long names apart where a plain truncation would merge them', () => {
+    const table = 'ProductVariantInventoryAllocation';
+    const first = derivedIndexName(table, ['warehouseIdentifier', 'variantIdentifierAlpha']);
+    const second = derivedIndexName(table, ['warehouseIdentifier', 'variantIdentifierOmega']);
+
+    expect(first).not.toBe(second);
+    expect(first.length).toBeLessThanOrEqual(63);
+    expect(second.length).toBeLessThanOrEqual(63);
+  });
+
+  it('leaves a name that already fits exactly as it is', () => {
+    expect(derivedIndexName('Order', ['total'])).not.toMatch(/[0-9a-f]{6}$/);
+  });
 });
 
 describe('escapeSqlId - identifier injection hardening', () => {

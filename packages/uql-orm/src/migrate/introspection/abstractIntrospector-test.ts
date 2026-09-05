@@ -119,7 +119,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
       t.string('region', { length: 100 }).notNullable();
     });
     await builder.createIndex(INTROSPECT_TABLES.COMPOSITE_UNIQUE, ['code', 'region'], {
-      name: 'uq_code_region',
+      name: 'code_region_uk',
       unique: true,
     });
 
@@ -130,8 +130,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
     });
 
     // Indexes
-    await builder.createIndex(INTROSPECT_TABLES.B, ['col1', 'col2'], { name: 'idx_test_b_cols' });
-    await builder.createIndex(INTROSPECT_TABLES.C, ['priority'], { name: 'idx_test_c_priority' });
+    await builder.createIndex(INTROSPECT_TABLES.B, ['col1', 'col2'], { name: 'test_b_cols_idx' });
+    await builder.createIndex(INTROSPECT_TABLES.C, ['priority'], { name: 'test_c_priority_idx' });
   }
 
   /**
@@ -249,7 +249,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectIndexes() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
-    const index = this.getIndex(schema, 'idx_test_b_cols');
+    const index = this.getIndex(schema, 'test_b_cols_idx');
     expect(index.entries.map((entry) => entry.column)).toEqual(['col1', 'col2']);
     expect(index.unique).toBe(false);
   }
@@ -257,7 +257,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectSingleColumnIndex() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
 
-    const index = this.getIndex(schema, 'idx_test_c_priority');
+    const index = this.getIndex(schema, 'test_c_priority_idx');
     expect(index.entries.map((entry) => entry.column)).toEqual(['priority']);
   }
 
@@ -496,11 +496,11 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     expect(ast.indexes.length).toBeGreaterThanOrEqual(2);
 
-    const idxBCols = ast.indexes.find((i) => i.name === 'idx_test_b_cols');
+    const idxBCols = ast.indexes.find((i) => i.name === 'test_b_cols_idx');
     expect(idxBCols).toBeDefined();
     expect(idxBCols?.entries.map((entry) => entry.column)).toEqual(['col1', 'col2']);
 
-    const idxCPriority = ast.indexes.find((i) => i.name === 'idx_test_c_priority');
+    const idxCPriority = ast.indexes.find((i) => i.name === 'test_c_priority_idx');
     expect(idxCPriority).toBeDefined();
     expect(idxCPriority?.entries.map((entry) => entry.column)).toEqual(['priority']);
   }

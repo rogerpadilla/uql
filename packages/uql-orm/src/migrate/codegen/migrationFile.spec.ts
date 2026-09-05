@@ -25,10 +25,10 @@ describe('emitSqlRunCall', () => {
 
   it('emitSqlRunCall per statement: index separate from table (#87 style)', () => {
     const table = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT\n);';
-    const index = 'CREATE INDEX `idx_Article_title` ON `Article` (`title`);';
+    const index = 'CREATE INDEX `Article_title_idx` ON `Article` (`title`);';
     const block = emitSqlRunCalls([table, index]);
     expect(block).toContain('await querier.run("CREATE TABLE `Article`');
-    expect(block).toContain('await querier.run("CREATE INDEX `idx_Article_title`');
+    expect(block).toContain('await querier.run("CREATE INDEX `Article_title_idx`');
     expect(() => new vm.Script(`async function _up(querier) {\n${block}\n}`)).not.toThrow();
   });
 

@@ -7,8 +7,10 @@ import {
   isVectorCategory,
   sqlToCanonical,
 } from '../schema/canonicalType.js';
+import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import { type DiffOptions, diffTable } from '../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
   CheckSchema,
@@ -34,8 +36,8 @@ import type {
   SqlDdlGenerator,
   Type,
 } from '../type/index.js';
-import { getKeys, isAutoIncrement, qualifyName } from '../util/index.js';
-import { derivedCheckName, derivedForeignKeyName } from '../util/sql.util.js';
+import { getKeys, isAutoIncrement, isSoleIdField, qualifyName } from '../util/index.js';
+import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor } from './ddl/index.js';
@@ -89,8 +91,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   /**
    * Primary key type for auto-increment integer IDs
    */
-  protected get serialPrimaryKeyType(): string {
-    return this.dialect.serialPrimaryKey;
+  protected get serialType(): string {
+    return this.dialect.serialType;
   }
 
   /**
@@ -195,6 +197,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const statements: string[] = [];
     const tableName = this.escapeId(diff.tableName);
 
+    // Before the columns, because a key column being added cannot be part of the old key, and after
+    // it is dropped the table is free to take the new one below.
+    if (diff.primaryKey?.from.length) {
+      statements.push(this.generateDropPrimaryKeySql(diff.tableName, diff.primaryKey.fromName));
+    }
+
     // Add new columns
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
@@ -233,12 +241,26 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       }
     }
 
+    // Last, so every column it names exists by now.
+    if (diff.primaryKey?.to.length) {
+      statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.to));
+    }
+
     return statements;
   }
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
     const statements: string[] = [];
     const tableName = this.escapeId(diff.tableName);
+
+    // The key first, mirroring the up direction: a column the up added cannot be dropped below while
+    // the new key still names it. Restored under the name the database gave it, which is what the
+    // table had before, rather than a derived one that was never on it.
+    if (diff.primaryKey?.to.length) {
+      statements.push(
+        this.generateDropPrimaryKeySql(diff.tableName, derivedPrimaryKeyName(diff.tableName, diff.primaryKey.to)),
+      );
+    }
 
     // Reverse column additions by dropping them
     if (diff.columnsToAdd?.length) {
@@ -250,7 +272,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Reverse column alterations by restoring original schema
     if (diff.columnsToAlter?.length) {
       for (const { from } of diff.columnsToAlter) {
-        const colDef = this.generateColumnDefinitionFromSchema(from, { includePrimaryKey: false });
+        const colDef = this.generateColumnDefinitionFromSchema(from);
         const colStatements = this.generateAlterColumnStatements(diff.tableName, from, colDef);
         statements.push(...colStatements);
       }
@@ -261,6 +283,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       for (const index of diff.indexesToAdd) {
         statements.push(this.generateDropIndex(diff.tableName, index.name, diff.schema));
       }
+    }
+
+    if (diff.primaryKey?.from.length) {
+      statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.from, diff.primaryKey.fromName));
     }
 
     if (diff.columnsToDrop?.length || diff.indexesToDrop?.length) {
@@ -286,14 +312,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /**
-   * Generate a column definition from a {@link ColumnSchema}, whose type is the engine's own spelling
-   * and may already carry its precision (or even `PRIMARY KEY`, for a serial).
+   * A column definition from a {@link ColumnSchema}, whose type is already the engine's own spelling
+   * and may carry its own size.
+   *
+   * Kept apart from {@link generateColumnFromNode} rather than folded into it: a `ColumnSchema` has no
+   * `enum`, because introspection reads one back as a `CHECK` constraint and not as a property of the
+   * column, so only the node knows enough to emit that clause. Both spell the definition through
+   * {@link renderColumn}, which is the part that must not be written twice.
    */
-  public generateColumnDefinitionFromSchema(
-    column: ColumnSchema,
-    options: { includePrimaryKey?: boolean; includeUnique?: boolean } = {},
-  ): string {
-    const { includePrimaryKey = true, includeUnique = true } = options;
+  public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
     let type = column.type;
 
     if (!type.includes('(')) {
@@ -304,18 +331,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       }
     }
 
-    if (!includePrimaryKey) {
-      type = type.replace(/\s+PRIMARY\s+KEY/i, '');
-    }
-
-    // `includePrimaryKey: false` suppresses the keyword, not the fact: the column is still the primary
-    // key, so it must not pick up `NOT NULL` (implied) or `UNIQUE` (redundant) on the way out.
-    return this.renderColumn({
-      ...column,
-      type,
-      isUnique: column.isUnique && includeUnique,
-      declaresPrimaryKey: includePrimaryKey && column.isPrimaryKey,
-    });
+    return this.renderColumn({ ...column, type });
   }
 
   /**
@@ -329,16 +345,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     nullable: boolean;
     isPrimaryKey: boolean;
     isUnique: boolean;
-    declaresPrimaryKey: boolean;
     defaultValue?: unknown;
     enum?: EnumValues;
     comment?: string;
   }): string {
     let def = `${this.escapeId(column.name)} ${column.type}`;
 
-    if (column.declaresPrimaryKey && !column.type.includes('PRIMARY KEY')) {
-      def += ' PRIMARY KEY';
-    }
     if (!column.nullable && !column.isPrimaryKey) {
       def += ' NOT NULL';
     }
@@ -366,7 +378,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
 
-  public getSqlType(field: FieldMeta, fieldType?: unknown): string {
+  public getSqlType(field: FieldMeta, fieldType?: unknown, isSoleKey = field.isId === true): string {
     // If field has a reference, inherit type from the target primary key
     if (field.references) {
       const refEntity = field.references();
@@ -382,8 +394,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const canonical = this.getCanonicalType(field, fieldType);
 
     // Special case for serial primary keys
-    if (isAutoIncrement(field, field.isId === true)) {
-      return this.dialect.serialPrimaryKey;
+    if (isAutoIncrement(field, isSoleKey)) {
+      return this.dialect.serialType;
     }
 
     return this.canonicalTypeToSql(canonical);
@@ -439,93 +451,103 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   /**
    * Compare an entity with a database table node and return the differences.
    */
+  /**
+   * How this entity differs from the table the database reported, as the migrator's `SchemaDiff`.
+   *
+   * The comparison itself is {@link diffTable}, the same one drift detection runs, so the two can no
+   * longer disagree about what has changed. Only two things are this side's own: the entity becomes a
+   * table node first, and types are compared as the *engine* would store them - see `normalizeType`.
+   */
   diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
+    const tableName = this.resolveTableName(meta);
+    const schema = this.resolveSchema(meta);
 
     if (!currentTable) {
-      return {
-        tableName: this.resolveTableName(meta),
-        schema: this.resolveSchema(meta),
-        type: 'create',
-      };
+      return { tableName, schema, type: 'create' };
     }
 
-    const columnsToAdd: ColumnSchema[] = [];
-    const columnsToAlter: { from: ColumnSchema; to: ColumnSchema }[] = [];
-    const columnsToDrop: string[] = [];
-
-    const currentColumns = new Map<string, ColumnNode>(currentTable.columns);
-    const fieldKeys = getKeys(meta.fields) as FieldKey<E>[];
-
-    for (const key of fieldKeys) {
-      const field = meta.fields[key];
-      if (!field || field.virtual) continue;
-
-      const columnName = this.dialect.resolveColumnName(key, field);
-      const currentColumn = currentColumns.get(columnName);
-
-      if (!currentColumn) {
-        columnsToAdd.push(this.fieldToColumnSchema(key, field, meta));
-      } else {
-        const desiredColumn = this.fieldToColumnSchema(key, field, meta);
-        const currentColumnSchema = this.columnNodeToSchema(currentColumn);
-        if (this.columnsNeedAlteration(currentColumnSchema, desiredColumn)) {
-          columnsToAlter.push({ from: currentColumnSchema, to: desiredColumn });
-        }
-      }
-      currentColumns.delete(columnName);
+    // Keyed by the qualified name this generator resolves, which is the key the AST it just built
+    // stores the table under.
+    const desired = buildEntityAST(this, [entity]).getTable(tableName);
+    if (!desired) {
+      return undefined;
     }
 
-    for (const [name] of currentColumns) {
-      columnsToDrop.push(name);
-    }
+    // Indexes are matched here rather than by the differ, which pairs them by name so that a changed
+    // one reads as one index that altered. A migration needs the opposite: an index already in the
+    // table, under whatever name, must not be created again, and one whose shape differs is a
+    // separate index rather than a change - no engine alters an index's columns or uniqueness.
+    const tableDiff = diffTable(desired, currentTable, { ...this.diffOptions(), compareIndexes: false });
+    const indexesToAdd = this.missingIndexes(desired, currentTable);
 
-    const indexesToAdd = this.missingIndexes(entity, currentTable);
+    const columnDiffs = tableDiff?.columnDiffs ?? [];
+    const columnsToAdd = columnDiffs.flatMap((it) => (it.type === 'add' ? [this.columnNodeToSchema(it.expected)] : []));
+    const columnsToDrop = columnDiffs.flatMap((it) => (it.type === 'drop' ? [it.column] : []));
+    const columnsToAlter = columnDiffs.flatMap((it) =>
+      it.type === 'alter'
+        ? [{ from: this.columnNodeToSchema(it.actual), to: this.columnNodeToSchema(it.expected) }]
+        : [],
+    );
+    const primaryKey = tableDiff?.primaryKeyDiff && {
+      from: tableDiff.primaryKeyDiff.actual,
+      to: tableDiff.primaryKeyDiff.expected,
+      fromName: tableDiff.primaryKeyDiff.actualName,
+    };
 
     if (
-      columnsToAdd.length === 0 &&
-      columnsToAlter.length === 0 &&
-      columnsToDrop.length === 0 &&
-      indexesToAdd.length === 0
+      !columnsToAdd.length &&
+      !columnsToAlter.length &&
+      !columnsToDrop.length &&
+      !indexesToAdd.length &&
+      !primaryKey
     ) {
       return undefined;
     }
 
     return {
-      tableName: this.resolveTableName(meta),
-      schema: this.resolveSchema(meta),
+      tableName,
+      schema,
       type: 'alter',
-      columnsToAdd: columnsToAdd.length > 0 ? columnsToAdd : undefined,
-      columnsToAlter: columnsToAlter.length > 0 ? columnsToAlter : undefined,
-      columnsToDrop: columnsToDrop.length > 0 ? columnsToDrop : undefined,
-      indexesToAdd: indexesToAdd.length > 0 ? indexesToAdd : undefined,
+      primaryKey,
+      columnsToAdd: columnsToAdd.length ? columnsToAdd : undefined,
+      columnsToAlter: columnsToAlter.length ? columnsToAlter : undefined,
+      columnsToDrop: columnsToDrop.length ? columnsToDrop : undefined,
+      indexesToAdd: indexesToAdd.length ? indexesToAdd : undefined,
     };
   }
 
   /**
-   * Indexes the entity declares that the table does not have, matched by name and built the same way
-   * `CREATE TABLE` builds them, so adding an `@Index` to an entity already in the database is picked
-   * up rather than waiting for the table to be created from scratch somewhere else.
+   * What the shared differ needs from a dialect: a type as this engine would actually store it.
    *
-   * Only ever additive. An index the entity does not name is left alone: it may well have been
-   * created deliberately outside the ORM, and dropping it is a decision for a reviewed migration.
-   *
-   * A vector index is one of these like any other: MariaDB's `CREATE VECTOR INDEX ... ON t (col)`
-   * adds one to a table that already exists, which the inline `CREATE TABLE` form it also has cannot.
+   * `boolean` is `TINYINT(1)` on MySQL and `INTEGER` on SQLite, so two canonical types that differ on
+   * paper can be one column in the database. Round-tripping through the engine's own spelling is what
+   * stops every such column reporting an alteration on every sync.
    */
-  private missingIndexes<E>(entity: Type<E>, currentTable: TableNode): IndexSchema[] {
-    // Keyed by the qualified name, so a table in a schema finds itself rather than reporting that
-    // the entity declares no indexes at all.
-    const desired =
-      buildEntityAST(this, [entity]).getTable(qualifyName(currentTable.name, currentTable.schema))?.indexes ?? [];
-    const present = new Set(currentTable.indexes.map((index) => index.name));
-    return desired.filter((index) => !present.has(index.name)).map(indexNodeToSchema);
+  /**
+   * Indexes the entity declares that the table does not already have, in any shape.
+   *
+   * Additive only: an index the entity does not name may well have been created deliberately outside
+   * the ORM, and dropping it is a decision for a reviewed migration.
+   */
+  private missingIndexes(desired: TableNode, currentTable: TableNode): IndexSchema[] {
+    const present = new Set(currentTable.indexes.map(indexSignature));
+    return desired.indexes.filter((index) => !present.has(indexSignature(index))).map(indexNodeToSchema);
+  }
+
+  protected diffOptions(): DiffOptions {
+    return {
+      normalizeType: (type) => sqlToCanonical(this.canonicalTypeToSql(type)),
+      defaultsEqual: (expected, actual) => this.isDefaultValueEqual(actual, expected),
+    };
   }
 
   private columnNodeToSchema(col: ColumnNode): ColumnSchema {
     return {
       name: col.name,
-      type: this.canonicalTypeToSql(col.type),
+      // The same rule `generateColumnFromNode` renders by, so a column added to an existing table
+      // gets the type it would have had if the table were created from scratch.
+      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType : this.canonicalTypeToSql(col.type),
       nullable: col.nullable,
       defaultValue: col.defaultValue,
       isPrimaryKey: col.isPrimaryKey,
@@ -536,64 +558,14 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /**
-   * Convert field options to ColumnSchema. Both sides of a diff are the engine's SQL spelling: what it
-   * would create for this field, against what it reported for the existing column.
-   */
-  protected fieldToColumnSchema<E>(fieldKey: string, field: FieldOptions, meta: EntityMeta<E>): ColumnSchema {
-    const isPrimaryKey = field.isId === true;
-
-    return {
-      name: this.dialect.resolveColumnName(fieldKey, field),
-      type: this.getSqlType(field, field.type),
-      nullable: field.nullable ?? !isPrimaryKey,
-      defaultValue: field.defaultValue,
-      isPrimaryKey,
-      isAutoIncrement: isAutoIncrement(field, isPrimaryKey),
-      isUnique: field.unique ?? false,
-      length: field.length,
-      precision: field.precision,
-      scale: field.scale,
-      comment: field.comment,
-    };
-  }
-
-  /**
-   * Check if two columns differ enough to require alteration
-   */
-  protected columnsNeedAlteration(current: ColumnSchema, desired: ColumnSchema): boolean {
-    if (current.isPrimaryKey && desired.isPrimaryKey) {
-      return false;
-    }
-
-    if (current.isPrimaryKey !== desired.isPrimaryKey) return true;
-    if (current.nullable !== desired.nullable) return true;
-    if (current.isUnique !== desired.isUnique) return true;
-
-    if (!this.isTypeEqual(current, desired)) return true;
-    if (!this.isDefaultValueEqual(current.defaultValue, desired.defaultValue)) return true;
-
-    return false;
-  }
-
-  /**
-   * Whether two column types are the same *as this engine stores them*.
-   *
-   * Both sides are SQL spellings, parsed back to canonical so that `INT` and `INTEGER`, or `DATETIME`
-   * and `TIMESTAMP`, do not read as a change. Do not "simplify" this into comparing the entity's
-   * canonical type against the column's: several canonical types share one storage type per engine
-   * (`boolean` is `TINYINT(1)` on MySQL and `INTEGER` on SQLite), so that comparison reports an
-   * alteration for those columns on every single sync.
-   */
-  protected isTypeEqual(current: ColumnSchema, desired: ColumnSchema): boolean {
-    return areTypesEqual(sqlToCanonical(current.type), sqlToCanonical(desired.type));
-  }
-
-  /**
    * Compare two default values for equality
    */
   protected isDefaultValueEqual(current: unknown, desired: unknown): boolean {
     if (current === desired) return true;
-    if (current === undefined || desired === undefined) return current === desired;
+    // Both spellings of "no default" are the same fact, and engines disagree on which they report:
+    // MariaDB says `null` where MySQL says nothing at all. Reading them as different values asked to
+    // `MODIFY` every nullable column, on every sync, forever.
+    if (current == null || desired == null) return current == null && desired == null;
 
     const normalize = (value: unknown): string => {
       if (value === null) return 'null';
@@ -631,9 +603,17 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       columns.push(colDef);
     }
 
-    if (table.primaryKey.length > 1) {
-      const pkCols = table.primaryKey.map((c) => this.escapeId(c.name)).join(', ');
-      constraints.push(`PRIMARY KEY (${pkCols})`);
+    // Every key, of any width, as one named constraint beside the checks and foreign keys - so a
+    // later `DROP` has something to name. The exception is a dialect whose serial type states the key
+    // itself (SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT`, which cannot be split): there the column
+    // has already declared it, and saying it again is a second primary key.
+    const declaredByColumn =
+      this.dialect.serialDeclaresPrimaryKey && table.primaryKey.length === 1 && table.primaryKey[0].isAutoIncrement;
+    if (table.primaryKey.length && !declaredByColumn) {
+      const pkColumns = table.primaryKey.map((c) => c.name);
+      const pkName = table.primaryKeyName ?? derivedPrimaryKeyName(table.name, pkColumns);
+      const pkCols = pkColumns.map((c) => this.escapeId(c)).join(', ');
+      constraints.push(`CONSTRAINT ${this.escapeId(pkName)} PRIMARY KEY (${pkCols})`);
     }
 
     (table.checks ?? []).forEach((check, i) => {
@@ -691,8 +671,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   protected generateColumnFromNode(col: ColumnNode): string {
     return this.renderColumn({
       ...col,
-      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialPrimaryKeyType : this.canonicalTypeToSql(col.type),
-      declaresPrimaryKey: col.isPrimaryKey && col.table.primaryKey.length === 1,
+      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType : this.canonicalTypeToSql(col.type),
     });
   }
 
@@ -763,6 +742,51 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   generateDropForeignKeySql(tableName: string, constraintName: string): string {
     return `ALTER TABLE ${this.escapeId(tableName)} ${this.dialect.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
+  }
+
+  /**
+   * `ALTER TABLE ... ADD CONSTRAINT <name> PRIMARY KEY (...)`, the other half of
+   * {@link generateDropPrimaryKeySql}. Refused where the engine cannot alter a key at all, by name,
+   * rather than emitting DDL it will reject.
+   */
+  generateAddPrimaryKeySql(tableName: string, columns: readonly string[], name?: string): string {
+    this.assertPrimaryKeyAlterable(tableName);
+    const constraintName = this.escapeId(name ?? derivedPrimaryKeyName(tableName, columns));
+    const pkCols = columns.map((c) => this.escapeId(c)).join(', ');
+    return `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} PRIMARY KEY (${pkCols});`;
+  }
+
+  /**
+   * Drops whatever key the table has.
+   *
+   * `constraintName` has to be what the constraint is *actually* called: the name introspection
+   * reported for a key the database already had, or the derived one for a key this generator itself
+   * added, which is what reversing a migration drops. Guessing either way names nothing. MySQL takes
+   * no name at all - a table's key is always `PRIMARY` there.
+   */
+  generateDropPrimaryKeySql(tableName: string, constraintName?: string): string {
+    this.assertPrimaryKeyAlterable(tableName);
+    const table = this.escapeId(tableName);
+    if (this.dialect.dropPrimaryKeySyntax === 'DROP PRIMARY KEY') {
+      return `ALTER TABLE ${table} DROP PRIMARY KEY;`;
+    }
+    if (!constraintName) {
+      throw new TypeError(
+        `Cannot drop the primary key of "${tableName}": ${this.dialect} names the constraint, and ` +
+          'introspection did not report a name for it.',
+      );
+    }
+    return `ALTER TABLE ${table} DROP CONSTRAINT ${this.escapeId(constraintName)};`;
+  }
+
+  private assertPrimaryKeyAlterable(tableName: string): void {
+    if (this.features.primaryKeyAlter) {
+      return;
+    }
+    throw new TypeError(
+      `${this.dialect}: Cannot change the primary key of "${tableName}" - this database has no ALTER ` +
+        'for it. Recreate the table in a written migration.',
+    );
   }
 }
 

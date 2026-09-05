@@ -46,6 +46,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     dropTableCascade: false,
     renameColumn: true,
     foreignKeyAlter: true,
+    primaryKeyAlter: true,
     columnComment: true,
     vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
@@ -81,7 +82,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     super.pager(ctx, opts);
   }
 
-  override readonly serialPrimaryKey = 'BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY';
+  override readonly serialType = 'BIGINT UNSIGNED AUTO_INCREMENT';
 
   override readonly escapeIdChar = '`';
 
@@ -96,6 +97,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   override readonly isolationLevelStrategy = 'set-before';
 
   override readonly dropForeignKeySyntax = 'DROP FOREIGN KEY';
+
+  override readonly dropPrimaryKeySyntax = 'DROP PRIMARY KEY';
 
   override readonly dropIndexSyntax = 'on-table';
 

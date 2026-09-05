@@ -13,7 +13,7 @@ import { buildSqlQuerierMigrationModule, emitSqlRunCalls } from './migrationFile
 /** SQLite/LibSQL DDL with backticks - would break if emitted inside an outer template literal (#86). */
 const createTableSql =
   'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);';
-const createIndexSql = 'CREATE INDEX `idx_Article_title` ON `Article` (`title`);';
+const createIndexSql = 'CREATE INDEX `Article_title_idx` ON `Article` (`title`);';
 
 async function assertArticleTableAndIndex(querier: SqlQuerier): Promise<void> {
   const tables = await querier.all<{ name: string }>(
@@ -22,7 +22,7 @@ async function assertArticleTableAndIndex(querier: SqlQuerier): Promise<void> {
   expect(tables).toHaveLength(1);
 
   const indexes = await querier.all<{ name: string }>(
-    "SELECT name FROM sqlite_master WHERE type='index' AND name='idx_Article_title'",
+    "SELECT name FROM sqlite_master WHERE type='index' AND name='Article_title_idx'",
   );
   expect(indexes).toHaveLength(1);
 }
@@ -53,7 +53,7 @@ describe('generated SQL migration module (integration)', () => {
     async ({ createPool }) => {
       const upInner = emitSqlRunCalls([createTableSql, createIndexSql]);
       const downInner = emitSqlRunCalls([
-        'DROP INDEX IF EXISTS `idx_Article_title`;',
+        'DROP INDEX IF EXISTS `Article_title_idx`;',
         'DROP TABLE IF EXISTS `Article`;',
       ]);
 

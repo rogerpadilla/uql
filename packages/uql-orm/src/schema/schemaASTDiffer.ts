@@ -9,13 +9,15 @@
  */
 
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
-import { describeIndexDifferences, type IndexFacet } from './indexDifferences.js';
+import { describeIndexDifferences, type IndexFacet, indexNameStem } from './indexDifferences.js';
 import type { SchemaAST } from './schemaAST.js';
+import type { CanonicalType } from './types.js';
 import type {
   ColumnDiff,
   ColumnNode,
   IndexDiff,
   IndexNode,
+  PrimaryKeyDiff,
   RelationshipDiff,
   RelationshipNode,
   SchemaDiffResult,
@@ -38,6 +40,23 @@ export interface DiffOptions {
   ignoreCase?: boolean;
   /** Tables to exclude from comparison */
   excludeTables?: string[];
+  /**
+   * A type as the engine would actually store it, for the caller that has a dialect.
+   *
+   * Several canonical types share one storage type per engine - a `boolean` is `TINYINT(1)` on MySQL
+   * and `INTEGER` on SQLite - so comparing them canonically reports an alteration on every sync for
+   * those columns. Passing both sides through the engine first is what settles that, and it is the
+   * only thing here a dialect is needed for, so it arrives as a function rather than as a dependency.
+   */
+  normalizeType?: (type: CanonicalType) => CanonicalType;
+  /**
+   * Whether two defaults are the same value, for the caller that has a dialect.
+   *
+   * A database reprints a default from its parse tree, so `'active'` comes back as
+   * `'active'::character varying` on Postgres and a symbolic `now()` matches no spelling of
+   * `CURRENT_TIMESTAMP`. Undoing that needs the dialect that wrote it, so it arrives as a function.
+   */
+  defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
 }
 
 /**
@@ -47,6 +66,8 @@ const DEFAULT_OPTIONS: Required<DiffOptions> = {
   compareIndexes: true,
   indexFacets: new Set(),
   compareRelationships: true,
+  normalizeType: (type) => type,
+  defaultsEqual: (expected, actual) => normalizeDefault(expected) === normalizeDefault(actual),
   ignoreCase: false,
   excludeTables: [],
 };
@@ -105,6 +126,7 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     .filter((tableDiff) => tableDiff !== undefined);
   const columnDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.columnDiffs ?? []);
   const indexDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.indexDiffs ?? []);
+  const primaryKeyDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.primaryKeyDiff ?? []);
   // Relationships span tables, so they are compared over the whole schema rather than per table.
   const relationshipDiffs = opts.compareRelationships ? diffRelationships(source, target, opts) : [];
 
@@ -113,8 +135,12 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     tablesToDrop.length > 0 ||
     tablesToAlter.length > 0 ||
     relationshipDiffs.length > 0 ||
-    indexDiffs.length > 0;
-  const hasBreakingChanges = tablesToDrop.length > 0 || columnDiffs.some((d) => d.isBreaking);
+    indexDiffs.length > 0 ||
+    primaryKeyDiffs.length > 0;
+  // Rewriting a key drops a constraint and rebuilds an index over the whole table, and fails outright
+  // where its new columns are null on rows that already exist. Breaking by any measure.
+  const hasBreakingChanges =
+    tablesToDrop.length > 0 || primaryKeyDiffs.length > 0 || columnDiffs.some((d) => d.isBreaking);
 
   return {
     tablesToCreate,
@@ -122,6 +148,7 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     tablesToAlter,
     columnDiffs,
     indexDiffs,
+    primaryKeyDiffs,
     relationshipDiffs,
     hasDifferences,
     hasBreakingChanges,
@@ -130,16 +157,38 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
 
 /**
  * Compare two tables and return the differences.
+ *
+ * Exported because it is also how a migration is planned: the generator diffs one entity's table
+ * against the one the database reported, then projects the result into a `SchemaDiff`. One
+ * comparison serves both, so drift and migrations can no longer disagree about what has changed.
  */
-function diffTable(source: TableNode, target: TableNode, opts: Required<DiffOptions>): TableDiff | undefined {
+export function diffTable(source: TableNode, target: TableNode, options: DiffOptions = {}): TableDiff | undefined {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
   const columnDiffs = diffTableColumns(source, target, opts);
   const indexDiffs = opts.compareIndexes ? diffTableIndexes(source, target, opts) : [];
+  const primaryKeyDiff = diffPrimaryKey(source, target);
 
-  if (columnDiffs.length === 0 && indexDiffs.length === 0) {
+  if (columnDiffs.length === 0 && indexDiffs.length === 0 && !primaryKeyDiff) {
     return undefined;
   }
 
-  return { name: source.name, type: 'alter', columnDiffs, indexDiffs };
+  return { name: source.name, type: 'alter', columnDiffs, indexDiffs, primaryKeyDiff };
+}
+
+/**
+ * The two keys, where they hold different columns.
+ *
+ * Compared by columns and in order. Not by name: the engine named the constraint on every table that
+ * already exists, so matching on one would report every table as drifted the moment the convention
+ * that derives names changes.
+ */
+function diffPrimaryKey(source: TableNode, target: TableNode): PrimaryKeyDiff | undefined {
+  const expected = source.primaryKey.map((column) => column.name);
+  const actual = target.primaryKey.map((column) => column.name);
+  if (expected.length === actual.length && expected.every((column, i) => column === actual[i])) {
+    return undefined;
+  }
+  return { table: source.name, expected, actual, actualName: target.primaryKeyName };
 }
 
 /**
@@ -168,7 +217,7 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
       description: `Drop column "${column.name}"`,
     })),
     ...matched
-      .map(([sourceColumn, targetColumn]) => diffColumn(source.name, sourceColumn, targetColumn))
+      .map(([sourceColumn, targetColumn]) => diffColumn(source.name, sourceColumn, targetColumn, opts))
       .filter((diff) => diff !== undefined),
   ];
 }
@@ -179,7 +228,7 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
 function diffTableIndexes(source: TableNode, target: TableNode, opts: Required<DiffOptions>): IndexDiff[] {
   const normalizeName = nameNormalizer(opts);
   const { created, dropped, matched } = matchByKey(source.indexes, target.indexes, (index) =>
-    normalizeName(index.name),
+    normalizeName(indexNameStem(index.name)),
   );
 
   return [
@@ -194,16 +243,30 @@ function diffTableIndexes(source: TableNode, target: TableNode, opts: Required<D
 /**
  * Compare two columns and return the difference.
  */
-function diffColumn(tableName: string, source: ColumnNode, target: ColumnNode): ColumnDiff | undefined {
+function diffColumn(
+  tableName: string,
+  source: ColumnNode,
+  target: ColumnNode,
+  opts: Required<DiffOptions>,
+): ColumnDiff | undefined {
   const differences: string[] = [];
 
-  // Compare types
-  if (!areTypesEqual(source.type, target.type)) {
+  // Two things a key column implies rather than states, and catalogues report inconsistently: its
+  // type, which is the dialect's serial spelling rather than one the entity chose and does not round
+  // trip (`BIGINT UNSIGNED AUTO_INCREMENT` reads back as `BIGINT(20) UNSIGNED`), and its nullability,
+  // which is NOT NULL in every engine whatever is reported - SQLite's `PRAGMA table_info` says
+  // `notnull: 0` for the `INTEGER PRIMARY KEY` that is the table's own rowid. Comparing either asked
+  // to rewrite the column on every sync, and on SQLite, which cannot alter one at all, failed
+  // outright. Everything else about a key column is still compared, which the blanket "never alter a
+  // key column" rule these two replace used to hide.
+  const generatedType = source.isAutoIncrement && target.isAutoIncrement;
+  const impliedNotNull = source.isPrimaryKey && target.isPrimaryKey;
+
+  if (!generatedType && !areTypesEqual(opts.normalizeType(source.type), opts.normalizeType(target.type))) {
     differences.push(`type: ${formatType(source.type)} → ${formatType(target.type)}`);
   }
 
-  // Compare nullability
-  if (source.nullable !== target.nullable) {
+  if (!impliedNotNull && source.nullable !== target.nullable) {
     differences.push(`nullable: ${target.nullable} → ${source.nullable}`);
   }
 
@@ -212,13 +275,13 @@ function diffColumn(tableName: string, source: ColumnNode, target: ColumnNode): 
     differences.push(`unique: ${target.isUnique} → ${source.isUnique}`);
   }
 
-  // Compare auto-increment
-  if (source.isAutoIncrement !== target.isAutoIncrement) {
-    differences.push(`autoIncrement: ${target.isAutoIncrement} → ${source.isAutoIncrement}`);
-  }
+  // Auto-increment is deliberately not compared. No engine turns a column into an identity, or out of
+  // one, without rewriting the table, and there is no DDL here that does it - so a difference could
+  // only ever be reported, never settled, and the statements emitted for it (a bare `ALTER COLUMN
+  // TYPE`) do not change it. The same rule `describeIndexDifferences` follows for what it cannot read.
 
   // Compare default values (if both defined)
-  if (normalizeDefault(source.defaultValue) !== normalizeDefault(target.defaultValue)) {
+  if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {
     differences.push(`default: ${target.defaultValue ?? 'NULL'} → ${source.defaultValue ?? 'NULL'}`);
   }
 

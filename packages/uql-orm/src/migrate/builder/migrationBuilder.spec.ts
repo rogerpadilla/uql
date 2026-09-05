@@ -141,7 +141,7 @@ describe('OperationRecorder', () => {
       await recorder.createIndex('users', ['email', 'status']);
 
       const ops = recorder.getOperations();
-      expect((ops[0] as CreateIndexOperation).index.name).toBe('idx_users_email_status');
+      expect((ops[0] as CreateIndexOperation).index.name).toBe('users__email_status_idx');
     });
 
     it('should use custom index name', async () => {
@@ -167,12 +167,12 @@ describe('OperationRecorder', () => {
     it('should record dropIndex operation', async () => {
       const recorder = new OperationRecorder();
 
-      await recorder.dropIndex('users', 'idx_users_email');
+      await recorder.dropIndex('users', 'users__email_idx');
 
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropIndex');
-      expect((ops[0] as DropIndexOperation).indexName).toBe('idx_users_email');
+      expect((ops[0] as DropIndexOperation).indexName).toBe('users__email_idx');
     });
   });
 
@@ -203,12 +203,12 @@ describe('OperationRecorder', () => {
     it('should record dropForeignKey operation', async () => {
       const recorder = new OperationRecorder();
 
-      await recorder.dropForeignKey('posts', 'fk_posts_author');
+      await recorder.dropForeignKey('posts', 'posts_author_fk');
 
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropForeignKey');
-      expect((ops[0] as DropForeignKeyOperation).constraintName).toBe('fk_posts_author');
+      expect((ops[0] as DropForeignKeyOperation).constraintName).toBe('posts_author_fk');
     });
   });
 
@@ -305,9 +305,9 @@ describe('OperationRecorder', () => {
         table.addForeignKey(
           ['profile_id'],
           { table: 'profiles', columns: ['id'] },
-          { onDelete: 'CASCADE', name: 'fk_users_profile' },
+          { onDelete: 'CASCADE', name: 'users_profile_fk' },
         );
-        table.dropForeignKey('fk_users_profile');
+        table.dropForeignKey('users_profile_fk');
       });
 
       const ops = recorder.getOperations();
@@ -320,7 +320,7 @@ describe('OperationRecorder', () => {
       const addFkOp = ops[2] as AddForeignKeyOperation;
       expect(addFkOp.foreignKey.referencesTable).toBe('profiles');
       expect(addFkOp.foreignKey.onDelete).toBe('CASCADE');
-      expect(addFkOp.foreignKey.name).toBe('fk_users_profile');
+      expect(addFkOp.foreignKey.name).toBe('users_profile_fk');
     });
   });
 
@@ -336,7 +336,7 @@ describe('OperationRecorder', () => {
       const idxOp = ops.find((o) => o.type === 'createIndex') as CreateIndexOperation;
       const fkOp = ops.find((o) => o.type === 'addForeignKey') as AddForeignKeyOperation;
 
-      expect(idxOp.index.name).toBe('idx_users_name');
+      expect(idxOp.index.name).toBe('users__name_idx');
       expect(idxOp.index.unique).toBe(false);
       expect(fkOp.foreignKey.onDelete).toBe('NO ACTION');
       expect(fkOp.foreignKey.onUpdate).toBe('NO ACTION');

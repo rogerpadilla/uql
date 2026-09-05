@@ -47,7 +47,7 @@ describe('Migrator autoSync MongoDB Integration', () => {
     expect(db.collection).toHaveBeenCalledWith('SyncMongoUser');
     expect(db.collection('SyncMongoUser').createIndex).toHaveBeenCalledWith(
       { name: 1 },
-      expect.objectContaining({ name: 'idx_SyncMongoUser_name' }),
+      expect.objectContaining({ name: 'SyncMongoUser__name_idx' }),
     );
   });
 });

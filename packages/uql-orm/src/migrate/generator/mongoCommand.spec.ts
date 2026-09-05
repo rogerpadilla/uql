@@ -48,19 +48,19 @@ describe('runMongoCommand', () => {
     const calls = await run({
       action: 'createIndex',
       collection: 'users',
-      name: 'idx_users_email',
+      name: 'users__email_idx',
       key: { email: 1, createdAt: -1 },
-      options: { unique: true, name: 'idx_users_email' },
+      options: { unique: true, name: 'users__email_idx' },
     });
 
     expect(calls).toEqual([
-      ['createIndex', 'users', { email: 1, createdAt: -1 }, { unique: true, name: 'idx_users_email' }],
+      ['createIndex', 'users', { email: 1, createdAt: -1 }, { unique: true, name: 'users__email_idx' }],
     ]);
   });
 
   it('should drop an index by name', async () => {
-    expect(await run({ action: 'dropIndex', collection: 'users', name: 'idx_users_email' })).toEqual([
-      ['dropIndex', 'users', 'idx_users_email'],
+    expect(await run({ action: 'dropIndex', collection: 'users', name: 'users__email_idx' })).toEqual([
+      ['dropIndex', 'users', 'users__email_idx'],
     ]);
   });
 

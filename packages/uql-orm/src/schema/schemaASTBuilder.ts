@@ -10,6 +10,7 @@ import { getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, FieldMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
+import { isSoleIdField } from '../util/field.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { createTableNode, SchemaAST } from './schemaAST.js';
@@ -131,7 +132,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
     const type = resolveColumnCanonicalType(field);
 
     const isPrimaryKey = field.isId === true;
-    const isSoleKey = isPrimaryKey && meta.ids.length === 1;
+    const isSoleKey = isSoleIdField(meta, field);
     const column: ColumnNode = {
       name: columnName,
       type,
@@ -140,9 +141,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
       nullable: isPrimaryKey ? false : (field.nullable ?? true),
       defaultValue: field.defaultValue,
       isPrimaryKey,
-      // Only a sole integer key defaults to auto-increment: a composite's columns are values the
-      // caller supplies, and the serial type carries an inline `PRIMARY KEY` the table already states.
-      isAutoIncrement: field.autoIncrement ?? (isPrimaryKey && isSoleKey && type.category === 'integer'),
+      isAutoIncrement: field.autoIncrement ?? (isSoleKey && type.category === 'integer'),
       isUnique: field.unique ?? false,
       comment: field.comment,
       enum: field.enum,
@@ -192,43 +191,38 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
       // the engine requires the referenced columns to match a unique constraint as a whole.
       const localColumns: ColumnNode[] = [];
       const foreignColumns: ColumnNode[] = [];
-      let firstLocalField: FieldOptions | undefined;
 
-      for (const { local: localPropName, foreign: foreignPropName } of relation.references) {
-        const localField = meta.fields[localPropName];
-        const foreignField = relatedMeta.fields[foreignPropName];
-        if (!localField || !foreignField) {
-          continue;
-        }
-        const localColumn = table.columns.get(ctx.resolveColumnName(localPropName, localField));
-        const foreignColumn = relatedTable.columns.get(ctx.resolveColumnName(foreignPropName, foreignField));
-        if (!localColumn || !foreignColumn) {
-          continue;
-        }
-        firstLocalField ??= localField;
+      for (const { local: localProp, foreign: foreignProp } of relation.references) {
+        const localField = meta.fields[localProp];
+        const foreignField = relatedMeta.fields[foreignProp];
+        const localColumn = localField && table.columns.get(ctx.resolveColumnName(localProp, localField));
+        const foreignColumn =
+          foreignField && relatedTable.columns.get(ctx.resolveColumnName(foreignProp, foreignField));
+        if (!localColumn || !foreignColumn) break;
         localColumns.push(localColumn);
         foreignColumns.push(foreignColumn);
       }
 
-      if (localColumns.length === relation.references.length && firstLocalField) {
-        const relNode: RelationshipNode = {
-          name: derivedForeignKeyName(
-            table.name,
-            localColumns.map((column) => column.name),
-          ),
-          type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
-          from: { table, columns: localColumns },
-          to: { table: relatedTable, columns: foreignColumns },
-          // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
-          // references, onDelete })` work with no relation declared at all.
-          onDelete: relation.onDelete ?? firstLocalField.onDelete ?? ctx.defaultForeignKeyAction,
-          onUpdate: relation.onUpdate ?? ctx.defaultForeignKeyAction,
-          confidence: 1.0,
-          inferredFrom: 'entity_decorator',
-        };
+      // A pair that cannot be resolved drops the whole constraint: half of one enforces a rule
+      // nobody declared, over a subset of the key.
+      if (localColumns.length !== relation.references.length) continue;
 
-        ctx.ast.addRelationship(relNode);
-      }
+      ctx.ast.addRelationship({
+        name: derivedForeignKeyName(
+          table.name,
+          localColumns.map((column) => column.name),
+        ),
+        type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
+        from: { table, columns: localColumns },
+        to: { table: relatedTable, columns: foreignColumns },
+        // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
+        // references, onDelete })` work with no relation declared at all.
+        onDelete:
+          relation.onDelete ?? meta.fields[relation.references[0].local]?.onDelete ?? ctx.defaultForeignKeyAction,
+        onUpdate: relation.onUpdate ?? ctx.defaultForeignKeyAction,
+        confidence: 1.0,
+        inferredFrom: 'entity_decorator',
+      });
     }
   }
 }

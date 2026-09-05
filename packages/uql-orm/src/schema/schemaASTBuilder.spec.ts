@@ -297,7 +297,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should resolve include columns through the naming strategy too', () => {
-      @Index(['tenantId'], { include: ['createdAt'], name: 'idx_cov' })
+      @Index(['tenantId'], { include: ['createdAt'], name: 'cov_idx' })
       @Entity()
       class Covered {
         @Id({ type: Number }) id?: number;
@@ -352,7 +352,7 @@ describe('SchemaASTBuilder', () => {
 
     it('should handle composite indexes and full metadata from decorators', () => {
       @Entity()
-      @Index(['firstName', 'lastName'], { name: 'idx_fullname', unique: true, where: 'active = true' })
+      @Index(['firstName', 'lastName'], { name: 'fullname_idx', unique: true, where: 'active = true' })
       class IndexedUser {
         @Id({ type: Number }) id?: number;
         @Field({ type: String }) firstName?: string;
@@ -365,7 +365,7 @@ describe('SchemaASTBuilder', () => {
 
       const compositeIdx = table?.indexes.find((idx) => idx.entries.length > 1);
       expect(compositeIdx).toBeDefined();
-      expect(compositeIdx?.name).toBe('idx_fullname');
+      expect(compositeIdx?.name).toBe('fullname_idx');
       expect(compositeIdx?.unique).toBe(true);
       expect(compositeIdx?.where).toBe('active = true');
       expect(compositeIdx?.entries.map((entry) => entry.column)).toEqual(['firstName', 'lastName']);

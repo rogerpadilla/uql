@@ -18,6 +18,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     dropTableCascade: false,
     renameColumn: true,
     foreignKeyAlter: true,
+    primaryKeyAlter: true,
     columnComment: true,
     vectorIndexRequiresNotNull: true,
     vectorSupportsLength: false,
@@ -29,7 +30,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return '`' as const;
   }
 
-  get serialPrimaryKey() {
+  get serialType() {
     return 'SERIAL PRIMARY KEY';
   }
 

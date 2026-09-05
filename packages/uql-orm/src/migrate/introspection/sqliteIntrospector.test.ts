@@ -33,15 +33,15 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     const querier = await this.pool.getQuerier();
     try {
       const table = querier.dialect.escapeId(INTROSPECT_TABLES.A);
-      await querier.run(`CREATE INDEX idx_expr_name ON ${table} (lower(${querier.dialect.escapeId('name')}))`);
+      await querier.run(`CREATE INDEX expr_name_idx ON ${table} (lower(${querier.dialect.escapeId('name')}))`);
 
       const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
       const names = schema.indexes?.map((index) => index.name) ?? [];
 
-      expect(names).not.toContain('idx_expr_name');
+      expect(names).not.toContain('expr_name_idx');
       expect(schema.indexes?.flatMap((index) => index.entries.map((column) => column.column))).not.toContain(null);
     } finally {
-      await querier.run('DROP INDEX idx_expr_name');
+      await querier.run('DROP INDEX expr_name_idx');
       await querier.release();
     }
   }
