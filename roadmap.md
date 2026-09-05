@@ -1,37 +1,30 @@
 # Roadmap
 
-Next feature block, in the order it should be built. Groundwork first, so the features that
-depend on it stay small.
+The next feature block, in build order. Groundwork first, so the features depending on it stay small.
 
 ## Foundational refactors
 
-| #   | Refactor                                                  | Unlocks                                      | State  |
-| :-- | :-------------------------------------------------------- | :------------------------------------------- | :----- |
-| R1  | Zero key columns, for a relation nothing identifies       | views                                        | to do  |
-| R2  | Entity capabilities (`readable`/`writable`/`refreshable`) | views, matviews, future CTEs                 | to do  |
-| R5  | `dialect.compile(query) -> { sql, values }`               | prepared statements, batching                | to do  |
-| R6  | One projection-alias concept for derived result keys      | `$window`, cursor metadata, `$agg`, `_count` | to do  |
-| R7  | Schema objects as a dependency-ordered graph              | enums, views, triggers                       | step 1 |
+**R1 — zero key columns.** The composite half shipped: `meta.ids` is the only stored form, and
+`EntityId<E>` is a scalar for one key, an object for several. Left is zero, for a relation nothing
+identifies. Unlocks views.
 
-**R1.** The composite half shipped: `meta.ids` is the only stored form and `EntityId<E>` is a scalar
-for one key, an object for several. Left is zero keys, for a relation nothing identifies.
+**R2 — entity capabilities.** `@Entity` means "table". A `readable`/`writable`/`refreshable` set makes
+a read-only relation expressible and brands it on the type, so writing to a view is a compile error.
+Unlocks views, matviews, future CTEs.
 
-**R2.** `@Entity` means "table". A capability set (`readable`/`writable`/`refreshable`) makes a
-read-only relation expressible and brands it on the type, so writing to a view is a compile error.
+**R5 — `dialect.compile(query) -> { sql, values }`.** Makes the SQL text a memoizable identity, which
+is the whole prerequisite for prepared statements and batching.
 
-**R5.** Naming `compile(query) -> { sql, values }` makes the SQL text a memoizable identity. That is
-the whole prerequisite for prepared statements and batching.
+**R6 — one projection-alias concept.** `$agg` aliases, `_count`, and the proposed `$window` aliases and
+cursor metadata each carry their own result-type derivation. Unify, or `$window` adds a third. Unlocks
+cursor pagination.
 
-**R6.** `$agg` aliases, `_count`, and the proposed `$window` aliases and cursor metadata each carry
-their own result-type derivation. Unify, or `$window` adds a third.
-
-**R7.** Step 1 done: the table-only topological sort is now `schema/dependencyGraph.ts`
-(`createOrder`, `dropOrder`, `findCycles`), generic over any node and an edge function. Cycle
-tolerance is deliberate - a cyclic FK is legal SQL, handled by deferring the constraint. Left: a
-`SchemaObject` vocabulary, and flattening `SchemaDiffResult`, which carries one field per kind. Both
-wait for a second kind, so the shape is derived rather than guessed.
-
----
+**R7 — schema objects as a dependency-ordered graph.** Step 1 done: the table-only topological sort is
+`schema/dependencyGraph.ts` (`createOrder`, `dropOrder`, `findCycles`), generic over any node and an
+edge function. Cycle tolerance is deliberate - a cyclic FK is legal SQL, handled by deferring the
+constraint. Left: a `SchemaObject` vocabulary, and flattening `SchemaDiffResult`, which carries one
+field per kind. Both wait for a second kind, so the shape is derived rather than guessed. Unlocks
+enums, views, triggers.
 
 ## Views and materialized views
 
@@ -88,15 +81,14 @@ Depends on R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT
 on `pg`, `mysql2`, `mariadb` - correct, not faster.
 
 **The entity-level API cannot keep its promise.** Most querier methods are not one statement:
-`findMany` issues extra queries for to-many relations, `$count` tallies and `$candidates` tuning;
-`updateMany` and `deleteMany` run lifecycle hooks - arbitrary user code that may itself query - and
-deletes cascade. Only `count`, `exists` and the inserts are reliably single. A caller cannot tell
-which from the call site: add `$populate` of a to-many and a "batch" quietly becomes several round
-trips, or throws at run time.
+`findMany` issues extra queries for to-many relations, `$count` and `$candidates`; `updateMany` and
+`deleteMany` run lifecycle hooks - arbitrary user code that may itself query - and deletes cascade.
+Only `count`, `exists` and the inserts are reliably single, and a caller cannot tell from the call
+site: add `$populate` of a to-many and the batch quietly becomes several round trips.
 
-So the honest shape is statement-level - `pool.batch([{ sql, values }, ...])` over `compile()` -
-which guarantees the round trip but gives up the typing that makes the rest of the API worth using.
-Decide which of those is wanted before building either.
+The honest shape is statement-level, `pool.batch([{ sql, values }, ...])` over `compile()`, which
+guarantees the round trip but gives up the typing that makes the rest of the API worth using. Decide
+which is wanted before building either.
 
 ## Server-side prepared statements
 
