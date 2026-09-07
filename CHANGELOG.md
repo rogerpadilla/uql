@@ -11,7 +11,6 @@ What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 - **A field or relation added to an entity already queried now works**: the relation used to throw, the field to come back raw.
 - `$select` on an entity typed with an index signature keeps its columns, instead of returning `{}`.
 - A generated entity types a blob column as `Uint8Array`, so it compiles without `@types/node`.
-- **Breaking**, for dialects and metadata readers: `getSqlType` and `fieldOptionsToCanonical` lost their second argument, and `columnFamily(type)` replaces `isNumericType`, `isBooleanType` and `isJsonType`.
 
 ## [0.42.1] - 2026-09-05
 
