@@ -151,7 +151,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     });
   }
 
-  getSqlType(fieldOptions: FieldOptions, fieldType?: unknown): string {
+  getSqlType(fieldOptions: FieldOptions): string {
     return '';
   }
 

@@ -6,15 +6,15 @@ describe('PostgresSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should map column types correctly', () => {
-    expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({}, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'text' }, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' }, Number)).toBe('INTEGER');
-    expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
-    expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('BOOLEAN');
-    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 }, Number)).toBe('NUMERIC(10, 2)');
+    expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ type: String })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'text' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
+    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('BIGINT');
+    expect(generator.getSqlType({ type: Boolean })).toBe('BOOLEAN');
+    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 })).toBe('NUMERIC(10, 2)');
   });
 
   it('should generate DROP INDEX statement', () => {

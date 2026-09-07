@@ -182,15 +182,19 @@ describe('SchemaASTBuilder Extra Coverage', () => {
 
   it('should ignore indexes on missing columns', () => {
     @Entity()
-    class VirtualIndex {
+    class RenamedColumn {
       @Id({ type: Number }) id?: number;
 
-      @Field({ type: Number, virtual: raw`1`, index: true })
-      virtualField?: number;
+      @Field({ type: String, index: true })
+      name?: string;
     }
 
-    const ast = buildSchemaAST([VirtualIndex]);
-    const table = ast.getTable('VirtualIndex');
+    // A resolver answering differently every time names the index a column the table does not have -
+    // the only way left to reach that, now that `@Field({ virtual, index })` is rejected outright.
+    let callCount = 0;
+    const ast = buildSchemaAST([RenamedColumn], { resolveColumnName: () => `c${++callCount}` });
+
+    const table = ast.getTable('RenamedColumn');
     expect(table?.indexes.length).toBe(0);
   });
 });

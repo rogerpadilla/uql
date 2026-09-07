@@ -37,6 +37,28 @@ describe('DriftDetector', () => {
       expect(drifts[0].details).toContain('Default mismatch');
     });
 
+    it('should call a truncating type change critical, and a widening one a warning', () => {
+      const drifts = (entity: { category: 'string'; length?: number }, database: typeof entity) => {
+        const expected = new SchemaAST();
+        const actual = new SchemaAST();
+        expected.addTable(mockTableNode('users', [{ name: 'title', type: entity }]));
+        actual.addTable(mockTableNode('users', [{ name: 'title', type: database }]));
+        return detectDrift(expected, actual, { dialect: new MySqlDialect() }).drifts;
+      };
+
+      // An unstated length is the engine's widest, so applying an entity that states one truncates.
+      const narrowing = drifts({ category: 'string', length: 50 }, { category: 'string' });
+      expect(narrowing).toHaveLength(1);
+      expect(narrowing[0].severity).toBe('critical');
+      expect(narrowing[0].suggestion).toContain('Data truncation risk');
+
+      // The other way round only widens the column, which loses nothing.
+      const widening = drifts({ category: 'string' }, { category: 'string', length: 50 });
+      expect(widening).toHaveLength(1);
+      expect(widening[0].severity).toBe('warning');
+      expect(widening[0].suggestion).toContain('align types');
+    });
+
     it('should detect type mismatches', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();

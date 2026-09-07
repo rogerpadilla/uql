@@ -36,7 +36,7 @@ it('User', () => {
     entity: User,
     name: 'User',
     ids: ['id'] as const,
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
@@ -89,7 +89,7 @@ it('Profile', () => {
     entity: Profile,
     name: 'user_profile',
     ids: ['pk' as IdKey<Profile>],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       pk: { name: 'pk', type: Number, isId: true as const },
       companyId: {
@@ -126,7 +126,7 @@ it('Item', () => {
     entity: Item,
     name: 'Item',
     ids: ['id' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
@@ -218,7 +218,7 @@ it('Tag', () => {
     entity: Tag,
     ids: ['id' as const],
     name: 'Tag',
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: {
         isId: true as const,
@@ -287,7 +287,7 @@ it('ItemTag', () => {
     entity: ItemTag,
     name: 'ItemTag',
     ids: ['id' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       itemId: {
@@ -321,7 +321,7 @@ it('TaxCategory', () => {
     entity: TaxCategory,
     name: 'TaxCategory',
     ids: ['pk' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
@@ -359,7 +359,7 @@ it('Tax', () => {
     entity: Tax,
     name: 'Tax',
     ids: ['id' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       categoryId: {
@@ -415,7 +415,7 @@ it('ItemAdjustment', () => {
     entity: ItemAdjustment,
     name: 'ItemAdjustment',
     ids: ['id' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       buyPrice: {
@@ -491,7 +491,7 @@ it('InventoryAdjustment', () => {
     entity: InventoryAdjustment,
     name: 'InventoryAdjustment',
     ids: ['id' as const],
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       companyId: {
@@ -537,7 +537,7 @@ it('MeasureUnitCategory', () => {
     name: 'MeasureUnitCategory',
     ids: ['id' as const],
     softDelete: 'deletedAt' as const,
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       name: { name: 'name', type: String },
@@ -582,7 +582,7 @@ it('MeasureUnit', () => {
     name: 'MeasureUnit',
     ids: ['id' as const],
     softDelete: 'deletedAt' as const,
-    processed: true as const,
+    processedAt: expect.any(Number),
     fields: {
       id: { name: 'id', type: Number, isId: true as const },
       name: { name: 'name', type: String },

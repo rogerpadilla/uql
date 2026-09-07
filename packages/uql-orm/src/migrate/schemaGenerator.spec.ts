@@ -327,13 +327,25 @@ describe('SqlSchemaGenerator (MySQL)', () => {
   });
 
   it('should generate boolean as TINYINT(1)', () => {
-    const boolType = generator.getSqlType({ type: Boolean }, Boolean);
+    const boolType = generator.getSqlType({ type: Boolean });
     expect(boolType).toBe('TINYINT(1)');
   });
 
   it('should generate DROP INDEX with ON table', () => {
     const sql = generator.generateDropIndex('users', 'email_idx');
     expect(sql).toBe('DROP INDEX `email_idx` ON `users`;');
+  });
+
+  it('should keep a foreign key on its own type when the referenced key is not there', () => {
+    // A `referencedKey` naming a column the target does not have used to reach a spread of
+    // `undefined`, which carries no type at all and rendered as the default string column.
+    const type = generator.getSqlType({
+      type: 'uuid',
+      references: () => TestUser,
+      referencedKey: 'nonesuch',
+    });
+
+    expect(type).toBe('CHAR(36)');
   });
 });
 
@@ -350,15 +362,15 @@ describe('SqlSchemaGenerator (SQLite)', () => {
   });
 
   it('should use TEXT for most types (SQLite dynamic typing)', () => {
-    expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'json' }, undefined)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'uuid' }, undefined)).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'json' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'uuid' })).toBe('TEXT');
   });
 
   it('should use INTEGER for numeric types', () => {
-    expect(generator.getSqlType({ columnType: 'int' }, undefined)).toBe('INTEGER');
-    expect(generator.getSqlType({ columnType: 'bigint' }, undefined)).toBe('INTEGER');
-    expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('INTEGER');
+    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
+    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('INTEGER');
+    expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
   });
 
   it('generateCreateSchema splits non-inline indexes for separate querier.run', () => {

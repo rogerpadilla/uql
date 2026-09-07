@@ -1,6 +1,5 @@
 import { jsonPath } from '../dialect/jsonSql.js';
 import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
-import { isVectorFieldType } from '../dialect/vectorCast.js';
 import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
@@ -13,6 +12,7 @@ import type {
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
+import { columnFamily } from '../util/field.util.js';
 import { MARIA_VECTOR_METRICS } from './mariaVectorMetrics.js';
 
 export class MariaDialect extends MysqlLikeSqlDialect {
@@ -103,6 +103,6 @@ export class MariaDialect extends MysqlLikeSqlDialect {
 
   /** The reverse: selecting a `VECTOR` column raw yields that blob, so it is read back as text. */
   protected override selectFieldExpr(escapedColumn: string, field: FieldOptions): string {
-    return isVectorFieldType(field.type) ? `VEC_ToText(${escapedColumn})` : escapedColumn;
+    return columnFamily(field.type) === 'vector' ? `VEC_ToText(${escapedColumn})` : escapedColumn;
   }
 }

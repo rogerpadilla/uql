@@ -294,7 +294,7 @@ export interface SchemaGenerator {
   /**
    * Get the SQL type for a field based on its options
    */
-  getSqlType(fieldOptions: FieldOptions, fieldType?: unknown): string;
+  getSqlType(fieldOptions: FieldOptions): string;
 
   /**
    * Compare an entity with a database table node and return the differences.

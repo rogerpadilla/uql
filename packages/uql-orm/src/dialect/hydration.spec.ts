@@ -5,7 +5,7 @@ import { MariaDialect } from '../maria/mariaDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { JsonRecord, NarrowVectorItem, VectorItem } from '../test/index.js';
-import { isNumericType } from '../util/field.util.js';
+import { columnFamily } from '../util/field.util.js';
 
 /**
  * Which columns a dialect decodes on read, and as what.
@@ -88,10 +88,10 @@ describe('hydratableFields', () => {
     // `type: BigInt` promises a bigint property, and the pg pools decode BIGINT to a JS number at the
     // wire, so sharing the numeric kind would hand a `number` to a field typed `bigint`.
     //
-    // This is also what guards the one load-bearing order in `hydrateKind`: `isNumericType` answers
-    // true for `BigInt`, so testing it before the `BigInt` case turns this back into `'number'`.
+    // This is also what guards the one load-bearing order in `hydrateKind`: `BigInt` is in the numeric
+    // family, so letting the switch answer for it turns this back into `'number'`.
     expect(postgres.hydratableFields(LogicalRow)).toContainEqual(['huge', 'bigint']);
-    expect(isNumericType(BigInt)).toBe(true);
+    expect(columnFamily(BigInt)).toBe('numeric');
   });
 
   it('keeps the narrow vector casts on Postgres, the only engine that has them', () => {
@@ -115,7 +115,7 @@ describe('hydratableFields', () => {
   });
 
   it('computes the list once per entity, since it is a function of the column not the row', () => {
-    // A 1000-row read would otherwise re-answer the same question 1000 times, and `isJsonType`
+    // A 1000-row read would otherwise re-answer the same question 1000 times, and `columnFamily`
     // lowercases a string on every call. The two narrow-vector cases above cover the other half of
     // this: the cache is per dialect, so a shared one would make the second of them read the first's
     // answer for the same entity.

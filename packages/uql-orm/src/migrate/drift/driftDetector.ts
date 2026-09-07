@@ -6,7 +6,7 @@
  */
 
 import type { AbstractDialect } from '../../dialect/abstractDialect.js';
-import { canonicalToSql } from '../../schema/canonicalType.js';
+import { canonicalToSql, engineType } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { diffSchemas } from '../../schema/schemaASTDiffer.js';
@@ -75,11 +75,15 @@ export function detectDrift(
   options: DriftDetectorOptions = {},
 ): DriftReport {
   const opts = resolveOptions(options);
+  const { dialect } = opts;
   const diff = diffSchemas(expectedAST, actualAST, {
     compareIndexes: opts.checkIndexes,
     indexFacets: opts.indexFacets,
     compareRelationships: opts.checkForeignKeys,
     excludeTables: opts.excludeTables,
+    // Without a dialect there is no engine to compare through, and `formatType` below then reports no
+    // type drift at all.
+    ...(dialect && { normalizeType: engineType(dialect) }),
   });
 
   const drifts: Drift[] = [

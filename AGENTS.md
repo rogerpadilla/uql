@@ -15,7 +15,7 @@ Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. 
 - `bun run check` is the gate: `lint`, `ts`, `test`, `build`, `check.package`. `build` is in it because `check.package` inspects `dist`, so without one the gate passes on the previous release's output. `bun run lint.fix` fixes instead of reporting.
 - `build` ends with `verify-dist.ts`: declared paths present, browser entries free of Node builtins, types resolving with `types: []`, gzipped size budgets. A budget moving is the leaked-module case it exists to catch - raise one only once you know which module became reachable.
 - `bun run test` runs vitest then the Bun suites **sequentially on purpose**: both drive the same Docker databases. Never pipe a test run into `head` - the SIGPIPE kills the parent and leaves its forks alive, corrupting the next run. Redirect to a file.
-- `bun run ts.perf` reports what the types cost a consuming project, split into fixed and per-query. Instantiations compare across runs; the wall clock does not. Measure both sides of a query-type change in one session - and if the "before" was missed, it is still recoverable: `git worktree add <dir> uql-orm@<version>` and run it there. Baseline at 0.42.1: **409,805** fixed, **484,766** at 600 queries.
+- `bun run ts.perf` reports what the types cost a consuming project, split into fixed and per-query. It measures `dist`, so **build first** - including in the worktree when measuring a before (`git worktree add <dir> uql-orm@<version>`). It fails rather than reporting a number when the measured project does not compile. Instantiations compare across runs; the wall clock does not. Measure both sides of a query-type change in one session. Baseline at 0.43.0: **4,012** fixed, **98,985** at 600 queries.
 
 ## Tests
 
@@ -24,5 +24,7 @@ Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. 
 - An integration suite acquires per test and `end()`s its pool in `afterAll`. Never pin one querier for a whole suite: a pool can hand out a connection the server already closed.
 
 ## Elsewhere
+
+[architecture/](architecture/) holds the design docs: [roadmap.md](architecture/roadmap.md) is the build order, and a file per feature that needed a design settled before it was written.
 
 [CONTRIBUTING.md](CONTRIBUTING.md#packaging) holds the packaging constraints (ESM-only, **zero runtime dependencies**, no transpiler in the CLI) and the release runbook - versioning and publishing are two separate steps on purpose, so never reach for `lerna publish`.

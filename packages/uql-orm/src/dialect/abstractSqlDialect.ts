@@ -64,10 +64,8 @@ import {
   getKeys,
   getSoftDeleteValue,
   hasKeys,
-  isBooleanType,
-  isJsonType,
+  columnFamily,
   isJsonUpdateOp,
-  isNumericType,
   isOperatorMap,
   isOperatorObject,
   isOperatorOnlyObject,
@@ -97,7 +95,7 @@ import {
   resolveQueryJoins,
   resolveSortableJoin,
 } from './queryJoins.js';
-import { isVectorFieldType, resolveVectorCast } from './vectorCast.js';
+import { resolveVectorCast } from './vectorCast.js';
 import { VectorSqlDialect } from './vectorSqlDialect.js';
 
 /** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
@@ -1609,23 +1607,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /**
    * How a column's values are written. A function of the column, not of the value, so a bulk insert
-   * classifies each column once instead of re-deciding per row: a 20-row, 6-column insert asked
-   * `isJsonType` and `isVectorFieldType` 120 times to get the same six answers.
+   * classifies each column once instead of re-deciding per row: a 20-row, 6-column insert used to ask
+   * 120 times to get the same six answers.
    */
   protected persistKind(field: FieldOptions | undefined): PersistKind {
-    const type = field?.type;
-    if (isJsonType(type)) {
-      return 'json';
-    }
-    return isVectorFieldType(type) ? 'vector' : 'plain';
+    const family = columnFamily(field?.type);
+    return family === 'json' || family === 'vector' ? family : 'plain';
   }
 
   /**
    * Which of an entity's columns need decoding on READ, and how: the inverse of {@link persistKind},
    * cached per entity for the same reason it classifies per column. A 1000-row read of a 10-field
-   * entity otherwise asks `isJsonType` (which lowercases a string on every call) 10,000 times to get
-   * the same ten answers. Most entities land here for their numeric columns alone, where the per-row
-   * cost is one `typeof` against a value the driver usually decoded already.
+   * entity otherwise asks {@link columnFamily} (which lowercases a string on every call) 10,000 times
+   * to get the same ten answers. Most entities land here for their numeric columns alone, where the
+   * per-row cost is one `typeof` against a value the driver usually decoded already.
    *
    * Dialect-aware exactly like {@link supportedVectorType}, because it has to be: a `sparsevec` field
    * is written as a plain dense vector everywhere but Postgres, so reading it back by the field's own
@@ -1637,23 +1632,26 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * the field says it was meant as a number; and `type: BigInt` shares BIGINT with `type: Number`, so
    * the wire decode has to be undone for it. All are no-ops where the driver already decoded.
    *
-   * Classified through the same `isNumericType`/`isBooleanType`/`isJsonType` the rest of the library
-   * uses, not against the constructors: `type` accepts a string logical type for every one of these
-   * (`@Field({ type: 'decimal' })`), and matching `=== Number` alone left those reading back as text.
+   * Classified through the same {@link columnFamily} the rest of the library uses, not against the
+   * constructors: `type` accepts a string logical type for every one of these (`@Field({ type:
+   * 'decimal' })`), and matching `=== Number` alone left those reading back as text.
    */
   hydratableFields<E>(entity: Type<E>): readonly HydratableField[] {
+    const meta = getMeta(entity);
     const cached = this.hydratable.get(entity as Type<object>);
-    if (cached) {
-      return cached;
+    // Against the revision, not merely present: a field added to an entity already read - a content
+    // type the admin extended - would otherwise decode by the list its columns are missing from.
+    if (cached?.[0] === meta.revision) {
+      return cached[1];
     }
     const decoded: HydratableField[] = [];
-    for (const [key, field] of Object.entries(getMeta(entity).fields)) {
+    for (const [key, field] of Object.entries(meta.fields)) {
       const kind = this.hydrateKind(field);
       if (kind) {
         decoded.push([key, kind]);
       }
     }
-    this.hydratable.set(entity as Type<object>, decoded);
+    this.hydratable.set(entity as Type<object>, [meta.revision, decoded]);
     return decoded;
   }
 
@@ -1692,29 +1690,32 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   /**
    * The mirror of {@link persistKind}: what one column decodes as, or nothing if it needs no decode.
    *
-   * Ordered for correctness, not for speed - this runs once per entity, cached, never per row. The
-   * one order that is load-bearing is `BigInt` before {@link isNumericType}, which answers true for
-   * `BigInt` as well as `Number`: swap them and every `type: BigInt` property silently decodes to a
-   * JS number again.
+   * `BigInt` is asked first because it shares the numeric family with `Number`: let the switch answer
+   * it and every `type: BigInt` property silently decodes to a JS number again.
    */
   protected hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
     const type = field?.type;
-    if (isJsonType(type)) {
-      return 'json';
-    }
-    if (isVectorFieldType(type)) {
-      return this.supportedVectorType(resolveVectorCast(field));
-    }
-    if (isBooleanType(type)) {
-      return 'boolean';
-    }
     if (type === BigInt) {
       return 'bigint';
     }
-    return isNumericType(type) ? 'number' : undefined;
+    switch (columnFamily(type)) {
+      case 'json':
+        return 'json';
+      case 'vector':
+        return this.supportedVectorType(resolveVectorCast(field));
+      case 'boolean':
+        return 'boolean';
+      case 'numeric':
+        return 'number';
+      default:
+        return undefined;
+    }
   }
 
-  private readonly hydratable = new WeakMap<Type<object>, readonly HydratableField[]>();
+  private readonly hydratable = new WeakMap<
+    Type<object>,
+    readonly [revision: number, fields: readonly HydratableField[]]
+  >();
 
   /** The one type dispatch for a persisted value, over a column kind decided by the caller. */
   private writePersistableValue(
@@ -1849,7 +1850,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
     const root = key.slice(0, dotIndex);
     const field = meta.fields[root as FieldKey<E>];
-    if (!field || !isJsonType(field.type)) {
+    if (!field || columnFamily(field.type) !== 'json') {
       return undefined;
     }
     const colName = this.resolveColumnName(root, field);

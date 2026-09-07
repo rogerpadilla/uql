@@ -2,6 +2,17 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.43.0] - 2026-09-07
+
+**An option a column cannot use is now an error** rather than silently ignored: `autoIncrement` on a string, `length` on a number, `index` on a `virtual` field, `nullable: true` on a key. `defaultValue` must be the value the column holds, except on a JSON column, which takes the SQL literal it stores.
+
+- **Drift no longer misses a mismatched column.** `VARCHAR` against `TEXT` read as a match on Postgres, and a change that truncates - `TEXT` to `VARCHAR(50)`, a dropped timezone - was reported as safe.
+- **Registering onto a decorated class keeps its table.** A later `defineEntity` used to retarget `@Entity({ name, schema })` at the class name in the default schema.
+- **A field or relation added to an entity already queried now works**: the relation used to throw, the field to come back raw.
+- `$select` on an entity typed with an index signature keeps its columns, instead of returning `{}`.
+- A generated entity types a blob column as `Uint8Array`, so it compiles without `@types/node`.
+- **Breaking**, for dialects and metadata readers: `getSqlType` and `fieldOptionsToCanonical` lost their second argument, and `columnFamily(type)` replaces `isNumericType`, `isBooleanType` and `isJsonType`.
+
 ## [0.42.1] - 2026-09-05
 
 **A migration can change a primary key.** A second `@Id` on an entity already in the database used to add the column and leave the key alone, so the table kept enforcing uniqueness on one column while uql addressed rows by two:

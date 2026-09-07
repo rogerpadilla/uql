@@ -1,5 +1,5 @@
 import type { FieldOptions, FieldType } from '../type/index.js';
-import { isBooleanType, isNumericType } from '../util/field.util.js';
+import { columnFamily } from '../util/field.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 
 /**
@@ -83,14 +83,16 @@ export function jsonCompareMode(value: unknown): JsonAccessMode {
  * operand. An index over a JSON path is only reachable by a comparison that extracts it the same way,
  * so the two have to answer alike - which is why they are one pair over one vocabulary.
  *
- * Reads the type through `util/field.util`'s predicates, which the dialects already carry: resolving
- * it through `schema/canonicalType` instead pulls that whole module into every consumer bundle.
+ * Reads the type through `util/field.util`'s own classifier, which the dialects already carry:
+ * resolving it through `schema/canonicalType` instead pulls that whole module into every consumer
+ * bundle.
  */
 export function jsonTypeMode(type: FieldType): JsonAccessMode {
-  if (isNumericType(type)) {
+  const family = columnFamily(type);
+  if (family === 'numeric') {
     return 'numeric';
   }
-  return isBooleanType(type) ? 'json' : 'text';
+  return family === 'boolean' ? 'json' : 'text';
 }
 
 /**

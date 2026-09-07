@@ -5,6 +5,7 @@ import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { type ColumnFamily, COLUMN_TYPES_BY_FAMILY } from '../util/field.util.js';
 import {
   areTypesEqual,
   canonicalToColumnType,
@@ -14,7 +15,40 @@ import {
   isBreakingTypeChange,
   sqlToCanonical,
 } from './canonicalType.js';
-import type { CanonicalType } from './types.js';
+import type { CanonicalType, TypeCategory } from './types.js';
+
+/**
+ * The family each canonical category belongs to. Stated here rather than shipped because the two
+ * classifiers are deliberately separate: `sqlToCanonical` knows every dialect spelling and size, and
+ * its tables are ~18 KB that only migrations reach, while `columnFamily` is in every bundle. What
+ * they must not do is disagree, which is what the test below pins - the way `entityOptions.test-d.ts`
+ * asserts `TsTypeOf` and `TypeFor` agree rather than deriving one from the other.
+ */
+const CATEGORY_FAMILY = {
+  integer: 'numeric',
+  float: 'numeric',
+  decimal: 'numeric',
+  string: 'string',
+  uuid: 'string',
+  boolean: 'boolean',
+  date: 'date',
+  time: 'date',
+  timestamp: 'date',
+  json: 'json',
+  blob: 'blob',
+  vector: 'vector',
+  halfvec: 'vector',
+  sparsevec: 'vector',
+} as const satisfies Record<TypeCategory, ColumnFamily>;
+
+it('classifies every column type the same way canonical categories do', () => {
+  for (const [family, columnTypes] of Object.entries(COLUMN_TYPES_BY_FAMILY)) {
+    for (const columnType of columnTypes) {
+      const category = sqlToCanonical(columnType).category;
+      expect([columnType, CATEGORY_FAMILY[category]]).toEqual([columnType, family]);
+    }
+  }
+});
 
 const pg = new PostgresDialect();
 const cockroach = new CockroachDialect();
@@ -156,7 +190,7 @@ describe('canonicalType', () => {
       expect(canonicalToTypeScript({ category: 'timestamp' })).toBe('Date');
       expect(canonicalToTypeScript({ category: 'json' })).toBe('unknown');
       expect(canonicalToTypeScript({ category: 'uuid' })).toBe('string');
-      expect(canonicalToTypeScript({ category: 'blob' })).toBe('Buffer');
+      expect(canonicalToTypeScript({ category: 'blob' })).toBe('Uint8Array');
       expect(canonicalToTypeScript({ category: 'vector' })).toBe('number[]');
       expect(canonicalToTypeScript({ category: 'halfvec' })).toBe('number[]');
       expect(canonicalToTypeScript({ category: 'sparsevec' })).toBe('number[]');
@@ -222,8 +256,11 @@ describe('canonicalType', () => {
       expect(areTypesEqual({ category: 'string', length: 100 }, { category: 'string', length: 200 })).toBe(false);
     });
 
-    it('should treat undefined length as 255 for strings', () => {
-      expect(areTypesEqual({ category: 'string' }, { category: 'string', length: 255 })).toBe(true);
+    it('should not guess an engine default for an unstated length', () => {
+      // `VARCHAR` is 255 on MySQL and `TEXT` on Postgres, so assuming either was blind to a real
+      // difference on the other. `DiffOptions.normalizeType` settles it through the engine instead.
+      expect(areTypesEqual({ category: 'string' }, { category: 'string', length: 255 })).toBe(false);
+      expect(areTypesEqual({ category: 'decimal' }, { category: 'decimal', precision: 10, scale: 2 })).toBe(false);
     });
 
     it('should compare decimal precision and scale', () => {
@@ -290,6 +327,28 @@ describe('canonicalType', () => {
 
     it('should detect scale reduction as breaking', () => {
       expect(isBreakingTypeChange({ category: 'decimal', scale: 4 }, { category: 'decimal', scale: 2 })).toBe(true);
+    });
+
+    it('should treat a bound stated for the first time as narrowing, since none means unbounded', () => {
+      expect(isBreakingTypeChange({ category: 'string' }, { category: 'string', length: 50 })).toBe(true);
+      expect(isBreakingTypeChange({ category: 'decimal' }, { category: 'decimal', precision: 5, scale: 2 })).toBe(true);
+    });
+
+    it('should keep a bound dropped as widening', () => {
+      expect(isBreakingTypeChange({ category: 'string', length: 50 }, { category: 'string' })).toBe(false);
+      expect(isBreakingTypeChange({ category: 'decimal', precision: 5 }, { category: 'decimal' })).toBe(false);
+    });
+
+    it('should detect a signedness flip as breaking, in either direction', () => {
+      expect(isBreakingTypeChange({ category: 'integer', unsigned: true }, { category: 'integer' })).toBe(true);
+      expect(isBreakingTypeChange({ category: 'integer' }, { category: 'integer', unsigned: true })).toBe(true);
+    });
+
+    it('should detect a dropped timezone as breaking, and keep adding one safe', () => {
+      expect(isBreakingTypeChange({ category: 'timestamp', withTimezone: true }, { category: 'timestamp' })).toBe(true);
+      expect(isBreakingTypeChange({ category: 'timestamp' }, { category: 'timestamp', withTimezone: true })).toBe(
+        false,
+      );
     });
   });
 

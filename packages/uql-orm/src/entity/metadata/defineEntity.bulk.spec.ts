@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import type { EntityMeta, Type } from '../../type/index.js';
 import { defineEntity, defineField, defineFilter, defineId, defineRelation, getMeta } from './definition.js';
 
-/** Stable projection for parity assertions (drops `entity` and `processed`). */
+/** Stable projection for parity assertions (drops `entity` and the revision counters). */
 function metaCore<E>(
   entity: Type<E>,
 ): Pick<EntityMeta<E>, 'ids' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
@@ -247,4 +247,25 @@ it('defineEntity bulk filters match incremental defineFilter', () => {
   });
 
   expect(metaCore(Incremental).filters).toEqual(metaCore(Bulk).filters);
+});
+
+it('a second defineEntity keeps the name and schema the first one set', () => {
+  class Composed {
+    id?: number;
+    title?: string;
+    extra?: string;
+  }
+  defineEntity(Composed, {
+    name: 'composed_rows',
+    schema: 'cms',
+    fields: { id: { type: Number, isId: true }, title: { type: String } },
+  });
+
+  // A later registration adds to the entity; it says nothing about the table, so it retracts nothing.
+  defineEntity(Composed, { fields: { extra: { type: String } } });
+
+  const meta = getMeta(Composed);
+  expect(meta.name).toBe('composed_rows');
+  expect(meta.schema).toBe('cms');
+  expect(Object.keys(meta.fields)).toEqual(['id', 'title', 'extra']);
 });

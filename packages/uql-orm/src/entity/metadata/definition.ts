@@ -18,6 +18,7 @@ import type {
 } from '../../type/index.js';
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import {
+  fieldOptionConflict,
   getKeys,
   ddlText,
   hasKeys,
@@ -40,12 +41,16 @@ const metas: Meta = holder[metaKey] ?? new Map();
 holder[metaKey] = metas;
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   if (!opts.type && !opts.references && !opts.virtual) {
     throw new TypeError(
       `'${entity.name}.${key}' needs a 'type'. Declare it - '@Field({ type: String })' - or point the field ` +
         "at another entity with 'references', which resolves the column type from its primary key.",
     );
+  }
+  const conflict = fieldOptionConflict(opts);
+  if (conflict) {
+    throw new TypeError(`'${entity.name}.${key}' ${conflict}.`);
   }
   const fieldKey = key as FieldKey<E>;
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
@@ -68,7 +73,7 @@ export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOp
       `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
     );
   }
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   // Registration writes the authored shape into a map declared as resolved: `getMeta` runs
   // `fillRelations`, which settles `entity`, `references` and `mappedBy` or throws. Bridging the two
   // shapes here is what lets every consumer read `RelationMeta` without asserting.
@@ -78,7 +83,7 @@ export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOp
 }
 
 export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   if (!meta.hooks) meta.hooks = {};
   if (!meta.hooks[event]) meta.hooks[event] = [];
   meta.hooks[event].push({ methodName });
@@ -90,7 +95,7 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
  * lets the dialects render one shape instead of re-parsing it.
  */
 export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>, E>): EntityMeta<E> {
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   if (!meta.indexes) meta.indexes = [];
   meta.indexes.push({
     ...index,
@@ -102,7 +107,7 @@ export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey
 }
 
 export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptions<E>): EntityMeta<E> {
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   if (name === SOFT_DELETE_FILTER) {
     throw TypeError(
       `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; it is auto-registered from @Field({ softDelete })`,
@@ -162,7 +167,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     );
   }
 
-  const meta = ensureMeta(entity);
+  const meta = ensureWritableMeta(entity);
   // Covers `defineEntity(Decorated)` called on a class whose members carry decorators. `@Entity()`
   // drains `context.metadata` itself, because TypeScript only attaches `Symbol.metadata` to the class
   // after class decorators return; draining empties the bag, so whichever runs second is a no-op.
@@ -183,8 +188,9 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  meta.name = opts.name ?? entity.name;
-  meta.schema = opts.schema;
+  // A later call composes onto the entity, so saying nothing about the table retracts nothing.
+  meta.name = opts.name ?? meta.name ?? entity.name;
+  meta.schema = opts.schema ?? meta.schema;
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
   while (proto.constructor !== Object) {
@@ -274,12 +280,22 @@ export function getEntities(): Type<unknown>[] {
   }, [] as Type<unknown>[]);
 }
 
+/**
+ * The metadata of `entity`, marked as changed. Every `define*` goes through this, and nothing outside
+ * this file writes to a meta, so it is the one place a derived cache can be told it has gone stale.
+ */
+function ensureWritableMeta<E>(entity: Type<E>): EntityMeta<E> {
+  const meta = ensureMeta(entity);
+  meta.revision++;
+  return meta;
+}
+
 function ensureMeta<E>(entity: Type<E>): EntityMeta<E> {
   let meta = metas.get(entity);
   if (meta) {
     return meta;
   }
-  meta = { entity, ids: [], fields: {}, relations: {} };
+  meta = { entity, ids: [], fields: {}, relations: {}, revision: 0 };
   metas.set(entity, meta);
   return meta;
 }
@@ -289,10 +305,13 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (!meta) {
     throw TypeError(`'${entity.name}' is not an entity`);
   }
-  if (meta.processed) {
+  if (meta.processedAt === meta.revision) {
     return meta;
   }
-  meta.processed = true;
+  // Stamped before finalizing, not after: `fillInverseSide` reads the other side through `getMeta`,
+  // and with each side mapped by the other that recursion has to find this half-filled meta rather
+  // than run again. Finalizing twice is harmless anyway - every step of it skips what it settled.
+  meta.processedAt = meta.revision;
   return fillRelations(meta);
 }
 

@@ -32,6 +32,24 @@ describe('SchemaASTDiffer', () => {
       expect(diff.tablesToDrop.length).toBe(0);
     });
 
+    it('should not call a column breaking for a type it never compared', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      // A generated key: its type is the dialect's own serial spelling, which MySQL reads back as
+      // unsigned against an entity that cannot say so, and which the diff therefore skips. The column
+      // still differs - it is unique on one side - and that difference loses nothing.
+      const key = { name: 'id', isPrimaryKey: true, isAutoIncrement: true } as const;
+      source.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer' }, isUnique: true }]));
+      target.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer', unsigned: true } }]));
+
+      const diff = diffSchemas(source, target);
+
+      expect(diff.columnDiffs).toHaveLength(1);
+      expect(diff.columnDiffs[0].description).toContain('unique');
+      expect(diff.columnDiffs[0].description).not.toContain('type');
+      expect(diff.columnDiffs[0].isBreaking).toBe(false);
+    });
+
     it('should detect tables to create', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();

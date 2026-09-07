@@ -515,14 +515,15 @@ type QueryProjectedRow<
   ? E
   : IsUniform<V> extends true
     ? [PopulatedToMany<E, P>] extends [never]
-      ? { [K in keyof E as K extends ProjectedKeys<E, S, V, X, P, C> ? K : never]: E[K] }
+      ? // `Pick`, not a key remap: an entity keyed by an index signature - a content type defined at
+        // runtime - has `string` for its keys, and a remap keeps no literal one, so every projection
+        // over one came back as `{}`.
+        Pick<E, ProjectedKeys<E, S, V, X, P, C> & keyof E>
       : // A populated to-many is always a list, empty where the parent has no children, so it maps
         // and counts without a guard. Only that promotion needs a second member, and only a query
         // that populates one pays for it; every other key keeps the modifier the entity declared,
         // a to-one relation included, since a join that finds no row leaves it absent.
-        {
-          [K in keyof E as K extends Exclude<ProjectedKeys<E, S, V, X, P, C>, PopulatedToMany<E, P>> ? K : never]: E[K];
-        } & {
+        Pick<E, Exclude<ProjectedKeys<E, S, V, X, P, C>, PopulatedToMany<E, P>> & keyof E> & {
           [K in PopulatedToMany<E, P>]-?: NonNullable<E[K]>;
         }
     : E;

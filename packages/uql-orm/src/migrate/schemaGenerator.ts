@@ -3,9 +3,9 @@ import { getMeta, soleIdOf } from '../entity/index.js';
 import {
   areTypesEqual,
   canonicalToSql,
+  engineType,
   fieldOptionsToCanonical,
   isVectorCategory,
-  sqlToCanonical,
 } from '../schema/canonicalType.js';
 import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
@@ -93,13 +93,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    */
   protected get serialType(): string {
     return this.dialect.serialType;
-  }
-
-  /**
-   * Convert FieldOptions to CanonicalType using the unified type system.
-   */
-  protected getCanonicalType(field: FieldOptions, fieldType?: unknown): CanonicalType {
-    return fieldOptionsToCanonical(field, fieldType);
   }
 
   protected canonicalTypeToSql(type: CanonicalType): string {
@@ -378,23 +371,22 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
 
-  public getSqlType(field: FieldMeta, fieldType?: unknown, isSoleKey = field.isId === true): string {
-    // If field has a reference, inherit type from the target primary key
+  public getSqlType(field: FieldMeta): string {
+    // A foreign key takes the type of the key it points at. A `referencedKey` the target does not
+    // have falls through to this column's own options, as the AST builder does with the same case.
     if (field.references) {
-      const refEntity = field.references();
-      const refMeta = getMeta(refEntity);
+      const refMeta = getMeta(field.references());
       const refIdField = refMeta.fields[field.referencedKey ?? soleIdOf(refMeta, 'a foreign key')];
-      return this.getSqlType(
-        { ...refIdField, references: undefined, isId: undefined, autoIncrement: false },
-        refIdField!.type,
-      );
+      if (refIdField) {
+        return this.getSqlType({ ...refIdField, references: undefined, isId: undefined, autoIncrement: false });
+      }
     }
 
     // Get canonical type and convert to SQL
-    const canonical = this.getCanonicalType(field, fieldType);
+    const canonical = fieldOptionsToCanonical(field);
 
     // Special case for serial primary keys
-    if (isAutoIncrement(field, isSoleKey)) {
+    if (isAutoIncrement(field, field.isId === true)) {
       return this.dialect.serialType;
     }
 
@@ -537,7 +529,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   protected diffOptions(): DiffOptions {
     return {
-      normalizeType: (type) => sqlToCanonical(this.canonicalTypeToSql(type)),
+      normalizeType: engineType(this.dialect),
       defaultsEqual: (expected, actual) => this.isDefaultValueEqual(actual, expected),
     };
   }

@@ -25,6 +25,23 @@ describe('EntityCodeGenerator', () => {
       expect(result!.code).toContain('name?:');
     });
 
+    it('should type a blob column as the bytes the drivers return', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('files', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'body', type: { category: 'blob' } },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('files');
+
+      // Not `Buffer`: the drivers hand back a `Uint8Array`, and a generated file has to compile in a
+      // project with no `@types/node`.
+      expect(result!.code).toContain('body?: Uint8Array');
+      expect(result!.code).not.toContain('Buffer');
+    });
+
     it('should use PascalCase for class name', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('user_profiles', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);

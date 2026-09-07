@@ -58,6 +58,9 @@ export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
  */
 type IsJson<T> = '__json' extends keyof T ? true : false;
 
+/** Whether `T` is what a JSON column holds: the branded payload, or an array of them. */
+type IsJsonColumn<T> = IsJson<T> extends true ? true : IsJson<NonNullable<Unpacked<T>>>;
+
 /** The payload `P` of a branded `Json<P>`, or `never` for any non-JSON type. */
 type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
 
@@ -370,25 +373,23 @@ export type FieldType =
  * arms so a `number[]` vector is not read as a `number`.
  */
 export type TypeFor<V, T = NonNullable<V>> =
-  IsJson<T> extends true
+  IsJsonColumn<T> extends true
     ? JsonColumnType
-    : IsJson<NonNullable<Unpacked<T>>> extends true
-      ? JsonColumnType
-      : T extends readonly number[]
-        ? VectorColumnType
-        : T extends string
-          ? StringConstructor | StringColumnType
-          : T extends number
-            ? NumberConstructor | NumericColumnType
-            : T extends bigint
-              ? BigIntConstructor | NumericColumnType
-              : T extends boolean
-                ? BooleanConstructor | BooleanColumnType
-                : T extends Date
-                  ? DateConstructor | DateColumnType
-                  : T extends Uint8Array
-                    ? BlobColumnType
-                    : FieldType;
+    : T extends readonly number[]
+      ? VectorColumnType
+      : T extends string
+        ? StringConstructor | StringColumnType
+        : T extends number
+          ? NumberConstructor | NumericColumnType
+          : T extends bigint
+            ? BigIntConstructor | NumericColumnType
+            : T extends boolean
+              ? BooleanConstructor | BooleanColumnType
+              : T extends Date
+                ? DateConstructor | DateColumnType
+                : T extends Uint8Array
+                  ? BlobColumnType
+                  : FieldType;
 
 /**
  * A field as the registry holds it: what the user authored, plus what registration worked out.
@@ -500,11 +501,9 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    */
   readonly unique?: boolean;
   /**
-   * The column's DDL default, rendered into `CREATE TABLE` by `formatDefaultValue` - not `V`, unlike
-   * the generators above. A JSONB column defaults with the SQL literal it stores, `defaultValue: '{}'`,
-   * which is a string whatever the field's TypeScript type is.
+   * The column's DDL default, rendered into `CREATE TABLE` by `formatDefaultValue`.
    */
-  readonly defaultValue?: Scalar | Record<string, unknown>;
+  readonly defaultValue?: DdlDefault<V>;
   /**
    * Whether the column is auto-incrementing (for integer IDs).
    */
@@ -520,6 +519,20 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
 };
 
 export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V | QueryRaw);
+
+/**
+ * What a column may default to: the value it holds, except on a JSON column, which defaults with the
+ * SQL literal it stores (`defaultValue: '{}'`) whatever the property's TypeScript type is. Opening
+ * that exception to every field is what let `@Field({ type: Number, defaultValue: 'hello' })` compile.
+ *
+ * The erased shape - `FieldOptions` with no field in mind - admits every column's default at once, or
+ * no `FieldOptions<V>` would be assignable to the one the registry and the dialects read.
+ */
+type DdlDefault<V, T = NonNullable<V>> =
+  IsJsonColumn<T> extends true ? JsonDdlDefault : [TsTypeOf<FieldType>] extends [T] ? JsonDdlDefault | T : T;
+
+/** What a JSON column, and the field-less `FieldOptions`, may default to. */
+type JsonDdlDefault = Scalar | Record<string, unknown>;
 
 /**
  * The TypeScript types a field may be declared as, given the `type` it registers: the inverse of
@@ -939,7 +952,13 @@ export type EntityMeta<E> = {
   checks?: CheckSchema[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
-  processed?: boolean;
+  /**
+   * Bumped by every `define*` call, so anything derived from this metadata can tell that it changed.
+   * A content type registered at runtime keeps adding to an entity that has already been read.
+   */
+  revision: number;
+  /** The revision `getMeta` last finalized, which is what makes finalizing idempotent and re-entrant. */
+  processedAt?: number;
 };
 
 /**

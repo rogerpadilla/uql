@@ -106,7 +106,7 @@ function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = 
       return resolveColumnCanonicalType(referencedIdField, seen);
     }
   }
-  return fieldOptionsToCanonical(field, field.type);
+  return fieldOptionsToCanonical(field);
 }
 
 /**

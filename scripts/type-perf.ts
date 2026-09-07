@@ -4,11 +4,17 @@
  * queries, which is the fixed cost of materializing the querier's signatures, and with `--calls` of
  * them, whose difference is what one more query costs.
  *
+ * Measured against `dist`, which is what a consumer actually compiles against, so **`bun run build`
+ * first** - including in the worktree, when measuring a before against another ref. Pointing at the
+ * source instead put uql's own 39k lines in the program: the fixed cost read as 414k instantiations
+ * where a consumer pays 4k, it moved whenever an implementation did, and it could not compile at all
+ * under `types: []` (17 errors on `console`, `Buffer`, `TextDecoder`), which is the shape a consumer
+ * has. `verify-dist` is what proves the declarations do compile there.
+ *
  * Instantiations are deterministic; the wall clock is not, so compare that only within one run.
- * For a before/after, check out the other ref in a worktree and run this there.
  */
 
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,6 +22,11 @@ import { $ } from 'bun';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const calls = Number(process.argv[2] ?? 200);
+const declarations = resolve(root, 'packages/uql-orm/dist/index.d.ts');
+
+if (!existsSync(declarations)) {
+  throw new Error(`no declarations at ${declarations} - run 'bun run build' first.`);
+}
 
 const entities = /*ts*/ `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
 
@@ -42,6 +53,8 @@ export async function q${i}(q: Querier) {
   const a = await q.findMany(User, { $select: { id: true, name: true }, $where: { age: { $gte: ${i} } }, $sort: { createdAt: -1 } });
   const b = await q.findOne(User, { $exclude: { email: true }, $where: { name: 'x' } });
   const c = await q.findMany(Company, { $populate: { users: { $select: { name: true } } }, $where: { size: ${i} } });
+  await q.insertMany(User, [{ name: 'x', age: ${i} }]);
+  await q.updateMany(User, { $where: { age: ${i} } }, { name: 'y' });
   return [a[0]?.name, b?.name, c[0]?.users];
 }`;
 
@@ -60,8 +73,6 @@ async function measure(blocks: number): Promise<string> {
     );
     writeFileSync(
       resolve(dir, 'tsconfig.json'),
-      // The source rather than `dist`, so a measurement needs no build: these are the same types the
-      // published `.d.ts` projects.
       JSON.stringify({
         compilerOptions: {
           module: 'NodeNext',
@@ -72,11 +83,17 @@ async function measure(blocks: number): Promise<string> {
           strict: true,
           skipLibCheck: true,
           noEmit: true,
-          paths: { 'uql-orm': [`${root}/packages/uql-orm/src/index.ts`] },
+          paths: { 'uql-orm': [declarations] },
         },
       }),
     );
     const out = await $`${resolve(root, 'node_modules/.bin/tsc')} -p ${dir} --extendedDiagnostics`.nothrow().text();
+    // A failed compile still prints counters, and a project that resolves nothing prints zeroes, so
+    // the numbers are only worth reading once the fixture is known to have type-checked.
+    const errors = out.split('\n').filter((line) => line.includes('error TS'));
+    if (errors.length) {
+      throw new TypeError(`the measured project does not compile:\n${errors.join('\n')}`);
+    }
     const counters = /^(Instantiations|Check time):\s+(\S+)/gm;
     const read = [...out.matchAll(counters)].map(([, name, value]) => `${name}: ${value}`).join('  ');
     if (!read) {

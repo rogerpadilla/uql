@@ -99,8 +99,8 @@ class Referrer {
   @Field({ references: () => Company }) misTypedId?: string;
 }
 // ─── Generators stamp the value the field declares ───
-// `defaultValue` is deliberately not among them: it is the DDL literal, so a JSONB column defaults
-// with the string it stores. Requiring the field's own type there broke every such column in 0.24.3.
+// `defaultValue` does too, with one exception: a JSONB column defaults with the SQL literal it
+// stores. Requiring the field's own type there as well broke every such column in 0.24.3.
 class Generated {
   @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
   @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number;
@@ -118,6 +118,8 @@ expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => Date.now() }
 expectType<FieldOptionsFor<Json<{ theme?: string }>>>({ type: 'jsonb', defaultValue: '{}' });
 // @ts-expect-error a number column is not stamped with a string
 expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
+// @ts-expect-error nor does it default to one
+expectType<FieldOptionsFor<number>>({ type: Number, defaultValue: 'nope' });
 
 // ─── RelationOptionsFor: `entity` required and pinned, cardinality follows the field shape ───
 expectType<RelationTarget<Company>>(new Company());

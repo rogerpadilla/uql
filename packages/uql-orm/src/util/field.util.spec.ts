@@ -1,76 +1,48 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldOptions } from '../type/index.js';
-import { isAutoIncrement, isBooleanType, isNumericType } from './field.util.js';
+import { columnFamily, isAutoIncrement } from './field.util.js';
 
-describe('isNumericType', () => {
-  it('should return true for Number constructor', () => {
-    expect(isNumericType(Number)).toBe(true);
+describe('columnFamily', () => {
+  it('places the constructors', () => {
+    expect(columnFamily(Number)).toBe('numeric');
+    expect(columnFamily(BigInt)).toBe('numeric');
+    expect(columnFamily(String)).toBe('string');
+    expect(columnFamily(Boolean)).toBe('boolean');
+    expect(columnFamily(Date)).toBe('date');
   });
 
-  it('should return true for BigInt constructor', () => {
-    expect(isNumericType(BigInt)).toBe(true);
-  });
-
-  it('should return true for numeric string types', () => {
-    const numericTypes = [
-      'int',
-      'integer',
-      'tinyint',
-      'bigint',
-      'smallint',
-      'decimal',
-      'numeric',
-      'float',
-      'real',
-      'double',
-      'serial',
-      'smallserial',
-      'bigserial',
-    ];
-    for (const type of numericTypes) {
-      expect(isNumericType(type)).toBe(true);
+  it('places one type of each family, which is what the built lookup has to get right', () => {
+    // Every type's placement is checked where it is written - each list `satisfies` its own column-type
+    // union, and `UnplacedColumnType` refuses one left out - and cross-checked against the canonical
+    // categories in `canonicalType.spec`. What is left for a test is the lookup built from that table.
+    const oneOfEach = {
+      bigserial: 'numeric',
+      uuid: 'string',
+      timestamptz: 'date',
+      jsonb: 'json',
+      bytea: 'blob',
+      bool: 'boolean',
+      halfvec: 'vector',
+    };
+    for (const [type, family] of Object.entries(oneOfEach)) {
+      expect([type, columnFamily(type)]).toEqual([type, family]);
     }
   });
 
-  it('should return true for mixed case numeric string types', () => {
-    expect(isNumericType('INT')).toBe(true);
-    expect(isNumericType('Decimal')).toBe(true);
+  it('reads a column type in any case', () => {
+    expect(columnFamily('INT')).toBe('numeric');
+    expect(columnFamily('Decimal')).toBe('numeric');
+    expect(columnFamily('BOOLEAN')).toBe('boolean');
   });
 
-  it('should return false for non-numeric types', () => {
-    const nonNumericTypes = ['boolean', 'string', 'varchar', 'text', 'uuid', 'date', 'json', 'blob'];
-    for (const type of nonNumericTypes) {
-      expect(isNumericType(type)).toBe(false);
-    }
-  });
-
-  it('should return false for invalid inputs', () => {
-    expect(isNumericType(null)).toBe(false);
-    expect(isNumericType(undefined)).toBe(false);
-    expect(isNumericType({})).toBe(false);
-    expect(isNumericType(Boolean)).toBe(false);
-    expect(isNumericType(Date)).toBe(false);
-  });
-});
-
-describe('isBooleanType', () => {
-  it('should return true for the Boolean constructor and both boolean string types', () => {
-    expect(isBooleanType(Boolean)).toBe(true);
-    expect(isBooleanType('bool')).toBe(true);
-    expect(isBooleanType('boolean')).toBe(true);
-    expect(isBooleanType('BOOLEAN')).toBe(true);
-  });
-
-  it('should return false for anything else', () => {
-    // `tinyint` in particular: MySQL stores a boolean as TINYINT(1), but a field declaring the column
-    // type asked for an integer, and reading it back as `true`/`false` would be a different type.
-    for (const type of ['tinyint', 'int', 'string', 'json']) {
-      expect(isBooleanType(type)).toBe(false);
-    }
-    expect(isBooleanType(Number)).toBe(false);
-    expect(isBooleanType(null)).toBe(false);
-    expect(isBooleanType(undefined)).toBe(false);
-    expect(isBooleanType({})).toBe(false);
+  it('places nothing else', () => {
+    // `tinyint` is numeric in particular: MySQL stores a boolean as TINYINT(1), but a field declaring
+    // that column type asked for an integer, and reading it back as `true`/`false` would be another type.
+    expect(columnFamily('string')).toBe(undefined);
+    expect(columnFamily('nonesuch')).toBe(undefined);
+    expect(columnFamily(null)).toBe(undefined);
+    expect(columnFamily(undefined)).toBe(undefined);
+    expect(columnFamily({})).toBe(undefined);
   });
 });
 

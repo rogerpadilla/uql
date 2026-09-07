@@ -6,17 +6,17 @@ describe('MysqlSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new MySqlDialect());
 
   it('should map column types correctly', () => {
-    expect(generator.getSqlType({ length: 100 }, String)).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({}, String)).toBe('VARCHAR(255)');
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ columnType: 'varchar' }, String)).toBe('VARCHAR(255)');
-    expect(generator.getSqlType({ columnType: 'text' }, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' }, Number)).toBe('INT');
-    expect(generator.getSqlType({ columnType: 'bigint' }, Number)).toBe('BIGINT');
-    expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('TINYINT(1)');
-    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 }, Number)).toBe('DECIMAL(10, 2)');
-    expect(generator.getSqlType({ columnType: 'serial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
-    expect(generator.getSqlType({ columnType: 'bigserial' }, {})).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
+    expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ type: String })).toBe('VARCHAR(255)');
+    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
+    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('VARCHAR(255)');
+    expect(generator.getSqlType({ columnType: 'text' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'int' })).toBe('INT');
+    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('BIGINT');
+    expect(generator.getSqlType({ type: Boolean })).toBe('TINYINT(1)');
+    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 })).toBe('DECIMAL(10, 2)');
+    expect(generator.getSqlType({ columnType: 'serial' })).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
+    expect(generator.getSqlType({ columnType: 'bigserial' })).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
   });
 
   it('should generate ALTER COLUMN statements', () => {

@@ -6,15 +6,6 @@
 /** Vector cast types supported by pgvector. */
 export type VectorCast = 'vector' | 'halfvec' | 'sparsevec';
 
-/**
- * Whether a declared field type is a vector of any width. Every dialect that treats vectors specially
- * has to answer this for all three, not just `vector`: matching that one alone left `halfvec` and
- * `sparsevec` fields binding as plain arrays on insert and reading back raw.
- */
-export function isVectorFieldType(type: unknown): boolean {
-  return type === 'vector' || type === 'halfvec' || type === 'sparsevec';
-}
-
 /** Resolves the effective cast from field options, `columnType` taking priority over `type`. */
 export function resolveVectorCast(field: { type?: unknown; columnType?: unknown } | undefined): VectorCast {
   const raw = field?.columnType ?? field?.type;

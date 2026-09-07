@@ -6,9 +6,13 @@ describe('SqliteSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new SqliteDialect());
 
   it('should map column types correctly', () => {
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 }, String)).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' }, Number)).toBe('INTEGER');
-    expect(generator.getSqlType({ type: Boolean }, Boolean)).toBe('INTEGER');
+    // Affinity, so a length is not a different column type here as it is everywhere else.
+    expect(generator.getSqlType({ type: String })).toBe('TEXT');
+    expect(generator.getSqlType({ type: String, length: 100 })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('TEXT');
+    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
+    expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
   });
 
   it('should throw error on generateAlterColumnStatements (SQLite limitation)', () => {

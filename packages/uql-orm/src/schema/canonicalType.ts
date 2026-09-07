@@ -11,6 +11,7 @@ import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
 import type { DialectName } from '../type/index.js';
+import { columnFamily } from '../util/field.util.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 /** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
@@ -132,77 +133,60 @@ const PG_TYPE_MAP: Record<TypeCategory, string> = {
   sparsevec: 'SPARSEVEC',
 };
 
+const MYSQL_SCALAR_MAP: ScalarTypeMap = {
+  integer: 'INT',
+  float: 'FLOAT',
+  decimal: 'DECIMAL',
+  string: 'VARCHAR',
+  boolean: 'TINYINT(1)',
+  date: 'DATE',
+  time: 'TIME',
+  timestamp: 'DATETIME',
+  json: 'JSON',
+  uuid: 'CHAR(36)',
+  blob: 'BLOB',
+};
+
+const SQLITE_SCALAR_MAP: ScalarTypeMap = {
+  integer: 'INTEGER',
+  float: 'REAL',
+  decimal: 'REAL',
+  string: 'TEXT',
+  boolean: 'INTEGER',
+  date: 'TEXT',
+  time: 'TEXT',
+  timestamp: 'TEXT',
+  json: 'TEXT',
+  uuid: 'TEXT',
+  blob: 'BLOB',
+};
+
+/** MongoDB uses BSON types, not SQL types. These are placeholders for compatibility. */
+const MONGO_SCALAR_MAP: ScalarTypeMap = {
+  integer: 'int',
+  float: 'double',
+  decimal: 'decimal128',
+  string: 'string',
+  boolean: 'bool',
+  date: 'date',
+  time: 'string',
+  timestamp: 'timestamp',
+  json: 'object',
+  uuid: 'binData',
+  blob: 'binData',
+};
+
+/** Every engine's scalars, and the one spelling it gives all three vector widths. */
 const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
   postgres: PG_TYPE_MAP,
   // CockroachDB's VECTOR is native, no extension needed.
   cockroachdb: withVectorType(PG_SCALAR_MAP, 'VECTOR'),
-  mysql: withVectorType(
-    {
-      integer: 'INT',
-      float: 'FLOAT',
-      decimal: 'DECIMAL',
-      string: 'VARCHAR',
-      boolean: 'TINYINT(1)',
-      date: 'DATE',
-      time: 'TIME',
-      timestamp: 'DATETIME',
-      json: 'JSON',
-      uuid: 'CHAR(36)',
-      blob: 'BLOB',
-    },
-    // MySQL does have a `VECTOR` type (26.7), but no distance function outside HeatWave and no vector
-    // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
-    'JSON',
-  ),
-  sqlite: withVectorType(
-    {
-      integer: 'INTEGER',
-      float: 'REAL',
-      decimal: 'REAL',
-      string: 'TEXT',
-      boolean: 'INTEGER',
-      date: 'TEXT',
-      time: 'TEXT',
-      timestamp: 'TEXT',
-      json: 'TEXT',
-      uuid: 'TEXT',
-      blob: 'BLOB',
-    },
-    'TEXT',
-  ),
-  mariadb: withVectorType(
-    {
-      integer: 'INT',
-      float: 'FLOAT',
-      decimal: 'DECIMAL',
-      string: 'VARCHAR',
-      boolean: 'TINYINT(1)',
-      date: 'DATE',
-      time: 'TIME',
-      timestamp: 'DATETIME',
-      json: 'JSON',
-      uuid: 'CHAR(36)',
-      blob: 'BLOB',
-    },
-    'VECTOR',
-  ),
-  // MongoDB uses BSON types, not SQL types. These are placeholders for compatibility.
-  mongodb: withVectorType(
-    {
-      integer: 'int',
-      float: 'double',
-      decimal: 'decimal128',
-      string: 'string',
-      boolean: 'bool',
-      date: 'date',
-      time: 'string',
-      timestamp: 'timestamp',
-      json: 'object',
-      uuid: 'binData',
-      blob: 'binData',
-    },
-    'array',
-  ),
+  // MySQL does have a `VECTOR` type (26.7), but no distance function outside HeatWave and no vector
+  // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
+  mysql: withVectorType(MYSQL_SCALAR_MAP, 'JSON'),
+  mariadb: withVectorType(MYSQL_SCALAR_MAP, 'VECTOR'),
+  sqlite: withVectorType(SQLITE_SCALAR_MAP, 'TEXT'),
+  mongodb: withVectorType(MONGO_SCALAR_MAP, 'array'),
 };
 
 /**
@@ -278,7 +262,7 @@ const CANONICAL_TO_TS: Record<TypeCategory, string> = {
   timestamp: 'Date',
   json: 'unknown',
   uuid: 'string',
-  blob: 'Buffer',
+  blob: 'Uint8Array',
   vector: 'number[]',
   halfvec: 'number[]',
   sparsevec: 'number[]',
@@ -441,155 +425,105 @@ export function canonicalToTypeScript(type: CanonicalType): string {
 }
 
 /**
+ * A type as `dialect` would actually store it: rendered to that engine's SQL and read back.
+ *
+ * Several canonical types share one storage type per engine - a `boolean` is `TINYINT(1)` on MySQL and
+ * `INTEGER` on SQLite - and only the engine settles an unstated bound, since `VARCHAR` is 255 on MySQL
+ * and `TEXT` on Postgres. Both paths that diff a schema compare through this, so a migration and a
+ * drift report cannot disagree about what changed.
+ */
+export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
+  return (type) => sqlToCanonical(canonicalToSql(type, dialect));
+}
+
+/**
  * Convert UQL FieldOptions to a canonical type.
  */
-export function fieldOptionsToCanonical(options: FieldOptions, tsType?: unknown): CanonicalType {
-  // If explicit columnType is specified, use it
+export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
+  // An explicit column type is read exactly as an introspected one is: the SQL type, plus whatever
+  // bounds are stated beside it.
   if (options.columnType) {
-    const base = sqlToCanonical(options.columnType);
-    return {
-      ...base,
-      length: options.length ?? base.length,
-      precision: options.precision ?? base.precision,
-      scale: options.scale ?? base.scale,
-    };
+    return canonicalColumnType(options.columnType, options);
   }
 
-  // Infer from type (could be constructor or string)
-  const type = options.type || tsType;
-
-  if (type === String) {
-    return {
-      category: 'string',
-      length: options.length,
-    };
-  }
-
-  if (type === Number) {
-    if (options.precision || options.scale) {
-      return {
-        category: 'decimal',
-        precision: options.precision,
-        scale: options.scale,
-      };
-    }
-    // BIGINT for every `Number`, key or not: a 32-bit column is a migration waiting to happen, and
-    // the pools decode it back to a JS number at the wire (see `pgNumericTypes`).
-    return { category: 'integer', size: 'big' };
-  }
-
-  if (type === Boolean) {
-    return { category: 'boolean' };
-  }
-
-  if (type === Date) {
-    return { category: 'timestamp' };
-  }
-
-  if (type === BigInt) {
-    return { category: 'integer', size: 'big' };
-  }
+  // Infer from type, which is a SQL type string or one of the constructors.
+  const { type } = options;
 
   if (typeof type === 'string') {
     const canonical = sqlToCanonical(type);
     // Propagate explicit dimensions into CanonicalType.length for vector types
-    if (options.dimensions && isVectorCategory(canonical.category)) {
-      return { ...canonical, length: options.dimensions };
-    }
-    return canonical;
+    return options.dimensions && isVectorCategory(canonical.category)
+      ? { ...canonical, length: options.dimensions }
+      : canonical;
   }
 
-  // Default to string
-  return { category: 'string', length: options.length };
+  switch (columnFamily(type)) {
+    case 'numeric':
+      // BIGINT for every `Number` without a scale, key or not: a 32-bit column is a migration waiting
+      // to happen, and the pools decode it back to a JS number at the wire (see `pgNumericTypes`).
+      return type === Number && (options.precision || options.scale)
+        ? { category: 'decimal', precision: options.precision, scale: options.scale }
+        : { category: 'integer', size: 'big' };
+    case 'boolean':
+      return { category: 'boolean' };
+    case 'date':
+      return { category: 'timestamp' };
+    // `String`, and anything a reflected type left unrecognised.
+    default:
+      return { category: 'string', length: options.length };
+  }
 }
 
 /**
- * Compare two canonical types for equality.
- * Used for schema diffing.
+ * Compare two canonical types for equality. Used for schema diffing.
+ *
+ * Nothing here guesses an engine's own default for an unstated bound: `VARCHAR` is 255 on MySQL and
+ * `TEXT` on Postgres, and a comparison that assumed either was blind to that difference on the other.
+ * `DiffOptions.normalizeType` is what settles it, by putting both sides through the engine first.
  */
 export function areTypesEqual(a: CanonicalType, b: CanonicalType): boolean {
-  // Category must match
-  if (a.category !== b.category) {
-    return false;
-  }
-
-  // Size must match (if specified)
-  if (a.size !== b.size) {
-    return false;
-  }
-
-  // For strings, compare length (allowing for default 255)
-  if (a.category === 'string') {
-    const lengthA = a.length ?? 255;
-    const lengthB = b.length ?? 255;
-    if (lengthA !== lengthB) {
-      return false;
-    }
-  }
-
-  // For decimals, compare precision and scale (allowing for default 10, 2)
-  if (a.category === 'decimal') {
-    const pA = a.precision ?? 10;
-    const pB = b.precision ?? 10;
-    const sA = a.scale ?? 2;
-    const sB = b.scale ?? 2;
-    if (pA !== pB || sA !== sB) {
-      return false;
-    }
-  }
-
-  // For timestamps, compare timezone
-  if (a.category === 'timestamp') {
-    if (!!a.withTimezone !== !!b.withTimezone) {
-      return false;
-    }
-  }
-
-  // Unsigned must match
-  if (!!a.unsigned !== !!b.unsigned) {
-    return false;
-  }
-
-  return true;
+  return (
+    a.category === b.category &&
+    a.size === b.size &&
+    a.length === b.length &&
+    a.precision === b.precision &&
+    a.scale === b.scale &&
+    !!a.withTimezone === !!b.withTimezone &&
+    !!a.unsigned === !!b.unsigned
+  );
 }
 
 /**
- * Check if changing from type A to type B could cause data loss.
+ * Whether changing a column from one type to the other can lose what it holds.
+ *
+ * An unstated bound is the engine's widest, so stating one for the first time narrows the column just
+ * as lowering one does: `TEXT` to `VARCHAR(50)` truncates, and `NUMERIC` to `NUMERIC(5,2)` rounds.
  */
 export function isBreakingTypeChange(from: CanonicalType, to: CanonicalType): boolean {
-  // Changing category is always potentially breaking
   if (from.category !== to.category) {
     return true;
   }
-
-  // Reducing size is breaking
-  const sizeOrder: SizeVariant[] = ['tiny', 'small', 'medium', 'big'];
-  if (from.size && to.size) {
-    const fromIndex = sizeOrder.indexOf(from.size);
-    const toIndex = sizeOrder.indexOf(to.size);
-    if (toIndex < fromIndex) {
-      return true;
-    }
+  // Only where both state a size: an unsized member of a family is the engine's base type, wider than
+  // `tiny` and narrower than `big`, and which of those it is depends on a family this does not know.
+  if (from.size && to.size && SIZE_ORDER.indexOf(to.size) < SIZE_ORDER.indexOf(from.size)) {
+    return true;
   }
+  return (
+    narrows(from.length, to.length) ||
+    narrows(from.precision, to.precision) ||
+    narrows(from.scale, to.scale) ||
+    // Either direction drops half the range: signed loses the top bit, unsigned the negatives.
+    !!from.unsigned !== !!to.unsigned ||
+    // An offset the column stops keeping cannot be recovered from what is left.
+    (!!from.withTimezone && !to.withTimezone)
+  );
+}
 
-  // Reducing string length is breaking
-  if (from.category === 'string' && from.length && to.length) {
-    if (to.length < from.length) {
-      return true;
-    }
-  }
+const SIZE_ORDER: readonly SizeVariant[] = ['tiny', 'small', 'medium', 'big'];
 
-  // Reducing precision/scale is breaking
-  if (from.category === 'decimal') {
-    if (from.precision && to.precision && to.precision < from.precision) {
-      return true;
-    }
-    if (from.scale && to.scale && to.scale < from.scale) {
-      return true;
-    }
-  }
-
-  return false;
+/** A bound narrowed, where an unstated one is unbounded. */
+function narrows(from: number | undefined, to: number | undefined): boolean {
+  return to !== undefined && (from === undefined || to < from);
 }
 
 /**

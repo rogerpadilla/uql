@@ -1,60 +1,87 @@
-import type { EntityMeta, FieldOptions, JsonColumnType, NumericColumnType } from '../type/index.js';
-
-const NUMERIC_COLUMN_TYPES = {
-  int: true,
-  integer: true,
-  tinyint: true,
-  smallint: true,
-  bigint: true,
-  float: true,
-  float4: true,
-  float8: true,
-  double: true,
-  'double precision': true,
-  decimal: true,
-  numeric: true,
-  real: true,
-  serial: true,
-  smallserial: true,
-  bigserial: true,
-} as const satisfies Record<NumericColumnType, true>;
-
-const JSON_COLUMN_TYPES = {
-  json: true,
-  jsonb: true,
-} as const satisfies Record<JsonColumnType, true>;
+import type {
+  BlobColumnType,
+  BooleanColumnType,
+  ColumnType,
+  DateColumnType,
+  EntityMeta,
+  FieldOptions,
+  JsonColumnType,
+  NumericColumnType,
+  StringColumnType,
+  VectorColumnType,
+} from '../type/index.js';
+import { getKeys } from './object.util.js';
 
 /**
- * Checks if a field type is numeric (Number, BigInt, or explicit numeric logical types)
+ * The kind of column a field lands on, which is what decides whether an option means anything on it:
+ * `length` is a string's, `precision` a number's, `dimensions` a vector's. Named in the words an
+ * error reports it in, so there is no second table of labels to keep in step.
  */
-export function isNumericType(type: unknown): boolean {
-  if (type === Number || type === BigInt) return true;
-  if (typeof type === 'string') {
-    return type.toLowerCase() in NUMERIC_COLUMN_TYPES;
+export type ColumnFamily = 'string' | 'numeric' | 'boolean' | 'date' | 'json' | 'blob' | 'vector';
+
+/**
+ * The runtime half of the column-type unions in `type/entity.ts`, which TypeScript erases. Each list
+ * is checked against its own union, so a type cannot be filed under the wrong family, and
+ * {@link UnplacedColumnType} refuses to compile if a new one is filed under none. Nothing here
+ * restates the unions: the compile-time side of the same question reads them directly.
+ */
+export const COLUMN_TYPES_BY_FAMILY = {
+  numeric: [
+    'int',
+    'integer',
+    'tinyint',
+    'smallint',
+    'bigint',
+    'float',
+    'float4',
+    'float8',
+    'double',
+    'double precision',
+    'decimal',
+    'numeric',
+    'real',
+    'serial',
+    'smallserial',
+    'bigserial',
+  ],
+  string: ['char', 'varchar', 'text', 'uuid'],
+  date: ['date', 'time', 'datetime', 'timestamp', 'timestamptz'],
+  json: ['json', 'jsonb'],
+  blob: ['blob', 'bytea'],
+  boolean: ['bool', 'boolean'],
+  vector: ['vector', 'halfvec', 'sparsevec'],
+} as const satisfies {
+  numeric: readonly NumericColumnType[];
+  string: readonly StringColumnType[];
+  date: readonly DateColumnType[];
+  json: readonly JsonColumnType[];
+  blob: readonly BlobColumnType[];
+  boolean: readonly BooleanColumnType[];
+  vector: readonly VectorColumnType[];
+};
+
+/** Resolves to `never`, and fails to compile as anything else: a column type in no list above. */
+type UnplacedColumnType = Unplaced<Exclude<ColumnType, (typeof COLUMN_TYPES_BY_FAMILY)[ColumnFamily][number]>>;
+type Unplaced<T extends never> = T;
+
+// Constructors and type strings in one map: a logical type is either, and every caller asks the same
+// question of both.
+const FAMILY_OF = new Map<unknown, ColumnFamily>([
+  [String, 'string'],
+  [Number, 'numeric'],
+  [BigInt, 'numeric'],
+  [Boolean, 'boolean'],
+  [Date, 'date'],
+]);
+for (const family of getKeys(COLUMN_TYPES_BY_FAMILY)) {
+  for (const columnType of COLUMN_TYPES_BY_FAMILY[family]) {
+    FAMILY_OF.set(columnType, family);
   }
-  return false;
 }
 
-/**
- * Checks if a field type is boolean (Boolean, or an explicit boolean logical type)
- */
-export function isBooleanType(type: unknown): boolean {
-  if (type === Boolean) return true;
-  if (typeof type === 'string') {
-    const lowered = type.toLowerCase();
-    return lowered === 'bool' || lowered === 'boolean';
-  }
-  return false;
-}
-
-/**
- * Checks if a field type is JSON
- */
-export function isJsonType(type: unknown): boolean {
-  if (typeof type === 'string') {
-    return type.toLowerCase() in JSON_COLUMN_TYPES;
-  }
-  return false;
+/** The family of a logical field type, or `undefined` where it names none. */
+export function columnFamily(type: unknown): ColumnFamily | undefined {
+  return FAMILY_OF.get(typeof type === 'string' ? type.toLowerCase() : type);
 }
 
 /**
@@ -80,6 +107,5 @@ export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boo
   const colType = field.columnType?.toLowerCase();
   if (colType === 'serial' || colType === 'smallserial' || colType === 'bigserial') return true;
 
-  const isNumeric = isNumericType(field.type);
-  return isPrimaryKey && isNumeric && !field.onInsert && !field.columnType;
+  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.columnType;
 }

@@ -11,6 +11,7 @@ import type {
   RelationOptions,
   TsTypeOf,
 } from '../../type/index.js';
+import type { RejectIncompatible } from '../../util/index.js';
 import { memberRegistrations } from './bag.js';
 
 // The member decorators share one mechanism, which is why they share a file: the standard spec gives a
@@ -74,7 +75,8 @@ type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enum
 export function Field<
   O extends FieldOptions<DeclaredValue<O>> &
     ({ type: FieldType } | { references: EntityGetter }) &
-    RejectUnknown<O, FieldOptions>,
+    RejectUnknown<O, FieldOptions> &
+    RejectIncompatible<O>,
 >(opts: O): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = opts;
@@ -87,9 +89,13 @@ export function Field<
  * @example `@Id({ type: Number }) id?: number;`
  * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
  */
-export function Id<O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectUnknown<O, FieldOptions>>(
-  opts: O,
-): MemberDecorator<DeclaredValue<O> | undefined> {
+export function Id<
+  O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectUnknown<O, FieldOptions> &
+    RejectIncompatible<O> &
+    // A key is NOT NULL in every engine, and the `isId` that says so is stamped on below rather than
+    // authored, so this is the one contradiction the shared check cannot see from `O` alone.
+    { readonly nullable?: false },
+>(opts: O): MemberDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = { ...opts, isId: true };
   };
