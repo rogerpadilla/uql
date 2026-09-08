@@ -6,7 +6,7 @@ What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
 **A schema can be defined while the process runs** - a CMS content type an admin creates, a tenant whose columns are a row in a table. Register the columns as they arrive, with the SQL type each one stores (`type: 'text'`), then `sync({ entity })` gives it a table without reading the whole catalogue. See [Runtime Schemas](https://uql-orm.dev/entities/runtime).
 
-- `removeEntity(entity)` forgets a content type that was deleted, which an append-only registry would otherwise keep - with its table in every diff - for the life of the process.
+- `removeEntity(entity)` forgets a content type.
 - `uql-migrate types` writes a `.d.ts` for the registered entities, so one definition feeds both the database and the compiler.
 - **A naming strategy no longer rewrites a name you wrote.** `@Entity({ name: 'UserProfile' })` on `class UserProfile` was snake-cased like a default.
 - `entityPath` names an HTTP route, on the handler and the browser client alike, for a build that minifies class names.
