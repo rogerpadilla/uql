@@ -8,6 +8,8 @@ import { AbstractSqlDialect } from './abstractSqlDialect.js';
 class TestSqlDialect extends AbstractSqlDialect {
   override readonly dialectName: SqlDialectName = 'mysql';
 
+  override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
+
   protected override readonly featureDefaults: DialectFeatures = {
     explicitJsonCast: false,
     nativeArrays: false,

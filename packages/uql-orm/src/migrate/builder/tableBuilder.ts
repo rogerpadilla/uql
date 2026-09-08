@@ -5,7 +5,7 @@
  */
 
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
-import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 import { ddlText, normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { ColumnBuilder } from './columnBuilder.js';
@@ -18,7 +18,6 @@ import type {
   ITableForeignKeyBuilder,
   StringColumnOptions,
   TableDefinition,
-  TableForeignKeyDefinition,
   VectorColumnOptions,
 } from './types.js';
 
@@ -27,8 +26,8 @@ import type {
  */
 class TableForeignKeyBuilder implements ITableForeignKeyBuilder {
   private _columns: string[];
-  private _referencesTable?: string;
-  private _referencesColumns: string[] = [];
+  private _referencedTable?: string;
+  private _referencedColumns: string[] = [];
   private _onDelete: ForeignKeyAction = 'NO ACTION';
   private _onUpdate: ForeignKeyAction = 'NO ACTION';
   private _name?: string;
@@ -38,8 +37,8 @@ class TableForeignKeyBuilder implements ITableForeignKeyBuilder {
   }
 
   references(table: string, columns: string[]): this {
-    this._referencesTable = table;
-    this._referencesColumns = columns;
+    this._referencedTable = table;
+    this._referencedColumns = columns;
     return this;
   }
 
@@ -61,14 +60,13 @@ class TableForeignKeyBuilder implements ITableForeignKeyBuilder {
   /**
    * Build the foreign key definition.
    */
-  build(): TableForeignKeyDefinition | undefined {
-    if (!this._referencesTable) return undefined;
+  build(): ForeignKeySchema | undefined {
+    if (!this._referencedTable) return undefined;
 
     return {
       name: this._name,
       columns: this._columns,
-      referencesTable: this._referencesTable,
-      referencesColumns: this._referencesColumns,
+      references: { table: this._referencedTable, columns: this._referencedColumns },
       onDelete: this._onDelete,
       onUpdate: this._onUpdate,
     };
@@ -90,8 +88,9 @@ export class TableBuilder implements ITableBuilder {
     this._name = name;
   }
 
+  /** Big, matching an entity's `@Id`: a key is spelled from this type, so it has to state the real one. */
   id(name = 'id', options: BaseColumnOptions = {}): IColumnBuilder {
-    return this.add(name, { category: 'integer' }, { ...options, primaryKey: true, autoIncrement: true });
+    return this.add(name, { category: 'integer', size: 'big' }, { ...options, primaryKey: true, autoIncrement: true });
   }
 
   integer(name: string, options?: BaseColumnOptions): IColumnBuilder {
@@ -277,7 +276,7 @@ export class TableBuilder implements ITableBuilder {
     // Build foreign keys
     const foreignKeys = this._foreignKeyBuilders
       .map((fk) => fk.build())
-      .filter((fk): fk is TableForeignKeyDefinition => fk !== undefined);
+      .filter((fk): fk is ForeignKeySchema => fk !== undefined);
 
     // Collect column-level foreign keys
     for (const col of columns) {
@@ -285,8 +284,7 @@ export class TableBuilder implements ITableBuilder {
         foreignKeys.push({
           name: col.foreignKey.name,
           columns: [col.name],
-          referencesTable: col.foreignKey.table,
-          referencesColumns: col.foreignKey.columns,
+          references: { table: col.foreignKey.table, columns: col.foreignKey.columns },
           onDelete: col.foreignKey.onDelete,
           onUpdate: col.foreignKey.onUpdate,
         });

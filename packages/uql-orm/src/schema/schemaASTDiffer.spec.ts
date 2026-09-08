@@ -32,15 +32,35 @@ describe('SchemaASTDiffer', () => {
       expect(diff.tablesToDrop.length).toBe(0);
     });
 
+    /**
+     * The exception to the rule above, and the migration path off the unsigned keys MySQL schemas were
+     * created with: a key left unsigned refuses every foreign key pointing at it, because the
+     * referencing column takes its type from the canonical one, which is signed.
+     */
+    it('should report signedness on a generated key, which is the one part that round trips', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const key = { name: 'id', isPrimaryKey: true, isAutoIncrement: true, type: { category: 'integer' } } as const;
+      source.addTable(mockTableNode('users', [key]));
+      target.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer', unsigned: true } }]));
+
+      const diff = diffSchemas(source, target);
+
+      expect(diff.columnDiffs).toHaveLength(1);
+      expect(diff.columnDiffs[0].description).toContain('type');
+      // Either direction drops half the range, so it is not something safe mode may apply.
+      expect(diff.columnDiffs[0].isBreaking).toBe(true);
+    });
+
     it('should not call a column breaking for a type it never compared', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();
-      // A generated key: its type is the dialect's own serial spelling, which MySQL reads back as
-      // unsigned against an entity that cannot say so, and which the diff therefore skips. The column
-      // still differs - it is unique on one side - and that difference loses nothing.
+      // A generated key: its type is the dialect's own serial spelling, which does not round trip
+      // (`BIGINT AUTO_INCREMENT` reads back as `BIGINT(20)`), so the diff skips it. The column still
+      // differs - it is unique on one side - and that difference loses nothing.
       const key = { name: 'id', isPrimaryKey: true, isAutoIncrement: true } as const;
       source.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer' }, isUnique: true }]));
-      target.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer', unsigned: true } }]));
+      target.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer', size: 'big' } }]));
 
       const diff = diffSchemas(source, target);
 

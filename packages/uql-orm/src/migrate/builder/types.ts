@@ -7,6 +7,7 @@
 
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
+import type { ForeignKeySchema } from '../../type/migration.js';
 
 /**
  * Foreign key reference options.
@@ -134,27 +135,9 @@ export interface TableDefinition {
   /** Index definitions */
   indexes: IndexSchema[];
   /** Foreign key definitions at table level */
-  foreignKeys: TableForeignKeyDefinition[];
+  foreignKeys: ForeignKeySchema[];
   /** Table comment */
   comment?: string;
-}
-
-/**
- * Table-level foreign key (for composite FKs).
- */
-export interface TableForeignKeyDefinition {
-  /** Constraint name */
-  name?: string;
-  /** Local columns */
-  columns: string[];
-  /** Referenced table */
-  referencesTable: string;
-  /** Referenced columns */
-  referencesColumns: string[];
-  /** Action on delete */
-  onDelete: ForeignKeyAction;
-  /** Action on update */
-  onUpdate: ForeignKeyAction;
 }
 
 /**
@@ -274,7 +257,7 @@ export interface DropIndexOperation extends MigrationOperation {
 export interface AddForeignKeyOperation extends MigrationOperation {
   type: 'addForeignKey';
   tableName: string;
-  foreignKey: TableForeignKeyDefinition;
+  foreignKey: ForeignKeySchema;
 }
 
 /**

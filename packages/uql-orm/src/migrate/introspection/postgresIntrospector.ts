@@ -238,8 +238,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return results.map((row) => ({
       name: row.constraint_name,
       columns: row.columns,
-      referencedTable: row.referenced_table,
-      referencedColumns: row.referenced_columns,
+      references: { table: row.referenced_table, columns: row.referenced_columns },
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));

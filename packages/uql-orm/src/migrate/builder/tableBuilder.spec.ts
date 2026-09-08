@@ -314,7 +314,7 @@ describe('TableBuilder', () => {
 
       expect(def.foreignKeys.length).toBe(1);
       expect(def.foreignKeys[0].columns).toEqual(['authorId']);
-      expect(def.foreignKeys[0].referencesTable).toBe('users');
+      expect(def.foreignKeys[0].references.table).toBe('users');
       expect(def.foreignKeys[0].onDelete).toBe('CASCADE');
       expect(def.foreignKeys[0].onUpdate).toBe('CASCADE');
       expect(def.foreignKeys[0].name).toBe('posts_author_fk');

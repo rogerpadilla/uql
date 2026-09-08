@@ -15,8 +15,8 @@ describe('MysqlSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ columnType: 'bigint' })).toBe('BIGINT');
     expect(generator.getSqlType({ type: Boolean })).toBe('TINYINT(1)');
     expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 })).toBe('DECIMAL(10, 2)');
-    expect(generator.getSqlType({ columnType: 'serial' })).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
-    expect(generator.getSqlType({ columnType: 'bigserial' })).toBe('BIGINT UNSIGNED AUTO_INCREMENT');
+    expect(generator.getSqlType({ type: Number, isId: true })).toBe('BIGINT AUTO_INCREMENT');
+    expect(generator.getSqlType({ type: Number, isId: true, columnType: 'int' })).toBe('INT AUTO_INCREMENT');
   });
 
   it('should generate ALTER COLUMN statements', () => {

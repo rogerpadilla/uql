@@ -38,7 +38,7 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly escapeIdChar = '`';
 
-  override readonly serialType = 'INTEGER PRIMARY KEY AUTOINCREMENT';
+  override readonly autoIncrementSuffix = 'PRIMARY KEY AUTOINCREMENT';
 
   // `AUTOINCREMENT` is only legal in that exact phrase, so the key cannot be lifted to table level.
   override readonly serialDeclaresPrimaryKey = true;

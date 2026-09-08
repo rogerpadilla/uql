@@ -154,8 +154,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return results.map((row) => ({
       name: row.constraint_name,
       columns: (row.columns || '').split(','),
-      referencedTable: row.referenced_table,
-      referencedColumns: (row.referenced_columns || '').split(','),
+      references: { table: row.referenced_table, columns: (row.referenced_columns || '').split(',') },
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));

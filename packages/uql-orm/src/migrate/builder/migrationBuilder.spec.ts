@@ -186,7 +186,7 @@ describe('OperationRecorder', () => {
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('addForeignKey');
       expect((ops[0] as AddForeignKeyOperation).foreignKey.columns).toEqual(['authorId']);
-      expect((ops[0] as AddForeignKeyOperation).foreignKey.referencesTable).toBe('users');
+      expect((ops[0] as AddForeignKeyOperation).foreignKey.references.table).toBe('users');
     });
 
     it('should support onDelete option', async () => {
@@ -318,7 +318,7 @@ describe('OperationRecorder', () => {
       expect(createIndexOp.index.unique).toBe(true);
 
       const addFkOp = ops[2] as AddForeignKeyOperation;
-      expect(addFkOp.foreignKey.referencesTable).toBe('profiles');
+      expect(addFkOp.foreignKey.references.table).toBe('profiles');
       expect(addFkOp.foreignKey.onDelete).toBe('CASCADE');
       expect(addFkOp.foreignKey.name).toBe('users_profile_fk');
     });

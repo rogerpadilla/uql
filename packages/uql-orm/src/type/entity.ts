@@ -301,10 +301,7 @@ export type NumericColumnType =
   | 'double precision'
   | 'decimal'
   | 'numeric'
-  | 'real'
-  | 'serial'
-  | 'smallserial'
-  | 'bigserial';
+  | 'real';
 
 /**
  * SQL string column types

@@ -45,8 +45,7 @@ function postsWith(fk: Partial<ForeignKeySchema> = {}, authorId = column({ name:
       {
         name: 'posts_authorId_fk',
         columns: ['authorId'],
-        referencedTable: 'users',
-        referencedColumns: ['id'],
+        references: { table: 'users', columns: ['id'] },
         ...fk,
       },
     ],
@@ -104,7 +103,7 @@ describe('BaseSqlIntrospector relationships', () => {
   });
 
   it('should skip a foreign key naming a referenced column that does not exist', async () => {
-    const ast = await introspect([users, postsWith({ referencedColumns: ['ghost'] })]);
+    const ast = await introspect([users, postsWith({ references: { table: 'users', columns: ['ghost'] } })]);
 
     expect(ast.relationships).toHaveLength(0);
   });

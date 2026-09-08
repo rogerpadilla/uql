@@ -160,7 +160,7 @@ describe('SqliteSchemaIntrospector', () => {
     expect(schema).toBeDefined();
     expect(schema!.foreignKeys).toHaveLength(1);
     expect(schema!.foreignKeys![0]).toMatchObject({
-      referencedTable: 'users',
+      references: { table: 'users', columns: ['id'] },
       onUpdate: 'CASCADE',
       onDelete: 'RESTRICT',
       // `PRAGMA foreign_key_list` reports no name, so one is derived the same way the entity side

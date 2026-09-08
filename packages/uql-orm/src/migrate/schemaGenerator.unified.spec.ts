@@ -32,14 +32,14 @@ const dialects = [
   },
   {
     dialect: new MySqlDialect(),
-    serialId: 'BIGINT UNSIGNED AUTO_INCREMENT',
+    serialId: 'BIGINT AUTO_INCREMENT',
     tableOptions: 'ENGINE=InnoDB',
     booleanType: 'TINYINT(1)',
     comment: " COMMENT 'Testing'",
   },
   {
     dialect: new MariaDialect(),
-    serialId: 'BIGINT UNSIGNED AUTO_INCREMENT',
+    serialId: 'BIGINT AUTO_INCREMENT',
     tableOptions: 'ENGINE=InnoDB',
     booleanType: 'TINYINT(1)',
     comment: " COMMENT 'Testing'",

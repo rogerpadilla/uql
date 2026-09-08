@@ -1,4 +1,5 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
+import type { ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnSchema,
   ForeignKeySchema,
@@ -12,11 +13,6 @@ import type {
 import { isSqlQuerier } from '../../type/index.js';
 import { escapeAnsiSqlLiteral } from '../../util/sqlLiteral.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
-
-/**
- * Referential action type for foreign key constraints.
- */
-export type ReferentialAction = 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
 
 /**
  * Reads the rows of one statement while introspecting a table.
@@ -173,7 +169,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   /**
    * Normalize referential action string to standard type.
    */
-  protected normalizeReferentialAction(action: string): ReferentialAction | undefined {
+  protected normalizeReferentialAction(action: string): ForeignKeyAction | undefined {
     switch (action.toUpperCase()) {
       case 'CASCADE':
         return 'CASCADE';
@@ -183,6 +179,8 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         return 'RESTRICT';
       case 'NO ACTION':
         return 'NO ACTION';
+      case 'SET DEFAULT':
+        return 'SET DEFAULT';
       default:
         return undefined;
     }

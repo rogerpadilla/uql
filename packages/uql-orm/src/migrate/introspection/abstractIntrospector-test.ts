@@ -78,7 +78,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Table B: FK to A with CASCADE actions
     await builder.createTable(INTROSPECT_TABLES.B, (t) => {
       t.id();
-      t.bigint('a_id').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('CASCADE').onUpdate('NO ACTION');
+      t.bigint('a_id').nullable().references(INTROSPECT_TABLES.A).onDelete('CASCADE').onUpdate('NO ACTION');
       t.string('col1', { length: 100 }).nullable();
       t.string('col2', { length: 100 }).nullable();
       t.string('unique_code', { length: 50 }).unique();
@@ -87,7 +87,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Table C: FK to B with SET NULL / CASCADE
     await builder.createTable(INTROSPECT_TABLES.C, (t) => {
       t.id();
-      t.bigint('b_id').unsigned().nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
+      t.bigint('b_id').nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
       t.integer('priority').notNullable();
     });
 
@@ -101,15 +101,15 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Self-referencing table
     await builder.createTable(INTROSPECT_TABLES.SELF_REF, (t) => {
       t.id();
-      t.bigint('parent_id').unsigned().nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete('SET NULL');
+      t.bigint('parent_id').nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete('SET NULL');
       t.string('name', { length: 255 }).notNullable();
     });
 
     // Multiple FKs to same table
     await builder.createTable(INTROSPECT_TABLES.MULTI_FK, (t) => {
       t.id();
-      t.bigint('created_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
-      t.bigint('updated_by').unsigned().nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
+      t.bigint('created_by').nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
+      t.bigint('updated_by').nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
     });
 
     // Composite unique constraint
@@ -224,8 +224,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(schema.foreignKeys!.length).toBeGreaterThanOrEqual(1);
 
     const fk = this.getForeignKey(schema, 'a_id');
-    expect(fk.referencedTable).toBe(INTROSPECT_TABLES.A);
-    expect(fk.referencedColumns).toEqual(['id']);
+    expect(fk.references.table).toBe(INTROSPECT_TABLES.A);
+    expect(fk.references.columns).toEqual(['id']);
     expect(fk.columns).toEqual(['a_id']);
   }
 
@@ -241,7 +241,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
 
     const fk = this.getForeignKey(schema, 'b_id');
-    expect(fk.referencedTable).toBe(INTROSPECT_TABLES.B);
+    expect(fk.references.table).toBe(INTROSPECT_TABLES.B);
     expect(fk.onDelete).toBe('SET NULL');
     expect(fk.onUpdate).toBe('CASCADE');
   }
@@ -383,8 +383,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.SELF_REF);
 
     const fk = this.getForeignKey(schema, 'parent_id');
-    expect(fk.referencedTable).toBe(INTROSPECT_TABLES.SELF_REF);
-    expect(fk.referencedColumns).toEqual(['id']);
+    expect(fk.references.table).toBe(INTROSPECT_TABLES.SELF_REF);
+    expect(fk.references.columns).toEqual(['id']);
     expect(fk.onDelete).toBe('SET NULL');
   }
 
@@ -401,10 +401,10 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(schema.foreignKeys!.length).toBe(2);
 
     const createdByFK = this.getForeignKey(schema, 'created_by');
-    expect(createdByFK.referencedTable).toBe(INTROSPECT_TABLES.A);
+    expect(createdByFK.references.table).toBe(INTROSPECT_TABLES.A);
 
     const updatedByFK = this.getForeignKey(schema, 'updated_by');
-    expect(updatedByFK.referencedTable).toBe(INTROSPECT_TABLES.A);
+    expect(updatedByFK.references.table).toBe(INTROSPECT_TABLES.A);
   }
 
   async shouldIntrospectRestrictReferentialAction() {

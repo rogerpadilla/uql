@@ -1,5 +1,5 @@
 import type { VectorCast } from '../dialect/vectorCast.js';
-import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from '../migrate/builder/types.js';
+import type { FullColumnDefinition, TableDefinition } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
@@ -189,15 +189,22 @@ export interface IndexSchema extends VectorIndexOptions {
 }
 
 /**
- * Represents a foreign key constraint
+ * A foreign key constraint, wherever one is described: read back by introspection, planned into a
+ * {@link SchemaDiff}, or declared through the migration builder. One shape for all three - they
+ * differed only in spelling, and the translation between them was pure overhead.
  */
 export interface ForeignKeySchema {
-  readonly name: string;
+  /** Absent when nothing named it, which the generator fills in with `derivedForeignKeyName`. */
+  readonly name?: string;
   readonly columns: string[];
-  readonly referencedTable: string;
-  readonly referencedColumns: string[];
-  readonly onDelete?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
-  readonly onUpdate?: 'CASCADE' | 'SET NULL' | 'RESTRICT' | 'NO ACTION';
+  /**
+   * The far end, as one thing. Same shape and same name as everywhere else a relationship's target is
+   * described - `@Field({ references })`, `addForeignKey`'s `target`, a `RelationshipNode`'s `to` -
+   * so nothing has to be destructured on the way between them.
+   */
+  readonly references: { readonly table: string; readonly columns: string[] };
+  readonly onDelete?: ForeignKeyAction;
+  readonly onUpdate?: ForeignKeyAction;
 }
 
 /**
@@ -226,7 +233,14 @@ export interface SchemaDiff {
   readonly indexesToAdd?: IndexSchema[];
   readonly indexesToDrop?: string[];
   readonly foreignKeysToAdd?: ForeignKeySchema[];
+  /** Dropped under the name the *database* reported, which is the only name a `DROP` can use. */
   readonly foreignKeysToDrop?: string[];
+  /**
+   * A constraint whose referential actions changed. Its own field rather than a pair of entries in
+   * the two above, because no engine alters an action in place: it is a drop and an add that have to
+   * travel together, and safe mode has to hold back both or neither.
+   */
+  readonly foreignKeysToAlter?: { readonly from: ForeignKeySchema; readonly to: ForeignKeySchema }[];
 }
 
 /**
@@ -312,8 +326,22 @@ export interface SchemaGenerator {
 
   /**
    * Compare an entity with a database table node and return the differences.
+   *
+   * `desiredAst` is the entity side, from {@link buildAST}, and must span every entity a foreign key
+   * on this table points at: a relation whose target is absent resolves to nothing, so the constraint
+   * reads as missing from both sides, which is a match and no statement. Defaults to this entity
+   * alone, which is right only where it has no relations.
    */
-  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined;
+  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined;
+
+  /**
+   * The entity side as an AST, to hand to every {@link diffSchema} of one run - building it per
+   * entity instead is quadratic in the number of entities.
+   *
+   * Optional because not every generator compares one: MongoDB has no foreign keys and diffs only
+   * indexes, so it neither implements this nor reads the argument.
+   */
+  buildAST?(entities: readonly Type<unknown>[]): SchemaAST;
 
   /**
    * The table's key: {@link resolveTableAlias} behind {@link resolveSchema}, which is how a
@@ -363,7 +391,7 @@ export interface SqlDdlGenerator extends SchemaGenerator {
   /** Generate RENAME COLUMN statement */
   generateRenameColumnSql(tableName: string, oldName: string, newName: string): string;
   /** Generate ADD FOREIGN KEY statement */
-  generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string;
+  generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string;
   /** Generate DROP FOREIGN KEY statement */
   generateDropForeignKeySql(tableName: string, constraintName: string): string;
 }

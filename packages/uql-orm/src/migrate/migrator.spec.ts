@@ -10,6 +10,7 @@ import { User } from '../test/entityMock.js';
 import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type {
+  ForeignKeySchema,
   Migration,
   MigrationStorage,
   QuerierPool,
@@ -562,6 +563,46 @@ describe('Migrator Core Methods', () => {
       await migrator.sync({ safe: false, drop: true });
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.objectContaining({ columnsToDrop: ['old_col'] }),
+      );
+    });
+
+    /**
+     * Adding a constraint is additive; dropping one, and altering one - which is a drop and an add -
+     * are not. Letting the add through while safe mode held the drop back would emit `ADD CONSTRAINT`
+     * for a constraint the table still has, which every engine rejects.
+     */
+    it('sync should not drop or alter a foreign key in safe mode', async () => {
+      const companyFk: ForeignKeySchema = {
+        name: 'User__companyId_fk',
+        columns: ['companyId'],
+        references: { table: 'Company', columns: ['id'] },
+        onDelete: 'CASCADE',
+      };
+      const diff: SchemaDiff = {
+        type: 'alter',
+        tableName: 'User',
+        foreignKeysToAdd: [companyFk],
+        foreignKeysToDrop: ['User_legacy_fk'],
+        foreignKeysToAlter: [{ from: { ...companyFk, onDelete: 'NO ACTION' }, to: companyFk }],
+      };
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      vi.spyOn(migrator.schemaGenerator!, 'generateAlterTable').mockReturnValue([]);
+
+      await migrator.sync();
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.objectContaining({ foreignKeysToAdd: [companyFk] }),
+      );
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.not.objectContaining({ foreignKeysToDrop: expect.anything() }),
+      );
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.not.objectContaining({ foreignKeysToAlter: expect.anything() }),
+      );
+
+      vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
+      await migrator.sync({ safe: false });
+      expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
+        expect.objectContaining({ foreignKeysToDrop: ['User_legacy_fk'] }),
       );
     });
 

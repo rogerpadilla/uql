@@ -11,6 +11,7 @@ import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, FieldMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { isSoleIdField } from '../util/field.util.js';
+import { isAutoIncrement } from '../util/field.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { createTableNode, SchemaAST } from './schemaAST.js';
@@ -141,7 +142,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
       nullable: isPrimaryKey ? false : (field.nullable ?? true),
       defaultValue: field.defaultValue,
       isPrimaryKey,
-      isAutoIncrement: field.autoIncrement ?? (isSoleKey && type.category === 'integer'),
+      isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
       comment: field.comment,
       enum: field.enum,

@@ -166,8 +166,7 @@ describe('MysqlSchemaIntrospector', () => {
     expect(schema!.foreignKeys![0]).toMatchObject({
       name: 'posts_user_id_fk',
       columns: ['user_id'],
-      referencedTable: 'users',
-      referencedColumns: ['id'],
+      references: { table: 'users', columns: ['id'] },
       onDelete: 'CASCADE',
       onUpdate: 'NO ACTION',
     });
@@ -178,6 +177,10 @@ describe('MysqlSchemaIntrospector', () => {
     expect(introspector.normalizeReferentialAction('SET NULL')).toBe('SET NULL');
     expect(introspector.normalizeReferentialAction('RESTRICT')).toBe('RESTRICT');
     expect(introspector.normalizeReferentialAction('NO ACTION')).toBe('NO ACTION');
+    // The entity side has always accepted it; reading it back as `undefined` made the constraint
+    // look like `NO ACTION`, so every sync offered to alter one that was already right.
+    expect(introspector.normalizeReferentialAction('SET DEFAULT')).toBe('SET DEFAULT');
+    expect(introspector.normalizeReferentialAction('set default')).toBe('SET DEFAULT');
     expect(introspector.normalizeReferentialAction('UNKNOWN')).toBeUndefined();
   });
 

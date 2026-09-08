@@ -5,6 +5,7 @@ import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
+import { derivedForeignKeyName } from '../../util/sql.util.js';
 
 /**
  * Base class for SQL introspectors with shared AST building logic.
@@ -100,15 +101,15 @@ export abstract class BaseSqlIntrospector {
       if (!fromTable) continue;
 
       for (const fk of schema.foreignKeys) {
-        const toTable = tableNodes.get(fk.referencedTable);
+        const toTable = tableNodes.get(fk.references.table);
         if (!toTable) continue;
 
         const fromColumns = fk.columns.flatMap((name) => fromTable.columns.get(name) ?? []);
-        const toColumns = fk.referencedColumns.flatMap((name) => toTable.columns.get(name) ?? []);
+        const toColumns = fk.references.columns.flatMap((name) => toTable.columns.get(name) ?? []);
 
         if (fromColumns.length > 0 && toColumns.length > 0) {
           const rel: RelationshipNode = {
-            name: fk.name,
+            name: fk.name ?? derivedForeignKeyName(schema.name, fk.columns),
             type: fromColumns[0].isUnique ? 'OneToOne' : 'ManyToOne',
             from: { table: fromTable, columns: fromColumns },
             to: { table: toTable, columns: toColumns },

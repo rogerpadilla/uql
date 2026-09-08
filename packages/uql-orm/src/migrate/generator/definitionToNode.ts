@@ -1,4 +1,5 @@
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import type { ForeignKeySchema } from '../../type/migration.js';
 import { derivedForeignKeyName } from '../../util/sql.util.js';
 import type { FullColumnDefinition, TableDefinition } from '../builder/types.js';
 
@@ -49,8 +50,8 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
         columns: fkDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
       },
       to: {
-        table: { name: fkDef.referencesTable } as TableNode,
-        columns: fkDef.referencesColumns.map((name) => ({ name }) as ColumnNode),
+        table: { name: fkDef.references.table } as TableNode,
+        columns: fkDef.references.columns.map((name) => ({ name }) as ColumnNode),
       },
       onDelete: fkDef.onDelete,
       onUpdate: fkDef.onUpdate,

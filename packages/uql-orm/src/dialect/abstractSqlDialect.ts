@@ -127,10 +127,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * declares over its columns as one named constraint. SQLite is the exception - see
    * {@link serialDeclaresPrimaryKey}.
    */
-  abstract readonly serialType: string;
+  abstract readonly autoIncrementSuffix: string;
 
   /**
-   * Whether {@link serialType} states `PRIMARY KEY` itself, so the table must not state it again.
+   * Whether {@link autoIncrementSuffix} states `PRIMARY KEY` itself, so the table must not state it again.
    *
    * True on SQLite alone, where `AUTOINCREMENT` is legal only in the exact phrase
    * `INTEGER PRIMARY KEY AUTOINCREMENT` - the key cannot be lifted out of the column there.

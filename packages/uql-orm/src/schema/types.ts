@@ -332,14 +332,23 @@ export interface IndexDiff {
 /**
  * Difference between two relationship definitions.
  */
-export interface RelationshipDiff {
+interface RelationshipDiffBase {
   readonly name: string;
   readonly fromTable: string;
   readonly toTable: string;
-  readonly type: 'create' | 'drop' | 'alter';
-  readonly expected?: RelationshipNode;
-  readonly actual?: RelationshipNode;
 }
+
+/**
+ * Difference between two relationships, shaped like {@link ColumnDiff} and for the same reason: which
+ * node is present follows from the kind of difference, so a reader never asserts its way past an
+ * `undefined` the kind had already ruled out.
+ */
+export type RelationshipDiff = RelationshipDiffBase &
+  (
+    | { readonly type: 'create'; readonly expected: RelationshipNode; readonly actual?: undefined }
+    | { readonly type: 'drop'; readonly expected?: undefined; readonly actual: RelationshipNode }
+    | { readonly type: 'alter'; readonly expected: RelationshipNode; readonly actual: RelationshipNode }
+  );
 
 /**
  * Complete diff between two schemas.

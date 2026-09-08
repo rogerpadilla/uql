@@ -21,6 +21,10 @@ interface DatabaseConfig {
   keyColumnType: string;
   /** Set where the engine cannot alter a key, naming the refusal its DDL raises. */
   unsafeKeyError?: string;
+  /** Set where the engine cannot `ALTER` a foreign key in, so a sync reports no difference at all. */
+  noForeignKeyAlter?: boolean;
+  /** How this engine spelled a key before it was derived from the declared type. MySQL family only. */
+  legacyUnsignedIdColumn?: string;
   textType: string;
   doubleType: string;
   unsafeAlterError?: string;
@@ -39,16 +43,18 @@ const databases: DatabaseConfig[] = [
   },
   {
     name: 'MySQL',
+    legacyUnsignedIdColumn: '`id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
     createPool: () =>
       new MySql2QuerierPool({ host: '0.0.0.0', port: 3316, user: 'test', password: 'test', database: 'test' }),
     createIntrospector: (pool) => new MysqlSchemaIntrospector(pool),
-    serialIdColumn: '`id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+    serialIdColumn: '`id` BIGINT AUTO_INCREMENT PRIMARY KEY',
     textType: 'VARCHAR(255)',
     doubleType: 'DOUBLE',
     keyColumnType: 'BIGINT',
   },
   {
     name: 'MariaDB',
+    legacyUnsignedIdColumn: '`id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
     createPool: () =>
       new MariadbQuerierPool({
         host: '0.0.0.0',
@@ -59,7 +65,7 @@ const databases: DatabaseConfig[] = [
         connectionLimit: 5,
       }),
     createIntrospector: (pool) => new MariadbSchemaIntrospector(pool),
-    serialIdColumn: '`id` BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY',
+    serialIdColumn: '`id` BIGINT AUTO_INCREMENT PRIMARY KEY',
     textType: 'VARCHAR(255)',
     doubleType: 'DOUBLE',
     keyColumnType: 'BIGINT',
@@ -74,6 +80,7 @@ const databases: DatabaseConfig[] = [
     keyColumnType: 'INTEGER',
     unsafeAlterError: 'Cannot alter column',
     unsafeKeyError: 'Cannot change the primary key',
+    noForeignKeyAlter: true,
   },
 ];
 
@@ -417,6 +424,134 @@ for (const db of databases) {
       const table = ast.getTable(tableName);
       expect(table).toBeDefined();
       expect(Array.from(table!.columns.keys()).sort()).toEqual(['extraColumn', 'id', 'name']);
+    });
+
+    /**
+     * A key a foreign key can point at, spelled the same as the column that will reference it. Not
+     * {@link DatabaseConfig.serialIdColumn}, which is `BIGINT UNSIGNED` on the MySQL family: an
+     * engine refuses a constraint whose two sides differ in signedness.
+     *
+     * The child table is claimed first so the shared teardown drops it first - a parent cannot go
+     * while a constraint still points at it, and a failed drop leaks the table into the next test.
+     */
+    const givenRelatedTables = async (parent: string, child: string) => {
+      const idColumn = `${escapeId('id')} ${db.keyColumnType} PRIMARY KEY`;
+      await givenNoTable(child);
+      await givenTable(parent, idColumn);
+      await pool.run(`CREATE TABLE ${escapeId(child)} (${idColumn}, ${escapeId('companyId')} ${db.keyColumnType})`);
+    };
+
+    /**
+     * The whole point of the foreign-key diff: the constraint has to reach the database and the engine
+     * has to accept the DDL, which no string assertion can prove.
+     */
+    it.skipIf(db.noForeignKeyAlter)('should add a foreign key the table has not got', async () => {
+      @Entity()
+      class FkSyncCompany {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class FkSyncEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkSyncCompany, onDelete: 'CASCADE' }) companyId?: number;
+      }
+
+      await givenRelatedTables('FkSyncCompany', 'FkSyncEmployee');
+      const before = await introspector.introspect();
+      expect(before.getTable('FkSyncEmployee')!.outgoingRelations).toHaveLength(0);
+
+      await new Migrator(pool, { entities: [FkSyncCompany, FkSyncEmployee] }).sync({ logging: true });
+
+      const relations = (await introspector.introspect()).getTable('FkSyncEmployee')!.outgoingRelations;
+      expect(relations).toHaveLength(1);
+      expect(relations[0].to.table.name).toBe('FkSyncCompany');
+      expect(relations[0].onDelete).toBe('CASCADE');
+    });
+
+    /**
+     * The case the feature exists for, and the one no unit test can prove: changing `onDelete` on a
+     * relation whose constraint is already there. It is a drop and an add, so it needs `safe: false`.
+     */
+    it.skipIf(db.noForeignKeyAlter)('should alter a foreign key whose referential action changed', async () => {
+      @Entity()
+      class FkAlterCompany {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class FkAlterEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkAlterCompany, onDelete: 'SET NULL' }) companyId?: number;
+      }
+
+      await givenRelatedTables('FkAlterCompany', 'FkAlterEmployee');
+      await pool.run(
+        `ALTER TABLE ${escapeId('FkAlterEmployee')} ADD CONSTRAINT ${escapeId('fk_employee_company')} ` +
+          `FOREIGN KEY (${escapeId('companyId')}) REFERENCES ${escapeId('FkAlterCompany')} (${escapeId('id')}) ` +
+          `ON DELETE CASCADE`,
+      );
+      const before = await introspector.introspect();
+      expect(before.getTable('FkAlterEmployee')!.outgoingRelations[0].onDelete).toBe('CASCADE');
+
+      await new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] }).sync({ logging: true, safe: false });
+
+      const relations = (await introspector.introspect()).getTable('FkAlterEmployee')!.outgoingRelations;
+      expect(relations).toHaveLength(1);
+      expect(relations[0].onDelete).toBe('SET NULL');
+    });
+
+    /**
+     * A schema built from its own entities has no foreign key left to reconcile. A phantom here would
+     * drop and re-add every constraint on every sync, forever.
+     */
+    it('should report no foreign key change on a schema it just created', async () => {
+      @Entity()
+      class FkStableCompany {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class FkStableEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkStableCompany, onDelete: 'CASCADE' }) companyId?: number;
+      }
+
+      await givenNoTable('FkStableEmployee');
+      await givenNoTable('FkStableCompany');
+      const migrator = new Migrator(pool, { entities: [FkStableCompany, FkStableEmployee] });
+      await migrator.sync({ logging: true });
+
+      expect(await migrator.planSync()).toEqual([]);
+    });
+
+    /**
+     * The upgrade path for a database created while the serial was a fixed `BIGINT UNSIGNED`: the key
+     * has to come back to the type it declares, or every foreign key pointing at it stays refused.
+     * Signedness is the one part of a generated key's type the diff compares, for exactly this.
+     */
+    it.runIf(db.legacyUnsignedIdColumn)('should bring a legacy unsigned key back to its declared type', async () => {
+      @Entity()
+      class FkLegacyCompany {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class FkLegacyEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkLegacyCompany, onDelete: 'CASCADE' }) companyId?: number;
+      }
+
+      await givenNoTable('FkLegacyEmployee');
+      await givenTable('FkLegacyCompany', db.legacyUnsignedIdColumn!);
+      await pool.run(
+        `CREATE TABLE ${escapeId('FkLegacyEmployee')} (${db.legacyUnsignedIdColumn}, ${escapeId('companyId')} ${db.keyColumnType})`,
+      );
+
+      const migrator = new Migrator(pool, { entities: [FkLegacyCompany, FkLegacyEmployee] });
+      await migrator.sync({ logging: true, safe: false });
+
+      const after = await introspector.introspect();
+      expect(after.getTable('FkLegacyCompany')!.columns.get('id')!.type.unsigned).toBeFalsy();
+      // The point of the alter: the constraint can finally be created.
+      expect(after.getTable('FkLegacyEmployee')!.outgoingRelations).toHaveLength(1);
+      expect(await migrator.planSync({ safe: false })).toEqual([]);
     });
 
     it('should log skipped migrations when safe mode blocks changes', async () => {

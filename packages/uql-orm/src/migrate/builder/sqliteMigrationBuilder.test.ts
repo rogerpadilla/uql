@@ -66,8 +66,8 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
 
     const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
     const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
-    expect(fk?.referencedTable).toBe(BUILDER_TABLES.PARENT);
-    expect(fk?.referencedColumns).toEqual(['id']);
+    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
+    expect(fk?.references.columns).toEqual(['id']);
   }
 }
 

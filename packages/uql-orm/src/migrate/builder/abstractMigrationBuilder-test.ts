@@ -87,9 +87,8 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   /**
    * A parent/child pair, unconstrained, for the foreign key operations to work on.
    *
-   * `bigint().unsigned()` and not `integer()` because MySQL refuses a foreign key whose column does
-   * not match the one it references down to signedness, and `id()` is `BIGINT UNSIGNED` there. The
-   * one declaration serves every engine: Postgres and SQLite have no unsigned integer and ignore it.
+   * `bigint()` and not `integer()` because a foreign key column has to match the one it references,
+   * and `id()` is a big integer on every engine here.
    */
   protected async givenUnrelatedPair(builder: MigrationBuilder) {
     await builder.createTable(this.claim(BUILDER_TABLES.PARENT), (t) => {
@@ -97,7 +96,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     });
     await builder.createTable(this.claim(BUILDER_TABLES.CHILD), (t) => {
       t.id();
-      t.bigint('parentId').unsigned().nullable();
+      t.bigint('parentId').nullable();
     });
   }
 
@@ -383,8 +382,8 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
 
     const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
     const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
-    expect(fk?.referencedTable).toBe(BUILDER_TABLES.PARENT);
-    expect(fk?.referencedColumns).toEqual(['id']);
+    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
+    expect(fk?.references.columns).toEqual(['id']);
   }
 
   async shouldDropAForeignKey() {
@@ -415,6 +414,6 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
 
     const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
     const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
-    expect(fk?.referencedTable).toBe(BUILDER_TABLES.PARENT);
+    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
   }
 }

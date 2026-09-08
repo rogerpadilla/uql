@@ -222,7 +222,7 @@ describe('canonicalType', () => {
       expect(fieldOptionsToCanonical({ type: 'tinyint' })).toEqual({ category: 'integer', size: 'tiny' });
       expect(fieldOptionsToCanonical({ type: 'bool' }).category).toBe('boolean');
       expect(fieldOptionsToCanonical({ type: 'datetime' }).category).toBe('timestamp');
-      expect(fieldOptionsToCanonical({ type: 'smallserial' })).toEqual({ category: 'integer', size: 'small' });
+      expect(sqlToCanonical('smallserial')).toEqual({ category: 'integer', size: 'small' });
     });
 
     it('should handle new type aliases via columnType', () => {
@@ -230,7 +230,6 @@ describe('canonicalType', () => {
       expect(fieldOptionsToCanonical({ columnType: 'tinyint' })).toEqual({ category: 'integer', size: 'tiny' });
       expect(fieldOptionsToCanonical({ columnType: 'bool' }).category).toBe('boolean');
       expect(fieldOptionsToCanonical({ columnType: 'datetime' }).category).toBe('timestamp');
-      expect(fieldOptionsToCanonical({ columnType: 'smallserial' })).toEqual({ category: 'integer', size: 'small' });
     });
 
     it('should default to string', () => {

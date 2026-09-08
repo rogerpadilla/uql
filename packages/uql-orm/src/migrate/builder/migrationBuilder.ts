@@ -82,8 +82,7 @@ function addForeignKeyOperation(
     foreignKey: {
       name: options.name,
       columns,
-      referencesTable: target.table,
-      referencesColumns: target.columns,
+      references: { table: target.table, columns: target.columns },
       onDelete: options.onDelete ?? 'NO ACTION',
       onUpdate: options.onUpdate ?? 'NO ACTION',
     },

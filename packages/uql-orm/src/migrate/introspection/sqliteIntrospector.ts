@@ -148,8 +148,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         // derives it. Seeded from the columns, not the PRAGMA's row id, which nothing else knows.
         name: derivedForeignKeyName(tableName, columns),
         columns,
-        referencedTable: first.table,
-        referencedColumns: rows.map((r) => r.to),
+        references: { table: first.table, columns: rows.map((r) => r.to) },
         onDelete: this.normalizeReferentialAction(first.on_delete),
         onUpdate: this.normalizeReferentialAction(first.on_update),
       };

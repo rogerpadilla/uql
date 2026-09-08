@@ -2,6 +2,16 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.45.0] - 2026-09-08
+
+- **A sync now applies foreign keys.** Adding one, dropping one or changing its `onDelete` reaches the database. Not on SQLite, which cannot alter one.
+- **`SET DEFAULT` reads back from the db.** It looked like `NO ACTION`, so every sync offered to fix a constraint that was already right.
+- **Breaking: a generated key is spelled from the type it declares**, so a foreign key can match it. MySQL and MariaDB keys lose `UNSIGNED`; a sync alters them under `safe: false`.
+- **Breaking: a key filled by `onInsert` is no longer auto-increment.** The schema and the insert path asked separately and disagreed.
+- **Breaking: `serial`, `bigserial` and `smallserial` are gone as `columnType`.** Declare the width: `@Id({ type: Number })` is a big integer, `columnType: 'int'` a four-byte one.
+- **Breaking:** `TableForeignKeyDefinition` is gone. `ForeignKeySchema` describes every foreign key, its target under `references: { table, columns }`.
+- The `./migrate` budget rose to 49.4 KB gzipped for the foreign-key diff and its DDL; nothing newly reachable.
+
 ## [0.44.0] - 2026-09-07
 
 **A schema can be defined while the process runs** - a CMS content type an admin creates, a tenant whose columns are a row in a table. Register the columns as they arrive, with the SQL type each one stores (`type: 'text'`), then `sync({ entity })` gives it a table without reading the whole catalogue. See [Runtime Schemas](https://uql-orm.dev/entities/runtime).

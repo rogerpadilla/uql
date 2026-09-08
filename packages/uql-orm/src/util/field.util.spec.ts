@@ -16,7 +16,7 @@ describe('columnFamily', () => {
     // union, and `UnplacedColumnType` refuses one left out - and cross-checked against the canonical
     // categories in `canonicalType.spec`. What is left for a test is the lookup built from that table.
     const oneOfEach = {
-      bigserial: 'numeric',
+      decimal: 'numeric',
       uuid: 'string',
       timestamptz: 'date',
       jsonb: 'json',
@@ -54,10 +54,16 @@ describe('isAutoIncrement', () => {
     expect(isAutoIncrement({ type: 'integer' }, true)).toBe(true);
   });
 
-  it('should return true for serial/smallserial columnType', () => {
-    expect(isAutoIncrement({ columnType: 'serial' }, false)).toBe(true);
-    expect(isAutoIncrement({ columnType: 'bigserial' }, false)).toBe(true);
-    expect(isAutoIncrement({ columnType: 'smallserial' }, false)).toBe(true);
+  // A key that states its width is still a key the database generates; one that states how it is
+  // filled is not. The schema AST and this used to answer both of these differently.
+  it('should generate a numeric key whatever width it declares', () => {
+    expect(isAutoIncrement({ type: Number, columnType: 'int' }, true)).toBe(true);
+    expect(isAutoIncrement({ type: Number, columnType: 'bigint' }, true)).toBe(true);
+  });
+
+  it('should not generate a key the application fills', () => {
+    expect(isAutoIncrement({ type: Number, onInsert: () => 1 }, true)).toBe(false);
+    expect(isAutoIncrement({ type: Number, autoIncrement: false }, true)).toBe(false);
   });
 
   it('should return false given a non-primary key', () => {
@@ -79,11 +85,6 @@ describe('isAutoIncrement', () => {
 
   it('should return false if onInsert is defined', () => {
     const field: FieldOptions = { type: Number, onInsert: () => 1 };
-    expect(isAutoIncrement(field, true)).toBe(false);
-  });
-
-  it('should return false if columnType is manually defined', () => {
-    const field: FieldOptions = { type: Number, columnType: 'int' };
     expect(isAutoIncrement(field, true)).toBe(false);
   });
 });

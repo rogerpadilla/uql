@@ -40,9 +40,6 @@ export const COLUMN_TYPES_BY_FAMILY = {
     'decimal',
     'numeric',
     'real',
-    'serial',
-    'smallserial',
-    'bigserial',
   ],
   string: ['char', 'varchar', 'text', 'uuid'],
   date: ['date', 'time', 'datetime', 'timestamp', 'timestamptz'],
@@ -98,14 +95,14 @@ export function isSoleIdField<E>(meta: EntityMeta<E>, field: FieldOptions): bool
 }
 
 /**
- * Checks if a field should be treated as auto-incrementing.
+ * Whether the database generates this column's value.
+ *
+ * The only answer: the schema AST asked it separately and disagreed on three counts - it ignored
+ * `onInsert`, so a key the application generates was still emitted `AUTO_INCREMENT`, and it ignored
+ * `columnType`, where this one used to let *any* declared width suppress the whole inference. A key
+ * that states its width is still a generated key; one that states how it is filled is not.
  */
 export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boolean {
-  if (field.autoIncrement === false) return false;
-  if (field.autoIncrement) return true;
-
-  const colType = field.columnType?.toLowerCase();
-  if (colType === 'serial' || colType === 'smallserial' || colType === 'bigserial') return true;
-
-  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.columnType;
+  if (field.autoIncrement !== undefined) return field.autoIncrement;
+  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert;
 }

@@ -82,7 +82,14 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     super.pager(ctx, opts);
   }
 
-  override readonly serialType = 'BIGINT UNSIGNED AUTO_INCREMENT';
+  /**
+   * Signed, though MySQL's own convention is `UNSIGNED`: a foreign key column takes its type from the
+   * key it points at, resolved through the *canonical* type, which has no way to know this string said
+   * `UNSIGNED`. The two then disagree and the engine refuses the constraint - the same trap knex hit
+   * (knex#6129) and MikroORM still carries (mikro-orm#5485). Signed is also the portable half: no
+   * other engine here has unsigned integers, so an `@Id` means one range everywhere.
+   */
+  override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
   override readonly escapeIdChar = '`';
 

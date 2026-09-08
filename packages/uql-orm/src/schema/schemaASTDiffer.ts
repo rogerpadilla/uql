@@ -128,7 +128,9 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
   const indexDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.indexDiffs ?? []);
   const primaryKeyDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.primaryKeyDiff ?? []);
   // Relationships span tables, so they are compared over the whole schema rather than per table.
-  const relationshipDiffs = opts.compareRelationships ? diffRelationships(source, target, opts) : [];
+  const relationshipDiffs = opts.compareRelationships
+    ? diffRelationshipNodes(source.relationships, target.relationships, opts)
+    : [];
 
   const hasDifferences =
     tablesToCreate.length > 0 ||
@@ -253,7 +255,7 @@ function diffColumn(
 
   // Two things a key column implies rather than states, and catalogues report inconsistently: its
   // type, which is the dialect's serial spelling rather than one the entity chose and does not round
-  // trip (`BIGINT UNSIGNED AUTO_INCREMENT` reads back as `BIGINT(20) UNSIGNED`), and its nullability,
+  // trip (`BIGINT AUTO_INCREMENT` reads back as `BIGINT(20)`), and its nullability,
   // which is NOT NULL in every engine whatever is reported - SQLite's `PRAGMA table_info` says
   // `notnull: 0` for the `INTEGER PRIMARY KEY` that is the table's own rowid. Comparing either asked
   // to rewrite the column on every sync, and on SQLite, which cannot alter one at all, failed
@@ -265,6 +267,15 @@ function diffColumn(
   const typeChanged =
     !generatedType && !areTypesEqual(opts.normalizeType(source.type), opts.normalizeType(target.type));
   if (typeChanged) {
+    differences.push(`type: ${formatType(source.type)} → ${formatType(target.type)}`);
+  }
+
+  // Signedness is the one thing compared on a generated key, because it is the one part of the serial
+  // spelling that does round trip - and a key left unsigned refuses every foreign key pointing at it,
+  // since the referencing column takes its type from the canonical one, which is signed. Without this
+  // a database created before the serial became signed could never gain a foreign key.
+  const signednessChanged = generatedType && !!source.type.unsigned !== !!target.type.unsigned;
+  if (signednessChanged) {
     differences.push(`type: ${formatType(source.type)} → ${formatType(target.type)}`);
   }
 
@@ -300,7 +311,7 @@ function diffColumn(
     // Only the type this diff actually reports: a column altered for its default carries no data loss,
     // and a generated key's type - never compared above - reads as unsigned against an entity that
     // cannot say so.
-    isBreaking: typeChanged && isBreakingTypeChange(target.type, source.type),
+    isBreaking: (typeChanged || signednessChanged) && isBreakingTypeChange(target.type, source.type),
     description: differences.join(', '),
   };
 }
@@ -331,11 +342,21 @@ function diffIndex(
 }
 
 /**
- * Compare relationships at the schema level.
+ * Compare two lists of relationships.
+ *
+ * Lists rather than whole schemas, because a migration diffs one table: its two sides are that
+ * table's `outgoingRelations`, where `diffSchemas` passes the schema's every relationship.
+ *
+ * Matched by columns, never by name - the engine named every constraint that already exists, so
+ * pairing on names would report every hand-named one as a drop and an add.
  */
-function diffRelationships(source: SchemaAST, target: SchemaAST, opts: Required<DiffOptions>): RelationshipDiff[] {
-  const normalizeName = nameNormalizer(opts);
-  const { created, dropped, matched } = matchByKey(source.relationships, target.relationships, (relation) =>
+export function diffRelationshipNodes(
+  source: readonly RelationshipNode[],
+  target: readonly RelationshipNode[],
+  opts: DiffOptions = {},
+): RelationshipDiff[] {
+  const normalizeName = nameNormalizer({ ...DEFAULT_OPTIONS, ...opts });
+  const { created, dropped, matched } = matchByKey(source, target, (relation) =>
     getRelationshipKey(relation, normalizeName),
   );
 

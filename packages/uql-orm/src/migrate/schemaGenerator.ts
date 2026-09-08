@@ -10,14 +10,14 @@ import {
 import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import { type DiffOptions, diffTable } from '../schema/schemaASTDiffer.js';
+import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
-  CheckSchema,
   ColumnNode,
   EnumValues,
   ForeignKeyAction,
   IndexNode,
+  RelationshipNode,
   TableNode,
 } from '../schema/types.js';
 import type {
@@ -29,6 +29,7 @@ import type {
   FieldKey,
   FieldMeta,
   FieldOptions,
+  ForeignKeySchema,
   IndexSchema,
   NamingStrategy,
   SchemaDiff,
@@ -39,7 +40,7 @@ import type {
 import { getKeys, isAutoIncrement, isSoleIdField, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
-import type { FullColumnDefinition, TableDefinition, TableForeignKeyDefinition } from './builder/types.js';
+import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor } from './ddl/index.js';
 import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
@@ -91,12 +92,26 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   /**
    * Primary key type for auto-increment integer IDs
    */
-  protected get serialType(): string {
-    return this.dialect.serialType;
+  /**
+   * How an auto-increment key of `type` is spelled: the type as any other column renders it, plus what
+   * the engine appends to make it generated.
+   *
+   * Derived rather than a fixed string per dialect, because a foreign key column takes its type from
+   * the key it points at, resolved through the same canonical type. A key whose spelling ignored that
+   * type could never be referenced: `@Id({ columnType: 'int' })` emitted `BIGINT` while the column
+   * pointing at it emitted `INT`, and every engine refuses that constraint.
+   */
+  protected serialType(type: CanonicalType): string {
+    return `${this.canonicalTypeToSql(type)} ${this.dialect.autoIncrementSuffix}`;
   }
 
   protected canonicalTypeToSql(type: CanonicalType): string {
     return canonicalToSql(type, this.dialect);
+  }
+
+  /** The entity side as an AST, carrying this generator's default referential action. */
+  buildAST(entities: readonly Type<unknown>[]): SchemaAST {
+    return buildEntityAST(this, entities, this.defaultForeignKeyAction);
   }
 
   /**
@@ -127,18 +142,12 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     if (withForeignKeys && !inline) {
       for (const table of tables) {
-        for (const rel of table.outgoingRelations) {
-          statements.push(
-            this.generateAddForeignKeySql(qualifyName(table.name, table.schema), {
-              name: rel.name,
-              columns: rel.from.columns.map((c) => c.name),
-              referencesTable: qualifyName(rel.to.table.name, rel.to.table.schema),
-              referencesColumns: rel.to.columns.map((c) => c.name),
-              onDelete: rel.onDelete ?? this.defaultForeignKeyAction,
-              onUpdate: rel.onUpdate ?? this.defaultForeignKeyAction,
-            }),
-          );
-        }
+        statements.push(
+          ...this.addForeignKeyStatements(
+            qualifyName(table.name, table.schema),
+            table.outgoingRelations.map(foreignKeyOf),
+          ),
+        );
       }
     }
 
@@ -196,6 +205,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       statements.push(this.generateDropPrimaryKeySql(diff.tableName, diff.primaryKey.fromName));
     }
 
+    // Before the columns: a constraint holds its columns down, so one the entity dropped cannot go
+    // while a foreign key still names it. An alter is a drop and an add, and this is its drop half.
+    statements.push(
+      ...this.dropForeignKeyStatements(diff.tableName, [
+        ...(diff.foreignKeysToDrop ?? []),
+        ...(diff.foreignKeysToAlter ?? []).map((it) => constraintNameOf(diff.tableName, it.from)),
+      ]),
+    );
+
     // Add new columns
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
@@ -239,16 +257,44 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.to));
     }
 
+    // After the columns, for the same reason the key is: a constraint cannot name one that is not
+    // there yet. The add half of an alter rides along, its drop having gone out above.
+    statements.push(
+      ...this.addForeignKeyStatements(diff.tableName, [
+        ...(diff.foreignKeysToAdd ?? []),
+        ...(diff.foreignKeysToAlter ?? []).map((it) => it.to),
+      ]),
+    );
+
     return statements;
+  }
+
+  /** `ADD CONSTRAINT` for each of `foreignKeys`. */
+  private addForeignKeyStatements(tableName: string, foreignKeys: readonly ForeignKeySchema[]): string[] {
+    return foreignKeys.map((foreignKey) => this.generateAddForeignKeySql(tableName, foreignKey));
+  }
+
+  /** `DROP CONSTRAINT` for each of `constraintNames`, the mirror of {@link addForeignKeyStatements}. */
+  private dropForeignKeyStatements(tableName: string, constraintNames: readonly string[]): string[] {
+    return constraintNames.map((name) => this.generateDropForeignKeySql(tableName, name));
   }
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
     const statements: string[] = [];
     const tableName = this.escapeId(diff.tableName);
 
-    // The key first, mirroring the up direction: a column the up added cannot be dropped below while
-    // the new key still names it. Restored under the name the database gave it, which is what the
-    // table had before, rather than a derived one that was never on it.
+    // Constraints first, mirroring the up direction: the up added them last, so the down drops them
+    // first, and a column it is about to drop is then free of anything naming it.
+    statements.push(
+      ...this.dropForeignKeyStatements(diff.tableName, [
+        ...(diff.foreignKeysToAdd ?? []).map((it) => constraintNameOf(diff.tableName, it)),
+        ...(diff.foreignKeysToAlter ?? []).map((it) => constraintNameOf(diff.tableName, it.to)),
+      ]),
+    );
+
+    // The key next, for the same reason: a column the up added cannot be dropped below while the new
+    // key still names it. Restored under the name the database gave it, which is what the table had
+    // before, rather than a derived one that was never on it.
     if (diff.primaryKey?.to.length) {
       statements.push(
         this.generateDropPrimaryKeySql(diff.tableName, derivedPrimaryKeyName(diff.tableName, diff.primaryKey.to)),
@@ -282,8 +328,17 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.from, diff.primaryKey.fromName));
     }
 
-    if (diff.columnsToDrop?.length || diff.indexesToDrop?.length) {
-      statements.push(`-- TODO: Manual reversal needed for dropped columns/indexes`);
+    // The constraint the up replaced, back under the name the database had for it. A foreign key the
+    // up *dropped* is not restored: only its name survived the diff, never what it pointed at.
+    statements.push(
+      ...this.addForeignKeyStatements(
+        diff.tableName,
+        (diff.foreignKeysToAlter ?? []).map((it) => it.from),
+      ),
+    );
+
+    if (diff.columnsToDrop?.length || diff.indexesToDrop?.length || diff.foreignKeysToDrop?.length) {
+      statements.push(`-- TODO: Manual reversal needed for dropped columns/indexes/foreign keys`);
     }
 
     return statements;
@@ -387,7 +442,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     // Special case for serial primary keys
     if (isAutoIncrement(field, field.isId === true)) {
-      return this.dialect.serialType;
+      return this.serialType(canonical);
     }
 
     return this.canonicalTypeToSql(canonical);
@@ -450,7 +505,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * longer disagree about what has changed. Only two things are this side's own: the entity becomes a
    * table node first, and types are compared as the *engine* would store them - see `normalizeType`.
    */
-  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
+  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(meta);
     const schema = this.resolveSchema(meta);
@@ -459,9 +514,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       return { tableName, schema, type: 'create' };
     }
 
-    // Keyed by the qualified name this generator resolves, which is the key the AST it just built
-    // stores the table under.
-    const desired = buildEntityAST(this, [entity]).getTable(tableName);
+    // Keyed by the qualified name this generator resolves, which is the key the AST stores the table
+    // under.
+    const desired = (desiredAst ?? buildEntityAST(this, [entity], this.defaultForeignKeyAction)).getTable(tableName);
     if (!desired) {
       return undefined;
     }
@@ -487,11 +542,30 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       fromName: tableDiff.primaryKeyDiff.actualName,
     };
 
+    // This table's own constraints, which is what `outgoingRelations` holds on both sides: the
+    // entity's as the AST derived them, the database's as the introspector read them back.
+    //
+    // None at all where the engine cannot alter one: SQLite resolves foreign keys lazily and keeps
+    // them inline at CREATE time, and its only way to change one afterwards is the twelve-step table
+    // rebuild, which a sync does not do. Reporting a difference nothing can apply would throw on
+    // every sync of an entity that has a relation. `drift:check` still names it.
+    const relationDiffs = this.features.foreignKeyAlter
+      ? diffRelationshipNodes(desired.outgoingRelations, currentTable.outgoingRelations, this.diffOptions())
+      : [];
+    const foreignKeysToAdd = relationDiffs.flatMap((it) => (it.type === 'create' ? [foreignKeyOf(it.expected)] : []));
+    const foreignKeysToDrop = relationDiffs.flatMap((it) => (it.type === 'drop' ? [it.name] : []));
+    const foreignKeysToAlter = relationDiffs.flatMap((it) =>
+      it.type === 'alter' ? [{ from: foreignKeyOf(it.actual), to: foreignKeyOf(it.expected) }] : [],
+    );
+
     if (
       !columnsToAdd.length &&
       !columnsToAlter.length &&
       !columnsToDrop.length &&
       !indexesToAdd.length &&
+      !foreignKeysToAdd.length &&
+      !foreignKeysToDrop.length &&
+      !foreignKeysToAlter.length &&
       !primaryKey
     ) {
       return undefined;
@@ -506,6 +580,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       columnsToAlter: columnsToAlter.length ? columnsToAlter : undefined,
       columnsToDrop: columnsToDrop.length ? columnsToDrop : undefined,
       indexesToAdd: indexesToAdd.length ? indexesToAdd : undefined,
+      foreignKeysToAdd: foreignKeysToAdd.length ? foreignKeysToAdd : undefined,
+      foreignKeysToDrop: foreignKeysToDrop.length ? foreignKeysToDrop : undefined,
+      foreignKeysToAlter: foreignKeysToAlter.length ? foreignKeysToAlter : undefined,
     };
   }
 
@@ -539,7 +616,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       name: col.name,
       // The same rule `generateColumnFromNode` renders by, so a column added to an existing table
       // gets the type it would have had if the table were created from scratch.
-      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType : this.canonicalTypeToSql(col.type),
+      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type),
       nullable: col.nullable,
       defaultValue: col.defaultValue,
       isPrimaryKey: col.isPrimaryKey,
@@ -663,7 +740,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   protected generateColumnFromNode(col: ColumnNode): string {
     return this.renderColumn({
       ...col,
-      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType : this.canonicalTypeToSql(col.type),
+      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type),
     });
   }
 
@@ -714,12 +791,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return `ALTER TABLE ${this.escapeId(tableName)} RENAME COLUMN ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
   }
 
-  generateAddForeignKeySql(tableName: string, foreignKey: TableForeignKeyDefinition): string {
+  generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string {
     const fkCols = foreignKey.columns.map((c) => this.escapeId(c)).join(', ');
-    const refCols = foreignKey.referencesColumns.map((c) => this.escapeId(c)).join(', ');
-    const constraintName = foreignKey.name
-      ? this.escapeId(foreignKey.name)
-      : this.escapeId(derivedForeignKeyName(tableName, foreignKey.columns));
+    const refCols = foreignKey.references.columns.map((c) => this.escapeId(c)).join(', ');
+    const constraintName = this.escapeId(constraintNameOf(tableName, foreignKey));
 
     if (!this.features.foreignKeyAlter) {
       throw new TypeError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
@@ -727,7 +802,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     return (
       `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} ` +
-      `FOREIGN KEY (${fkCols}) REFERENCES ${this.escapeId(foreignKey.referencesTable)} (${refCols}) ` +
+      `FOREIGN KEY (${fkCols}) REFERENCES ${this.escapeId(foreignKey.references.table)} (${refCols}) ` +
       `ON DELETE ${foreignKey.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${foreignKey.onUpdate ?? this.defaultForeignKeyAction};`
     );
   }
@@ -780,6 +855,33 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
         'for it. Recreate the table in a written migration.',
     );
   }
+}
+
+/**
+ * What a constraint is called: its own name, or one derived from its columns where nothing named it.
+ * Shared by the add and the drop so a `DROP CONSTRAINT` names exactly what an `ADD CONSTRAINT` made.
+ */
+function constraintNameOf(tableName: string, foreignKey: ForeignKeySchema): string {
+  return foreignKey.name ?? derivedForeignKeyName(tableName, foreignKey.columns);
+}
+
+/**
+ * A relationship node as the migration's own `ForeignKeySchema`. The node's `name` is kept rather
+ * than derived: on the database's side it is the only name a `DROP` can use, and on the entity's it
+ * is already the derived one. An unset action stays unset - the default belongs to the one place
+ * that spends it, `addForeignKeyStatements`.
+ */
+function foreignKeyOf(relation: RelationshipNode): ForeignKeySchema {
+  return {
+    name: relation.name,
+    columns: relation.from.columns.map((column) => column.name),
+    references: {
+      table: qualifyName(relation.to.table.name, relation.to.table.schema),
+      columns: relation.to.columns.map((column) => column.name),
+    },
+    onDelete: relation.onDelete,
+    onUpdate: relation.onUpdate,
+  };
 }
 
 /**

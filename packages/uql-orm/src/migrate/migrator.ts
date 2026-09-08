@@ -361,13 +361,17 @@ export class Migrator {
     }
 
     const ast = await this.introspectClaimedSchemas();
+    // Both sides built once: the database's above, the entities' here. Left to `diffSchema`, each
+    // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
+    // generator that compares no schema of its own - MongoDB, which reads only indexes.
+    const desiredAst = this.schemaGenerator.buildAST?.(this.entities);
     const diffs: SchemaDiff[] = [];
 
     for (const entity of this.entities) {
       const meta = getMeta(entity);
       const tableName = this.schemaGenerator.resolveTableName(meta);
       const currentTable = ast.getTable(tableName);
-      const diff = this.schemaGenerator.diffSchema(entity, currentTable);
+      const diff = this.schemaGenerator.diffSchema(entity, currentTable, desiredAst);
       if (diff) {
         diffs.push(diff);
       }
@@ -478,7 +482,9 @@ export class Migrator {
 
   /** The same for one entity against the table it already has, and nothing where the two agree. */
   private alterFromEntity(entity: Type<unknown>, table: TableNode | undefined, options: SyncOptions): string[] {
-    const diff = this.generator.diffSchema(entity, table);
+    // Spanning the set for the reason `planEntity` spells out: a foreign key needs the table it
+    // points at, which a sync of one entity outside the configured list would not otherwise have.
+    const diff = this.generator.diffSchema(entity, table, this.generator.buildAST?.(this.entitiesWith(entity)));
     return diff?.type === 'alter' ? this.alterFromDiff(diff, options) : [];
   }
 
@@ -586,6 +592,15 @@ export class Migrator {
           `[AutoSync] Skipped changing the primary key of '${diff.tableName}' from (${filteredDiff.primaryKey.from.join(', ')}) to (${filteredDiff.primaryKey.to.join(', ')}) (safe mode active). Use a migration or { safe: false } to apply.`,
         );
         delete filteredDiff.primaryKey;
+      }
+
+      if (filteredDiff.foreignKeysToAlter?.length) {
+        // Altering one is dropping it and adding it back, so letting the add through while the drop
+        // is held would emit `ADD CONSTRAINT` for a constraint the table still has.
+        this.logger.logSkippedMigration(
+          `[AutoSync] Skipped altering ${filteredDiff.foreignKeysToAlter.length} foreign keys in table '${diff.tableName}': ${filteredDiff.foreignKeysToAlter.map((fk) => fk.to.name).join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
+        );
+        delete filteredDiff.foreignKeysToAlter;
       }
 
       delete filteredDiff.indexesToDrop;
