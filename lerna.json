@@ -4,7 +4,6 @@
   "npmClient": "bun",
   "command": {
     "version": {
-      "conventionalCommits": true,
       "changelog": false,
       "message": "chore(release): version bump",
       "allowBranch": "main",

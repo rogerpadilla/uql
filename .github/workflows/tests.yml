@@ -29,8 +29,6 @@ jobs:
     name: Lint & Typecheck
     steps:
       - uses: actions/checkout@v6
-        with:
-          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: latest
@@ -38,19 +36,6 @@ jobs:
         run: bun install --frozen-lockfile
       - name: Lint
         run: bun run lint
-      - name: Commitlint
-        # `base.sha`, not `base_sha`: the latter is not a field, so it rendered empty and commitlint
-        # walked the whole history instead of the range, failing on release commits from years ago.
-        run: |
-          if [ "${{ github.event_name }}" = pull_request ]; then
-            from='${{ github.event.pull_request.base.sha }}'
-            to='${{ github.event.pull_request.head.sha }}'
-          else
-            from='${{ github.event.before }}'
-            to='${{ github.sha }}'
-            git cat-file -e "$from^{commit}" 2>/dev/null || from="$to~1"
-          fi
-          bunx commitlint --from "$from" --to "$to" --verbose
       - name: Typecheck
         run: bun run ts
 
