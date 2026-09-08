@@ -27,14 +27,6 @@ export const WorkspaceUsage = defineView({
 
 Depends on R2, R7. A view is an entity, just read-only - which dissolves the "relation with no entity" problem that makes CTEs a poor fit. Field types fall out of `QueryAggregateResult`, so nothing is restated; writes are a compile error; the definition is the migration, instead of raw SQL hidden in a migration file. `REFRESH ... CONCURRENTLY` on Postgres/CockroachDB, refused elsewhere rather than silently downgraded.
 
-## Generated stored columns
-
-```ts
-@Field({ type: String, virtual: raw`...`, stored: true }) fullName?: string;
-```
-
-One flag on the existing option. `$where`/`$sort`/`$select` behave identically either way; `stored` trades disk for a real, **indexable** column, so it is a dial you flip after profiling without touching a call site. Drizzle spells it the same way - `generatedAlwaysAs(expr, { mode: 'stored' })` - except on Postgres, where it hardcodes `stored` and takes no options at all. Postgres 12+, MySQL 5.7+, MariaDB 5.2+, SQLite 3.31+; Mongo refuses.
-
 ## Cursor pagination
 
 ```ts
@@ -43,13 +35,18 @@ await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $
 
 Depends on R6. A row-value comparison where available, an OR-chain elsewhere, a compound `$lt` on Mongo. **Throw when the sort is not total** (last key not a primary or unique key): a keyset page that silently skips or repeats rows under concurrent writes is worse than an error, and fail-closed matches how `security` filters behave.
 
-## Triggers
+## Triggers and computed columns
 
 ```ts
-@Field({ agg: { resources: { $count: '*' } } }) resourceCount?: number;
+@Field({ computed: raw`"first" || ' ' || "last"`, stored: true })          fullName?: string;
+@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
 ```
 
-A trigger written as raw SQL in a migration is invisible: nothing reports it drifting or missing, and it is absent from any database built from the entities. Depends on R7. Declaring one makes it visible, and the diff owns only what it generated. A maintained aggregate is the case worth declaring rather than authoring, because it is the only one that knows enough to generate the reparent branch every hand-written version forgets. [The design](triggers.md).
+One option pair says a column is computed rather than written, and Postgres decides the machinery: an immutable same-row expression is `GENERATED ALWAYS AS`, `now()` needs a `BEFORE` trigger, an aggregate over a relation needs an `AFTER` trigger on the child. `stored` is the dial you flip after profiling without touching a call site, over both halves. `computed` replaces `virtual`, deprecated with a codemod. The generated-column arm runs on Postgres 12+, MySQL 5.7+, MariaDB 5.2+ and SQLite 3.31+ (Mongo refuses); the trigger-backed arms are Postgres only.
+
+**Two stages, because the halves are not blocked on the same thing.** The generated-column arm depends on nothing and can ship first; only the trigger-backed arms need R7's schema-object graph, since a trigger, its function and the column it maintains are three objects with a fixed creation order. One API, landed in the order its dependencies allow.
+
+A trigger written as raw SQL in a migration is invisible: nothing reports it drifting or missing, and it is absent from any database built from the entities. Declaring one makes it visible, and the diff owns only what it generated. The aggregate is the case worth declaring rather than authoring, because it is the only one that knows enough to generate the reparent branch every hand-written version forgets. [The design](triggers.md).
 
 ## Batching
 

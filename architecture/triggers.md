@@ -1,36 +1,65 @@
 # Triggers
 
-Design for the [roadmap](roadmap.md)'s triggers item. Postgres only. Depends on R7.
+Design for the [roadmap](roadmap.md)'s triggers item. Depends on R7. Trigger-backed behaviour is Postgres only; the generated-column arm of `computed` is not, and each arm names its own support below.
 
 ## What ships
 
-**One trigger object, three ways to declare it.** A trigger is a schema object carrying a table, timing, an event set with its columns, a `when`, a body, a deferral mode and an owner. The authored API writes one; the declarative options generate one. Same generator, differ, drop ordering and naming - the declarative cases are front ends that write a body, not a second mechanism.
+**Two declaration sites.** A column the database computes is a field option; a trigger that is not about one column is an entity option.
 
-|                      | Declared as                                               |
-| :------------------- | :-------------------------------------------------------- |
-| Maintained aggregate | `@Field({ agg: { resources: { $count: '*' } } })`         |
-| Database-side stamp  | ``@Field({ onUpdate: raw`now()`, enforce: 'database' })`` |
-| Everything else      | `@Entity({ triggers: [...] })`                            |
+| Site                               | Declares                               |
+| :--------------------------------- | :------------------------------------- |
+| `@Field({ computed, stored, on })` | a column the caller does not write     |
+| `@Entity({ triggers: [...] })`     | a trigger that is not about one column |
 
-Lowering pays both ways: the aggregate needs a deferral mode and per-event `UPDATE OF` columns, so the authored trigger gets both for free.
+A trigger is a schema object carrying a table, timing, an event set with its columns, a `when`, a body, a deferral mode and an owner. The authored API writes one; `computed` generates one where it needs one. Same generator, differ, drop ordering and naming. Lowering pays both ways: the aggregate needs a deferral mode and per-event `UPDATE OF` columns, so the authored trigger gets both for free.
+
+### `computed` and the mechanism it picks
+
+One option pair says _this column is computed, not written by the caller_. Which machinery Postgres needs is not an API choice, it is forced. Measured on Postgres 18:
+
+| Expression                                              | Result                                              |
+| :------------------------------------------------------ | :-------------------------------------------------- |
+| `GENERATED ALWAYS AS (first \|\| ' ' \|\| last) STORED` | legal                                               |
+| `GENERATED ALWAYS AS (now()) STORED`                    | **`ERROR: generation expression is not immutable`** |
+| `GENERATED ALWAYS AS (n * 2) VIRTUAL`                   | legal, new in PG 18                                 |
+
+A generated column cannot hold `now()`, and none can aggregate across a relation. So:
+
+```ts
+@Field({ computed: raw`"first" || ' ' || "last"` })                 // inlined into the statement
+@Field({ computed: raw`"first" || ' ' || "last"`, stored: true })   // GENERATED ALWAYS AS ... STORED
+@Field({ computed: raw`now()`, on: ['insert', 'update'] })          // BEFORE trigger
+@Field({ computed: { resources: { $count: '*' } } })                // correlated subquery
+@Field({ computed: { resources: { $count: '*' } }, stored: true })  // AFTER trigger on the child
+```
+
+`stored` is one dial across both halves - the roadmap already promises exactly that for generated columns, _"a dial you flip after profiling without touching a call site"_, and this is the same promise over aggregates. `$select`/`$where`/`$sort` behave the same either way and the result type is unchanged, so flipping it edits no call site.
+
+`on` is what selects a trigger, so nothing infers immutability: UQL cannot know whether a user's `raw` is immutable, and learning it from a rejected migration is a bad error. Naming _when_ a value is stamped is only meaningful for a trigger, and it is information the author has anyway.
+
+`computed` replaces `virtual`, which is deprecated rather than removed, following the one precedent in the tree - the string form of `raw`, which pairs a `@deprecated` tag naming the replacement with a pointer at the codemod. Both keys live for one release and giving both throws rather than guessing. The rename is what makes `stored: true` stop reading as a contradiction, and renaming a key inside a decorator options object needs none of the type-checker inference `uql-codemod` already does for `type`.
 
 ## The maintained aggregate
 
-One option. The aggregate points at a relation that already exists, and the operator says what is maintained:
+The stored arm over a relation. The aggregate points at a relation that already exists, and the operator says what is maintained:
 
 ```ts
 @OneToMany({ entity: () => Resource, mappedBy: (r) => r.creatorId })
 resources?: Resource[];
 
-@Field({ agg: { resources: { $count: '*' } } })        resourceCount?: number;
-@Field({ agg: { items: { $sum: 'amount' } } })         orderTotal?: number;
-@Field({ agg: { resources: { $countInserts: '*' } } }) resourceCreatedCount?: number;
-@Field({ agg: { resources: { $count: '*' }, $where: { isArchived: false } } }) activeCount?: number;
+@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
+@Field({ computed: { items: { $sum: 'amount' } }, stored: true })         orderTotal?: number;
+@Field({ computed: { resources: { $countInserts: '*' } }, stored: true }) resourceCreatedCount?: number;
+@Field({ computed: { resources: { $count: '*' }, $where: { isArchived: false } }, stored: true }) activeCount?: number;
 ```
 
-`$count` and `$sum` are `QueryAggregateOp` verbatim, and the shape is `$agg`'s inner shape with the relation standing where the alias does. No shorthand: `count: 'resources'` would be a second key to type-check, to reject against the first, and to normalize away.
+`$count` and `$sum` are `QueryAggregateOp` verbatim, and the shape is `$agg`'s inner shape with the relation standing where the alias does.
 
 UQL derives from it the trigger, its function, `updatable: false` and `NOT NULL DEFAULT 0` on the column, the backfill in the generated migration, and the resync.
+
+**No index is created, on either side.** The column takes the existing `index?: boolean | string` like any other; auto-creating one would be wrong as often as right, since the case study's `resourceCount` is only ever read by primary key. The trigger's write path needs nothing new either, because `UPDATE parent SET c = c + <delta> WHERE id = NEW.<fk>` hits the parent's primary key.
+
+Only the backfill and resync would want one, running `SELECT <fk>, count(*) FROM child GROUP BY <fk>` where neither Postgres nor UQL indexes a foreign key. They still do not get one: a backfill runs once inside its migration, where a sequential scan and hash aggregate beat building an index first, and a resync is a maintenance command. Standing write cost on every child insert forever, to speed up a query that runs twice, is the wrong trade. The cost to name is that a resync on a very large child table is a full scan; add the index by hand before running one.
 
 ### Which operators ship
 
@@ -80,12 +109,12 @@ A plain `AFTER ... FOR EACH ROW` trigger is not a third mode: measured on Postgr
 ## The database-side stamp
 
 ```ts
-@Field({ onUpdate: raw`now()`, enforce: 'database' }) updatedAt?: Date;
+@Field({ computed: raw`now()`, on: ['insert', 'update'] }) updatedAt?: Date;
 ```
 
-The option already exists; what is new is where it is enforced. Today `fillOnFields` stamps the callback into the payload, so it is right for every write UQL makes and absent from every write it does not - a raw SQL UPDATE, a data migration, a second service. `enforce: 'database'` generates the `BEFORE UPDATE` trigger instead and the ORM stops stamping the column, so there is one writer rather than two that can disagree. It requires the callback to be a `QueryRaw`, since a JavaScript callback cannot run in the database, and it takes no deferral mode, since a constraint trigger cannot be `BEFORE`.
+The most common trigger in every codebase surveyed, and the one UQL currently gets wrong. `fillOnFields` stamps `onUpdate` into the payload, so it is right for every write UQL makes and absent from every write it does not - a raw SQL UPDATE, a data migration, a second service. The `on` arm generates the `BEFORE` trigger instead and the ORM stops stamping the column, so there is one writer rather than two that can disagree. It takes no deferral mode, since a constraint trigger cannot be `BEFORE`.
 
-**The column must be read back.** Once the database writes it, the in-memory entity is stale unless the write returns it, so `enforce: 'database'` adds the column to the statement's `RETURNING` list. Hibernate is the prior art here and the reason to get it right: it has cooperated with database-generated columns via `@Generated` for years, and 6.5 was largely about returning them in the mutation statement instead of issuing a follow-up `SELECT`.
+**The column must be read back.** Once the database writes it the in-memory entity is stale unless the write returns it, so the column joins the statement's `RETURNING` list. Hibernate is the prior art and the reason to get it right: it has cooperated with database-generated columns via `@Generated` for years, and 6.5 was largely about returning them in the mutation statement instead of a follow-up `SELECT`.
 
 ## The authored trigger
 
@@ -117,11 +146,21 @@ The plpgsql function is generated beside the trigger and dropped with it, becaus
 - **An authored body is created and never compared**, exactly like a check constraint. Its timing, events and `forEach` still are, so a dropped or reshaped one is reported.
 - **Resync is a data command, not a schema one.** `drift:check` reports schema drift; this reports data drift. The verification query is the backfill with a comparison, so it is the same generator exposed - `appendRelationSubquery(..., 'COUNT(*)')` already derives it from the relation alone and applies the target's own filters. Recomputing under concurrent writes can lose an insert whose deferred trigger commits after the subquery's snapshot, so resync reports by default and repairs under a lock.
 - **TRUNCATE bypasses every aggregate.** A constraint trigger cannot carry a TRUNCATE event. Resync is the answer.
-- **Postgres only.** Deferred constraint triggers and plpgsql do not port; refuse elsewhere rather than downgrading silently, following `estimatedCount`'s base-throws/subclass-overrides pattern or the `indexFeatures` capability set.
+- **Support is per arm, not per feature.** Inlining an unstored `computed` works everywhere. `GENERATED ALWAYS AS` is Postgres 12+, MySQL 5.7+, MariaDB 5.2+ and SQLite 3.31+, with Mongo refusing. Everything trigger-backed - both `on` arms and every stored aggregate - is Postgres only, because deferred constraint triggers and plpgsql do not port. Refuse elsewhere rather than downgrading silently, following `estimatedCount`'s base-throws/subclass-overrides pattern or the `indexFeatures` capability set.
 
 ## Typing
 
-The relation name is checked at compile time. A member decorator gets no reference to its class and `MemberDecorator<V>` pins the context's `This` to `unknown`, but `ClassFieldDecoratorContext<This, Value>` does carry `This`, inferred where the decorator is _applied_. Constraining the options object cannot work, since `Field(opts)` is a call resolved before that, so the check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying `agg` pays for it. Ungated it costs every decorated field about 41 extra instantiations; gated, four. Verified against self-references, inherited fields and forward references, none circular.
+The relation name is checked at compile time. A member decorator gets no reference to its class and `MemberDecorator<V>` pins the context's `This` to `unknown`, but `ClassFieldDecoratorContext<This, Value>` does carry `This`, inferred where the decorator is _applied_. Constraining the options object cannot work, since `Field(opts)` is a call resolved before that, so the check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying a relation `computed` pays for it. Ungated it costs every decorated field about 41 extra instantiations; gated, four. Verified against self-references, inherited fields and forward references, none circular.
+
+## What `computed` costs in the existing code
+
+The option-compatibility machinery shipped since this design was written, and it already holds the shape this needs. `FIELD_OPTION_FAMILY` in `util/fieldOption.util.ts` is `satisfies Record<keyof FieldOptions, ...>`, so `computed`, `stored` and `on` cannot be added without placing each one - the same discipline `INDEX_FEATURE_LABELS` uses.
+
+The real cost is one shipped rule turning conditional. `VIRTUAL_READS` lists the five options a `virtual` field reaches, and `deadOn` rejects the other nineteen because _"it is skipped in DDL and dropped from every insert and update, so the whole persistence half of the options above is dead on one."_ That is true of an unstored `computed` and false of a stored one, which is a real column with DDL, a default, an index and a comment. So the rule gains a `stored` branch, in `deadOn` and in its type mirror `DeadOptions<O>`.
+
+That branch is not a cost this unification introduces: the roadmap already proposed `virtual + stored: true`, so it arrives with generated columns either way. What this adds is two more arms to it.
+
+`schemaASTBuilder.ts` skips `virtual` fields in DDL; a stored one must not be skipped. The three read sites in `abstractSqlDialect.ts` - projection, `$where` operand, `ORDER BY` - keep inlining the unstored arm and read a plain column for the stored one.
 
 ## Not in this release
 
@@ -142,7 +181,7 @@ The case study is Variability: nineteen counter columns kept by five triggers, *
 
 The migrations are also name-sorted, and one calls a function only a later-sorting file creates. Generated DDL is ordered by its dependency graph, which is what R7 exists to settle.
 
-Independent evidence, since one application is not evidence. A census of every trigger in every unrelated codebase to hand found four: three `updated_at` stampers and one NOTIFY, and no counters at all - so the case for `agg` is not frequency. `django-pgtrigger` has fourteen cookbook recipes and no counter. Rails has the opposite: `counter_cache` is core ActiveRecord, and `counter_culture` exists because the built-in one misses the reparent branch, arriving independently at conditional counters, a `fix_counts` repair command, and `execute_after_commit: true` for deadlocks - three decisions above, reached from the other direction.
+Independent evidence, since one application is not evidence. A census of every trigger in every unrelated codebase to hand found four: three `updated_at` stampers and one NOTIFY, and no counters at all - so the case for the aggregate is not frequency. `django-pgtrigger` has fourteen cookbook recipes and no counter. Rails has the opposite: `counter_cache` is core ActiveRecord, and `counter_culture` exists because the built-in one misses the reparent branch, arriving independently at conditional counters, a `fix_counts` repair command, and `execute_after_commit: true` for deadlocks - three decisions above, reached from the other direction.
 
 Across ecosystems, the two halves are always split and the second half is always missing.
 
