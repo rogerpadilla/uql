@@ -2,6 +2,10 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.45.1] - 2026-09-08
+
+- An enum column added to an existing table is now constrained.
+
 ## [0.45.0] - 2026-09-08
 
 - **A sync now applies foreign keys.** Adding one, dropping one or changing its `onDelete` reaches the database. Not on SQLite, which cannot alter one.

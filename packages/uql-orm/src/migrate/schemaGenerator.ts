@@ -217,8 +217,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Add new columns
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
-        const colDef = this.generateColumnDefinitionFromSchema(column);
-        statements.push(`ALTER TABLE ${tableName} ADD COLUMN ${colDef};`);
+        statements.push(`ALTER TABLE ${tableName} ADD COLUMN ${this.generateColumnDefinitionFromSchema(column)};`);
       }
     }
 
@@ -531,9 +530,18 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     const columnDiffs = tableDiff?.columnDiffs ?? [];
     const columnsToAdd = columnDiffs.flatMap((it) => (it.type === 'add' ? [this.columnNodeToSchema(it.expected)] : []));
     const columnsToDrop = columnDiffs.flatMap((it) => (it.type === 'drop' ? [it.column] : []));
+    // Without its values: an alter restates the whole column, and MySQL answers a restated `CHECK` by
+    // adding a *second* constraint rather than replacing the first, so the column would accumulate one
+    // per alter. An enum's values reach the database with the column and are never restated - which is
+    // also why changing them is a hand-written migration. See architecture/roadmap.md.
     const columnsToAlter = columnDiffs.flatMap((it) =>
       it.type === 'alter'
-        ? [{ from: this.columnNodeToSchema(it.actual), to: this.columnNodeToSchema(it.expected) }]
+        ? [
+            {
+              from: this.columnNodeToSchema(it.actual),
+              to: { ...this.columnNodeToSchema(it.expected), enum: undefined },
+            },
+          ]
         : [],
     );
     const primaryKey = tableDiff?.primaryKeyDiff && {
@@ -623,6 +631,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       isAutoIncrement: col.isAutoIncrement,
       isUnique: col.isUnique,
       comment: col.comment,
+      enum: col.enum,
     };
   }
 

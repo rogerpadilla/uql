@@ -101,6 +101,32 @@ class TsEnumInvoice {
 }
 
 describe('enum fields', () => {
+  /**
+   * A column added to a table that already exists renders from a `ColumnSchema`, which used to carry
+   * no values - so the constraint was emitted with a `CREATE TABLE` and silently dropped from an
+   * `ALTER`. An alter of an existing column still drops it: MySQL adds a second check rather than
+   * replacing the first, so a changed enum is a hand-written migration like any other check.
+   */
+  it('constrains an enum column it adds to an existing table', () => {
+    const [sql] = new SqlSchemaGenerator(new PostgresDialect()).generateAlterTable({
+      type: 'alter',
+      tableName: 'Invoice',
+      columnsToAdd: [
+        {
+          name: 'status',
+          type: 'VARCHAR(20)',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+          enum: ['draft', 'paid'],
+        },
+      ],
+    });
+
+    expect(sql).toContain(`CHECK ("status" IN ('draft', 'paid'))`);
+  });
+
   it('constrains the column to its values', () => {
     expect(ddl(new PostgresDialect(), Invoice)).toContain(
       `"status" TEXT CHECK ("status" IN ('draft', 'paid', 'void'))`,

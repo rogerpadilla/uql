@@ -23,6 +23,13 @@ class DefaultsEntity {
 }
 
 @Entity()
+class EnumAltered {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
+  status?: 'draft' | 'paid';
+}
+
+@Entity()
 class VirtualEntity {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number, virtual: raw`1 + 1` }) computed?: number;
@@ -62,6 +69,23 @@ describe('SqlSchemaGenerator Advanced', () => {
     expect(diff?.columnsToAlter).toHaveLength(2);
     expect(diff?.columnsToAlter?.map((c) => c.to.name)).toContain('name');
     expect(diff?.columnsToAlter?.map((c) => c.to.name)).toContain('email');
+  });
+
+  /**
+   * An altered column carries no values to restate: MySQL answers a restated `CHECK` by adding a
+   * second constraint rather than replacing the first. They reach the database with the column, which
+   * is also why changing an enum is a hand-written migration.
+   */
+  it('diffSchema should leave an enum off a column it alters', () => {
+    const currentSchema = createTableNode('EnumAltered', ast, [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'status', sql: 'VARCHAR', length: 10 },
+    ]);
+
+    const diff = generator.diffSchema(EnumAltered, currentSchema, generator.buildAST([EnumAltered]));
+
+    expect(diff?.columnsToAlter?.[0].to.name).toBe('status');
+    expect(diff?.columnsToAlter?.[0].to.enum).toBeUndefined();
   });
 
   it('diffSchema should detect columns to drop', () => {

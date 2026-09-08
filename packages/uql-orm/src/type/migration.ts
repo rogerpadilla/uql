@@ -2,7 +2,7 @@ import type { VectorCast } from '../dialect/vectorCast.js';
 import type { FullColumnDefinition, TableDefinition } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { CanonicalType, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
+import type { CanonicalType, EnumValues, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
   FieldOptions,
@@ -141,6 +141,13 @@ export interface ColumnSchema {
   readonly precision?: number;
   readonly scale?: number;
   readonly comment?: string;
+  /**
+   * The values the column accepts, rendered as an inline `CHECK`. Carried only so a column *added* to
+   * an existing table is constrained the way one created with its table is; an alter drops it, since
+   * MySQL adds a second check rather than replacing the first. Introspection never sets it: a database
+   * reports a check as a constraint, not as a property of the column.
+   */
+  readonly enum?: EnumValues;
 }
 
 /**

@@ -1,10 +1,11 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, Field, Id, removeEntity } from '../entity/index.js';
 import { MariadbQuerierPool } from '../maria/mariadbQuerierPool.js';
 import { MySql2QuerierPool } from '../mysql/mysql2QuerierPool.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
+import { raw } from '../util/index.js';
 import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
 import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
@@ -552,6 +553,106 @@ for (const db of databases) {
       // The point of the alter: the constraint can finally be created.
       expect(after.getTable('FkLegacyEmployee')!.outgoingRelations).toHaveLength(1);
       expect(await migrator.planSync({ safe: false })).toEqual([]);
+    });
+
+    /**
+     * An enum is a column `CHECK`, not a native type, so only the database can say the constraint was
+     * emitted and is enforced. A column *added* to a table that already exists used to arrive without
+     * it - the alter path renders from a `ColumnSchema`, which carried no values - so the entity
+     * promised a union the database accepted anything for.
+     */
+    it('should constrain an enum column it adds to an existing table', async () => {
+      @Entity()
+      class SyncEnumAdded {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
+        status?: 'draft' | 'paid';
+      }
+
+      const tableName = 'SyncEnumAdded';
+      await givenTable(tableName, db.serialIdColumn);
+
+      await new Migrator(pool, { entities: [SyncEnumAdded] }).sync({ logging: true });
+
+      await pool.run(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('draft')`);
+      await expect(
+        pool.run(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('bogus')`),
+      ).rejects.toThrow();
+    });
+
+    it('should constrain an enum column on a table it creates', async () => {
+      @Entity()
+      class SyncEnumCreated {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['on', 'off'] as const }) state?: 'on' | 'off';
+      }
+
+      await givenNoTable('SyncEnumCreated');
+      const migrator = new Migrator(pool, { entities: [SyncEnumCreated] });
+      await migrator.sync({ logging: true });
+
+      await pool.run(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('on')`);
+      await expect(
+        pool.run(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('nope')`),
+      ).rejects.toThrow();
+      // A check is never diffed, so it must not read as a difference either.
+      expect(await migrator.planSync()).toEqual([]);
+    });
+
+    /**
+     * The limitation the enum-as-check decision carries, pinned so it cannot change unnoticed: a check
+     * is never diffed, so adding a value emits nothing and the column goes on rejecting it. The
+     * property type admits the value by then, which is what makes it silent. See architecture/roadmap.md.
+     */
+    it('should emit nothing when an enum gains a value, which the column keeps rejecting', async () => {
+      @Entity({ name: 'SyncEnumWidened' })
+      class Narrow {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
+        status?: 'draft' | 'paid';
+      }
+
+      await givenNoTable('SyncEnumWidened');
+      await new Migrator(pool, { entities: [Narrow] }).sync({ logging: true });
+      removeEntity(Narrow);
+
+      @Entity({ name: 'SyncEnumWidened' })
+      class Wide {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid', 'void'] as const })
+        status?: 'draft' | 'paid' | 'void';
+      }
+      const migrator = new Migrator(pool, { entities: [Wide] });
+
+      expect(await migrator.planSync({ safe: false })).toEqual([]);
+      await expect(
+        pool.run(`INSERT INTO ${escapeId('SyncEnumWidened')} (${escapeId('status')}) VALUES ('void')`),
+      ).rejects.toThrow();
+      removeEntity(Wide);
+    });
+
+    /**
+     * A table-level check is created with its table and never diffed. Both halves need the database:
+     * that the expression is legal SQL for this engine, and that re-syncing reports nothing.
+     */
+    it('should enforce a table check and report no difference for it', async () => {
+      // Unquoted, so every engine reads two identifiers: `"spent"` is a string literal on MySQL and
+      // MariaDB, which makes the constraint compare two constants and reject every row.
+      @Entity({ checks: [{ expression: raw`spent <= balance` }] })
+      class SyncChecked {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) spent?: number;
+        @Field({ type: Number }) balance?: number;
+      }
+
+      await givenNoTable('SyncChecked');
+      const migrator = new Migrator(pool, { entities: [SyncChecked] });
+      await migrator.sync({ logging: true });
+
+      const cols = `${escapeId('spent')}, ${escapeId('balance')}`;
+      await pool.run(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (1, 2)`);
+      await expect(pool.run(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (5, 2)`)).rejects.toThrow();
+      expect(await migrator.planSync()).toEqual([]);
     });
 
     it('should log skipped migrations when safe mode blocks changes', async () => {
