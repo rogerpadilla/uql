@@ -12,8 +12,6 @@
 <p>UQL stands for Unified Query Language. With pure (type-safe) JSON queries, complex jobs can be done simply across SQL vendors + MongoDB. It got some inspiration from Mongo's best syntax.
 </p>
 
-<p>Queries are plain JSON, typed to the leaf. Unified across SQL databases and MongoDB.</p>
-
 <p>
   <a href="https://uql-orm.dev"><b>Website</b></a> ·
   <a href="https://uql-orm.dev/getting-started">Quick Start</a> ·
