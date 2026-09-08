@@ -66,7 +66,7 @@ export async function createTables(querier: AbstractSqlQuerier) {
 }
 
 export async function dropTables(querier: AbstractSqlQuerier) {
-  // The same routine `syncForce` runs: dependents first, and `cascade` gated on
+  // The same routine a forced sync runs: dependents first, and `cascade` gated on
   // `features.dropTableCascade`, so it is the Postgres-wire answer to the cycle and a no-op elsewhere.
   const statements = generatorFor(querier).generateDropSchema(getEntities(), { ifExists: true, cascade: true });
   await querier.transaction(async () => {

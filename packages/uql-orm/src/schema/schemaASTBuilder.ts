@@ -94,7 +94,7 @@ export function buildSchemaAST(entities: readonly Type<unknown>[], options: Buil
  * reflection also produces constructor values like `String`/`Number`.
  * `columnType` remains the unambiguous, always-respected explicit override.
  */
-function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
+export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
   const hasExplicitType = !!field.columnType || !field.typeFromReference;
   if (!hasExplicitType && field.references && !seen.has(field.references)) {
     seen.add(field.references);

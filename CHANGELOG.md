@@ -2,6 +2,17 @@
 
 What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
 
+## [0.44.0] - 2026-09-07
+
+**A schema can be defined while the process runs** - a CMS content type an admin creates, a tenant whose columns are a row in a table. Register the columns as they arrive, with the SQL type each one stores (`type: 'text'`), then `sync({ entity })` gives it a table without reading the whole catalogue. See [Runtime Schemas](https://uql-orm.dev/entities/runtime).
+
+- `removeEntity(entity)` forgets a content type that was deleted, which an append-only registry would otherwise keep - with its table in every diff - for the life of the process.
+- `uql-migrate types` writes a `.d.ts` for the registered entities, so one definition feeds both the database and the compiler.
+- **A naming strategy no longer rewrites a name you wrote.** `@Entity({ name: 'UserProfile' })` on `class UserProfile` was snake-cased like a default.
+- `entityPath` names an HTTP route, on the handler and the browser client alike, for a build that minifies class names.
+- A column typed as every scalar at once - what a shape known only at runtime has - keeps every operator, instead of narrowing to the equality a boolean and a blob share.
+- **Breaking:** one pair applies the schema - `sync(options)` and `planSync(options)`. `autoSync()`, `syncForce()` and `syncEntity(e)` are now `sync()`, `sync({ force: true })` and `sync({ entity: e })`. `--dry-run` is honored beside `--force`, which it used to ignore.
+
 ## [0.43.0] - 2026-09-07
 
 **An option a column cannot use is now an error** rather than silently ignored: `autoIncrement` on a string, `length` on a number, `index` on a `virtual` field, `nullable: true` on a key. `defaultValue` must be the value the column holds, except on a JSON column, which takes the SQL literal it stores.

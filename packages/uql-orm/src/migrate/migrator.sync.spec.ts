@@ -95,7 +95,7 @@ describe('Migrator autoSync Integration', () => {
     // Mock introspector to return nothing (no tables)
     migrator.schemaIntrospector = introspectorOf({});
 
-    await migrator.autoSync({ logging: true });
+    await migrator.sync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
     expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE `SyncUser`'));
@@ -106,7 +106,7 @@ describe('Migrator autoSync Integration', () => {
     // Mock introspector to return existing table with one column missing
     migrator.schemaIntrospector = introspectorOf({ SyncUser: { id: BIG_INT } });
 
-    await migrator.autoSync({ logging: true });
+    await migrator.sync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
     expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE `SyncUser` ADD COLUMN `name` TEXT'));
@@ -127,7 +127,7 @@ describe('Migrator autoSync Integration', () => {
 
     // Now when autoSync runs, it should detect that:
     // - SyncProfile entity has a 'userId' field that doesn't exist in the database
-    await migrator.autoSync({ logging: true });
+    await migrator.sync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
 
@@ -163,7 +163,7 @@ describe('Migrator autoSync Integration', () => {
       MultiFieldUser: { id: BIG_INT, username: TEXT },
     });
 
-    await multiFieldMigrator.autoSync({ logging: true });
+    await multiFieldMigrator.sync({ logging: true });
 
     const querier = (await pool.getQuerier()) as SqlQuerier;
 

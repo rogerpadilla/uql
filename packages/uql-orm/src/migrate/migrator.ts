@@ -3,7 +3,7 @@ import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import { introspectSchema, SchemaAST } from '../schema/index.js';
-import type { ForeignKeyAction } from '../schema/types.js';
+import type { ForeignKeyAction, TableNode } from '../schema/types.js';
 import type {
   DialectName,
   LoggingOptions,
@@ -18,6 +18,7 @@ import type {
   SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,
+  SyncOptions,
   Type,
 } from '../type/index.js';
 import { isKnownMigratorDialect, isSqlQuerier } from '../type/index.js';
@@ -386,7 +387,7 @@ export class Migrator {
     const claimed = new Set(this.entities.map((entity) => this.pool.dialect.resolveSchema(getMeta(entity))));
     const merged = new SchemaAST();
     for (const schema of claimed) {
-      const introspector = schema === undefined ? this.schemaIntrospector : this.createIntrospector(schema);
+      const introspector = this.introspectorFor(schema);
       if (!introspector) {
         continue;
       }
@@ -413,61 +414,98 @@ export class Migrator {
   }
 
   /**
-   * Sync schema directly (for development only - not for production!)
+   * Applies the entity schema to the database: every registered entity, or the one `entity` names.
+   *
+   * The whole surface is this and {@link planSync}, which answers the same question without running
+   * it - `force` and a single entity included, so `--dry-run` means the same thing whatever else was
+   * asked for.
    */
-  async sync(options: { force?: boolean } = {}): Promise<void> {
-    if (options.force) {
-      return this.syncForce();
+  async sync(options: SyncOptions = {}): Promise<void> {
+    const statements = await this.planSync(options);
+    if (statements.length) {
+      await this.executeSyncStatements(statements, options);
+    } else if (options.logging) {
+      this.logger.logSchema('Schema is already in sync.');
     }
-    return this.autoSync({ safe: true });
   }
 
   /**
-   * Drops and recreates all tables (Development only!)
+   * Every table dropped and recreated.
+   *
+   * Both directions span the whole entity set rather than looping an entity at a time. A per-entity
+   * AST cannot resolve a cross-entity foreign key, so the old create loop silently produced a schema
+   * with no referential integrity; and the old drop loop went in reverse *declaration* order, which
+   * says nothing about the relation graph and is rejected as soon as the constraints are really there.
    */
-  public async syncForce(): Promise<void> {
-    await this.ensureSchemaGenerator();
-
-    // Both directions span the whole entity set rather than looping an entity at a time. A per-entity
-    // AST cannot resolve a cross-entity foreign key, so the old create loop silently produced a schema
-    // with no referential integrity; and the old drop loop went in reverse *declaration* order, which
-    // says nothing about the relation graph and is rejected as soon as the constraints are really there.
-    const statements = [
+  private forceStatements(): string[] {
+    return [
       ...this.generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
       ...this.generator.generateCreateSchema(this.entities),
     ];
-
-    await withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
-      querier.transaction(async () => {
-        for (const sql of statements) {
-          this.logger.logSchema(`Executing: ${sql}`);
-          await querier.run(sql);
-        }
-      }),
-    );
-
-    this.logger.logSchema('Schema sync (force) completed');
   }
 
   /**
-   * Safely synchronizes the schema by only adding missing tables and columns.
+   * Sync one entity, for a schema that grows while the process runs: a content type an admin just
+   * created is one table to add, where the whole set would read the catalogue to work that out.
+   *
+   * The new-table case costs one existence check and creates with `IF NOT EXISTS`, so instances racing
+   * the same admin save settle instead of colliding. An existing table still pays for introspection,
+   * since a column diff needs the columns.
    */
-  async autoSync(options: { safe?: boolean; drop?: boolean; logging?: boolean } = {}): Promise<void> {
-    const statements = await this.planSync(options);
-
-    if (statements.length === 0) {
-      if (options.logging) this.logger.logSchema('Schema is already in sync.');
-      return;
+  /** The DDL for one entity: {@link planSync} narrowed to the table it names. */
+  private async planEntity(entity: Type<unknown>, options: SyncOptions): Promise<string[]> {
+    const meta = getMeta(entity);
+    // Before anything reads `this.generator`, whose own failure names neither the entity nor the
+    // dialect that has no support.
+    const introspector = this.introspectorFor(this.pool.dialect.resolveSchema(meta));
+    if (!introspector) {
+      throw new TypeError(`No introspector for '${meta.entity.name}' on '${this.dialectName}'`);
     }
+    const tableName = this.generator.resolveTableName(meta);
 
-    await this.executeSyncStatements(statements, options);
+    return (await introspector.tableExists(tableName))
+      ? this.alterFromEntity(entity, (await introspectSchema(introspector)).getTable(tableName), options)
+      : // Spanning the whole set, so a foreign key resolves against the tables it points at, and
+        // always including this entity: pinned to an explicit `entities` list, a sync of one outside
+        // it emitted nothing at all. `only` is what keeps the statements to this table.
+        this.generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
+  }
+
+  /** An alter diff as statements, narrowed to what the caller allows. */
+  private alterFromDiff(diff: SchemaDiff, options: SyncOptions): string[] {
+    return this.generator.generateAlterTable(this.filterDiff(diff, options));
+  }
+
+  /** The same for one entity against the table it already has, and nothing where the two agree. */
+  private alterFromEntity(entity: Type<unknown>, table: TableNode | undefined, options: SyncOptions): string[] {
+    const diff = this.generator.diffSchema(entity, table);
+    return diff?.type === 'alter' ? this.alterFromDiff(diff, options) : [];
+  }
+
+  /** The configured entities, with `entity` among them however the migrator was built. */
+  private entitiesWith(entity: Type<unknown>): Type<unknown>[] {
+    const entities = this.entities;
+    return entities.includes(entity) ? entities : [...entities, entity];
+  }
+
+  /** The introspector for a claimed schema, which is the connection's own where none is claimed. */
+  private introspectorFor(schema: string | undefined): SchemaIntrospector | undefined {
+    return schema === undefined ? this.schemaIntrospector : this.createIntrospector(schema);
   }
 
   /**
-   * The DDL {@link autoSync} would run, without running it. Separate so `--dry-run` shows the real
+   * The DDL {@link sync} would run, without running it. Separate so `--dry-run` shows the real
    * statements rather than a summary of a second, differently-computed diff.
    */
-  async planSync(options: { safe?: boolean; drop?: boolean } = {}): Promise<string[]> {
+  async planSync(options: SyncOptions = {}): Promise<string[]> {
+    await this.ensureSchemaGenerator();
+    if (options.force) {
+      return this.forceStatements();
+    }
+    if (options.entity) {
+      return this.planEntity(options.entity, options);
+    }
+
     const creating: string[] = [];
     const altering: string[] = [];
 
@@ -475,7 +513,7 @@ export class Migrator {
       if (diff.type === 'create') {
         if (entity) creating.push(diff.tableName);
       } else if (diff.type === 'alter') {
-        altering.push(...this.generator.generateAlterTable(this.filterDiff(diff, options)));
+        altering.push(...this.alterFromDiff(diff, options));
       }
     }
 
@@ -565,12 +603,18 @@ export class Migrator {
   }
 
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    // Mongo creates collections and indexes outside any transaction, so only the SQL path opens one.
-    await withQuerierForMigrations(this.pool, (querier) =>
-      this.dialectName === 'mongodb'
-        ? this.executeMongoSyncStatements(statements, options, querier as MongoQuerier)
-        : querier.transaction(() => this.executeSqlSyncStatements(statements, options, querier)),
-    );
+    // Mongo creates collections and indexes outside any transaction, so only the SQL path opens one -
+    // and asks for a SQL querier before it opens it, since `transaction` is what a Mongo one lacks and
+    // reaching for it first reports that instead of which querier the dialect needs.
+    if (this.dialectName === 'mongodb') {
+      await withQuerierForMigrations(this.pool, (querier) =>
+        this.executeMongoSyncStatements(statements, options, querier as MongoQuerier),
+      );
+    } else {
+      await withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
+        querier.transaction(() => this.executeSqlSyncStatements(statements, options, querier)),
+      );
+    }
     if (options.logging) this.logger.logSchema('Schema synchronization completed');
   }
 

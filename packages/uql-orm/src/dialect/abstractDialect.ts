@@ -12,6 +12,7 @@ import type {
   QueryWhereMap,
 } from '../type/index.js';
 import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
+import { entityName } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
 
 /**
@@ -78,12 +79,10 @@ export abstract class AbstractDialect {
    * nothing declared.
    */
   resolveTableAlias<E>(meta: EntityMeta<E>): string {
-    const className = meta.entity.name;
-    const name = meta.name ?? className;
-    if (name !== className || !this.namingStrategy) {
-      return name;
-    }
-    return this.namingStrategy.tableName(name);
+    // A name the author wrote is the table, verbatim: there is nothing to derive. Only a name that
+    // stood in for one is a derivation, which is what a naming strategy exists to make.
+    const name = entityName(meta);
+    return meta.derivedName && this.namingStrategy ? this.namingStrategy.tableName(name) : name;
   }
 
   /**

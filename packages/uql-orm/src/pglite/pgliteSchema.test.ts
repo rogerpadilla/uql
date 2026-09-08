@@ -129,7 +129,7 @@ describe('schema against postgres', () => {
   });
 
   // Introspection only ever read `table_schema = 'public'`, so a qualified entity matched nothing and
-  // diffed as `create` forever: `drift:check` called an existing table missing, and `autoSync` reran
+  // diffed as `create` forever: `drift:check` called an existing table missing, and a sync reran
   // `CREATE TABLE` instead of altering it. A column added to the entity is the case that exposes it.
   describe('drift against a qualified table', () => {
     let driftPool: PgliteQuerierPool;

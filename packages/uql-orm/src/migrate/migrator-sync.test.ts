@@ -15,7 +15,7 @@ interface DatabaseConfig {
   /** A factory, not a pool: nothing is opened for a backend whose suite never runs. */
   createPool: () => SqlQuerierPool;
   createIntrospector: (pool: SqlQuerierPool) => SchemaIntrospector;
-  /** A hand-written key column, for seeding the table `autoSync` is then asked to reconcile. */
+  /** A hand-written key column, for seeding the table a sync is then asked to reconcile. */
   serialIdColumn: string;
   /** The plain integer a caller-supplied key column takes, which is not the auto-increment type. */
   keyColumnType: string;
@@ -78,7 +78,7 @@ const databases: DatabaseConfig[] = [
 ];
 
 for (const db of databases) {
-  describe(`Migrator autoSync Integration (${db.name})`, () => {
+  describe(`Migrator sync Integration (${db.name})`, () => {
     let pool: SqlQuerierPool;
     let introspector: SchemaIntrospector;
     const claimed = new Set<string>();
@@ -96,7 +96,7 @@ for (const db of databases) {
       await dropTable(tableName);
     };
 
-    /** {@link givenNoTable} plus the pre-existing table `autoSync` is expected to reconcile. */
+    /** {@link givenNoTable} plus the pre-existing table a sync is expected to reconcile. */
     const givenTable = async (tableName: string, columns: string) => {
       await givenNoTable(tableName);
       await pool.run(`CREATE TABLE ${escapeId(tableName)} (${columns})`);
@@ -133,7 +133,7 @@ for (const db of databases) {
       expect(before.getTable(tableName)).toBeDefined();
       expect(Array.from(before.getTable(tableName)!.columns.keys()).sort()).toEqual(['id', 'name']);
 
-      await new Migrator(pool, { entities: [AutoSyncUserTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncUserTest1] }).sync({ logging: true });
 
       const after = await introspector.introspect();
       expect(after.getTable(tableName)).toBeDefined();
@@ -158,7 +158,7 @@ for (const db of databases) {
 
       await givenNoTable('AutoSyncSettledTest');
       const migrator = new Migrator(pool, { entities: [AutoSyncSettledTest] });
-      await migrator.autoSync();
+      await migrator.sync();
 
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
     });
@@ -185,7 +185,7 @@ for (const db of databases) {
       const before = await introspector.getTableSchema(tableName);
       expect(before?.primaryKey).toEqual(['userId']);
 
-      await new Migrator(pool, { entities: [AutoSyncKeyTest] }).autoSync({ safe: false });
+      await new Migrator(pool, { entities: [AutoSyncKeyTest] }).sync({ safe: false });
 
       const after = await introspector.getTableSchema(tableName);
       expect(after?.primaryKey).toEqual(['userId', 'groupId']);
@@ -205,9 +205,9 @@ for (const db of databases) {
         `${escapeId('userId')} ${db.keyColumnType} NOT NULL, PRIMARY KEY (${escapeId('userId')})`,
       );
 
-      await expect(
-        new Migrator(pool, { entities: [AutoSyncKeyRefusedTest] }).autoSync({ safe: false }),
-      ).rejects.toThrow(db.unsafeKeyError);
+      await expect(new Migrator(pool, { entities: [AutoSyncKeyRefusedTest] }).sync({ safe: false })).rejects.toThrow(
+        db.unsafeKeyError,
+      );
     });
 
     it('should create an index the entity declares on a table that already exists', async () => {
@@ -223,7 +223,7 @@ for (const db of databases) {
       const before = await introspector.introspect();
       expect(before.getTable(tableName)!.indexes).toEqual([]);
 
-      await new Migrator(pool, { entities: [AutoSyncIndexTest] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncIndexTest] }).sync({ logging: true });
 
       const after = await introspector.introspect();
       expect(after.getTable(tableName)!.indexes.map((index) => index.name)).toEqual(['AutoSyncIndexTest__email_idx']);
@@ -242,7 +242,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncProductTest1';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('name')} ${db.textType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncProductTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncProductTest1] }).sync({ logging: true });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -263,7 +263,7 @@ for (const db of databases) {
       const before = await introspector.introspect();
       expect(before.getTable(tableName)).toBeDefined();
 
-      await new Migrator(pool, { entities: [AutoSyncCategoryTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncCategoryTest1] }).sync({ logging: true });
 
       const after = await introspector.introspect();
       expect(after.getTable(tableName)).toBeDefined();
@@ -283,7 +283,7 @@ for (const db of databases) {
 
       expect(await introspector.tableExists(tableName)).toBe(false);
 
-      await new Migrator(pool, { entities: [AutoSyncNewTableTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncNewTableTest1] }).sync({ logging: true });
 
       expect(await introspector.tableExists(tableName)).toBe(true);
 
@@ -304,7 +304,7 @@ for (const db of databases) {
       const tableName = 'custom_user_table';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('username')} ${db.textType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncCustomNameTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncCustomNameTest1] }).sync({ logging: true });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -322,7 +322,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncCustomColumnTest1';
       await givenTable(tableName, db.serialIdColumn);
 
-      await new Migrator(pool, { entities: [AutoSyncCustomColumnTest1] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncCustomColumnTest1] }).sync({ logging: true });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -340,7 +340,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncRenameTest';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('oldName')} ${db.textType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncRenameTest] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncRenameTest] }).sync({ logging: true });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -358,7 +358,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncUnsafeRenameTest';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('oldName')} ${db.textType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncUnsafeRenameTest] }).autoSync({
+      await new Migrator(pool, { entities: [AutoSyncUnsafeRenameTest] }).sync({
         logging: true,
         safe: false,
         drop: true,
@@ -380,7 +380,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncFloatTest';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('cost')} ${db.doubleType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncFloatTest] }).autoSync({ logging: true });
+      await new Migrator(pool, { entities: [AutoSyncFloatTest] }).sync({ logging: true });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -411,7 +411,7 @@ for (const db of databases) {
         `${db.serialIdColumn}, ${escapeId('name')} ${db.textType}, ${escapeId('extraColumn')} ${db.textType}`,
       );
 
-      await new Migrator(pool, { entities: [AutoSyncNoDropTest] }).autoSync({ logging: true, safe: false });
+      await new Migrator(pool, { entities: [AutoSyncNoDropTest] }).sync({ logging: true, safe: false });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -434,7 +434,7 @@ for (const db of databases) {
 
       const consoleSpy = vi.spyOn(console, 'info').mockImplementation(() => {});
       try {
-        await new Migrator(pool, { entities: [AutoSyncLogTest], logger: true }).autoSync({ logging: true });
+        await new Migrator(pool, { entities: [AutoSyncLogTest], logger: true }).sync({ logging: true });
 
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('skipped migration:'));
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped dropping 1 columns'));
@@ -453,7 +453,7 @@ for (const db of databases) {
       const tableName = 'AutoSyncUnsafeAlterTest';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('cost')} ${db.doubleType}`);
 
-      await new Migrator(pool, { entities: [AutoSyncUnsafeAlterTest] }).autoSync({ logging: true, safe: false });
+      await new Migrator(pool, { entities: [AutoSyncUnsafeAlterTest] }).sync({ logging: true, safe: false });
 
       const ast = await introspector.introspect();
       const table = ast.getTable(tableName);
@@ -479,7 +479,7 @@ for (const db of databases) {
 
       const migrator = new Migrator(pool, { entities: [AutoSyncUnsafeAlterErrorTest] });
 
-      await expect(migrator.autoSync({ logging: true, safe: false })).rejects.toThrow(db.unsafeAlterError);
+      await expect(migrator.sync({ logging: true, safe: false })).rejects.toThrow(db.unsafeAlterError);
     });
   });
 }

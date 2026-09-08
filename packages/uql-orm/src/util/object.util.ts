@@ -62,9 +62,9 @@ export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
 }
 
 /**
- * The entity's own name for a message to carry, declared or its class's. `defineEntity` always sets
- * one, so the fallback is for a meta a decorator is still building - which is why the sites spelling
- * this out reached for three different fallbacks, `?? ''` among them, and named nothing at all.
+ * The entity's own name, declared or its class's. `meta.name` holds only what the author wrote, so
+ * the fallback is what an entity that named no table is called - which is why the sites spelling this
+ * out reached for three different fallbacks, `?? ''` among them, and named nothing at all.
  */
 export function entityName<E>(meta: EntityMeta<E>): string {
   return meta.name ?? meta.entity.name;

@@ -5,14 +5,22 @@
  * caller can supply, and these pin how much survives at each end of that.
  *
  * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
+ *
+ * Every `@ts-expect-error` below sits on the property it is about, which is where TypeScript 7 - what
+ * this repo compiles with - reports it. An older compiler reports the same error at the call instead,
+ * so an editor running its own 5.x/6.x server marks these unused; the checks hold either way.
  */
-import type { Querier, Scalar, Type } from '../../type/index.js';
+import { idKey, type Querier, type Scalar, type Type } from '../../type/index.js';
 import { defineEntity, defineField } from './definition.js';
 
 declare const querier: Querier;
 
-/** A shape nobody declared: every key is a column, so every value is a scalar. */
-type ContentRow = { [column: string]: Scalar };
+/**
+ * A shape nobody declared: every key is a column, so every value is a scalar. The key is named even
+ * so, and as an intersection, which is what gives `IdKey` a key to find; {@link brandedKey} is the
+ * case where it is not called `id`.
+ */
+type ContentRow = { id: string } & { [column: string]: Scalar };
 declare const Dynamic: Type<ContentRow>;
 
 export async function unknownShape() {
@@ -27,18 +35,25 @@ export async function unknownShape() {
   const [projected] = await querier.findMany(Dynamic, { $select: { title: true } });
   const projectedTitle: Scalar = projected['title'];
 
-  // Operators follow the value type, and this one spans every column type at once: a boolean has no
-  // ordering, so no member of the union offers `$gte`. A narrower value union brings them back.
-  // @ts-expect-error `$gte` is not in the operator set shared by the whole `Scalar` union
-  await querier.findMany(Dynamic, { $where: { servings: { $gte: 2 } } });
+  // Operators stay open on a column typed as every scalar at once, since the type says nothing to
+  // check: narrowing to what a boolean and a blob share would leave equality alone.
+  await querier.findMany(Dynamic, { $where: { servings: { $gte: 2 } }, $sort: { title: 'desc' } });
 
-  // An insert returns the id *column's* value, which here is the whole union rather than the number
-  // the column holds.
-  const dynamicId: Scalar | undefined = await querier.insertOne(Dynamic, { title: 'Arepas' });
-  // @ts-expect-error nothing says the column that happens to be the id is the numeric one
-  const numericId: number | undefined = dynamicId;
+  const dynamicId: string | undefined = await querier.insertOne(Dynamic, { title: 'Arepas' });
 
-  return { title, projectedTitle, numericId };
+  return { title, projectedTitle, dynamicId };
+}
+
+/**
+ * A runtime content type whose key is not named by convention: the brand says which column it is, and
+ * the id reads back as its own type. Unbranded it still works, widened to the row's value type.
+ */
+type KeyedRow = { [idKey]?: 'pk'; pk: number } & { [column: string]: Scalar };
+declare const Keyed: Type<KeyedRow>;
+
+export async function brandedKey() {
+  const generated: number | undefined = await querier.insertOne(Keyed, { title: 'Arepas' });
+  return querier.findOneById(Keyed, generated!);
 }
 
 /** The same content type after codegen: the class a generator writes from the stored definition. */
@@ -74,19 +89,16 @@ export async function generatedShape() {
 }
 
 /**
- * The two ends meet at registration, which is why both are reachable from one API: `defineField`
- * takes the column name as a plain string, so a shape known only at runtime is registered field by
- * field, while the bulk `fields` map is keyed by the entity and checks what codegen wrote.
+ * The third door, for a shape that arrives field by field rather than all at once: `defineField`
+ * takes the column name as a plain string, where the bulk map is keyed by the entity and checks a
+ * column the class does not declare.
  */
 export function registration() {
   class Unknown {}
   defineField(Unknown, 'whateverTheAdminNamedIt', { type: String });
 
   defineEntity(Recipe, {
-    fields: {
-      id: { type: Number, isId: true },
-      // @ts-expect-error a column the generated class does not have
-      titel: { type: String },
-    },
+    // @ts-expect-error a column the generated class does not have
+    fields: { id: { type: Number, isId: true }, titel: { type: String } },
   });
 }

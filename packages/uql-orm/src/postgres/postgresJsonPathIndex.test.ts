@@ -41,7 +41,7 @@ describe('PostgreSQL JSON path index', () => {
 
   beforeAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-    await new Migrator(pool, { entities: [JsonPathIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [JsonPathIndexed] }).sync({ logging: false });
     await pool.withQuerier(async (querier) => {
       await querier.insertMany(
         JsonPathIndexed,

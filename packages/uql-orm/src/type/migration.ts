@@ -229,6 +229,20 @@ export interface SchemaDiff {
   readonly foreignKeysToDrop?: string[];
 }
 
+/**
+ * What every sync entry point takes: `safe` keeps it additive, `drop` lets it remove a column, and
+ * `logging` reports each statement. A plan ignores `logging`, having nothing to run.
+ */
+export interface SyncOptions {
+  readonly safe?: boolean;
+  readonly drop?: boolean;
+  readonly logging?: boolean;
+  /** One entity instead of every registered one, for a schema that grows while the process runs. */
+  readonly entity?: Type<unknown>;
+  /** Drop every table and recreate it. Development only: it is the one option that loses data. */
+  readonly force?: boolean;
+}
+
 export interface CreateSchemaOptions {
   readonly ifNotExists?: boolean;
   /**

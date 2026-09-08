@@ -926,7 +926,10 @@ export type EntityIndexMeta = {
 
 export type EntityMeta<E> = {
   readonly entity: Type<E>;
+  /** The table, which is the class's own name where the entity named none - see {@link derivedName}. */
   name?: string;
+  /** Whether {@link name} came from the class rather than from the author, so a naming strategy applies. */
+  derivedName?: boolean;
   /** Set only when the entity named one; unset defers to the pool where it is used. See `AbstractDialect.resolveSchema`. */
   schema?: string;
   /**
@@ -975,6 +978,17 @@ export type CheckOptions = {
   /** Derived from the table and the constraint's position when absent. */
   readonly name?: string;
   readonly expression: QueryRaw;
+};
+
+/**
+ * An entity's members as the registry takes them, keyed by plain strings - what a decorator bag, an
+ * {@link EntityOptions} and a decorator bag both reduce to before anything is registered: a member
+ * decorator has no class to key against, so by then the keys are plain strings either way.
+ */
+export type EntityMembers = {
+  readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
+  readonly relations?: Readonly<Record<string, RelationOptions | undefined>>;
+  readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
 };
 
 export type EntityOptions<E = unknown> = {

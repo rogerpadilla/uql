@@ -16,6 +16,7 @@ export type {
   SqlDialectName,
   SqlQuerier,
   SqlQueryDialect,
+  SyncOptions,
   TableSchema,
 } from '../type/index.js';
 export { type Config, isSqlQuerier } from '../type/index.js';

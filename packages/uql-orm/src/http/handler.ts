@@ -85,6 +85,14 @@ export type RequestHandlerOptions<Ctx = unknown> = {
   // oxlint-disable-next-line typescript/no-explicit-any -- accepts any entity constructor
   exclude?: Type<any>[];
   /**
+   * The URL segment an entity is addressed by, defaulting to its kebab-cased class name.
+   *
+   * State it where the default cannot serve: a build that minifies class names renames every route,
+   * and two entities mapping one table in different schemas collide on one. The browser client takes
+   * the same option, so both ends can read one map.
+   */
+  entityPath?: (entity: Type<unknown>) => string;
+  /**
    * Allow augment any kind of request before it runs. Hooks may be async
    * and abort the request by throwing (a numeric `status` on the error is honored).
    */
@@ -132,6 +140,7 @@ function tableOf(entity: Type<unknown>): string {
 
 export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx>): RequestHandler<Ctx> {
   const { include, exclude, pre, preSave, preFilter, post, getContext, pool } = opts;
+  const pathOf = opts.entityPath ?? entityPath;
 
   let entities = include ?? getEntities();
   if (exclude) {
@@ -141,16 +150,15 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     throw new TypeError('no entities for the uql middleware');
   }
 
-  // The route is the class name, so two entities mapping one table in different schemas collide here
-  // even though nothing else about them does. All of them at once, so fixing the first collision
-  // does not just reveal the next.
-  const byPath = Map.groupBy(entities, entityPath);
+  // All of them at once, so fixing the first collision does not just reveal the next.
+  const byPath = Map.groupBy(entities, pathOf);
   const collisions = [...byPath].filter(([, clashing]) => clashing.length > 1);
   if (collisions.length) {
     const lines = collisions.map(([path, clashing]) => `  /${path} <- ${clashing.map(tableOf).join(', ')}`);
     throw new TypeError(
       `every entity below shares a route with another, so all but the first are unreachable:\n${lines.join('\n')}\n` +
-        "A route is the kebab-cased class name. Rename a class, or pass only one of them in 'include'.",
+        "A route is the kebab-cased class name unless 'entityPath' says otherwise. Name them apart, " +
+        "pass an 'entityPath', or pass only one of them in 'include'.",
     );
   }
   // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous entity map

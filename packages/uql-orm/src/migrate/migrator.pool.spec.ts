@@ -15,7 +15,7 @@ describe('Migrator Shared Pool', () => {
     });
 
     // 3. Initialize schema via migrator
-    await migrator.autoSync();
+    await migrator.sync();
 
     // 4. Use the pool for app logic
     const querier = await pool.getQuerier();
@@ -46,7 +46,7 @@ describe('Migrator Shared Pool', () => {
     const pool = new Sqlite3QuerierPool(':memory:');
     const migrator = new Migrator(pool, { entities: [User] });
 
-    await migrator.autoSync();
+    await migrator.sync();
 
     // Start a long-running app operation (simulated)
     const appQuerier = await pool.getQuerier();

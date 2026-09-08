@@ -29,7 +29,7 @@ describe('pgvector query-time tuning', () => {
   });
 
   const seed = async () => {
-    await new Migrator(pool, { entities: [TunedItem] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [TunedItem] }).sync({ logging: false });
     await pool.insertMany(TunedItem, [
       { name: 'north', vec: [0, 1, 0] },
       { name: 'east', vec: [1, 0, 0] },

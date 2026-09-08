@@ -35,6 +35,12 @@ export type HttpQuerierDefaults = {
    * infrastructure (proxies, CDNs) that forwards the QUERY method. Defaults to 'GET'.
    */
   readonly readMethod?: Extract<HttpMethod, 'GET' | 'QUERY'>;
+  /**
+   * The URL segment an entity is addressed by, defaulting to its kebab-cased class name - the same
+   * option the server handler takes, so one map serves both. State it where the default cannot: a
+   * build that minifies class names renames every route.
+   */
+  readonly entityPath?: (entity: Type<unknown>) => string;
 };
 
 /**
@@ -199,7 +205,7 @@ export class HttpQuerier implements ClientQuerier {
   }
 
   getBasePath<E>(entity: Type<E>) {
-    return `${this.basePath}/${entityPath(entity)}`;
+    return `${this.basePath}/${(this.defaults.entityPath ?? entityPath)(entity)}`;
   }
 
   protected read<T>(path: string, q: Record<string, unknown> | undefined, opts?: RequestOptions) {

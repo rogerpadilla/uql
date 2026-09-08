@@ -11,6 +11,7 @@ export {
   type EntityCodeGeneratorOptions,
   type GeneratedEntity,
 } from './entityCodeGenerator.js';
+export { entityTypesSource } from './entityTypes.js';
 export {
   buildSqlQuerierMigrationModule,
   EMPTY_MANUAL_MIGRATION_DOWN_INNER,

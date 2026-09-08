@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
-import { defineEntity } from '../entity/index.js';
+import { defineEntity, getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
@@ -87,6 +87,16 @@ describe('createRequestHandler', () => {
     expect(() => createRequestHandler({ pool, include: [Company, Shadow] })).toThrow(
       '/company <- Company (crm.Company), Company (billing.Company)',
     );
+
+    // Which is what `entityPath` is for: the two are one table in two schemas, so the schema is what
+    // tells their routes apart.
+    const handle = createRequestHandler({
+      pool,
+      include: [Company, Shadow],
+      entityPath: (entity) => `${getMeta(entity).schema}-company`,
+    });
+    expect(handle(req({ method: 'GET', entityPath: 'crm-company', subPath: 'one' }))).toBeDefined();
+    expect(handle(req({ method: 'GET', entityPath: 'billing-company', subPath: 'one' }))).toBeDefined();
   });
 
   it('returns undefined for unknown entity or route', () => {

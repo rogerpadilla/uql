@@ -105,27 +105,30 @@ describe('Migrator (extra coverage)', () => {
     expect(res).toBe('');
   });
 
-  it('syncForce should throw if not a SQL querier', async () => {
+  it('a forced sync throws if the querier is not a SQL one', async () => {
     const mongoQuerier = { release: vi.fn() } as unknown as MongoQuerier;
     (pool.getQuerier as Mock).mockResolvedValue(mongoQuerier);
     const migrator = new Migrator(pool);
-    await expect(migrator.syncForce()).rejects.toThrow('Migrator requires a SQL-based querier');
+    vi.spyOn(migrator, 'planSync').mockResolvedValue(['DROP TABLE "x"']);
+    await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow(
+      'Migrator requires a SQL-based querier',
+    );
   });
 
-  it('autoSync should throw if no generator/introspector', async () => {
+  it('sync should throw if no generator/introspector', async () => {
     const invalidPool = {
       ...pool,
       dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
     };
     const migrator = new Migrator(invalidPool);
-    await expect(migrator.autoSync()).rejects.toThrow('Schema generator and introspector must be set');
+    await expect(migrator.sync()).rejects.toThrow('Schema generator and introspector must be set');
   });
 
-  it('autoSync should return if no statements and logging is enabled', async () => {
+  it('sync should return if no statements and logging is enabled', async () => {
     const logger = vi.fn();
     migrator.logger = logger;
     vi.spyOn(migrator, 'getDiffs').mockResolvedValue([]);
-    await migrator.autoSync({ logging: true });
+    await migrator.sync({ logging: true });
     expect(logger).toHaveBeenCalledWith('Schema is already in sync.');
   });
 

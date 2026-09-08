@@ -10,6 +10,7 @@ export {
   defineRelation,
   getEntities,
   getMeta,
+  removeEntity,
   assertSoleId,
   idOf,
   soleIdOf,

@@ -21,6 +21,9 @@ const registrations = Symbol.for('uql-orm/entity/decoratorMembers');
  * What the member decorators record for one class, waiting for `@Entity()` or `defineEntity` to drain
  * it into the metadata registry. Member decorators receive no class reference under the standard
  * decorator spec, so this object is the only channel between them and the class decorator that does.
+ *
+ * The writable counterpart of `EntityMembers`, which is what registration reads: this one is written
+ * into member by member, so every map is present and none of them is readonly.
  */
 export type MemberRegistrations = {
   readonly fields: Record<string, FieldOptions>;

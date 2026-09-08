@@ -1,4 +1,14 @@
 {
   // This will make VsCode to recommend these extensions by default (the ones related to the tools we use)
-  "recommendations": ["oxc.oxc-vscode", "editorConfig.editorConfig", "tobermory.es6-string-html", "eamodio.gitlens"]
+  // `typescript.native-preview` is the editor half of the TypeScript this repo compiles with (7.x, the
+  // native one): without it the editor falls back to its own 5.x/6.x server, which reports the same
+  // errors in `*.test-d.ts` at the call rather than at the property, so every `@ts-expect-error` there
+  // reads as unused.
+  "recommendations": [
+    "oxc.oxc-vscode",
+    "typescript.native-preview",
+    "editorConfig.editorConfig",
+    "tobermory.es6-string-html",
+    "eamodio.gitlens"
+  ]
 }

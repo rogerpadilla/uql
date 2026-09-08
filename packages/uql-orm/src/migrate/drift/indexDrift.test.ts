@@ -66,7 +66,7 @@ describe('index drift (PostgreSQL)', () => {
 
   beforeAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-    await new Migrator(pool, { entities: [DriftIndexUser] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [DriftIndexUser] }).sync({ logging: false });
   }, provisioningTimeout);
 
   afterAll(async () => {
@@ -114,7 +114,7 @@ describe('index drift (CockroachDB)', () => {
 
   beforeAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${CRDB_TABLE}"`));
-    await new Migrator(pool, { entities: [CrdbIndexUser] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [CrdbIndexUser] }).sync({ logging: false });
   }, provisioningTimeout);
 
   afterAll(async () => {

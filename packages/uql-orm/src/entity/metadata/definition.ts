@@ -1,6 +1,8 @@
 import type {
+  CheckOptions,
   EntityId,
   EntityIndexInput,
+  EntityMembers,
   EntityMeta,
   EntityOptions,
   FieldKey,
@@ -18,6 +20,7 @@ import type {
 } from '../../type/index.js';
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import {
+  entityName,
   fieldOptionConflict,
   getKeys,
   ddlText,
@@ -31,14 +34,20 @@ import { ownRegistrations } from '../decorator/bag.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
 type Meta = Map<Type<unknown>, EntityMeta<any>>;
-// Held on `globalThis` via the global symbol registry so a single metadata map survives multiple
-// evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading). Version-suffixed
-// because v1 changed the `FieldOptions` shape: a tree holding both majors gets two maps rather than one
-// map with entries the other major cannot read.
-const holder = globalThis as unknown as Record<symbol, Meta>;
-const metaKey = Symbol.for('uql-orm/entity/metadata/v1');
-const metas: Meta = holder[metaKey] ?? new Map();
-holder[metaKey] = metas;
+/**
+ * A map held on `globalThis` through the global symbol registry, so a single one survives multiple
+ * evaluations of this module (HMR, duplicated/federated bundles, ESM+CJS dual-loading). The keys are
+ * version-suffixed because v1 changed the `FieldOptions` shape: a tree holding both majors gets two
+ * maps rather than one map with entries the other major cannot read.
+ */
+function globalMap<K, V>(key: string): Map<K, V> {
+  const holder = globalThis as unknown as Record<symbol, Map<K, V>>;
+  const symbol = Symbol.for(key);
+  holder[symbol] ??= new Map();
+  return holder[symbol];
+}
+
+const metas: Meta = globalMap('uql-orm/entity/metadata/v1');
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
@@ -122,21 +131,10 @@ export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptio
 }
 
 /**
- * What a decorator bag and {@link EntityOptions} have in common at registration time. The keyed mapped
- * types in `EntityOptions<E>` are what check the imperative call; a member decorator has no class to key
- * against, so by the time either reaches the primitives the keys are plain strings.
- */
-type MemberSpecs = {
-  readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
-  readonly relations?: Readonly<Record<string, RelationOptions | undefined>>;
-  readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
-};
-
-/**
  * Feeds fields, relations and hooks into the `define*` primitives, so the decorators and the imperative
  * API converge on one registration path before anything is finalized.
  */
-export function applyMembers<E>(entity: Type<E>, specs: MemberSpecs | undefined): void {
+export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefined): void {
   for (const [key, spec] of Object.entries(specs?.fields ?? {})) {
     if (!spec) continue;
     if (spec.isId) {
@@ -155,6 +153,12 @@ export function applyMembers<E>(entity: Type<E>, specs: MemberSpecs | undefined)
   }
 }
 
+/**
+ * Registers an entity described by data alone, minting the class the registry keys it by. The row
+ * type follows from the spec - see {@link SpecRow} - so a definition written out is checked column by
+ * column, and one assembled at runtime is the column bag it is. Pass `Row` to name a shape the spec
+ * cannot describe, such as the interface `uql-migrate types` generated for it.
+ */
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
   // Ahead of any registration, so a rejected definition leaves nothing half-written in the registry.
   // A dotted name reads like a schema and is not one: it escapes as a single identifier, so the
@@ -180,16 +184,26 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   for (const index of opts.indexes ?? []) {
     defineIndex(entity, index);
   }
-  for (const [name, spec] of Object.entries(opts.filters ?? {})) {
-    if (spec) defineFilter(entity, name, spec);
+  for (const [name, filter] of Object.entries<FilterOptions<E> | undefined>(opts.filters ?? {})) {
+    if (filter) defineFilter(entity, name, filter);
   }
 
   if (!hasKeys(meta.fields)) {
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  // A later call composes onto the entity, so saying nothing about the table retracts nothing.
-  meta.name = opts.name ?? meta.name ?? entity.name;
+  // A later call composes onto the entity, so saying nothing about the table retracts nothing - which
+  // is why `derivedName` is only ever *set*, never recomputed from what a previous call left.
+  // It records that the class name stood in, telling a naming strategy there is something to derive;
+  // comparing the two cannot, since an entity may name its table exactly what its class is called and
+  // a spec's minted class is named after its table.
+  if (opts.name !== undefined) {
+    meta.name = opts.name;
+    meta.derivedName = false;
+  } else if (meta.name === undefined) {
+    meta.name = entity.name;
+    meta.derivedName = true;
+  }
   meta.schema = opts.schema ?? meta.schema;
   let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
 
@@ -271,8 +285,18 @@ export function idOf<E>(meta: EntityMeta<E>, row: E): EntityId<E> {
   return Object.fromEntries(ids.map((key) => [key, row[key]])) as EntityId<E>;
 }
 
+/**
+ * Forgets an entity, and reports whether there was one - for a registry that grows at runtime, where a
+ * deleted content type would otherwise keep its metadata for the life of the process. Nothing rewrites
+ * what pointed at it, and a decorated class does not come back (its decorators drained at first
+ * registration). See the Runtime Schemas guide.
+ */
+export function removeEntity<E>(entity: Type<E>): boolean {
+  return metas.delete(entity);
+}
+
 export function getEntities(): Type<unknown>[] {
-  return [...metas.entries()].reduce((acc, [key, val]) => {
+  return metas.entries().reduce((acc, [key, val]) => {
     if (val.ids.length) {
       acc.push(key);
     }
@@ -477,7 +501,7 @@ function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
 
 /** `<entityName><IdColumn>`, not the `<relationKey>Id` an owning to-one derives: a junction row has no relation key to borrow from. */
 function junctionColumn<E>(meta: EntityMeta<E>, idKey: string): string {
-  return lowerFirst(meta.name ?? '') + upperFirst(meta.fields[idKey]?.name ?? idKey);
+  return lowerFirst(entityName(meta)) + upperFirst(meta.fields[idKey]?.name ?? idKey);
 }
 
 /** A callback only reads one property off the key map, and that property is the key, so one serves every entity. */

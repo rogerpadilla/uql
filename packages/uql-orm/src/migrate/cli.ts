@@ -9,6 +9,7 @@ import type { Config, MigratorOptions } from '../type/index.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
+import { entityTypesSource } from './codegen/entityTypes.js';
 import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
 import { buildEntityAST, createSchemaGenerator } from './schemaGenerator.js';
@@ -88,6 +89,9 @@ export async function main(args = process.argv.slice(2)) {
         break;
       case 'sync':
         await runSync(migrator, filteredArgs.slice(1), config);
+        break;
+      case 'types':
+        runTypes(migrator, filteredArgs.slice(1));
         break;
       case 'pending':
         await runPending(migrator);
@@ -224,40 +228,52 @@ export async function runGenerateFromEntities(migrator: Migrator, args: string[]
   console.log(`\nCreated migration from entities: ${filePath}`);
 }
 
-export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
-  if (args.includes('--force')) {
-    console.log('\n⚠️  WARNING: This will drop and recreate all tables!');
-    console.log('   All data will be lost. This should only be used in development.\n');
-    await migrator.sync({ force: true });
-    console.log('\nSchema sync completed.');
-    return;
-  }
+/**
+ * Writes a `.d.ts` for the registered entities. The point is a schema defined at runtime: the same
+ * registration that made the tables is what the compiler then checks queries against.
+ */
+export function runTypes(migrator: Migrator, args: string[]) {
+  const output = readOutput(args) ?? './uql-entities.d.ts';
+  fs.mkdirSync(path.dirname(output), { recursive: true });
+  fs.writeFileSync(output, entityTypesSource(migrator.entities), 'utf-8');
+  console.log(`Wrote ${migrator.entities.length} entities to ${output}`);
+}
 
+/** `--output`/`-o`, wherever a command takes one. */
+function readOutput(args: readonly string[]): string | undefined {
+  const at = args.findIndex((arg) => arg === '--output' || arg === '-o');
+  return at === -1 ? undefined : args[at + 1];
+}
+
+export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
   // Pulling the database into entity files is what `generate:from-db` does; one implementation.
   if (args.includes('--pull')) {
     return runGenerateFromDb(migrator, args, config);
   }
 
+  const force = args.includes('--force');
   const safe = !args.includes('--unsafe');
+  const options = { force, safe, drop: !safe };
 
+  // Ahead of the warning as well as of the run: `--dry-run` means the same thing whatever else was
+  // asked for, and it used to be ignored beside `--force`.
   if (args.includes('--dry-run')) {
-    const statements = await migrator.planSync({ safe, drop: !safe });
+    const statements = await migrator.planSync(options);
     console.log(statements.length ? `\n${statements.join('\n')}` : '\nSchema is already in sync.');
     return;
   }
 
-  await migrator.autoSync({ safe, drop: !safe, logging: true });
+  if (force) {
+    console.log('\n⚠️  WARNING: This will drop and recreate all tables!');
+    console.log('   All data will be lost. This should only be used in development.\n');
+  }
+
+  await migrator.sync({ ...options, logging: true });
   console.log('\nSchema sync completed.');
 }
 
 export async function runGenerateFromDb(migrator: Migrator, args: string[], config: Partial<Config>) {
-  // Parse output directory
-  let outputDir = './src/entities';
-  for (let i = 0; i < args.length; i++) {
-    if ((args[i] === '--output' || args[i] === '-o') && args[i + 1]) {
-      outputDir = args[++i];
-    }
-  }
+  const outputDir = readOutput(args) ?? './src/entities';
 
   if (!migrator.schemaIntrospector) {
     console.error('No introspector available. Check your pool configuration.');
@@ -399,6 +415,9 @@ Commands:
     --unsafe            Allow destructive changes (drops, column alterations)
     --pull              Go the other way: generate entities from the database
     --force             Drop and recreate all tables (dangerous!)
+
+  types                 Write a .d.ts for the registered entities
+    --output, -o <file> Output path (default: ./uql-entities.d.ts)
 
   drift:check           Check for schema drift between entities and database
 

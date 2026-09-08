@@ -21,6 +21,13 @@ describe('HttpQuerier', () => {
     vi.restoreAllMocks();
   });
 
+  it('addresses an entity by the path it is given, for a build that renames classes', async () => {
+    const named = new HttpQuerier('/api', { entityPath: () => 'people' });
+    await named.findMany(User, {});
+
+    expect(vi.mocked(http.get).mock.calls[0]?.[0]).toBe('/api/people');
+  });
+
   it('findOneById', async () => {
     await querier.findOneById(User, 1);
     expect(http.get).toHaveBeenCalledWith('/api/user/1', undefined);

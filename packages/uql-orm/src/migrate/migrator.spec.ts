@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
-import { Entity, Id } from '../entity/index.js';
+import { defineEntity, Entity, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -241,13 +241,13 @@ describe('Migrator Core Methods', () => {
     expect(status.executed).toEqual(['20250101000000_m1']);
   });
 
-  it('sync should call autoSync by default', async () => {
-    const autoSyncSpy = vi.spyOn(migrator, 'autoSync').mockResolvedValue(undefined);
+  it('sync applies only what is additive unless told otherwise', async () => {
+    const planned = vi.spyOn(migrator, 'planSync').mockResolvedValue([]);
     await migrator.sync();
-    expect(autoSyncSpy).toHaveBeenCalledWith({ safe: true });
+    expect(planned).toHaveBeenCalledWith({});
   });
 
-  it('syncForce should drop and create tables', async () => {
+  it('a forced sync drops and creates tables', async () => {
     @Entity()
     class SyncEntity {
       @Id({ type: Number }) id?: number;
@@ -264,7 +264,7 @@ describe('Migrator Core Methods', () => {
     };
     migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
 
-    await migrator.syncForce();
+    await migrator.sync({ force: true, logging: true });
 
     expect(querier.run).toHaveBeenCalledWith('DROP TABLE "SyncEntity"');
     expect(querier.run).toHaveBeenCalledWith('CREATE TABLE "SyncEntity"');
@@ -366,21 +366,23 @@ describe('Migrator Core Methods', () => {
       id!: number;
     }
 
-    it('syncForce should drop and create tables', async () => {
+    it('a forced sync drops and creates tables', async () => {
       const migratorSync = new Migrator(pool, { entities: [MigratorUser] });
       await migratorSync.sync({ force: true });
       expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('DROP TABLE'));
       expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE'));
     });
 
-    it('sync should call autoSync', async () => {
+    it('sync runs what it planned', async () => {
       const migratorSync = new Migrator(pool, { entities: [MigratorUser] });
-      const autoSyncSpy = vi.spyOn(migratorSync, 'autoSync').mockResolvedValue(undefined);
+      const planned = vi.spyOn(migratorSync, 'planSync').mockResolvedValue(['CREATE TABLE "planned" ()']);
       await migratorSync.sync();
-      expect(autoSyncSpy).toHaveBeenCalledWith({ safe: true });
+
+      expect(planned).toHaveBeenCalled();
+      expect(querier.run).toHaveBeenCalledWith('CREATE TABLE "planned" ()');
     });
 
-    it('autoSync should execute statements from diffs', async () => {
+    it('sync should execute statements from diffs', async () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       const migratorSync = new Migrator(pool, {
@@ -389,7 +391,7 @@ describe('Migrator Core Methods', () => {
       });
       migratorSync.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
-      await migratorSync.autoSync({ logging: true });
+      await migratorSync.sync({ logging: true });
       expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
     });
 
@@ -404,7 +406,7 @@ describe('Migrator Core Methods', () => {
       // MigratorUser is decorated with @Entity, so it should be included by default
       expect(migratorDefault.entities).toContain(MigratorUser);
 
-      await migratorDefault.autoSync();
+      await migratorDefault.sync();
       expect(querier.run).toHaveBeenCalledWith(expect.stringMatching(/CREATE TABLE "MigratorUser"/i));
     });
 
@@ -484,10 +486,12 @@ describe('Migrator Core Methods', () => {
       await expect(migrator.getDiffs()).rejects.toThrow('Schema generator and introspector must be set');
     });
 
-    it('syncForce should throw if not SQL-based querier', async () => {
+    it('a forced sync throws if the querier is not a SQL one', async () => {
       const nonSqlQuerier = { release: vi.fn() } as any;
       (pool.getQuerier as Mock).mockResolvedValueOnce(nonSqlQuerier);
-      await expect(migrator.syncForce()).rejects.toThrow('Migrator requires a SQL-based querier');
+      await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow(
+        'Migrator requires a SQL-based querier',
+      );
       expect(nonSqlQuerier.release).toHaveBeenCalled();
     });
 
@@ -537,7 +541,7 @@ describe('Migrator Core Methods', () => {
       }
     });
 
-    it('autoSync should respect safe and drop options in filterDiff', async () => {
+    it('sync should respect safe and drop options in filterDiff', async () => {
       const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'User',
@@ -548,14 +552,14 @@ describe('Migrator Core Methods', () => {
       vi.spyOn(migrator.schemaGenerator!, 'generateAlterTable').mockReturnValue([]);
 
       // Safe mode (default)
-      await migrator.autoSync();
+      await migrator.sync();
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.not.objectContaining({ columnsToDrop: expect.anything() }),
       );
 
       // Unsafe mode with drop
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
-      await migrator.autoSync({ safe: false, drop: true });
+      await migrator.sync({ safe: false, drop: true });
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.objectContaining({ columnsToDrop: ['old_col'] }),
       );
@@ -566,7 +570,7 @@ describe('Migrator Core Methods', () => {
      * outright where the new columns are null on rows that already exist - so safe mode, which
      * exists to keep a sync additive, has to hold it back like any other alteration.
      */
-    it('autoSync should not change a primary key in safe mode', async () => {
+    it('sync should not change a primary key in safe mode', async () => {
       const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'Member',
@@ -575,29 +579,30 @@ describe('Migrator Core Methods', () => {
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       vi.spyOn(migrator.schemaGenerator!, 'generateAlterTable').mockReturnValue([]);
 
-      await migrator.autoSync();
+      await migrator.sync();
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.not.objectContaining({ primaryKey: expect.anything() }),
       );
 
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
-      await migrator.autoSync({ safe: false });
+      await migrator.sync({ safe: false });
       expect(migrator.schemaGenerator!.generateAlterTable).toHaveBeenCalledWith(
         expect.objectContaining({ primaryKey: diff.primaryKey }),
       );
     });
 
-    it('autoSync should log and return if no statements', async () => {
+    it('sync should log and return if no statements', async () => {
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([]);
       const spy = vi.spyOn(migrator.logger, 'logSchema');
-      await migrator.autoSync({ logging: true });
+      await migrator.sync({ logging: true });
       expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
     });
 
-    it('sync should call syncForce if force is true', async () => {
-      vi.spyOn(migrator, 'syncForce').mockResolvedValueOnce();
-      await migrator.sync({ force: true });
-      expect(migrator.syncForce).toHaveBeenCalled();
+    it('sync with force drops every table before recreating it', async () => {
+      const statements = await migrator.planSync({ force: true });
+
+      expect(statements.some((sql) => sql.startsWith('DROP TABLE'))).toBe(true);
+      expect(statements.some((sql) => sql.startsWith('CREATE TABLE'))).toBe(true);
     });
 
     it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
@@ -610,9 +615,24 @@ describe('Migrator Core Methods', () => {
       expect(m.schemaIntrospector).toBeUndefined();
     });
 
-    it('syncForce should rollback on error', async () => {
+    it('a single-entity sync says which entity it has no introspector for', async () => {
+      class NoIntrospectorRow {
+        id?: number;
+      }
+      defineEntity(NoIntrospectorRow, { fields: { id: { type: Number, isId: true } } });
+      const unknownPool = {
+        ...pool,
+        dialect: { dialectName: 'unknown', resolveSchema: () => undefined } as unknown as AbstractDialect,
+      };
+      const m = new Migrator(unknownPool, { storage });
+      await expect(m.sync({ entity: NoIntrospectorRow })).rejects.toThrow(
+        "No introspector for 'NoIntrospectorRow' on 'unknown'",
+      );
+    });
+
+    it('a forced sync rolls back on error', async () => {
       vi.spyOn(querier, 'run').mockRejectedValueOnce(new Error('Sync error'));
-      await expect(migrator.syncForce()).rejects.toThrow('Sync error');
+      await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow('Sync error');
       expect(querier.rollbackTransaction).toHaveBeenCalled();
     });
 
@@ -622,29 +642,29 @@ describe('Migrator Core Methods', () => {
      * `not a pending transaction`, which replaced the real cause and reported a wrong password as a
      * transaction-state error.
      */
-    it('syncForce reports why the transaction never started, not that it is missing', async () => {
+    it('a forced sync reports why the transaction never started, not that it is missing', async () => {
       (querier.beginTransaction as Mock).mockRejectedValueOnce(new Error('password authentication failed'));
 
-      await expect(migrator.syncForce()).rejects.toThrow('password authentication failed');
+      await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow('password authentication failed');
       expect(querier.release).toHaveBeenCalled();
     });
 
     /** A rollback that fails too is a consequence of the original error, and must not replace it. */
-    it('syncForce keeps the original error when the rollback also fails', async () => {
+    it('a forced sync keeps the original error when the rollback also fails', async () => {
       (querier.run as Mock).mockRejectedValueOnce(new Error('Sync error'));
       (querier.rollbackTransaction as Mock).mockRejectedValueOnce(new Error('connection is dead'));
 
-      await expect(migrator.syncForce()).rejects.toThrow('Sync error');
+      await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow('Sync error');
       expect(querier.release).toHaveBeenCalled();
     });
 
-    it('syncForce should throw if schemaGenerator is missing', async () => {
+    it('a forced sync throws if the schema generator is missing', async () => {
       const unknownPool = {
         ...pool,
         dialect: { dialectName: 'unknown' } as unknown as AbstractDialect,
       };
       const m = new Migrator(unknownPool, { storage });
-      await expect(m.syncForce()).rejects.toThrow('Schema generator not set');
+      await expect(m.sync({ force: true, logging: true })).rejects.toThrow('Schema generator not set');
     });
 
     it('findEntityForTable should return undefined if not found', async () => {
@@ -691,7 +711,7 @@ describe('Migrator Core Methods', () => {
       expect(result).toContain('test_full');
     });
 
-    it('generateFromEntities and autoSync should skip table if entity not found', async () => {
+    it('generateFromEntities and sync skip a table with no entity', async () => {
       const m = new Migrator(pool, { storage });
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
       vi.spyOn(m, 'findEntityForTable').mockResolvedValue(undefined);
@@ -701,7 +721,7 @@ describe('Migrator Core Methods', () => {
 
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
       const spy = vi.spyOn(m.logger, 'logSchema');
-      await m.autoSync({ logging: true });
+      await m.sync({ logging: true });
       expect(spy).toHaveBeenCalledWith('Schema is already in sync.');
     });
 

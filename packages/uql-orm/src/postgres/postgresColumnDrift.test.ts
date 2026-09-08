@@ -8,6 +8,9 @@ import { PgQuerierPool } from './pgQuerierPool.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 const TABLE = 'pg_column_drift';
+/** Its own namespace: another suite introspecting `public` while this one drops its table reads a
+ * relation that is already gone, which Postgres reports as a missing OID. */
+const SCHEMA = 'drift_probe';
 
 /**
  * Whether two column types agree is the engine's answer, not one the canonical values can give: an
@@ -25,22 +28,24 @@ describe('PostgreSQL column type drift', () => {
     }
     defineEntity(Row, {
       name: TABLE,
+      schema: SCHEMA,
       fields: { id: { type: Number, isId: true }, title: { type: String, length } },
     });
-    const actual = await new PostgresSchemaIntrospector(pool).introspect();
+    const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect();
     const expected = buildSchemaAST([Row], { namingStrategy: dialect.namingStrategy });
     return detectDrift(expected, actual, { dialect }).drifts.filter((drift) => drift.type === 'type_mismatch');
   };
 
   beforeAll(async () => {
     await pool.withQuerier(async (querier) => {
-      await querier.run(`DROP TABLE IF EXISTS "${TABLE}"`);
-      await querier.run(`CREATE TABLE "${TABLE}" (id BIGINT PRIMARY KEY, title VARCHAR(255))`);
+      await querier.run(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`);
+      await querier.run(`CREATE SCHEMA "${SCHEMA}"`);
+      await querier.run(`CREATE TABLE "${SCHEMA}"."${TABLE}" (id BIGINT PRIMARY KEY, title VARCHAR(255))`);
     });
   }, provisioningTimeout);
 
   afterAll(async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
+    await pool.withQuerier((querier) => querier.run(`DROP SCHEMA IF EXISTS "${SCHEMA}" CASCADE`));
     await pool.end();
   }, provisioningTimeout);
 

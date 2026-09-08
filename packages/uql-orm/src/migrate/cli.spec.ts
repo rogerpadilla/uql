@@ -1,3 +1,6 @@
+import { readFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
@@ -51,6 +54,7 @@ const mockMigrator = {
   autoSync: vi.fn().mockResolvedValue(undefined),
   planSync: vi.fn().mockResolvedValue([]),
   pending: vi.fn().mockResolvedValue([]),
+  entities: [TestEntity],
 };
 
 vi.mock('./migrator.js', () => {
@@ -126,12 +130,20 @@ describe('CLI', () => {
 
   it('main sync should apply the entity schema', async () => {
     await cli.main(['sync']);
-    expect(mockMigrator.autoSync).toHaveBeenCalledWith({ safe: true, drop: false, logging: true });
+    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: false, safe: true, drop: false, logging: true });
+  });
+
+  it('main types writes a declaration file for the registered entities', async () => {
+    const output = join(tmpdir(), `uql-types-${Date.now()}`, 'entities.d.ts');
+    await cli.main(['types', '--output', output]);
+
+    expect(readFileSync(output, 'utf-8')).toContain('export interface TestEntity {');
+    rmSync(dirname(output), { recursive: true, force: true });
   });
 
   it('main sync --force', async () => {
     await cli.main(['sync', '--force']);
-    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: true });
+    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: true, safe: true, drop: false, logging: true });
   });
 
   it('main help', async () => {
@@ -206,7 +218,7 @@ describe('CLI', () => {
 
   it('runSync', async () => {
     await cli.runSync(mockMigrator as unknown as Migrator, ['--force'], {});
-    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: true });
+    expect(mockMigrator.sync).toHaveBeenCalledWith({ force: true, safe: true, drop: false, logging: true });
   });
 
   it('getSchemaGenerator', () => {
@@ -265,11 +277,11 @@ describe('CLI', () => {
   });
 
   it('runSync with --unsafe should allow destructive changes', async () => {
-    const autoSync = vi.fn();
-    const migrator = { ...mockMigrator, autoSync } as unknown as Migrator;
+    const sync = vi.fn();
+    const migrator = { ...mockMigrator, sync } as unknown as Migrator;
 
     await cli.runSync(migrator, ['--unsafe'], { entities: [TestEntity] });
-    expect(autoSync).toHaveBeenCalledWith({ safe: false, drop: true, logging: true });
+    expect(sync).toHaveBeenCalledWith({ force: false, safe: false, drop: true, logging: true });
   });
 
   it('runSync with --pull should use db-to-entity direction', async () => {

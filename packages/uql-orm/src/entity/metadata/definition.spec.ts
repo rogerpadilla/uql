@@ -19,7 +19,7 @@ import {
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
-import { getEntities, getMeta } from './definition.js';
+import { defineEntity, defineRelation, getEntities, getMeta } from './definition.js';
 
 it('User', () => {
   const meta = getMeta(User);
@@ -1208,4 +1208,21 @@ it('a foreign-key column not named after the key it points at stays a plain colu
 
   expect(getKeys(meta.relations)).toEqual([]);
   expect(meta.fields.origin!.references!()).toBe(Airport);
+});
+
+it('a relation with no columns to join on says so', () => {
+  class Terminal {
+    id?: number;
+  }
+  defineEntity(Terminal, { fields: { id: { type: Number, isId: true } } });
+
+  class Gate {
+    id?: number;
+    terminal?: Terminal;
+  }
+  defineEntity(Gate, { fields: { id: { type: Number, isId: true } } });
+  // Hand-written and empty: nothing filled it in, so nothing says how the two are joined.
+  defineRelation(Gate, 'terminal', { cardinality: 'm1', entity: () => Terminal, references: [] });
+
+  expect(() => getMeta(Gate)).toThrow("'Gate.terminal' has no columns to join on.");
 });

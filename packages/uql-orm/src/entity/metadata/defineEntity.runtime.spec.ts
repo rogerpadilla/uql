@@ -1,8 +1,18 @@
-import { afterAll, expect, it } from 'vitest';
+import { afterAll, expect, it, vi } from 'vitest';
 import { Migrator } from '../../migrate/migrator.js';
+import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
+import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import type { Json, Scalar, Type } from '../../type/index.js';
-import { defineEntity, defineField, defineId, defineRelation, getMeta } from './definition.js';
+import type { ColumnType, Json, Scalar, Type } from '../../type/index.js';
+import {
+  defineEntity,
+  defineField,
+  defineId,
+  defineRelation,
+  getEntities,
+  getMeta,
+  removeEntity,
+} from './definition.js';
 
 /**
  * A content type an admin creates through a UI: its shape is a row in a table, not a class in the
@@ -11,10 +21,8 @@ import { defineEntity, defineField, defineId, defineRelation, getMeta } from './
  * thing it costs - is pinned in `defineEntity.runtime.test-d.ts`.
  */
 
-/** What the admin UI stored. */
-type ContentType = { name: string; fields: { name: string; kind: keyof typeof KINDS }[] };
-
-const KINDS = { text: String, number: Number } as const;
+/** What the admin UI stored: a column per field, which is the shape a CMS keeps its own schema in. */
+type ContentType = { name: string; fields: { name: string; type: ColumnType }[] };
 
 /** A row of a content type nobody declared: every key is a column, so every value is a scalar. */
 type ContentRow = { [column: string]: Scalar | Json<Record<string, unknown>> };
@@ -23,14 +31,17 @@ type ContentRow = { [column: string]: Scalar | Json<Record<string, unknown>> };
 function register({ name, fields }: ContentType): Type<ContentRow> {
   const entity = {
     [name]: class {
+      id!: number;
       [column: string]: Scalar | Json<Record<string, unknown>>;
     },
   }[name];
-  defineId(entity, 'id', { type: Number });
-  for (const field of fields) {
-    defineField(entity, field.name, { type: KINDS[field.kind] });
-  }
-  defineEntity(entity, { name });
+  defineEntity(entity, {
+    name,
+    fields: {
+      id: { type: 'bigint', isId: true },
+      ...Object.fromEntries(fields.map((field) => [field.name, { type: field.type }])),
+    },
+  });
   return entity;
 }
 
@@ -41,12 +52,12 @@ const sync = (entities: Type<ContentRow>[]) => new Migrator(pool, { entities }).
 
 afterAll(() => pool.end());
 
-it('registers the metadata a hand-written entity would', () => {
+it('registers the table a hand-written entity would, whichever way the type is spelled', () => {
   const Runtime = register({
     name: 'recipe',
     fields: [
-      { name: 'title', kind: 'text' },
-      { name: 'servings', kind: 'number' },
+      { name: 'title', type: 'text' },
+      { name: 'servings', type: 'bigint' },
     ],
   });
 
@@ -60,15 +71,18 @@ it('registers the metadata a hand-written entity would', () => {
     fields: { id: { type: Number, isId: true }, title: { type: String }, servings: { type: Number } },
   });
 
-  expect(getMeta(Runtime)).toMatchObject({ name: 'recipe', fields: getMeta(Written).fields, ids: ['id'] });
+  // The runtime one names SQL types, the hand-written one JS constructors: the same table either way.
+  const generator = new SqlSchemaGenerator(new SqliteDialect());
+  expect(generator.generateCreateSchema([Runtime])).toEqual(generator.generateCreateSchema([Written]));
+  expect(getMeta(Runtime)).toMatchObject({ name: 'recipe', ids: ['id'] });
 });
 
 it('creates its table from the definition, and the rows read back', async () => {
   const Post = register({
     name: 'post',
     fields: [
-      { name: 'title', kind: 'text' },
-      { name: 'views', kind: 'number' },
+      { name: 'title', type: 'text' },
+      { name: 'views', type: 'bigint' },
     ],
   });
   await sync([Post]);
@@ -85,8 +99,8 @@ it('creates its table from the definition, and the rows read back', async () => 
 });
 
 it('relates two content types to each other', async () => {
-  const Author = register({ name: 'author', fields: [{ name: 'name', kind: 'text' }] });
-  const Article = register({ name: 'article', fields: [{ name: 'title', kind: 'text' }] });
+  const Author = register({ name: 'author', fields: [{ name: 'name', type: 'text' }] });
+  const Article = register({ name: 'article', fields: [{ name: 'title', type: 'text' }] });
   defineField(Article, 'authorId', { references: () => Author });
   defineRelation(Article, 'author', { cardinality: 'm1', entity: () => Author });
   await sync([Author, Article]);
@@ -101,7 +115,7 @@ it('relates two content types to each other', async () => {
 });
 
 it('decodes a field added after the entity has already been used', async () => {
-  const Doc = register({ name: 'doc', fields: [{ name: 'title', kind: 'text' }] });
+  const Doc = register({ name: 'doc', fields: [{ name: 'title', type: 'text' }] });
   await sync([Doc]);
 
   const querier = await pool.getQuerier();
@@ -121,8 +135,8 @@ it('decodes a field added after the entity has already been used', async () => {
 });
 
 it('joins a relation added after the entity has already been used', async () => {
-  const Owner = register({ name: 'owner', fields: [{ name: 'name', kind: 'text' }] });
-  const Note = register({ name: 'note', fields: [{ name: 'title', kind: 'text' }] });
+  const Owner = register({ name: 'owner', fields: [{ name: 'name', type: 'text' }] });
+  const Note = register({ name: 'note', fields: [{ name: 'title', type: 'text' }] });
   await sync([Owner, Note]);
 
   const querier = await pool.getQuerier();
@@ -142,7 +156,7 @@ it('joins a relation added after the entity has already been used', async () => 
 });
 
 it('takes a field added after the entity has already been used', async () => {
-  const Page = register({ name: 'page', fields: [{ name: 'title', kind: 'text' }] });
+  const Page = register({ name: 'page', fields: [{ name: 'title', type: 'text' }] });
   await sync([Page]);
 
   const querier = await pool.getQuerier();
@@ -158,4 +172,53 @@ it('takes a field added after the entity has already been used', async () => {
   await querier.release();
 
   expect(updated).toEqual({ id: 1, title: 'About', subtitle: 'the team' });
+});
+
+it('creates one content type, whatever the migrator was configured with', async () => {
+  const Memo = register({ name: 'memo', fields: [{ name: 'body', type: 'text' }] });
+  // Pinned to an explicit list, which a content type created after startup is never in.
+  await new Migrator(pool, { entities: [] }).sync({ entity: Memo });
+
+  const querier = await pool.getQuerier();
+  await querier.insertOne(Memo, { id: 1, body: 'hi' });
+  const found = await querier.findOneById(Memo, 1);
+  await querier.release();
+
+  expect(found).toEqual({ id: 1, body: 'hi' });
+});
+
+it('adds a field the admin added, and leaves one they retyped', async () => {
+  const Tag = register({
+    name: 'tag',
+    fields: [
+      { name: 'label', type: 'text' },
+      { name: 'weight', type: 'bigint' },
+    ],
+  });
+  const migrator = new Migrator(pool);
+  await migrator.sync({ entity: Tag });
+
+  // A column is additive and reaches the table; retyping one is not, on any engine, so it stays a
+  // migration and the sync says nothing about it.
+  defineField(Tag, 'colour', { type: String });
+  defineField(Tag, 'weight', { type: String });
+  await migrator.sync({ entity: Tag });
+
+  const querier = await pool.getQuerier();
+  await querier.insertOne(Tag, { id: 1, label: 'news', colour: 'red', weight: 2 });
+  const found = await querier.findOneById(Tag, 1);
+  await querier.release();
+
+  expect(found).toEqual({ id: 1, label: 'news', colour: 'red', weight: 2 });
+});
+
+it('forgets a content type the admin deleted', () => {
+  const Draft = register({ name: 'draft', fields: [{ name: 'title', type: 'text' }] });
+  expect(getEntities()).toContain(Draft);
+
+  expect(removeEntity(Draft)).toBe(true);
+  expect(getEntities()).not.toContain(Draft);
+  expect(() => getMeta(Draft)).toThrow('is not an entity');
+  // Removing is not a reset: the same class registers afresh, carrying nothing from before.
+  expect(removeEntity(Draft)).toBe(false);
 });

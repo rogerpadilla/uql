@@ -40,7 +40,7 @@ describe('MySQL JSON array index', () => {
 
   beforeAll(async () => {
     await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS \`${TABLE}\``));
-    await new Migrator(pool, { entities: [JsonArrayIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [JsonArrayIndexed] }).sync({ logging: false });
     await pool.withQuerier(async (querier) => {
       await querier.insertMany(
         JsonArrayIndexed,

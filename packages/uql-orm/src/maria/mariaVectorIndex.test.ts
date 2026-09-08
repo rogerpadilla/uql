@@ -56,7 +56,7 @@ describe('MariaDB vector index', () => {
   }, provisioningTimeout);
 
   it('creates the index with the table it belongs to', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
   });
@@ -68,17 +68,17 @@ describe('MariaDB vector index', () => {
    */
   it('adds the index to a table that already exists', async () => {
     await drop();
-    await new Migrator(pool, { entities: [MariaVectorUnindexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [MariaVectorUnindexed] }).sync({ logging: false });
     expect(await indexesOf()).toEqual([]);
 
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
   });
 
   /** `IF NOT EXISTS` is MariaDB's, and it is what keeps a second `autoSync` from failing on it. */
   it('leaves the index alone on a second sync', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
   });
@@ -89,7 +89,7 @@ describe('MariaDB vector index', () => {
    * the variable exists and that the prefix parses ahead of a SELECT this shape.
    */
   it('runs a tuned vector search through SET STATEMENT', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).autoSync({ logging: false });
+    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
     await pool.insertMany(MariaVectorIndexed, [{ vec: [0, 1, 0] }, { vec: [1, 0, 0] }]);
 
     const rows = await pool.findMany(MariaVectorIndexed, {

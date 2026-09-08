@@ -11,7 +11,7 @@ class SyncMongoUser {
   @Field({ type: String, index: true }) name?: string;
 }
 
-describe('Migrator autoSync MongoDB Integration', () => {
+describe('Migrator sync MongoDB Integration', () => {
   let migrator: Migrator;
   let pool: QuerierPool;
   let db: any;
@@ -40,8 +40,14 @@ describe('Migrator autoSync MongoDB Integration', () => {
     });
   });
 
+  it('creates one collection for a single entity, as `syncEntity` does elsewhere', async () => {
+    await migrator.sync({ entity: SyncMongoUser, logging: true });
+
+    expect(db.createCollection).toHaveBeenCalledWith('SyncMongoUser');
+  });
+
   it('should generate createCollection and createIndex for MongoDB', async () => {
-    await migrator.autoSync({ logging: true });
+    await migrator.sync({ logging: true });
 
     expect(db.createCollection).toHaveBeenCalledWith('SyncMongoUser');
     expect(db.collection).toHaveBeenCalledWith('SyncMongoUser');

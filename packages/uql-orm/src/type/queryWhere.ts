@@ -333,12 +333,25 @@ type QueryAllowedOp<T> =
 
 /**
  * Operators applicable to a field of type `T`: string operators require string fields, ordering
- * operators comparable fields, array operators array fields. `unknown` stays fully permissive
- * (untyped JSON dot-paths, erased dialect shapes).
+ * operators comparable fields, array operators array fields.
+ *
+ * Two shapes stay fully permissive, because neither says anything to check against: `unknown`
+ * (untyped JSON dot-paths, erased dialect shapes), and a field typed as every scalar at once - the
+ * column of a content type defined at runtime. Narrowing to what they share would leave a dynamic
+ * row with equality alone, since no operator applies to a boolean and a blob both.
  */
 export type QueryWhereFieldOperators<T> = unknown extends T
   ? QueryWhereFieldOperatorMap<T>
-  : Pick<QueryWhereFieldOperatorMap<T>, QueryAllowedOp<T>>;
+  : IsUntypedColumn<T> extends true
+    ? QueryWhereFieldOperatorMap<T>
+    : Pick<QueryWhereFieldOperatorMap<T>, QueryAllowedOp<T>>;
+
+/**
+ * Whether a column admits every scalar at once, which is what an entity keyed by an index signature
+ * says about all of its columns. `Scalar` is the yardstick rather than a parameter: the question is
+ * whether `T` is at least that wide, and nothing narrower than the whole union answers it.
+ */
+type IsUntypedColumn<T> = [Scalar] extends [NonNullable<T>] ? true : false;
 
 /**
  * Value for a field comparison. A bare array is an implicit `$in` for scalar fields only:
