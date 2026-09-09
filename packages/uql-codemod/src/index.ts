@@ -59,15 +59,17 @@ export async function run({ project, dryRun, include }: RunOptions): Promise<Run
   // against the old spec, so a codemod that only touched the sources would leave it half-migrated.
   const tsconfig = transformTsconfig(configPath, ts.sys.readFile(configPath) ?? '');
 
+  const rewritten = results.filter((r) => r.changed);
+
   if (!dryRun) {
-    await Promise.all(results.filter((r) => r.changed).map((r) => writeFile(r.fileName, r.text, 'utf8')));
+    await Promise.all(rewritten.map((r) => writeFile(r.fileName, r.text, 'utf8')));
     if (tsconfig.changed) {
       await writeFile(configPath, tsconfig.text, 'utf8');
     }
   }
 
   return {
-    changed: [...results.filter((r) => r.changed).map((r) => r.fileName), ...(tsconfig.changed ? [configPath] : [])],
+    changed: [...rewritten.map((r) => r.fileName), ...(tsconfig.changed ? [configPath] : [])],
     unresolved: [...results.flatMap((r) => r.unresolved), ...tsconfig.unresolved],
     notes: results.flatMap((r) => r.notes),
   };

@@ -37,6 +37,11 @@ export type FileResult = {
   readonly notes: readonly string[];
 };
 
+/** A node's decorators, or none where it is a kind that cannot carry them. */
+function decoratorsOf(node: ts.Node): readonly ts.Decorator[] {
+  return ts.canHaveDecorators(node) ? (ts.getDecorators(node) ?? []) : [];
+}
+
 function decoratorName(node: ts.Decorator): string | undefined {
   const call = ts.isCallExpression(node.expression) ? node.expression : undefined;
   const target = call?.expression ?? node.expression;
@@ -109,7 +114,7 @@ function propertyKey(name: ts.PropertyName): string | undefined {
  * object survive untouched. A shorthand has no value to keep, so it becomes `computed: virtual` -
  * renaming the key alone would rebind it to a local that does not exist.
  */
-function renameVirtualOption(decorator: ts.Decorator, ctx: Context, node: ts.Node): void {
+function renameVirtualOption(decorator: ts.Decorator, node: ts.Node, ctx: Context): void {
   const options = decoratorOptions(decorator);
   const virtual = findProperty(options, 'virtual');
   if (!virtual) {
@@ -253,7 +258,7 @@ function unwrapRelationAlias(node: ts.PropertyDeclaration, ctx: Context): void {
     declared.typeName.text === 'Relation' &&
     declared.typeArguments?.length === 1
   ) {
-    ctx.edits.push({ start: declared.getStart(), end: declared.getEnd(), text: declared.typeArguments[0]!.getText() });
+    ctx.edits.push({ start: declared.getStart(), end: declared.getEnd(), text: declared.typeArguments[0].getText() });
     ctx.relationAlias.unwrapped += 1;
   }
 }
@@ -320,9 +325,71 @@ function dropDeadImports(source: ts.SourceFile, ctx: Context): void {
   }
 }
 
+/** The names a key is read from without help, mirroring `NamedIdKey` in `uql-orm`. */
+const CONVENTIONAL_ID_NAMES = new Set(['id', '_id', 'uuid']);
+
+/** Whether the member is an `[idKey]?: ...` brand, matched by the name it is written under. */
+function isIdKeyBrand(member: ts.ClassElement): boolean {
+  return (
+    ts.isPropertyDeclaration(member) &&
+    ts.isComputedPropertyName(member.name) &&
+    ts.isIdentifier(member.name.expression) &&
+    member.name.expression.text === 'idKey'
+  );
+}
+
+/**
+ * Names the class's key with the `idKey` brand, where a conventional name does not already.
+ *
+ * Only the class's own `@Id` properties are read, which is also what makes an overriding key right:
+ * a subclass that replaces an inherited `id` needs the brand precisely because the inherited name
+ * would otherwise be taken for the key.
+ *
+ * Reports whether one was written, since `idKey` is then a value the file has to import.
+ */
+function brandIdKey(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context): boolean {
+  const ids = node.members.filter(
+    (m): m is ts.PropertyDeclaration =>
+      ts.isPropertyDeclaration(m) && decoratorsOf(m).some((d) => decoratorName(d) === 'Id'),
+  );
+  if (!ids.length || node.members.some(isIdKeyBrand)) {
+    return false;
+  }
+  const names = ids.map((m) => propertyKey(m.name)).filter((name) => name !== undefined);
+  if (names.length !== ids.length) {
+    ctx.unresolved.push(`${ctx.describe(node)}: a key written as a computed name; add the 'idKey' brand by hand`);
+    return false;
+  }
+  if (names.length === 1 && CONVENTIONAL_ID_NAMES.has(names[0])) {
+    return false;
+  }
+  const indent = ' '.repeat(node.getSourceFile().getLineAndCharacterOfPosition(ids[0].getStart()).character);
+  const brand = names.map((name) => `'${name}'`).join(' | ');
+  const start = node.members.pos;
+  ctx.edits.push({ start, end: start, text: `\n${indent}[idKey]?: ${brand};` });
+  return true;
+}
+
+/**
+ * Imports `idKey` where a brand was written, into the file's own `uql-orm` import. Reported instead
+ * where there is none: the package may be imported under a path this codemod does not recognise.
+ */
+function addIdKeyImport(source: ts.SourceFile, ctx: Context): void {
+  const imported = uqlImports(source);
+  if (imported.some((element) => importedName(element) === 'idKey')) {
+    return;
+  }
+  const [anchor] = imported;
+  if (!anchor) {
+    ctx.unresolved.push(`${source.fileName}: import 'idKey' from 'uql-orm' for the brand(s) written here`);
+    return;
+  }
+  ctx.edits.push({ start: anchor.getStart(), end: anchor.getStart(), text: 'idKey, ' });
+}
+
 /** Everything the standard spec needs written onto one decorated property. */
 function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
-  const decorators = ts.canHaveDecorators(node) ? (ts.getDecorators(node) ?? []) : [];
+  const decorators = decoratorsOf(node);
   for (const decorator of decorators) {
     const name = decoratorName(decorator);
     if (!name) {
@@ -330,7 +397,7 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     }
     if (FIELD_DECORATORS.has(name)) {
       addFieldType(decorator, node, ctx);
-      renameVirtualOption(decorator, ctx, node);
+      renameVirtualOption(decorator, node, ctx);
     }
     if (RELATION_DECORATORS.has(name)) {
       addRelationEntity(decorator, node, ctx);
@@ -344,10 +411,7 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
 
 /** Names a decorator that no longer exists, wherever it appears. */
 function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
-  if (!ts.canHaveDecorators(node)) {
-    return;
-  }
-  for (const decorator of ts.getDecorators(node) ?? []) {
+  for (const decorator of decoratorsOf(node)) {
     const name = decoratorName(decorator);
     const advice = name && REMOVED_DECORATORS.get(name);
     if (advice) {
@@ -357,19 +421,9 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
 }
 
 /** Names an export that no longer exists, where it is imported from the package. */
-function reportRemovedExports(node: ts.Node, ctx: Context): void {
-  if (!ts.isImportDeclaration(node) || !ts.isStringLiteral(node.moduleSpecifier)) {
-    return;
-  }
-  if (node.moduleSpecifier.text !== 'uql-orm') {
-    return;
-  }
-  const bindings = node.importClause?.namedBindings;
-  if (!bindings || !ts.isNamedImports(bindings)) {
-    return;
-  }
-  for (const element of bindings.elements) {
-    const name = (element.propertyName ?? element.name).text;
+function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
+  for (const element of uqlImports(source)) {
+    const name = importedName(element);
     const advice = REMOVED_EXPORTS.get(name);
     if (advice) {
       ctx.unresolved.push(`${ctx.describe(element)}: '${name}' was removed; ${advice}`);
@@ -377,22 +431,23 @@ function reportRemovedExports(node: ts.Node, ctx: Context): void {
   }
 }
 
-/** Whether this file's `raw` is the ORM's, so another library's function of that name is left alone. */
-function importsRaw(source: ts.SourceFile): boolean {
-  return source.statements.some((statement) => {
+/** What the file imports from `uql-orm` by name, which is every import this codemod reads or writes. */
+function uqlImports(source: ts.SourceFile): readonly ts.ImportSpecifier[] {
+  return source.statements.flatMap((statement) => {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
-      return false;
+      return [];
     }
     if (statement.moduleSpecifier.text !== 'uql-orm') {
-      return false;
+      return [];
     }
     const bindings = statement.importClause?.namedBindings;
-    return (
-      !!bindings &&
-      ts.isNamedImports(bindings) &&
-      bindings.elements.some((element) => (element.propertyName ?? element.name).text === 'raw')
-    );
+    return bindings && ts.isNamedImports(bindings) ? [...bindings.elements] : [];
   });
+}
+
+/** The name an import specifier brings in, which is the original one where it was renamed. */
+function importedName(element: ts.ImportSpecifier): string {
+  return (element.propertyName ?? element.name).text;
 }
 
 /**
@@ -433,11 +488,11 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
   };
   const lineOf = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart()).line;
 
-  const rewritesRaw = importsRaw(source);
+  const rewritesRaw = uqlImports(source).some((element) => importedName(element) === 'raw');
+  let branded = false;
 
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
-    reportRemovedExports(node, ctx);
     countRelationAlias(node, ctx);
     if (rewritesRaw) {
       rewriteRawCall(node, ctx, source);
@@ -445,10 +500,17 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     if (ts.isPropertyDeclaration(node)) {
       rewriteProperty(node, ctx);
     }
+    if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
+      branded = brandIdKey(node, ctx) || branded;
+    }
     ts.forEachChild(node, visit);
   };
   visit(source);
+  reportRemovedExports(source, ctx);
   dropDeadImports(source, ctx);
+  if (branded) {
+    addIdKeyImport(source, ctx);
+  }
 
   return {
     fileName: source.fileName,

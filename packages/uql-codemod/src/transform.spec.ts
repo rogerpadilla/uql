@@ -38,6 +38,7 @@ const STUBS = `
   type FieldOptions = { type?: unknown; references?: EntityGetter; name?: string; length?: number };
   declare function Field(opts?: FieldOptions): PropertyDecorator;
   declare function Id(opts?: FieldOptions): PropertyDecorator;
+  declare const idKey: unique symbol;
   declare function InjectQuerier(): ParameterDecorator;
   declare function Log(): MethodDecorator;
   declare function Serialized(): PropertyDecorator;
@@ -81,6 +82,50 @@ describe('codemod transforms', () => {
     `);
 
     expect(text).toContain("@Field({ type: String, name: 'image', length: 150 }) picture?: string;");
+  });
+
+  it('names an unconventional key with the idKey brand', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Id({ type: String }) code?: string;
+        @Field({ type: String }) title?: string;
+      }
+    `);
+
+    expect(text).toContain("[idKey]?: 'code';");
+  });
+
+  it('names both columns of a composite key', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Id({ type: Number }) studentId?: number;
+        @Id({ type: String }) courseId?: string;
+      }
+    `);
+
+    expect(text).toContain("[idKey]?: 'studentId' | 'courseId';");
+  });
+
+  it('leaves a conventional key alone', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string;
+      }
+    `);
+
+    expect(text).not.toContain('[idKey]');
+  });
+
+  it('leaves a key that is already branded alone', () => {
+    const { text } = codemod(`
+      class Entity {
+        [idKey]?: 'pk';
+        @Id({ type: Number }) pk?: number;
+      }
+    `);
+
+    expect(text.match(/\[idKey\]/g)).toHaveLength(1);
   });
 
   it('renames the virtual option to computed, leaving its expression alone', () => {
