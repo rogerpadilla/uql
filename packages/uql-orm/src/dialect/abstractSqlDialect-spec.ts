@@ -404,19 +404,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?), (?, ?, ?), (?, ?, ?)' +
+      'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?), (?, ?, ?, ?), (?, ?, ?, ?)' +
         this.returningClause(User),
     );
     expect(values).toEqual([
       'Some name 1',
       'someemail1@example.com',
       123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
       'Some name 2',
       'someemail2@example.com',
       456,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
       'Some name 3',
       'someemail3@example.com',
       789,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
     ]);
   }
 
@@ -428,15 +431,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldInsertManyWithHeterogeneousColumns() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
-        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { id: '5', name: 'Some name 1', createdAt: 123 },
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (DEFAULT, ?, ?, ?)' +
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (?, ?, ?, ?)' +
         this.returningClause(User),
     );
-    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+    expect(values).toEqual([
+      '5',
+      'Some name 1',
+      123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'Some name 2',
+      456,
+      'someemail2@example.com',
+    ]);
   }
 
   shouldInsertOne() {
@@ -448,9 +459,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?)' + this.returningClause(User),
+      'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?)' + this.returningClause(User),
     );
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
@@ -459,7 +470,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?)' +
+      'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`, `id`) VALUES (?, ?, ?)' +
         this.returningClause(InventoryAdjustment),
     );
     expect(res.values[0]).toBeInstanceOf(Date);
@@ -486,7 +497,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         Company,
-        { $where: { id: 1 } },
+        { $where: { id: '1' } },
         {
           kind: raw`'value'`,
           updatedAt: 123,
@@ -494,7 +505,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe("UPDATE `Company` SET `kind` = 'value', `updatedAt` = ? WHERE `id` = ?");
-    expect(values).toEqual([123, 1]);
+    expect(values).toEqual([123, '1']);
   }
 
   shouldUpdateWithJsonbField() {
@@ -502,7 +513,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         Company,
-        { $where: { id: 1 } },
+        { $where: { id: '1' } },
         {
           kind: { private: 1 },
           updatedAt: 123,
@@ -510,7 +521,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
-    expect(values).toEqual(['{"private":1}', 123, 1]);
+    expect(values).toEqual(['{"private":1}', 123, '1']);
   }
 
   /**
@@ -523,7 +534,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   private assertJsonUpdate(name: JsonUpdateCaseName): void {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: JSON_UPDATE_PAYLOADS[name], updatedAt: 123 }),
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: JSON_UPDATE_PAYLOADS[name], updatedAt: 123 }),
     );
     const expected = this.jsonUpdateCases[name];
     expect(sql).toBe(expected.sql);
@@ -614,9 +625,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUE\(`name`\).*`createdAt` = VALUE\(`createdAt`\).*`updatedAt` = \?.*$/,
+      /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*`id`.*\) VALUES \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUE\(`name`\).*`createdAt` = VALUE\(`createdAt`\).*`updatedAt` = \?.*$/,
     );
-    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.any(Number)]);
+    expect(values).toEqual([
+      'Some Name',
+      'someemail@example.com',
+      123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      expect.any(Number),
+    ]);
   }
 
   shouldUpsertMany() {
@@ -634,8 +651,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ]),
     );
-    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
-    expect(values).toHaveLength(7);
+    expect(sql).toMatch(/^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE/);
+    expect(values).toHaveLength(9);
   }
 
   shouldUpdate() {
@@ -644,7 +661,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         User,
-        { $where: { name: 'some', creatorId: 123 } },
+        { $where: { name: 'some', creatorId: '123' } },
         {
           name: 'Some Text',
           email: 'this field should not be updated',
@@ -655,7 +672,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(sql).toBe(
       `UPDATE ${e}User${e} SET ${e}name${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}name${e} = ${this.ph(3)} AND ${e}creatorId${e} = ${this.ph(4)}`,
     );
-    expect(values).toEqual(['Some Text', 321, 'some', 123]);
+    expect(values).toEqual(['Some Text', 321, 'some', '123']);
   }
 
   shouldUpdateWithAlias() {
@@ -664,7 +681,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         Profile,
-        { $where: { pk: 123 } },
+        { $where: { pk: '123' } },
         {
           picture: 'a base64 image',
           updatedAt: 321,
@@ -674,17 +691,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(sql).toBe(
       `UPDATE ${e}user_profile${e} SET ${e}image${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}pk${e} = ${this.ph(3)}`,
     );
-    expect(values).toEqual(['a base64 image', 321, 123]);
+    expect(values).toEqual(['a base64 image', 321, '123']);
   }
 
   shouldSoftDelete() {
     // MeasureUnit stamps `() => Date.now()`; delete becomes an UPDATE that only touches live rows.
-    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: 1 } }));
+    const { sql, values } = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: '1' } }));
     const deletedAt = this.dialect.escapeId('deletedAt');
     expect(sql).toContain(`UPDATE ${this.dialect.escapeId('MeasureUnit')} SET ${deletedAt} = `);
     expect(sql).toContain(`${deletedAt} IS NULL`);
     expect(typeof values[0]).toBe('number');
-    expect(values).toContain(1);
+    expect(values).toContain('1');
   }
 
   shouldSoftDeleteWithRawValue() {
@@ -714,14 +731,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const field = 'deletedAt';
     const payload = { [field]: null } as UpdatePayload<MeasureUnit>;
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, MeasureUnit, { $where: { id: 1, deletedAt: { $ne: null } } }, payload, {
+      this.dialect.update(ctx, MeasureUnit, { $where: { id: '1', deletedAt: { $ne: null } } }, payload, {
         filters: { softDelete: false },
       }),
     );
     const deletedAt = this.dialect.escapeId('deletedAt');
     expect(sql).toContain(`SET ${deletedAt} = ${this.ph(1)}`);
     expect(sql).not.toContain(`${deletedAt} IS NULL`); // soft-delete read filter disabled
-    expect(values).toContain(1);
+    expect(values).toContain('1');
   }
 
   shouldFind() {
@@ -729,35 +746,35 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { id: 123, name: { $ne: 'abc' } },
+        $where: { id: '123', name: { $ne: 'abc' } },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Profile, {
         $select: { pk: true, picture: true, companyId: true },
-        $where: { pk: 123, picture: 'abc' },
+        $where: { pk: '123', picture: 'abc' },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}pk${e}, ${e}image${e} ${e}picture${e}, ${e}companyId${e} FROM ${e}user_profile${e} WHERE ${e}pk${e} = ${this.ph(1)} AND ${e}image${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnit, {
         $select: { id: true },
-        $where: { id: 123, name: 'abc' },
+        $where: { id: '123', name: 'abc' },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}MeasureUnit${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}name${e} = ${this.ph(2)} AND ${e}deletedAt${e} IS NULL`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
   }
 
   shouldFindWithPopulateOnly() {
@@ -769,14 +786,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
             $select: { picture: true },
           },
         },
-        $where: { id: 123 },
+        $where: { id: '123' },
       }),
     );
     expect(res.sql).toContain(
       `LEFT JOIN ${e}user_profile${e} ${e}profile${e} ON ${e}profile${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e}`,
     );
     expect(res.sql).toContain(`${e}profile${e}.${e}image${e} ${e}profile.picture${e}`);
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
   }
 
   shouldBeSecure() {
@@ -803,8 +820,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         createdAt: 1,
       } as any),
     );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `createdAt`) VALUES (?, ?)' + this.returningClause(User));
-    expect(res.values).toEqual(['Some Name', 1]);
+    expect(res.sql).toBe(
+      'INSERT INTO `User` (`name`, `createdAt`, `id`) VALUES (?, ?, ?)' + this.returningClause(User),
+    );
+    expect(res.values).toEqual(['Some Name', 1, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
 
     res = this.exec((ctx) =>
       this.dialect.update(
@@ -837,24 +856,24 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $and: [{ id: 123, name: 'abc' }] },
+        $where: { $and: [{ id: '123', name: 'abc' }] },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}name${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: 1 },
-        $where: { $and: [{ id: 123 }], name: 'abc' },
+        $where: { $and: [{ id: '123' }], name: 'abc' },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}name${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
   }
 
   shouldFind$or() {
@@ -862,44 +881,44 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $or: [{ id: 123 }, { name: 'abc' }] },
+        $where: { $or: [{ id: '123' }, { name: 'abc' }] },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} OR ${e}name${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $or: [{ id: 123 }] },
+        $where: { $or: [{ id: '123' }] },
       }),
     );
     expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}`);
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: 1 },
-        $where: { $or: [{ id: 123, name: 'abc' }] },
+        $where: { $or: [{ id: '123', name: 'abc' }] },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}name${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $or: [{ id: 123 }], name: 'abc' },
+        $where: { $or: [{ id: '123' }], name: 'abc' },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}name${e} = ${this.ph(2)}`,
     );
-    expect(res.values).toEqual([123, 'abc']);
+    expect(res.values).toEqual(['123', 'abc']);
   }
 
   shouldFind$not() {
@@ -915,29 +934,29 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: { $not: 123 } },
+        $where: { id: { $not: '123' } },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` = ?)');
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: { $not: [123, 456] } },
+        $where: { id: { $not: ['123', '456'] } },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` IN (?, ?))');
-    expect(res.values).toEqual([123, 456]);
+    expect(res.values).toEqual(['123', '456']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: 123, name: { $not: { $startsWith: 'a' } } },
+        $where: { id: '123', name: { $not: { $startsWith: 'a' } } },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE `id` = ? AND NOT (`name` LIKE ?)');
-    expect(res.values).toEqual([123, 'a%']);
+    expect(res.values).toEqual(['123', 'a%']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
@@ -960,20 +979,20 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $not: [{ name: 'abc' }, { creatorId: 1 }] },
+        $where: { $not: [{ name: 'abc' }, { creatorId: '1' }] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` = ? AND `creatorId` = ?)');
-    expect(res.values).toEqual(['abc', 1]);
+    expect(res.values).toEqual(['abc', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Tax, {
         $select: { id: true },
-        $where: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
+        $where: { companyId: '1', name: { $not: { $startsWith: 'a' } } },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Tax` WHERE `companyId` = ? AND NOT (`name` LIKE ?)');
-    expect(res.values).toEqual([1, 'a%']);
+    expect(res.values).toEqual(['1', 'a%']);
   }
 
   shouldFind$nor() {
@@ -1001,13 +1020,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $nor: [{ name: 'abc' }, { creatorId: 1 }] },
+        $where: { $nor: [{ name: 'abc' }, { creatorId: '1' }] },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT (${e}name${e} = ${this.ph(1)} OR ${e}creatorId${e} = ${this.ph(2)})`,
     );
-    expect(res.values).toEqual(['abc', 1]);
+    expect(res.values).toEqual(['abc', '1']);
   }
 
   /**
@@ -1044,21 +1063,21 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { creatorId: 1, $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: 1 },
+        $where: { creatorId: '1', $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: '1' },
       }),
     );
     expect(res.sql).toBe(
       'SELECT `id` FROM `User` WHERE `creatorId` = ? AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ?',
     );
-    expect(res.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1]);
+    expect(res.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1']);
 
     const res2 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          creatorId: 1,
+          creatorId: '1',
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
-          id: 1,
+          id: '1',
           email: 'e',
         },
       }),
@@ -1067,15 +1086,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       'SELECT `id` FROM `User` WHERE `creatorId` = ?' +
         ' AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ? AND `email` = ?',
     );
-    expect(res2.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1, 'e']);
+    expect(res2.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1', 'e']);
 
     const res3 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          creatorId: 1,
+          creatorId: '1',
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
-          id: 1,
+          id: '1',
           email: 'e',
         },
         $sort: { name: 1, createdAt: -1 },
@@ -1089,7 +1108,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ' AND `id` = ? AND `email` = ?' +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
     );
-    expect(res3.values).toEqual([1, 'a', 'b', 'c', 'abc@example.com', 1, 'e']);
+    expect(res3.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1', 'e']);
 
     const res4 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -1097,8 +1116,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: {
           $or: [
             {
-              creatorId: 1,
-              id: 1,
+              creatorId: '1',
+              id: '1',
               email: 'e',
             },
             { name: ['a', 'b', 'c'], email: 'abc@example.com' },
@@ -1114,7 +1133,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ' OR (`name` IN (?, ?, ?) AND `email` = ?)' +
         ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
     );
-    expect(res4.values).toEqual([1, 1, 'e', 'a', 'b', 'c', 'abc@example.com']);
+    expect(res4.values).toEqual(['1', '1', 'e', 'a', 'b', 'c', 'abc@example.com']);
   }
 
   shouldFindSingle$where() {
@@ -1157,13 +1176,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { companyId: 1 }] },
+        $where: { $or: [{ name: { $eq: 'other', $ne: 'other unwanted' } }, { companyId: '1' }] },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} = ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) OR ${e}companyId${e} = ${this.ph(3)}`,
     );
-    expect(res.values).toEqual(['other', 'other unwanted', 1]);
+    expect(res.values).toEqual(['other', 'other unwanted', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -1238,14 +1257,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: { $ne: 5 } },
+        $where: { name: 'some', companyId: { $ne: '5' } },
         $limit: 20,
       }),
     );
     expect(sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${this.neSql(`${e}companyId${e}`, 2)} LIMIT 20`,
     );
-    expect(values).toEqual(['some', 5]);
+    expect(values).toEqual(['some', '5']);
   }
 
   shouldFindIsNull() {
@@ -1253,48 +1272,48 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { creatorId: 123, companyId: null as any },
+        $where: { creatorId: '123', companyId: null as any },
         $limit: 5,
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NULL LIMIT 5`,
     );
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { creatorId: 123, companyId: { $ne: null } },
+        $where: { creatorId: '123', companyId: { $ne: null } },
         $limit: 5,
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NOT NULL LIMIT 5`,
     );
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
   }
 
   shouldFind$in() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: [1, 2, 3] },
+        $where: { name: 'some', companyId: ['1', '2', '3'] },
         $limit: 10,
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
-    expect(res.values).toEqual(['some', 1, 2, 3]);
+    expect(res.values).toEqual(['some', '1', '2', '3']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: { $in: [1, 2, 3] } },
+        $where: { name: 'some', companyId: { $in: ['1', '2', '3'] } },
         $limit: 10,
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
-    expect(res.values).toEqual(['some', 1, 2, 3]);
+    expect(res.values).toEqual(['some', '1', '2', '3']);
   }
 
   /**
@@ -1327,12 +1346,12 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: { $nin: [1, 2, 3] } },
+        $where: { name: 'some', companyId: { $nin: ['1', '2', '3'] } },
         $limit: 10,
       }),
     );
     expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` NOT IN (?, ?, ?) LIMIT 10');
-    expect(values).toEqual(['some', 1, 2, 3]);
+    expect(values).toEqual(['some', '1', '2', '3']);
   }
 
   shouldFind$selectFields() {
@@ -1765,7 +1784,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     ).toThrow("cannot $sort by 'tax': it is neither a $group column nor an $agg alias");
   }
 
-  shouldVirtualField() {
+  shouldComputedField() {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -1778,7 +1797,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}id${e}) >= ${this.ph(1)}`,
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) >= ${this.ph(1)}`,
     );
     expect(res.values).toEqual([10]);
 
@@ -1881,36 +1900,36 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: 9,
+        $where: '9',
         $limit: 1,
       }),
     );
     expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} LIMIT 1`);
-    expect(res.values).toEqual([9]);
+    expect(res.values).toEqual(['9']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: 1, name: 1, creatorId: 1 },
-        $where: 9,
+        $where: '9',
         $limit: 1,
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} LIMIT 1`,
     );
-    expect(res.values).toEqual([9]);
+    expect(res.values).toEqual(['9']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'something', creatorId: 123 },
+        $where: { name: 'something', creatorId: '123' },
         $limit: 1,
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}creatorId${e} = ${this.ph(2)} LIMIT 1`,
     );
-    expect(res.values).toEqual(['something', 123]);
+    expect(res.values).toEqual(['something', '123']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -2016,14 +2035,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ` AND (${e}name${e} = ${this.ph(2)} OR ${e}name${e} = ${this.ph(3)})`;
 
     const explicit = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $and: [{ companyId: 1 }, { $or: or }] } }),
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $and: [{ companyId: '1' }, { $or: or }] } }),
     );
     const implicit = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $select: { id: true }, $where: { companyId: 1, $or: or } }),
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { companyId: '1', $or: or } }),
     );
     expect(explicit.sql).toBe(expected);
     expect(implicit.sql).toBe(expected);
-    expect(explicit.values).toEqual([1, 'a', 'b']);
+    expect(explicit.values).toEqual(['1', 'a', 'b']);
 
     // A negation applies to the whole group, not just to its first term.
     const negated = this.exec((ctx) =>
@@ -2043,26 +2062,26 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldDelete() {
     const e = this.dialect.escapeIdChar;
     // Entity without a soft-delete field: always a plain DELETE.
-    let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }));
+    let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: '123' }));
     expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}`);
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     // `hardDelete` on a non-soft-deletable entity is still a plain DELETE (e.g. a cascade onto one).
-    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: 123 }, { hardDelete: true }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: '123' }, { hardDelete: true }));
     expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}`);
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     // Soft-deletable entity: UPDATE stamping only live rows.
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: '123' }));
     expect(res.sql).toBe(
       `UPDATE ${e}MeasureUnit${e} SET ${e}deletedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)} AND ${e}deletedAt${e} IS NULL`,
     );
-    expect(res.values).toEqual([expect.any(Number), 123]);
+    expect(res.values).toEqual([expect.any(Number), '123']);
 
     // `hardDelete` removes the row regardless of soft-delete state (no `IS NULL` filter).
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: 123 }, { hardDelete: true }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: '123' }, { hardDelete: true }));
     expect(res.sql).toBe(`DELETE FROM ${e}MeasureUnit${e} WHERE ${e}id${e} = ${this.ph(1)}`);
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
   }
 
   shouldFind$selectRaw() {
@@ -2092,38 +2111,38 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $and: [{ companyId: 1 }, raw`SUM(salePrice) > 500`] },
+        $where: { $and: [{ companyId: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = ? AND SUM(salePrice) > 500');
-    expect(res.values).toEqual([1]);
+    expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ companyId: '1' }, { id: '5' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `companyId` = ? OR `id` = ? OR SUM(salePrice) > 500');
-    expect(res.values).toEqual([1, 5]);
+    expect(res.values).toEqual(['1', '5']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ id: 1 }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ id: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `id` = ? OR SUM(salePrice) > 500');
-    expect(res.values).toEqual([1]);
+    expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [raw`SUM(salePrice) > 500`, { id: 1 }, { companyId: 1 }] },
+        $where: { $or: [raw`SUM(salePrice) > 500`, { id: '1' }, { companyId: '1' }] },
       }),
     );
     expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = ? OR `companyId` = ?');
-    expect(res.values).toEqual([1, 1]);
+    expect(res.values).toEqual(['1', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -2144,11 +2163,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $or: [{ id: { $in: [1, 2] } }, { code: 'abc' }] },
+        $where: { $or: [{ id: { $in: ['1', '2'] } }, { code: 'abc' }] },
       }),
     );
     expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `id` IN (?, ?) OR `code` = ?');
-    expect(res.values).toEqual([1, 2, 'abc']);
+    expect(res.values).toEqual(['1', '2', 'abc']);
   }
 
   shouldFind$startsWith() {
@@ -2418,14 +2437,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
+        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: '1' },
         $limit: 30,
       }),
     );
     expect(res.sql).toBe(
       'SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST(?) AND `companyId` = ? LIMIT 30',
     );
-    expect(res.values).toEqual(['some text', 1]);
+    expect(res.values).toEqual(['some text', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -2433,7 +2452,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          companyId: 1,
+          companyId: '1',
         },
         $limit: 10,
       }),
@@ -2441,7 +2460,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(
       `SELECT \`id\` FROM \`User\` WHERE MATCH(\`name\`) AGAINST(?) AND ${this.neSql('`name`')} AND \`companyId\` = ? LIMIT 10`,
     );
-    expect(res.values).toEqual(['something', 'other unwanted', 1]);
+    expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
 
   shouldUpdateWithJsonNull() {
@@ -2449,7 +2468,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         Company,
-        { $where: { id: 1 } },
+        { $where: { id: '1' } },
         {
           kind: null as any,
           updatedAt: 123,
@@ -2457,7 +2476,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
-    expect(values).toEqual([null, 123, 1]);
+    expect(values).toEqual([null, 123, '1']);
   }
 
   shouldHandleRawFalsyValues() {

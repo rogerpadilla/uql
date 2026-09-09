@@ -1,4 +1,4 @@
-import { assertSoleId, getMeta, idOf, soleIdOf } from '../entity/index.js';
+import { assertSoleId, getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
 
 import type {
   EntityData,
@@ -484,10 +484,7 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
-    await this.emitHook(entity, 'beforeInsert', payload);
-    const ids = await this.internalInsertMany(entity, payload);
-    await this.emitHook(entity, 'afterInsert', payload);
-    return ids;
+    return this.hooked(entity, 'Insert', payload, () => this.internalInsertMany(entity, payload));
   }
 
   protected abstract internalInsertMany<E extends object>(
@@ -511,10 +508,7 @@ export abstract class AbstractQuerier implements Querier {
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ): Promise<number> {
-    await this.emitHook(entity, 'beforeUpdate', [payload as E]);
-    const changes = await this.internalUpdateMany(entity, q, payload, opts);
-    await this.emitHook(entity, 'afterUpdate', [payload as E]);
-    return changes;
+    return this.hooked(entity, 'Update', [payload], () => this.internalUpdateMany(entity, q, payload, opts));
   }
 
   protected abstract internalUpdateMany<E extends object>(
@@ -540,13 +534,35 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  abstract upsertOne<E extends object>(
+  /**
+   * `beforeUpsert`/`afterUpsert` rather than the insert's or the update's pair: the database decides
+   * which branch each row takes as the statement runs, so neither of those could be fired honestly -
+   * but the upsert itself is a fact known before and after, and a row written with no hook at all
+   * was how an `@Id({ onInsert })` or an audit trail silently skipped this path.
+   */
+  async upsertOne<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>,
+  ): Promise<QueryUpdateResult> {
+    return this.hooked(entity, 'Upsert', [payload], () => this.internalUpsertOne(entity, conflictPaths, payload));
+  }
+
+  async upsertMany<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>[],
+  ): Promise<QueryUpdateResult> {
+    return this.hooked(entity, 'Upsert', payload, () => this.internalUpsertMany(entity, conflictPaths, payload));
+  }
+
+  protected abstract internalUpsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
   ): Promise<QueryUpdateResult>;
 
-  abstract upsertMany<E extends object>(
+  protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
@@ -615,47 +631,81 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
+  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined> {
     const [id] = await this.saveMany(entity, [payload]);
     return id;
   }
 
-  async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]) {
+  /**
+   * Insert or update, as the name has always promised - and now as one statement per kind rather
+   * than a guess.
+   *
+   * Whether a row names its key decides which statement it takes, never whether the row exists: an
+   * id the caller invented is not proof of anything, and a stale one used to issue an `UPDATE` that
+   * matched nothing and reported success. A named row upserts on its own key, so it is written
+   * either way and no read can go stale between deciding and writing. An unnamed one inserts, and
+   * the database assigns the key.
+   *
+   * A composite key is always supplied by the caller, so it always takes the upsert branch - which
+   * is why nothing here special-cases one, and why this is the method that stopped refusing them.
+   *
+   * The hooks follow the statement: a named row fires `beforeUpsert`/`afterUpsert`, never the
+   * update pair, because the database picks the branch as the statement runs.
+   */
+  async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    const toInsert: EntityData<E>[] = [];
-    const toUpdate: EntityData<E>[] = [];
-    const existingIds: (IdValue<E> | undefined)[] = [];
+    // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
+    // passed, which concatenating the branches did not do.
+    const toInsert: number[] = [];
+    const toUpsert: number[] = [];
+    const ids: (EntityId<E> | undefined)[] = new Array(payload.length);
 
-    // Save reads an id as proof the row exists, and inserts the rest. A composite key is supplied by
-    // the caller on every row, insert included, so that proof does not exist for one: telling the two
-    // apart takes a read, which is `upsertMany`'s job and not this one's.
-    const idKey = soleIdOf(meta, 'saving a row');
+    /** Whether the row carries anything its primary key does not - something to write. */
+    const writesMoreThanItsKey = (row: EntityData<E>) =>
+      someKey(row, (key) => !meta.ids.some((idKey) => idKey === key));
 
-    for (const it of payload) {
-      const id = it[idKey];
-      if (!id) {
-        toInsert.push(it);
-      } else if (!someKey(it, (key) => key !== idKey)) {
-        existingIds.push(id);
+    for (let index = 0; index < payload.length; index++) {
+      const it = payload[index];
+      if (!namesKey(meta, it)) {
+        toInsert.push(index);
+      } else if (writesMoreThanItsKey(it)) {
+        toUpsert.push(index);
       } else {
-        toUpdate.push(it);
+        // A row that names its key and carries nothing else is a *reference*, not a write - the
+        // shape a to-many uses to link rows it did not author. Upserting it would stamp `onUpdate`
+        // fields on a row the caller never asked to change, and create one that was meant to exist.
+        ids[index] = idOf(meta, it);
       }
     }
 
-    const [insertedIds, updatedIds] = await Promise.all([
-      toInsert.length ? this.insertMany(entity, toInsert) : ([] as (IdValue<E> | undefined)[]),
-      Promise.all(
-        toUpdate.map(async (it) => {
-          const id = it[idKey];
-          const data = { ...it };
-          delete data[idKey];
-          await this.updateOneById(entity, id, data as E);
-          return id;
-        }),
-      ),
-    ]);
+    const write = async () => {
+      if (toInsert.length) {
+        const inserted = await this.insertMany(
+          entity,
+          toInsert.map((index) => payload[index]),
+        );
+        toInsert.forEach((index, position) => {
+          ids[index] = inserted[position];
+        });
+      }
+      if (toUpsert.length) {
+        const conflictPaths = Object.fromEntries(meta.ids.map((key) => [key, true])) as QueryConflictPaths<E>;
+        await this.upsertMany(
+          entity,
+          conflictPaths,
+          toUpsert.map((index) => payload[index]),
+        );
+        for (const index of toUpsert) {
+          ids[index] = idOf(meta, payload[index]);
+        }
+      }
+    };
 
-    return [...existingIds, ...insertedIds, ...updatedIds];
+    // Only a batch carrying both kinds is more than one statement; `transaction` is re-entrant, so
+    // this is free inside a caller's own.
+    await (toInsert.length && toUpsert.length ? this.transaction(write) : write());
+
+    return ids;
   }
 
   protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], populate?: QueryPopulate<E>) {
@@ -905,7 +955,7 @@ export abstract class AbstractQuerier implements Querier {
       case 'mm':
         return this.saveToMany(relOpts, relEntity, ids, relPayload as unknown as object[], isUpdate);
       case '11':
-        return this.saveOneToOne(relEntity, relOpts, ids, relPayload as unknown as object);
+        return this.saveOneToOne(relEntity, relOpts, ids, relPayload as unknown as object, isUpdate);
       case 'm1':
         if (relPayload) return this.saveManyToOne(entity, relEntity, relOpts, ids, relPayload as unknown as object);
     }
@@ -959,11 +1009,21 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  private async saveOneToOne(relEntity: Type<object>, relOpts: RelationMeta, ids: unknown[], relPayload: object) {
+  private async saveOneToOne(
+    relEntity: Type<object>,
+    relOpts: RelationMeta,
+    ids: unknown[],
+    relPayload: object,
+    isUpdate?: boolean,
+  ) {
     const foreignField = soleParentColumn(relOpts);
-    if (relPayload === null) {
+    // The same rule a to-many follows: the parent owns its child, so an update replaces it. Without
+    // this the old row stayed behind and a one-to-one `$populate` had two rows to choose from.
+    if (relPayload === null || isUpdate) {
       await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
-      return;
+      if (relPayload === null) {
+        return;
+      }
     }
     await this.saveMany(
       relEntity,
@@ -1038,6 +1098,22 @@ export abstract class AbstractQuerier implements Querier {
    * Emit a lifecycle hook event for the given entity.
    * Fires global listeners first, then entity-level hooks.
    */
+  /**
+   * Runs `write` between the event's `before`/`after` pair. Every hooked write is this shape, and
+   * each one spelled out was a place the pair could drift - `upsert` had none at all for a release.
+   */
+  private async hooked<E extends object, T>(
+    entity: Type<E>,
+    event: 'Insert' | 'Update' | 'Upsert',
+    payloads: E[],
+    write: () => Promise<T>,
+  ): Promise<T> {
+    await this.emitHook(entity, `before${event}`, payloads);
+    const result = await write();
+    await this.emitHook(entity, `after${event}`, payloads);
+    return result;
+  }
+
   private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: E[]): Promise<void> {
     if (!this.hasHook(entity, event)) return;
 

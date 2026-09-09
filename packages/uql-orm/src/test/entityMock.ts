@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto';
+import { v7 as uuidv7 } from 'uuid';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { idKey, type Json } from '../type/index.js';
 import { raw } from '../util/index.js';
@@ -9,22 +10,25 @@ import { raw } from '../util/index.js';
  */
 export abstract class BaseEntity {
   /**
-   * auto-generated primary-key (when the `onInsert` property is omitted).
+   * A client-generated key, so the same entity runs on every backend: MongoDB cannot mint a number,
+   * so a key left to the database is a SQL-only shape - {@link Invoice} declares one for the tests
+   * that need it. Version 7 rather than random, so insertion order is still key order, which is
+   * what the auto-increment it replaces gave and what the docs recommend for the same reason.
    */
-  @Id({ type: Number })
-  id?: number;
+  @Id({ type: String, onInsert: uuidv7 })
+  id?: string;
 
   /**
    * foreign-keys are really simple to specify with the `references` property.
    */
   @Field({ references: () => Company })
-  companyId?: number;
+  companyId?: string;
 
   @ManyToOne({ entity: () => Company })
   company?: Company;
 
   @Field({ references: () => User })
-  creatorId?: number;
+  creatorId?: string;
 
   @ManyToOne({ entity: () => User })
   creator?: User;
@@ -88,8 +92,8 @@ export class Profile extends BaseEntity {
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.
    */
-  @Id({ type: Number })
-  pk?: number;
+  @Id({ type: String, onInsert: uuidv7 })
+  pk?: string;
 
   @Field({ type: String, name: 'image' })
   picture?: string;
@@ -140,7 +144,7 @@ export class LedgerAccount extends BaseEntity {
   description?: string;
 
   @Field({ references: () => LedgerAccount })
-  parentLedgerId?: number;
+  parentLedgerId?: string;
 
   @ManyToOne({ entity: () => LedgerAccount })
   parentLedger?: LedgerAccount;
@@ -211,7 +215,7 @@ export class MeasureUnit extends BaseEntity {
   name?: string;
 
   @Field({ references: () => MeasureUnitCategory })
-  categoryId?: number;
+  categoryId?: string;
 
   @ManyToOne({ entity: () => MeasureUnitCategory, cascade: 'persist' })
   category?: MeasureUnitCategory;
@@ -244,25 +248,25 @@ export class Item extends BaseEntity {
   code?: string;
 
   @Field({ references: () => LedgerAccount })
-  buyLedgerAccountId?: number;
+  buyLedgerAccountId?: string;
 
   @ManyToOne({ entity: () => LedgerAccount })
   buyLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => LedgerAccount })
-  saleLedgerAccountId?: number;
+  saleLedgerAccountId?: string;
 
   @ManyToOne({ entity: () => LedgerAccount })
   saleLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => Tax })
-  taxId?: number;
+  taxId?: string;
 
   @ManyToOne({ entity: () => Tax })
   tax?: Tax;
 
   @Field({ references: () => MeasureUnit })
-  measureUnitId?: number;
+  measureUnitId?: string;
 
   @ManyToOne({ entity: () => MeasureUnit })
   measureUnit?: MeasureUnit;
@@ -278,13 +282,11 @@ export class Item extends BaseEntity {
 
   @Field({
     /**
-     * `virtual` property allows defining the value for a non-persistent field,
-     * such value might be a scalar or a (`raw`) function. Virtual-fields can
-     * be used in `$select` and `$where` as a common field whose value is
-     * replaced is replaced at runtime.
+     * An unstored `computed` field: the expression is spliced into each statement that reads it, so it
+     * is never a column and works in `$select`, `$where` and `$sort` like any other field.
      */
     type: Number,
-    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+    computed: raw(({ ctx, escapedPrefix, dialect }) => {
       ctx.append('(');
       dialect.count(
         ctx,
@@ -314,7 +316,7 @@ export class Tag extends BaseEntity {
 
   @Field({
     type: Number,
-    virtual: raw(({ ctx, escapedPrefix, dialect }) => {
+    computed: raw(({ ctx, escapedPrefix, dialect }) => {
       ctx.append('(');
       dialect.count(
         ctx,
@@ -336,14 +338,14 @@ export class Tag extends BaseEntity {
 
 @Entity()
 export class ItemTag {
-  @Id({ type: Number })
-  id?: number;
+  @Id({ type: String, onInsert: uuidv7 })
+  id?: string;
 
   @Field({ references: () => Item })
-  itemId?: number;
+  itemId?: string;
 
   @Field({ references: () => Tag })
-  tagId?: number;
+  tagId?: string;
 }
 
 @Entity()
@@ -365,7 +367,7 @@ export class InventoryAdjustment extends BaseEntity {
 @Entity()
 export class ItemAdjustment extends BaseEntity {
   @Field({ references: () => Item })
-  itemId?: number;
+  itemId?: string;
 
   @ManyToOne({ entity: () => Item })
   item?: Item;
@@ -377,16 +379,53 @@ export class ItemAdjustment extends BaseEntity {
   buyPrice?: number;
 
   @Field({ references: () => Storehouse })
-  storehouseId?: number;
+  storehouseId?: string;
 
   @ManyToOne({ entity: () => Storehouse })
   storehouse?: Storehouse;
 
   @Field({ references: () => InventoryAdjustment })
-  inventoryAdjustmentId?: number;
+  inventoryAdjustmentId?: string;
 
   @ManyToOne({ entity: () => InventoryAdjustment })
   inventoryAdjustment?: InventoryAdjustment;
+}
+
+/**
+ * SQL-only: the one fixture that leaves its key to the database on purpose. The shared entities carry
+ * a client-generated key so they run on MongoDB, which cannot mint a number; the tests that mix
+ * supplied and generated keys in one batch, or read the ids a driver infers, need auto-increment to
+ * exist. `lines` is the cascade those tests write with a parent id the driver had to report.
+ */
+@Entity()
+export class Invoice {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  description?: string;
+
+  @OneToMany({
+    entity: () => InvoiceLine,
+    mappedBy: (rel) => rel.invoice,
+    cascade: true,
+  })
+  lines?: InvoiceLine[];
+}
+
+@Entity()
+export class InvoiceLine {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: Number })
+  amount?: number;
+
+  @Field({ references: () => Invoice })
+  invoiceId?: number;
+
+  @ManyToOne({ entity: () => Invoice })
+  invoice?: Invoice;
 }
 
 /**

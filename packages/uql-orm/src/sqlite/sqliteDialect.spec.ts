@@ -76,9 +76,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toMatch(
-      /^INSERT INTO `User` .*VALUES \(\?, \?, \?\), \(\?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET.* RETURNING `id` `id`$/,
+      /^INSERT INTO `User` .*VALUES \(\?, \?, \?, \?\), \(\?, \?, \?, \?\) ON CONFLICT \(`email`\) DO UPDATE SET.* RETURNING `id` `id`$/,
     );
-    expect(values).toHaveLength(7);
+    expect(values).toHaveLength(9);
   }
 
   shouldUpsertWithDifferentColumnNames() {
@@ -88,7 +88,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         Profile,
         { pk: true },
         {
-          pk: 1,
+          pk: '1',
           picture: 'image.jpg',
         },
       ),
@@ -96,7 +96,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toMatch(
       /^INSERT INTO `user_profile` \(.*`pk`.*`image`.*`createdAt`.*\) VALUES \(\?, \?, \?\) ON CONFLICT \(`pk`\) DO UPDATE SET .*`image` = EXCLUDED.`image`.*`updatedAt` = \?.*$/,
     );
-    expect(values).toEqual([1, 'image.jpg', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual(['1', 'image.jpg', expect.any(Number), expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
@@ -106,7 +106,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         User,
         { id: true },
         {
-          id: 1,
+          id: '1',
           email: 'a@b.com',
         },
       ),
@@ -114,7 +114,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toMatch(
       /^INSERT INTO `User` \(.*`id`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\) ON CONFLICT \(`id`\) DO UPDATE SET .*`updatedAt` = \?.*$/,
     );
-    expect(values).toEqual([1, 'a@b.com', expect.any(Number), expect.any(Number)]);
+    expect(values).toEqual(['1', 'a@b.com', expect.any(Number), expect.any(Number)]);
   }
 
   override shouldInsertOne() {
@@ -125,8 +125,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `User` (`name`, `email`, `createdAt`) VALUES (?, ?, ?) RETURNING `id` `id`');
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123]);
+    expect(res.sql).toBe(
+      'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?) RETURNING `id` `id`',
+    );
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
@@ -134,7 +136,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         createdAt: 123,
       }),
     );
-    expect(res.sql).toBe('INSERT INTO `InventoryAdjustment` (`date`, `createdAt`) VALUES (?, ?) RETURNING `id` `id`');
+    expect(res.sql).toBe(
+      'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
+    );
     expect(res.values[0]).toBe(1640995199999);
     expect(res.values[1]).toBe(123);
   }
@@ -146,14 +150,22 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   override shouldInsertManyWithHeterogeneousColumns() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
-        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { id: '5', name: 'Some name 1', createdAt: 123 },
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (NULL, ?, ?, ?) RETURNING `id` `id`',
+      'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (?, ?, ?, ?) RETURNING `id` `id`',
     );
-    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+    expect(values).toEqual([
+      '5',
+      'Some name 1',
+      123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'Some name 2',
+      456,
+      'someemail2@example.com',
+    ]);
   }
 
   shouldUpsertWithDoNothing() {
@@ -163,26 +175,26 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         ItemTag,
         { id: true },
         {
-          id: 1,
+          id: '1',
         },
       ),
     );
     expect(sql).toBe('INSERT INTO `ItemTag` (`id`) VALUES (?) ON CONFLICT (`id`) DO NOTHING RETURNING `id` `id`');
-    expect(values).toEqual([1]);
+    expect(values).toEqual(['1']);
   }
 
   override shouldFind$text() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: 1 },
+        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: '1' },
         $limit: 30,
       }),
     );
     expect(res.sql).toBe(
       'SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : ? AND `companyId` = ? LIMIT 30',
     );
-    expect(res.values).toEqual(['some text', 1]);
+    expect(res.values).toEqual(['some text', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -190,7 +202,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          companyId: 1,
+          companyId: '1',
         },
         $limit: 10,
       }),
@@ -198,7 +210,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.sql).toBe(
       'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
     );
-    expect(res.values).toEqual(['something', 'other unwanted', 1]);
+    expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
 
   shouldHandleBoolean() {
@@ -466,19 +478,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
       sql: "UPDATE `Company` SET `kind` = json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', 123, 1],
+      values: ['1', 123, '1'],
     },
     unsetOnly: {
       sql: "UPDATE `Company` SET `kind` = json_remove(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
-      values: [123, 1],
+      values: [123, '1'],
     },
     setUnsetCombined: {
       sql: "UPDATE `Company` SET `kind` = json_remove(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', 123, 1],
+      values: ['1', 123, '1'],
     },
     push: {
       sql: "UPDATE `Company` SET `kind` = json_set(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"new-tag"', 123, 1],
+      values: ['"new-tag"', 123, '1'],
     },
     /**
      * Elements are read back via `->` at their own `fullkey`, which preserves each element's JSON
@@ -486,23 +498,23 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
      */
     pull: {
       sql: "UPDATE `Company` SET `kind` = json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"a"', 123, 1],
+      values: ['"a"', 123, '1'],
     },
     pullPushSameKey: {
       sql: "UPDATE `Company` SET `kind` = json_set(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"a"', '"b"', 123, 1],
+      values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
       sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['1', '"new-tag"', 123, 1],
+      values: ['1', '"new-tag"', 123, '1'],
     },
     setPushSameKey: {
       sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
-      values: ['["a"]', '"b"', 123, 1],
+      values: ['["a"]', '"b"', 123, '1'],
     },
     pushUnsetCombined: {
       sql: "UPDATE `Company` SET `kind` = json_remove(json_set(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
-      values: ['"new-tag"', 123, 1],
+      values: ['"new-tag"', 123, '1'],
     },
   };
 

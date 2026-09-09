@@ -213,11 +213,11 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined> {
     return this.withQuerier((querier) => querier.saveOne(entity, payload));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.saveMany(entity, payload));
   }
 

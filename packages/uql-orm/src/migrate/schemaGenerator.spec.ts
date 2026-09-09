@@ -1,3 +1,4 @@
+import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
@@ -31,7 +32,7 @@ class TestUser {
 
 @Entity({ name: 'blog_posts' })
 class TestPost {
-  @Id({ type: String, onInsert: () => crypto.randomUUID(), length: 36 })
+  @Id({ type: String, onInsert: uuidv7, length: 36 })
   id?: string;
 
   @Field({ type: String })

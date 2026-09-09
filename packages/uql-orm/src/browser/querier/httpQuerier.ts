@@ -184,12 +184,16 @@ export class HttpQuerier implements ClientQuerier {
 
   saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return put<IdValue<E> | undefined>(basePath, payload, this.buildOptions(opts));
+    return put<EntityId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
   saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return put<(IdValue<E> | undefined)[]>(`${basePath}${CRUD_ROUTES.saveMany.path}`, payload, this.buildOptions(opts));
+    return put<(EntityId<E> | undefined)[]>(
+      `${basePath}${CRUD_ROUTES.saveMany.path}`,
+      payload,
+      this.buildOptions(opts),
+    );
   }
 
   async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts: QueryOptions & RequestOptions = {}) {

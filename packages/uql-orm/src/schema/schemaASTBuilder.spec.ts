@@ -340,14 +340,14 @@ describe('SchemaASTBuilder', () => {
       expect(userTable?.columns.has('col_id')).toBe(true);
     });
 
-    it('should skip virtual fields', () => {
+    it('should skip inlined computed fields', () => {
       @Entity()
-      class VirtualUser {
+      class ComputedUser {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, virtual: raw`TRUE` }) secret?: string;
+        @Field({ type: String, computed: raw`TRUE` }) secret?: string;
       }
-      const ast = buildSchemaAST([VirtualUser]);
-      expect(ast.getTable('VirtualUser')?.columns.has('secret')).toBe(false);
+      const ast = buildSchemaAST([ComputedUser]);
+      expect(ast.getTable('ComputedUser')?.columns.has('secret')).toBe(false);
     });
 
     it('should handle composite indexes and full metadata from decorators', () => {
@@ -408,7 +408,7 @@ describe('SchemaASTBuilder', () => {
       }
       const meta = getMeta(BadIndex);
       const noCol = 'no_col';
-      (meta.fields as Record<string, any>)[noCol] = { index: true, name: noCol, virtual: true }; // Inject a field that wasn't properly added
+      (meta.fields as Record<string, any>)[noCol] = { index: true, name: noCol, computed: true }; // Inject a field that wasn't properly added
 
       const ast = buildSchemaAST([BadIndex]);
       expect(ast.getTable('BadIndex')?.indexes.length).toBe(0);
@@ -473,12 +473,12 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Other2 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, virtual: raw`true` }) virtual?: number;
+        @Field({ type: Number, computed: raw`true` }) computed?: number;
       }
       @Entity()
       class Main2 {
         @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => Other2, references: [{ local: 'otherId', foreign: 'virtual' }] })
+        @OneToOne({ entity: () => Other2, references: [{ local: 'otherId', foreign: 'computed' }] })
         other?: Other2;
         @Field({ type: Number }) otherId?: number;
       }

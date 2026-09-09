@@ -3,7 +3,17 @@ import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
-import { Company, createSpec, Item, MeasureUnitCategory, type Spec, Tax, TaxCategory, User } from '../test/index.js';
+import {
+  Company,
+  createSpec,
+  Invoice,
+  Item,
+  MeasureUnitCategory,
+  type Spec,
+  Tax,
+  TaxCategory,
+  User,
+} from '../test/index.js';
 import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
@@ -26,6 +36,17 @@ class SecureRelated {
   tenantId?: number;
   @Field({ type: String })
   name?: string;
+}
+
+/** A string key and a string reference: the shape the two wire seams convert. */
+@Entity()
+class Doc {
+  @Id({ type: String })
+  id?: string;
+  @Field({ references: () => Doc })
+  parentId?: string;
+  @Field({ type: String })
+  title?: string;
 }
 
 @Entity()
@@ -107,12 +128,12 @@ class MongoDialectSpec implements Spec {
 
     expect(
       this.dialect.where(TaxCategory, {
-        creatorId: 1,
+        creatorId: '1',
         $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
         pk: '507f191e810c19729de860ea',
       }),
     ).toEqual({
-      creatorId: 1,
+      creatorId: '1',
       $or: [{ name: { $in: ['a', 'b', 'c'] } }, { name: 'abc' }],
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
@@ -1437,6 +1458,73 @@ class MongoDialectSpec implements Spec {
       { $set: { 'kind.public': { $literal: 1 } } },
       { $unset: ['kind.public'] },
     ]);
+  }
+
+  /**
+   * MongoDB mints one kind of key - an `ObjectId`, read back as its hex string - so a key declared
+   * `Number` and left to the database is a promise it cannot keep. Refused rather than answered with
+   * a string, which is what made `IdValue<E>` a lie on this backend. Prisma refuses the same shape.
+   */
+  shouldRefuseAKeyMongoDbCannotMint() {
+    expect(() => this.dialect.getPersistables(getMeta(Invoice), [{ description: 'no key' }], 'onInsert')).toThrow(
+      /'Invoice.id' is declared 'Number' and left to the database, which MongoDB cannot do/,
+    );
+
+    // Supplied, so there is nothing to mint - and a string key is what it can mint.
+    expect(this.dialect.getPersistables(getMeta(Invoice), [{ id: 7, description: 'given' }], 'onInsert')).toEqual([
+      { _id: 7, description: 'given' },
+    ]);
+    expect(this.dialect.getPersistables(getMeta(Doc), [{ title: 'minted' }], 'onInsert')).toEqual([
+      { title: 'minted' },
+    ]);
+  }
+
+  /**
+   * The seam into the driver. A key, and any field that references one, becomes an `ObjectId` when
+   * it is a valid 24-hex string, so a write agrees with the filter that will later look for it;
+   * anything else is stored as given, which is how a `uuidv7` or a number key keeps its value.
+   * The key maps to `_id` on an insert and is left out of an update, where `_id` is immutable.
+   */
+  shouldMapTheKeyAndReferencesIntoTheWire() {
+    const meta = getMeta(Doc);
+    const hex = '507f191e810c19729de860ea';
+
+    expect(this.dialect.getPersistables(meta, [{ id: hex, parentId: hex, title: 'a' }], 'onInsert')).toEqual([
+      { _id: new ObjectId(hex), parentId: new ObjectId(hex), title: 'a' },
+    ]);
+    expect(this.dialect.getPersistables(meta, [{ id: 'not-an-object-id', title: 'b' }], 'onInsert')).toEqual([
+      { _id: 'not-an-object-id', title: 'b' },
+    ]);
+    expect(this.dialect.getPersistables(getMeta(Invoice), [{ id: 5100, description: 'c' }], 'onInsert')).toEqual([
+      { _id: 5100, description: 'c' },
+    ]);
+    expect(this.dialect.getPersistables(meta, [{ id: hex, title: 'd' }], 'onUpdate')).toEqual([{ title: 'd' }]);
+
+    expect(this.dialect.where(Doc, { parentId: hex })).toEqual({ parentId: new ObjectId(hex) });
+    expect(this.dialect.where(Doc, { parentId: [hex, 'plain'] })).toEqual({
+      parentId: { $in: [new ObjectId(hex), 'plain'] },
+    });
+  }
+
+  /**
+   * The seam out of the driver. An `ObjectId` in `_id` or in a reference becomes its hex string:
+   * the "string in your code" the docs promise. The object itself used to leak, typed as a string
+   * it was not, so `doc.id === someId` was false and a reference written back missed the join.
+   */
+  shouldHandBackHexStringsFromTheWire() {
+    const meta = getMeta(Doc);
+    const id = new ObjectId('507f191e810c19729de860ea');
+    const parentId = new ObjectId('507f191e810c19729de860eb');
+
+    expect(this.dialect.normalizeId(meta, { _id: id, parentId, title: 'a' })).toEqual({
+      id: '507f191e810c19729de860ea',
+      parentId: '507f191e810c19729de860eb',
+      title: 'a',
+    });
+    expect(this.dialect.normalizeId(meta, { _id: 'kept-as-is', parentId: 7 })).toEqual({
+      id: 'kept-as-is',
+      parentId: 7,
+    });
   }
 }
 

@@ -496,11 +496,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   describe('relation filtering', () => {
     it('ManyToMany with simple id equality', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Item, { tags: { id: 5 } });
+      dialect.where(ctx, Item, { tags: { id: '5' } });
       expect(ctx.sql).toBe(
         ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`id` = ?))',
       );
-      expect(ctx.values).toEqual([5]);
+      expect(ctx.values).toEqual(['5']);
     });
 
     it('ManyToMany with operator filter', () => {
@@ -514,11 +514,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('ManyToMany with multiple conditions on related entity', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Item, { tags: { id: 1, name: 'urgent' } });
+      dialect.where(ctx, Item, { tags: { id: '1', name: 'urgent' } });
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
       expect(ctx.sql).toContain('`Tag`.`id` = ?');
       expect(ctx.sql).toContain('`Tag`.`name` = ?');
-      expect(ctx.values).toEqual([1, 'urgent']);
+      expect(ctx.values).toEqual(['1', 'urgent']);
     });
 
     it('OneToMany with simple filter', () => {
@@ -543,23 +543,23 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('combined with regular field', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Item, { companyId: 1, tags: { name: 'urgent' } });
+      dialect.where(ctx, Item, { companyId: '1', tags: { name: 'urgent' } });
       expect(ctx.sql).toContain('`companyId` = ?');
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
-      expect(ctx.values).toEqual([1, 'urgent']);
+      expect(ctx.values).toEqual(['1', 'urgent']);
     });
 
     it('ManyToMany combined with regular field and raw', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, {
-        companyId: 1,
+        companyId: '1',
         tags: { name: 'test' },
         $and: [raw`code IS NOT NULL`],
       });
       expect(ctx.sql).toContain('`companyId` = ?');
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
       expect(ctx.sql).toContain('code IS NOT NULL');
-      expect(ctx.values).toEqual([1, 'test']);
+      expect(ctx.values).toEqual(['1', 'test']);
     });
 
     it('ManyToOne with simple filter', () => {
@@ -763,11 +763,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('combined with regular field', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Item, { companyId: 1, tags: { $size: { $gte: 2 } } });
+      dialect.where(ctx, Item, { companyId: '1', tags: { $size: { $gte: 2 } } });
       expect(ctx.sql).toContain('`companyId` = ?');
       expect(ctx.sql).toContain('(SELECT COUNT(*) FROM `ItemTag`');
       expect(ctx.sql).toContain('>= ?');
-      expect(ctx.values).toEqual([1, 2]);
+      expect(ctx.values).toEqual(['1', 2]);
     });
 
     it('throws for unsupported $size comparison operator', () => {
@@ -814,7 +814,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
    * one you did not select failed on the server with `column "tagsCount" does not exist`.
    */
   describe('$sort on an inlined computed field', () => {
-    const tagsCountOperand = '(SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`)';
+    const tagsCountOperand = '(SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)';
 
     it('orders by the expression, not by an alias that may not exist', () => {
       const ctx = dialect.createContext();
@@ -875,11 +875,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       dialect.find(ctx, User, {
         $distinct: true,
         $select: { name: true },
-        $where: { companyId: 1 },
+        $where: { companyId: '1' },
         $sort: { name: 1 },
       });
       expect(ctx.sql).toBe('SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ? ORDER BY `name`');
-      expect(ctx.values).toEqual([1]);
+      expect(ctx.values).toEqual(['1']);
     });
 
     it('$distinct with $limit and $skip', () => {

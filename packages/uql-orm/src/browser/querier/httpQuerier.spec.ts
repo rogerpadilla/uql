@@ -29,10 +29,10 @@ describe('HttpQuerier', () => {
   });
 
   it('findOneById', async () => {
-    await querier.findOneById(User, 1);
+    await querier.findOneById(User, '1');
     expect(http.get).toHaveBeenCalledWith('/api/user/1', undefined);
 
-    await querier.findOneById(User, 1, { $select: { name: true } });
+    await querier.findOneById(User, '1', { $select: { name: true } });
     expect(http.get).toHaveBeenCalledWith(`/api/user/1${stringifyQuery({ $select: { name: true } })}`, undefined);
   });
 
@@ -114,7 +114,7 @@ describe('HttpQuerier', () => {
   });
 
   it('updateOneById', async () => {
-    await querier.updateOneById(User, 1, { name: 'Mario' });
+    await querier.updateOneById(User, '1', { name: 'Mario' });
     expect(http.patch).toHaveBeenCalledWith('/api/user/1', { name: 'Mario' }, undefined);
   });
 
@@ -131,22 +131,22 @@ describe('HttpQuerier', () => {
     await querier.saveOne(User, { name: 'Mario' });
     expect(http.put).toHaveBeenCalledWith('/api/user', { name: 'Mario' }, undefined);
 
-    await querier.saveOne(User, { id: 1, name: 'Mario' });
-    expect(http.put).toHaveBeenCalledWith('/api/user', { id: 1, name: 'Mario' }, undefined);
+    await querier.saveOne(User, { id: '1', name: 'Mario' });
+    expect(http.put).toHaveBeenCalledWith('/api/user', { id: '1', name: 'Mario' }, undefined);
     expect(http.post).not.toHaveBeenCalled();
     expect(http.patch).not.toHaveBeenCalled();
   });
 
   it('saveMany', async () => {
-    await querier.saveMany(User, [{ id: 1 }, { name: 'new' }]);
-    expect(http.put).toHaveBeenCalledWith('/api/user/many', [{ id: 1 }, { name: 'new' }], undefined);
+    await querier.saveMany(User, [{ id: '1' }, { name: 'new' }]);
+    expect(http.put).toHaveBeenCalledWith('/api/user/many', [{ id: '1' }, { name: 'new' }], undefined);
   });
 
   it('deleteOneById', async () => {
-    await querier.deleteOneById(User, 1);
+    await querier.deleteOneById(User, '1');
     expect(http.remove).toHaveBeenCalledWith('/api/user/1', {});
 
-    await querier.deleteOneById(User, 1, { hardDelete: true });
+    await querier.deleteOneById(User, '1', { hardDelete: true });
     expect(http.remove).toHaveBeenCalledWith('/api/user/1?hardDelete=true', { hardDelete: true });
   });
 
@@ -177,7 +177,7 @@ describe('HttpQuerier', () => {
 
     it('writes and byId reads keep their canonical methods', async () => {
       const rfcQuerier = new HttpQuerier('/api', { readMethod: 'QUERY' });
-      await rfcQuerier.findOneById(User, 1);
+      await rfcQuerier.findOneById(User, '1');
       expect(http.get).toHaveBeenCalledWith('/api/user/1', undefined);
       await rfcQuerier.insertOne(User, { name: 'Mario' });
       expect(http.post).toHaveBeenCalledWith('/api/user', { name: 'Mario' }, undefined);

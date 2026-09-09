@@ -13,5 +13,6 @@ export {
   removeEntity,
   assertSoleId,
   idOf,
+  namesKey,
   soleIdOf,
 } from './metadata/definition.js';

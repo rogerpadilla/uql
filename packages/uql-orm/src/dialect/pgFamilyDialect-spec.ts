@@ -81,20 +81,21 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO "User" ("name", "email", "createdAt") VALUES' +
-        ' ($1, $2, $3), ($4, $5, $6), ($7, $8, $9)' +
-        ' RETURNING "id" "id"',
+      'INSERT INTO "User" ("name", "email", "createdAt", "id") VALUES ($1, $2, $3, $4), ($5, $6, $7, $8), ($9, $10, $11, $12) RETURNING "id" "id"',
     );
     expect(values).toEqual([
       'Some name 1',
       'someemail1@example.com',
       123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
       'Some name 2',
       'someemail2@example.com',
       456,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
       'Some name 3',
       'someemail3@example.com',
       789,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
     ]);
   }
 
@@ -112,14 +113,22 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   override shouldInsertManyWithHeterogeneousColumns() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, [
-        { id: 5, name: 'Some name 1', createdAt: 123 },
+        { id: '5', name: 'Some name 1', createdAt: 123 },
         { name: 'Some name 2', email: 'someemail2@example.com', createdAt: 456 },
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO "User" ("id", "name", "createdAt", "email") VALUES ($1, $2, $3, DEFAULT), (DEFAULT, $4, $5, $6) RETURNING "id" "id"',
+      'INSERT INTO "User" ("id", "name", "createdAt", "email") VALUES ($1, $2, $3, DEFAULT), ($4, $5, $6, $7) RETURNING "id" "id"',
     );
-    expect(values).toEqual([5, 'Some name 1', 123, 'Some name 2', 456, 'someemail2@example.com']);
+    expect(values).toEqual([
+      '5',
+      'Some name 1',
+      123,
+      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      'Some name 2',
+      456,
+      'someemail2@example.com',
+    ]);
   }
 
   override shouldInsertOne() {
@@ -130,8 +139,10 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         createdAt: 123,
       }),
     );
-    expect(sql).toBe('INSERT INTO "User" ("name", "email", "createdAt") VALUES ($1, $2, $3) RETURNING "id" "id"');
-    expect(values).toEqual(['Some Name', 'someemail@example.com', 123]);
+    expect(sql).toBe(
+      'INSERT INTO "User" ("name", "email", "createdAt", "id") VALUES ($1, $2, $3, $4) RETURNING "id" "id"',
+    );
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
   }
 
   override shouldInsertWithOnInsertId() {
@@ -156,7 +167,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         User,
         { id: true },
         {
-          id: 1,
+          id: '1',
           name: 'Some Name',
           createdAt: 123,
         },
@@ -165,19 +176,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       `INSERT INTO "User" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([expect.any(Number), 1, 'Some Name', 123]);
+    expect(values).toEqual([expect.any(Number), '1', 'Some Name', 123]);
   }
 
   override shouldUpsertMany() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(ctx, User, { id: true }, [
         {
-          id: 1,
+          id: '1',
           name: 'Name A',
           createdAt: 100,
         },
         {
-          id: 2,
+          id: '2',
           name: 'Name B',
           createdAt: 200,
         },
@@ -268,8 +279,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         createdAt: 1,
       } as any),
     );
-    expect(res.sql).toBe('INSERT INTO "User" ("name", "createdAt") VALUES ($1, $2) RETURNING "id" "id"');
-    expect(res.values).toEqual(['Some Name', 1]);
+    expect(res.sql).toBe('INSERT INTO "User" ("name", "createdAt", "id") VALUES ($1, $2, $3) RETURNING "id" "id"');
+    expect(res.values).toEqual(['Some Name', 1, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
 
     res = this.exec((ctx) =>
       this.dialect.update(
@@ -304,22 +315,22 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: [1, 2, 3] },
+        $where: { name: 'some', companyId: ['1', '2', '3'] },
         $limit: 10,
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
-    expect(res.values).toEqual(['some', [1, 2, 3]]);
+    expect(res.values).toEqual(['some', ['1', '2', '3']]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { name: 'some', companyId: { $in: [1, 2, 3] } },
+        $where: { name: 'some', companyId: { $in: ['1', '2', '3'] } },
         $limit: 10,
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
-    expect(res.values).toEqual(['some', [1, 2, 3]]);
+    expect(res.values).toEqual(['some', ['1', '2', '3']]);
   }
 
   /** Same `$or`/`$and` composition as the base, but `$in` shorthand binds via `= ANY(...)`. */
@@ -329,21 +340,21 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { creatorId: 1, $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: 1 },
+        $where: { creatorId: '1', $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }], id: '1' },
       }),
     );
     expect(res.sql).toBe(
       'SELECT "id" FROM "User" WHERE "creatorId" = $1 AND ("name" = ANY($2) OR "email" = $3) AND "id" = $4',
     );
-    expect(res.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1]);
+    expect(res.values).toEqual(['1', ['a', 'b', 'c'], 'abc@example.com', '1']);
 
     const res2 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          creatorId: 1,
+          creatorId: '1',
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
-          id: 1,
+          id: '1',
           email: 'e',
         },
       }),
@@ -352,15 +363,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       'SELECT "id" FROM "User" WHERE "creatorId" = $1' +
         ' AND ("name" = ANY($2) OR "email" = $3) AND "id" = $4 AND "email" = $5',
     );
-    expect(res2.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1, 'e']);
+    expect(res2.values).toEqual(['1', ['a', 'b', 'c'], 'abc@example.com', '1', 'e']);
 
     const res3 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          creatorId: 1,
+          creatorId: '1',
           $or: [{ name: ['a', 'b', 'c'] }, { email: 'abc@example.com' }],
-          id: 1,
+          id: '1',
           email: 'e',
         },
         $sort: { name: 1, createdAt: -1 },
@@ -374,7 +385,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         ' AND "id" = $4 AND "email" = $5' +
         ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
     );
-    expect(res3.values).toEqual([1, ['a', 'b', 'c'], 'abc@example.com', 1, 'e']);
+    expect(res3.values).toEqual(['1', ['a', 'b', 'c'], 'abc@example.com', '1', 'e']);
 
     const res4 = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -382,8 +393,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: {
           $or: [
             {
-              creatorId: 1,
-              id: 1,
+              creatorId: '1',
+              id: '1',
               email: 'e',
             },
             { name: ['a', 'b', 'c'], email: 'abc@example.com' },
@@ -399,7 +410,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         ' OR ("name" = ANY($4) AND "email" = $5)' +
         ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
     );
-    expect(res4.values).toEqual([1, 1, 'e', ['a', 'b', 'c'], 'abc@example.com']);
+    expect(res4.values).toEqual(['1', '1', 'e', ['a', 'b', 'c'], 'abc@example.com']);
   }
 
   /** The `$in` sub-case binds via `= ANY(...)`, unlike the base's `IN (?, ?)`. */
@@ -409,38 +420,38 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $and: [{ companyId: 1 }, raw`SUM(salePrice) > 500`] },
+        $where: { $and: [{ companyId: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "creatorId" FROM "Item" WHERE "companyId" = $1 AND SUM(salePrice) > 500');
-    expect(res.values).toEqual([1]);
+    expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ companyId: 1 }, { id: 5 }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ companyId: '1' }, { id: '5' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "companyId" = $1 OR "id" = $2 OR SUM(salePrice) > 500');
-    expect(res.values).toEqual([1, 5]);
+    expect(res.values).toEqual(['1', '5']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [{ id: 1 }, raw`SUM(salePrice) > 500`] },
+        $where: { $or: [{ id: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE "id" = $1 OR SUM(salePrice) > 500');
-    expect(res.values).toEqual([1]);
+    expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $or: [raw`SUM(salePrice) > 500`, { id: 1 }, { companyId: 1 }] },
+        $where: { $or: [raw`SUM(salePrice) > 500`, { id: '1' }, { companyId: '1' }] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500 OR "id" = $1 OR "companyId" = $2');
-    expect(res.values).toEqual([1, 1]);
+    expect(res.values).toEqual(['1', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -461,11 +472,11 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
-        $where: { $or: [{ id: { $in: [1, 2] } }, { code: 'abc' }] },
+        $where: { $or: [{ id: { $in: ['1', '2'] } }, { code: 'abc' }] },
       }),
     );
     expect(res.sql).toBe('SELECT "creatorId" FROM "Item" WHERE "id" = ANY($1) OR "code" = $2');
-    expect(res.values).toEqual([[1, 2], 'abc']);
+    expect(res.values).toEqual([['1', '2'], 'abc']);
   }
 
   /** `$not` on an array value goes through the same `= ANY(...)` array binding as `$in`. */
@@ -484,29 +495,29 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: { $not: 123 } },
+        $where: { id: { $not: '123' } },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT ("id" = $1)');
-    expect(res.values).toEqual([123]);
+    expect(res.values).toEqual(['123']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: { $not: [123, 456] } },
+        $where: { id: { $not: ['123', '456'] } },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT ("id" = ANY($1))');
-    expect(res.values).toEqual([[123, 456]]);
+    expect(res.values).toEqual([['123', '456']]);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { id: 123, name: { $not: { $startsWith: 'a' } } },
+        $where: { id: '123', name: { $not: { $startsWith: 'a' } } },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "id" = $1 AND NOT ("name" LIKE $2)');
-    expect(res.values).toEqual([123, 'a%']);
+    expect(res.values).toEqual(['123', 'a%']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
@@ -529,20 +540,20 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { $not: [{ name: 'abc' }, { creatorId: 1 }] },
+        $where: { $not: [{ name: 'abc' }, { creatorId: '1' }] },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" = $1 AND "creatorId" = $2)');
-    expect(res.values).toEqual(['abc', 1]);
+    expect(res.values).toEqual(['abc', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Tax, {
         $select: { id: true },
-        $where: { companyId: 1, name: { $not: { $startsWith: 'a' } } },
+        $where: { companyId: '1', name: { $not: { $startsWith: 'a' } } },
       }),
     );
     expect(res.sql).toBe('SELECT "id" FROM "Tax" WHERE "companyId" = $1 AND NOT ("name" LIKE $2)');
-    expect(res.values).toEqual([1, 'a%']);
+    expect(res.values).toEqual(['1', 'a%']);
   }
 
   /** A JSONB column always binds with an explicit cast, even for `null`. */
@@ -553,7 +564,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.update(
         ctx,
         Company,
-        { $where: { id: 1 } },
+        { $where: { id: '1' } },
         {
           kind: null as any,
           updatedAt: 123,
@@ -561,7 +572,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
-    expect(values).toEqual([null, 123, 1]);
+    expect(values).toEqual([null, 123, '1']);
   }
 
   /** `$in`/`$nin` inside `$having` also bind as a native array via `= ANY`/`<> ALL`. */
@@ -598,7 +609,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         Profile,
         { pk: true },
         {
-          pk: 1,
+          pk: '1',
           picture: 'image.jpg',
         },
       ),
@@ -606,7 +617,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       `INSERT INTO "user_profile" ("pk", "image", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("pk") DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = $1 RETURNING "pk" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([expect.any(Number), 1, 'image.jpg', expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), '1', 'image.jpg', expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableFields() {
@@ -616,7 +627,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         User,
         { id: true },
         {
-          id: 1,
+          id: '1',
           email: 'a@b.com',
         },
       ),
@@ -624,7 +635,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       `INSERT INTO "User" ("id", "email", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([expect.any(Number), 1, 'a@b.com', expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), '1', 'a@b.com', expect.any(Number)]);
   }
 
   shouldUpsertWithNonUpdatableId() {
@@ -652,14 +663,14 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         ItemTag,
         { id: true },
         {
-          id: 1,
+          id: '1',
         },
       ),
     );
     expect(sql).toBe(
       `INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([1]);
+    expect(values).toEqual(['1']);
   }
 
   shouldUpsertWithCompositeKeys() {
@@ -669,15 +680,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         ItemTag,
         { itemId: true, tagId: true },
         {
-          itemId: 1,
-          tagId: 2,
+          itemId: '1',
+          tagId: '2',
         },
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "ItemTag" ("itemId", "tagId") VALUES ($1, $2) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([1, 2]);
+    expect(values).toEqual(['1', '2', expect.stringMatching(/^[0-9a-f-]{36}$/)]);
   }
 
   shouldUpsertWithOnUpdateField() {
@@ -687,7 +698,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         User,
         { id: true },
         {
-          id: 1,
+          id: '1',
           name: 'Some Name',
         },
       ),
@@ -695,17 +706,17 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toMatch(
       /^INSERT INTO "User" \(.*"id".*"name".*"createdAt".*\) VALUES \(.*\$2, \$3, \$4.*\) ON CONFLICT \("id"\) DO UPDATE SET .*"name" = EXCLUDED."name".*"updatedAt" = \$1.*$/,
     );
-    expect(values).toEqual([expect.any(Number), 1, 'Some Name', expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), '1', 'Some Name', expect.any(Number)]);
   }
 
-  shouldUpsertWithVirtualField() {
+  shouldUpsertWithComputedField() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(
         ctx,
         Item,
         { id: true },
         {
-          id: 1,
+          id: '1',
           name: 'Some Item',
           tagsCount: 5,
         },
@@ -714,7 +725,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       `INSERT INTO "Item" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual([expect.any(Number), 1, 'Some Item', expect.any(Number)]);
+    expect(values).toEqual([expect.any(Number), '1', 'Some Item', expect.any(Number)]);
   }
 
   override shouldFind$regex() {
@@ -747,7 +758,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: {
           $text: { $fields: ['name'], $value: 'something' },
           name: { $ne: 'other unwanted' },
-          creatorId: 1,
+          creatorId: '1',
         },
         $limit: 10,
       }),
@@ -755,7 +766,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.sql).toBe(
       'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ websearch_to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
-    expect(res.values).toEqual(['something', 'other unwanted', 1]);
+    expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
 
   override shouldUpdateWithRawString() {
@@ -763,7 +774,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.update(
         ctx,
         Company,
-        { $where: { id: 1 } },
+        { $where: { id: '1' } },
         {
           kind: raw`jsonb_set(kind, '{open}', to_jsonb(1))`,
           updatedAt: 123,
@@ -773,7 +784,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = jsonb_set(kind, \'{open}\', to_jsonb(1)), "updatedAt" = $1 WHERE "id" = $2',
     );
-    expect(values).toEqual([123, 1]);
+    expect(values).toEqual([123, '1']);
   }
 
   shouldFormatVector() {
@@ -1103,24 +1114,24 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
       sql: 'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
-      values: ['{"private":1}', 123, 1],
+      values: ['{"private":1}', 123, '1'],
     },
     unsetOnly: {
       sql: 'UPDATE "Company" SET "kind" = ("kind") - $1::text[], "updatedAt" = $2 WHERE "id" = $3',
-      values: [['public', 'private'], 123, 1],
+      values: [['public', 'private'], 123, '1'],
     },
     setUnsetCombined: {
       sql: 'UPDATE "Company" SET "kind" = (COALESCE("kind", \'{}\'::jsonb) || $1::jsonb) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"private":1}', ['public'], 123, 1],
+      values: ['{"private":1}', ['public'], 123, '1'],
     },
     push: {
       sql: 'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
-      values: ['"new-tag"', 123, 1],
+      values: ['"new-tag"', 123, '1'],
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
       sql: `UPDATE "Company" SET "kind" = jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
-      values: ['"a"', 123, 1],
+      values: ['"a"', 123, '1'],
     },
     /**
      * Postgres is the one dialect whose `$push` references the accumulated expression twice - safe
@@ -1128,19 +1139,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
      */
     pullPushSameKey: {
       sql: `UPDATE "Company" SET "kind" = jsonb_set(jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
-      values: ['"a"', '"b"', 123, 1],
+      values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
       sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"private":1}', '"new-tag"', 123, 1],
+      values: ['{"private":1}', '"new-tag"', 123, '1'],
     },
     setPushSameKey: {
       sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
-      values: ['{"tags":["a"]}', '"b"', 123, 1],
+      values: ['{"tags":["a"]}', '"b"', 123, '1'],
     },
     pushUnsetCombined: {
       sql: 'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
-      values: ['"new-tag"', ['public'], 123, 1],
+      values: ['"new-tag"', ['public'], 123, '1'],
     },
   };
 
@@ -1149,12 +1160,17 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   /** A `$set` value that would be falsy in JS (`false`), to confirm it isn't dropped like a missing key. */
   shouldUpdateWithJsonSetBooleanFalse() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: { $set: { isArchived: false } }, updatedAt: 1 }),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        { kind: { $set: { isArchived: false } }, updatedAt: 1 },
+      ),
     );
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, "updatedAt" = $2 WHERE "id" = $3',
     );
-    expect(values).toEqual(['{"isArchived":false}', 1, 1]);
+    expect(values).toEqual(['{"isArchived":false}', 1, '1']);
   }
 
   /**
@@ -1200,7 +1216,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    */
 
   override shouldFind$nin() {
-    const values = [1, 2];
+    const values = ['1', '2'];
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
     );
@@ -1211,9 +1227,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   override shouldUpdateWithJsonbField() {
     const payload: UpdatePayload<Company>['kind'] = { private: 1 };
     const res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload, updatedAt: 123 }),
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: payload, updatedAt: 123 }),
     );
     expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
-    expect(res.values).toEqual(['{"private":1}', 123, 1]);
+    expect(res.values).toEqual(['{"private":1}', 123, '1']);
   }
 }

@@ -257,26 +257,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     }
   }
 
-  async shouldInsertManyWithAutoIncrementIdAsDefault() {
-    const ids = await this.querier.insertMany(LedgerAccount, [
-      {
-        name: 'Some Name A',
-      },
-      {
-        name: 'Some Name B',
-      },
-      {
-        name: 'Some Name C',
-      },
-    ]);
-    expect(ids).toHaveLength(3);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
-    const founds = await this.querier.findMany(LedgerAccount, {});
-    expect(founds.map(({ id }) => id)).toEqual(ids);
-  }
-
   async shouldInsertManyWithHeterogeneousFieldSets() {
     const ids = await this.querier.insertMany(User, [
       { name: 'Het A', email: 'heta@example.com', password: '123456789a!' },
@@ -653,6 +633,25 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       id,
       ...payload,
     });
+  }
+
+  /**
+   * Updating a 1-1 replaces the child rather than leaving the old row behind. `saveRelation` threads
+   * `isUpdate`, but only the to-many branch read it, so the update inserted a second row and a
+   * `$populate` then had two to choose from.
+   */
+  async shouldUpdateOneAndReplaceOneToOne() {
+    const id = await this.querier.insertOne(User, {
+      name: 'Profile Replace',
+      createdAt: 1,
+      profile: { picture: 'first', createdAt: 1 },
+    });
+
+    await this.querier.updateOneById(User, id, { profile: { picture: 'second', updatedAt: 2 } });
+
+    const profiles = await this.querier.findMany(Profile, { $select: { picture: true } });
+    expect(profiles).toHaveLength(1);
+    expect(profiles[0].picture).toBe('second');
   }
 
   async shouldUpdateWithJsonOperators() {
@@ -1513,6 +1512,53 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(updated2).toMatchObject({ name: 'Updated B' });
   }
 
+  /**
+   * A batch whose rows carry different columns. The `SET` list is derived from the batch, not from
+   * `payload[0]`: a first row carrying only the conflict column used to collapse the whole statement
+   * to `DO NOTHING`, dropping every later row's values.
+   */
+  async shouldUpsertManyWithHeterogeneousFieldSets() {
+    const pk1 = '507f1f77bcf86cd799439031';
+    const pk2 = '507f1f77bcf86cd799439032';
+
+    await this.querier.upsertMany(TaxCategory, { pk: true }, [
+      { pk: pk1, name: 'Het A' },
+      { pk: pk2, name: 'Het B' },
+    ]);
+
+    await this.querier.upsertMany(TaxCategory, { pk: true }, [{ pk: pk1 }, { pk: pk2, name: 'Het B updated' }]);
+
+    const found1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
+    const found2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
+    expect(found1).toMatchObject({ name: 'Het A' });
+    expect(found2).toMatchObject({ name: 'Het B updated' });
+  }
+
+  /**
+   * `saveMany` reports its ids in payload order, so the result can be zipped with what was passed -
+   * the contract `insertMany` already states. It used to concatenate its branches instead (named,
+   * then inserted, then updated), so any batch not already in that order came back permuted.
+   */
+  async shouldSaveManyReportingIdsInPayloadOrder() {
+    const [seeded] = await this.querier.insertMany(User, [{ name: 'Save Order Seed', createdAt: 1 }]);
+
+    const ids = await this.querier.saveMany(User, [
+      { id: seeded, name: 'Save Order Updated', updatedAt: 2 },
+      { name: 'Save Order New', createdAt: 2 },
+    ]);
+
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(seeded);
+    // Not a type assertion: the same declared `number` key is an `ObjectId` on MongoDB, and a
+    // BIGINT some SQL drivers hand back as a string. What is invariant is that it names the row.
+    expect(ids[1]).toBeDefined();
+
+    const updated = await this.querier.findOneById(User, ids[0], { $select: { name: true } });
+    expect(updated).toMatchObject({ name: 'Save Order Updated' });
+    const inserted = await this.querier.findOneById(User, ids[1], { $select: { name: true } });
+    expect(inserted).toMatchObject({ name: 'Save Order New' });
+  }
+
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
@@ -1610,7 +1656,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     await expect(this.querier.count(User, {})).resolves.toBe(3);
     await expect(this.querier.count(User, { $where: { companyId: null } as any })).resolves.toBe(3);
-    await expect(this.querier.count(User, { $where: { companyId: 1 } })).resolves.toBe(0);
+    await expect(this.querier.count(User, { $where: { companyId: '1' } })).resolves.toBe(0);
   }
 
   /** `max(0, total - $skip)`, capped at `$limit`. */
@@ -1677,15 +1723,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
-    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null as any })).resolves.toBe(
-      0,
-    );
-    await expect(this.querier.updateMany(User, { $where: { companyId: null } as any }, { companyId: 1 })).resolves.toBe(
-      3,
-    );
-    await expect(this.querier.updateMany(User, { $where: { companyId: 1 } }, { companyId: null as any })).resolves.toBe(
-      3,
-    );
+    await expect(
+      this.querier.updateMany(User, { $where: { companyId: '1' } }, { companyId: null as any }),
+    ).resolves.toBe(0);
+    await expect(this.querier.updateMany(User, { $where: { companyId: null } }, { companyId: '1' })).resolves.toBe(3);
+    await expect(
+      this.querier.updateMany(User, { $where: { companyId: '1' } }, { companyId: null as any }),
+    ).resolves.toBe(3);
   }
 
   async shouldThrowIfUnknownComparisonOperator() {
@@ -1833,7 +1877,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldSelectOneToManyEmpty() {
-    const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, -1, {
+    const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, '-1', {
       $populate: { itemAdjustments: true, creator: true },
     });
     expect(inventoryAdjustment).toBeUndefined();
@@ -1897,7 +1941,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async shouldDeleteMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-    await expect(this.querier.deleteMany(User, { $where: { companyId: 1 } })).resolves.toBe(0);
+    await expect(this.querier.deleteMany(User, { $where: { companyId: '1' } })).resolves.toBe(0);
     await expect(this.querier.deleteMany(User, { $where: { companyId: null } as any })).resolves.toBe(3);
   }
 
@@ -1989,15 +2033,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /** The filter bounds the deduplicated total as well, and a page never shrinks it. */
   async shouldFindManyAndCountDistinctRowsOfAPage() {
     await this.querier.insertMany(User, [
-      { name: 'a', email: 'dp1@test.com', companyId: 1 },
-      { name: 'a', email: 'dp2@test.com', companyId: 1 },
-      { name: 'b', email: 'dp3@test.com', companyId: 1 },
-      { name: 'c', email: 'dp4@test.com', companyId: 2 },
+      { name: 'a', email: 'dp1@test.com', companyId: '1' },
+      { name: 'a', email: 'dp2@test.com', companyId: '1' },
+      { name: 'b', email: 'dp3@test.com', companyId: '1' },
+      { name: 'c', email: 'dp4@test.com', companyId: '2' },
     ]);
 
     const [rows, total] = await this.querier.findManyAndCount(User, {
       $select: { name: true },
-      $where: { companyId: 1 },
+      $where: { companyId: '1' },
       $distinct: true,
       $limit: 1,
     });
@@ -2016,13 +2060,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /** The filter still bounds the total when a page is taken out of it. */
   async shouldFindManyAndCountAFilteredPage() {
     await this.querier.insertMany(User, [
-      { name: 'Alice', email: 'alice@test.com', companyId: 1 },
-      { name: 'Bob', email: 'bob@test.com', companyId: 1 },
-      { name: 'Charlie', email: 'charlie@test.com', companyId: 2 },
+      { name: 'Alice', email: 'alice@test.com', companyId: '1' },
+      { name: 'Bob', email: 'bob@test.com', companyId: '1' },
+      { name: 'Charlie', email: 'charlie@test.com', companyId: '2' },
     ]);
 
     const [page, total] = await this.querier.findManyAndCount(User, {
-      $where: { companyId: 1 },
+      $where: { companyId: '1' },
       $sort: { name: 1 },
       $limit: 1,
     });

@@ -1,11 +1,21 @@
-import { randomUUID } from 'node:crypto';
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
+import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
-import { getEntities, getMeta } from '../entity/index.js';
+import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, Item, TaxCategory, User } from '../test/index.js';
+import { createSpec, Item, Profile, TaxCategory, User } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
+
+/** A string key left to the driver, so MongoDB mints the `ObjectId` and the read converts it. */
+@Entity()
+class Ticket {
+  @Id({ type: String })
+  id?: string;
+
+  @Field({ type: String })
+  subject?: string;
+}
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   static replSet: MongoMemoryReplSet;
@@ -113,8 +123,8 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldUpsertManyReturnGeneratedIdsOnlyForInsertedDocs() {
     // Conflict path is `email`, not `_id` - so a newly-inserted document's `_id` is
     // MongoDB-generated and unknown to the caller ahead of time.
-    const existingEmail = `existing-${randomUUID()}@example.com`;
-    const newEmail = `new-${randomUUID()}@example.com`;
+    const existingEmail = `existing-${uuidv7()}@example.com`;
+    const newEmail = `new-${uuidv7()}@example.com`;
 
     await this.querier.insertOne(User, { name: 'Existing', email: existingEmail, createdAt: 1 });
 
@@ -132,6 +142,60 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     const inserted = await this.querier.findOne(User, { $select: { id: true }, $where: { email: newEmail } });
     expect(inserted).toBeDefined();
     expect(String(result.firstId)).toBe(String(inserted!.id));
+  }
+
+  /**
+   * A supplied key is the row's `_id`. It used to land under its own name beside an `_id` the driver
+   * minted, so the row was written and unreachable by the value the caller held.
+   */
+  async shouldKeepASuppliedKey() {
+    const id = await this.querier.insertOne(User, { id: 'supplied-key', name: 'supplied', createdAt: 1 });
+
+    expect(id).toBe('supplied-key');
+    expect(await this.querier.findOneById(User, 'supplied-key', { $select: { name: true } })).toMatchObject({
+      name: 'supplied',
+    });
+  }
+
+  /** The same for a key an `onInsert` generated - the documented portable-key pattern. */
+  async shouldKeepAKeyAnOnInsertGenerated() {
+    const id = await this.querier.insertOne(TaxCategory, { name: 'generated' });
+
+    expect(String(id)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(await this.querier.findOneById(TaxCategory, id, { $select: { name: true } })).toMatchObject({
+      name: 'generated',
+    });
+  }
+
+  /**
+   * A key the driver minted comes back as its hex string, the type the docs promise, not the
+   * `ObjectId` itself - which compared unequal to its own string form.
+   */
+  async shouldHandBackAMintedKeyAsAHexString() {
+    const id = await this.querier.insertOne(Ticket, { subject: 'minted' });
+
+    expect(typeof id).toBe('string');
+    expect(String(id)).toMatch(/^[0-9a-f]{24}$/);
+    expect(await this.querier.findOneById(Ticket, id, { $select: { subject: true } })).toMatchObject({
+      subject: 'minted',
+    });
+  }
+
+  /**
+   * A reference crosses both seams: written as the `ObjectId` the `$lookup` joins on, read back as
+   * the same hex string the parent's own key reads as, so the two compare equal in code.
+   */
+  async shouldRoundTripAReferenceThroughTheWire() {
+    const creatorId = await this.querier.insertOne(User, { name: 'creator', createdAt: 1 });
+    await this.querier.insertOne(Profile, { picture: 'pic', createdAt: 1, creatorId });
+
+    const user = await this.querier.findOneById(User, creatorId, {
+      $populate: { profile: { $select: { picture: true } } },
+    });
+    expect(user?.profile).toMatchObject({ picture: 'pic' });
+
+    const profile = await this.querier.findOne(Profile, { $select: { creatorId: true }, $where: { creatorId } });
+    expect(profile?.creatorId).toBe(creatorId);
   }
 
   async shouldFindManyWithSortAndLimit() {

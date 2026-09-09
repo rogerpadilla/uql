@@ -4,6 +4,7 @@ import {
   createTables,
   dropTables,
   InventoryAdjustment,
+  Invoice,
   LedgerAccount,
   TaxCategory,
   TypedRow,
@@ -152,16 +153,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * Expected `insertMany` IDs for a mixed batch (explicit ID in the middle), given the IDs the
-   * database actually assigned. `'returning'` dialects report every ID exactly;
-   * {@link MySqlLikeQuerierIt} overrides since header-derived IDs are unsafe for mixed batches
-   * (only the provided ID is reported, never inferred values).
-   */
-  protected expectedMixedBatchIds(persistedIds: IdValue<LedgerAccount>[]): IdValue<LedgerAccount>[] {
-    return persistedIds;
-  }
-
-  /**
    * `firstId` is asserted defined by default (every `'returning'`-ish dialect reports one).
    * {@link MySqlLikeQuerierIt} overrides to a no-op: MySQL has no `RETURNING`, so a manually
    * specified (non-auto-increment) PK reports no `firstId` on upsert.
@@ -272,19 +263,34 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect('number' in found.itemAdjustments![0]).toBe(false);
   }
 
+  /** A key left to the database is assigned by it: the shape only a SQL engine can offer. */
+  async shouldInsertManyWithAutoIncrementIdAsDefault() {
+    const ids = await this.querier.insertMany(Invoice, [
+      { description: 'Some Name A' },
+      { description: 'Some Name B' },
+      { description: 'Some Name C' },
+    ]);
+    expect(ids).toHaveLength(3);
+    for (const id of ids) {
+      expect(id).toBeDefined();
+    }
+    const founds = await this.querier.findMany(Invoice, { $sort: { id: 1 } });
+    expect(founds.map(({ id }) => id)).toEqual(ids);
+  }
+
   async shouldInsertManyWithProvidedAndGeneratedIds() {
-    const ids = await this.querier.insertMany(LedgerAccount, [
-      { name: 'Mixed A' },
-      { id: 5000, name: 'Mixed B' },
-      { name: 'Mixed C' },
+    const ids = await this.querier.insertMany(Invoice, [
+      { description: 'Mixed A' },
+      { id: 5000, description: 'Mixed B' },
+      { description: 'Mixed C' },
     ]);
     expect(ids).toHaveLength(3);
     expect(ids[1]).toBe(5000);
 
-    const founds = await this.querier.findMany(LedgerAccount, {
-      $select: { id: true, name: true },
-      $where: { name: ['Mixed A', 'Mixed B', 'Mixed C'] },
-      $sort: { name: 1 },
+    const founds = await this.querier.findMany(Invoice, {
+      $select: { id: true, description: true },
+      $where: { description: ['Mixed A', 'Mixed B', 'Mixed C'] },
+      $sort: { description: 1 },
     });
     expect(founds).toHaveLength(3);
     const persistedIds = founds.map(({ id }) => id);
@@ -292,6 +298,28 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       expect(id).toBeDefined();
     }
     expect(Number(persistedIds[1])).toBe(5000);
-    expect(ids).toEqual(this.expectedMixedBatchIds([persistedIds[0], 5000, persistedIds[2]]));
+    expect(ids).toEqual([persistedIds[0], 5000, persistedIds[2]]);
+  }
+
+  /**
+   * The same mixed batch, cascading. Header-derived ids are only sound when every row in the
+   * *statement* left the key to the database, and that was asked of the whole batch: one supplied id
+   * made every id `undefined`, so the cascade had no parent to point at and wrote a null foreign
+   * key, silently orphaning the child.
+   */
+  async shouldCascadeFromABatchMixingProvidedAndGeneratedIds() {
+    const ids = await this.querier.insertMany(Invoice, [
+      { description: 'mixed cascade a', lines: [{ amount: 50 }] },
+      { id: 5001, description: 'mixed cascade b' },
+    ]);
+
+    expect(ids[0]).toBeDefined();
+    expect(Number(ids[1])).toBe(5001);
+
+    const [found] = await this.querier.findMany(Invoice, {
+      $where: { description: 'mixed cascade a' },
+      $populate: { lines: { $select: { amount: true } } },
+    });
+    expect(found.lines).toMatchObject([{ amount: 50 }]);
   }
 }

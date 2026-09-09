@@ -7,6 +7,8 @@ import type {
   DialectFeatures,
   EntityData,
   EntityMeta,
+  FieldKey,
+  FieldOptions,
   FieldValue,
   JsonUpdateOp,
   Query,
@@ -39,6 +41,7 @@ import {
   assertNonNegativeInteger,
   buildQueryWhereAsMap,
   type CallbackKey,
+  columnFamily,
   entityName,
   fillOnFields,
   filterFieldKeys,
@@ -104,6 +107,14 @@ export const mongoDialectFeatures: DialectFeatures = {
   supportsTimestamptz: false,
   defaultStringAsText: false,
 };
+
+/** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
+const HEX_24 = /^[0-9a-f]{24}$/i;
+
+/** How a declared column type reads in a message: `Number`, `uuid` - not its whole source. */
+function declaredTypeName(type: unknown): string {
+  return typeof type === 'function' ? type.name : String(type);
+}
 
 export class MongoDialect extends AbstractDialect {
   protected override readonly featureDefaults = mongoDialectFeatures;
@@ -221,9 +232,10 @@ export class MongoDialect extends AbstractDialect {
       } else {
         this.assertNoRaw(val);
         this.assertKnownPathRoot(meta, key);
+        const isReference = !!meta.fields[key as FieldKey<E>]?.references;
         key = this.pathOf(meta, key);
-        if (key === MongoDialect.ID_KEY) {
-          val = this.getIdValue(val as IdValue);
+        if ((key === MongoDialect.ID_KEY || isReference) && !isOperatorObject(val)) {
+          val = this.toWireId(val);
         }
         if (isOperatorObject(val)) {
           val = this.transformOperators(val);
@@ -952,14 +964,25 @@ export class MongoDialect extends AbstractDialect {
     return renamed;
   }
 
+  private referenceKeys<E>(meta: EntityMeta<E>): readonly string[] {
+    let keys = this.#referenceKeys.get(meta);
+    if (!keys) {
+      keys = getKeys(meta.fields).filter((key) => meta.fields[key]?.references);
+      this.#referenceKeys.set(meta, keys);
+    }
+    return keys;
+  }
+
   // Keyed by the meta object itself; entity metadata is immutable once defined.
   readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
+  readonly #referenceKeys = new WeakMap<object, readonly string[]>();
 
-  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: E[] | undefined): E[] | undefined {
+  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[] | undefined): E[] | undefined {
     return docs?.map((doc) => this.normalizeId(meta, doc)) as E[] | undefined;
   }
 
-  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: E | undefined): E | undefined {
+  /** `doc` is the wire shape - `_id`, stored names, `ObjectId`s - and what comes back is the code's. */
+  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document | undefined): E | undefined {
     if (!doc) {
       return doc;
     }
@@ -967,9 +990,10 @@ export class MongoDialect extends AbstractDialect {
     const res = doc as Record<string, unknown>;
     const _id = MongoDialect.ID_KEY;
 
-    if (res[_id]) {
+    // `!== undefined`, not truthiness: `0` is a key MongoDB accepts and a truthy test dropped it.
+    if (res[_id] !== undefined) {
       const idKey = soleIdOf(meta, 'MongoDB');
-      res[idKey] = res[_id];
+      res[idKey] = this.fromWireId(res[_id]);
       if (idKey !== _id) {
         delete res[_id];
       }
@@ -981,6 +1005,12 @@ export class MongoDialect extends AbstractDialect {
       if (res[column] !== undefined) {
         res[key] = res[column];
         delete res[column];
+      }
+    }
+    // After the rename, so a renamed reference is converted under the name the code reads.
+    for (const key of this.referenceKeys(meta)) {
+      if (res[key] !== undefined) {
+        res[key] = this.fromWireId(res[key]);
       }
     }
 
@@ -998,15 +1028,23 @@ export class MongoDialect extends AbstractDialect {
     return res as E;
   }
 
-  public getIdValue<T extends IdValue>(value: T): T {
-    if (value instanceof ObjectId) {
-      return value;
+  /**
+   * The seam into the driver: a key, or a reference to one, as MongoDB stores it. A 24-hex string
+   * becomes an `ObjectId`, so a write agrees with the filter that will later look for it; anything
+   * else - a UUID, a number, an `ObjectId` already - is stored as given, which is how those keys keep
+   * their value. Strictly 24-hex: the driver also accepts any 12-byte string, and coercing one of
+   * those turned an ordinary short key into a foreign `ObjectId`. Arrays convert element-wise.
+   */
+  public toWireId(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return value.map((it) => this.toWireId(it));
     }
-    try {
-      return new ObjectId(value) as T;
-    } catch (e) {
-      return value;
-    }
+    return typeof value === 'string' && HEX_24.test(value) ? new ObjectId(value) : value;
+  }
+
+  /** The seam out of the driver: an `ObjectId` becomes its hex string, the type the code declares. */
+  public fromWireId(value: unknown): unknown {
+    return value instanceof ObjectId ? value.toHexString() : value;
   }
 
   public getPersistable<E extends Document>(
@@ -1104,23 +1142,54 @@ export class MongoDialect extends AbstractDialect {
     return [{ $set: assignments }, ...(unset.size > 0 ? [{ $unset: [...unset] }] : [])];
   }
 
+  /**
+   * Refuses a key the caller left to MongoDB that MongoDB cannot mint one of.
+   *
+   * The only key a server generates is an `ObjectId`, which {@link fromWireId} hands back as its hex
+   * string - so a key declared `String` is satisfiable and one declared `Number` is not. Answering a
+   * numeric declaration with a string is the lie this exists to refuse: the field says `number`, the
+   * value is not one, and every consumer that indexes or compares by it is quietly wrong. Prisma
+   * refuses the same shape at its schema, and this is the first moment uql can.
+   */
+  private assertMintableKey<E>(meta: EntityMeta<E>, field: FieldOptions): void {
+    if (columnFamily(field.type) === 'string') {
+      return;
+    }
+    throw new TypeError(
+      `'${entityName(meta)}.${meta.ids[0]}' is declared '${declaredTypeName(field.type)}' and left to the ` +
+        'database, which MongoDB cannot do: the only key it generates is an ObjectId, read back as a string. ' +
+        "Declare the key as a string, or give it an 'onInsert' generator.",
+    );
+  }
+
   public getPersistables<E extends Document>(
     meta: EntityMeta<E>,
     payload: EntityData<E> | EntityData<E>[],
     callbackKey: CallbackKey,
   ): Partial<E>[] {
-    // Not `columnOf`, which maps the primary key to `_id`: an update may not touch `_id` at all, and
-    // an insert leaves it to the driver. What that mapping refuses, a write has to refuse too.
+    // What `columnOf` refuses, a write has to refuse too.
     assertSoleId(meta, 'MongoDB');
+    const [idKey] = meta.ids;
     const payloads = fillOnFields(meta, payload, callbackKey);
     // Keys are resolved per document so heterogeneous payloads keep every provided field.
-    return payloads.map((it) =>
-      filterFieldKeys(meta, it, callbackKey).reduce<Partial<E>>((acc, key) => {
-        const field = meta.fields[key];
-        (acc as Record<string, unknown>)[this.resolveColumnName(key, field!)] = it[key];
-        return acc;
-      }, {} as Partial<E>),
-    );
+    const inserting = callbackKey === 'onInsert';
+    return payloads.map((it) => {
+      // The key is `_id` on an insert and immutable on an update, so it is left out of one. It used
+      // to land under its own name beside the `_id` the driver minted: a supplied id, or one an
+      // `onInsert` generated, was written and unreachable by the value the caller held.
+      const named = inserting && it[idKey] != null;
+      if (inserting && !named) {
+        // Nothing named the key, so the database is being asked to mint one.
+        this.assertMintableKey(meta, meta.fields[idKey]!);
+      }
+      const doc: Record<string, unknown> = named ? { [MongoDialect.ID_KEY]: this.toWireId(it[idKey]) } : {};
+      for (const key of filterFieldKeys(meta, it, callbackKey)) {
+        if (key === idKey) continue;
+        const field = meta.fields[key]!;
+        doc[this.resolveColumnName(key, field)] = field.references ? this.toWireId(it[key]) : it[key];
+      }
+      return doc as Partial<E>;
+    });
   }
 
   /**
@@ -1358,8 +1427,6 @@ type MongoAggregationUnwind = {
   readonly path?: string;
   readonly preserveNullAndEmptyArrays?: boolean;
 };
-
-type IdValue = string | ObjectId;
 
 export type ExtractedVectorSort<E> = {
   readonly vectorKey: string;

@@ -145,15 +145,18 @@ it('augmentWhere empty', () => {
 it('augmentWhere', () => {
   const meta = getMeta(User);
   expect(augmentWhere(meta, { name: 'a' }, { name: 'b' })).toEqual({ name: 'b' });
-  expect(augmentWhere(meta, { name: 'a' }, { id: 1 })).toEqual({ name: 'a', id: 1 });
-  expect(augmentWhere(meta, { name: 'a' }, { $and: [{ id: 1 }, { id: 2 }] })).toEqual({
+  expect(augmentWhere(meta, { name: 'a' }, { id: '1' })).toEqual({ name: 'a', id: '1' });
+  expect(augmentWhere(meta, { name: 'a' }, { $and: [{ id: '1' }, { id: '2' }] })).toEqual({
     name: 'a',
-    $and: [{ id: 1 }, { id: 2 }],
+    $and: [{ id: '1' }, { id: '2' }],
   });
-  expect(augmentWhere(meta, 1, { $or: [{ id: 2 }, { id: 3 }] })).toEqual({ id: 1, $or: [{ id: 2 }, { id: 3 }] });
+  expect(augmentWhere(meta, '1', { $or: [{ id: '2' }, { id: '3' }] })).toEqual({
+    id: '1',
+    $or: [{ id: '2' }, { id: '3' }],
+  });
   const rawFilter = raw(() => 'a > 1');
-  expect(augmentWhere(meta, rawFilter, 1)).toEqual({ $and: [rawFilter], id: 1 });
-  expect(augmentWhere(meta, 1, rawFilter)).toEqual({ id: 1, $and: [rawFilter] });
+  expect(augmentWhere(meta, rawFilter, '1')).toEqual({ $and: [rawFilter], id: '1' });
+  expect(augmentWhere(meta, '1', rawFilter)).toEqual({ id: '1', $and: [rawFilter] });
 });
 
 it('getFieldCallbackValue', () => {
@@ -172,14 +175,14 @@ it('getSoftDeleteValue', () => {
 
 it('filterFieldKeys', () => {
   const meta = getMeta(User);
-  expect(filterFieldKeys(meta, { id: 1, name: 'John' }, 'onInsert')).toEqual(['id', 'name']);
+  expect(filterFieldKeys(meta, { id: '1', name: 'John' }, 'onInsert')).toEqual(['id', 'name']);
   // email is not updatable
   expect(filterFieldKeys(meta, { email: 'a@b.com' }, 'onUpdate')).toEqual([]);
 });
 
 it('fillOnFields', () => {
   const meta = getMeta(User);
-  const payload: Partial<User> & { id: number } = { id: 1 };
+  const payload: Partial<User> & { id: string } = { id: '1' };
   fillOnFields(meta, payload, 'onInsert');
   expect(payload.createdAt).toBeLessThanOrEqual(Date.now());
 });
@@ -263,8 +266,8 @@ class Enrolled {
 
 describe('buildQueryWhereAsMap', () => {
   it('names the one key column for a bare value, and an `IN` for a list of them', () => {
-    expect(buildQueryWhereAsMap(getMeta(User), 1)).toEqual({ id: 1 });
-    expect(buildQueryWhereAsMap(getMeta(User), [1, 2])).toEqual({ id: [1, 2] });
+    expect(buildQueryWhereAsMap(getMeta(User), '1')).toEqual({ id: '1' });
+    expect(buildQueryWhereAsMap(getMeta(User), ['1', '2'])).toEqual({ id: ['1', '2'] });
     expect(buildQueryWhereAsMap(getMeta(User), [])).toEqual({ id: [] });
   });
 

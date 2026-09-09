@@ -4,9 +4,11 @@ import {
   AfterInsert,
   AfterLoad,
   AfterUpdate,
+  AfterUpsert,
   BeforeDelete,
   BeforeInsert,
   BeforeUpdate,
+  BeforeUpsert,
   Entity,
   Field,
   Id,
@@ -69,6 +71,16 @@ class Book {
   @AfterDelete()
   recordAfterDelete(this: Book) {
     log.push(`afterDelete:${this.title}`);
+  }
+
+  @BeforeUpsert()
+  recordBeforeUpsert(this: Book) {
+    log.push(`beforeUpsert:${this.title}`);
+  }
+
+  @AfterUpsert()
+  recordAfterUpsert(this: Book) {
+    log.push(`afterUpsert:${this.title}`);
   }
 
   @AfterLoad()
@@ -439,13 +451,15 @@ describe('lifecycle hooks', () => {
   });
 
   /**
-   * Upsert stays hook-free on purpose: which branch a row takes is decided by the database as the
-   * statement runs, so there is no honest moment to fire `beforeInsert` rather than `beforeUpdate`.
+   * An upsert fires its own pair, never the insert's or the update's: which branch a row takes is
+   * decided by the database as the statement runs, so there is no honest moment to fire
+   * `beforeInsert` rather than `beforeUpdate`. There is one to fire `beforeUpsert`, and firing
+   * nothing at all was how an audit trail silently skipped this path.
    */
-  it('should not run insert or update hooks for an upsert', async () => {
+  it('should run upsert hooks, and neither the insert nor the update ones, for an upsert', async () => {
     await querier.upsertOne(Book, { id: true }, { id: 1, title: 'Upserted' });
 
-    expect(log).toEqual([]);
+    expect(log).toEqual(['beforeUpsert:Upserted', 'afterUpsert:Upserted']);
     expect(await querier.findMany(Book, { $select: { title: true, slug: true } })).toEqual([
       { title: 'Upserted', slug: null },
     ]);

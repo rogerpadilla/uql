@@ -134,25 +134,25 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     expect(ast.relationships.length).toBe(0);
   });
 
-  it('should skip relation if columns are virtual (no columns created)', () => {
+  it('should skip relation if columns are inlined computed (no columns created)', () => {
     @Entity()
-    class VirtualTarget {
+    class ComputedTarget {
       @Id({ type: Number }) id?: number;
     }
 
     @Entity()
-    class VirtualSource {
+    class ComputedSource {
       @Id({ type: Number }) id?: number;
 
-      @Field({ type: Number, virtual: raw`1` })
+      @Field({ type: Number, computed: raw`1` })
       targetId?: number;
 
-      @ManyToOne({ entity: () => VirtualTarget, references: [{ local: 'targetId', foreign: 'id' }] })
-      target?: VirtualTarget;
+      @ManyToOne({ entity: () => ComputedTarget, references: [{ local: 'targetId', foreign: 'id' }] })
+      target?: ComputedTarget;
     }
 
-    const ast = buildSchemaAST([VirtualTarget, VirtualSource]);
-    // Relation depends on 'targetId' column, but it is virtual, so no column => no relation in AST
+    const ast = buildSchemaAST([ComputedTarget, ComputedSource]);
+    // Relation depends on 'targetId' column, but it is inlined, so no column => no relation in AST
     expect(ast.relationships.length).toBe(0);
   });
 
@@ -190,7 +190,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     }
 
     // A resolver answering differently every time names the index a column the table does not have -
-    // the only way left to reach that, now that `@Field({ virtual, index })` is rejected outright.
+    // the only way left to reach that, now that `@Field({ computed, index })` is rejected outright.
     let callCount = 0;
     const ast = buildSchemaAST([RenamedColumn], { resolveColumnName: () => `c${++callCount}` });
 

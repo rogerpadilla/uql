@@ -17,9 +17,9 @@ import {
   UserWithNonUpdatableId,
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
-import { getKeys } from '../../util/index.js';
+import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
-import { defineEntity, defineRelation, getEntities, getMeta } from './definition.js';
+import { defineEntity, defineField, defineRelation, getEntities, getMeta } from './definition.js';
 
 it('User', () => {
   const meta = getMeta(User);
@@ -38,7 +38,7 @@ it('User', () => {
     ids: ['id'] as const,
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
         references: expect.anything(),
@@ -91,7 +91,7 @@ it('Profile', () => {
     ids: ['pk' as IdKey<Profile>],
     processedAt: expect.any(Number),
     fields: {
-      pk: { name: 'pk', type: Number, isId: true as const },
+      pk: { name: 'pk', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
         references: expect.anything(),
@@ -128,7 +128,7 @@ it('Item', () => {
     ids: ['id' as const],
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
         references: expect.anything(),
@@ -163,7 +163,7 @@ it('Item', () => {
       tagsCount: {
         name: 'tagsCount',
         type: Number,
-        virtual: expect.any(QueryRaw),
+        computed: expect.any(QueryRaw),
       },
     },
     relations: {
@@ -223,7 +223,8 @@ it('Tag', () => {
       id: {
         isId: true as const,
         name: 'id',
-        type: Number,
+        type: String,
+        onInsert: expect.anything(),
       },
       companyId: {
         name: 'companyId',
@@ -241,7 +242,7 @@ it('Tag', () => {
       itemsCount: {
         name: 'itemsCount',
         type: Number,
-        virtual: expect.objectContaining({
+        computed: expect.objectContaining({
           [RAW_VALUE]: expect.any(Function),
         }),
       },
@@ -289,7 +290,7 @@ it('ItemTag', () => {
     ids: ['id' as const],
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       itemId: {
         name: 'itemId',
         references: expect.anything(),
@@ -361,7 +362,7 @@ it('Tax', () => {
     ids: ['id' as const],
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       categoryId: {
         name: 'categoryId',
         references: expect.anything(),
@@ -417,7 +418,7 @@ it('ItemAdjustment', () => {
     ids: ['id' as const],
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       buyPrice: {
         name: 'buyPrice',
         type: Number,
@@ -493,7 +494,7 @@ it('InventoryAdjustment', () => {
     ids: ['id' as const],
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       companyId: {
         name: 'companyId',
         references: expect.anything(),
@@ -539,7 +540,7 @@ it('MeasureUnitCategory', () => {
     softDelete: 'deletedAt' as const,
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       name: { name: 'name', type: String },
       companyId: {
         name: 'companyId',
@@ -584,7 +585,7 @@ it('MeasureUnit', () => {
     softDelete: 'deletedAt' as const,
     processedAt: expect.any(Number),
     fields: {
-      id: { name: 'id', type: Number, isId: true as const },
+      id: { name: 'id', type: String, isId: true as const, onInsert: expect.anything() },
       name: { name: 'name', type: String },
       categoryId: {
         name: 'categoryId',
@@ -801,6 +802,16 @@ it('at most one softDelete field', () => {
       archivedAt?: Date;
     }
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
+});
+
+it('refuses a field giving both the computed option and its deprecated alias', () => {
+  class TwoNames {
+    total?: number;
+  }
+
+  expect(() => defineField(TwoNames, 'total', { type: Number, virtual: raw`1`, computed: raw`1` })).toThrow(
+    "'TwoNames.total' gives both 'virtual' and 'computed'.",
+  );
 });
 
 it('auto-generates the FK column from a relation-only declaration', () => {

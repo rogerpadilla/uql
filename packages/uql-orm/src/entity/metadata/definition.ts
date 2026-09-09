@@ -1,5 +1,6 @@
 import type {
   CheckOptions,
+  EntityData,
   EntityId,
   EntityIndexInput,
   EntityMembers,
@@ -280,13 +281,25 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
 }
 
 /**
+ * Whether the caller named every column of the row's primary key, so {@link idOf} can name the row.
+ *
+ * `!= null` rather than falsiness: `0` and an empty string are ids a row can legitimately carry, and
+ * reading them as "no id" is how a write of that row turned into a second insert. Distinct from
+ * "does the row carry this column", which an insert asks of `undefined` alone because that is what
+ * decides whether the column appears in its `VALUES` list at all.
+ */
+export function namesKey<E>(meta: EntityMeta<E>, row: EntityData<E>): boolean {
+  return meta.ids.every((key) => row[key] != null);
+}
+
+/**
  * A row's primary key in the shape a `$where` takes: the value itself for a single key, an object
  * carrying every key for a composite - which is exactly {@link EntityId}.
  *
  * What a settled write names its rows by, and what an insert hands back. Naming a composite row by
  * one of its columns would address every row agreeing on that one.
  */
-export function idOf<E>(meta: EntityMeta<E>, row: E): EntityId<E> {
+export function idOf<E>(meta: EntityMeta<E>, row: EntityData<E>): EntityId<E> {
   const { ids } = meta;
   if (ids.length === 1) {
     return row[ids[0]];

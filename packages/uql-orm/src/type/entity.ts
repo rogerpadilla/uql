@@ -737,6 +737,11 @@ export type HookEvent =
   | 'afterInsert'
   | 'beforeUpdate'
   | 'afterUpdate'
+  // An upsert has its own pair rather than borrowing the insert's or the update's: which branch a
+  // row takes is decided by the database as the statement runs, so there is no honest moment to
+  // fire one of those - but there is an honest moment to fire this.
+  | 'beforeUpsert'
+  | 'afterUpsert'
   | 'beforeDelete'
   | 'afterDelete'
   | 'afterLoad';

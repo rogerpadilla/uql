@@ -28,17 +28,17 @@ class PostgresDialectSpec extends PgFamilySpec {
     super.shouldUpdateWithJsonbField();
     const payload: UpdatePayload<Company>['kind'] = { private: 1 };
     const res = this.exec(
-      (ctx) => this.pgDialect.update(ctx, Company, { $where: { id: 1 } }, { kind: payload, updatedAt: 123 }),
+      (ctx) => this.pgDialect.update(ctx, Company, { $where: { id: '1' } }, { kind: payload, updatedAt: 123 }),
       this.pgDialect,
     );
     expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
-    expect(res.values).toEqual(['{"private":1}', 123, 1]);
+    expect(res.values).toEqual(['{"private":1}', 123, '1']);
   }
 
   /** The family's binding, then each wire driver's: node-pg a native array, the wire clients a literal. */
   override shouldFind$nin() {
     super.shouldFind$nin();
-    const values = [1, 2];
+    const values = ['1', '2'];
     let res = this.exec(
       (ctx) => this.pgDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
       this.pgDialect,
@@ -150,7 +150,7 @@ class PostgresDialectSpec extends PgFamilySpec {
         this.bunSqlPostgresDialect.update(
           ctx,
           Company,
-          { $where: { id: 1 } },
+          { $where: { id: '1' } },
           { kind: JSON_UPDATE_PAYLOADS.push, updatedAt: 123 },
         ),
       this.bunSqlPostgresDialect,
@@ -158,7 +158,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
-    expect(values).toEqual(['"new-tag"', 123, 1]);
+    expect(values).toEqual(['"new-tag"', 123, '1']);
   }
 
   /**

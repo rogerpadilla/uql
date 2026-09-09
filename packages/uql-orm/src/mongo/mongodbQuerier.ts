@@ -130,7 +130,11 @@ export class MongodbQuerier extends AbstractQuerier {
     { joins, parents }: ParentPartition,
   ): Promise<E[]> {
     const queries = parents.map((parent) => queryChildrenOf(q, joins, parent));
-    // A vector sort needs a pipeline of its own shape, which only `internalFindMany` builds.
+    // A vector sort is not a degraded fallback here, it is the only expressible form: `$vectorSearch`
+    // has to be the first stage of a pipeline, so it cannot be one of N `$unionWith` branches. Read a
+    // parent at a time it stays correct, because `buildVectorSearchStage` passes the query's `$where`
+    // - which carries this parent's key - into the search as its filter, so each parent gets its own
+    // nearest rather than a share of the collection's.
     if (this.dialect.extractVectorSort(q.$sort)) {
       return this.readEachInTurn(entity, queries);
     }
@@ -389,7 +393,7 @@ export class MongodbQuerier extends AbstractQuerier {
         this.collection(entity).insertMany(persistables, { session }),
       );
 
-      const ids = Object.values(insertedIds) as IdValue<E>[];
+      const ids = Object.values(insertedIds).map((id) => this.dialect.fromWireId(id)) as IdValue<E>[];
 
       const idKey = soleIdOf(meta, 'insert');
       for (const [index, it] of payloads.entries()) {
@@ -417,7 +421,7 @@ export class MongodbQuerier extends AbstractQuerier {
       // has to name the rows it picked rather than touching every match.
       const where =
         this.dialect.constrainsRelations(entity, qm.$where) || isPagedQuery(qm)
-          ? ({ _id: { $in: await this.settleIds(entity, qm, opts) } } as Filter<E>)
+          ? ({ _id: { $in: this.dialect.toWireId(await this.settleIds(entity, qm, opts)) } } as Filter<E>)
           : this.dialect.where(entity, qm.$where, opts);
       // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
       const update = this.dialect.getUpdateFilter<E>(persistable);
@@ -434,6 +438,22 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
+  /**
+   * `_id` is immutable, so a key the payload names can only be written on the insert branch of an
+   * upsert; in `$set` it would refuse every matched document. Everything else updates either way.
+   */
+  private upsertUpdate<E extends Document>(persistable: Partial<E>): UpdateFilter<E> {
+    const { _id, ...rest } = persistable as Document;
+    const update: Document = {};
+    if (hasKeys(rest)) {
+      update['$set'] = rest;
+    }
+    if (_id !== undefined) {
+      update['$setOnInsert'] = { _id };
+    }
+    return update as UpdateFilter<E>;
+  }
+
   private buildConflictFilter<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
@@ -446,7 +466,7 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.dialect.where(entity, where);
   }
 
-  override async upsertOne<E extends Document>(
+  protected override async internalUpsertOne<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
@@ -457,7 +477,7 @@ export class MongodbQuerier extends AbstractQuerier {
       const meta = getMeta(entity);
       const persistable = this.dialect.getPersistable(meta, payload, 'onInsert');
       const filter = this.buildConflictFilter(entity, conflictPaths, payload);
-      const update: UpdateFilter<E> = { $set: persistable };
+      const update = this.upsertUpdate(persistable);
 
       const res = await this.execute((session) =>
         this.collection(entity).findOneAndUpdate(filter, update, {
@@ -468,7 +488,7 @@ export class MongodbQuerier extends AbstractQuerier {
         }),
       );
 
-      const firstId = res?.value?._id as unknown as string;
+      const firstId = this.dialect.fromWireId(res?.value?._id) as PrimaryKey | undefined;
       // `updatedExisting` is false when a new document was inserted (upserted).
       const created = res?.lastErrorObject?.['updatedExisting'] === false;
 
@@ -476,7 +496,7 @@ export class MongodbQuerier extends AbstractQuerier {
     });
   }
 
-  override async upsertMany<E extends Document>(
+  protected override async internalUpsertMany<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
@@ -493,7 +513,7 @@ export class MongodbQuerier extends AbstractQuerier {
       const operations = payload.map((item) => {
         const persistable = this.dialect.getPersistable(meta, item, 'onInsert');
         const filter = this.buildConflictFilter(entity, conflictPaths, item);
-        const update: UpdateFilter<E> = { $set: persistable };
+        const update = this.upsertUpdate(persistable);
 
         return {
           updateOne: {
@@ -511,7 +531,7 @@ export class MongodbQuerier extends AbstractQuerier {
       // updated document's `_id` isn't in the response, so it's simply not represented here - same
       // "exact where knowable, absent otherwise" convention `RETURNING`-based SQL dialects use for
       // rows that hit `DO NOTHING`.
-      const ids = Object.values(res.upsertedIds) as PrimaryKey[];
+      const ids = Object.values(res.upsertedIds).map((id) => this.dialect.fromWireId(id)) as PrimaryKey[];
 
       return { changes, ids, firstId: ids[0] };
     });
@@ -541,7 +561,7 @@ export class MongodbQuerier extends AbstractQuerier {
         const softDeleteColumn = this.dialect.resolveColumnName(meta.softDelete as string, field);
         const updateResult = await this.execute((session) =>
           this.collection(entity).updateMany(
-            { _id: { $in: ids } } as Filter<E>,
+            { _id: { $in: this.dialect.toWireId(ids) } } as Filter<E>,
             { $set: { [softDeleteColumn]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
             {
               session,
@@ -551,7 +571,7 @@ export class MongodbQuerier extends AbstractQuerier {
         changes = updateResult.matchedCount;
       } else {
         const deleteResult = await this.execute((session) =>
-          this.collection(entity).deleteMany({ _id: { $in: ids } } as Filter<E>, { session }),
+          this.collection(entity).deleteMany({ _id: { $in: this.dialect.toWireId(ids) } } as Filter<E>, { session }),
         );
         changes = deleteResult.deletedCount;
       }

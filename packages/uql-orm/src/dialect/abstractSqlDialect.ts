@@ -368,10 +368,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         const field = meta.fields[key];
         if (!field) return;
         if (isInlinedExpression(field)) {
+          // Qualified even when nothing else in this statement is: the expression is spliced in, and
+          // one that opens a correlated subquery has the inner table's columns in scope, so a bare
+          // `"id"` would bind to *that* table instead of this one. `SELECT "Item"."id" FROM "Item"`
+          // is valid on every engine, so naming the table costs nothing where it is not needed.
+          const qualified = opts.prefix ?? this.resolveTableAlias(meta);
           this.getRawValue(ctx, {
             value: computedExpression(field)!.as(key),
-            prefix: opts.prefix,
-            escapedPrefix,
+            prefix: qualified,
+            escapedPrefix: this.escapeId(qualified, true, true),
             autoPrefixAlias: opts.autoPrefixAlias,
           });
           return;
@@ -752,13 +757,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * The SQL a field comparison reads its left-hand side from. A virtual field builds its expression
+   * The SQL a field comparison reads its left-hand side from. An inlined field builds its expression
    * as text rather than appending it, so every operator gets a real operand to wrap - `LOWER(...)`,
    * `NOT (... <=> ...)` - instead of having to fall back to a form that takes none.
    */
   protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryOptions): string {
-    const field = getMeta(entity).fields[key];
-    return this.inlinedOperand(ctx, field, opts.prefix) ?? this.columnWithPrefix(key, field, opts.prefix);
+    const meta = getMeta(entity);
+    const field = meta.fields[key];
+    return (
+      this.inlinedOperand(ctx, field, opts.prefix ?? this.resolveTableAlias(meta)) ??
+      this.columnWithPrefix(key, field, opts.prefix)
+    );
   }
 
   /**
@@ -1156,7 +1165,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   private sortColumn<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, prefix: string | undefined): string {
     const field = meta.fields[key as FieldKey<E>];
     if (field) {
-      return this.inlinedOperand(ctx, field, prefix) ?? this.columnWithPrefix(key, field, prefix);
+      return (
+        this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta)) ??
+        this.columnWithPrefix(key, field, prefix)
+      );
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
     return json ? this.jsonPathExpr(json.column, json.jsonPath, 'text') : this.escapeId(key);

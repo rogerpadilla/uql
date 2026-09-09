@@ -1,5 +1,13 @@
 import type { CrudOperation } from '../../http/contract.js';
-import type { EntityData, IdValue, QuerierResult, QueryOptions, SharedQuerier, Type } from '../../type/index.js';
+import type {
+  EntityData,
+  EntityId,
+  IdValue,
+  QuerierResult,
+  QueryOptions,
+  SharedQuerier,
+  Type,
+} from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -25,13 +33,13 @@ export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, Q
     entity: Type<E>,
     payload: EntityData<E>,
     opts?: RequestOptions,
-  ): QuerierResult<'client', IdValue<E> | undefined>;
+  ): QuerierResult<'client', EntityId<E> | undefined>;
 
   saveMany<E extends object>(
     entity: Type<E>,
     payload: EntityData<E>[],
     opts?: RequestOptions,
-  ): QuerierResult<'client', (IdValue<E> | undefined)[]>;
+  ): QuerierResult<'client', (EntityId<E> | undefined)[]>;
 }
 
 type AssertEmpty<T extends never> = T;

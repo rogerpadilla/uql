@@ -24,47 +24,47 @@ it('unflatObjects - empty', () => {
 it('unflatObjects', () => {
   const source: RawRow[] = [
     {
-      id: 1,
+      id: '1',
       name: 'Auxiliar',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: null,
-      creatorId: 1,
-      companyId: 1,
+      creatorId: '1',
+      companyId: '1',
     },
     {
-      id: 2,
+      id: '2',
       name: 'Principal',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      creatorId: 1,
-      companyId: 1,
+      creatorId: '1',
+      companyId: '1',
     },
   ];
   const result = unflatObjects(source);
   const expected: Storehouse[] = [
     {
-      id: 1,
+      id: '1',
       name: 'Auxiliar',
       address: null as any,
       description: null as any,
       createdAt: 1,
       updatedAt: null as any,
-      creatorId: 1,
-      companyId: 1,
+      creatorId: '1',
+      companyId: '1',
     },
     {
-      id: 2,
+      id: '2',
       name: 'Principal',
       address: null,
       description: null,
       createdAt: 1,
       updatedAt: 1578759519913,
-      creatorId: 1,
-      companyId: 1,
+      creatorId: '1',
+      companyId: '1',
     },
   ];
   expect(result).toEqual(expected);
@@ -73,67 +73,67 @@ it('unflatObjects', () => {
 it('unflatObjects deep', () => {
   const source = [
     {
-      id: 9,
+      id: '9',
       buyPrice: 1000,
       number: 10,
-      'item.id': 1,
+      'item.id': '1',
       'item.name': 'Arepa de Yuca y Queso x 6',
       'item.createdAt': 1,
       'item.buyLedgerAccount': 1,
       'item.saleLedgerAccount': 1,
       'item.tax': 1,
-      'item.companyId': 1,
+      'item.companyId': '1',
       'item.measureUnit': 1,
       'item.inventoryable': 1,
-      'item.buyLedgerAccount.id': 1,
+      'item.buyLedgerAccount.id': '1',
       'item.buyLedgerAccount.name': 'Ventas',
-      'item.saleLedgerAccount.id': 1,
+      'item.saleLedgerAccount.id': '1',
       'item.saleLedgerAccount.name': 'Ventas',
-      'item.tax.id': 1,
+      'item.tax.id': '1',
       'item.tax.name': 'IVA 0%',
       'item.tax.percentage': 0,
       'item.tax.category.pk': '1',
       'item.tax.category.name': 'Impuestos',
       'item.tax.category.description': 'Nacionales',
-      'item.measureUnit.id': 1,
+      'item.measureUnit.id': '1',
       'item.measureUnit.name': 'Unidad',
       'item.creatorId': null as unknown as string,
       'item.creator.id': null as unknown as string,
       'item.creator.name': null as unknown as string,
     },
     {
-      id: 15,
+      id: '15',
       buyPrice: 2000,
       number: 20,
-      'item.id': 2,
+      'item.id': '2',
       'item.name': 'Pony Malta 2 litros',
       'item.createdAt': 1,
-      'item.companyId': 1,
-      'item.creatorId': 5,
-      'item.creator.id': 5,
+      'item.companyId': '1',
+      'item.creatorId': '5',
+      'item.creator.id': '5',
       'item.creator.name': 'Roshi Master',
     },
   ];
   const result = unflatObjects<Item>(source);
   const expected: ItemAdjustment[] = [
     {
-      id: 9,
+      id: '9',
       buyPrice: 1000,
       number: 10,
       item: {
-        id: 1,
+        id: '1',
         name: 'Arepa de Yuca y Queso x 6',
         createdAt: 1,
         buyLedgerAccount: {
-          id: 1,
+          id: '1',
           name: 'Ventas',
         },
         saleLedgerAccount: {
-          id: 1,
+          id: '1',
           name: 'Ventas',
         },
         tax: {
-          id: 1,
+          id: '1',
           name: 'IVA 0%',
           percentage: 0,
           category: {
@@ -142,26 +142,26 @@ it('unflatObjects deep', () => {
             description: 'Nacionales',
           },
         },
-        companyId: 1,
+        companyId: '1',
         measureUnit: {
-          id: 1,
+          id: '1',
           name: 'Unidad',
         },
         inventoryable: 1 as any as boolean,
       },
     },
     {
-      id: 15,
+      id: '15',
       buyPrice: 2000,
       number: 20,
       item: {
-        id: 2,
+        id: '2',
         name: 'Pony Malta 2 litros',
         createdAt: 1,
-        companyId: 1,
-        creatorId: 5,
+        companyId: '1',
+        creatorId: '5',
         creator: {
-          id: 5,
+          id: '5',
           name: 'Roshi Master',
         },
       },
@@ -313,17 +313,17 @@ it('unflatObject - flat row (no nested paths)', () => {
 
 it('unflatObject - deep nested row', () => {
   const row = {
-    id: 1,
-    'item.id': 10,
+    id: '1',
+    'item.id': '10',
     'item.name': 'Widget',
     'item.category.name': 'Tools',
   };
   const attrsPaths = obtainAttrsPaths(row);
   const result = unflatObject(row, attrsPaths);
   expect(result).toEqual({
-    id: 1,
+    id: '1',
     item: {
-      id: 10,
+      id: '10',
       name: 'Widget',
       category: { name: 'Tools' },
     },
@@ -339,8 +339,8 @@ it('unflatObject - skips null values', () => {
 
 it('unflatObject - produces same result as unflatObjects for single row', () => {
   const row = {
-    id: 5,
-    'item.id': 2,
+    id: '5',
+    'item.id': '2',
     'item.name': 'Test',
     'item.tax.name': 'IVA',
   };
@@ -376,7 +376,7 @@ describe('buildUpdateResult', () => {
   it('should ignore a zero header id (no auto-generated key, e.g. mysql2 insertId=0)', () => {
     const res = buildUpdateResult({
       changes: 3,
-      id: 0,
+      id: '0',
       insertIdSource: 'firstId',
     });
     expect(res).toEqual({
@@ -391,7 +391,7 @@ describe('buildUpdateResult', () => {
   it('should ignore the header id on "returning" dialects (rows are the source of truth)', () => {
     const res = buildUpdateResult({
       changes: 2,
-      id: 7,
+      id: '7',
       insertIdSource: 'returning',
     });
     expect(res).toEqual({

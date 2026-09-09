@@ -1,7 +1,7 @@
-import { randomUUID } from 'node:crypto';
 import { rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it } from 'vitest';
 import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
@@ -11,7 +11,7 @@ import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 // `:memory:` is avoided here: `client.transaction()` opens a separate connection, and SQLite's
 // in-memory databases are private per-connection without shared-cache mode, so that connection
 // sees a blank schema. A real file is shared across connections like any other database file.
-const dbFile = join(tmpdir(), `uql-libsql-${randomUUID()}.db`);
+const dbFile = join(tmpdir(), `uql-libsql-${uuidv7()}.db`);
 
 export class LibsqlQuerierIt extends VectorQuerierIt {
   constructor() {
@@ -36,7 +36,7 @@ createSpec(new LibsqlQuerierIt());
 
 describe('foreign key enforcement', () => {
   it('should enforce without the pool setting a pragma, which libSQL does itself', async () => {
-    const file = join(tmpdir(), `uql-libsql-fk-${randomUUID()}.db`);
+    const file = join(tmpdir(), `uql-libsql-fk-${uuidv7()}.db`);
     const pool = new LibsqlQuerierPool({ url: `file:${file}` });
     const querier = await pool.getQuerier();
 

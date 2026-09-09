@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { Company, Item, Profile, Tag, User } from '../test/index.js';
+import { Invoice, Company, Item, Profile, Tag, User } from '../test/index.js';
 import type { Query } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { escapeSqlId } from '../util/sql.util.js';
@@ -225,7 +225,7 @@ describe('SQL generation - edge cases', () => {
   it('handles numeric zero in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { id: 0 } });
+    pg.find(ctx, Invoice, { $where: { id: 0 } });
     expect(ctx.sql).not.toContain('DROP');
     expect(ctx.values).toContain(0);
   });

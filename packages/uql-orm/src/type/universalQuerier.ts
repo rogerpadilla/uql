@@ -253,7 +253,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the ID
    */
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined>;
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined>;
 
   /**
    * Insert or update records.
@@ -261,7 +261,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

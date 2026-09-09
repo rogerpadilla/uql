@@ -41,11 +41,11 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  override upsertOne(): any {
+  protected override internalUpsertOne(): any {
     return Promise.resolve({ firstId: null, changes: 0 });
   }
 
-  override upsertMany(): any {
+  protected override internalUpsertMany(): any {
     return Promise.resolve({ changes: 0 });
   }
 
@@ -95,24 +95,24 @@ describe('Dual API Pattern: $entity field support', () => {
 
   describe('findOne', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
-      await querier.findOne(User, { $where: { id: 1 } });
+      await querier.findOne(User, { $where: { id: '1' } });
 
       expect(querier.findManyMock).toHaveBeenCalledWith(
         User,
         expect.objectContaining({
-          $where: { id: 1 },
+          $where: { id: '1' },
           $limit: 1,
         }),
       );
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
-      await querier.findOne({ $entity: User, $where: { id: 1 } });
+      await querier.findOne({ $entity: User, $where: { id: '1' } });
 
       expect(querier.findManyMock).toHaveBeenCalledWith(
         User,
         expect.objectContaining({
-          $where: { id: 1 },
+          $where: { id: '1' },
           $limit: 1,
         }),
       );
@@ -156,17 +156,17 @@ describe('Dual API Pattern: $entity field support', () => {
 
   describe('findManyAndCount', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
-      await querier.findManyAndCount(User, { $where: { companyId: 1 } });
+      await querier.findManyAndCount(User, { $where: { companyId: '1' } });
 
-      expect(querier.findManyMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
-      expect(querier.countMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(querier.findManyMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
+      expect(querier.countMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
-      await querier.findManyAndCount({ $entity: User, $where: { companyId: 1 } });
+      await querier.findManyAndCount({ $entity: User, $where: { companyId: '1' } });
 
-      expect(querier.findManyMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
-      expect(querier.countMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(querier.findManyMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
+      expect(querier.countMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
     });
   });
 
@@ -186,27 +186,27 @@ describe('Dual API Pattern: $entity field support', () => {
 
   describe('deleteMany', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
-      await querier.deleteMany(User, { $where: { id: 1 } });
+      await querier.deleteMany(User, { $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, undefined);
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
-      await querier.deleteMany({ $entity: User, $where: { id: 1 } });
+      await querier.deleteMany({ $entity: User, $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, undefined);
     });
 
     it('should pass options correctly with entity-as-argument pattern', async () => {
-      await querier.deleteMany(User, { $where: { id: 1 } }, { hardDelete: true });
+      await querier.deleteMany(User, { $where: { id: '1' } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { hardDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, { hardDelete: true });
     });
 
     it('should pass options correctly with entity-as-field pattern', async () => {
-      await querier.deleteMany({ $entity: User, $where: { id: 1 } }, { hardDelete: true });
+      await querier.deleteMany({ $entity: User, $where: { id: '1' } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: 1 } }, { hardDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, { hardDelete: true });
     });
   });
 
@@ -233,29 +233,29 @@ describe('Dual API Pattern: $entity field support', () => {
   describe('findManyStream', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
       const collected: User[] = [];
-      for await (const row of querier.findManyStream(User, { $where: { companyId: 1 } })) {
+      for await (const row of querier.findManyStream(User, { $where: { companyId: '1' } })) {
         collected.push(row);
       }
 
-      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
       expect(collected).toEqual([]);
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
       const collected: User[] = [];
-      for await (const row of querier.findManyStream({ $entity: User, $where: { companyId: 1 } })) {
+      for await (const row of querier.findManyStream({ $entity: User, $where: { companyId: '1' } })) {
         collected.push(row);
       }
 
-      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: 1 } });
+      expect(querier.findManyStreamMock).toHaveBeenCalledWith(User, { $where: { companyId: '1' } });
       expect(collected).toEqual([]);
     });
 
     it('should yield rows in order', async () => {
       const rows = [
-        { id: 1, name: 'Alice', companyId: 1 } as User,
-        { id: 2, name: 'Bob', companyId: 1 } as User,
-        { id: 3, name: 'Charlie', companyId: 1 } as User,
+        { id: '1', name: 'Alice', companyId: '1' } as User,
+        { id: '2', name: 'Bob', companyId: '1' } as User,
+        { id: '3', name: 'Charlie', companyId: '1' } as User,
       ];
 
       // Override the mock to yield actual data
@@ -266,7 +266,7 @@ describe('Dual API Pattern: $entity field support', () => {
       );
 
       const collected: User[] = [];
-      for await (const row of querier.findManyStream(User, { $where: { companyId: 1 } })) {
+      for await (const row of querier.findManyStream(User, { $where: { companyId: '1' } })) {
         collected.push(row);
       }
 
@@ -278,10 +278,10 @@ describe('Dual API Pattern: $entity field support', () => {
   describe('restore', () => {
     it('restoreMany updates the soft-delete field to null with the filter disabled', async () => {
       const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
-      await querier.restoreMany(MeasureUnitCategory, { $where: { id: 1 } });
+      await querier.restoreMany(MeasureUnitCategory, { $where: { id: '1' } });
       expect(updateSpy).toHaveBeenCalledWith(
         MeasureUnitCategory,
-        expect.objectContaining({ $where: expect.objectContaining({ id: 1, deletedAt: { $ne: null } }) }),
+        expect.objectContaining({ $where: expect.objectContaining({ id: '1', deletedAt: { $ne: null } }) }),
         { deletedAt: null },
         { filters: { softDelete: false } },
       );
@@ -289,17 +289,17 @@ describe('Dual API Pattern: $entity field support', () => {
 
     it('restoreOneById delegates to restoreMany', async () => {
       const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
-      await querier.restoreOneById(MeasureUnitCategory, 7);
+      await querier.restoreOneById(MeasureUnitCategory, '7');
       expect(updateSpy).toHaveBeenCalledWith(
         MeasureUnitCategory,
-        expect.objectContaining({ $where: expect.objectContaining({ id: 7, deletedAt: { $ne: null } }) }),
+        expect.objectContaining({ $where: expect.objectContaining({ id: '7', deletedAt: { $ne: null } }) }),
         { deletedAt: null },
         { filters: { softDelete: false } },
       );
     });
 
     it('restoreMany throws when the entity has no soft-delete field', async () => {
-      await expect(querier.restoreMany(User, { $where: { id: 1 } })).rejects.toThrow(
+      await expect(querier.restoreMany(User, { $where: { id: '1' } })).rejects.toThrow(
         "'User' has not enabled 'softDelete'",
       );
     });

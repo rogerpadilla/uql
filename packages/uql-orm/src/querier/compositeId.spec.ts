@@ -142,13 +142,22 @@ describe('writing composite rows', () => {
   });
 
   /**
-   * `saveMany` reads an id as proof the row exists. A composite is supplied whole on an insert too,
-   * so every row would look like an update and a new one would silently update nothing.
+   * A composite key is supplied by the caller on an insert too, so an id proves nothing about
+   * whether the row exists - which is why `save` used to refuse one outright. It no longer has to
+   * guess: a row naming its key upserts on that key, so it is written either way, and the id it
+   * reports is the map {@link idOf} builds from the payload the caller already held.
    */
-  it('refuses to save, where an id proves nothing about whether the row exists', async () => {
-    await expect(pool.saveMany(Enrolment, [{ studentId: 9, courseId: 'maths' }])).rejects.toThrow(
-      /composite primary key \(studentId, courseId\), which saving a row does not support/,
-    );
+  it('saves a composite row, inserting what is new and updating what is not', async () => {
+    const [inserted] = await pool.saveMany(Enrolment, [{ studentId: 9, courseId: 'maths', grade: 'A' }]);
+    expect(inserted).toEqual({ studentId: 9, courseId: 'maths' });
+    expect(await pool.findOneById(Enrolment, { studentId: 9, courseId: 'maths' })).toMatchObject({ grade: 'A' });
+
+    const [updated] = await pool.saveMany(Enrolment, [{ studentId: 9, courseId: 'maths', grade: 'B' }]);
+    expect(updated).toEqual({ studentId: 9, courseId: 'maths' });
+    expect(await pool.findOneById(Enrolment, { studentId: 9, courseId: 'maths' })).toMatchObject({ grade: 'B' });
+
+    // The reads below share this table's seed, so this row does not outlive the test that wrote it.
+    await pool.deleteMany(Enrolment, { $where: { studentId: 9, courseId: 'maths' } });
   });
 
   /**

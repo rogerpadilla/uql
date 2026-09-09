@@ -14,7 +14,7 @@ describe('parseQueryParams', () => {
       $select: '{ "id": true, "name": true }',
       $populate: '{ "measureUnit": true, "tax": true }',
       $exclude: '{ "createdAt": true }',
-      $where: '{ "name": "lorem", "companyId": 40 }',
+      $where: '{ "name": "lorem", "companyId": "40" }',
       $sort: '{ "name": -1, "companyId": 1 }',
       $skip: '200',
       $limit: '100',
@@ -29,7 +29,7 @@ describe('parseQueryParams', () => {
         tax: true,
       },
       $exclude: { createdAt: true },
-      $where: { name: 'lorem', companyId: 40 },
+      $where: { name: 'lorem', companyId: '40' },
       $sort: { name: -1, companyId: 1 },
       $skip: 200,
       $limit: 100,
@@ -144,7 +144,7 @@ describe('stringifyQuery', () => {
     const source: Query<Item> = {
       $select: { id: 1, name: 1 },
       $populate: { tax: true, measureUnit: { $select: { id: 1, name: 1, categoryId: 1 } } },
-      $where: { name: 'Batman', companyId: 38 },
+      $where: { name: 'Batman', companyId: '38' },
       $sort: { companyId: 1, name: -1 },
       $limit: 5,
     };
@@ -153,7 +153,7 @@ describe('stringifyQuery', () => {
     expect(entries).toEqual({
       $select: '{"id":1,"name":1}',
       $populate: '{"tax":true,"measureUnit":{"$select":{"id":1,"name":1,"categoryId":1}}}',
-      $where: '{"name":"Batman","companyId":38}',
+      $where: '{"name":"Batman","companyId":"38"}',
       $sort: '{"companyId":1,"name":-1}',
       $limit: '5',
     });
@@ -179,7 +179,7 @@ describe('round trip', () => {
   it('parse(stringify(q)) preserves the query', () => {
     const source = {
       $select: { id: true, name: true },
-      $where: { name: 'lorem ipsum', companyId: 40 },
+      $where: { name: 'lorem ipsum', companyId: '40' },
       $sort: { name: -1 },
       $skip: 200,
       $limit: 100,

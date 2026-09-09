@@ -4,7 +4,9 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta, idOf, soleIdOf } from '../entity/index.js';
 import type {
   EntityData,
+  EntityMeta,
   ExtraOptions,
+  IdKey,
   IdValue,
   Query,
   QueryAggMap,
@@ -14,6 +16,7 @@ import type {
   QueryConflictPaths,
   QueryFilter,
   QueryGroupMap,
+  PrimaryKey,
   QueryOptions,
   QuerySearch,
   QueryUpdateResult,
@@ -28,6 +31,7 @@ import {
   cascadesOnDelete,
   clone,
   getInsertFieldKeys,
+  insertShapeOf,
   getRelationRequestSummary,
   hasKeys,
   idOnlyQuery,
@@ -45,6 +49,85 @@ import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 import { enrichError } from './queryError.js';
+
+/**
+ * Row indexes grouped by whether the caller supplied the key, payload order kept within each group.
+ * One group when the batch agrees on it, which is the single statement it has always been.
+ *
+ * Deliberately coarser than {@link groupByInsertShape}, and the two must not be merged: an insert's
+ * `VALUES` list takes the union of the batch's columns and fills the rest with `DEFAULT`, so the
+ * key's presence is the only thing that changes what the statement can report. Splitting an insert
+ * by full shape instead would turn a batch of optional fields into a statement per combination.
+ */
+function partitionBySuppliedId<E extends object>(payload: EntityData<E>[], idKey: IdKey<E>): number[][] {
+  const supplied: number[] = [];
+  const generated: number[] = [];
+  for (let index = 0; index < payload.length; index++) {
+    (payload[index][idKey] === undefined ? generated : supplied).push(index);
+  }
+  return supplied.length && generated.length ? [supplied, generated] : [supplied.length ? supplied : generated];
+}
+
+/**
+ * Rows grouped by the columns they carry, payload order kept within each group - or `undefined` when
+ * they all carry the same ones, which is the batch as it stands and needs no grouping at all.
+ *
+ * Deliberately finer than {@link partitionBySuppliedId}: an upsert's `DO UPDATE SET` is one
+ * assignment list for the whole statement, so rows of different shapes cannot share one at all.
+ */
+function groupByInsertShape<E extends object>(
+  meta: EntityMeta<E>,
+  payload: EntityData<E>[],
+): EntityData<E>[][] | undefined {
+  const first = insertShapeOf(meta, payload[0]);
+  let index = 1;
+  while (index < payload.length && insertShapeOf(meta, payload[index]) === first) {
+    index++;
+  }
+  if (index === payload.length) {
+    return undefined;
+  }
+  const groups = new Map<string, EntityData<E>[]>([[first, payload.slice(0, index)]]);
+  for (; index < payload.length; index++) {
+    const row = payload[index];
+    const shape = insertShapeOf(meta, row);
+    const group = groups.get(shape);
+    if (group) {
+      group.push(row);
+    } else {
+      groups.set(shape, [row]);
+    }
+  }
+  return [...groups.values()];
+}
+
+/**
+ * How many rows one statement can carry within the dialect's bind budget. `DEFAULT` cells bind no
+ * parameter, so fields-per-record is a safe upper bound. Every multi-row write splits on this: D1
+ * allows 100 binds, which a couple of dozen rows reach.
+ */
+function bindBudgetChunkSize<E extends object>(
+  meta: EntityMeta<E>,
+  rows: EntityData<E>[],
+  maxBindValues: number,
+): number {
+  const fieldsPerRecord = getInsertFieldKeys(meta, rows).length || 1;
+  return Math.max(1, Math.floor(maxBindValues / fieldsPerRecord));
+}
+
+/** `rows` split into statement-sized slices, payload order kept. */
+function chunkByBindBudget<E extends object>(
+  meta: EntityMeta<E>,
+  rows: EntityData<E>[],
+  maxBindValues: number,
+): EntityData<E>[][] {
+  const size = bindBudgetChunkSize(meta, rows, maxBindValues);
+  const chunks: EntityData<E>[][] = [];
+  for (let start = 0; start < rows.length; start += size) {
+    chunks.push(rows.slice(start, start + size));
+  }
+  return chunks;
+}
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
   private hasPendingTransaction?: boolean;
@@ -413,34 +496,49 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const [idKey] = meta.ids;
     const sole = meta.ids.length === 1;
     const idField = sole ? meta.fields[idKey] : undefined;
-    // RETURNING-based IDs are exact per row. Header-derived IDs (LAST_INSERT_ID /
-    // lastInsertRowid arithmetic) are only sound when the primary key is database-generated
-    // and no record supplies an explicit ID (a mixed batch shifts the positional mapping and
-    // MySQL stops guaranteeing consecutive values); otherwise generated IDs stay `undefined`.
-    const idsReliable =
-      sole &&
-      (this.dialect.insertIdSource === 'returning' ||
-        (!!idField && isAutoIncrement(idField, true) && payload.every((it) => it[idKey] === undefined)));
-    // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
-    // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
-    if (idsReliable && payload.length > 1 && this.dialect.insertIdSource === 'firstId') {
-      this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
-    }
-    // `DEFAULT` cells bind no parameter, so fields-per-record is a safe upper bound per row.
-    const fieldsPerRecord = getInsertFieldKeys(meta, payload).length || 1;
-    const chunkSize = Math.max(1, Math.floor(this.dialect.maxBindValues / fieldsPerRecord));
-    const payloadIds: (IdValue<E> | undefined)[] = [];
-    for (let start = 0; start < payload.length; start += chunkSize) {
-      const chunk = payload.slice(start, start + chunkSize);
-      const ctx = this.dialect.createContext();
-      this.dialect.insert(ctx, entity, chunk);
-      const { ids = [] } = await this.run(ctx.sql, ctx.values);
-      chunk.forEach((it, index) => {
-        if (idsReliable) {
-          it[idKey] ??= ids[index] as E[typeof idKey];
-        }
-        payloadIds.push(sole ? it[idKey] : undefined);
-      });
+    const generatedKey = !!idField && isAutoIncrement(idField, true);
+    const payloadIds: (IdValue<E> | undefined)[] = new Array(payload.length);
+
+    for (const group of partitionBySuppliedId(payload, idKey)) {
+      // Per group, not per batch: the two carry different columns - one names the key, one does not -
+      // so a budget taken over their union would under-fill the statement that is missing one.
+      const chunkSize = bindBudgetChunkSize(
+        meta,
+        group.map((index) => payload[index]),
+        this.dialect.maxBindValues,
+      );
+      // RETURNING-based ids are exact per row. Header-derived ones (LAST_INSERT_ID / lastInsertRowid
+      // arithmetic) are only sound when the key is database-generated and every row *in this
+      // statement* left it to the database. That is a property of the statement, not of the batch:
+      // asking it of the whole batch meant one supplied id made every id `undefined`, which a
+      // cascade then wrote into a child as a null foreign key. Splitting on that one axis costs at
+      // most one extra statement and keeps each of them inferable.
+      const idsReliable =
+        sole &&
+        (this.dialect.insertIdSource === 'returning' ||
+          (generatedKey && group.every((index) => payload[index][idKey] === undefined)));
+      // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
+      // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
+      if (idsReliable && group.length > 1 && this.dialect.insertIdSource === 'firstId') {
+        this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
+      }
+      for (let start = 0; start < group.length; start += chunkSize) {
+        const indexes = group.slice(start, start + chunkSize);
+        const ctx = this.dialect.createContext();
+        this.dialect.insert(
+          ctx,
+          entity,
+          indexes.map((index) => payload[index]),
+        );
+        const { ids = [] } = await this.run(ctx.sql, ctx.values);
+        indexes.forEach((index, position) => {
+          const it = payload[index];
+          if (idsReliable) {
+            it[idKey] ??= ids[position] as E[typeof idKey];
+          }
+          payloadIds[index] = sole ? it[idKey] : undefined;
+        });
+      }
     }
     await this.insertRelations(entity, payload);
     return payloadIds;
@@ -479,23 +577,60 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return founds.map((found) => idOf(meta, found));
   }
 
-  override async upsertOne<E extends object>(
+  protected override async internalUpsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
   ) {
-    return this.upsertMany(entity, conflictPaths, [payload]);
+    return this.internalUpsertMany(entity, conflictPaths, [payload]);
   }
 
-  override async upsertMany<E extends object>(
+  protected override async internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
-  ) {
+  ): Promise<QueryUpdateResult> {
     if (!payload?.length) {
       return { changes: 0 };
     }
     payload = clone(payload);
+    const meta = getMeta(entity);
+    // One statement per shape, each split again to stay inside the bind budget. Grouping first is
+    // what makes the budget arithmetic right: every row of a group carries the same columns, so the
+    // `DO UPDATE SET` resolves to non-binding `EXCLUDED` references rather than inlined values.
+    const groups = groupByInsertShape(meta, payload);
+    const statements = (groups ?? [payload]).flatMap((group) =>
+      chunkByBindBudget(meta, group, this.dialect.maxBindValues),
+    );
+    if (statements.length === 1) {
+      return this.runUpsert(entity, conflictPaths, payload);
+    }
+    // `ON CONFLICT DO UPDATE SET` carries one assignment list for the whole statement, so rows of
+    // different shapes cannot share one. Neither obvious single-statement form works: taking the
+    // union writes the omitting row's `DEFAULT` (null) over a column it never mentioned, and
+    // sampling one row drops every column that row happens to lack. One statement per shape is the
+    // only form that writes exactly what each row asked for. Transactional because it is now more
+    // than one statement; `transaction` is re-entrant, so this is free inside a caller's own.
+    return this.transaction(async () => {
+      let changes = 0;
+      const ids: PrimaryKey[] = [];
+      for (const statement of statements) {
+        const result = await this.runUpsert(entity, conflictPaths, statement);
+        changes += result.changes ?? 0;
+        if (result.ids) {
+          ids.push(...result.ids);
+        }
+      }
+      // No `created`/`firstId`: both speak for a single statement, and there were several.
+      return ids.length ? { changes, ids } : { changes };
+    });
+  }
+
+  private async runUpsert<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityData<E>[],
+  ): Promise<QueryUpdateResult> {
     const ctx = this.dialect.createContext();
     this.dialect.upsert(ctx, entity, conflictPaths, payload);
     const result = await this.run(ctx.sql, ctx.values);

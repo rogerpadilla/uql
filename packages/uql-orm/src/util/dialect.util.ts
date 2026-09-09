@@ -57,6 +57,21 @@ function isInsertableField<E>(meta: EntityMeta<E>, record: EntityData<E>, key: F
 }
 
 /** Appends `record`'s not-yet-`seen` insertable keys (real, caller-written, defined value) to `keys`. */
+/**
+ * The insertable keys `record` itself carries, as a string, for grouping rows by the statement they
+ * can share. Only the row's own keys: the `onInsert` columns {@link getInsertFieldKeys} appends are a
+ * property of the entity, identical for every row, so they cannot tell two rows apart.
+ */
+export function insertShapeOf<E>(meta: EntityMeta<E>, record: EntityData<E>): string {
+  let shape = '';
+  for (const key of getKeys(record as object) as FieldKey<E>[]) {
+    if (isInsertableField(meta, record, key)) {
+      shape += `${key},`;
+    }
+  }
+  return shape;
+}
+
 function addInsertFieldKeys<E>(
   meta: EntityMeta<E>,
   record: EntityData<E>,
