@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
+import { idKey } from '../type/index.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
 import {
   applyFilters,
@@ -259,6 +260,7 @@ it('parseGroupMap skips falsy and non-object values', () => {
 
 @Entity()
 class Enrolled {
+  [idKey]?: 'studentId' | 'courseId';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: String }) courseId?: string;
   @Field({ type: String }) grade?: string;

@@ -16,7 +16,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE } from '../../type/index.js';
+import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import { defineEntity, defineField, defineRelation, getEntities, getMeta } from './definition.js';
@@ -892,6 +892,7 @@ it('a security filter cannot opt into skipping when its condition is unresolved'
 it('a second @Id makes the primary key composite', () => {
   @Entity()
   class Membership {
+    [idKey]?: 'userId' | 'groupId';
     @Id({ type: Number })
     userId?: number;
     @Id({ type: Number })
@@ -915,6 +916,7 @@ it('a second @Id makes the primary key composite', () => {
 it('a junction pairs every key of both sides, and the inverse side swaps the groups', () => {
   @Entity()
   class Enrolment {
+    [idKey]?: 'studentId' | 'courseId';
     @Id({ type: Number }) studentId?: number;
     @Id({ type: String }) courseId?: string;
     @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
@@ -955,6 +957,7 @@ it('refuses an inverse relation mapped by a field when the key is composite', ()
   }
   @Entity()
   class Enrolment {
+    [idKey]?: 'studentId' | 'courseId';
     @Id({ type: Number }) studentId?: number;
     @Id({ type: String }) courseId?: string;
     @OneToMany({ entity: () => Note, mappedBy: (it) => it.enrolmentStudentId })
@@ -997,6 +1000,7 @@ function getError(run: () => unknown): string {
 it('refuses a plain foreign key pointing at a composite key', () => {
   @Entity()
   class Enrolment {
+    [idKey]?: 'studentId' | 'courseId';
     @Id({ type: Number }) studentId?: number;
     @Id({ type: String }) courseId?: string;
   }
@@ -1017,6 +1021,7 @@ it('refuses a plain foreign key pointing at a composite key', () => {
 it('a subclass declaring its own key drops every key of a composite parent', () => {
   @Entity()
   class Pair {
+    [idKey]?: 'left' | 'right';
     @Id({ type: Number }) left?: number;
     @Id({ type: Number }) right?: number;
     @Field({ type: String }) label?: string;

@@ -6,10 +6,12 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { idKey } from '../type/index.js';
 import { raw } from '../util/index.js';
 
 @Entity()
 class Enrolment {
+  [idKey]?: 'studentId' | 'courseId';
   @Id({ type: Number })
   studentId?: number;
   @Id({ type: String })
@@ -59,6 +61,7 @@ class Note {
 /** Its own table, so the writes below cannot disturb the row counts the reads further down assert. */
 @Entity()
 class Attempt {
+  [idKey]?: 'studentId' | 'task';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: String }) task?: string;
   @Field({ type: String }) score?: string;
@@ -66,6 +69,7 @@ class Attempt {
 
 @Entity()
 class Term {
+  [idKey]?: 'year' | 'season';
   @Id({ type: Number }) year?: number;
   @Id({ type: String }) season?: string;
   @OneToMany({ entity: () => Session, mappedBy: (it) => it.term, cascade: 'delete' })
@@ -300,11 +304,13 @@ describe('a composite primary key in DDL', () => {
 describe('changing the primary key of an existing table', () => {
   @Entity({ name: 'Member' })
   class MemberBefore {
+    [idKey]?: 'userId';
     @Id({ type: Number }) userId?: number;
     @Field({ type: String }) note?: string;
   }
   @Entity({ name: 'Member' })
   class MemberAfter {
+    [idKey]?: 'userId' | 'groupId';
     @Id({ type: Number }) userId?: number;
     @Id({ type: Number }) groupId?: number;
     @Field({ type: String }) note?: string;

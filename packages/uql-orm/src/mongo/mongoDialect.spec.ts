@@ -14,6 +14,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
+import { idKey } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
@@ -1415,6 +1416,7 @@ class MongoDialectSpec implements Spec {
   shouldRefuseACompositeKey() {
     @Entity()
     class Enrolment {
+      [idKey]?: 'studentId' | 'courseId';
       @Id({ type: Number }) studentId?: number;
       @Id({ type: String }) courseId?: string;
       @Field({ type: String }) grade?: string;
@@ -1438,6 +1440,7 @@ class MongoDialectSpec implements Spec {
   shouldRefuseAJoinToACompositeTarget() {
     @Entity()
     class Enrolment {
+      [idKey]?: 'studentId' | 'courseId';
       @Id({ type: Number }) studentId?: number;
       @Id({ type: String }) courseId?: string;
     }

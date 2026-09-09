@@ -26,6 +26,7 @@ createSpec(new SqliteQuerierSpec());
 // ─── insertMany: chunking and ID reliability ───
 import BetterSqlite3 from 'better-sqlite3';
 import { Entity, Field, Id } from '../entity/index.js';
+import { idKey } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
@@ -37,6 +38,7 @@ class TinyBatchDialect extends SqliteDialect {
 /** A primary key the database does not generate (no auto-increment, no `onInsert`). */
 @Entity()
 class TextPkNote {
+  [idKey]?: 'code';
   @Id({ type: String })
   code?: string;
 

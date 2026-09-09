@@ -88,6 +88,10 @@ export class Company extends BaseEntity {
  */
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
+  // Names the key for the type level: the inherited `id` would otherwise be taken for it, since a
+  // conventional name outranks the fallback and nothing else says `pk` replaced it.
+  [idKey]?: 'pk';
+
   /**
    * an entity can specify its own ID Field and still inherit the others
    * columns/relations from its parent entity.

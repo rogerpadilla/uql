@@ -4,6 +4,7 @@ import type {
   FieldType,
   HookEvent,
   IdValue,
+  NamedIdKey,
   RelationManyToManyOptions,
   RelationManyToOneOptions,
   RelationOneToManyOptions,
@@ -84,10 +85,22 @@ export function Field<
 }
 
 /**
- * Declares the primary key, checked the same way as `@Field`.
+ * A key the type level cannot name, reported on each `@Id` that leaves it unnamed. Where no `idKey`
+ * brand and no conventional name applies, `IdKey` falls back to every field, and `IdValue`,
+ * `EntityId` and every by-id method are then typed against a column that is not the key.
+ */
+type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNeedsIdKeyBrand: true } : unknown;
+
+/** {@link MemberDecorator} that also constrains the class, which is where a key is named. */
+type IdDecorator<V> = <This>(value: undefined, context: ClassFieldDecoratorContext<This, V> & KeyIsNamed<This>) => void;
+
+/**
+ * Declares the primary key, checked the same way as `@Field` and additionally against the class:
+ * a key not named `id`, `_id` or `uuid` has to be named by the `idKey` brand.
  *
  * @example `@Id({ type: Number }) id?: number;`
  * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
+ * @example `[idKey]?: 'pk';` beside `@Id({ type: Number }) pk?: number;`
  */
 export function Id<
   O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectUnknown<O, FieldOptions> &
@@ -95,7 +108,7 @@ export function Id<
     // A key is NOT NULL in every engine, and the `isId` that says so is stamped on below rather than
     // authored, so this is the one contradiction the shared check cannot see from `O` alone.
     { readonly nullable?: false },
->(opts: O): MemberDecorator<DeclaredValue<O> | undefined> {
+>(opts: O): IdDecorator<DeclaredValue<O> | undefined> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = { ...opts, isId: true };
   };

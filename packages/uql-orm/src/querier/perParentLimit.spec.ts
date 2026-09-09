@@ -4,6 +4,7 @@ import { getMeta } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PgDialect } from '../postgres/pgDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { idKey } from '../type/index.js';
 import type { QueryUpdateResult, RawRow, Type } from '../type/index.js';
 import type { ParentJoin, ParentPartition } from '../util/relationQuery.util.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -39,6 +40,7 @@ class BlogTag {
 /** Two-column key, to pin that each branch compares every column of a composite parent key. */
 @Entity()
 class Region {
+  [idKey]?: 'country' | 'area';
   @Id({ type: String }) country?: string;
   @Id({ type: String }) area?: string;
   @OneToMany({ entity: () => City, mappedBy: 'region' }) cities?: City[];

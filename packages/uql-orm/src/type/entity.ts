@@ -233,9 +233,10 @@ export type UpdatePayload<E> = {
 export type FieldValue<E> = E[FieldKey<E>];
 
 /**
- * Infers the name of the key identifier on an entity
+ * The key's name where the entity states it: the `idKey` brand first, then the conventional names.
+ * `never` when nothing does, which is the case {@link IdKey} falls back on and `@Id` refuses.
  */
-export type IdKey<E> = (E extends { [idKey]?: infer K }
+export type NamedIdKey<E> = E extends { [idKey]?: infer K }
   ? K & FieldKey<E>
   : E extends { _id?: unknown }
     ? '_id' & FieldKey<E>
@@ -243,7 +244,12 @@ export type IdKey<E> = (E extends { [idKey]?: infer K }
       ? 'id' & FieldKey<E>
       : E extends { uuid?: unknown }
         ? 'uuid' & FieldKey<E>
-        : FieldKey<E>) &
+        : never;
+
+/**
+ * Infers the name of the key identifier on an entity
+ */
+export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdKey<E>) &
   // Every arm resolves through `FieldKey`, which is already `keyof E & string` - but a generic `E`
   // leaves that unresolved, so a key could not be used where a string was wanted without a cast.
   string;

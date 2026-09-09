@@ -4,6 +4,7 @@ import { MariadbQuerierPool } from '../maria/mariadbQuerierPool.js';
 import { MySql2QuerierPool } from '../mysql/mysql2QuerierPool.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { idKey } from '../type/index.js';
 import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
@@ -190,6 +191,7 @@ for (const db of databases) {
     it.skipIf(!!db.unsafeKeyError)('should widen a single-column key to a composite one', async () => {
       @Entity()
       class AutoSyncKeyTest {
+        [idKey]?: 'userId' | 'groupId';
         @Id({ type: Number }) userId?: number;
         @Id({ type: Number }) groupId?: number;
         @Field({ type: String }) note?: string;
@@ -214,6 +216,7 @@ for (const db of databases) {
     it.skipIf(!db.unsafeKeyError)('should refuse to change a key it cannot alter', async () => {
       @Entity()
       class AutoSyncKeyRefusedTest {
+        [idKey]?: 'userId' | 'groupId';
         @Id({ type: Number }) userId?: number;
         @Id({ type: Number }) groupId?: number;
       }

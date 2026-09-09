@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { COUNT_RESULT_KEY, type Querier, type QueryUpdateResult, type RawRow } from '../type/index.js';
+import { COUNT_RESULT_KEY, type Querier, type QueryUpdateResult, type RawRow, idKey } from '../type/index.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import { fillRelationCounts } from './relationCount.js';
 
@@ -14,6 +14,7 @@ import { fillRelationCounts } from './relationCount.js';
  */
 @Entity()
 class Tag {
+  [idKey]?: 'slug';
   @Id({ type: String }) slug?: string;
   @OneToMany({ entity: () => Item, mappedBy: 'tag' }) items?: Item[];
 }
