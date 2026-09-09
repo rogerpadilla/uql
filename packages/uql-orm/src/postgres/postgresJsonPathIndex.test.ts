@@ -75,7 +75,7 @@ describe('PostgreSQL JSON path index', () => {
 
   it('reports no drift for the indexes it just created', async () => {
     const introspector = new PostgresSchemaIntrospector(pool);
-    const actual = await introspector.introspect();
+    const actual = await introspector.introspect([TABLE]);
     const expected = buildSchemaAST([JsonPathIndexed], { namingStrategy: dialect.namingStrategy });
 
     const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });

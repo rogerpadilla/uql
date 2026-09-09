@@ -42,7 +42,12 @@ import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor } from './ddl/index.js';
-import { fullColumnDefinitionToNode, tableDefinitionToNode } from './generator/definitionToNode.js';
+import {
+  columnForeignKey,
+  columnIndex,
+  fullColumnDefinitionToNode,
+  tableDefinitionToNode,
+} from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 
 /**
@@ -103,6 +108,18 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    */
   protected serialType(type: CanonicalType): string {
     return `${this.canonicalTypeToSql(type)} ${this.dialect.autoIncrementSuffix}`;
+  }
+
+  /**
+   * The SQL type a column is spelled with: the engine's generated-key form for an auto-increment key,
+   * the canonical type otherwise.
+   *
+   * One method because both paths that spell a column need the same answer - written twice, with a
+   * comment asking the two to stay in sync, is how the generated key and the column referencing it
+   * came to disagree in the first place.
+   */
+  protected columnSqlType(col: ColumnNode): string {
+    return col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type);
   }
 
   protected canonicalTypeToSql(type: CanonicalType): string {
@@ -217,7 +234,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Add new columns
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
+        this.assertColumnAddable(diff.tableName, column);
         statements.push(`ALTER TABLE ${tableName} ADD COLUMN ${this.generateColumnDefinitionFromSchema(column)};`);
+        statements.push(...this.generateColumnCommentStatement(diff.tableName, column, diff.schema));
       }
     }
 
@@ -395,8 +414,16 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     defaultValue?: unknown;
     enum?: EnumValues;
     comment?: string;
+    generatedAs?: string;
   }): string {
     let def = `${this.escapeId(column.name)} ${column.type}`;
+
+    // Before the constraints, which every engine here accepts and is where each documents it. The
+    // clause takes the place of a `DEFAULT`, which is mutually exclusive with it; everything else -
+    // `NOT NULL`, `UNIQUE`, an enum `CHECK`, a comment - a generated column carries like any other.
+    if (column.generatedAs) {
+      def += ` GENERATED ALWAYS AS (${column.generatedAs}) STORED`;
+    }
 
     if (!column.nullable && !column.isPrimaryKey) {
       def += ' NOT NULL';
@@ -411,7 +438,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     def += this.defaultClause(column);
 
     if (column.comment) {
-      def += this.generateColumnComment(column.name, column.comment);
+      def += this.generateColumnComment(column.comment);
     }
 
     return def;
@@ -483,15 +510,46 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return [`ALTER TABLE ${table} ${this.dialect.alterColumnSyntax} ${newDefinition};`];
   }
 
+  /** The inline ` COMMENT '...'` a column declaration carries, where the engine takes one there. */
+  public generateColumnComment(comment: string): string {
+    return this.features.commentSyntax === 'inline' ? ` COMMENT ${this.dialect.escape(comment)}` : '';
+  }
+
   /**
-   * Generate column comment clause (if supported)
+   * The `COMMENT ON` statements a table and its columns need, on an engine that carries a comment
+   * that way. Empty on the others: MySQL writes them inline, SQLite has no comments at all.
+   *
+   * Emitted after the `CREATE TABLE` rather than folded into it, which is what `COMMENT ON` requires -
+   * and what makes a comment reach Postgres, where it was previously read as unsupported and dropped.
    */
-  public generateColumnComment(columnName: string, comment: string): string {
-    if (this.features.columnComment) {
-      const escapedComment = comment.replace(/'/g, "''");
-      return ` COMMENT '${escapedComment}'`;
+  protected generateCommentStatements(table: TableNode): string[] {
+    if (this.features.commentSyntax !== 'statement') {
+      return [];
     }
-    return '';
+    const tableRef = this.dialect.escapeQualifiedId(table.name, table.schema);
+    const statements = table.comment ? [`COMMENT ON TABLE ${tableRef} IS ${this.dialect.escape(table.comment)};`] : [];
+    for (const col of table.columns.values()) {
+      statements.push(...this.generateColumnCommentStatement(table.name, col, table.schema));
+    }
+    return statements;
+  }
+
+  /**
+   * The `COMMENT ON COLUMN` one column needs, on an engine that carries a comment that way.
+   *
+   * Shared by `CREATE TABLE` and every path that adds a column: written only for the former, a column
+   * added later reached the database undocumented, the way its enum `CHECK` used to.
+   */
+  protected generateColumnCommentStatement(
+    tableName: string,
+    column: { name: string; comment?: string },
+    schema?: string,
+  ): string[] {
+    if (!column.comment || this.features.commentSyntax !== 'statement') {
+      return [];
+    }
+    const tableRef = this.dialect.escapeQualifiedId(tableName, schema);
+    return [`COMMENT ON COLUMN ${tableRef}.${this.escapeId(column.name)} IS ${this.dialect.escape(column.comment)};`];
   }
 
   /**
@@ -619,20 +677,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     };
   }
 
+  /** Spread, not copied field by field, so a field the node gains cannot go missing here. */
   private columnNodeToSchema(col: ColumnNode): ColumnSchema {
-    return {
-      name: col.name,
-      // The same rule `generateColumnFromNode` renders by, so a column added to an existing table
-      // gets the type it would have had if the table were created from scratch.
-      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type),
-      nullable: col.nullable,
-      defaultValue: col.defaultValue,
-      isPrimaryKey: col.isPrimaryKey,
-      isAutoIncrement: col.isAutoIncrement,
-      isUnique: col.isUnique,
-      comment: col.comment,
-      enum: col.enum,
-    };
+    const { table: _table, referencedBy: _referencedBy, references: _references, ...column } = col;
+    return { ...column, type: this.columnSqlType(col) };
   }
 
   /**
@@ -701,13 +749,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
     for (const rel of table.outgoingRelations) {
       if (rel.from.columns.length > 0) {
-        const fromCols = rel.from.columns.map((c) => this.escapeId(c.name)).join(', ');
-        const toCols = rel.to.columns.map((c) => this.escapeId(c.name)).join(', ');
-        const constraintName = rel.name ? `CONSTRAINT ${this.escapeId(rel.name)} ` : '';
-        constraints.push(
-          `${constraintName}FOREIGN KEY (${fromCols}) REFERENCES ${this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema)} (${toCols})` +
-            ` ON DELETE ${rel.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${rel.onUpdate ?? this.defaultForeignKeyAction}`,
-        );
+        const refTable = this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema);
+        constraints.push(this.foreignKeyConstraint(table.name, foreignKeyOf(rel), refTable));
       }
     }
 
@@ -725,6 +768,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (this.dialect.tableOptions) {
       createSql += ` ${this.dialect.tableOptions}`;
     }
+    if (table.comment && this.features.commentSyntax === 'inline') {
+      createSql += ` COMMENT=${this.dialect.escape(table.comment)}`;
+    }
 
     createSql += ';';
 
@@ -736,6 +782,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       }
     }
     statements.push(createSql);
+    statements.push(...this.generateCommentStatements(table));
     for (const idx of table.indexes) {
       statements.push(this.generateCreateIndexFromNode(idx));
     }
@@ -747,10 +794,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * so only a lone primary key column carries `PRIMARY KEY` inline.
    */
   protected generateColumnFromNode(col: ColumnNode): string {
-    return this.renderColumn({
-      ...col,
-      type: col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type),
-    });
+    return this.renderColumn({ ...col, type: this.columnSqlType(col) });
   }
 
   /**
@@ -778,9 +822,29 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return `ALTER TABLE ${this.escapeId(oldName)} RENAME TO ${this.escapeId(newName)};`;
   }
 
+  /**
+   * `ADD COLUMN`, plus the constraint and index the column declares.
+   *
+   * `CREATE TABLE` lifts a column's `references` and `index` onto the table it is building; this had
+   * no lift, so a hand-written `addColumn(...).references(...).index()` emitted the column alone and
+   * dropped both without a word. Several statements in one string is what `generateAlterColumnSql`
+   * already returns, and `execute` splits them.
+   */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string {
+    this.assertColumnAddable(tableName, column);
     const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
-    return `ALTER TABLE ${this.escapeId(tableName)} ADD COLUMN ${colSql};`;
+    const statements = [`ALTER TABLE ${this.escapeId(tableName)} ADD COLUMN ${colSql};`];
+
+    const foreignKey = columnForeignKey(column);
+    if (foreignKey) {
+      statements.push(...this.addForeignKeyStatements(tableName, [foreignKey]));
+    }
+    const index = columnIndex(tableName, column);
+    if (index) {
+      statements.push(this.generateCreateIndex(tableName, index));
+    }
+    statements.push(...this.generateColumnCommentStatement(tableName, column));
+    return statements.join('\n');
   }
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string {
@@ -800,20 +864,29 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return `ALTER TABLE ${this.escapeId(tableName)} RENAME COLUMN ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
   }
 
-  generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string {
+  /**
+   * `CONSTRAINT <name> FOREIGN KEY (...) REFERENCES ... ON DELETE ... ON UPDATE ...`.
+   *
+   * One spelling for the two places that need it - inline in a `CREATE TABLE`, and after `ADD` in an
+   * `ALTER`. Written twice, the two drifted over which end they qualified with a schema.
+   */
+  protected foreignKeyConstraint(tableName: string, foreignKey: ForeignKeySchema, refTableSql: string): string {
     const fkCols = foreignKey.columns.map((c) => this.escapeId(c)).join(', ');
     const refCols = foreignKey.references.columns.map((c) => this.escapeId(c)).join(', ');
-    const constraintName = this.escapeId(constraintNameOf(tableName, foreignKey));
+    return (
+      `CONSTRAINT ${this.escapeId(constraintNameOf(tableName, foreignKey))} ` +
+      `FOREIGN KEY (${fkCols}) REFERENCES ${refTableSql} (${refCols}) ` +
+      `ON DELETE ${foreignKey.onDelete ?? this.defaultForeignKeyAction} ` +
+      `ON UPDATE ${foreignKey.onUpdate ?? this.defaultForeignKeyAction}`
+    );
+  }
 
+  generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string {
     if (!this.features.foreignKeyAlter) {
       throw new TypeError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
     }
-
-    return (
-      `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} ` +
-      `FOREIGN KEY (${fkCols}) REFERENCES ${this.escapeId(foreignKey.references.table)} (${refCols}) ` +
-      `ON DELETE ${foreignKey.onDelete ?? this.defaultForeignKeyAction} ON UPDATE ${foreignKey.onUpdate ?? this.defaultForeignKeyAction};`
-    );
+    const constraint = this.foreignKeyConstraint(tableName, foreignKey, this.escapeId(foreignKey.references.table));
+    return `ALTER TABLE ${this.escapeId(tableName)} ADD ${constraint};`;
   }
 
   generateDropForeignKeySql(tableName: string, constraintName: string): string {
@@ -853,6 +926,24 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       );
     }
     return `ALTER TABLE ${table} DROP CONSTRAINT ${this.escapeId(constraintName)};`;
+  }
+
+  /**
+   * A column an `ALTER` can carry. Only a generated one is ever refused, and only where the engine
+   * takes it in a `CREATE TABLE` but not afterwards.
+   */
+  private assertColumnAddable(
+    tableName: string,
+    column: { readonly name: string; readonly generatedAs?: string },
+  ): void {
+    if (!column.generatedAs || this.features.generatedColumnAdd) {
+      return;
+    }
+    throw new TypeError(
+      `${this.dialect}: Cannot add the computed column "${column.name}" to the existing table ` +
+        `"${tableName}" - this database only accepts one in a CREATE TABLE. Drop \`stored\` to have the ` +
+        'expression spliced into each statement instead, or recreate the table in a written migration.',
+    );
   }
 
   private assertPrimaryKeyAlterable(tableName: string): void {

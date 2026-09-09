@@ -104,8 +104,27 @@ export interface EngineFeatures {
    * than emitting DDL the engine rejects.
    */
   readonly primaryKeyAlter: boolean;
-  /** Whether the dialect supports inline COMMENT on columns (MySQL/MariaDB). */
-  readonly columnComment: boolean;
+  /**
+   * Whether a stored generated column can be added to a table that already exists. False on SQLite,
+   * which takes one in a `CREATE TABLE` and rejects the same column in an `ALTER` ("cannot add a
+   * STORED column"), since filling it would rewrite every row - so a sync that would add one is
+   * refused by name rather than by the driver.
+   *
+   * A boolean rather than a mode: SQLite would accept a `VIRTUAL` column here, but emitting one where
+   * the entity said `stored` makes the same entity a stored column on a new database and a virtual one
+   * on an old, which nothing diffs and no one can see. Refusal has one form; only what UQL *emits*
+   * earns a mode, which is what makes {@link EngineFeatures.commentSyntax} three-way.
+   */
+  readonly generatedColumnAdd: boolean;
+  /**
+   * How this engine carries a comment on a table or a column, if at all: `inline` writes it into the
+   * declaration (MySQL, MariaDB), `statement` needs a `COMMENT ON` of its own (Postgres, CockroachDB),
+   * `none` has no such thing (SQLite, MongoDB).
+   *
+   * One knob rather than a boolean because the answer is three-way. Read as a boolean, Postgres landed
+   * on the same branch as SQLite and a documented column silently lost its comment.
+   */
+  readonly commentSyntax: 'inline' | 'statement' | 'none';
   /**
    * Whether every column of a vector index has to be `NOT NULL`, which MariaDB 12.3 enforces ("All
    * parts of a VECTOR index must be NOT NULL") and CockroachDB 26.3 does not - so being indexed, not

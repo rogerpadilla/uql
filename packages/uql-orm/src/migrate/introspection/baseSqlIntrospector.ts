@@ -28,10 +28,12 @@ export abstract class BaseSqlIntrospector {
     return escapeSqlId(identifier, this.dialect.escapeIdChar);
   }
   /**
-   * Introspect entire database schema and return SchemaAST.
+   * The database as a {@link SchemaAST}, or just the tables named. A name nothing matches is left out
+   * rather than raised: the point of naming them is to read a database other things are still
+   * changing, where scanning every table is both wasted work and a relation that can vanish mid-scan.
    */
-  async introspect(): Promise<SchemaAST> {
-    const tableNames = await this.getTableNames();
+  async introspect(tables?: readonly string[]): Promise<SchemaAST> {
+    const tableNames = tables ?? (await this.getTableNames());
     const tableSchemas: TableSchema[] = [];
 
     for (const tableName of tableNames) {
@@ -67,15 +69,13 @@ export abstract class BaseSqlIntrospector {
       const { columns } = table;
 
       for (const col of schema.columns) {
+        // Spread, not field by field: a `ColumnSchema` is a `ColumnNode` minus the graph links, so
+        // everything but the type crosses unchanged and a field either shape gains cannot be dropped
+        // here. Listed by hand this had already lost `enum` and `generatedAs`.
+        const { type, length: _length, precision: _precision, scale: _scale, ...rest } = col;
         const column: ColumnNode = {
-          name: col.name,
-          type: canonicalColumnType(col.type, col),
-          nullable: col.nullable,
-          defaultValue: col.defaultValue,
-          isPrimaryKey: col.isPrimaryKey,
-          isAutoIncrement: col.isAutoIncrement,
-          isUnique: col.isUnique,
-          comment: col.comment,
+          ...rest,
+          type: canonicalColumnType(type, col),
           table,
           referencedBy: [],
         };

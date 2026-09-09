@@ -1,5 +1,6 @@
 import type { IndexNode } from '../../schema/types.js';
 import type { IndexColumnSchema, VectorDistance } from '../../type/index.js';
+import { rawTag } from './sourceLiteral.js';
 
 /**
  * A vector index carries its metric in the operator class pgvector names after it
@@ -100,14 +101,4 @@ function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: strin
     return `'${propertyName(entry.column)}'`;
   }
   return `{ column: '${propertyName(entry.column)}', ${modifiers.join(', ')} }`;
-}
-
-/**
- * SQL as a `raw` tagged template. A database reprints an expression as arbitrary text, and exactly
- * three sequences can end or interpolate a template literal, so escaping those is the whole job.
- * Newlines need none, which keeps a multi-line expression readable in the generated entity.
- */
-function rawTag(sql: string): string {
-  const escaped = sql.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-  return `raw\`${escaped}\``;
 }

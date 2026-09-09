@@ -83,6 +83,61 @@ describe('codemod transforms', () => {
     expect(text).toContain("@Field({ type: String, name: 'image', length: 150 }) picture?: string;");
   });
 
+  it('renames the virtual option to computed, leaving its expression alone', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Field({ type: Number, virtual: raw\`1 + 1\` }) score?: number;
+      }
+    `);
+
+    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number;');
+  });
+
+  /** A shorthand has no value to keep, so the key alone would rebind it to a local that is not there. */
+  it('renames a shorthand virtual, keeping what it referred to', () => {
+    const { text, unresolved } = codemod(`
+      const virtual = raw\`1 + 1\`;
+      class Entity {
+        @Field({ type: Number, virtual }) score?: number;
+      }
+    `);
+
+    expect(text).toContain('@Field({ type: Number, computed: virtual }) score?: number;');
+    expect(unresolved).toEqual([]);
+  });
+
+  it('renames a quoted virtual key', () => {
+    const { text, unresolved } = codemod(`
+      class Entity {
+        @Field({ type: Number, 'virtual': raw\`1\` }) score?: number;
+      }
+    `);
+
+    expect(text).toContain('@Field({ type: Number, computed: raw`1` }) score?: number;');
+    expect(unresolved).toEqual([]);
+  });
+
+  /** The same lookup decides whether an option is already stated, so a quoted one is not doubled. */
+  it('leaves a quoted type alone rather than inserting a second one', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Field({ 'type': String }) name?: string;
+      }
+    `);
+
+    expect(text).toContain("@Field({ 'type': String }) name?: string;");
+  });
+
+  it('reports a field giving both names rather than choosing one', () => {
+    const { unresolved } = codemod(`
+      class Entity {
+        @Field({ type: Number, virtual: raw\`1\`, computed: raw\`2\` }) score?: number;
+      }
+    `);
+
+    expect(unresolved.join('\n')).toContain("gives both 'virtual' and 'computed'");
+  });
+
   /** An empty literal has no first property to insert before, so the whole object is rewritten instead. */
   it('fills in an empty options object', () => {
     const { text } = codemod(`

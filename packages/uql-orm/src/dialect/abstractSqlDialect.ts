@@ -53,6 +53,7 @@ import {
   type UpdatePayload,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
+import { computedExpression, isInlinedExpression } from '../util/field.util.js';
 import {
   asSelectMap,
   assertNonNegativeInteger,
@@ -311,9 +312,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       } else {
         const field = meta.fields[key];
         if (!field) return;
-        if (field.virtual) {
+        if (isInlinedExpression(field)) {
           this.getRawValue(ctx, {
-            value: field.virtual.as(key),
+            value: computedExpression(field)!.as(key),
             prefix: opts.prefix,
             escapedPrefix,
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -737,17 +738,26 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    */
   protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryOptions): string {
     const field = getMeta(entity).fields[key];
-    const virtual = field?.virtual;
-    if (virtual) {
-      return this.buildFragment(ctx, (fragmentCtx) =>
-        this.getRawValue(fragmentCtx, {
-          value: virtual,
-          prefix: opts.prefix,
-          escapedPrefix: this.escapeId(opts.prefix, true, true),
-        }),
-      );
-    }
-    return this.columnWithPrefix(key, field, opts.prefix);
+    return this.inlinedOperand(ctx, field, opts.prefix) ?? this.columnWithPrefix(key, field, opts.prefix);
+  }
+
+  /**
+   * The expression an inlined computed field stands for, or nothing when the field is a real column.
+   *
+   * Every clause that names such a field needs the expression itself, never the output alias: an
+   * alias exists only when the field was also selected, which `$where` and `$sort` cannot assume.
+   */
+  private inlinedOperand(ctx: QueryContext, field: FieldOptions | undefined, prefix: string | undefined) {
+    const inlined = field && isInlinedExpression(field) ? computedExpression(field) : undefined;
+    return inlined
+      ? this.buildFragment(ctx, (fragmentCtx) =>
+          this.getRawValue(fragmentCtx, {
+            value: inlined,
+            prefix,
+            escapedPrefix: this.escapeId(prefix, true, true),
+          }),
+        )
+      : undefined;
   }
 
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
@@ -1115,18 +1125,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         );
         continue;
       }
-      columns.push(this.sortColumn(meta, key, prefix) + this.resolveSortDirection(value));
+      columns.push(this.sortColumn(ctx, meta, key, prefix) + this.resolveSortDirection(value));
     }
   }
 
   /**
-   * The `ORDER BY` operand for one key. A key that is not a column of `meta` - a virtual field, a
-   * `raw()` projection - is an output alias, which is never table-qualified and needs no resolving.
+   * The `ORDER BY` operand for one key. A key that is not a field of `meta` - a `raw()` projection, a
+   * `$agg` alias - is an output alias, which is never table-qualified and needs no resolving.
    */
-  private sortColumn<E>(meta: EntityMeta<E>, key: string, prefix: string | undefined): string {
+  private sortColumn<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, prefix: string | undefined): string {
     const field = meta.fields[key as FieldKey<E>];
     if (field) {
-      return field.virtual ? this.escapeId(key) : this.columnWithPrefix(key, field, prefix);
+      return this.inlinedOperand(ctx, field, prefix) ?? this.columnWithPrefix(key, field, prefix);
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
     return json ? this.jsonPathExpr(json.column, json.jsonPath, 'text') : this.escapeId(key);

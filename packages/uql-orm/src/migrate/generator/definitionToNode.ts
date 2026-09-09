@@ -1,7 +1,19 @@
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
-import type { ForeignKeySchema } from '../../type/migration.js';
-import { derivedForeignKeyName } from '../../util/sql.util.js';
+import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
+import { derivedForeignKeyName, derivedIndexName } from '../../util/sql.util.js';
 import type { FullColumnDefinition, TableDefinition } from '../builder/types.js';
+
+/**
+ * A table the builder names but has not seen.
+ *
+ * A `RelationshipNode` points at a whole `TableNode` because the AST wires `incomingRelations` through
+ * it; a builder creating one table has no node for the table its foreign key targets, and the
+ * generator reads only the name. Stated once, so the three casts it replaces cannot be mistaken for a
+ * node that was resolved and lost.
+ */
+function unresolvedTable(name: string): TableNode {
+  return { name } as TableNode;
+}
 
 /**
  * A migration builder's table definition as the AST nodes the generators render from, so a hand-written
@@ -50,7 +62,7 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
         columns: fkDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
       },
       to: {
-        table: { name: fkDef.references.table } as TableNode,
+        table: unresolvedTable(fkDef.references.table),
         columns: fkDef.references.columns.map((name) => ({ name }) as ColumnNode),
       },
       onDelete: fkDef.onDelete,
@@ -62,30 +74,43 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
   return table;
 }
 
+/**
+ * A builder's column as the AST node the generators render from.
+ *
+ * The shared half is spread, not copied field by field: `ColumnDefinition` *is* a `ColumnNode` minus
+ * the graph links, so spreading it and adding those back is a node by construction. Listed one by one,
+ * the copy silently dropped whatever the node gained next - `enum` first, and the type had no way to
+ * say so. The two builder-only keys are destructured off: `index` and `foreignKey` are lifted onto the
+ * table by `columnIndex`/`columnForeignKey`, which is the path that renders them.
+ *
+ * No `references` node either: `SchemaAST.addRelationship` sets that one.
+ */
 export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName: string): ColumnNode {
+  const { index: _index, foreignKey: _foreignKey, ...column } = col;
+  return { ...column, table: unresolvedTable(tableName), referencedBy: [] };
+}
+
+/**
+ * The index a column-level `index` declares, or nothing.
+ *
+ * Shared with `TableBuilder.build`, which lifts these into the table it is creating: written twice,
+ * `addColumn` had no lift at all and silently emitted a column with no index.
+ */
+export function columnIndex(tableName: string, col: FullColumnDefinition): IndexSchema | undefined {
+  if (!col.index) {
+    return undefined;
+  }
   return {
-    name: col.name,
-    type: col.type,
-    nullable: col.nullable,
-    defaultValue: col.defaultValue,
-    isPrimaryKey: col.primaryKey,
-    isAutoIncrement: col.autoIncrement,
-    isUnique: col.unique,
-    comment: col.comment,
-    table: { name: tableName } as TableNode,
-    referencedBy: [],
-    references: col.foreignKey
-      ? {
-          name: derivedForeignKeyName(tableName, [col.name]),
-          type: 'ManyToOne',
-          from: { table: { name: tableName } as TableNode, columns: [] },
-          to: {
-            table: { name: col.foreignKey.table } as TableNode,
-            columns: col.foreignKey.columns.map((name) => ({ name }) as ColumnNode),
-          },
-          onDelete: col.foreignKey.onDelete,
-          onUpdate: col.foreignKey.onUpdate,
-        }
-      : undefined,
+    name: typeof col.index === 'string' ? col.index : derivedIndexName(tableName, [col.name]),
+    entries: [{ column: col.name }],
+    unique: col.isUnique,
   };
+}
+
+/** The foreign key a column-level `references` declares, or nothing. Shared for the same reason. */
+export function columnForeignKey(col: FullColumnDefinition): ForeignKeySchema | undefined {
+  if (!col.foreignKey) {
+    return undefined;
+  }
+  return { ...col.foreignKey, columns: [col.name] };
 }

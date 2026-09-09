@@ -77,7 +77,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('sqlite_master')) {
         return Promise.resolve([{ count: 1 }]);
       }
-      if (sql.includes('table_info')) {
+      if (sql.includes('table_info(') || sql.includes('table_xinfo(')) {
         return Promise.resolve([
           {
             name: 'id',
@@ -138,7 +138,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('sqlite_master')) {
         return Promise.resolve([{ count: 1 }]);
       }
-      if (sql.includes('table_info')) {
+      if (sql.includes('table_info(') || sql.includes('table_xinfo(')) {
         return Promise.resolve([{ name: 'user_id', type: 'INTEGER', notnull: 1, pk: 0 }]);
       }
       if (sql.includes('foreign_key_list')) {
@@ -212,7 +212,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('sqlite_master')) {
         return Promise.resolve([{ count: 1 }]);
       }
-      if (sql.includes('table_info')) {
+      if (sql.includes('table_info(') || sql.includes('table_xinfo(')) {
         return Promise.resolve([{ name: 'email', type: 'TEXT', notnull: 0, pk: 0 }]);
       }
       if (sql.includes('index_list')) {
@@ -234,7 +234,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('sqlite_master')) {
         return Promise.resolve([{ count: 1 }]);
       }
-      if (sql.includes('table_info')) {
+      if (sql.includes('table_info(') || sql.includes('table_xinfo(')) {
         return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 1, pk: 1 }]);
       }
       if (sql.includes('index_list')) {
@@ -260,7 +260,7 @@ describe('SqliteSchemaIntrospector', () => {
       if (sql.includes('sqlite_master')) {
         return Promise.resolve([{ count: 1 }]);
       }
-      if (sql.includes('table_info')) {
+      if (sql.includes('table_info(') || sql.includes('table_xinfo(')) {
         return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 0, pk: 0 }]);
       }
       if (sql.includes('index_list')) {
@@ -308,7 +308,7 @@ describe('SqliteSchemaIntrospector', () => {
         if (normalized.includes('count(*)')) return Promise.resolve([{ count: 1 }]);
         return Promise.resolve([{ name: 'users' }]);
       }
-      if (normalized.includes('table_info')) {
+      if (normalized.includes('table_info(') || normalized.includes('table_xinfo(')) {
         return Promise.resolve([{ name: 'id', type: 'INTEGER', notnull: 1, pk: 1 }]);
       }
       return Promise.resolve([]);

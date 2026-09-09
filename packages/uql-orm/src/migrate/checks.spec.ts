@@ -107,6 +107,26 @@ describe('enum fields', () => {
    * `ALTER`. An alter of an existing column still drops it: MySQL adds a second check rather than
    * replacing the first, so a changed enum is a hand-written migration like any other check.
    */
+  /**
+   * A stored computed column is a real column: the option rules let it declare `unique`, `nullable`
+   * and an `enum`, so the declaration has to carry them. Emitting the generated clause and stopping
+   * there dropped all three silently - every engine here accepts them after it.
+   */
+  it('keeps the constraints a stored computed column declares', () => {
+    @Entity({ name: 'Priced' })
+    class Priced {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number }) net?: number;
+      @Field({ type: Number, computed: raw`net * 2`, stored: true, nullable: false, unique: true }) gross?: number;
+    }
+
+    const sql = ddl(new PostgresDialect(), Priced);
+
+    expect(sql).toContain('GENERATED ALWAYS AS (net * 2) STORED');
+    expect(sql).toContain('NOT NULL');
+    expect(sql).toContain('UNIQUE');
+  });
+
   it('constrains an enum column it adds to an existing table', () => {
     const [sql] = new SqlSchemaGenerator(new PostgresDialect()).generateAlterTable({
       type: 'alter',

@@ -288,10 +288,14 @@ function diffColumn(
     differences.push(`unique: ${target.isUnique} → ${source.isUnique}`);
   }
 
-  // Auto-increment is deliberately not compared. No engine turns a column into an identity, or out of
-  // one, without rewriting the table, and there is no DDL here that does it - so a difference could
-  // only ever be reported, never settled, and the statements emitted for it (a bare `ALTER COLUMN
-  // TYPE`) do not change it. The same rule `describeIndexDifferences` follows for what it cannot read.
+  // Four things are deliberately not compared, all for one reason: a difference here could only be
+  // reported, never settled, because no statement this generator emits would change it.
+  //   - `isAutoIncrement`: no engine makes a column an identity, or unmakes one, without rewriting the
+  //     table, and the alter emitted for it is a bare `ALTER COLUMN TYPE`.
+  //   - `enum`: a check, and a database reprints one from its parse tree. See the roadmap.
+  //   - `generatedAs`: only Postgres 17 and the MySQL family can rewrite an expression in place.
+  //   - `comment`: fixable on every engine but SQLite, and the only one of the four worth revisiting.
+  // The same rule `describeIndexDifferences` follows for what it cannot read.
 
   // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {

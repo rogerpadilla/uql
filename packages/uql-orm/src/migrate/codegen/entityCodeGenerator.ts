@@ -21,7 +21,7 @@ import {
   type TableNode,
 } from '../../schema/types.js';
 import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
-import { buildFieldOptionsSource } from './fieldOptionsSource.js';
+import { buildFieldOptionsSource, fieldNeedsRaw } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 
 /**
@@ -130,10 +130,12 @@ export class EntityCodeGenerator {
     const uqlImports = new Set<string>(['Entity', 'Field']);
     const relatedImports: string[] = [];
 
-    // Check for Id decorator
     for (const col of table.columns.values()) {
       if (col.isPrimaryKey) {
         uqlImports.add('Id');
+      }
+      if (fieldNeedsRaw(col)) {
+        uqlImports.add('raw');
       }
     }
 
@@ -215,9 +217,6 @@ export class EntityCodeGenerator {
       lines.push('  /**');
       lines.push(`   * @sync-added ${new Date().toISOString().split('T')[0]}`);
       lines.push(`   * Column: ${col.name} (${this.formatTypeDescription(col.type)})`);
-      if (col.comment) {
-        lines.push(`   * ${col.comment}`);
-      }
       lines.push('   */');
     }
 

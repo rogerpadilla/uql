@@ -8,6 +8,7 @@ import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 import { ddlText, normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
+import { columnForeignKey, columnIndex } from '../generator/definitionToNode.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { expr } from './expressions.js';
 import type {
@@ -257,19 +258,11 @@ export class TableBuilder implements ITableBuilder {
     // Build all columns from builders
     const columns = this._columnBuilders.map((cb) => cb.build());
 
-    // Collect column-level indexes
+    // Collect column-level indexes, skipping any a table-level one already names.
     for (const col of columns) {
-      if (col.index) {
-        const indexName = typeof col.index === 'string' ? col.index : derivedIndexName(this._name, [col.name]);
-
-        // Only add if not already in table-level indexes
-        if (!this._indexes.some((idx) => idx.name === indexName)) {
-          this._indexes.push({
-            name: indexName,
-            entries: [{ column: col.name }],
-            unique: col.unique,
-          });
-        }
+      const index = columnIndex(this._name, col);
+      if (index && !this._indexes.some((idx) => idx.name === index.name)) {
+        this._indexes.push(index);
       }
     }
 
@@ -280,14 +273,9 @@ export class TableBuilder implements ITableBuilder {
 
     // Collect column-level foreign keys
     for (const col of columns) {
-      if (col.foreignKey) {
-        foreignKeys.push({
-          name: col.foreignKey.name,
-          columns: [col.name],
-          references: { table: col.foreignKey.table, columns: col.foreignKey.columns },
-          onDelete: col.foreignKey.onDelete,
-          onUpdate: col.foreignKey.onUpdate,
-        });
+      const foreignKey = columnForeignKey(col);
+      if (foreignKey) {
+        foreignKeys.push(foreignKey);
       }
     }
 

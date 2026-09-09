@@ -4,6 +4,7 @@
  * Fluent API for defining columns in migrations.
  */
 
+import type { EnumValues } from '../../schema/types.js';
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type {
   BaseColumnOptions,
@@ -25,6 +26,8 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
   private _primaryKey: boolean;
   private _autoIncrement: boolean;
   private _unique: boolean;
+  private _enum?: EnumValues;
+  private _generatedAs?: string;
   private _comment?: string;
   private _index?: string | boolean;
   private _foreignKey?: ForeignKeyDefinition;
@@ -47,8 +50,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
     // Handle inline references option
     if (options.references) {
       this._foreignKey = {
-        table: options.references.table,
-        columns: [options.references.column ?? 'id'],
+        references: { table: options.references.table, columns: [options.references.column ?? 'id'] },
         onDelete: options.references.onDelete ?? 'NO ACTION',
         onUpdate: options.references.onUpdate ?? 'NO ACTION',
       };
@@ -105,6 +107,25 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
   }
 
   /**
+   * Make the column one the database computes: `GENERATED ALWAYS AS (<sql>) STORED`.
+   *
+   * Takes the SQL as text, since a `CREATE TABLE` has nowhere to bind a value into - the same reason
+   * a check expression and a partial-index predicate do.
+   */
+  computed(sql: string): this {
+    this._generatedAs = sql;
+    return this;
+  }
+
+  /**
+   * Constrain the column to these values, as a `CHECK (col IN (...))` - what `@Field({ enum })` emits.
+   */
+  enum(values: EnumValues): this {
+    this._enum = values;
+    return this;
+  }
+
+  /**
    * Add a comment to the column.
    */
   comment(text: string): this {
@@ -134,8 +155,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    */
   references(table: string, column = 'id'): IForeignKeyBuilder {
     this._foreignKey = {
-      table,
-      columns: [column],
+      references: { table, columns: [column] },
       onDelete: 'NO ACTION',
       onUpdate: 'NO ACTION',
     };
@@ -147,7 +167,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    */
   onDelete(action: ForeignKeyAction): this {
     if (this._foreignKey) {
-      this._foreignKey.onDelete = action;
+      this._foreignKey = { ...this._foreignKey, onDelete: action };
     }
     return this;
   }
@@ -157,7 +177,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    */
   onUpdate(action: ForeignKeyAction): this {
     if (this._foreignKey) {
-      this._foreignKey.onUpdate = action;
+      this._foreignKey = { ...this._foreignKey, onUpdate: action };
     }
     return this;
   }
@@ -171,9 +191,11 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
       type: this._type,
       nullable: this._nullable,
       defaultValue: this._defaultValue,
-      primaryKey: this._primaryKey,
-      autoIncrement: this._autoIncrement,
-      unique: this._unique,
+      isPrimaryKey: this._primaryKey,
+      isAutoIncrement: this._autoIncrement,
+      isUnique: this._unique,
+      enum: this._enum,
+      generatedAs: this._generatedAs,
       comment: this._comment,
       index: this._index,
       foreignKey: this._foreignKey,

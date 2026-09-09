@@ -27,6 +27,7 @@ Only the `--flag=value` form is read, and anything unrecognised is an error: a m
 - `@Field()` and `@Field({ ... })` with no `type`, and `@Id()`: inserts the `type` the property's declared TypeScript type implies. Skipped when `references` is present, because schema generation resolves that column from the referenced primary key.
 - Bare relation decorators: inserts `entity: () => X`, unwrapping arrays and the old `Relation<T>` alias.
 - `Relation<T>` becomes `T`, and its import goes with the last usage - `uql-orm` no longer exports it. A usage somewhere the codemod does not reach, such as a type alias, keeps the import and is reported.
+- `@Field({ virtual })` becomes `@Field({ computed })`, the name it was renamed to - written as a plain key, a quoted one, or a shorthand, which becomes `computed: virtual` so it keeps referring to the same local. A decorator given both names is reported instead, because which one wins is your call.
 - `import 'reflect-metadata'` goes. Removing the package from your `package.json` is left to you.
 - `tsconfig.json`: removes `experimentalDecorators` and `emitDecoratorMetadata`, keeping the rest of the file - comments and formatting included - exactly as written.
 

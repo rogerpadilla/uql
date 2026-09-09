@@ -1,6 +1,17 @@
 # Changelog
 
-What changed and worth it, be pretty concise. Newest first, `[yyyy-mm-dd]`.
+Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
+Before adding, rewrite `[Unreleased]` as if it shipped today: fold duplicates, drop what was superseded, cut the rest.
+
+## [0.46.0] - 2026-09-08
+
+- **`@Field({ computed, stored })` declares a column the database computes.** Unstored it is spliced into each statement, as `virtual` was; `stored: true` makes it a `GENERATED ALWAYS AS (...) STORED` column, indexable like any other. SQLite accepts one only in a `CREATE TABLE`.
+- **`virtual` is deprecated**, renamed to `computed`. Both live for one release, giving both throws, and `npx uql-codemod` rewrites it.
+- **A migration-builder column now emits everything it declares.** Its foreign key, index and comment were dropped unless `createTable` lifted them. New: `.computed()` and `.enum()`.
+- **`$sort` on a computed field works without selecting it.** It ordered by the output alias, which only exists when the field is in `$select`; now every clause writes the expression.
+- **A generated entity keeps its column comments.** `generate:entities` wrote them only into a JSDoc, so the next sync dropped every one.
+- **`introspect(tables?)` reads just the tables you name**, instead of every relation in the database.
+- **Breaking:** `DialectFeatures.columnComment` is `commentSyntax: 'inline' | 'statement' | 'none'`. Read as a boolean, Postgres landed on SQLite's branch and lost every comment.
 
 ## [0.45.1] - 2026-09-08
 

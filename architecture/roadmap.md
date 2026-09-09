@@ -35,16 +35,13 @@ await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $
 
 R6. Row-value comparison where available, an OR-chain elsewhere, compound `$lt` on Mongo. **Throw when the sort is not total** — a keyset page that silently skips or repeats rows is worse than an error.
 
-## Triggers and computed columns
+## Triggers
 
 ```ts
-@Field({ computed: raw`"first" || ' ' || "last"`, stored: true })          fullName?: string;
 @Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
 ```
 
-One option pair says a column is computed rather than written, and the engine decides the machinery. `stored` is the dial you flip after profiling without touching a call site. `computed` replaces `virtual`, deprecated with a codemod.
-
-**Two stages.** The generated-column arm depends on nothing and ships first (Postgres 12+, MySQL 5.7+, MariaDB 5.2+, SQLite 3.31+). The trigger-backed arms need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md).
+The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md).
 
 ## Row-level security
 
@@ -76,11 +73,13 @@ Types stay permissive: TypeScript cannot accumulate `@Id` across properties, so 
 
 ## Shipped, and not worth re-litigating
 
-Foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
+`computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
 
 - **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
 - **Keys and indexes are compared by their columns, never by name.** Matching on names would rewrite every table the first time a naming convention changed.
 - **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
 - **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix; nearly free once the trigger design's `COMMENT ON` emission lands.
 - **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
+- **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
+- **An unstored `computed` is written out by every clause that names it.** `$sort` used the output alias, so ordering by one you had not selected failed on the server.
 - **Every field option states where it applies, in one table.** `FIELD_OPTION_FAMILY` pairs each option with its column family, `deadOn` with what makes it dead. A new option cannot be added without answering both. Only a contradiction is rejected, never a redundancy.

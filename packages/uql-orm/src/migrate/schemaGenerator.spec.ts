@@ -6,7 +6,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { mockTableNode } from '../test/index.js';
-import type { ColumnSchema } from '../type/index.js';
+import type { ColumnSchema, VectorDistance } from '../type/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -190,7 +190,7 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should not resolve a vector distance keyword via the prototype chain for an unvalidated distance value', () => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     expect(() =>
-      mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' as any }])),
+      mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' as VectorDistance }])),
     ).toThrow('mariadb does not support vector distance metric: toString');
   });
 
@@ -553,7 +553,7 @@ describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
   it('should emit a column comment where the dialect supports one', () => {
     const mysqlGenerator = new SqlSchemaGenerator(new MySqlDialect());
     expect(addColumn({ comment: "the user's age", nullable: false }, mysqlGenerator)).toBe(
-      "ALTER TABLE `users` ADD COLUMN `col` INTEGER NOT NULL COMMENT 'the user''s age';",
+      "ALTER TABLE `users` ADD COLUMN `col` INTEGER NOT NULL COMMENT 'the user\\'s age';",
     );
   });
 
@@ -605,7 +605,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         column({ name: 'userId' }),
         column({
           name: 'groupId',
-          foreignKey: { table: 'groups', columns: ['id'], onDelete: 'CASCADE', onUpdate: 'NO ACTION' },
+          foreignKey: { references: { table: 'groups', columns: ['id'] }, onDelete: 'CASCADE', onUpdate: 'NO ACTION' },
         }),
       ],
       indexes: [],
@@ -619,9 +619,9 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       name: 'col',
       type: { category: 'integer' },
       nullable: false,
-      primaryKey: false,
-      autoIncrement: false,
-      unique: false,
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
       ...overrides,
     };
   }
@@ -643,7 +643,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
 
   it('should fall back to the columns flagged as primary when no key is declared', () => {
     const definition = tableDefinition();
-    definition.columns[0] = column({ name: 'userId', primaryKey: true, autoIncrement: true });
+    definition.columns[0] = column({ name: 'userId', isPrimaryKey: true, isAutoIncrement: true });
     const sql = generator.generateCreateTableFromDefinition(definition).join('\n');
     // The column declares a plain integer, and the key is spelled from that - it used to be a
     // hardcoded BIGINT whatever the column said, which no foreign key could then match.

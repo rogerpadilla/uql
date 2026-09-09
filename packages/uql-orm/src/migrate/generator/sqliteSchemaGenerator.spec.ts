@@ -29,6 +29,6 @@ describe('SqliteSchemaGenerator Specifics', () => {
   });
 
   it('should return empty string for column comment', () => {
-    expect(generator.generateColumnComment('name', 'comment')).toBe('');
+    expect(generator.generateColumnComment('comment')).toBe('');
   });
 });

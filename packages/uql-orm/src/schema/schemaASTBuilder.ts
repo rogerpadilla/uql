@@ -10,6 +10,8 @@ import { getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, FieldMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
+import { ddlText } from '../util/ddlExpression.util.js';
+import { computedExpression, isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
@@ -126,8 +128,8 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
     const field = fields[key];
     if (!field) continue;
 
-    // Skip virtual fields
-    if (field.virtual) continue;
+    // An inlined expression has no column; a stored one is a column like any other.
+    if (isInlinedExpression(field)) continue;
 
     const columnName = ctx.resolveColumnName(key, field);
     const type = resolveColumnCanonicalType(field);
@@ -144,6 +146,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
+      generatedAs: ddlText(computedExpression(field), `the computed column '${columnName}'`),
       comment: field.comment,
       enum: field.enum,
       table,

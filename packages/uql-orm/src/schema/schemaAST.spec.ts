@@ -510,12 +510,20 @@ describe('SchemaAST', () => {
         unique: false,
       });
 
-      const json: any = ast.toJSON();
+      const json = ast.toJSON();
 
-      expect(json).toHaveProperty('tables');
-      expect(json).toHaveProperty('relationships');
-      expect(json.tables[0].indexes.length).toBeGreaterThan(0);
-      expect(json.relationships.length).toBe(1);
+      expect(json.tables.map((table) => table.name)).toEqual(['users', 'posts']);
+      expect(json.tables[0].indexes.map((index) => index.name)).toEqual(['users__name_idx']);
+      expect(json.relationships.map((relationship) => relationship.name)).toEqual(['posts_user_fk']);
+      // Everything but the graph links, so a column option cannot go missing from a dump.
+      expect(json.tables[0].columns[0]).toEqual({
+        name: 'col0',
+        type: { category: 'string' },
+        nullable: true,
+        isPrimaryKey: true,
+        isAutoIncrement: true,
+        isUnique: false,
+      });
     });
   });
 });

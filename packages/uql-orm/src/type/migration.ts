@@ -2,7 +2,15 @@ import type { VectorCast } from '../dialect/vectorCast.js';
 import type { FullColumnDefinition, TableDefinition } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { CanonicalType, EnumValues, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
+import type {
+  CanonicalType,
+  ColumnNode,
+  EnumValues,
+  ForeignKeyAction,
+  IndexNode,
+  IndexType,
+  TableNode,
+} from '../schema/types.js';
 import type {
   EntityMeta,
   FieldOptions,
@@ -120,10 +128,14 @@ export interface MigrationResult {
 }
 
 /**
- * Represents a column in a database table schema
+ * A column as a statement describes one: {@link ColumnNode} with the engine's type spelling in place
+ * of the canonical one, and without the graph links.
+ *
+ * Derived so a field the node gains reaches every path that renders a column. Listed field by field,
+ * this dropped `enum` and then `generatedAs`, and a column added to an existing table arrived without
+ * the constraint or the expression the entity declared.
  */
-export interface ColumnSchema {
-  readonly name: string;
+export interface ColumnSchema extends Omit<ColumnNode, 'type' | 'table' | 'referencedBy' | 'references'> {
   /**
    * The engine's own type spelling, as introspection read it (`tinyint(1)`, `DATETIME`, `VARCHAR`).
    * Deliberately not a {@link CanonicalType}: the diff has to compare what the engine would *store*,
@@ -132,22 +144,10 @@ export interface ColumnSchema {
    * every sync for those columns. Use `sqlToCanonical` to interpret it.
    */
   readonly type: string;
-  readonly nullable: boolean;
-  readonly defaultValue?: unknown;
-  readonly isPrimaryKey: boolean;
-  readonly isAutoIncrement: boolean;
-  readonly isUnique: boolean;
+  /** Bounds introspection reports beside the type, where the engine states them separately. */
   readonly length?: number;
   readonly precision?: number;
   readonly scale?: number;
-  readonly comment?: string;
-  /**
-   * The values the column accepts, rendered as an inline `CHECK`. Carried only so a column *added* to
-   * an existing table is constrained the way one created with its table is; an alter drops it, since
-   * MySQL adds a second check rather than replacing the first. Introspection never sets it: a database
-   * reports a check as a constraint, not as a property of the column.
-   */
-  readonly enum?: EnumValues;
 }
 
 /**
@@ -417,7 +417,8 @@ export interface SchemaIntrospector {
   /**
    * Introspect entire database schema and return SchemaAST.
    */
-  introspect(): Promise<SchemaAST>;
+  /** The whole database, or just the tables named. Names nothing matches are left out. */
+  introspect(tables?: readonly string[]): Promise<SchemaAST>;
 
   /**
    * Get all table names in the database

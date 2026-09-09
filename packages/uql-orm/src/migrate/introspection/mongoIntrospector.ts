@@ -16,8 +16,8 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 
   constructor(private readonly pool: QuerierPool) {}
 
-  async introspect(): Promise<SchemaAST> {
-    const tableNames = await this.getTableNames();
+  async introspect(tables?: readonly string[]): Promise<SchemaAST> {
+    const tableNames = tables ?? (await this.getTableNames());
     const ast = new SchemaAST();
 
     for (const name of tableNames) {

@@ -36,7 +36,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
   });
 
   it('should generate column comment', () => {
-    expect(generator.generateColumnComment('name', "user's name")).toBe(" COMMENT 'user''s name'");
+    expect(generator.generateColumnComment("user's name")).toBe(" COMMENT 'user\\'s name'");
   });
 
   it('should generate DROP INDEX statement', () => {

@@ -21,7 +21,8 @@ class TestSqlDialect extends AbstractSqlDialect {
     renameColumn: true,
     foreignKeyAlter: true,
     primaryKeyAlter: true,
-    columnComment: true,
+    generatedColumnAdd: true,
+    commentSyntax: 'inline',
     vectorIndexRequiresNotNull: true,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
@@ -804,6 +805,37 @@ describe('AbstractSqlDialect (extra coverage)', () => {
         $sort: { name: 1, 'kind.public': -1 },
       });
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->>'public') DESC");
+    });
+  });
+
+  /**
+   * An inlined field has no column, so every clause naming it has to write the expression out. `$sort`
+   * wrote the output alias instead, which exists only when the field was also selected - so ordering by
+   * one you did not select failed on the server with `column "tagsCount" does not exist`.
+   */
+  describe('$sort on an inlined computed field', () => {
+    const tagsCountOperand = '(SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `id`)';
+
+    it('orders by the expression, not by an alias that may not exist', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Item, { $select: { id: true }, $sort: { tagsCount: -1 } });
+
+      expect(ctx.sql).toBe(`SELECT \`id\` FROM \`Item\` ORDER BY ${tagsCountOperand} DESC`);
+    });
+
+    /** One field, one rendering: the clause that reads it must not decide the operand for itself. */
+    it('builds the same operand $where does', () => {
+      const filtered = dialect.createContext();
+      dialect.find(filtered, Item, { $select: { id: true }, $where: { tagsCount: 1 } });
+
+      expect(filtered.sql).toContain(`WHERE ${tagsCountOperand} = ?`);
+    });
+
+    it('orders by the column itself when the field is a real one', () => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Item, { $select: { id: true }, $sort: { name: 1 } });
+
+      expect(ctx.sql).toBe('SELECT `id` FROM `Item` ORDER BY `name`');
     });
   });
 

@@ -454,7 +454,28 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    * @example `@Field({ type: String, enum: ['draft', 'paid'] as const })`
    */
   readonly enum?: EnumValues;
+  /**
+   * @deprecated Renamed to {@link FieldOptions.computed}, which also takes `stored`. `npx uql-codemod`
+   * rewrites it. Giving both throws.
+   */
   readonly virtual?: QueryRaw;
+  /**
+   * An expression the database computes, rather than a value the caller writes. Never part of an
+   * insert or update either way.
+   *
+   * Unstored, it is spliced into each statement that reads the field, so nothing is persisted and any
+   * expression will do. With `stored`, it becomes a real column - `GENERATED ALWAYS AS (...) STORED` -
+   * which the engine keeps up to date, so it can be indexed and read like any other.
+   *
+   * @example `@Field({ type: String, computed: raw`"first" || ' ' || "last"`, stored: true })`
+   */
+  readonly computed?: QueryRaw;
+  /**
+   * Whether {@link FieldOptions.computed} is a column the database keeps, rather than an expression
+   * spliced into each statement. The dial to flip after profiling: `$select`, `$where` and `$sort`
+   * read the field the same way either side of it, so no call site changes.
+   */
+  readonly stored?: boolean;
   readonly updatable?: boolean;
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback<V>;

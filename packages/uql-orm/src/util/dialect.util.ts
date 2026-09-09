@@ -34,6 +34,7 @@ import {
   type UqlContext,
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
+import { isDatabaseWritten } from './field.util.js';
 import { entityName, getFieldKeys, getKeys, hasKeys, isScalarId, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
@@ -45,17 +46,17 @@ export function filterFieldKeys<E>(
 ): FieldKey<E>[] {
   return getKeys(payload as object).filter((key) => {
     const fieldOpts = meta.fields[key];
-    return fieldOpts && !fieldOpts.virtual && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
+    return fieldOpts && !isDatabaseWritten(fieldOpts) && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
   }) as FieldKey<E>[];
 }
 
-/** Whether `key` is a real, non-virtual field that `record` provides a defined value for. */
+/** Whether `key` is a field the caller writes, and `record` provides a defined value for. */
 function isInsertableField<E>(meta: EntityMeta<E>, record: EntityData<E>, key: FieldKey<E>): boolean {
   const field = meta.fields[key];
-  return !!field && !field.virtual && record[key] !== undefined;
+  return !!field && !isDatabaseWritten(field) && record[key] !== undefined;
 }
 
-/** Appends `record`'s not-yet-`seen` insertable keys (real, non-virtual, defined value) to `keys`. */
+/** Appends `record`'s not-yet-`seen` insertable keys (real, caller-written, defined value) to `keys`. */
 function addInsertFieldKeys<E>(
   meta: EntityMeta<E>,
   record: EntityData<E>,

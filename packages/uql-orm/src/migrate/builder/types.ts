@@ -5,7 +5,7 @@
  * Enables type-safe migrations without raw SQL.
  */
 
-import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
+import type { ColumnNode, EnumValues, ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
 import type { ForeignKeySchema } from '../../type/migration.js';
 
@@ -75,42 +75,21 @@ export interface VectorColumnOptions extends BaseColumnOptions {
 }
 
 /**
- * Base options for a column definition.
+ * A column as the builder describes one: {@link ColumnNode} without the graph links a DTO cannot carry.
+ *
+ * Derived rather than restated, so the two cannot drift. A column gained `enum` and this shape was
+ * simply missing it, which is why a hand-written `createTable` could never constrain one. A field
+ * added to the node now reaches here, and failing to render it is a compile error rather than a
+ * column that quietly loses half its declaration.
  */
-export interface ColumnDefinition {
-  /** Column name */
-  name: string;
-  /** Canonical type */
-  type: CanonicalType;
-  /** Whether the column is nullable */
-  nullable: boolean;
-  /** Default value or expression */
-  defaultValue?: unknown;
-  /** Whether this is a primary key */
-  primaryKey: boolean;
-  /** Whether this column auto-increments */
-  autoIncrement: boolean;
-  /** Whether this column has a unique constraint */
-  unique: boolean;
-  /** Column comment */
-  comment?: string;
-}
+export type ColumnDefinition = Omit<ColumnNode, 'table' | 'referencedBy' | 'references'>;
 
 /**
- * Foreign key definition for a column.
+ * The foreign key a single column declares: {@link ForeignKeySchema} without the local columns, which
+ * are the column itself. Derived for the reason {@link ColumnDefinition} is - restated, the two spelled
+ * their target differently and every hand-off between them had to translate.
  */
-export interface ForeignKeyDefinition {
-  /** Constraint name */
-  name?: string;
-  /** Referenced table */
-  table: string;
-  /** Referenced column(s) */
-  columns: string[];
-  /** Action on delete */
-  onDelete: ForeignKeyAction;
-  /** Action on update */
-  onUpdate: ForeignKeyAction;
-}
+export type ForeignKeyDefinition = Omit<ForeignKeySchema, 'columns'>;
 
 /**
  * Full column definition including foreign key.
@@ -310,6 +289,10 @@ export interface IColumnBuilder {
   autoIncrement(): this;
   /** Add unique constraint */
   unique(): this;
+  /** Constrain the column to these values, as a `CHECK (col IN (...))`. */
+  enum(values: EnumValues): this;
+  /** Make the column one the database computes, as `GENERATED ALWAYS AS (<sql>) STORED`. */
+  computed(sql: string): this;
   /** Add comment */
   comment(text: string): this;
   /** Add index */

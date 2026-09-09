@@ -31,7 +31,7 @@ describe('PostgreSQL column type drift', () => {
       schema: SCHEMA,
       fields: { id: { type: Number, isId: true }, title: { type: String, length } },
     });
-    const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect();
+    const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect([TABLE]);
     const expected = buildSchemaAST([Row], { namingStrategy: dialect.namingStrategy });
     return detectDrift(expected, actual, { dialect }).drifts.filter((drift) => drift.type === 'type_mismatch');
   };

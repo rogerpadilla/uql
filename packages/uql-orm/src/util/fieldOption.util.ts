@@ -9,7 +9,7 @@ import type {
   StringColumnType,
   VectorColumnType,
 } from '../type/index.js';
-import { type ColumnFamily, columnFamily } from './field.util.js';
+import { type ColumnFamily, columnFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
 
 /**
@@ -27,6 +27,8 @@ const FIELD_OPTION_FAMILY = {
   onDelete: '*',
   enum: '*',
   virtual: '*',
+  computed: '*',
+  stored: '*',
   updatable: '*',
   eager: '*',
   onInsert: '*',
@@ -50,15 +52,33 @@ const FIELD_OPTION_FAMILY = {
  * rather than on each option that dies, because it is one fact rather than nineteen - and because an
  * option added without a thought then lands on the safe side of it.
  */
-const VIRTUAL_READS = [
+const INLINE_READS = [
   'type',
   'virtual',
+  'computed',
+  'stored',
   'enum',
   'eager',
   'distance',
 ] as const satisfies readonly (keyof FieldOptions)[];
 
-type VirtualRead = (typeof VIRTUAL_READS)[number];
+type InlineRead = (typeof INLINE_READS)[number];
+
+/**
+ * What a column the *database* writes cannot use. A stored computed column is a real column - it has
+ * DDL, an index, a comment, a name - so only the write half is dead on one: the engine fills it, and
+ * `GENERATED ALWAYS AS` and `DEFAULT` are mutually exclusive on every engine that has both.
+ */
+const GENERATED_WRITES = [
+  'updatable',
+  'onInsert',
+  'onUpdate',
+  'softDelete',
+  'defaultValue',
+  'autoIncrement',
+] as const satisfies readonly (keyof FieldOptions)[];
+
+type GeneratedWrite = (typeof GENERATED_WRITES)[number];
 
 /**
  * Whatever leaves `key` unread, named for the message, or `undefined` where the field reads it. Only
@@ -66,7 +86,8 @@ type VirtualRead = (typeof VIRTUAL_READS)[number];
  * an accurate statement teaches an author to distrust the check.
  */
 function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined {
-  if (opts.virtual !== undefined && !VIRTUAL_READS.some((read) => read === key)) return 'a virtual field';
+  if (isInlinedExpression(opts) && !INLINE_READS.some((read) => read === key)) return 'an inlined computed field';
+  if (opts.stored === true && GENERATED_WRITES.some((write) => write === key)) return 'a stored computed column';
   if (opts.isId === true && key === 'nullable' && opts.nullable === true) return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
   return undefined;
@@ -122,7 +143,11 @@ type FamilyOfType<T> = T extends NumericColumnType | NumberConstructor | BigIntC
 
 /** What the field's own values leave unread, matching {@link deadOn} line for line. */
 type DeadOptions<O> =
-  | (O extends { readonly virtual: QueryRaw } ? Exclude<keyof FieldOptions, VirtualRead> : never)
+  | (O extends { readonly stored: true }
+      ? GeneratedWrite
+      : O extends { readonly virtual: QueryRaw } | { readonly computed: QueryRaw }
+        ? Exclude<keyof FieldOptions, InlineRead>
+        : never)
   | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)
   | (O extends { readonly updatable: false } ? 'onUpdate' : never);
 

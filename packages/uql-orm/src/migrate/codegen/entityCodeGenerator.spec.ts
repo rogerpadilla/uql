@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SchemaAST } from '../../schema/schemaAST.js';
+import type { RelationshipNode } from '../../schema/types.js';
 import { mockTableNode } from '../../test/index.js';
 import { createEntityCodeGenerator, EntityCodeGenerator } from './entityCodeGenerator.js';
 
@@ -403,19 +404,21 @@ describe('EntityCodeGenerator', () => {
       const tags = mockTableNode('tags', []);
       const userTags = mockTableNode('user_tags', []);
 
-      const profileRel: any = {
+      const userId = users.columns.get('id')!;
+
+      const profileRel: RelationshipNode = {
         name: 'profile',
         type: 'OneToOne',
-        from: { table: users, columns: [users.columns.get('id')] },
+        from: { table: users, columns: [userId] },
         to: { table: profiles, columns: [] },
       };
 
-      const tagsRel: any = {
+      const tagsRel: RelationshipNode = {
         name: 'tags',
         type: 'ManyToMany',
-        from: { table: users, columns: [users.columns.get('id')!] },
+        from: { table: users, columns: [userId] },
         to: { table: tags, columns: [] },
-        through: { table: userTags },
+        through: userTags,
       };
 
       users.outgoingRelations.push(profileRel);
@@ -498,16 +501,24 @@ describe('EntityCodeGenerator', () => {
       expect(result!.code).not.toContain('/**');
     });
 
-    it('should carry a column comment into the generated JSDoc', () => {
+    /**
+     * The decorator owns the comment, not the JSDoc: only the option survives a regenerate and reaches
+     * the `COMMENT ON` the next sync emits, and writing the text in both places put one comment in the
+     * file twice.
+     */
+    it('should carry a column comment into the decorator rather than the JSDoc', () => {
       const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
 
-      expect(result!.code).toContain('   * headline');
+      expect(result!.code).toContain("comment: 'headline'");
+      expect(result!.code).not.toContain('   * headline');
     });
 
     it('should declare a non-nullable column as required', () => {
       const result = new EntityCodeGenerator(createBlogAst()).generateForTable('posts');
 
-      expect(result!.code).toContain("@Field({ columnType: 'varchar', length: 255, index: 'posts_title_idx' })");
+      expect(result!.code).toContain(
+        "@Field({ columnType: 'varchar', length: 255, comment: 'headline', index: 'posts_title_idx' })",
+      );
       expect(result!.code).toContain('title: string;');
     });
 
@@ -515,6 +526,59 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(createBlogAst(), { uqlImportPath: '@acme/orm' }).generateForTable('posts');
 
       expect(result!.code).toContain("from '@acme/orm'");
+    });
+  });
+
+  /**
+   * Every option a {@link ColumnNode} can carry has to reach the decorator, or regenerating an entity
+   * hands back a weaker one than the database holds and the next sync writes the difference away.
+   * `OPTION_SOURCE`'s `satisfies` is what forces the answer; these are the answers it forces.
+   */
+  describe('round trip', () => {
+    it('should carry the values an enum column accepts', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('tickets', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'state', type: { category: 'string', length: 20 }, enum: ['open', 'closed'] },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('tickets');
+
+      expect(result!.code).toContain("enum: ['open', 'closed']");
+    });
+
+    it('should carry a generated column as a stored computed field, and import raw for it', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('lines', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'qty', type: { category: 'integer' } },
+          { name: 'total', type: { category: 'integer' }, generatedAs: 'qty * 2' },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('lines');
+
+      expect(result!.code).toContain('computed: raw`qty * 2`, stored: true');
+      expect(result!.code).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
+    });
+
+    it('should escape what a database reprints inside the source it emits', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('quotes', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'label', type: { category: 'string' }, comment: "the buyer's name" },
+          { name: 'tick', type: { category: 'string' }, generatedAs: 'concat(`a`, ${1})' },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('quotes');
+
+      expect(result!.code).toContain("comment: 'the buyer\\'s name'");
+      expect(result!.code).toContain('computed: raw`concat(\\`a\\`, \\${1})`');
     });
   });
 

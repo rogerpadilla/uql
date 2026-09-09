@@ -33,9 +33,13 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return false;
   }
 
-  // SQLite uses PRAGMA which doesn't use parameterized queries in the same way
+  /**
+   * `table_xinfo`, not `table_info`: the latter omits generated columns entirely, so a table carrying
+   * one read back without it and every sync offered to add a column that was already there - which
+   * SQLite cannot do to an existing table anyway. PRAGMA takes no bound parameters, hence the splice.
+   */
   protected getColumnsQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA table_info(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA table_xinfo(${this.escapeId(tableName)})`;
   }
 
   protected getIndexesQuery(tableName: string): string {

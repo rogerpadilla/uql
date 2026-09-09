@@ -21,8 +21,8 @@ describe('TableBuilder', () => {
 
       expect(def.columns.length).toBe(1);
       expect(def.columns[0].name).toBe('id');
-      expect(def.columns[0].primaryKey).toBe(true);
-      expect(def.columns[0].autoIncrement).toBe(true);
+      expect(def.columns[0].isPrimaryKey).toBe(true);
+      expect(def.columns[0].isAutoIncrement).toBe(true);
     });
 
     it('should add custom id name', () => {

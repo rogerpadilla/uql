@@ -22,8 +22,8 @@ describe('ColumnBuilder', () => {
       );
       const def = col.build();
       expect(def.foreignKey).toBeDefined();
-      expect(def.foreignKey?.table).toBe('users');
-      expect(def.foreignKey?.columns).toEqual(['id']);
+      expect(def.foreignKey?.references.table).toBe('users');
+      expect(def.foreignKey?.references.columns).toEqual(['id']);
       expect(def.foreignKey?.onDelete).toBe('CASCADE');
     });
 
@@ -36,7 +36,7 @@ describe('ColumnBuilder', () => {
         },
       );
       const def = col.build();
-      expect(def.foreignKey?.columns).toEqual(['id']);
+      expect(def.foreignKey?.references.columns).toEqual(['id']);
       expect(def.foreignKey?.onDelete).toBe('NO ACTION');
       expect(def.foreignKey?.onUpdate).toBe('NO ACTION');
     });
@@ -61,18 +61,18 @@ describe('ColumnBuilder', () => {
     it('should set primary key', () => {
       const col = new ColumnBuilder('id', { category: 'integer' }).primaryKey();
       const def = col.build();
-      expect(def.primaryKey).toBe(true);
+      expect(def.isPrimaryKey).toBe(true);
       expect(def.nullable).toBe(false); // PK implies NOT NULL
     });
 
     it('should set autoIncrement', () => {
       const col = new ColumnBuilder('id', { category: 'integer' }).autoIncrement();
-      expect(col.build().autoIncrement).toBe(true);
+      expect(col.build().isAutoIncrement).toBe(true);
     });
 
     it('should set unique', () => {
       const col = new ColumnBuilder('email', { category: 'string' }).unique();
-      expect(col.build().unique).toBe(true);
+      expect(col.build().isUnique).toBe(true);
     });
 
     it('should set comment', () => {
@@ -97,8 +97,8 @@ describe('ColumnBuilder', () => {
       const def = col.build();
 
       expect(def.foreignKey).toBeDefined();
-      expect(def.foreignKey?.table).toBe('users');
-      expect(def.foreignKey?.columns).toEqual(['id']);
+      expect(def.foreignKey?.references.table).toBe('users');
+      expect(def.foreignKey?.references.columns).toEqual(['id']);
     });
 
     it('should set onDelete action', () => {
@@ -130,7 +130,7 @@ describe('ColumnBuilder', () => {
       const def = col.build();
 
       expect(def.nullable).toBe(false);
-      expect(def.unique).toBe(true);
+      expect(def.isUnique).toBe(true);
       expect(def.comment).toBe('Primary email');
       expect(def.index).toBe(true);
     });

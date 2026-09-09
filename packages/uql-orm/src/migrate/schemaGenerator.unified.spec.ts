@@ -79,7 +79,7 @@ describe('SqlSchemaGenerator (unified)', () => {
       });
 
       it('should generate correct column comments', () => {
-        expect(generator.generateColumnComment('col', 'Testing')).toBe(comment);
+        expect(generator.generateColumnComment('Testing')).toBe(comment);
       });
     },
   );

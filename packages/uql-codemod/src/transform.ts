@@ -77,11 +77,53 @@ function decoratorOptions(node: ts.Decorator): DecoratorOptions {
     : { kind: 'literal', node: first };
 }
 
-function hasProperty(options: DecoratorOptions, name: string): boolean {
-  return (
-    options.kind === 'literal' &&
-    options.node.properties.some((prop) => prop.name && ts.isIdentifier(prop.name) && prop.name.text === name)
+/** A named property of the options object, however its key is written. */
+type NamedProperty = ts.PropertyAssignment | ts.ShorthandPropertyAssignment;
+
+/**
+ * The property `name` in the decorator's options, whether its key is plain, quoted or a shorthand.
+ *
+ * All three forms, because both callers care about the option being *there*: one to leave an option
+ * alone that is already stated, the other to rename it. Matching only the plain key inserted a second
+ * `type` beside a quoted one, and left a shorthand `virtual` behind while reporting nothing.
+ */
+function findProperty(options: DecoratorOptions, name: string): NamedProperty | undefined {
+  if (options.kind !== 'literal') {
+    return undefined;
+  }
+  return options.node.properties.find(
+    (prop): prop is NamedProperty =>
+      (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)) && propertyKey(prop.name) === name,
   );
+}
+
+/** A key's name where it is spelled out, which is every form but a computed one (`{ [k]: v }`). */
+function propertyKey(name: ts.PropertyName): string | undefined {
+  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : undefined;
+}
+
+/**
+ * Renames the `virtual` option to `computed`, the one it was renamed to.
+ *
+ * Only the key is replaced, so the expression, its formatting and any comment inside the options
+ * object survive untouched. A shorthand has no value to keep, so it becomes `computed: virtual` -
+ * renaming the key alone would rebind it to a local that does not exist.
+ */
+function renameVirtualOption(decorator: ts.Decorator, ctx: Context, node: ts.Node): void {
+  const options = decoratorOptions(decorator);
+  const virtual = findProperty(options, 'virtual');
+  if (!virtual) {
+    if (options.kind === 'opaque' && /\bvirtual\b/.test(decorator.getText())) {
+      ctx.unresolved.push(`${ctx.describe(node)}: ${options.reason}`);
+    }
+    return;
+  }
+  if (findProperty(options, 'computed')) {
+    ctx.unresolved.push(`${ctx.describe(node)}: gives both 'virtual' and 'computed'; keep 'computed'.`);
+    return;
+  }
+  const text = ts.isShorthandPropertyAssignment(virtual) ? 'computed: virtual' : 'computed';
+  ctx.edits.push({ start: virtual.name.getStart(), end: virtual.name.getEnd(), text });
 }
 
 /** Inserts `option` into the decorator's options object, creating one when the call has no arguments. */
@@ -126,7 +168,7 @@ function addInferredOption(
   },
 ): ts.Type | undefined {
   const options = decoratorOptions(decorator);
-  if (spec.satisfiedBy.some((name) => hasProperty(options, name))) {
+  if (spec.satisfiedBy.some((name) => findProperty(options, name))) {
     return undefined;
   }
   if (options.kind === 'opaque') {
@@ -288,6 +330,7 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     }
     if (FIELD_DECORATORS.has(name)) {
       addFieldType(decorator, node, ctx);
+      renameVirtualOption(decorator, ctx, node);
     }
     if (RELATION_DECORATORS.has(name)) {
       addRelationEntity(decorator, node, ctx);

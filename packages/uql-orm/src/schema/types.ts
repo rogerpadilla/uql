@@ -151,6 +151,8 @@ export interface ColumnNode {
   readonly isUnique: boolean;
   /** The values the column accepts. See {@link EnumValues}. */
   readonly enum?: EnumValues;
+  /** The SQL an engine-generated column is computed from, as `GENERATED ALWAYS AS (...) STORED`. */
+  readonly generatedAs?: string;
   /** Column comment/description */
   readonly comment?: string;
 

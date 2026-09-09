@@ -39,6 +39,6 @@ describe('PostgresSchemaGenerator Specifics', () => {
   });
 
   it('should return empty string for generateColumnComment', () => {
-    expect(generator.generateColumnComment('name', 'comment')).toBe('');
+    expect(generator.generateColumnComment('comment')).toBe('');
   });
 });

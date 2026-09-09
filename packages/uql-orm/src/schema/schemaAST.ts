@@ -458,20 +458,17 @@ export class SchemaAST implements ISchemaAST {
   }
 
   /**
-   * Convert schema to a plain object for serialization/debugging.
+   * The schema as a plain object, for serialization and debugging. The graph links are what is left
+   * out - they are cycles, and nothing else is: listing the fields to keep instead dropped every
+   * option a column had gained since, `defaultValue` and `enum` included.
    */
-  toJSON(): object {
+  toJSON() {
     return {
       tables: Array.from(this.tables.values()).map((t) => ({
         name: t.name,
-        columns: Array.from(t.columns.values()).map((c) => ({
-          name: c.name,
-          type: c.type,
-          nullable: c.nullable,
-          isPrimaryKey: c.isPrimaryKey,
-          isAutoIncrement: c.isAutoIncrement,
-          isUnique: c.isUnique,
-        })),
+        columns: Array.from(t.columns.values()).map(
+          ({ table: _table, referencedBy: _referencedBy, references: _references, ...column }) => column,
+        ),
         indexes: t.indexes.map((i) => ({
           name: i.name,
           columns: i.entries.map((entry) => entry.column),

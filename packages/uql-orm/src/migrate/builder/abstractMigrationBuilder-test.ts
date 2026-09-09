@@ -368,6 +368,69 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
     expect(await this.getColumnCategory(BUILDER_TABLES.MAIN, 'payload')).toBe('string');
   }
 
+  /**
+   * The three a column declares for itself. `createTable` lifts them onto the table it is building;
+   * `addColumn` had no such lift and emitted the column alone, dropping the constraint and the index
+   * without a word, while the builder could not express an enum at all.
+   */
+  async shouldAddAColumnCarryingItsForeignKey() {
+    await this.withBuilder(async (builder) => {
+      await this.givenUnrelatedPair(builder);
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) =>
+        c.bigint('ownerId').nullable().references(BUILDER_TABLES.PARENT, 'id'),
+      );
+    });
+
+    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    const fk = schema.foreignKeys?.find((key) => key.columns.includes('ownerId'));
+    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
+    expect(fk?.references.columns).toEqual(['id']);
+  }
+
+  async shouldAddAColumnCarryingItsIndex() {
+    await this.withBuilder(async (builder) => {
+      await this.givenUnrelatedPair(builder);
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('slug', { length: 80 }).nullable().index());
+    });
+
+    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(schema.indexes?.some((index) => index.entries.some((entry) => entry.column === 'slug'))).toBe(true);
+  }
+
+  /** Only the database can say the `CHECK` reached the column and is enforced. */
+  async shouldAddAColumnCarryingItsEnum() {
+    await this.withBuilder(async (builder) => {
+      await this.givenUnrelatedPair(builder);
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) =>
+        c.string('state', { length: 10 }).nullable().enum(['on', 'off']),
+      );
+    });
+
+    // Unquoted: these names need no quoting on any engine here, and `raw` is the suite's own seam.
+    await this.withBuilder(async (builder) => {
+      await builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('on')`);
+      await expect(builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('bogus')`)).rejects.toThrow();
+    });
+  }
+
+  /** The engine fills it, so only the engine can say the clause is right and a write to it is refused. */
+  async shouldCreateATableWithAComputedColumn() {
+    await this.withBuilder(async (builder) => {
+      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+        t.id();
+        t.integer('qty').nullable();
+        t.integer('price').nullable();
+        t.integer('total').nullable().computed('qty * price');
+      });
+      await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (qty, price) VALUES (3, 7)`);
+    });
+
+    const [row] = await this.pool.withQuerier((querier) =>
+      querier.all<{ total: number }>(`SELECT total FROM ${BUILDER_TABLES.MAIN}`),
+    );
+    expect(Number(row.total)).toBe(21);
+  }
+
   async shouldAddAForeignKey() {
     await this.withBuilder(async (builder) => {
       await this.givenUnrelatedPair(builder);

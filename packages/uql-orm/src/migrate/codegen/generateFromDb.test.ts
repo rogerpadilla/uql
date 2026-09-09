@@ -32,7 +32,9 @@ describe('generate:from-db (PostgreSQL)', () => {
       await querier.run(`CREATE INDEX cfd_covering ON "${TABLE}" ("tenantId") INCLUDE (status)`);
     });
 
-    const ast = await new PostgresSchemaIntrospector(pool).introspect();
+    // Only this table: the suites share one database, and scanning every relation while another
+    // drops one is how Postgres comes back with "could not open relation with OID".
+    const ast = await new PostgresSchemaIntrospector(pool).introspect([TABLE]);
     code = new EntityCodeGenerator(ast).generateForTable(TABLE)!.code;
   }, provisioningTimeout);
 

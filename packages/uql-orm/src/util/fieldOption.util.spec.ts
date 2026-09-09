@@ -20,7 +20,7 @@ it('reports the option a column cannot use', () => {
 
 it('reports the option another option leaves unread', () => {
   expect(fieldOptionConflict({ type: Number, virtual: raw`1`, index: true })).toBe(
-    "cannot use 'index': it is ignored on a virtual field",
+    "cannot use 'index': it is ignored on an inlined computed field",
   );
   expect(fieldOptionConflict({ type: Number, updatable: false, onUpdate: () => 1 })).toBe(
     "cannot use 'onUpdate': it is ignored on a field declared 'updatable: false'",
@@ -49,6 +49,18 @@ it('leaves a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: Number, isId: true, nullable: false })).toBe(undefined);
 });
 
+it('lets a stored computed column keep what a real column has, and refuses what the engine fills', () => {
+  const stored = { type: String, computed: raw`a || b`, stored: true } as const;
+
+  expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: false })).toBeUndefined();
+  expect(fieldOptionConflict({ ...stored, defaultValue: 'x' })).toBe(
+    "cannot use 'defaultValue': it is ignored on a stored computed column",
+  );
+  expect(fieldOptionConflict({ ...stored, updatable: false })).toBe(
+    "cannot use 'updatable': it is ignored on a stored computed column",
+  );
+});
+
 it('defineField backstops what the decorators reject at compile time', () => {
   class Backstopped {
     id?: number;
@@ -56,7 +68,7 @@ it('defineField backstops what the decorators reject at compile time', () => {
   }
 
   expect(() => defineField(Backstopped, 'computed', { type: Number, virtual: raw`1`, index: true })).toThrow(
-    "'Backstopped.computed' cannot use 'index': it is ignored on a virtual field.",
+    "'Backstopped.computed' cannot use 'index': it is ignored on an inlined computed field.",
   );
   expect(() => defineEntity(Backstopped, { fields: { id: { type: Number, isId: true, nullable: true } } })).toThrow(
     "'Backstopped.id' cannot use 'nullable': it is ignored on a primary key.",
