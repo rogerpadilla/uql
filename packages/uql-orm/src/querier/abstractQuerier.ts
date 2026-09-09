@@ -41,6 +41,7 @@ import {
   augmentWhere,
   childrenOf,
   clone,
+  dataKeyed,
   filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
@@ -48,18 +49,18 @@ import {
   idOnlyQuery,
   isScalarId,
   joinedColumns,
-  joinedRowKey,
+  keyColumns,
   LoggerWrapper,
   type ParentJoin,
   type ParentPartition,
   isBoundedPerParent,
   type JoinedRelationRejectedKey,
   parentJoins,
-  parentRowKey,
   queryChildrenOfAll,
   parseRelationAtKey,
   parseRelationQueryValue,
   type RelationQuery,
+  rowKey,
   runHooks,
   someKey,
   targetKeyColumns,
@@ -800,17 +801,19 @@ export abstract class AbstractQuerier implements Querier {
     joins: readonly ParentJoin[],
     relKey: keyof E & string,
   ): void {
-    const childrenByParentId: Record<string, RawRow[]> = {};
+    const childrenByParentId = dataKeyed<RawRow[]>();
+    // Every joined column, so two children agreeing on one column of a composite key are not
+    // gathered under the same parent. Both column lists are read once, not once per row.
+    const joinedKeys = keyColumns(joins, 'joined');
+    const parentKeys = keyColumns(joins, 'parent');
     for (const child of children) {
-      // Every joined column, so two children agreeing on one column of a composite key are not
-      // gathered under the same parent.
-      (childrenByParentId[joinedRowKey(joins, child)] ??= []).push(child);
+      (childrenByParentId[rowKey(child, joinedKeys)] ??= []).push(child);
     }
     for (const parent of parents) {
       // `[]` rather than nothing for a parent with no children: a populated to-many is a list the
       // caller asked for, so it maps and counts without a guard, and its type can say so. An
       // unpopulated one stays absent, which is what tells the two apart.
-      parent[relKey] = (childrenByParentId[parentRowKey(joins, parent)] ?? []) as E[keyof E & string];
+      parent[relKey] = (childrenByParentId[rowKey(parent, parentKeys)] ?? []) as E[keyof E & string];
     }
   }
 

@@ -7,8 +7,11 @@ import type {
   FieldOptions,
   InsertIdSource,
   NamingStrategy,
+  QueryGroupOp,
+  QueryJoinOp,
   QueryOptions,
   QueryWhere,
+  QueryWhereArray,
   QueryWhereMap,
 } from '../type/index.js';
 import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
@@ -130,5 +133,37 @@ export abstract class AbstractDialect {
    */
   protected scopedWhereMap<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhereMap<E> {
     return applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
+  }
+
+  /**
+   * How each clause-grouping operator renders: which operator joins its clauses, and whether the
+   * group is negated afterwards - so `$not` is `NOT (a AND b)` and `$nor` is `NOT (a OR b)`. SQL
+   * negates the rendered group; MongoDB spells the same thing with its own `$nor`.
+   *
+   * Total over {@link QueryGroupOp}, so a fifth operator cannot reach a dialect without both being
+   * told how to render it.
+   */
+  protected static readonly GROUP_OPS = {
+    $and: { join: '$and', negate: false },
+    $or: { join: '$or', negate: false },
+    $not: { join: '$and', negate: true },
+    $nor: { join: '$or', negate: true },
+  } as const satisfies Record<QueryGroupOp, { readonly join: QueryJoinOp; readonly negate: boolean }>;
+
+  /** Whether a `$where` key groups clauses, narrowing it for the renderers that read {@link GROUP_OPS}. */
+  protected static isGroupOp(key: string): key is QueryGroupOp {
+    return Object.hasOwn(AbstractDialect.GROUP_OPS, key);
+  }
+
+  /**
+   * A group operator's clauses, rejecting what the types do not cover: `/http` casts client JSON
+   * straight to `Query`, so a scalar can arrive where an array belongs. Shared so both backends
+   * refuse the same payload rather than one throwing and the other failing further in.
+   */
+  protected static groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E>): QueryWhereArray<E> {
+    if (val !== undefined && !Array.isArray(val)) {
+      throw TypeError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
+    }
+    return val ?? [];
   }
 }

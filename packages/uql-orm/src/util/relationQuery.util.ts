@@ -15,7 +15,6 @@ import {
   QUERY_ROOT_NUMBER_CLAUSES,
 } from '../type/query.js';
 import { getKeys, someKey } from './object.util.js';
-import { rowKey } from './rowKey.util.js';
 
 export type RelationRequestSummary<E> = {
   readonly requestedKeys: RelationKey<E>[];
@@ -68,21 +67,21 @@ export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, pare
 
 /** `{ joined column: true }`: the projection or grouping that keeps a parent's key on the rows read. */
 export function joinedColumns(joins: readonly ParentJoin[]): Record<string, true> {
-  return Object.fromEntries(joins.map(({ joined }) => [joined, true]));
+  return Object.fromEntries(keyColumns(joins, 'joined').map((column) => [column, true]));
 }
 
 /**
- * A parent row keyed by the columns a relation joins *from*, and a child or tally row keyed by the
- * columns it carries that key in. The two halves of matching children to parents: they must agree on
- * every column, so each is read through `joins` rather than through the parent's own key list - which
- * is the same set only for a to-many, and silently a different one otherwise.
+ * One side's columns: `'parent'` for the columns a parent is keyed by, `'joined'` for the ones a
+ * child or tally row carries that key in. Matching the two halves means agreeing on every column, so
+ * each side is read through `joins` rather than through the parent's own key list - the same set only
+ * for a to-many, and silently a different one otherwise. `keyof ParentJoin` is what keeps the two
+ * sides from being spelled apart.
+ *
+ * Lifted out of `joins` once per relation, not once per row: {@link rowKey} takes the list and reads
+ * each row itself, so a page of children costs one key each and nothing else.
  */
-export function parentRowKey(joins: readonly ParentJoin[], parent: unknown): string {
-  return rowKey(joins.map(({ parent: key }) => read(parent, key)));
-}
-
-export function joinedRowKey(joins: readonly ParentJoin[], row: unknown): string {
-  return rowKey(joins.map(({ joined }) => read(row, joined)));
+export function keyColumns(joins: readonly ParentJoin[], side: keyof ParentJoin): string[] {
+  return joins.map((join) => join[side]);
 }
 
 /**

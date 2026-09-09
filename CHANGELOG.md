@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.47.1] - 2026-09-09
+
+- **`$not` and `$nor` now work at the root of a `$where` on MongoDB.** Both threw `path $not does not exist`; every SQL dialect negated the group.
+- **`{ $and: [] }` no longer breaks the query.** An empty group left SQL a dangling `WHERE` and MongoDB an operator it rejects; it now constrains nothing.
+- **A populated to-many no longer breaks on an id like `__proto__`.** It threw `push is not a function`, and the relation's `_count` read back as an object.
+- **Populating a relation allocates a third less.** A page of 50 parents with 200 children drops from 245 KB to 190 KB.
+- Two entry budgets rose, `.` to 28.8 KB gzipped and `./migrate` to 50.4 KB; nothing newly reachable.
+
 ## [0.47.0] - 2026-09-09
 
 - **`$limit`/`$skip` inside a to-many `$populate` are now per parent.** They capped the whole page, so a parent that had children could come back with `[]`. One bounded subquery per parent, on every engine.

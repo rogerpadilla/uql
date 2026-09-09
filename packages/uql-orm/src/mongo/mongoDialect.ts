@@ -15,6 +15,7 @@ import type {
   QueryAggregateOp,
   QueryExclude,
   QueryGroupMap,
+  QueryGroupOp,
   QueryLikeOp,
   QueryOptions,
   QueryPopulate,
@@ -25,6 +26,7 @@ import type {
   QueryTextSearchOptions,
   QueryVectorSearch,
   QueryWhere,
+  QueryWhereArray,
   QueryWhereFieldOperatorMap,
   RelationKey,
   RelationMeta,
@@ -180,14 +182,14 @@ export class MongoDialect extends AbstractDialect {
     const meta = getMeta(entity);
     const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
     return someKey(whereMap, (key) =>
-      key === '$and' || key === '$or'
-        ? (whereMap[key] as QueryWhere<E>[]).some((it) => this.constrainsRelations(entity, it))
+      MongoDialect.isGroupOp(key)
+        ? ((whereMap[key] as QueryWhereArray<E>) ?? []).some((it) => this.constrainsRelations(entity, it))
         : Boolean(meta.relations[key as RelationKey<E>]),
     );
   }
 
   /**
-   * Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or`
+   * Renders a `$where` tree without applying entity filters (used for same-scope group-operator
    * recursion). Relation keys need `$lookup` stages, so they are only accepted when `lookups` is
    * given - a plain `find`/`updateMany` filter has nowhere to put them.
    */
@@ -204,13 +206,8 @@ export class MongoDialect extends AbstractDialect {
     for (const [rawKey, rawVal] of Object.entries(whereMap)) {
       let key = rawKey;
       let val: unknown = rawVal;
-      if (key === '$and' || key === '$or') {
-        filter[key] = (val as QueryWhere<E>[]).map((filterIt) => {
-          // A `QueryRaw` here would recurse forever: `buildQueryWhereAsMap` re-wraps it as
-          // `{ $and: [raw] }`, which lands back on this branch.
-          this.assertNoRaw(filterIt);
-          return this.renderFilter(entity, filterIt, opts, lookups);
-        });
+      if (MongoDialect.isGroupOp(key)) {
+        this.appendLogicalOperator(filter, entity, key, val as QueryWhereArray<E>, opts, lookups);
       } else if (key === '$text') {
         // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
         // the way it does elsewhere - the same shape as `$distance` being index-defined here.
@@ -237,6 +234,46 @@ export class MongoDialect extends AbstractDialect {
       }
     }
     return filter as Filter<E>;
+  }
+
+  /**
+   * Renders `$and`/`$or`/`$not`/`$nor` into `filter`. MongoDB has no root-level `$not`, so both
+   * negating operators become its `$nor`, which is exactly `NOT (a OR b)` - and by De Morgan that
+   * makes a `$nor` list its clauses directly while a `$not` wraps them in one `$and` first.
+   *
+   * Clauses that render to nothing are dropped and an empty operator emits no key at all: MongoDB
+   * rejects an empty `$and`/`$or`/`$nor` outright, where the SQL dialects contribute no term.
+   * Negations accumulate into the one `$nor`, since `NOT a AND NOT b` is `$nor: [a, b]`.
+   */
+  private appendLogicalOperator<E extends Document>(
+    filter: Record<string, unknown>,
+    entity: Type<E>,
+    key: QueryGroupOp,
+    val: QueryWhereArray<E>,
+    opts?: QueryOptions,
+    lookups?: RelationLookups,
+  ): void {
+    const { join, negate } = MongoDialect.GROUP_OPS[key];
+    const parts = MongoDialect.groupClauses(key, val)
+      .map((filterIt) => {
+        // A `QueryRaw` here would recurse forever: `buildQueryWhereAsMap` re-wraps it as
+        // `{ $and: [raw] }`, which lands back on this branch.
+        this.assertNoRaw(filterIt);
+        return this.renderFilter(entity, filterIt, opts, lookups);
+      })
+      .filter((part) => Object.keys(part).length > 0);
+
+    if (!parts.length) {
+      return;
+    }
+
+    if (!negate) {
+      filter[key] = parts;
+      return;
+    }
+
+    const negated = join === '$and' && parts.length > 1 ? [{ $and: parts }] : parts;
+    filter['$nor'] = [...((filter['$nor'] as Filter<E>[]) ?? []), ...negated];
   }
 
   /**

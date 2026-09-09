@@ -1,39 +1,52 @@
 ---
 name: release
-description: Cut and publish a uql release - changelog entry, version bump, tag push, GitHub Release, npm publish. Use when asked to release, cut a version, publish a package, or ship a patch/minor/major.
+description: Cut and publish a uql release - review the diff, changelog entry, version bump, tag push, GitHub Release, npm publish. Use when asked to release, cut a version, publish a package, or ship a patch/minor/major.
 ---
 
 # Releasing uql
 
-Versioning and publishing are two steps on purpose: `lerna publish`'s npm step 404s unreliably against this registry. **Never run `lerna publish`.** A failed publish then leaves the tag and CHANGELOG already right - rerun the publish alone, never re-bump.
+"Release" means all of this, not just the bump.
 
-Packages version independently, so a release usually moves only one.
+## 1. Review the whole diff
 
-## 1. Changelog entry, before the bump
+Staged and unstaged alike. Correct what is wrong, simplify what is duplicated, and delete comments the change made stale.
 
-`release.github` reads the notes from `CHANGELOG.md` and throws when the entry is missing.
+## 2. Settle the changelog entry
 
-Compress the `[Unreleased]` section first - the CHANGELOG.md header says how - then rename its heading to the version the bump will produce, dated today. Nothing checks that the two agree - a patch heading over breaking changes publishes wrong notes, so decide the heading and the bump level together.
+Compress `[Unreleased]` - the CHANGELOG.md header says how - then rename its heading to the version the bump will produce, dated today. Reorder so related bullets sit together.
 
-## 2. Bump, tag, push, release
+`release.github` looks the entry up by the version it bumped to, so a heading naming a different version stops the release. What nothing checks is severity: decide the heading and the bump level together.
+
+A raised size budget needs its own line saying which entry grew and that nothing became newly reachable.
+
+## 3. Verify the tests
+
+`bun run check` is the gate. Beyond green: does every fix have a test that would have failed before it, at the cheapest level that pins it - exact SQL in a dialect spec, cross-backend behaviour in the shared suite?
+
+## 4. Update the docs site
+
+`~/projects/uql-site`. A fix that makes the code match what the docs already claimed needs no change; a new or changed behaviour does. Its `build` type-checks every example against the **published** package, so a doc naming something unreleased has to wait for step 6.
+
+## 5. Bump, tag, push, release
+
+Versioning and publishing are two steps on purpose: `lerna publish`'s npm step 404s unreliably against this registry. **Never run `lerna publish`.** A failed publish leaves the tag and CHANGELOG already right - rerun the publish alone, never re-bump.
 
 ```sh
 bun run release.patch    # or .minor / .major
 ```
 
-The `lerna version` prompt is deliberate, and hangs a non-interactive shell. There, run the pieces:
+The `lerna version` prompt is deliberate, and hangs a non-interactive shell. There, take the bump and the rest separately - `--yes` has to reach `lerna version`, and a script's arguments only ever reach its last command:
 
 ```sh
 bun run release patch --yes
-git push --follow-tags
-bun run release.github
+bun run release.finish
 ```
 
 The codemod is deliberately left out of the GitHub Release, so its bumps never notify people who never installed it.
 
-## 3. Publish whichever package moved
+## 6. Publish whichever package moved
 
-`lerna version` reports which changed; publish only those.
+Packages version independently, so a release usually moves only one; `lerna version` reports which.
 
 ```sh
 bun run publish.orm

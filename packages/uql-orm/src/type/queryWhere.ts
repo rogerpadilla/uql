@@ -95,6 +95,18 @@ export type QueryWhereRootOperator<E> = {
 export type QueryNegateOp = keyof Pick<QueryWhereRootOperator<unknown>, '$not' | '$nor'>;
 
 /**
+ * The root operators that join their clauses instead of negating them, tied back to
+ * {@link QueryWhereRootOperator} on the same terms as {@link QueryNegateOp}.
+ */
+export type QueryJoinOp = keyof Pick<QueryWhereRootOperator<unknown>, '$and' | '$or'>;
+
+/**
+ * Every root operator whose value is a {@link QueryWhereArray} rather than a field condition: the
+ * two that join their clauses and the two that negate the join.
+ */
+export type QueryGroupOp = QueryJoinOp | QueryNegateOp;
+
+/**
  * Comparison operators accepted by `$size` for range queries: {@link QueryHavingOp} plus `$between`.
  * Strips `null` from picked operators since array size is always numeric.
  */
@@ -369,7 +381,7 @@ export type QueryWhereFieldValue<T> =
   | QueryRaw;
 
 /**
- * query filter array - used for `$and`, `$or`, `$not`, `$nor` operators.
+ * query filter array - the value every {@link QueryGroupOp} takes.
  */
 export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
 

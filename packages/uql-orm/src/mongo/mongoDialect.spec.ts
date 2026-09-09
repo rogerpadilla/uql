@@ -60,6 +60,40 @@ class MongoDialectSpec implements Spec {
     this.dialect = new MongoDialect();
   }
 
+  /** MongoDB has no root `$not`, so both negations become its `$nor`. */
+  shouldBuildWhereWithRootNegations() {
+    expect(this.dialect.where(Item, { $not: [{ name: 'a' }] })).toEqual({ $nor: [{ name: 'a' }] });
+
+    expect(this.dialect.where(Item, { $nor: [{ name: 'a' }, { code: 'c' }] })).toEqual({
+      $nor: [{ name: 'a' }, { code: 'c' }],
+    });
+
+    // `$not` joins with AND before negating, so its clauses need wrapping; `$nor` already is a NOT-OR.
+    expect(this.dialect.where(Item, { $not: [{ name: 'a' }, { code: 'c' }] })).toEqual({
+      $nor: [{ $and: [{ name: 'a' }, { code: 'c' }] }],
+    });
+
+    // `NOT a AND NOT b` is one `$nor` of both, so two negations at root merge instead of colliding.
+    expect(this.dialect.where(Item, { $not: [{ name: 'a' }], $nor: [{ code: 'c' }] })).toEqual({
+      $nor: [{ name: 'a' }, { code: 'c' }],
+    });
+
+    // MongoDB rejects an empty `$and`/`$or`/`$nor`, and a clause that renders to nothing leaves none.
+    expect(this.dialect.where(Item, { $nor: [] })).toEqual({});
+    expect(this.dialect.where(Item, { $and: [] })).toEqual({});
+    expect(this.dialect.where(Item, { $nor: [{}] })).toEqual({});
+  }
+
+  /**
+   * `/http` casts client JSON straight to `Query`, so a scalar reaches here where an array belongs.
+   * Both backends share the guard, so both name the operator and the type they got.
+   */
+  shouldRejectANonArrayLogicalOperator() {
+    expect(() => this.dialect.where(Item, { $and: 'foo' } as never)).toThrow('$and expects an array, got string');
+    expect(() => this.dialect.where(Item, { $or: { name: 'a' } } as never)).toThrow('$or expects an array, got object');
+    expect(() => this.dialect.where(Item, { $nor: null } as never)).toThrow('$nor expects an array, got null');
+  }
+
   shouldBuildWhere() {
     expect(this.dialect.where(Item, undefined)).toEqual({});
 
@@ -354,6 +388,11 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { name: 'x' })).toBe(false);
     expect(this.dialect.constrainsRelations(Item, { tags: { name: 'x' } } as never)).toBe(true);
     expect(this.dialect.constrainsRelations(Item, { $or: [{ tags: { name: 'x' } }] } as never)).toBe(true);
+    // A negation groups clauses like `$and`/`$or` do, so a relation inside one needs the same
+    // aggregation path - missing these was a relation filter throwing as unsupported.
+    expect(this.dialect.constrainsRelations(Item, { $not: [{ tags: { name: 'x' } }] } as never)).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $nor: [{ tags: { name: 'x' } }] } as never)).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $nor: [] } as never)).toBe(false);
   }
 
   /** To-many relations are populated with a second query, so they contribute no `$lookup` stage. */

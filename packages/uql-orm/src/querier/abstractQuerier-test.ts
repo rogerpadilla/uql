@@ -15,7 +15,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { Querier, QuerierPool, QuerySearch, Type } from '../type/index.js';
+import type { Querier, QuerierPool, QuerySearch, QueryWhere, Type } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
@@ -1536,6 +1536,71 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(notFound).toBeUndefined();
+  }
+
+  /**
+   * `$not` negates the AND of its clauses, `$nor` the OR. MongoDB has no root-level `$not` and
+   * spells both with its own `$nor`, so this is shared rather than per-backend.
+   */
+  async shouldFindByRootNegationOperators() {
+    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]); // Users A, B and C
+
+    const names = async (where: QueryWhere<User>) =>
+      (
+        await this.querier.findMany(User, {
+          $select: { name: true },
+          $sort: { name: 1 },
+          $where: where,
+        })
+      ).map(({ name }) => name);
+
+    // NOT (name = A AND email = A's) excludes only A, where the same pair under `$nor` excludes B too.
+    await expect(names({ $not: [{ name: 'Some Name A' }, { email: 'someemaila@example.com' }] })).resolves.toEqual([
+      'Some Name B',
+      'Some Name C',
+    ]);
+    await expect(names({ $nor: [{ name: 'Some Name A' }, { email: 'someemailb@example.com' }] })).resolves.toEqual([
+      'Some Name C',
+    ]);
+
+    await expect(names({ $not: [{ name: 'Some Name A' }] })).resolves.toEqual(['Some Name B', 'Some Name C']);
+
+    // Both negations at once, and one alongside an ordinary field.
+    await expect(names({ $not: [{ name: 'Some Name A' }], $nor: [{ name: 'Some Name B' }] })).resolves.toEqual([
+      'Some Name C',
+    ]);
+    await expect(names({ email: 'someemailc@example.com', $nor: [{ name: 'Some Name A' }] })).resolves.toEqual([
+      'Some Name C',
+    ]);
+
+    // Nested inside another group, and negating a clause with its own operator map.
+    await expect(names({ $or: [{ $not: [{ name: 'Some Name A' }] }, { name: 'Some Name A' }] })).resolves.toEqual([
+      'Some Name A',
+      'Some Name B',
+      'Some Name C',
+    ]);
+    await expect(names({ $nor: [{ name: { $in: ['Some Name A', 'Some Name B'] } }] })).resolves.toEqual([
+      'Some Name C',
+    ]);
+
+    // A negated relation condition still has to emit its join, MongoDB's `$lookup` included.
+    const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
+    await this.querier.insertOne(User, { name: 'Some Name D', email: 'somemaild@example.com', companyId });
+
+    await expect(names({ $nor: [{ company: { name: 'Acme' } }] })).resolves.toEqual([
+      'Some Name A',
+      'Some Name B',
+      'Some Name C',
+    ]);
+    await expect(names({ $not: [{ company: { name: 'Acme' } }] })).resolves.toEqual([
+      'Some Name A',
+      'Some Name B',
+      'Some Name C',
+    ]);
+
+    // An operator with nothing to negate constrains nothing, the way an empty `$and` does.
+    await expect(names({ $nor: [] })).resolves.toEqual(['Some Name A', 'Some Name B', 'Some Name C', 'Some Name D']);
+    await expect(names({ $and: [] })).resolves.toEqual(['Some Name A', 'Some Name B', 'Some Name C', 'Some Name D']);
   }
 
   async shouldCount() {

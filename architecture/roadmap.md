@@ -85,7 +85,7 @@ Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none se
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
 
-1. **The id an insert reports** — a key map widens `insertOne`'s return type for every entity (139 errors in this repo alone). Revisit only with a way to keep the single-key return narrow.
+1. **The id an insert reports** — a composite insert has nothing to report: the caller wrote every key column, so `idOf(meta, row)` already names the row from the payload it passed in. Handing back a key map instead widens `insertOne`'s return type for every entity (139 errors in this repo, all single-key `const id = await insertOne(...)`; the narrower `IdValue | map` union still costs 58). Revisit only as an opt-in that leaves the single-key return narrow, the way Drizzle's `$returningId()` does.
 2. **`saveMany`** reads an id as proof the row exists, which a composite carries on an insert too. Telling the two apart is upsert's job.
 3. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
 4. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.

@@ -13,7 +13,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { Query, QueryContext, QueryLockWait, Type, UpdatePayload } from '../type/index.js';
+import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
@@ -1008,6 +1008,36 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT (${e}name${e} = ${this.ph(1)} OR ${e}creatorId${e} = ${this.ph(2)})`,
     );
     expect(res.values).toEqual(['abc', 1]);
+  }
+
+  /**
+   * A group with nothing to render contributes no term, so it must leave behind neither a `WHERE`
+   * with no condition after it - which is a syntax error - nor a dangling separator beside the
+   * conditions that did render.
+   */
+  shouldFindWithAnEmptyLogicalOperator() {
+    const e = this.dialect.escapeIdChar;
+    const select = `SELECT ${e}id${e} FROM ${e}User${e}`;
+    const sqlOf = ($where: QueryWhere<User>) =>
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where }));
+
+    expect(sqlOf({ $and: [] })).toMatchObject({ sql: select, values: [] });
+    expect(sqlOf({ $or: [] })).toMatchObject({ sql: select, values: [] });
+    expect(sqlOf({ $nor: [] })).toMatchObject({ sql: select, values: [] });
+    // A clause that renders nothing counts the same as no clause at all.
+    expect(sqlOf({ $and: [{}] })).toMatchObject({ sql: select, values: [] });
+
+    let res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { name: 'abc', $and: [] } }),
+    );
+    expect(res.sql).toBe(`${select} WHERE ${e}name${e} = ${this.ph(1)}`);
+    expect(res.values).toEqual(['abc']);
+
+    res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { $or: [{ name: 'abc' }, {}] } }),
+    );
+    expect(res.sql).toBe(`${select} WHERE ${e}name${e} = ${this.ph(1)}`);
+    expect(res.values).toEqual(['abc']);
   }
 
   shouldFind$orAnd$and() {

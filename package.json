@@ -8,9 +8,10 @@
   "scripts": {
     "release": "bun run check && lerna version",
     "check.package": "publint packages/uql-orm && attw --pack --profile esm-only packages/uql-orm",
-    "release.patch": "bun run release patch && git push --follow-tags && bun run release.github",
-    "release.minor": "bun run release minor && git push --follow-tags && bun run release.github",
-    "release.major": "bun run release major && git push --follow-tags && bun run release.github",
+    "release.patch": "bun run release patch && bun run release.finish",
+    "release.minor": "bun run release minor && bun run release.finish",
+    "release.major": "bun run release major && bun run release.finish",
+    "release.finish": "git push --follow-tags && bun run release.github",
     "release.github": "bun scripts/github-release.ts",
     "publish.orm": "cd packages/uql-orm && bun publish",
     "publish.codemod": "cd packages/uql-codemod && bun publish",

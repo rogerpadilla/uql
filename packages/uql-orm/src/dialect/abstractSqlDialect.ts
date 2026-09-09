@@ -21,9 +21,9 @@ import {
   type QueryExclude,
   type QueryFilter,
   type QueryGroupMap,
+  type QueryGroupOp,
   type QueryHavingMap,
   type QueryLikeOp,
-  type QueryNegateOp,
   type QueryOptions,
   type QueryPager,
   type QueryPopulate,
@@ -244,6 +244,24 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const fragmentCtx = ctx.createFragment();
     build(fragmentCtx);
     return fragmentCtx.sql;
+  }
+
+  /**
+   * Each operand rendered into its own fragment, keeping only those that emitted SQL.
+   *
+   * Nothing reaches `ctx` until every one has rendered, because an operand that emits nothing - an
+   * empty `$and`, an `{}` entry - must leave behind neither a dangling separator nor a clause with no
+   * condition after it. How many terms really emit is also what decides the parentheses, which is why
+   * the caller counts what comes back rather than what it passed in.
+   */
+  protected renderOperands<T>(
+    ctx: QueryContext,
+    operands: readonly T[],
+    render: (ctx: QueryContext, operand: T) => void,
+  ): string[] {
+    return operands
+      .map((operand) => this.buildFragment(ctx, (fragmentCtx) => render(fragmentCtx, operand)))
+      .filter((part) => part !== '');
   }
 
   addValue(values: unknown[], value: unknown): string {
@@ -503,7 +521,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     this.renderWhere(ctx, entity, this.scopedWhereMap(meta, where, opts), opts);
   }
 
-  /** Renders a `$where` tree without applying entity filters (used for same-scope `$and`/`$or` recursion). */
+  /** Renders a `$where` tree without applying entity filters (used for same-scope group-operator recursion). */
   protected renderWhere<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -513,13 +531,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const meta = getMeta(entity);
     const { clause = 'WHERE' } = opts;
 
-    where = buildQueryWhereAsMap(meta, where);
+    const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
 
     // An `undefined` value emits nothing, so it must not count towards the terms either: it decides
-    // both where the `AND`s go and whether this fragment needs parentheses.
-    const whereKeys = getKeys(where).filter((key) => (where as Record<string, unknown>)[key] !== undefined);
+    // whether the keys below render as operands of an `AND`.
+    const whereKeys = getKeys(whereMap).filter((key) => whereMap[key] !== undefined);
 
-    if (!whereKeys.length) {
+    // Each key is an operand of the `AND` joining them; a lone key emits this fragment verbatim, so
+    // it inherits this one's position instead.
+    const childOperand = whereKeys.length > 1 || opts.operand || clause === 'AND';
+    const childOpts = opts.operand === childOperand ? opts : { ...opts, operand: childOperand };
+
+    const parts = this.renderOperands(ctx, whereKeys, (fragmentCtx, key) =>
+      this.compare(fragmentCtx, entity, key, whereMap[key], childOpts),
+    );
+
+    if (!parts.length) {
       return;
     }
 
@@ -527,29 +554,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       ctx.append(` ${clause} `);
     }
 
-    const multipleKeys = whereKeys.length > 1;
     // This fragment joins its own keys with `AND`, so appending it after one (a JOIN's `ON`) needs no
     // parentheses - but anything nested in it is still an operand, since that may be an `OR`.
-    const parenthesize = multipleKeys && opts.operand;
-
-    if (parenthesize) {
-      ctx.append('(');
-    }
-
-    // Each key is an operand of the `AND` joining them; a lone key emits this fragment verbatim, so
-    // it inherits this one's position instead.
-    const childOperand = multipleKeys || opts.operand || clause === 'AND';
-    const childOpts = opts.operand === childOperand ? opts : { ...opts, operand: childOperand };
-    whereKeys.forEach((key, index) => {
-      if (index > 0) {
-        ctx.append(' AND ');
-      }
-      this.compare(ctx, entity, key, (where as Record<string, unknown>)[key], childOpts);
-    });
-
-    if (parenthesize) {
-      ctx.append(')');
-    }
+    const body = parts.join(' AND ');
+    ctx.append(parts.length > 1 && opts.operand ? `(${body})` : body);
   }
 
   compare<E>(ctx: QueryContext, entity: Type<E>, key: string, val: unknown, opts: QueryComparisonOptions = {}): void {
@@ -580,14 +588,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       return;
     }
 
-    if (key === '$and' || key === '$or' || key === '$not' || key === '$nor') {
-      this.compareLogicalOperator(
-        ctx,
-        entity,
-        key as '$and' | '$or' | '$not' | '$nor',
-        val as QueryWhereArray<E>,
-        opts,
-      );
+    if (AbstractSqlDialect.isGroupOp(key)) {
+      this.compareLogicalOperator(ctx, entity, key, val as QueryWhereArray<E>, opts);
       return;
     }
 
@@ -642,55 +644,36 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected compareLogicalOperator<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    key: '$and' | '$or' | '$not' | '$nor',
+    key: QueryGroupOp,
     val: QueryWhereArray<E>,
     opts: QueryComparisonOptions,
   ): void {
-    const op = AbstractSqlDialect.NEGATE_OP_MAP.get(key as QueryNegateOp) ?? (key as '$and' | '$or');
-    const negate = AbstractSqlDialect.NEGATE_OP_MAP.has(key as QueryNegateOp);
-
-    if (val !== undefined && !Array.isArray(val)) {
-      // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
-      throw TypeError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
-    }
-
-    const items = val ?? [];
+    const { join, negate } = AbstractSqlDialect.GROUP_OPS[key];
+    const items = AbstractSqlDialect.groupClauses(key, val);
     // With more than one item each is an operand of the operator joining them, so a compound item
     // parenthesizes itself and precedence never applies; a lone item is this group verbatim, so it
     // inherits the group's own position. A negation always makes its subject an operand.
     const childOperand = items.length > 1 || negate || opts.operand;
 
-    // Rendered before anything is appended, because an item that contributes no SQL (`{}`, an
-    // `undefined` entry) must leave no dangling separator behind, and how many terms this fragment
-    // really emits is what decides whether it needs parentheses.
-    const parts = items
-      .map((entry) =>
-        this.buildFragment(ctx, (fragmentCtx) => {
-          if (entry instanceof QueryRaw) {
-            this.getRawValue(fragmentCtx, { value: entry });
-          } else if (entry) {
-            this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
-          }
-        }),
-      )
-      .filter((part) => part !== '');
+    const parts = this.renderOperands(ctx, items, (fragmentCtx, entry) => {
+      if (entry instanceof QueryRaw) {
+        this.getRawValue(fragmentCtx, { value: entry });
+      } else if (entry) {
+        this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
+      }
+    });
 
     if (!parts.length) {
       return;
     }
 
-    const body = parts.join(op === '$or' ? ' OR ' : ' AND ');
+    const body = parts.join(join === '$or' ? ' OR ' : ' AND ');
     const parenthesize = parts.length > 1 && (opts.operand || negate);
     ctx.append((negate ? 'NOT ' : '') + (parenthesize ? `(${body})` : body));
   }
 
   /** Memoizes {@link escapedColumnName}; see there for why it is per dialect instance. */
   private readonly escapedColumns = new WeakMap<FieldOptions, string>();
-
-  private static readonly NEGATE_OP_MAP = new Map<QueryNegateOp, '$and' | '$or'>([
-    ['$not', '$and'],
-    ['$nor', '$or'],
-  ]);
 
   private static readonly COMPARE_OP_MAP = new Map<QueryCompareOp, string>([
     ['$gt', ' > '],
