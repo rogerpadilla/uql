@@ -21,6 +21,7 @@
     "README.md"
   ],
   "scripts": {
+    "prepack": "bun run build",
     "build": "rimraf dist .tsconfig.tsbuildinfo && tsc -b tsconfig.build.json",
     "clean": "rimraf dist .tsconfig.tsbuildinfo"
   },
