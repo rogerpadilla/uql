@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.51.0] - 2026-09-09
+
+- **Breaking: an upsert reports the entity's id, not the driver's result.** `upsertOne` returns `{ id, changes, created }` and `upsertMany` `{ ids, changes }`, ids in payload order. `firstId` is gone from both; `run()` keeps it.
+- **A MongoDB upsert says which rows it inserted.** `bulkWrite` keys its ids by operation index and they were flattened into a dense list, so nothing tied them back to a row.
+
 ## [0.50.0] - 2026-09-09
 
 - **All four write methods report an id in one shape.** `WrittenId` is the column's value on a single key and the key map on a composite, so `saveOne` no longer hands back a union of both.
