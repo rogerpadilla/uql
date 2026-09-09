@@ -3,7 +3,11 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from
 /** The shape of a generated key, whose value a test cannot know. */
 export const uuidPattern = /^[0-9a-f-]{36}$/;
 
-/** Matches any column holding a generated key. Stateless, so one instance serves every assertion. */
+/**
+ * Matches any column holding a generated key. Stateless, so one instance serves every assertion.
+ * Annotated `string` - the value is a matcher object, but vitest types `stringMatching` as `any`,
+ * which would spread to every call site.
+ */
 export const anyUuid: string = expect.stringMatching(uuidPattern);
 
 export function createSpec<T extends Spec>(spec: T) {
