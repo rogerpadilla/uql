@@ -4,15 +4,44 @@ The next feature block, in build order. Groundwork first, so the features on top
 
 ## Foundational refactors
 
-**R1 — zero key columns.** The composite half shipped; left is zero, for a relation nothing identifies. _Unlocks views._
+Each is small on its own and gates something bigger. None is worth doing for its own sake.
 
-**R2 — entity capabilities.** A `readable`/`writable`/`refreshable` set brands read-only on the type, so writing to a view is a compile error. _Unlocks views._
+**R1 — an entity with no key.** `meta.ids` is a list that composite keys made plural; it cannot yet be empty. A view often identifies nothing, and every by-id path has to say so rather than take the first column of none. _Unlocks views._
 
-**R5 — `dialect.compile(query) -> { sql, values }`.** Makes the SQL text a memoizable identity. _Unlocks batching._
+```ts
+defineView({ name: 'DailyTotals', ... }); // no @Id to give it
+```
 
-**R6 — one projection-alias concept.** `$agg` aliases, `_count`, cursor metadata and a future `$window` each derive their result type separately. Unify, or `$window` adds a fourth. _Unlocks cursor pagination._
+**R2 — entity capabilities.** Whether an entity can be read, written or refreshed is not on its type, so nothing stops a write to something that has no table to write to. A `readable`/`writable`/`refreshable` set makes it a compile error instead of a runtime one. _Unlocks views._
 
-**R7 — schema objects as a dependency-ordered graph.** Step 1 done: the table-only topological sort in `schema/dependencyGraph.ts`, generic over node and edge. Left: a `SchemaObject` vocabulary, and flattening `SchemaDiffResult`'s one-field-per-kind. Both wait for a second kind, so the shape is derived rather than guessed. _Unlocks views, triggers, RLS policies._
+```ts
+await pool.insertOne(WorkspaceUsage, { total: 1 });
+//                   ~~~~~~~~~~~~~~ not writable
+```
+
+**R5 — `dialect.compile(query)`.** Building SQL and running it are one step today, so a caller cannot hold the text without executing it - and batching needs exactly that: several statements' text and values, gathered before any of them runs. It also makes the text a memoizable identity. _Unlocks batching._
+
+```ts
+const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
+```
+
+**R6 — one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, `$agg` through `QueryAggregateResult`. Cursor pagination adds a fourth for its metadata, and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination._
+
+```ts
+{ $select: { id: true }, $count: { posts: true }, $agg: { total: { $sum: 'amount' } } }
+// id from one rule, _count from another, total from a third
+```
+
+**R7 — schema objects as a dependency-ordered graph.** Ordering is already generic: `createOrder` in `schema/dependencyGraph.ts` takes any node and a function returning its dependencies. What is not is the diff - `SchemaDiffResult` has a field per kind (`tablesToCreate`, `tablesToDrop`, `columnDiffs`, `indexDiffs`), so a view, a trigger or a policy each add three more and every consumer grows a branch. A `SchemaObject` vocabulary flattens it. _Unlocks views, triggers, RLS policies._
+
+```ts
+// now                          // after
+tablesToCreate: TableNode[]     create: SchemaObject[]
+indexDiffs: IndexDiff[]         drop: SchemaObject[]
+...one field per kind           alter: SchemaObjectDiff[]
+```
+
+The second kind that R7 waited for has arrived - generated columns in 0.46.0 - so the shape can be derived now rather than guessed.
 
 ## Views and materialized views
 
@@ -42,14 +71,6 @@ R6. Row-value comparison where available, an OR-chain elsewhere, compound `$lt` 
 ```
 
 The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md).
-
-## Per-parent limits on a populated relation
-
-```ts
-$populate: { posts: { $sort: { createdAt: -1 }, $limit: 5 } };
-```
-
-`$limit`/`$skip` inside a to-many `$populate` cap the whole result set today, not each parent's share, so a parent that has children can come back with `[]`. The docs call that inherent; it is not. One bounded subquery per parent key concatenated with `UNION ALL` is universal and reads `parents x (skip + limit)` rows, with a `LATERAL` override on `PgLikeSqlDialect` as a second increment. A fix rather than a behaviour change, so it ships in a minor. No R7 dependency. [The design](populate-limits.md).
 
 ## Typed DDL predicates
 
@@ -81,27 +102,31 @@ R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N rou
 
 Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none server-side, though the browser `ClientQuerier` already carries a per-call `signal`. Not scheduled, and the mapping is worse than it looks: only pg, CockroachDB, MySQL and MariaDB can truly cancel, each needing a _second_ connection (`pg_cancel_backend`, `CANCEL QUERY`, `KILL QUERY`) that the querier cannot reach - it holds a `connect` thunk, not the pool. MongoDB is partial: the driver's `Abortable` covers `find`/`aggregate`/`countDocuments` but not `insertMany`/`updateMany`/`bulkWrite`. Every HTTP driver is a dead end rather than a freebie - libsql, Turso Cloud and D1 expose no per-request signal at all - and the synchronous ones (better-sqlite3, `node:sqlite`, PGlite) surface no `interrupt`. Nine write methods also take no options today. The idiom to follow when it happens is `supportsRowLocks` + `assertLockSupported` + `DriverCapabilities`.
 
+- **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
+- **`defineEntity` with `extends`.** Decorated classes already inherit fields and hooks from a base; the functional form has no way to say the same. Small, and only matters for the runtime-schema path 0.44.0 opened.
+- **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM ships it experimental.
+
 ## Where a composite key still refuses
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
 
-1. **The id an insert reports** — a composite insert has nothing to report: the caller wrote every key column, so `idOf(meta, row)` already names the row from the payload it passed in. Handing back a key map instead widens `insertOne`'s return type for every entity (139 errors in this repo, all single-key `const id = await insertOne(...)`; the narrower `IdValue | map` union still costs 58). Revisit only as an opt-in that leaves the single-key return narrow, the way Drizzle's `$returningId()` does.
-2. **`saveMany`** reads an id as proof the row exists, which a composite carries on an insert too. Telling the two apart is upsert's job.
-3. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
-4. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.
-5. **The HTTP `/:id` route** — one path segment, plus two bugs: the adapters disagree about percent-decoding, and a by-id route never runs `assertIdValue`, so a partial composite addresses every row agreeing on the columns it named, `DELETE` included.
+1. **The id an insert reports** — a composite insert has nothing to report: the caller wrote every key column, so `idOf(meta, row)` already names the row from the payload it passed in. Handing back a key map instead widens `insertOne`'s return type for every entity (139 errors in this repo, all single-key `const id = await insertOne(...)`; the narrower `IdValue | map` union still costs 58). Revisit only as an opt-in that leaves the single-key return narrow, the way Drizzle's `$returningId()` does. `saveOne`/`saveMany` **did** widen to `EntityId`, for 4 errors: save is 20 call sites against insert's 289, so the asymmetry between them is economic rather than principled.
+2. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
+3. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.
+4. **The HTTP `/:id` route** — one path segment, plus a bug: the adapters disagree about percent-decoding. A by-id route does not run `assertIdValue`, but `buildIdQuery` calls `soleIdOf` first, so a composite is refused before it can under-specify one; what is missing there is a nullish guard, which `matchRoute` already makes unreachable.
 
 Types stay permissive: TypeScript cannot accumulate `@Id` across properties, so the `idKey` brand is the opt-in and `assertIdValue` is what everyone else gets.
 
 ## Shipped, and not worth re-litigating
 
-`computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
+Per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
 
 - **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
 - **Keys and indexes are compared by their columns, never by name.** Matching on names would rewrite every table the first time a naming convention changed.
 - **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
 - **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix; nearly free once the trigger design's `COMMENT ON` emission lands.
 - **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
+- **A relation's `$limit` is each parent's share, not a slice of one page.** One bounded read per parent - `UNION ALL` of branches, `LATERAL` on the Postgres family, `$unionWith` on MongoDB. A `ROW_NUMBER` window is one statement everywhere but sorts every matching child to keep the top few, so its cost rides the axis nobody controls. [The design](populate-limits.md).
 - **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
 - **An unstored `computed` is written out by every clause that names it.** `$sort` used the output alias, so ordering by one you had not selected failed on the server.
 - **Every field option states where it applies, in one table.** `FIELD_OPTION_FAMILY` pairs each option with its column family, `deadOn` with what makes it dead. A new option cannot be added without answering both. Only a contradiction is rejected, never a redundancy.

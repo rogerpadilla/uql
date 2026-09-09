@@ -35,8 +35,10 @@ class IncompatibleRejected {
   @Field({ type: Number, length: 10 }) c?: number;
   // @ts-expect-error - 'precision' belongs to a numeric column
   @Field({ type: String, precision: 10 }) d?: string;
-  // @ts-expect-error - a virtual field is never in the DDL, so its index would never be created
-  @Field({ type: Number, virtual: raw`1`, index: true }) e?: number;
+  // @ts-expect-error - an inlined computed field is never in the DDL, so its index would never be created
+  @Field({ type: Number, computed: raw`1`, index: true }) e?: number;
+  // @ts-expect-error - and the deprecated 'virtual' spelling is read the same way
+  @Field({ type: Number, virtual: raw`1`, index: true }) e2?: number;
   // @ts-expect-error - an update never carries the field, so the callback could not fire
   @Field({ type: Number, updatable: false, onUpdate: () => 1 }) f?: number;
   // @ts-expect-error - a primary key is NOT NULL in every engine
@@ -58,7 +60,7 @@ class CompatibleStillCompiles {
   @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
   // A JSON column defaults with the SQL literal it stores.
   @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }>;
-  @Field({ type: Number, virtual: raw`1`, eager: false }) computed?: number;
+  @Field({ type: Number, computed: raw`1`, eager: false }) computed?: number;
   @Field({ type: Date, softDelete: true, index: true }) deletedAt?: Date;
 }
 

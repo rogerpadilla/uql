@@ -19,6 +19,10 @@ it('reports the option a column cannot use', () => {
 });
 
 it('reports the option another option leaves unread', () => {
+  expect(fieldOptionConflict({ type: Number, computed: raw`1`, index: true })).toBe(
+    "cannot use 'index': it is ignored on an inlined computed field",
+  );
+  // The deprecated alias reaches the same rules, which is the point of reading both spellings.
   expect(fieldOptionConflict({ type: Number, virtual: raw`1`, index: true })).toBe(
     "cannot use 'index': it is ignored on an inlined computed field",
   );
@@ -42,9 +46,9 @@ it('leaves a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: String, columnType: 'decimal', precision: 30, scale: 2 })).toBe(undefined);
   // A foreign key resolves its column from the referenced key, so there is no family to contradict.
   expect(fieldOptionConflict({ references: () => class {}, length: 36 })).toBe(undefined);
-  expect(fieldOptionConflict({ type: Number, virtual: raw`1`, eager: false })).toBe(undefined);
+  expect(fieldOptionConflict({ type: Number, computed: raw`1`, eager: false })).toBe(undefined);
   // An option stated as `undefined` is one the field never gave.
-  expect(fieldOptionConflict({ type: Number, index: undefined, virtual: raw`1` })).toBe(undefined);
+  expect(fieldOptionConflict({ type: Number, index: undefined, computed: raw`1` })).toBe(undefined);
   // A key is NOT NULL, so saying so states what it already is - only claiming the opposite is a conflict.
   expect(fieldOptionConflict({ type: Number, isId: true, nullable: false })).toBe(undefined);
 });
@@ -67,7 +71,7 @@ it('defineField backstops what the decorators reject at compile time', () => {
     computed?: number;
   }
 
-  expect(() => defineField(Backstopped, 'computed', { type: Number, virtual: raw`1`, index: true })).toThrow(
+  expect(() => defineField(Backstopped, 'computed', { type: Number, computed: raw`1`, index: true })).toThrow(
     "'Backstopped.computed' cannot use 'index': it is ignored on an inlined computed field.",
   );
   expect(() => defineEntity(Backstopped, { fields: { id: { type: Number, isId: true, nullable: true } } })).toThrow(

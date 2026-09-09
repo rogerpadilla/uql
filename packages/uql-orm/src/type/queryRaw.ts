@@ -27,7 +27,7 @@ export type QueryRawFnOptions = {
 /**
  * A `raw` callback: write into `ctx`, or return a string or number to have it appended. Anything else
  * it returns is ignored, which is why the return type is `unknown` rather than `void | Scalar` - the
- * latter rejected `({ ctx }) => ctx.append(...)`, the form every virtual field is written in, because
+ * latter rejected `({ ctx }) => ctx.append(...)`, the form every computed field is written in, because
  * TypeScript's "returning a value where void is expected" allowance does not apply to a union.
  *
  * `Required`, and the parameter not optional, because the one place that calls it (`getRawValue`)

@@ -102,7 +102,10 @@ Flat where the base is linear, and it buys two things.
 - **9x on wide pages**, and flat rather than linear scaling (table above).
 - **Constant SQL text.** `unnest($1::bigint[])` takes the whole key list as one parameter, so a single prepared statement serves every page size. `UNION ALL` cannot: N branches is distinct SQL per N.
 
-It costs the `./postgres` entry 1,916 gzipped bytes, which is `schema/canonicalType` becoming reachable: `unnest` refuses an uncast parameter, so the row source has to spell the key's SQL type. Its budget rose from 24,500 to 27,000 by the rule `verify-dist.ts` states. Precomputing a field's canonical type at registration would take that back to ~921 - the rest is the SQL-string parsing `fieldOptionsToCanonical` needs - and is the way to reclaim it if the entry ever tightens.
+It costs the `./postgres` entry 1,916 gzipped bytes, which is `schema/canonicalType` becoming reachable: `unnest` refuses an uncast parameter, so the row source has to spell the key's SQL type. Its budget rose from 24,500 to 27,000 by the rule `verify-dist.ts` states. There is no cheap way to take that back, and two that look like one are not:
+
+- **Precomputing a field's canonical type at registration** puts `canonicalType` on the path of `entity/index.js`, which the root entry re-exports - so it adds the module to the entry every consumer loads to save part of it on one. The root reaches `abstractSqlDialect` but not `pgLikeSqlDialect`, which is why the cost is confined to `./postgres` today.
+- **Splitting the module** by direction does not separate them: `fieldOptionsToCanonical`, the half the dialect needs, calls `sqlToCanonical` to read a `columnType: 'int'` string, so the parsing table comes along.
 
 **Dispatch is inheritance, not a capability flag.** `AbstractSqlDialect` emits `UNION ALL`; `PgLikeSqlDialect` overrides. **MySQL supports `LATERAL` and must not use it** - measured at 38.3 ms on the viral page above, worse than its own `UNION ALL` at 3.9 ms and worse than N+1 at 15.8 ms, because MySQL does not plan it as a correlated index loop. A `supportsLateral` flag would invite exactly that mistake; an override leaves MySQL on the default with nothing to get wrong.
 
@@ -136,7 +139,7 @@ Rejected: deriving the row source from the child itself (`SELECT DISTINCT fk FRO
 |     100 |       3.1 ms |      19.2 ms |
 |     500 |      14.1 ms |      87.5 ms |
 
-**The ceiling is stages, not bytes.** Bisected against a real server: 1000 top-level stages accepted, 1001 refused, and a `$unionWith`'s own sub-pipeline stages do not count toward it. The pipeline is the leading branch's stages plus one `$unionWith` each after, so the count is taken rather than estimated - a fixed parent budget would let a populate with several `$lookup`s overflow at the server instead. A query each is the fallback above it, and for a vector `$sort`, whose pipeline has a shape of its own; both arms are covered by `mongoPerParentLimit.test.ts`.
+A query each is the fallback above it, and the only form a vector `$sort` takes at all: `$vectorSearch` has to be the first stage of a pipeline, so it cannot be one of N `$unionWith` branches, and read a parent at a time it stays correct because the search takes the parent's key as its own filter. The stage-count arm is covered by `mongoPerParentLimit.test.ts`; the vector arm is not, since `$vectorSearch` needs Atlas and the suite runs `mongodb-memory-server`.
 
 Not the `$group`/`$push`/`$slice` MikroORM uses on MongoDB: that buffers every child of a parent into one array against the 16 MB document limit, which is the unbounded read this design rejects everywhere
 else.

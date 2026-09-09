@@ -47,7 +47,7 @@ const FIELD_OPTION_FAMILY = {
 } as const satisfies Record<keyof FieldOptions, ColumnFamily | '*'>;
 
 /**
- * The only options a `virtual` field reaches: it is skipped in DDL and dropped from every insert and
+ * The only options an inlined computed field reaches: it is skipped in DDL and dropped from every insert and
  * update, so the whole persistence half of the options above is dead on one. Stated as what survives
  * rather than on each option that dies, because it is one fact rather than nineteen - and because an
  * option added without a thought then lands on the safe side of it.

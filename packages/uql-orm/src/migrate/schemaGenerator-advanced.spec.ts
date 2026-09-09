@@ -30,9 +30,9 @@ class EnumAltered {
 }
 
 @Entity()
-class VirtualEntity {
+class ComputedEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, virtual: raw`1 + 1` }) computed?: number;
+  @Field({ type: Number, computed: raw`1 + 1` }) total?: number;
 }
 
 describe('SqlSchemaGenerator Advanced', () => {
@@ -230,13 +230,13 @@ describe('SqlSchemaGenerator Advanced', () => {
     expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
   });
 
-  /** A virtual field is a query-time expression, never a column, so it must not show up as a diff. */
-  it('diffSchema should skip virtual fields', () => {
-    const currentSchema = createTableNode('VirtualEntity', ast, [
+  /** An inlined computed field is a query-time expression, never a column, so it must not show up as a diff. */
+  it('diffSchema should skip inlined computed fields', () => {
+    const currentSchema = createTableNode('ComputedEntity', ast, [
       { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
     ]);
 
-    expect(generator.diffSchema(VirtualEntity, currentSchema)).toBeUndefined();
+    expect(generator.diffSchema(ComputedEntity, currentSchema)).toBeUndefined();
   });
 
   /** `DefaultsEntity` as it stands in the database, with `status`'s stored default under test. */
