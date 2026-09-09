@@ -104,6 +104,7 @@ Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none se
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
 - **`defineEntity` with `extends`.** Decorated classes already inherit fields and hooks from a base; the functional form has no way to say the same. Small, and only matters for the runtime-schema path 0.44.0 opened.
+- **SQL Server, then Oracle.** SQL Server is the one engine every other TypeScript ORM has and UQL does not; Oracle is a differentiator only Prisma and Drizzle also lack. Neither needs R5 - Oracle's generated ids ride in the values array, which is what MikroORM's driver already does. Six seams in the core come first and two of them are cleanups worth having either way. [The design](oracle-mssql.md).
 - **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM ships it experimental.
 
 ## Where a composite key still refuses

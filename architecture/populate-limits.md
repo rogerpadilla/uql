@@ -40,7 +40,7 @@ UNION ALL
   SELECT * FROM (SELECT <cols> FROM <child> WHERE <fk> = ? ORDER BY <sort> LIMIT ? OFFSET ?) "_uql_p1"
 
 -- PgLikeSqlDialect: inner written once, key referenced from an array row source
-SELECT p.k, c.* FROM unnest($1::bigint[]) AS p(k)
+SELECT p.k, c.* FROM UNNEST($1::bigint[]) AS p(k)
 JOIN LATERAL (SELECT <cols> FROM <child> WHERE <fk> = p.k ORDER BY <sort> LIMIT ? OFFSET ?) c ON true
 ```
 
@@ -100,23 +100,23 @@ A `LATERAL` override on `PgLikeSqlDialect` - which is Postgres, CockroachDB, PGl
 Flat where the base is linear, and it buys two things.
 
 - **9x on wide pages**, and flat rather than linear scaling (table above).
-- **Constant SQL text.** `unnest($1::bigint[])` takes the whole key list as one parameter, so a single prepared statement serves every page size. `UNION ALL` cannot: N branches is distinct SQL per N.
+- **Constant SQL text.** `UNNEST($1::bigint[])` takes the whole key list as one parameter, so a single prepared statement serves every page size. `UNION ALL` cannot: N branches is distinct SQL per N.
 
-It costs the `./postgres` entry 1,916 gzipped bytes, which is `schema/canonicalType` becoming reachable: `unnest` refuses an uncast parameter, so the row source has to spell the key's SQL type. Its budget rose from 24,500 to 27,000 by the rule `verify-dist.ts` states. There is no cheap way to take that back, and two that look like one are not:
+It costs the `./postgres` entry 1,916 gzipped bytes, which is `schema/canonicalType` becoming reachable: `UNNEST` refuses an uncast parameter, so the row source has to spell the key's SQL type. Its budget rose from 24,500 to 27,000 by the rule `verify-dist.ts` states. There is no cheap way to take that back, and two that look like one are not:
 
 - **Precomputing a field's canonical type at registration** puts `canonicalType` on the path of `entity/index.js`, which the root entry re-exports - so it adds the module to the entry every consumer loads to save part of it on one. The root reaches `abstractSqlDialect` but not `pgLikeSqlDialect`, which is why the cost is confined to `./postgres` today.
 - **Splitting the module** by direction does not separate them: `fieldOptionsToCanonical`, the half the dialect needs, calls `sqlToCanonical` to read a `columnType: 'int'` string, so the parsing table comes along.
 
 **Dispatch is inheritance, not a capability flag.** `AbstractSqlDialect` emits `UNION ALL`; `PgLikeSqlDialect` overrides. **MySQL supports `LATERAL` and must not use it** - measured at 38.3 ms on the viral page above, worse than its own `UNION ALL` at 3.9 ms and worse than N+1 at 15.8 ms, because MySQL does not plan it as a correlated index loop. A `supportsLateral` flag would invite exactly that mistake; an override leaves MySQL on the default with nothing to get wrong.
 
-Composite keys use multi-argument `unnest`, which pairs the arrays rather than cross-producting them, on both Postgres and CockroachDB:
+Composite keys use multi-argument `UNNEST`, which pairs the arrays rather than cross-producting them, on both Postgres and CockroachDB:
 
 ```sql
-FROM unnest($1::bigint[], $2::text[]) AS p(a, b)
+FROM UNNEST($1::bigint[], $2::text[]) AS p(a, b)
 JOIN LATERAL (SELECT ... WHERE a = p.a AND b = p.b ORDER BY ... LIMIT ?) c ON true
 ```
 
-Use the array form, not `VALUES`: Postgres types a bare parameter in a `VALUES` row source as `text`, so `(VALUES ($1),($2))` fails with `operator does not exist: bigint = text`. `unnest` needs the array's type spelled out too - an uncast parameter is `unknown` and it refuses with `function unnest(unknown) is not unique`. The type comes from the _parent's_ key column, which declares one explicitly, rather than from the child's foreign key, which would have to be resolved through the reference: a foreign key is spelled from the key it references, so the two always compare.
+Use the array form, not `VALUES`: Postgres types a bare parameter in a `VALUES` row source as `text`, so `(VALUES ($1),($2))` fails with `operator does not exist: bigint = text`. `UNNEST` needs the array's type spelled out too - an uncast parameter is `unknown` and it refuses with `function unnest(unknown) is not unique`. The type comes from the _parent's_ key column, which declares one explicitly, rather than from the child's foreign key, which would have to be resolved through the reference: a foreign key is spelled from the key it references, so the two always compare.
 
 Rejected: deriving the row source from the child itself (`SELECT DISTINCT fk FROM child WHERE fk = ANY($1)`), which needs no cast because the comparison drives inference. It reintroduces exactly the cost that disqualifies the window - every matching child scanned to produce the distinct keys, since Postgres has no loose index scan - and measured 7.25 ms against `UNION ALL`'s 1.18 ms on the viral page.
 
