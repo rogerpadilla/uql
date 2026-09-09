@@ -35,6 +35,7 @@ import type {
   TransactionOptions,
   Type,
   UpdatePayload,
+  WrittenId,
 } from '../type/index.js';
 import {
   asSelectMap,
@@ -478,13 +479,22 @@ export abstract class AbstractQuerier implements Querier {
   /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
   abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
-  async insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
+  async insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined> {
     const [id] = await this.insertMany(entity, [payload]);
     return id;
   }
 
-  async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
-    return this.hooked(entity, 'Insert', payload, () => this.internalInsertMany(entity, payload));
+  /**
+   * A composite key is named here rather than by the statement: no column holds it, so no database
+   * reports one, but the caller wrote every column of it and the payload still carries them.
+   */
+  async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
+    const meta = getMeta(entity);
+    return this.hooked(entity, 'Insert', payload, async () => {
+      const reported = await this.internalInsertMany(entity, payload);
+      // Neither branch can be shown to be `WrittenId` for an unresolved `E`; `idOf` narrows likewise.
+      return meta.ids.length === 1 ? (reported as (WrittenId<E> | undefined)[]) : payload.map((it) => idOf(meta, it));
+    });
   }
 
   protected abstract internalInsertMany<E extends object>(
@@ -631,7 +641,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined> {
+  async saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined> {
     const [id] = await this.saveMany(entity, [payload]);
     return id;
   }
@@ -652,13 +662,13 @@ export abstract class AbstractQuerier implements Querier {
    * The hooks follow the statement: a named row fires `beforeUpsert`/`afterUpsert`, never the
    * update pair, because the database picks the branch as the statement runs.
    */
-  async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]> {
+  async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
     // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
     // passed, which concatenating the branches did not do.
     const toInsert: number[] = [];
     const toUpsert: number[] = [];
-    const ids: (EntityId<E> | undefined)[] = new Array(payload.length);
+    const ids: (WrittenId<E> | undefined)[] = new Array(payload.length);
 
     /** Whether the row carries anything its primary key does not - something to write. */
     const writesMoreThanItsKey = (row: EntityData<E>) =>

@@ -305,7 +305,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * The alias names one column, and every column of a composite came from the caller, so there is no
    * id the statement could report that the payload does not already carry - the same "no id to give"
    * a `firstId` dialect already answers with. Empty rather than a refusal, so an insert and an upsert
-   * of a composite row both run; `idOf(meta, row)` names such a row.
+   * of a composite row both run, and the querier names those rows with `idOf`.
    */
   returningId<E>(meta: EntityMeta<E>): string {
     const expression = this.returningIdExpression(meta);

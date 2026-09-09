@@ -490,9 +490,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     payload = clone(payload);
     const meta = getMeta(entity);
-    // A composite key is supplied whole by the caller, so nothing is generated and nothing comes
-    // back: the rows insert, and their ids are `undefined` for the reason MySQL's are below - there
-    // is no id to report. `idOf` names such a row for the caller that wants one.
+    // What comes back is one column's value, so a composite reports nothing here and `insertMany`
+    // names those rows from the payload instead. `sole` is what keeps every id path off a key that
+    // is several columns.
     const [idKey] = meta.ids;
     const sole = meta.ids.length === 1;
     const idField = sole ? meta.fields[idKey] : undefined;

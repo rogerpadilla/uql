@@ -1,4 +1,4 @@
-import type { EntityData, EntityId, FieldKey, IdValue, RelationKey, UpdatePayload } from './entity.js';
+import type { EntityData, EntityId, FieldKey, RelationKey, UpdatePayload, WrittenId } from './entity.js';
 import type {
   QueryConflictPaths,
   QueryFilter,
@@ -204,7 +204,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the ID
    */
-  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined>;
+  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined>;
 
   /**
    * Insert multiple records in a single statement (auto-chunked when the batch exceeds the
@@ -214,12 +214,13 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * Database-generated IDs are exact on `'returning'` dialects (Postgres, MariaDB, MongoDB);
    * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
    * auto-increment keys in batches without explicit IDs - otherwise those entries are
-   * `undefined` rather than potentially wrong values.
+   * `undefined` rather than potentially wrong values. A composite key is never one the statement
+   * reports, so those rows are named from the payload instead.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    * @return the IDs
    */
-  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]>;
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]>;
 
   /**
    * Insert or update a record based on the conflict paths.
@@ -253,7 +254,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the ID
    */
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined>;
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined>;
 
   /**
    * Insert or update records.
@@ -261,7 +262,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

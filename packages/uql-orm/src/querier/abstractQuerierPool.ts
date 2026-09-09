@@ -5,7 +5,6 @@ import type {
   EntityId,
   ExtraOptions,
   FieldKey,
-  IdValue,
   PoolRunOptions,
   Querier,
   QuerierPool,
@@ -28,6 +27,7 @@ import type {
   Type,
   UpdatePayload,
   UqlContext,
+  WrittenId,
 } from '../type/index.js';
 
 /**
@@ -171,11 +171,11 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.estimatedCount(entity));
   }
 
-  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<IdValue<E> | undefined> {
+  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined> {
     return this.withQuerier((querier) => querier.insertOne(entity, payload));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(IdValue<E> | undefined)[]> {
+  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.insertMany(entity, payload));
   }
 
@@ -213,11 +213,11 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<EntityId<E> | undefined> {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined> {
     return this.withQuerier((querier) => querier.saveOne(entity, payload));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(EntityId<E> | undefined)[]> {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.saveMany(entity, payload));
   }
 

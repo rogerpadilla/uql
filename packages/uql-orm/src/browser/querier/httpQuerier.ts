@@ -4,7 +4,6 @@ import type {
   EntityData,
   EntityId,
   FieldKey,
-  IdValue,
   Query,
   QueryFilter,
   QueryFindResult,
@@ -18,6 +17,7 @@ import type {
   RequestSuccessResponse,
   Type,
   UpdatePayload,
+  WrittenId,
 } from '../../type/index.js';
 import { isScalarId } from '../../util/object.util.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
@@ -154,12 +154,12 @@ export class HttpQuerier implements ClientQuerier {
 
   insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return post<IdValue<E> | undefined>(basePath, payload, this.buildOptions(opts));
+    return post<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
   insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return post<(IdValue<E> | undefined)[]>(
+    return post<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.insertMany.path}`,
       payload,
       this.buildOptions(opts),
@@ -184,12 +184,12 @@ export class HttpQuerier implements ClientQuerier {
 
   saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return put<EntityId<E> | undefined>(basePath, payload, this.buildOptions(opts));
+    return put<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
   saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
-    return put<(EntityId<E> | undefined)[]>(
+    return put<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.saveMany.path}`,
       payload,
       this.buildOptions(opts),

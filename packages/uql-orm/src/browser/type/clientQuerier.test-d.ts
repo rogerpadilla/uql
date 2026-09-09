@@ -9,12 +9,21 @@
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
  * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
  */
+import { idKey } from '../../type/index.js';
 import type { Json, UniversalQuerier } from '../../type/index.js';
 import type { ClientQuerier } from './clientQuerier.js';
 
 class Author {
   id!: number;
   name!: string;
+}
+
+/** A composite key, where `WrittenId` and `IdValue` differ - on a single key they read alike. */
+class Enrolment {
+  [idKey]?: 'studentId' | 'courseId';
+  studentId?: number;
+  courseId?: string;
+  grade?: string;
 }
 
 class Article {
@@ -103,4 +112,35 @@ export async function clientServerParity() {
 
   await server.deleteMany(Article, { $where: { id: [1, 2] } });
   await client.deleteMany(Article, { $where: { id: [1, 2] } });
+}
+
+/**
+ * Every write reports the same shape on both sides. Written on a composite key, because that is the
+ * only place `WrittenId` and `IdValue` differ: a single key reads alike either way, which is how
+ * `insertOne` stayed on the old type here while the three around it moved.
+ */
+export async function writesReportOneShapeOnBothSides(server: UniversalQuerier, client: ClientQuerier) {
+  type Id = { studentId?: number; courseId?: string } | undefined;
+  const row = { studentId: 1, courseId: 'maths', grade: 'A' };
+
+  const serverInserted: Id = await server.insertOne(Enrolment, row);
+  const serverInsertedMany: Id[] = await server.insertMany(Enrolment, [row]);
+  const serverSaved: Id = await server.saveOne(Enrolment, row);
+  const serverSavedMany: Id[] = await server.saveMany(Enrolment, [row]);
+
+  const clientInserted: Id = (await client.insertOne(Enrolment, row)).data;
+  const clientInsertedMany: Id[] = (await client.insertMany(Enrolment, [row])).data;
+  const clientSaved: Id = (await client.saveOne(Enrolment, row)).data;
+  const clientSavedMany: Id[] = (await client.saveMany(Enrolment, [row])).data;
+
+  return [
+    serverInserted,
+    serverInsertedMany,
+    serverSaved,
+    serverSavedMany,
+    clientInserted,
+    clientInsertedMany,
+    clientSaved,
+    clientSavedMany,
+  ];
 }

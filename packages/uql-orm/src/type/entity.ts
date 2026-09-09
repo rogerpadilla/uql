@@ -268,23 +268,40 @@ export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdK
  */
 export type IdValue<E> = E[IdKey<E>];
 
+/** Every column of a key, which is how a composite row is named and what a `$where` reduces to. */
+type IdMap<E> = { [K in IdKey<E>]?: E[K] };
+
 /**
  * How a row is addressed by its primary key: the value for a single key, an object carrying every
  * key for a composite - which is also the `$where` map it reduces to, so both spellings are one type.
  *
- * Distinct from {@link IdValue}, the *column's* value, which stays a scalar: an id column holds a
- * number, never an object. The two read alike on a single-key entity and are not the same thing -
- * `findOneById` takes an `EntityId`, while the inserts return `IdValue | undefined`, which is why a
- * composite insert reports no id rather than the map.
+ * A union rather than a choice between the two, because a caller holding one column's value has to
+ * reach the same parameter as one holding a map. {@link WrittenId} is where a shape is committed to.
  *
- * The keys stay optional, and completeness is checked at run time by `assertIdValue`. Requiring them
- * needs `IdKey` to be precise, which it is not: with no `id`/`_id`/`uuid` and no `idKey` brand it
- * falls back to every field, so `IdKey<Membership>` accepts `'role'` and requiring the map would
- * demand fields that are not keys. Making it conditional on the brand was tried and reverted - a
- * conditional type does not reduce for an unresolved `E`, which left `QueryWhere<E>` opaque and broke
- * assignability across the dialects.
+ * The keys stay optional, and completeness is checked at run time by `assertIdValue`: requiring them
+ * would refuse a `$where` map that names one row while it is still being built up.
  */
-export type EntityId<E> = IdValue<E> | { [K in IdKey<E>]?: E[K] };
+export type EntityId<E> = IdValue<E> | IdMap<E>;
+
+/** Whether `T` is a union of more than one member, which for a key means the entity's is composite. */
+type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
+
+/**
+ * The id a write reports: the column's value for a single key, the key map for a composite.
+ *
+ * Exact where {@link EntityId} is a union, and that is the difference between them - a by-id method
+ * *accepts* either spelling, a write *commits* to one.
+ *
+ * Falls back to `EntityId` where {@link NamedIdKey} names nothing, because there `IdKey` is every
+ * field and a composite cannot be told from a single key: reporting a map for a scalar would be a
+ * lie. `@Id` refuses an unnamed key, so a decorated entity is always exact, and `defineEntity` is
+ * the path where this fallback is still reachable.
+ */
+export type WrittenId<E> = [NamedIdKey<E>] extends [never]
+  ? EntityId<E>
+  : IsUnion<IdKey<E>> extends true
+    ? IdMap<E>
+    : IdValue<E>;
 
 /**
  * Infers the values of the relations on an entity

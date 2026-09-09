@@ -1,5 +1,4 @@
 import type {
-  CheckOptions,
   EntityData,
   EntityId,
   EntityIndexInput,
@@ -18,6 +17,7 @@ import type {
   RelationMeta,
   RelationOptions,
   Type,
+  WrittenId,
 } from '../../type/index.js';
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import { isInlinedExpression } from '../../util/field.util.js';
@@ -293,18 +293,19 @@ export function namesKey<E>(meta: EntityMeta<E>, row: EntityData<E>): boolean {
 }
 
 /**
- * A row's primary key in the shape a `$where` takes: the value itself for a single key, an object
- * carrying every key for a composite - which is exactly {@link EntityId}.
+ * A row's primary key: the value itself for a single key, an object carrying every key for a
+ * composite - which is {@link WrittenId}, and reads as the {@link EntityId} a `$where` takes.
  *
- * What a settled write names its rows by, and what an insert hands back. Naming a composite row by
- * one of its columns would address every row agreeing on that one.
+ * What a settled write names its rows by, and what a write hands back. Naming a composite row by one
+ * of its columns would address every row agreeing on that one.
+ *
+ * `WrittenId` does not reduce for an unresolved `E`, so which branch this entity is in cannot be
+ * proven here, only checked - which is what `ids.length` does.
  */
-export function idOf<E>(meta: EntityMeta<E>, row: EntityData<E>): EntityId<E> {
+export function idOf<E>(meta: EntityMeta<E>, row: EntityData<E>): WrittenId<E> {
   const { ids } = meta;
-  if (ids.length === 1) {
-    return row[ids[0]];
-  }
-  return Object.fromEntries(ids.map((key) => [key, row[key]])) as EntityId<E>;
+  const id = ids.length === 1 ? row[ids[0]] : Object.fromEntries(ids.map((key) => [key, row[key]]));
+  return id as WrittenId<E>;
 }
 
 /**

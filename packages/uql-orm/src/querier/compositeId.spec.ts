@@ -128,17 +128,17 @@ beforeAll(async () => {
 
 describe('writing composite rows', () => {
   /**
-   * Nothing about the statement needs a single key: every column of a composite comes from the
-   * caller, so there is nothing to generate and nothing to read back. What an insert cannot do is
-   * *name* the row it wrote - `IdValue` is one column's value - so the id it reports is `undefined`,
-   * exactly as it is for a key MySQL's header cannot speak for. `idOf` names such a row instead.
+   * No column holds a composite key, so no statement reports one. `insertMany` names the rows from
+   * the payload instead, which the caller wrote every column of - the same map `saveMany` reports,
+   * so the two write methods answer in one shape.
    */
-  it('inserts rows whose key it did not generate, and reports no id', async () => {
-    const ids = await pool.insertMany(Term, [
+  it('inserts rows whose key it did not generate, and reports that key', async () => {
+    const [autumn, winter] = await pool.insertMany(Term, [
       { year: 2027, season: 'autumn' },
       { year: 2027, season: 'winter' },
     ]);
-    expect(ids).toEqual([undefined, undefined]);
+    expect(autumn).toEqual({ year: 2027, season: 'autumn' });
+    expect(winter).toEqual({ year: 2027, season: 'winter' });
     expect(await pool.findOneById(Term, { year: 2027, season: 'winter' })).toEqual({
       year: 2027,
       season: 'winter',
