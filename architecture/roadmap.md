@@ -115,7 +115,7 @@ Each refuses by name rather than taking the first key column ([the design](https
 3. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.
 4. **The HTTP `/:id` route** — one path segment, plus a bug: the adapters disagree about percent-decoding. A by-id route does not run `assertIdValue`, but `buildIdQuery` calls `soleIdOf` first, so a composite is refused before it can under-specify one; what is missing there is a nullish guard, which `matchRoute` already makes unreachable.
 
-Types stay permissive: TypeScript cannot accumulate `@Id` across properties, so the `idKey` brand is the opt-in and `assertIdValue` is what everyone else gets.
+TypeScript cannot accumulate `@Id` across properties, so the key is named in the class body or not at all: `@Id` refuses one the `idKey` brand and the conventional names both leave unnamed, and `assertIdValue` checks the value at run time.
 
 ## Shipped, and not worth re-litigating
 

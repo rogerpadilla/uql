@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.49.0] - 2026-09-09
+
+- **Breaking: a key not called `id`, `_id` or `uuid` needs the `idKey` brand naming it**, a composite always. `@Id` refuses one without it, where before the key resolved to any column and `findOneById` took its value. `npx uql-codemod` writes the brand.
+
 ## [0.48.0] - 2026-09-09
 
 **Breaking: `saveOne`/`saveMany` upsert instead of guessing.** A row naming its key upserts on it, so a stale id writes it. Both return `EntityId`, so a composite comes back as its key map - `insertOne`/`insertMany` keep `IdValue` - and ids come back in payload order. A save fires the new `@BeforeUpsert`/`@AfterUpsert` pair, not the update one; move hooks that ran on a save.
