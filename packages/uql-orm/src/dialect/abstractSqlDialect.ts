@@ -73,18 +73,20 @@ import {
   isVectorSearch,
   normalizeScalarFieldSelection,
   parentJoins,
+  type ParentPartition,
   targetKeyColumns,
   parseGroupMap,
   parseRelationSize,
   parseSortByCount,
   populatesRelations,
+  queryChildrenOf,
   raw,
   someValue,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS_PREFIX } from './aliases.js';
+import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS_PREFIX, PER_PARENT_BRANCH_ALIAS } from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { isJsonbOp, type JsonAccessMode, jsonCompareMode, jsonElemExists } from './jsonSql.js';
@@ -188,6 +190,41 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
     // 'set-before' - MySQL/MariaDB pattern
     return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
+  }
+
+  /**
+   * Every parent's own bounded page in one statement: a subquery per parent, each filtered to that
+   * parent alone and carrying its own `ORDER BY`, `LIMIT` and `OFFSET`. Universal, and reads
+   * `parents x (skip + limit)` rows where a `ROW_NUMBER` window reads every matching child.
+   * [The design](../../../../architecture/populate-limits.md).
+   *
+   * Each branch is a wrapped derived table rather than a bare parenthesised select: SQLite rejects
+   * `ORDER BY`/`LIMIT` on the latter, and the wrapper costs nothing elsewhere.
+   */
+  findPerParent<E extends object>(ctx: QueryContext, entity: Type<E>, q: Query<E>, partition: ParentPartition): void {
+    if (!partition.parents.length) {
+      // Guarded on the contract rather than in either shape: this is the end that would otherwise
+      // append nothing and hand the driver an empty statement, and both shapes owe the same promise.
+      throw new TypeError('cannot read a bounded relation for no parents at all');
+    }
+    this.appendPerParent(ctx, entity, q, partition);
+  }
+
+  /** The shape {@link findPerParent} emits, which the Postgres family replaces with a `LATERAL` join. */
+  protected appendPerParent<E extends object>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E>,
+    { joins, parents }: ParentPartition,
+  ): void {
+    parents.forEach((parent, index) => {
+      if (index) {
+        ctx.append(' UNION ALL ');
+      }
+      ctx.append('SELECT * FROM (');
+      this.find(ctx, entity, queryChildrenOf(q, joins, parent));
+      ctx.append(`) ${this.escapeId(ctx.nextAlias(PER_PARENT_BRANCH_ALIAS))}`);
+    });
   }
 
   createContext(): QueryContext {

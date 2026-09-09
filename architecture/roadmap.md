@@ -43,6 +43,24 @@ R6. Row-value comparison where available, an OR-chain elsewhere, compound `$lt` 
 
 The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md).
 
+## Per-parent limits on a populated relation
+
+```ts
+$populate: { posts: { $sort: { createdAt: -1 }, $limit: 5 } };
+```
+
+`$limit`/`$skip` inside a to-many `$populate` cap the whole result set today, not each parent's share, so a parent that has children can come back with `[]`. The docs call that inherent; it is not. One bounded subquery per parent key concatenated with `UNION ALL` is universal and reads `parents x (skip + limit)` rows, with a `LATERAL` override on `PgLikeSqlDialect` as a second increment. A fix rather than a behaviour change, so it ships in a minor. No R7 dependency. [The design](populate-limits.md).
+
+## Typed DDL predicates
+
+```ts
+@Index(['email'], { where: { deletedAt: null } })
+```
+
+A partial index's `where` is `string | QueryRaw` today. Widening it to a `QueryWhere<E>` compiled at DDL time makes a typo a compile error instead of SQL that parses and never matches, and MikroORM 7.1 reached the same conclusion for its partial indexes. `checks` can take one on the same terms, and MongoDB's `partialFilterExpression` is the shape `MongoDialect.where` already returns. Compile in `buildEntityAST`, which has a dialect, rather than at registration, which does not - so `IndexSchema.where` stays a string and nothing downstream changes. Shares the interpolated-`raw` DDL render path that [triggers](triggers.md) needs.
+
+Two things to get right when it lands. DDL carries no placeholders, so literals inline: every binding site funnels through `QueryDialect.addValue`, so one override returning `escape(value)` covers nearly all of it, but `PgLikeSqlDialect.formatIn` (binds the array for `= ANY($1)`), `jsonScalarParam` (hard-codes `'?'`) and `appendVectorValue` bypass it and need their own arms - assert `ctx.values.length === 0` afterwards so a missed site fails loudly instead of emitting `$1` into a `CREATE INDEX`. And refuse what a predicate cannot carry there: relation operators, `$size`, `$text`, `$near`, and `security` filters, which `{ filters: false }` deliberately does not disable.
+
 ## Row-level security
 
 Postgres and PGlite only. Two halves, and the first needs no R7: session context — `set_config`/`set local role` before each statement, transaction-scoped, exactly the shape `applyVectorTuning` already has. That alone makes hand-written policies (Supabase) usable from UQL. Declared `policies` are schema objects and wait for R7.
@@ -58,6 +76,10 @@ const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 })
 R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips elsewhere — correct, not faster.
 
 **The entity-level API cannot keep its promise.** Only `count`, `exists` and the inserts are reliably one statement: `findMany` issues extras for to-many relations, `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
+
+## Query cancellation
+
+Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none server-side, though the browser `ClientQuerier` already carries a per-call `signal`. Not scheduled, and the mapping is worse than it looks: only pg, CockroachDB, MySQL and MariaDB can truly cancel, each needing a _second_ connection (`pg_cancel_backend`, `CANCEL QUERY`, `KILL QUERY`) that the querier cannot reach - it holds a `connect` thunk, not the pool. MongoDB is partial: the driver's `Abortable` covers `find`/`aggregate`/`countDocuments` but not `insertMany`/`updateMany`/`bulkWrite`. Every HTTP driver is a dead end rather than a freebie - libsql, Turso Cloud and D1 expose no per-request signal at all - and the synchronous ones (better-sqlite3, `node:sqlite`, PGlite) surface no `interrupt`. Nine write methods also take no options today. The idiom to follow when it happens is `supportsRowLocks` + `assertLockSupported` + `DriverCapabilities`.
 
 ## Where a composite key still refuses
 

@@ -1,3 +1,4 @@
+import { canonicalToSql, fieldOptionsToCanonical } from '../schema/canonicalType.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type DialectFeatures,
@@ -14,9 +15,11 @@ import {
   type VectorOperatorMetric,
 } from '../type/index.js';
 import { hasVectorNear } from '../util/dialect.util.js';
+import { raw } from '../util/raw.js';
+import { type ParentPartition, queryNarrowedTo } from '../util/relationQuery.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { JSON_PULL_ALIAS } from './aliases.js';
+import { JSON_PULL_ALIAS, PER_PARENT_BRANCH_ALIAS, PER_PARENT_KEYS_ALIAS } from './aliases.js';
 import { jsonSetTarget } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
@@ -64,6 +67,51 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly commitTransactionCommand = 'COMMIT';
   override readonly rollbackTransactionCommand = 'ROLLBACK';
   override readonly alterColumnStrategy = 'separate-clauses';
+
+  /**
+   * One `LATERAL` branch correlated against an array of the parent keys, in place of the base
+   * `UNION ALL` of a subquery per parent. Same rows and the same `parents x (skip + limit)` read, but
+   * the planner sees one correlated index loop rather than N branches to plan: flat in page size where
+   * `UNION ALL` is linear, and the statement's text stops changing with the number of parents, so one
+   * prepared statement serves every page.
+   *
+   * Postgres, CockroachDB, PGlite, Neon and bun-sql inherit it together. **MySQL has `LATERAL` and must
+   * not use it** - it does not plan this as a correlated index loop and measured slower than both its
+   * own `UNION ALL` and a query per parent, which is why this is an override rather than a capability
+   * flag. [The design](../../../../architecture/populate-limits.md).
+   */
+  protected override appendPerParent<E extends object>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E>,
+    { joins, parents, parentFields }: ParentPartition,
+  ): void {
+    const keys = this.escapeId(ctx.nextAlias(PER_PARENT_KEYS_ALIAS));
+    const branch = this.escapeId(ctx.nextAlias(PER_PARENT_BRANCH_ALIAS));
+    const column = (index: number) => `${keys}.k${index}`;
+    // `unnest` resolves an uncast parameter to `unknown` and refuses it ("function unnest(unknown) is
+    // not unique"), so the array says its type. It comes from the parent's key column, which always
+    // declares one, rather than the child's foreign key, which would have to be resolved through the
+    // reference it takes its own type from.
+    const sources = joins.map(({ parent }) => {
+      const field = parentFields[parent];
+      if (!field) {
+        throw new TypeError(`cannot page a relation per parent: '${parent}' is not a field of the parent entity`);
+      }
+      const values = parents.map((it) => (it as Record<string, unknown>)[parent]);
+      return `${this.addValue(ctx.values, values)}::${canonicalToSql(fieldOptionsToCanonical(field), this)}[]`;
+    });
+    const rowSource = `unnest(${sources.join(', ')}) AS ${keys}(${joins.map((_, index) => `k${index}`).join(', ')})`;
+    // The keys come from the row source rather than as values, which is the whole point of correlating:
+    // one branch, planned once, instead of one per parent.
+    const correlated = Object.fromEntries(
+      joins.map(({ joined }, index) => [joined, raw(({ ctx: inner }) => inner.append(column(index)))]),
+    );
+
+    ctx.append(`SELECT ${branch}.* FROM ${rowSource} JOIN LATERAL (`);
+    this.find(ctx, entity, queryNarrowedTo(q, correlated));
+    ctx.append(`) ${branch} ON TRUE`);
+  }
 
   /** `$N` placeholders carry their own index, so the upsert's assignments need no scratch context. */
   protected override readonly upsertUpdateBindsInPlace = true;

@@ -34,6 +34,7 @@ import {
   isAutoIncrement,
   isPagedQuery,
   obtainAttrsPaths,
+  type ParentPartition,
   throwNoPendingTransaction,
   throwPendingTransaction,
   unflatObject,
@@ -164,6 +165,28 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
     return this.hydrateRows(entity, q, await this.selectRows(entity, q, opts));
+  }
+
+  /**
+   * One bounded subquery per parent, concatenated with `UNION ALL`, so each parent gets its own
+   * `$limit` rather than a share of one. Universal, and reads `parents x (skip + limit)` rows where a
+   * `ROW_NUMBER` window reads every matching child. [The design](../../../../architecture/populate-limits.md).
+   *
+   * Each branch is a wrapped derived table: SQLite rejects `ORDER BY`/`LIMIT` on a bare parenthesised
+   * compound branch, and the wrapper costs nothing elsewhere.
+   *
+   * Unlike {@link selectRows} this asserts no lock and tunes no vector search: `$lock` and
+   * `$candidates` describe the statement, and `parseRelationQueryValue` refuses both on a relation
+   * query, so neither can reach here.
+   */
+  protected override async internalFindManyPerParent<E extends object>(
+    entity: Type<E>,
+    q: Query<E>,
+    partition: ParentPartition,
+  ): Promise<E[]> {
+    const ctx = this.dialect.createContext();
+    this.dialect.findPerParent(ctx, entity, q, partition);
+    return this.hydrateRows(entity, q, await this.all<RawRow>(ctx.sql, ctx.values));
   }
 
   /**

@@ -1,5 +1,6 @@
 import { getLoadablePath } from 'sqlite-vec';
 import { expect } from 'vitest';
+import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
 import type { AbstractSqlQuerierPool } from '../querier/index.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, VectorItem } from '../test/index.js';
@@ -23,12 +24,8 @@ export class Sqlite3QuerierIt extends VectorQuerierIt {
     super(pool);
   }
 
-  /**
-   * SQLite has no DECIMAL type. NUMERIC affinity converts the literal to a float on write, so the
-   * exact digits are lost in the database, not on the way back out.
-   */
-  protected override expectedExactDecimal(): number {
-    return 12345678901234567000;
+  protected override expectedExactDecimal() {
+    return FLOATED_DECIMAL;
   }
 
   override async beforeEach() {

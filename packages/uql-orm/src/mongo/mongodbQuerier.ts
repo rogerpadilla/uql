@@ -31,7 +31,9 @@ import {
   hasKeys,
   idOnlyQuery,
   isPagedQuery,
+  type ParentPartition,
   populatesRelations,
+  queryChildrenOf,
   throwNoPendingTransaction,
   throwPendingTransaction,
   withoutSoftDeleteFilter,
@@ -47,6 +49,13 @@ import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
 function asksForNoRows<E>(q: Query<E>): boolean {
   return q.$limit === 0;
 }
+
+/**
+ * What MongoDB accepts in one pipeline. Bisected against a real server: 1000 top-level stages are
+ * accepted and 1001 refused (`Pipeline length must be no longer than 1000 stages`), and a
+ * `$unionWith`'s own sub-pipeline stages do not count toward it.
+ */
+const MAX_PIPELINE_STAGES = 1000;
 
 export class MongodbQuerier extends AbstractQuerier {
   private session?: ClientSession;
@@ -103,6 +112,60 @@ export class MongodbQuerier extends AbstractQuerier {
 
       return documents;
     });
+  }
+
+  /**
+   * Every parent's own bounded page. One `$unionWith` per parent after the first, so the whole page is
+   * one round trip - measured ~6x faster than a query each (11.0 ms -> 1.9 ms at 50 parents, 87.5 ms
+   * -> 14.1 ms at 500), because `execute` serializes on the session and a query each is N round trips
+   * rather than N concurrent ones.
+   *
+   * Both arms return documents with their own relations already filled, so this only chooses between
+   * them: leaving that to the caller once meant the arm that fills its own did it twice.
+   * [The design](../../../../architecture/populate-limits.md).
+   */
+  protected override async internalFindManyPerParent<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    { joins, parents }: ParentPartition,
+  ): Promise<E[]> {
+    const queries = parents.map((parent) => queryChildrenOf(q, joins, parent));
+    // A vector sort needs a pipeline of its own shape, which only `internalFindMany` builds.
+    if (this.dialect.extractVectorSort(q.$sort)) {
+      return this.readEachInTurn(entity, queries);
+    }
+    const pipelines = queries.map((it) => this.dialect.aggregationPipeline(entity, it));
+    // Counted, not estimated: the leading branch's own length grows with every `$lookup` a populate
+    // adds, so a fixed parent budget would let a richer query overflow at the server instead.
+    const stages = (pipelines[0]?.length ?? 0) + pipelines.length - 1;
+    return stages > MAX_PIPELINE_STAGES
+      ? this.readEachInTurn(entity, queries)
+      : this.readInOnePipeline(entity, q, pipelines);
+  }
+
+  /** Every parent's page as one `$unionWith` pipeline. */
+  private async readInOnePipeline<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    pipelines: Record<string, unknown>[][],
+  ): Promise<E[]> {
+    const meta = getMeta(entity);
+    const [first, ...rest] = pipelines;
+    const documents = await this.runPipeline(entity, meta, [
+      ...first,
+      ...rest.map((pipeline) => ({ $unionWith: { coll: meta.name, pipeline } })),
+    ]);
+    await this.fillToManyRelations(entity, documents, q.$populate);
+    return documents;
+  }
+
+  /** A query each, for what one pipeline cannot carry. `internalFindMany` fills its own relations. */
+  private async readEachInTurn<E extends Document>(entity: Type<E>, queries: Query<E>[]): Promise<E[]> {
+    const documents: E[] = [];
+    for (const query of queries) {
+      documents.push(...(await this.internalFindMany(entity, query)));
+    }
+    return documents;
   }
 
   protected override async *internalFindManyStream<E extends Document>(

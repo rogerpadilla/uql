@@ -18,6 +18,12 @@ export const TOTAL_ALIAS = '_uql_total';
 /** The derived table a `$distinct` count wraps its deduplicated set in. MySQL requires the alias. */
 export const DISTINCT_DERIVED_ALIAS = '_uql_distinct';
 
+/** Prefix for the derived table each branch of a per-parent bounded read is wrapped in. */
+export const PER_PARENT_BRANCH_ALIAS = '_uql_p';
+
+/** The row source a `LATERAL` per-parent read correlates each of its branches against. */
+export const PER_PARENT_KEYS_ALIAS = '_uql_keys';
+
 /** Prefix for the alias an exploded JSON array element is read through. */
 export const JSON_ELEM_ALIAS_PREFIX = '_uql_elem';
 

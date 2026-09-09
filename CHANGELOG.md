@@ -1,7 +1,15 @@
 # Changelog
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
-Before adding, rewrite `[Unreleased]` as if it shipped today: fold duplicates, drop what was superseded, cut the rest.
+
+## [0.47.0] - 2026-09-09
+
+- **`$limit`/`$skip` inside a to-many `$populate` are now per parent.** They capped the whole page, so a parent that had children could come back with `[]`. One bounded subquery per parent, on every engine.
+- **A many-to-many `$populate` can order and page.** `$sort`, `$limit`, `$skip` and `$distinct` reached the target's join, which rejects all four, so any of them threw.
+- **Postgres, CockroachDB, PGlite and Neon page a relation with `LATERAL`**, so the cost stays flat as the parent page grows: 3.5x faster than the portable shape at 100 parents, 8.3x at 500. The `./postgres` budget rose to 27 KB gzipped for `schema/canonicalType`, which spells the key type its row source has to name.
+- **MongoDB reads a bounded relation in one round trip**, through `$unionWith` rather than a query per parent - around 6x faster on a page of 50 or more.
+- **Bun SQL now enforces foreign keys on SQLite.** `bun:sql` leaves the pragma off, so declared constraints were decorative: dangling rows inserted, `ON DELETE CASCADE` left orphans.
+- **`BunSqlCockroachDialect` is now exported** from `uql-orm/bunSql`, like its Postgres and SQLite siblings.
 
 ## [0.46.0] - 2026-09-08
 

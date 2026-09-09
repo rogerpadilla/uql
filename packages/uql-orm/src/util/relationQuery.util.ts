@@ -1,5 +1,6 @@
 import type {
   EntityMeta,
+  FieldMeta,
   Except,
   Query,
   QueryPopulate,
@@ -97,6 +98,65 @@ export function parentsIn(joins: readonly ParentJoin[], parents: readonly unknow
 }
 
 /**
+ * The parents a bounded to-many read fans out over: the rows themselves, the columns matching them to
+ * their children.
+ */
+export type ParentPartition = {
+  readonly joins: readonly ParentJoin[];
+  readonly parents: readonly unknown[];
+  /** The parent's own fields: a `LATERAL` row source has to spell its key column's type. */
+  readonly parentFields: Readonly<Record<string, FieldMeta | undefined>>;
+};
+
+/**
+ * Whether a to-many's own query asks for a share *per parent* rather than a slice of the whole page.
+ * Only `$limit`/`$skip` do: without one, a single flat statement over an `IN (...)` list is both
+ * correct and cheaper.
+ */
+export function isBoundedPerParent(query: Pick<RelationQuery, '$limit' | '$skip'>): boolean {
+  return query.$limit !== undefined || query.$skip !== undefined;
+}
+
+/**
+ * The `$where` naming exactly one parent's children: every joined column equal to that parent's value.
+ * What a per-parent bounded read filters each of its branches by, and the composite half of
+ * {@link childrenOf}.
+ */
+function childOf(joins: readonly ParentJoin[], parent: unknown): Record<string, unknown> {
+  return Object.fromEntries(joins.map(({ parent: key, joined }) => [joined, read(parent, key)]));
+}
+
+/**
+ * `query` narrowed to one parent's children: what a single branch of a bounded per-parent read asks
+ * for. Shared by the backends so how the parent's filter merges into the relation's own is decided
+ * once - both spelled it out, and a rule that ever needs more than a spread would have to change twice.
+ */
+export function queryChildrenOf<E>(query: Query<E>, joins: readonly ParentJoin[], parent: unknown): Query<E> {
+  return queryNarrowedTo(query, childOf(joins, parent));
+}
+
+/**
+ * `query` narrowed to the children of a whole page of parents, which is the flat read a relation with
+ * no share of its own takes. Over-selects on a composite key exactly as {@link parentsIn} does.
+ */
+export function queryChildrenOfAll<E>(
+  query: Query<E>,
+  joins: readonly ParentJoin[],
+  parents: readonly unknown[],
+): Query<E> {
+  return queryNarrowedTo(query, parentsIn(joins, parents));
+}
+
+/**
+ * `query` with `filter` merged into its own `$where`: the one rule for narrowing a relation's query to
+ * the parents it is being read for, whether the filter names their keys as values or, for a correlated
+ * shape, as a reference to a row source.
+ */
+export function queryNarrowedTo<E>(query: Query<E>, filter: Record<string, unknown>): Query<E> {
+  return { ...query, $where: { ...query.$where, ...filter } };
+}
+
+/**
  * The `$where` naming exactly the children of the rows `parentIds` identifies: an `IN` over the one
  * column a single key contributes, an OR of key maps for several.
  *
@@ -108,9 +168,7 @@ export function childrenOf(joins: readonly ParentJoin[], parentIds: readonly unk
   if (joins.length === 1) {
     return { [first.joined]: parentIds };
   }
-  return {
-    $or: parentIds.map((id) => Object.fromEntries(joins.map(({ parent, joined }) => [joined, read(id, parent)]))),
-  };
+  return { $or: parentIds.map((id) => childOf(joins, id)) };
 }
 
 function read(row: unknown, key: string): unknown {

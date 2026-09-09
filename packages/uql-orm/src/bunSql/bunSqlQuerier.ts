@@ -4,6 +4,13 @@ import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
 import { type BunSqlResult, getAffectedRows, getInsertId, isReservedConnection, normalizeRows } from './bunSql.util.js';
 
+/**
+ * Querier for `bun:sql`, Bun's built-in driver for Postgres, MySQL, MariaDB, CockroachDB and SQLite.
+ *
+ * @remarks Deliberately does not override `internalStream`, which every other SQL driver here does:
+ * Bun's `SQL.Query` is a `Promise` with no cursor or async-iterator API, so `findManyStream` falls back
+ * to the base class buffering the whole result, as `PgliteQuerier` does for the same reason.
+ */
 export class BunSqlQuerier extends AbstractPoolQuerier<ReservedSQL> {
   constructor(
     readonly sql: SQL,

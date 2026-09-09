@@ -395,9 +395,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
       [1],
     );
+    // Per parent, not one page across all of them: each parent gets its own `LIMIT`/`OFFSET`, which
+    // is what `$limit` inside a to-many means. Flat, this handed two rows to whichever parents owned
+    // them and left the rest with `[]`.
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?, ?) LIMIT 2 OFFSET 1',
+      'SELECT * FROM (SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ? LIMIT 2 OFFSET 1) `_uql_p_1`' +
+        ' UNION ALL ' +
+        'SELECT * FROM (SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ? LIMIT 2 OFFSET 1) `_uql_p_2`',
       [1, 2],
     );
 

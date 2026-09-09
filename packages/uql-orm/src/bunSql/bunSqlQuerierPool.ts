@@ -32,6 +32,8 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
   readonly sql: SQL;
   readonly sqlDialectName: SqlDialectName;
 
+  private foreignKeysOn?: Promise<unknown>;
+
   constructor(
     readonly config: SQL.Options,
     extra?: ExtraOptions,
@@ -63,8 +65,12 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
 
   async getQuerier() {
     const connFactory = async () => {
-      // Bun's SQLite adapter does not support connection reservation (it's unpooled).
+      // Bun's SQLite adapter does not support connection reservation (it's unpooled), and leaves
+      // `foreign_keys` off as `bun:sqlite` does, so without the pragma the constraints uql emits in
+      // its own DDL are decorative. One connection means one pragma, issued on the first acquisition.
       if (!isPoolableDialect(this.sqlDialectName)) {
+        this.foreignKeysOn ??= this.sql.unsafe('PRAGMA foreign_keys = ON');
+        await this.foreignKeysOn;
         return this.sql as ReservedSQL;
       }
       return this.sql.reserve();

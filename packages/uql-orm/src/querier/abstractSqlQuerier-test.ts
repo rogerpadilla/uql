@@ -16,6 +16,13 @@ import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 /** Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. */
 const EXACT_DECIMAL = '12345678901234567890.99';
 
+/**
+ * What {@link EXACT_DECIMAL} becomes on the SQLite family, which has no DECIMAL type: NUMERIC affinity
+ * converts the literal to a float *on write*, so the digits are gone in the database before anything on
+ * the read side could preserve them. Every SQLite driver here answers `expectedExactDecimal` with it.
+ */
+export const FLOATED_DECIMAL = 12345678901234567000;
+
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
   /**
    * Locking outside a transaction is accepted by every engine and then released as the statement
@@ -129,11 +136,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * What survives a round-trip through a DECIMAL column declared `String`.
-   *
-   * The text itself, on every engine that has a real DECIMAL. The SQLite family overrides this: it
-   * has no such type, and NUMERIC affinity converts the literal to a float *on write*, so the digits
-   * are gone in the database before anything on the read side could preserve them.
+   * What survives a round-trip through a DECIMAL column declared `String`: the text itself, on every
+   * engine that has a real DECIMAL. The SQLite family overrides with {@link FLOATED_DECIMAL}.
    */
   protected expectedExactDecimal(): string | number {
     return EXACT_DECIMAL;
