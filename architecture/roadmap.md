@@ -110,17 +110,17 @@ Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none se
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
 
-1. **The id an insert reports** — a composite insert has nothing to report: the caller wrote every key column, so `idOf(meta, row)` already names the row from the payload it passed in. Handing back a key map instead widens `insertOne`'s return type for every entity (139 errors in this repo, all single-key `const id = await insertOne(...)`; the narrower `IdValue | map` union still costs 58). Revisit only as an opt-in that leaves the single-key return narrow, the way Drizzle's `$returningId()` does. `saveOne`/`saveMany` **did** widen to `EntityId`, for 4 errors: save is 20 call sites against insert's 289, so the asymmetry between them is economic rather than principled.
-2. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
-3. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.
-4. **The HTTP `/:id` route** — one path segment, plus a bug: the adapters disagree about percent-decoding. A by-id route does not run `assertIdValue`, but `buildIdQuery` calls `soleIdOf` first, so a composite is refused before it can under-specify one; what is missing there is a nullish guard, which `matchRoute` already makes unreachable.
+1. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
+2. **MongoDB** — a compound `_id` is a sub-document whose field order decides equality.
+3. **The HTTP `/:id` route** — one path segment, plus a bug: the adapters disagree about percent-decoding. A by-id route does not run `assertIdValue`, but `buildIdQuery` calls `soleIdOf` first, so a composite is refused before it can under-specify one; what is missing there is a nullish guard, which `matchRoute` already makes unreachable.
 
 TypeScript cannot accumulate `@Id` across properties, so the key is named in the class body or not at all: `@Id` refuses one the `idKey` brand and the conventional names both leave unnamed, and `assertIdValue` checks the value at run time.
 
 ## Shipped, and not worth re-litigating
 
-Per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
+One id shape for every write in 0.50.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
 
+- **An id is accepted as either spelling and reported as one.** `EntityId` is the union a by-id method takes, because a caller holding one column's value has to reach the same parameter as one holding a map. `WrittenId` picks a branch, because a write knows which it produced. Merging the two was measured and is worse: it leaves `IdValue<E>` unassignable to a `$where` for an unresolved `E` - the "opaque `QueryWhere`" that reverted the last attempt - and refuses `findOneById(X, 'abc')` on any entity whose key the type level cannot name. `WrittenId` falls back to the union there for the same reason.
 - **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
 - **Keys and indexes are compared by their columns, never by name.** Matching on names would rewrite every table the first time a naming convention changed.
 - **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
