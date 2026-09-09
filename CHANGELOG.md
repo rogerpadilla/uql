@@ -4,15 +4,13 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 
 ## [0.48.0] - 2026-09-09
 
-- **Breaking: `saveOne`/`saveMany` upsert instead of guessing.** A row naming its key upserts on it, so a stale id writes it. Composite keys work, and ids come back in payload order.
-- **Breaking: a save fires `@BeforeUpsert`/`@AfterUpsert`, not the update pair.** Move hooks that ran on a save.
-- **Breaking: `saveOne`/`saveMany` return `EntityId`**, so a composite comes back as its key map. `insertOne`/`insertMany` keep `IdValue`.
-- **Breaking: MongoDB stores and returns the key you declare.** A supplied id is the document's `_id`; a minted one reads back as a hex string, not an `ObjectId`.
-- **Breaking: `@Id({ type: Number })` with no `onInsert` is refused on MongoDB**, which mints only an `ObjectId`.
-- **`@BeforeUpsert`/`@AfterUpsert` hooks**, fired by `upsertOne`/`upsertMany` and by a save that names its key.
-- **A one-to-one update replaces its child** instead of leaving the old row for `$populate` to choose between.
-- **A batch mixing supplied and generated ids reports every id on MySQL**, so a cascade no longer writes a null foreign key.
+**Breaking: `saveOne`/`saveMany` upsert instead of guessing.** A row naming its key upserts on it, so a stale id writes it. Both return `EntityId`, so a composite comes back as its key map - `insertOne`/`insertMany` keep `IdValue` - and ids come back in payload order. A save fires the new `@BeforeUpsert`/`@AfterUpsert` pair, not the update one; move hooks that ran on a save.
+
+- **Breaking: MongoDB stores and returns the key you declare.** A supplied id is the document's `_id`; a minted one reads back as a hex string, not an `ObjectId`. `@Id({ type: Number })` with no `onInsert` is refused, since MongoDB mints only an `ObjectId`.
+- **`@BeforeUpsert`/`@AfterUpsert` hooks**, fired by `upsertOne`/`upsertMany`, which ran none at all, and by a save that names its key.
 - **`upsertMany` writes what each row asked for**, and splits by the dialect's bind budget like `insertMany`.
+- **A batch mixing supplied and generated ids reports every id on MySQL**, so a cascade no longer writes a null foreign key.
+- **A one-to-one update replaces its child** instead of leaving the old row for `$populate` to choose between.
 - **A computed field's expression is table-qualified**, so one opening a subquery reads the outer column rather than the inner table's.
 - The `.` and `./postgres` budgets rose to 29.4 and 27.7 KB gzipped: the write path's own growth, nothing newly reachable.
 
