@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import {
+  anyUuid,
   Company,
   Item,
   ItemTag,
@@ -87,15 +88,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       'Some name 1',
       'someemail1@example.com',
       123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
       'Some name 2',
       'someemail2@example.com',
       456,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
       'Some name 3',
       'someemail3@example.com',
       789,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
     ]);
   }
 
@@ -120,15 +121,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       'INSERT INTO "User" ("id", "name", "createdAt", "email") VALUES ($1, $2, $3, DEFAULT), ($4, $5, $6, $7) RETURNING "id" "id"',
     );
-    expect(values).toEqual([
-      '5',
-      'Some name 1',
-      123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
-      'Some name 2',
-      456,
-      'someemail2@example.com',
-    ]);
+    expect(values).toEqual(['5', 'Some name 1', 123, anyUuid, 'Some name 2', 456, 'someemail2@example.com']);
   }
 
   override shouldInsertOne() {
@@ -142,7 +135,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       'INSERT INTO "User" ("name", "email", "createdAt", "id") VALUES ($1, $2, $3, $4) RETURNING "id" "id"',
     );
-    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid]);
   }
 
   override shouldInsertWithOnInsertId() {
@@ -280,7 +273,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       } as any),
     );
     expect(res.sql).toBe('INSERT INTO "User" ("name", "createdAt", "id") VALUES ($1, $2, $3) RETURNING "id" "id"');
-    expect(res.values).toEqual(['Some Name', 1, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(res.values).toEqual(['Some Name', 1, anyUuid]);
 
     res = this.exec((ctx) =>
       this.dialect.update(
@@ -688,7 +681,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
     );
-    expect(values).toEqual(['1', '2', expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(values).toEqual(['1', '2', anyUuid]);
   }
 
   shouldUpsertWithOnUpdateField() {

@@ -2,6 +2,7 @@ import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { getMeta } from '../entity/index.js';
 import {
+  anyUuid,
   Company,
   createSpec,
   InventoryAdjustment,
@@ -128,7 +129,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.sql).toBe(
       'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?) RETURNING `id` `id`',
     );
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid]);
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
@@ -157,15 +158,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toBe(
       'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (?, ?, ?, ?) RETURNING `id` `id`',
     );
-    expect(values).toEqual([
-      '5',
-      'Some name 1',
-      123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
-      'Some name 2',
-      456,
-      'someemail2@example.com',
-    ]);
+    expect(values).toEqual(['5', 'Some name 1', 123, anyUuid, 'Some name 2', 456, 'someemail2@example.com']);
   }
 
   shouldUpsertWithDoNothing() {

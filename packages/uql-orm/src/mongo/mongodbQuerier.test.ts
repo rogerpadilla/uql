@@ -3,7 +3,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, Item, Profile, TaxCategory, User } from '../test/index.js';
+import { createSpec, Item, Profile, TaxCategory, User, uuidPattern } from '../test/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -161,7 +161,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldKeepAKeyAnOnInsertGenerated() {
     const id = await this.querier.insertOne(TaxCategory, { name: 'generated' });
 
-    expect(String(id)).toMatch(/^[0-9a-f-]{36}$/);
+    expect(String(id)).toMatch(uuidPattern);
     expect(await this.querier.findOneById(TaxCategory, id, { $select: { name: true } })).toMatchObject({
       name: 'generated',
     });

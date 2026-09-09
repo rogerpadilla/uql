@@ -2,6 +2,7 @@ import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import {
+  anyUuid,
   Company,
   InventoryAdjustment,
   Item,
@@ -411,15 +412,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       'Some name 1',
       'someemail1@example.com',
       123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
       'Some name 2',
       'someemail2@example.com',
       456,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
       'Some name 3',
       'someemail3@example.com',
       789,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
+      anyUuid,
     ]);
   }
 
@@ -439,15 +440,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, DEFAULT), (?, ?, ?, ?)' +
         this.returningClause(User),
     );
-    expect(values).toEqual([
-      '5',
-      'Some name 1',
-      123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
-      'Some name 2',
-      456,
-      'someemail2@example.com',
-    ]);
+    expect(values).toEqual(['5', 'Some name 1', 123, anyUuid, 'Some name 2', 456, 'someemail2@example.com']);
   }
 
   shouldInsertOne() {
@@ -461,7 +454,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(
       'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?)' + this.returningClause(User),
     );
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid]);
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
@@ -627,13 +620,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(sql).toMatch(
       /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*`id`.*\) VALUES \(\?, \?, \?, \?\).+ON DUPLICATE KEY UPDATE .*`name` = VALUE\(`name`\).*`createdAt` = VALUE\(`createdAt`\).*`updatedAt` = \?.*$/,
     );
-    expect(values).toEqual([
-      'Some Name',
-      'someemail@example.com',
-      123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
-      expect.any(Number),
-    ]);
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid, expect.any(Number)]);
   }
 
   shouldUpsertMany() {
@@ -823,7 +810,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.sql).toBe(
       'INSERT INTO `User` (`name`, `createdAt`, `id`) VALUES (?, ?, ?)' + this.returningClause(User),
     );
-    expect(res.values).toEqual(['Some Name', 1, expect.stringMatching(/^[0-9a-f-]{36}$/)]);
+    expect(res.values).toEqual(['Some Name', 1, anyUuid]);
 
     res = this.exec((ctx) =>
       this.dialect.update(

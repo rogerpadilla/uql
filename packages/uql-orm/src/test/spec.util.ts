@@ -1,4 +1,10 @@
-import { afterAll, afterEach, beforeAll, beforeEach, describe, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+
+/** The shape of a generated key, whose value a test cannot know. */
+export const uuidPattern = /^[0-9a-f-]{36}$/;
+
+/** Matches any column holding a generated key. Stateless, so one instance serves every assertion. */
+export const anyUuid: string = expect.stringMatching(uuidPattern);
 
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);

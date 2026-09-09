@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, createSpec, User } from '../test/index.js';
+import { anyUuid, Company, createSpec, User } from '../test/index.js';
 import type { QueryConflictPaths, UpdatePayload } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
@@ -32,13 +32,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     expect(sql).toMatch(
       /^INSERT INTO `User` \(.*`name`.*`email`.*`createdAt`.*`id`.*\) VALUES \(\?, \?, \?, \?\) AS `_uql_new` ON DUPLICATE KEY UPDATE .*`name` = `_uql_new`\.`name`.*`createdAt` = `_uql_new`\.`createdAt`.*`updatedAt` = \?.*$/,
     );
-    expect(values).toEqual([
-      'Some Name',
-      'someemail@example.com',
-      123,
-      expect.stringMatching(/^[0-9a-f-]{36}$/),
-      expect.any(Number),
-    ]);
+    expect(values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid, expect.any(Number)]);
   }
 
   shouldThrowForVectorSort() {
