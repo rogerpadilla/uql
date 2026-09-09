@@ -26,7 +26,10 @@ import type {
   QueryProjected,
   QuerySearch,
   QueryStreamProjected,
+  PrimaryKey,
   QueryUpdateResult,
+  QueryUpsertOneResult,
+  QueryUpsertManyResult,
   QueryWhere,
   RawRow,
   RelationKey,
@@ -115,6 +118,24 @@ function soleParentColumn(relOpts: RelationMeta): string {
  * Base class for all database queriers.
  * It provides a standardized way to execute tasks serially to prevent race conditions on database connections.
  */
+/**
+ * The ids an upsert reports, payload-aligned so the result zips with the rows that were passed.
+ *
+ * A composite is named from the payload, as an insert's is: no column holds that key, so no
+ * statement reports one. A sole key takes what the statement reported when it spoke for every row,
+ * and otherwise falls back to the key the caller supplied - a `firstId` dialect reports nothing for
+ * a batch, which is not the same as those rows having no id.
+ */
+function upsertIds<E>(
+  meta: EntityMeta<E>,
+  payload: EntityData<E>[],
+  reported: (PrimaryKey | undefined)[] | undefined,
+): (WrittenId<E> | undefined)[] {
+  return meta.ids.length === 1 && reported?.length === payload.length
+    ? (reported as (WrittenId<E> | undefined)[])
+    : payload.map((it) => (namesKey(meta, it) ? idOf(meta, it) : undefined));
+}
+
 export abstract class AbstractQuerier implements Querier {
   /**
    * Internal promise used to queue database operations.
@@ -554,16 +575,23 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
-  ): Promise<QueryUpdateResult> {
-    return this.hooked(entity, 'Upsert', [payload], () => this.internalUpsertOne(entity, conflictPaths, payload));
+  ): Promise<QueryUpsertOneResult<E>> {
+    return this.hooked(entity, 'Upsert', [payload], async () => {
+      const { ids, changes, created } = await this.internalUpsertOne(entity, conflictPaths, payload);
+      const [id] = upsertIds(getMeta(entity), [payload], ids);
+      return { id, changes, created };
+    });
   }
 
   async upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
-  ): Promise<QueryUpdateResult> {
-    return this.hooked(entity, 'Upsert', payload, () => this.internalUpsertMany(entity, conflictPaths, payload));
+  ): Promise<QueryUpsertManyResult<E>> {
+    return this.hooked(entity, 'Upsert', payload, async () => {
+      const { ids, changes } = await this.internalUpsertMany(entity, conflictPaths, payload);
+      return { ids: upsertIds(getMeta(entity), payload, ids), changes };
+    });
   }
 
   protected abstract internalUpsertOne<E extends object>(

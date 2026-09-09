@@ -122,7 +122,7 @@ describe('index features', () => {
   it.each([
     ['postgres', 'CREATE INDEX IF NOT EXISTS "i" ON "t" (((("kind"->\'theme\')->>\'color\')));'],
     ['cockroachdb', 'CREATE INDEX IF NOT EXISTS "i" ON "t" (((("kind"->\'theme\')->>\'color\')));'],
-    ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((json_extract(`kind`, '$.theme.color')));"],
+    ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((JSON_EXTRACT(`kind`, '$.theme.color')));"],
   ] as const)('should index a JSON path on %s', (dialect, expected) => {
     expect(render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }] })).toBe(
       expected,
@@ -132,7 +132,7 @@ describe('index features', () => {
   /** A number is compared cast to a number, so the index over it carries the same cast. */
   it.each([
     ['postgres', 'CREATE INDEX IF NOT EXISTS "i" ON "t" (((("kind"->>\'rating\'))::numeric));'],
-    ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((CAST(json_extract(`kind`, '$.rating') AS REAL)));"],
+    ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((CAST(JSON_EXTRACT(`kind`, '$.rating') AS REAL)));"],
   ] as const)('should index a numeric JSON path on %s', (dialect, expected) => {
     expect(render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] })).toBe(
       expected,

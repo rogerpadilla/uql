@@ -7,11 +7,6 @@ import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
  * support and only report header-derived IDs.
  */
 export abstract class MySqlLikeQuerierIt extends AbstractSqlQuerierIt {
-  /** MySQL reports no `firstId` for upserts on non-auto-increment PKs (no `RETURNING`). */
-  protected override assertUpsertFirstId(): void {
-    // no signal to assert
-  }
-
   /** MySQL's `affectedRows` convention exposes the `created` flag on upsert. */
   protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
     expect(created).toBe(true);
@@ -23,10 +18,11 @@ export abstract class MySqlLikeQuerierIt extends AbstractSqlQuerierIt {
 
   /**
    * No `RETURNING`: once a batch touches more than one row, `affectedRows` is a weighted sum
-   * (1=insert, 2=update) that can't be apportioned back to individual rows, so `ids` stays empty
-   * rather than fabricating values.
+   * (1=insert, 2=update) that can't be apportioned back to individual rows. The result stays
+   * payload-aligned, so those rows report `undefined` rather than fabricated values - a row that
+   * named its own key would still report that.
    */
-  protected override assertUpsertManyIds(ids: PrimaryKey[] | undefined): void {
-    expect(ids).toBeUndefined();
+  protected override assertUpsertManyIds(ids: readonly (PrimaryKey | undefined)[]): void {
+    expect(ids).toEqual([undefined, undefined]);
   }
 }

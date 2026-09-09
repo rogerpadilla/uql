@@ -527,13 +527,15 @@ export class MongodbQuerier extends AbstractQuerier {
       const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
 
       const changes = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
-      // `upsertedIds` only covers newly-inserted documents (keyed by operation index); a matched and
-      // updated document's `_id` isn't in the response, so it's simply not represented here - same
-      // "exact where knowable, absent otherwise" convention `RETURNING`-based SQL dialects use for
-      // rows that hit `DO NOTHING`.
-      const ids = Object.values(res.upsertedIds).map((id) => this.dialect.fromWireId(id)) as PrimaryKey[];
+      // `upsertedIds` only covers newly-inserted documents, keyed by operation index: a matched and
+      // updated document's `_id` is not in the response. Read by that index rather than flattened,
+      // so each id lands on the row it belongs to and the gaps stay gaps.
+      const ids = payload.map((_, index) => {
+        const id = res.upsertedIds[index];
+        return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
+      });
 
-      return { changes, ids, firstId: ids[0] };
+      return { changes, ids, firstId: ids.find((id) => id !== undefined) };
     });
   }
 

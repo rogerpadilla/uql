@@ -87,12 +87,12 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
     const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
     expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.firstId).toBeDefined();
+    expect(insertResult.id).toBe(pk);
     expect(insertResult.created).toBe(true);
 
     const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
     expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.firstId).toBeDefined();
+    expect(updateResult.id).toBe(pk);
     expect(updateResult.created).toBe(false);
 
     const record = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
@@ -136,12 +136,12 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     expect(result.changes).toBeGreaterThanOrEqual(2);
     // Only the inserted document's id is knowable from `bulkWrite`'s response - the updated
     // document's `_id` isn't returned, so it must not appear here.
-    expect(result.ids).toHaveLength(1);
-    expect(result.firstId).toBe(result.ids?.[0]);
+    // Payload-aligned: the inserted row's id lands on its own index, the updated row's stays a gap.
+    expect(result.ids).toHaveLength(2);
 
     const inserted = await this.querier.findOne(User, { $select: { id: true }, $where: { email: newEmail } });
     expect(inserted).toBeDefined();
-    expect(String(result.firstId)).toBe(String(inserted!.id));
+    expect(result.ids.map(String)).toContain(String(inserted!.id));
   }
 
   /**

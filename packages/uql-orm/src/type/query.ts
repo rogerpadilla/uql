@@ -1,4 +1,4 @@
-import type { FieldKey, IdKey, JsonFieldPaths, RelationKey, RelationTarget } from './entity.js';
+import type { FieldKey, IdKey, JsonFieldPaths, RelationKey, RelationTarget, WrittenId } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -539,7 +539,31 @@ export type QueryStringified = {
 };
 
 /**
- * result of an update operation.
+ * What upserting one row reports, against the entity rather than the driver.
+ *
+ * `created` is here and not on {@link QueryUpsertManyResult} because it is only ever knowable for a
+ * single statement: a batch's `affectedRows` is a weighted sum on the dialects that report one at
+ * all, and a batch of mixed shapes is several statements.
+ */
+export type QueryUpsertOneResult<E> = {
+  readonly id?: WrittenId<E>;
+  readonly changes?: number;
+  /** Whether the record was created (`true`) or updated (`false`), where the dialect can tell. */
+  readonly created?: boolean;
+};
+
+/**
+ * What upserting many rows reports. `ids` is payload-aligned like an insert's, so it zips with the
+ * rows that were passed, and carries a composite key as the map naming it.
+ */
+export type QueryUpsertManyResult<E> = {
+  readonly ids: (WrittenId<E> | undefined)[];
+  readonly changes?: number;
+};
+
+/**
+ * result of an update operation, as the driver reports it - which is what `run` hands back, where
+ * there is no entity to name the ids against. The `QueryUpsert*Result` pair is the entity-level shape.
  */
 export type QueryUpdateResult = {
   /**
@@ -547,11 +571,12 @@ export type QueryUpdateResult = {
    */
   changes?: number;
   /**
-   * the inserted IDs, in insertion order. Exact on `'returning'` dialects; inferred from the
-   * driver header on the others (see {@link InsertIdSource}), and empty when the header
-   * reports no generated ID.
+   * the IDs the statement reported, in payload order, `undefined` where it reported none for that
+   * row - a MongoDB upsert names only the documents it inserted. Exact on `'returning'` dialects;
+   * inferred from the driver header on the others (see {@link InsertIdSource}), and absent
+   * altogether when the header reports nothing.
    */
-  ids?: PrimaryKey[];
+  ids?: (PrimaryKey | undefined)[];
   /**
    * first inserted ID.
    */

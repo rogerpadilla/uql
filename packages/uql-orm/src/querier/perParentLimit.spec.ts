@@ -113,7 +113,7 @@ describe('per-parent limits: the LATERAL shape', () => {
     );
 
     expect(ctx.sql).toBe(
-      'SELECT "_uql_p_2".* FROM unnest($1::BIGINT[]) AS "_uql_keys_1"(k0)' +
+      'SELECT "_uql_p_2".* FROM UNNEST($1::BIGINT[]) AS "_uql_keys_1"(k0)' +
         ' JOIN LATERAL (SELECT "body" FROM "Post" WHERE "blogId" = "_uql_keys_1".k0 ORDER BY "id" DESC LIMIT 3)' +
         ' "_uql_p_2" ON TRUE',
     );
@@ -139,9 +139,9 @@ describe('per-parent limits: the LATERAL shape', () => {
       ),
     );
 
-    // `unnest` pairs the arrays rather than cross-producting them, so a pairing no parent has is never
+    // `UNNEST` pairs the arrays rather than cross-producting them, so a pairing no parent has is never
     // asked for - unlike the flat read, which over-selects and leans on the regroup to drop it.
-    expect(ctx.sql).toContain('unnest($1::TEXT[], $2::TEXT[]) AS "_uql_keys_1"(k0, k1)');
+    expect(ctx.sql).toContain('UNNEST($1::TEXT[], $2::TEXT[]) AS "_uql_keys_1"(k0, k1)');
     expect(ctx.sql).toContain('WHERE "cityCountry" = "_uql_keys_1".k0 AND "cityArea" = "_uql_keys_1".k1');
     expect(ctx.values).toEqual([['es'], ['north']]);
   });

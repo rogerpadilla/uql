@@ -741,7 +741,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Item" WHERE to_tsvector("name" || \' \' || "description") @@ websearch_to_tsquery($1) AND "code" = $2 LIMIT 30',
+      'SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || \' \' || "description") @@ WEBSEARCH_TO_TSQUERY($1) AND "code" = $2 LIMIT 30',
     );
     expect(res.values).toEqual(['some text', '1']);
 
@@ -757,7 +757,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE to_tsvector("name") @@ websearch_to_tsquery($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
+      'SELECT "id" FROM "User" WHERE TO_TSVECTOR("name") @@ WEBSEARCH_TO_TSQUERY($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
@@ -831,7 +831,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $size: 3 } } as any,
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") = $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") = $1');
     expect(values).toEqual([3]);
   }
 
@@ -843,7 +843,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $size: { $gte: 2 } } } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") >= $1');
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") >= $1');
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
@@ -854,7 +854,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Company" WHERE (jsonb_array_length("kind") > $1 AND jsonb_array_length("kind") <= $2)',
+      'SELECT "id" FROM "Company" WHERE (JSONB_ARRAY_LENGTH("kind") > $1 AND JSONB_ARRAY_LENGTH("kind") <= $2)',
     );
     expect(res.values).toEqual([0, 5]);
 
@@ -865,7 +865,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $size: { $between: [1, 10] } } } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE jsonb_array_length("kind") BETWEEN $1 AND $2');
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") BETWEEN $1 AND $2');
     expect(res.values).toEqual([1, 10]);
   }
 
@@ -887,7 +887,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { name: 'Acme', kind: { $size: 3 } } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "name" = $1 AND jsonb_array_length("kind") = $2');
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "name" = $1 AND JSONB_ARRAY_LENGTH("kind") = $2');
     expect(res.values).toEqual(['Acme', 3]);
 
     res = this.exec((ctx) =>
@@ -897,7 +897,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Company" WHERE "name" = $1 AND (jsonb_array_length("kind") > $2 AND jsonb_array_length("kind") <= $3)',
+      'SELECT "id" FROM "Company" WHERE "name" = $1 AND (JSONB_ARRAY_LENGTH("kind") > $2 AND JSONB_ARRAY_LENGTH("kind") <= $3)',
     );
     expect(res.values).toEqual(['Acme', 0, 5]);
   }
@@ -913,7 +913,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'city\' ILIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'city\' ILIKE $1)',
     );
     expect(values).toEqual(['new%']);
   }
@@ -926,7 +926,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE (_uql_elem_1->>\'price\')::numeric > $1 AND _uql_elem_1->\'active\' = $2::jsonb)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE (_uql_elem_1->>\'price\')::numeric > $1 AND _uql_elem_1->\'active\' = $2::jsonb)',
     );
     // The boolean compares as JSON: extracting it as text loses the type.
     expect(values).toEqual([100, 'true']);
@@ -940,7 +940,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' = $1 AND _uql_elem_1->>\'status\' = ANY($2))',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' = $1 AND _uql_elem_1->>\'status\' = ANY($2))',
     );
     expect(values).toEqual(['exact', ['active', 'pending']]);
   }
@@ -953,7 +953,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM jsonb_array_elements("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' LIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' LIKE $1)',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -1118,12 +1118,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       values: ['{"private":1}', ['public'], 123, '1'],
     },
     push: {
-      sql: 'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
       values: ['"new-tag"', 123, '1'],
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, '1'],
     },
     /**
@@ -1131,19 +1131,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
      * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
      */
     pullPushSameKey: {
-      sql: `UPDATE "Company" SET "kind" = jsonb_set(jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((jsonb_set("kind", '{tags}', COALESCE((SELECT jsonb_agg(_uql_pull.val ORDER BY _uql_pull.ord) FROM jsonb_array_elements("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
-      sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
       values: ['{"private":1}', '"new-tag"', 123, '1'],
     },
     setPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = jsonb_set(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || jsonb_build_array($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
       values: ['{"tags":["a"]}', '"b"', 123, '1'],
     },
     pushUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = (jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = (JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
       values: ['"new-tag"', ['public'], 123, '1'],
     },
   };

@@ -157,10 +157,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    * {@link MySqlLikeQuerierIt} overrides to a no-op: MySQL has no `RETURNING`, so a manually
    * specified (non-auto-increment) PK reports no `firstId` on upsert.
    */
-  protected assertUpsertFirstId(firstId: PrimaryKey | undefined): void {
-    expect(firstId).toBeDefined();
-  }
-
   /**
    * `created` is asserted `undefined` by default: most dialects (SQLite, MariaDB, CockroachDB)
    * have no reliable insert-vs-update signal for a `RETURNING`-based upsert. Dialects that DO have
@@ -184,8 +180,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    * weighted sum across rows once more than one is touched, so `ids` stays `undefined` (see
    * `AbstractSqlQuerier.upsertMany`) rather than fabricating per-row values.
    */
-  protected assertUpsertManyIds(ids: PrimaryKey[] | undefined, expectedIds: PrimaryKey[]): void {
-    expect(ids!.map(String).sort()).toEqual(expectedIds.map(String).sort());
+  protected assertUpsertManyIds(ids: readonly (PrimaryKey | undefined)[], expectedIds: PrimaryKey[]): void {
+    expect(ids.map(String).sort()).toEqual(expectedIds.map(String).sort());
   }
 
   async shouldUpsertManyReturnIdsForNonPkConflictPath() {
@@ -208,7 +204,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
     expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    this.assertUpsertFirstId(insertResult.firstId);
+    expect(insertResult.id).toBe(pk);
     this.assertUpsertCreatedOnInsert(insertResult.created);
 
     const record2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
@@ -216,7 +212,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
     expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    this.assertUpsertFirstId(updateResult.firstId);
+    expect(updateResult.id).toBe(pk);
     this.assertUpsertCreatedOnUpdate(updateResult.created);
 
     const record3 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });

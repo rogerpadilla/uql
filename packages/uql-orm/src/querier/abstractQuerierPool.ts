@@ -21,7 +21,8 @@ import type {
   QueryProjected,
   QuerySearch,
   QueryStreamProjected,
-  QueryUpdateResult,
+  QueryUpsertOneResult,
+  QueryUpsertManyResult,
   RelationKey,
   TransactionOptions,
   Type,
@@ -201,7 +202,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
-  ): Promise<QueryUpdateResult> {
+  ): Promise<QueryUpsertOneResult<E>> {
     return this.withQuerier((querier) => querier.upsertOne(entity, conflictPaths, payload));
   }
 
@@ -209,7 +210,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
-  ): Promise<QueryUpdateResult> {
+  ): Promise<QueryUpsertManyResult<E>> {
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
 

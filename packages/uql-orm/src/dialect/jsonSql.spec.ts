@@ -33,9 +33,9 @@ describe('jsonAssignCall', () => {
   });
 
   it('should append the path suffix to every key', () => {
-    const sql = jsonAssignCall(() => '?', 'json_insert', '`kind`', { tags: 'a' }, '[#]');
+    const sql = jsonAssignCall(() => '?', 'JSON_INSERT', '`kind`', { tags: 'a' }, '[#]');
 
-    expect(sql).toBe("json_insert(`kind`, '$.tags[#]', ?)");
+    expect(sql).toBe("JSON_INSERT(`kind`, '$.tags[#]', ?)");
   });
 });
 
@@ -64,15 +64,15 @@ describe('jsonRemoveCall', () => {
 
 describe('jsonElemExists', () => {
   it('should AND the element conditions', () => {
-    expect(jsonElemExists('json_each(`kind`) AS _uql_elem_1', ['a = 1', 'b = 2'])).toBe(
-      'EXISTS (SELECT 1 FROM json_each(`kind`) AS _uql_elem_1 WHERE a = 1 AND b = 2)',
+    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem_1', ['a = 1', 'b = 2'])).toBe(
+      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem_1 WHERE a = 1 AND b = 2)',
     );
   });
 
   /** With no conditions the question is only whether the array has any element at all. */
   it('should omit WHERE when there is no condition', () => {
-    expect(jsonElemExists('json_each(`kind`) AS _uql_elem_1', [])).toBe(
-      'EXISTS (SELECT 1 FROM json_each(`kind`) AS _uql_elem_1)',
+    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem_1', [])).toBe(
+      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem_1)',
     );
   });
 });

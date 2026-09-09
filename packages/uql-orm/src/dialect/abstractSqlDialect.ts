@@ -403,7 +403,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /**
    * The `$text` full-text predicate, which every engine spells differently: `MATCH ... AGAINST`
-   * (MySQL family), `to_tsvector @@ websearch_to_tsquery` (Postgres-wire), an FTS5 `MATCH` against
+   * (MySQL family), `TO_TSVECTOR @@ WEBSEARCH_TO_TSQUERY` (Postgres-wire), an FTS5 `MATCH` against
    * the table itself (SQLite). No portable form exists, so a dialect without one says so here rather
    * than inheriting another engine's syntax.
    */
@@ -1000,7 +1000,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected readonly jsonContainmentIsPartial: boolean = true;
 
   /**
-   * Whether an exploded *scalar* element keeps its SQL type. SQLite's `json_each` yields JSON
+   * Whether an exploded *scalar* element keeps its SQL type. SQLite's `JSON_EACH` yields JSON
    * booleans as `0`/`1` integers and numbers as numbers, so such an element compares directly to a
    * bound value; PostgreSQL and MySQL explode scalars to text, losing the type, so a non-string
    * operand there has to compare as JSON (see {@link isJsonbOp}).
@@ -2134,7 +2134,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /**
    * Build a complete `$size` comparison expression.
-   * @param sizeExprFn - function that appends the size expression to ctx (e.g. `jsonb_array_length("col")`)
+   * @param sizeExprFn - function that appends the size expression to ctx (e.g. `JSONB_ARRAY_LENGTH("col")`)
    */
   protected buildSizeComparison(
     ctx: QueryContext,

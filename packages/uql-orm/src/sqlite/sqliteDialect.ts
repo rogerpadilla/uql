@@ -132,12 +132,12 @@ export class SqliteDialect extends AbstractSqlDialect {
    */
   protected override readonly jsonContainmentIsPartial = false;
 
-  /** `json_each` exposes a JSON boolean as `0`/`1` and a number as a number - already comparable. */
+  /** `JSON_EACH` exposes a JSON boolean as `0`/`1` and a number as a number - already comparable. */
   protected override readonly jsonScalarElemKeepsType = true;
 
   /**
    * Each element is read back as JSON text through `->` at its own `fullkey`, so it compares
-   * correctly whatever its type. `json_each`'s `value` column would not: it unquotes strings (`a`
+   * correctly whatever its type. `JSON_EACH`'s `value` column would not: it unquotes strings (`a`
    * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
    */
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
@@ -151,24 +151,24 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
     return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`json_array_length(${jsonField})`), value),
+      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSON_ARRAY_LENGTH(${jsonField})`), value),
     );
   }
 
-  /** `json_each` yields both scalar and object elements, so one form covers each case. */
+  /** `JSON_EACH` yields both scalar and object elements, so one form covers each case. */
   protected override jsonElemFrom(jsonField: string, _fields: readonly string[], alias: string): string {
-    return `json_each(${jsonField}) ${alias}`;
+    return `JSON_EACH(${jsonField}) ${alias}`;
   }
 
   protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
     if (field === undefined) {
       return `${alias}.value`;
     }
-    return asJson ? `${alias}.value -> ${jsonPath(field)}` : `json_extract(${alias}.value, ${jsonPath(field)})`;
+    return asJson ? `${alias}.value -> ${jsonPath(field)}` : `JSON_EXTRACT(${alias}.value, ${jsonPath(field)})`;
   }
 
   protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `json_extract(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
+    return `JSON_EXTRACT(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
   }
 
   protected override numericCast(expr: string): string {
@@ -176,12 +176,12 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   protected override jsonCast(operand: string): string {
-    return `json(${operand})`;
+    return `JSON(${operand})`;
   }
 
   /**
-   * `json_replace` leaves an absent key (and a NULL column) untouched. Elements are read back
-   * through `->` at their own `fullkey` so each keeps its JSON type - `json_each`'s `value` would
+   * `JSON_REPLACE` leaves an absent key (and a NULL column) untouched. Elements are read back
+   * through `->` at their own `fullkey` so each keeps its JSON type - `JSON_EACH`'s `value` would
    * flatten booleans to 0/1 and stringify objects.
    */
   protected override jsonPullKey(
@@ -193,8 +193,8 @@ export class SqliteDialect extends AbstractSqlDialect {
   ): string {
     const path = jsonPath(key);
     const elem = `${escapedCol} -> ${JSON_PULL_ALIAS}.fullkey`;
-    const kept = `SELECT json_group_array(json(${elem})) FROM json_each(${escapedCol}, ${path}) ${JSON_PULL_ALIAS} WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
-    return `json_replace(${expr}, ${path}, (${kept}))`;
+    const kept = `SELECT JSON_GROUP_ARRAY(JSON(${elem})) FROM JSON_EACH(${escapedCol}, ${path}) ${JSON_PULL_ALIAS} WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
+    return `JSON_REPLACE(${expr}, ${path}, (${kept}))`;
   }
 
   protected override jsonSet(
@@ -205,7 +205,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   ): string {
     return jsonAssignCall(
       (value) => this.jsonScalarParam(ctx, value),
-      'json_set',
+      'JSON_SET',
       jsonSetTarget(expr, field, `'{}'`),
       set,
     );
@@ -214,15 +214,15 @@ export class SqliteDialect extends AbstractSqlDialect {
   /**
    * `[#]` appends, creating the array when the key is absent.
    *
-   * @remarks `json_set` rather than `json_insert`: the two are equivalent here because `[#]` always
-   * resolves past the end of the array, and Turso's engine implements `json_insert` as create-only,
+   * @remarks `JSON_SET` rather than `JSON_INSERT`: the two are equivalent here because `[#]` always
+   * resolves past the end of the array, and Turso's engine implements `JSON_INSERT` as create-only,
    * so it silently drops the element when the array already exists.
    */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'json_set', expr, push, '[#]');
+    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'JSON_SET', expr, push, '[#]');
   }
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall('json_remove', expr, unset);
+    return jsonRemoveCall('JSON_REMOVE', expr, unset);
   }
 }

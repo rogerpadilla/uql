@@ -14,7 +14,7 @@ export function jsonPath(path: string, suffix = ''): string {
 
 /**
  * `FN(target, path, value, ...)` - the multi-pair JSON assignment shape shared by MySQL's
- * `JSON_SET` and SQLite's `json_set`/`json_insert`. `pathSuffix` appends an accessor per key
+ * `JSON_SET` and SQLite's `JSON_SET`/`JSON_INSERT`. `pathSuffix` appends an accessor per key
  * (SQLite's `[#]` append). Values bind in key order through `bindValue`, the caller's
  * `jsonScalarParam` bound to its `QueryContext`.
  */
@@ -99,7 +99,7 @@ export function jsonTypeMode(type: FieldType): JsonAccessMode {
  * Whether the operator reads the JSON *value* instead of its text form. The array operators always
  * do. Equality joins them for boolean operands, because extracting JSON as text loses the type in
  * a way no cast recovers portably: PostgreSQL raises `operator does not exist: text = boolean`,
- * MySQL compares `'true'` to `1` and silently matches nothing, and SQLite's `json_extract` yields
+ * MySQL compares `'true'` to `1` and silently matches nothing, and SQLite's `JSON_EXTRACT` yields
  * `1`. Comparing the JSON value against a JSON-encoded parameter is exact on every dialect.
  *
  * Numbers stay on the text accessor with a numeric cast, which keeps `1` equal to `1.0` - JSON

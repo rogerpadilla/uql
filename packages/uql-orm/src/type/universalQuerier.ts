@@ -10,6 +10,8 @@ import type {
   QuerySearch,
   QueryStreamProjected,
   QueryUpdateResult,
+  QueryUpsertOneResult,
+  QueryUpsertManyResult,
 } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
@@ -233,7 +235,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
-  ): Promise<QueryUpdateResult>;
+  ): Promise<QueryUpsertOneResult<E>>;
 
   /**
    * Insert or update many records based on the conflict paths.
@@ -246,7 +248,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
-  ): Promise<QueryUpdateResult>;
+  ): Promise<QueryUpsertManyResult<E>>;
 
   /**
    * insert or update a record.

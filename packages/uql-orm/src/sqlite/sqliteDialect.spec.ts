@@ -235,7 +235,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE json_extract(_uql_elem_1.value, '$.city') = ? AND json_extract(_uql_elem_1.value, '$.zip') = ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE JSON_EXTRACT(_uql_elem_1.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem_1.value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
@@ -248,7 +248,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = json(?)) AND EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = json(?)))',
+      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = JSON(?)))',
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
@@ -260,7 +260,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $size: 3 } } as any,
       }),
     );
-    expect(sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) = ?');
+    expect(sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) = ?');
     expect(values).toEqual([3]);
   }
 
@@ -272,7 +272,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $size: { $gte: 2 } } } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) >= ?');
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) >= ?');
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
@@ -283,7 +283,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (json_array_length(`name`) > ? AND json_array_length(`name`) <= ?)',
+      'SELECT `id` FROM `User` WHERE (JSON_ARRAY_LENGTH(`name`) > ? AND JSON_ARRAY_LENGTH(`name`) <= ?)',
     );
     expect(res.values).toEqual([0, 5]);
 
@@ -294,7 +294,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $size: { $between: [1, 10] } } } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE json_array_length(`name`) BETWEEN ? AND ?');
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) BETWEEN ? AND ?');
     expect(res.values).toEqual([1, 10]);
   }
 
@@ -307,7 +307,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM json_each(`name`) _uql_elem_1 WHERE json_extract(_uql_elem_1.value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE JSON_EXTRACT(_uql_elem_1.value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -319,9 +319,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $elemMatch: { price: { $lt: 100 }, active: { $eq: true } } } } as any,
       }),
     );
-    expect(sql).toContain('EXISTS (SELECT 1 FROM json_each');
-    expect(sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.price') AS REAL) < ?");
-    expect(sql).toContain("_uql_elem_1.value -> '$.active' = json(?)");
+    expect(sql).toContain('EXISTS (SELECT 1 FROM JSON_EACH');
+    expect(sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.price') AS REAL) < ?");
+    expect(sql).toContain("_uql_elem_1.value -> '$.active' = JSON(?)");
     // The boolean binds as JSON text, not as SQLite's 0/1 integer.
     expect(values).toEqual([100, 'true']);
   }
@@ -343,10 +343,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.a') IS NOT ?");
-    expect(res.sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.b') AS REAL) > ?");
-    expect(res.sql).toContain("CAST(json_extract(_uql_elem_1.value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("_uql_elem_1.value -> '$.active' = json(?)");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.a') IS NOT ?");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.b') AS REAL) > ?");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.c') AS REAL) >= ?");
+    expect(res.sql).toContain("_uql_elem_1.value -> '$.active' = JSON(?)");
     expect(res.values).toContain('true');
 
     // Test $like, $startsWith, $endsWith
@@ -368,10 +368,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.a') LIKE ?");
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.d') LIKE ?");
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.e') LIKE ?");
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.g') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.a') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.d') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.e') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.g') LIKE ?");
 
     // Test $regex
     res = this.exec((ctx) =>
@@ -380,10 +380,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("json_extract(_uql_elem_1.value, '$.code') REGEXP ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.code') REGEXP ?");
   }
 
-  // ─── JSONB dot-notation (SQLite-specific json_extract syntax) ──────
+  // ─── JSONB dot-notation (SQLite-specific JSON_EXTRACT syntax) ──────
   shouldFindByJsonDotNotation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
@@ -391,7 +391,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': 1 } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) = ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) = ?");
     expect(values).toEqual([1]);
   }
 
@@ -402,7 +402,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $ne: 0 } } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) IS NOT ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) IS NOT ?");
     expect(values).toEqual([0]);
   }
 
@@ -413,7 +413,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $gt: 0 } } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(json_extract(`kind`, '$.public') AS REAL) > ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) > ?");
     expect(values).toEqual([0]);
   }
 
@@ -424,7 +424,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.theme.color': 'red' } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.theme.color') = ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.theme.color') = ?");
     expect(values).toEqual(['red']);
   }
 
@@ -436,7 +436,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     // SQLite uses LOWER(...) LIKE for ILIKE
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE json_extract(`kind`, '$.public') LIKE ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.public') LIKE ?");
     expect(values).toEqual(['%active%']);
   }
 
@@ -470,43 +470,43 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
     set: {
-      sql: "UPDATE `Company` SET `kind` = json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', 123, '1'],
     },
     unsetOnly: {
-      sql: "UPDATE `Company` SET `kind` = json_remove(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.public', '$.private'), `updatedAt` = ? WHERE `id` = ?",
       values: [123, '1'],
     },
     setUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = json_remove(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', 123, '1'],
     },
     push: {
-      sql: "UPDATE `Company` SET `kind` = json_set(`kind`, '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(`kind`, '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, '1'],
     },
     /**
      * Elements are read back via `->` at their own `fullkey`, which preserves each element's JSON
-     * type; `json_each`'s `value` column would flatten booleans to 0/1 and stringify objects.
+     * type; `JSON_EACH`'s `value` column would flatten booleans to 0/1 and stringify objects.
      */
     pull: {
-      sql: "UPDATE `Company` SET `kind` = json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = json_set(json_replace(`kind`, '$.tags', (SELECT json_group_array(json(`kind` -> _uql_pull.fullkey)) FROM json_each(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> json(?))), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_REPLACE(`kind`, '$.tags', (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?))), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
-      sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.private', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_SET(COALESCE(`kind`, '{}'), '$.private', JSON(?)), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['1', '"new-tag"', 123, '1'],
     },
     setPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = json_set(json_set(COALESCE(`kind`, '{}'), '$.tags', json(?)), '$.tags[#]', json(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_SET(COALESCE(`kind`, '{}'), '$.tags', JSON(?)), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['["a"]', '"b"', 123, '1'],
     },
     pushUnsetCombined: {
-      sql: "UPDATE `Company` SET `kind` = json_remove(json_set(`kind`, '$.tags[#]', json(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REMOVE(JSON_SET(`kind`, '$.tags[#]', JSON(?)), '$.public'), `updatedAt` = ? WHERE `id` = ?",
       values: ['"new-tag"', 123, '1'],
     },
   };
@@ -518,7 +518,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $sort: { 'kind.public': 1 },
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY json_extract(`kind`, '$.public')");
+    expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_EXTRACT(`kind`, '$.public')");
   }
 
   shouldSortByJsonDotNotationDeep() {
@@ -528,7 +528,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $sort: { 'kind.theme.color': -1 } as any,
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY json_extract(`kind`, '$.theme.color') DESC");
+    expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_EXTRACT(`kind`, '$.theme.color') DESC");
   }
 }
 

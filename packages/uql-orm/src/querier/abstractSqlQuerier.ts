@@ -613,7 +613,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // than one statement; `transaction` is re-entrant, so this is free inside a caller's own.
     return this.transaction(async () => {
       let changes = 0;
-      const ids: PrimaryKey[] = [];
+      const ids: (PrimaryKey | undefined)[] = [];
       for (const statement of statements) {
         const result = await this.runUpsert(entity, conflictPaths, statement);
         changes += result.changes ?? 0;

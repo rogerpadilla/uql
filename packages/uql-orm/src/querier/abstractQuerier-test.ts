@@ -1445,7 +1445,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       },
     );
     expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.firstId).toBeDefined();
+    expect(insertResult.id).toBe(pk);
     const record2 = await this.querier.findOne(TaxCategory, {
       $select: { name: true },
       $where: { pk },
@@ -1462,7 +1462,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       },
     );
     expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.firstId).toBeDefined();
+    expect(updateResult.id).toBe(pk);
     const record3 = await this.querier.findOne(TaxCategory, {
       $select: { name: true },
       $where: { pk },

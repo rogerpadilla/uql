@@ -25,7 +25,7 @@ import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /**
  * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
- * CockroachDB (wire- and SQL-compatible for everything below, including `to_tsvector`/`to_tsquery`
+ * CockroachDB (wire- and SQL-compatible for everything below, including `TO_TSVECTOR`/`TO_TSQUERY`
  * and pgvector's `<=>`/`<->`/`<#>` distance operators, which CockroachDB implements natively).
  * `xmax`-based upsert `created` detection is Postgres-only (CockroachDB has no `xmax`/`ctid`) and
  * stays in {@link PostgresDialect}, along with the `vectorExtension`/`vectorIndexStyle` values that
@@ -89,7 +89,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const keys = this.escapeId(ctx.nextAlias(PER_PARENT_KEYS_ALIAS));
     const branch = this.escapeId(ctx.nextAlias(PER_PARENT_BRANCH_ALIAS));
     const column = (index: number) => `${keys}.k${index}`;
-    // `unnest` resolves an uncast parameter to `unknown` and refuses it ("function unnest(unknown) is
+    // `UNNEST` resolves an uncast parameter to `unknown` and refuses it ("function unnest(unknown) is
     // not unique"), so the array says its type. It comes from the parent's key column, which always
     // declares one, rather than the child's foreign key, which would have to be resolved through the
     // reference it takes its own type from.
@@ -101,7 +101,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
       const values = parents.map((it) => (it as Record<string, unknown>)[parent]);
       return `${this.addValue(ctx.values, values)}::${canonicalToSql(fieldOptionsToCanonical(field), this)}[]`;
     });
-    const rowSource = `unnest(${sources.join(', ')}) AS ${keys}(${joins.map((_, index) => `k${index}`).join(', ')})`;
+    const rowSource = `UNNEST(${sources.join(', ')}) AS ${keys}(${joins.map((_, index) => `k${index}`).join(', ')})`;
     // The keys come from the row source rather than as values, which is the whole point of correlating:
     // one branch, planned once, instead of one per parent.
     const correlated = Object.fromEntries(
@@ -175,8 +175,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `to_tsvector(...) @@ websearch_to_tsquery(...)`. `websearch_to_tsquery` takes free-form user input
-   * (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike `to_tsquery`, which
+   * `TO_TSVECTOR(...) @@ WEBSEARCH_TO_TSQUERY(...)`. `WEBSEARCH_TO_TSQUERY` takes free-form user input
+   * (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike `TO_TSQUERY`, which
    * rejects anything unparseable - including a plain two-word search.
    */
   protected override appendTextSearch<E>(
@@ -190,7 +190,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
       .join(` || ' ' || `);
     // The config is bound once and its numbered placeholder reused by both calls.
     const config = search.$config ? `${this.addValue(ctx.values, search.$config)}::regconfig, ` : '';
-    ctx.append(`to_tsvector(${config}${fields}) @@ websearch_to_tsquery(${config}`);
+    ctx.append(`TO_TSVECTOR(${config}${fields}) @@ WEBSEARCH_TO_TSQUERY(${config}`);
     ctx.addValue(search.$value);
     ctx.append(')');
   }
@@ -201,7 +201,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
     return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`jsonb_array_length(${jsonField})`), value),
+      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSONB_ARRAY_LENGTH(${jsonField})`), value),
     );
   }
 
@@ -210,7 +210,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * as text unless they are compared as JSON, where `_text` would yield `text = jsonb`.
    */
   protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
-    const fn = fields.length || asJson ? 'jsonb_array_elements' : 'jsonb_array_elements_text';
+    const fn = fields.length || asJson ? 'JSONB_ARRAY_ELEMENTS' : 'JSONB_ARRAY_ELEMENTS_TEXT';
     return `${fn}(${jsonField}) AS ${alias}`;
   }
 
@@ -267,8 +267,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     value: unknown,
   ): string {
     const escapedKey = escapeSingleQuotes(key);
-    const kept = `SELECT jsonb_agg(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM jsonb_array_elements(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
-    return `jsonb_set(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
+    const kept = `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
+    return `JSONB_SET(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
   }
 
   protected override jsonSet(
@@ -285,7 +285,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return Object.entries(push).reduce((acc, [key, value]) => {
       const escapedKey = escapeSingleQuotes(key);
       const ph = this.jsonVal(ctx, value);
-      return `jsonb_set(${acc}, '{${escapedKey}}', COALESCE((${acc})->'${escapedKey}', '[]'::jsonb) || jsonb_build_array(${ph}))`;
+      return `JSONB_SET(${acc}, '{${escapedKey}}', COALESCE((${acc})->'${escapedKey}', '[]'::jsonb) || JSONB_BUILD_ARRAY(${ph}))`;
     }, expr);
   }
 

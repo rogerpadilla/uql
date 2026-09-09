@@ -118,7 +118,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN pg_class i ON i.oid = ix.indexrelid
       JOIN pg_am am ON am.oid = i.relam
       JOIN pg_namespace n ON n.oid = t.relnamespace
-      CROSS JOIN LATERAL unnest(ix.indkey) WITH ORDINALITY AS k(attnum, n)
+      CROSS JOIN LATERAL UNNEST(ix.indkey) WITH ORDINALITY AS k(attnum, n)
       LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
       LEFT JOIN pg_opclass op ON op.oid = ix.indclass[k.n - 1]
       WHERE t.relname = $1
@@ -147,9 +147,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return /*sql*/ `
       SELECT
         tc.constraint_name,
-        array_to_json(array_agg(kcu.column_name ORDER BY kcu.ordinal_position)) AS columns,
+        ARRAY_TO_JSON(ARRAY_AGG(kcu.column_name ORDER BY kcu.ordinal_position)) AS columns,
         ccu.table_name AS referenced_table,
-        array_to_json(array_agg(ccu.column_name ORDER BY kcu.ordinal_position)) AS referenced_columns,
+        ARRAY_TO_JSON(ARRAY_AGG(ccu.column_name ORDER BY kcu.ordinal_position)) AS referenced_columns,
         rc.delete_rule,
         rc.update_rule
       FROM information_schema.table_constraints tc

@@ -156,7 +156,7 @@ class PostgresDialectSpec extends PgFamilySpec {
       this.bunSqlPostgresDialect,
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = jsonb_set("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || jsonb_build_array(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['"new-tag"', 123, '1']);
   }
