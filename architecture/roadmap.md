@@ -104,7 +104,7 @@ Kysely 0.29 and MikroORM 7.1 both shipped `AbortSignal` support; UQL has none se
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
 - **`defineEntity` with `extends`.** Decorated classes already inherit fields and hooks from a base; the functional form has no way to say the same. Small, and only matters for the runtime-schema path 0.44.0 opened.
-- **SQL Server, then Oracle.** SQL Server is the one engine every other TypeScript ORM has and UQL does not; Oracle is a differentiator only Prisma and Drizzle also lack. Neither needs R5 - Oracle's generated ids ride in the values array, which is what MikroORM's driver already does. Six seams in the core come first and two of them are cleanups worth having either way. [The design](oracle-mssql.md).
+- **SQL Server, then Oracle.** SQL Server is the one engine every other TypeScript ORM has and UQL does not; Oracle is a differentiator only Prisma and Drizzle also lack. Neither needs R5 - Oracle's generated ids ride in the values array, the way MikroORM's driver already does. A third family base (`OFFSET/FETCH` paging, one `MERGE` upsert) and one new knob carry the pair; the other five seams are cleanups worth having either way. [The design](oracle-mssql.md).
 - **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM ships it experimental.
 
 ## Where a composite key still refuses
@@ -119,7 +119,7 @@ TypeScript cannot accumulate `@Id` across properties, so the key is named in the
 
 ## Shipped, and not worth re-litigating
 
-One id shape for every write in 0.50.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns and foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
+One id shape for every write in 0.50.0, upserts included in 0.51.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns in 0.46.0; foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
 
 - **An id is accepted as either spelling and reported as one.** `EntityId` is the union a by-id method takes, because a caller holding one column's value has to reach the same parameter as one holding a map. `WrittenId` picks a branch, because a write knows which it produced. Merging the two was measured and is worse: it leaves `IdValue<E>` unassignable to a `$where` for an unresolved `E` - the "opaque `QueryWhere`" that reverted the last attempt - and refuses `findOneById(X, 'abc')` on any entity whose key the type level cannot name. `WrittenId` falls back to the union there for the same reason.
 - **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
