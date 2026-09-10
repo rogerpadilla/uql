@@ -74,9 +74,10 @@ describe('MsSqlSchemaIntrospector', () => {
             is_nullable: false,
             is_identity: true,
             column_default: null,
+            is_primary_key: 1,
+            is_unique: 0,
           },
         ],
-        'i.is_unique = 1': [{ column_name: 'id', is_primary_key: 1 }],
       }),
     );
 
@@ -84,7 +85,7 @@ describe('MsSqlSchemaIntrospector', () => {
 
     expect(table?.columns[0]).toMatchObject({ name: 'name', type: 'NVARCHAR', length: 255, nullable: false });
     expect(table?.columns[1]).toMatchObject({ name: 'bio', type: 'NVARCHAR(MAX)', length: undefined });
-    expect(table?.columns[2]).toMatchObject({ name: 'id', isAutoIncrement: true, isPrimaryKey: true, isUnique: true });
+    expect(table?.columns[2]).toMatchObject({ name: 'id', isAutoIncrement: true, isPrimaryKey: true, isUnique: false });
   });
 
   /** The engine reprints a default from its own parse tree, wrapped in at least one paren layer. */
@@ -144,5 +145,30 @@ describe('MsSqlSchemaIntrospector', () => {
     expect((await introspector.getTableSchema('User'))?.indexes).toEqual([
       { name: 'ix_name_email', entries: [{ column: 'name' }, { column: 'email' }], unique: true },
     ]);
+  });
+
+  /** The 2025-only `vector_dimensions` column would break the query on the 2017 floor. */
+  it('should read a VECTOR dimension back from its storage size', async () => {
+    const introspector = new MsSqlSchemaIntrospector(
+      poolAnswering({
+        'COUNT(*) as count': [{ count: 1 }],
+        'sys.columns': [
+          {
+            column_name: 'vec',
+            data_type: 'vector',
+            max_length: 6152,
+            is_nullable: true,
+            is_identity: false,
+            column_default: null,
+          },
+        ],
+      }),
+    );
+
+    expect((await introspector.getTableSchema('T'))?.columns[0]).toMatchObject({
+      name: 'vec',
+      type: 'VECTOR',
+      length: 1536,
+    });
   });
 });

@@ -151,7 +151,7 @@
     "express": "^5.2.1",
     "mariadb": "^3.5.4",
     "mongodb": "^7.6.0",
-    "mssql": "^11",
+    "mssql": "^12",
     "mysql2": "^3.24.4",
     "pg": "^8.23.0",
     "pg-query-stream": "^4.17.0",

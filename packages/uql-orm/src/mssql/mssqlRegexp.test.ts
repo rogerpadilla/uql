@@ -45,7 +45,7 @@ describe('mssql $regex', () => {
     expect(found.map(({ name }) => name)).toEqual(['Alice']);
   });
 
-  /** Case-sensitive, which is what the column collation this dialect creates makes it. */
+  /** `REGEXP_LIKE` matches case-sensitively by default, whatever the column's collation. */
   it('should not fold case', async () => {
     const found = await pool.withQuerier((querier) =>
       querier.findMany(RegexpRow, { $where: { name: { $regex: '^a' } }, $sort: { name: 1 } }),

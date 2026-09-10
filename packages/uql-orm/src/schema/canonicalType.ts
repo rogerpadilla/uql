@@ -256,8 +256,8 @@ const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
   },
   // SQLite uses affinity, so no size variants.
   sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'TEXT') },
-  // A 2025 server has a native `VECTOR`; below that the column is JSON text, which stays queryable.
-  mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'NVARCHAR(MAX)'), sizes: MSSQL_SIZES },
+  // 2025 and up; below that the server refuses the type rather than storing it as text.
+  mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'VECTOR'), sizes: MSSQL_SIZES },
   mongodb: { scalars: withVectorType(MONGO_SCALAR_MAP, 'array') },
 };
 

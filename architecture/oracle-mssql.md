@@ -60,7 +60,7 @@ AbstractSqlDialect
 
 - **`pager()`** - `OFFSET m ROWS FETCH NEXT n ROWS ONLY`. An override, exactly as SQLite and the MySQL family already override it. **No knob.**
 - **`upsert()`** - one `MERGE`, below.
-- `escapeIdChar = '"'`, `maxIdentifierLength = 128`, `supportsMultipleCascadePaths = false`.
+- `escapeIdChar = '"'`, `maxIdentifierLength = 128`.
 
 > The name is the one open question. It names the more distinctive of the two shared clauses; `StandardSqlDialect` would name the fact that both spell paging and upsert the way the SQL standard does, where MySQL and Postgres each predate it.
 
@@ -128,9 +128,7 @@ A per-dialect override map layered over the shared one, consulted by `canonicalC
 
 Two problems that look like they need query-side knobs and do not. Both were in the first draft; removing them is the main simplification.
 
-**Case sensitivity is a DDL decision.** SQL Server's default collation is case-insensitive, so `$eq` would match `'ABC'` against `'abc'` and `$ilike` would be indistinguishable from `$like`. Knex handles it per-query, appending `collate SQL_Latin1_General_CP1_CS_AS` to the case-sensitive operators - which is what you do when you do not own the schema. **UQL's migrator owns the schema**: declare every string column `COLLATE Latin1_General_100_CS_AS_SC_UTF8` and `=`/`LIKE` are case-sensitive like everywhere else, while `caseInsensitiveMatch: 'fold'` - already the base default - covers `$ieq`/`$ilike` unchanged. One entry in the type map, zero query-side code.
-
-The caveat is honest and worth having: a pre-existing table with a case-insensitive collation keeps case-insensitive semantics. That is the DBA's decision, not a bug to paper over.
+**Case sensitivity follows the database collation**, case-insensitive by default, so `$eq` matches `'ABC'` against `'abc'` - as on MySQL and MariaDB, whose defaults are case-insensitive too. uql forces a collation on neither: it takes the database's own, and a forced one would put a `COLLATE` clause into every string column's type for the canonical parser to learn. `$regex` is case-sensitive regardless, `REGEXP_LIKE`'s default.
 
 **Unicode is a DDL decision too.** `VARCHAR` on SQL Server is a codepage type; only `NVARCHAR` holds Unicode. MikroORM carries a whole `UnicodeStringType` (59 lines plus a `validateMetadata` pass) because it exposes the `varchar`/`nvarchar` choice to users. UQL does not, so it is: map `string` to `NVARCHAR` in the type map, and prefix inlined literals with `N` in `escape()`. Bound parameters need nothing - tedious binds JS strings as `NVarChar`. Get it wrong and non-ASCII data is destroyed on write with no error, so it needs a test with a non-ASCII fixture, not just a review.
 
@@ -147,9 +145,8 @@ Existing knobs get values; `returningPosition` is the only new one.
 | `booleanLiteral`          | `integer` (`BIT`)                                                              | `native` (23ai)                                |
 | `beginTransactionCommand` | `BEGIN TRANSACTION`                                                            | none - `[]`, with `autoCommit: !inTransaction` |
 | `isolationLevelStrategy`  | `set-before`                                                                   | `set-before`                                   |
-| `alterColumnSyntax`       | `ALTER COLUMN`                                                                 | `MODIFY`                                       |
+| `alterColumnSyntax`       | `ALTER COLUMN`, type and nullability alone; the default is a constraint        | `MODIFY`                                       |
 | `commentSyntax`           | `none` - extended properties are not comments                                  | `statement`                                    |
-| `renameColumn`            | false - `sp_rename` is a proc, not DDL                                         | true                                           |
 | `dropTableCascade`        | false                                                                          | true (`CASCADE CONSTRAINTS`)                   |
 | `supportsRowLocks`        | true, as table hints                                                           | true, `FOR UPDATE` verbatim                    |
 | `maxBindValues`           | **2100** - [a hard server limit](https://github.com/yiisoft/yii2/issues/10371) | 65535                                          |
@@ -187,7 +184,7 @@ Ordered by how quietly. Each needs a test before the feature it belongs to.
 2. **`''` is `NULL` on Oracle.** Nothing can fix it. Needs an overridable expectation in the shared suites - the `expectedMixedBatchIds` pattern - and a line in the docs.
 3. **`OUTPUT` is rejected on a table with triggers** ("cannot have any enabled triggers if the statement contains an OUTPUT clause without INTO") and on some cascade-FK shapes. Knex and MikroORM _independently_ arrived at the same workaround: `SELECT TOP(0) ... INTO #out ...; INSERT ... OUTPUT ... INTO #out ...; SELECT ... FROM #out; DROP TABLE #out`. Four statements. Ship without it, detect the error, add it behind a flag - do not pretend the plain form always works.
 4. **`SET IDENTITY_INSERT ON/OFF`** must wrap any insert writing an explicit key. UQL's own fixtures do this constantly, so it surfaces on the first integration run rather than in production. MikroORM and knex both gate it behind a flag.
-5. **Multiple cascade paths.** Both engines refuse an FK graph with two cascade routes to one table (SQL Server error 1785); `MsSqlPlatform` and `OraclePlatform` both answer `supportsMultipleCascadePaths(): false`. `defaultForeignKeyAction` must fall back to `NO ACTION`, or a diamond-shaped schema fails to create at all.
+5. **Multiple cascade paths.** Both engines refuse an FK graph with two cascade routes to one table (SQL Server error 1785); `MsSqlPlatform` and `OraclePlatform` both answer `supportsMultipleCascadePaths(): false`. uql's `defaultForeignKeyAction` is `NO ACTION` everywhere already, so only a cascade the entity declares can meet this, and the server refuses it by name - where downgrading it would change what a delete does without a word.
 6. **Row-value comparison is unsupported on SQL Server.** Only matters for the roadmap's cursor pagination, which already plans an OR-chain fallback. Noted there now so it is not discovered later.
 7. **Default NULL sort position.** Oracle sorts NULLs last ascending, with Postgres; SQL Server sorts them first, with MySQL and SQLite. Documentation, not code - UQL exposes no query-level nulls ordering, and this inconsistency already exists between Postgres and MySQL.
 
@@ -206,9 +203,9 @@ Containers:
 
 **The suite runs with every other engine's, in `bun run test`.** The first draft of this design put it behind a separate script on the assumption the container was too slow for the everyday gate; measured, it is healthy in 12 seconds - no worse than MySQL or Postgres - and the 307 cases run in 5.5. What is actually different about it is worth knowing but not worth a second entry point: the image is ~2.4GB, roughly double the next largest, it is the only one with no arm64 build, and it is the only one needing a second container to create its database. A suite outside the gate is a suite that stops being run.
 
-## Vectors, declined for now
+## Vectors
 
-Both engines have native vector search - [Oracle 23ai](https://www.oracle.com/database/ai-native-database-26ai/) and [SQL Server 2025 RTM](https://learn.microsoft.com/en-us/sql/t-sql/data-types/vector-data-type?view=sql-server-ver17), both with a `VECTOR_DISTANCE` function taking a metric name. That is the shape `vectorMetrics` already models, so it is a ~30-line addition per engine whenever it is wanted. Declining it in v1 halves the integration matrix for a capability nobody has asked these engines for.
+SQL Server 2025's `VECTOR_DISTANCE` is taken, as exact search - see below. Oracle 23ai's takes the metric last and unquoted, `VECTOR_DISTANCE(a, b, DOT)`, beside a function per metric: `COSINE_DISTANCE`, `L2_DISTANCE`, `L1_DISTANCE`.
 
 `estimatedCount` ships on SQL Server (`sys.dm_db_partition_stats`, live) and not on Oracle (`USER_TABLES.NUM_ROWS` is stale until stats are gathered, and a confidently wrong number is worse than the refusal the base already throws).
 
@@ -228,7 +225,7 @@ The pager hook was the whole of it: 54 assertions across five spec files carried
 
 The type-table collapse found two things the seams had not predicted. `defaultStringAsText` was a boolean that could not describe SQLite, so SQLite carried a second check by name to escape the branch the boolean put it in - it is now the three-way `stringSizing`, and `canonicalType.ts` has no `dialectName` checks left. And `jsonScalarParam` bound its value against a hardcoded `?`, which held only because the two dialects reaching it both spell one that way; it asks the dialect now.
 
-Two capabilities landed as `EngineFeatures` rather than the prose rules this design first wrote them as: `supportsUnsigned` and `multipleCascadePaths`.
+`supportsUnsigned` landed as an `EngineFeatures` field rather than the prose rule this design first wrote it as.
 
 ### What the live suite settled
 
@@ -244,13 +241,16 @@ The shared integration suite runs against SQL Server 2025 and **all 307 cases pa
 
 `SET IDENTITY_INSERT` wraps an insert that states a key the engine would have generated, keyed off the same `isAutoIncrement` rule the schema generator asks.
 
+**A column's own constraints pin it.** SQL Server keeps a `DEFAULT`, `CHECK` and `UNIQUE` as constraints under names it picks, and refuses to drop or retype the column past one. `MsSqlTableDdl` drops them first, looked up per column at run time - Knex and MikroORM do the same for the default, TypeORM drops all three by names it tracks - and adds the default back after a retype. An index or foreign key has a name the migration gave it, and stays the migration's to drop. Renames are `sp_rename`, as in every one of them.
+
 ### What 2025 adds, and what of it is worth taking
 
 **`$regex` is emitted**, as `REGEXP_LIKE`. It needs 2025 at database compatibility level 170 and a server below that rejects it itself - the same terms `uuidv7()` is emitted on, where neither the version nor a database-scoped setting is knowable here. A first draft gated it behind a declared capability, which meant a new `EngineFeatures` field, a constant to spread, and `driverCapabilities` threaded through `ExtraOptions`: machinery for one operator, and machinery that contradicted the rule this repo already follows for version-gated SQL.
 
-Three things were measured and declined, each for a reason rather than for later:
+**Vector search is taken**, as exact search through `VECTOR_DISTANCE` - the shape sqlite-vec already has, every distance computed and no index read. 2025's DiskANN index is a preview feature that only `VECTOR_SEARCH` reads, never an `ORDER BY VECTOR_DISTANCE`, so an `@Index` on a vector column is left for the server to refuse. The query vector needs `CAST(... AS VECTOR(n))`; a write converts implicitly.
 
-- **Vector search.** `VECTOR_DISTANCE` is GA, but `CREATE VECTOR INDEX` and `VECTOR_SEARCH` need `ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON` - verified, the `CREATE` answers "Unknown object type 'VECTOR'" without it. uql's vector support is an ANN index plus `$candidates` tuning, so distance alone would serve `$sort: { $vector }` while refusing the index that makes it worth using.
+Two things were measured and declined, each for a reason rather than for later:
+
 - **`JSON_ARRAYAGG`.** It would replace the `CASE [type]` re-encoding a `$pull` rebuilds its array with, but only above the floor, so both spellings would have to exist. More code, not less.
 - **The native `json` column type.** `JSON_VALUE` stays capped at `nvarchar(4000)` on it and `JSON_QUERY` still answers NULL for a scalar, so every read would be spelled exactly as it already is. It buys validation on write and nothing else.
 
@@ -259,7 +259,6 @@ That last point settles something the design had assumed was a version gap: read
 ### Still not started
 
 - **The `OUTPUT`-into-`#out` fallback**, for a table carrying triggers. The plain form is emitted and the engine's own error is what a user sees.
-- **`sp_rename`**, so `renameColumn` is `false` and a rename is refused by name.
 
 ## Out of scope
 

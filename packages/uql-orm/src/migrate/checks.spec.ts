@@ -174,4 +174,28 @@ describe('enum fields', () => {
     expect(ddl(new MariaDialect(), Invoice)).toContain(`CHECK (\`status\` IN ('draft', 'paid', 'void'))`);
     expect(ddl(new SqliteDialect(), Invoice)).toContain(`CHECK (\`status\` IN ('draft', 'paid', 'void'))`);
   });
+
+  /** MariaDB takes nothing after a column's `CHECK`, so the enum's comes after its `DEFAULT`. */
+  it('puts the CHECK after the default, the one order MariaDB takes', () => {
+    const [sql] = new SqlSchemaGenerator(new MariaDialect()).generateAlterTable({
+      type: 'alter',
+      tableName: 'Invoice',
+      columnsToAdd: [
+        {
+          name: 'status',
+          type: 'VARCHAR(20)',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+          defaultValue: 'draft',
+          enum: ['draft', 'paid'],
+        },
+      ],
+    });
+
+    expect(sql).toBe(
+      "ALTER TABLE `Invoice` ADD COLUMN `status` VARCHAR(20) DEFAULT 'draft' CHECK (`status` IN ('draft', 'paid'));",
+    );
+  });
 });

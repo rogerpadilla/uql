@@ -24,7 +24,6 @@ export class SqliteDialect extends AbstractSqlDialect {
     indexIfNotExists: true,
     schemas: false, // SQLite's namespaces are attached database files, not declared objects
     dropTableCascade: false,
-    renameColumn: true,
     foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
     primaryKeyAlter: false, // nor changing a key: the only route is rebuilding the table
     generatedColumnAdd: false, // accepted in a CREATE TABLE, rejected in an ALTER
@@ -34,7 +33,6 @@ export class SqliteDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     stringSizing: 'text',
     supportsUnsigned: false,
-    multipleCascadePaths: true,
     serverSideCursors: false,
   };
 

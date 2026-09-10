@@ -162,19 +162,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return `CREATE SCHEMA IF NOT EXISTS ${this.escapeId(schema, true)}`;
   }
 
-  /** A stored generated column's type and clause. SQL Server spells it `AS (...) PERSISTED`, typeless. */
-  storedGeneratedColumn(type: string, expression: string): string {
-    return `${type} GENERATED ALWAYS AS (${expression}) STORED`;
-  }
-
   readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
 
   readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
 
   readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none' = 'ALTER COLUMN';
-
-  /** T-SQL alone rejects the optional `COLUMN` keyword after `ADD`. */
-  readonly addColumnSyntax: 'ADD COLUMN' | 'ADD' = 'ADD COLUMN';
 
   readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
 
@@ -185,8 +177,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   readonly dropPrimaryKeySyntax: 'DROP CONSTRAINT' | 'DROP PRIMARY KEY' = 'DROP CONSTRAINT';
 
   readonly dropIndexSyntax: 'on-table' | 'standalone' = 'standalone';
-
-  readonly renameTableSyntax: 'rename-table' | 'alter-table' = 'alter-table';
 
   readonly booleanLiteral: 'native' | 'integer' = 'native';
 

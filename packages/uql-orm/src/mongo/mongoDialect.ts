@@ -96,7 +96,6 @@ export const mongoDialectFeatures: DialectFeatures = {
   indexIfNotExists: false,
   schemas: false, // the connection picks the database, and a collection name takes no dot
   dropTableCascade: false,
-  renameColumn: false,
   foreignKeyAlter: false,
   primaryKeyAlter: false,
   generatedColumnAdd: false,
@@ -106,7 +105,6 @@ export const mongoDialectFeatures: DialectFeatures = {
   supportsTimestamptz: false,
   stringSizing: 'bounded-text',
   supportsUnsigned: false,
-  multipleCascadePaths: true,
   serverSideCursors: false,
 };
 

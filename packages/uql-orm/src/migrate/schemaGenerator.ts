@@ -37,11 +37,12 @@ import type {
   SqlDdlGenerator,
   Type,
 } from '../type/index.js';
-import { getKeys, isAutoIncrement, isSoleIdField, qualifyName } from '../util/index.js';
+import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
-import { type IndexDdl, indexDdlFor } from './ddl/index.js';
+import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
+import { sizedType } from './ddl/tableDdl.js';
 import {
   columnForeignKey,
   columnIndex,
@@ -58,11 +59,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   /** `CREATE INDEX` for this dialect: the migrator's, so a runtime import carries none of it. */
   protected readonly indexDdl: IndexDdl;
 
+  /** The `ALTER TABLE` statements this dialect spells its own way, the migrator's for the same reason. */
+  protected readonly tableDdl: TableDdl;
+
   constructor(
     protected readonly dialect: AbstractSqlDialect,
     protected readonly defaultForeignKeyAction: ForeignKeyAction = 'NO ACTION',
   ) {
     this.indexDdl = indexDdlFor(dialect);
+    this.tableDdl = tableDdlFor(dialect);
   }
 
   get namingStrategy(): NamingStrategy | undefined {
@@ -214,7 +219,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   generateAlterTable(diff: SchemaDiff): string[] {
     const statements: string[] = [];
-    const tableName = this.escapeId(diff.tableName);
 
     // Before the columns, because a key column being added cannot be part of the old key, and after
     // it is dropped the table is free to take the new one below.
@@ -235,7 +239,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
         this.assertColumnAddable(diff.tableName, column);
-        statements.push(`ALTER TABLE ${tableName} ADD COLUMN ${this.generateColumnDefinitionFromSchema(column)};`);
+        statements.push(this.tableDdl.addColumn(diff.tableName, this.generateColumnDefinitionFromSchema(column)));
         statements.push(...this.generateColumnCommentStatement(diff.tableName, column, diff.schema));
       }
     }
@@ -252,7 +256,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Drop columns
     if (diff.columnsToDrop?.length) {
       for (const columnName of diff.columnsToDrop) {
-        statements.push(`ALTER TABLE ${tableName} DROP COLUMN ${this.escapeId(columnName)};`);
+        statements.push(...this.tableDdl.dropColumn(diff.tableName, columnName));
       }
     }
 
@@ -299,7 +303,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
     const statements: string[] = [];
-    const tableName = this.escapeId(diff.tableName);
 
     // Constraints first, mirroring the up direction: the up added them last, so the down drops them
     // first, and a column it is about to drop is then free of anything naming it.
@@ -322,7 +325,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     // Reverse column additions by dropping them
     if (diff.columnsToAdd?.length) {
       for (const column of diff.columnsToAdd) {
-        statements.push(`ALTER TABLE ${tableName} DROP COLUMN ${this.escapeId(column.name)};`);
+        statements.push(...this.tableDdl.dropColumn(diff.tableName, column.name));
       }
     }
 
@@ -387,23 +390,14 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * {@link renderColumn}, which is the part that must not be written twice.
    */
   public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
-    let type = column.type;
-
-    if (!type.includes('(')) {
-      if (column.precision !== undefined) {
-        type += column.scale === undefined ? `(${column.precision})` : `(${column.precision}, ${column.scale})`;
-      } else if (column.length !== undefined) {
-        type += `(${column.length})`;
-      }
-    }
-
-    return this.renderColumn({ ...column, type });
+    return this.renderColumn({ ...column, type: sizedType(column) });
   }
 
   /**
-   * The one place a column definition is spelled. Both callers reach it - the `ColumnSchema` path above
-   * and the `ColumnNode` path below - because the clause order and the "no NOT NULL on a primary key"
-   * rules are the same everywhere, and having them written twice is how the two paths drifted.
+   * The one place a column definition is spelled, so the `ColumnSchema` and `ColumnNode` paths cannot
+   * drift. A key column states `NOT NULL` rather than leave it to the key: SQLite lets a key column hold
+   * NULL otherwise, and SQL Server adds no key over a nullable column. `UNIQUE` is left to the key. An
+   * enum's `CHECK` comes last, the only place MariaDB takes it.
    */
   private renderColumn(column: {
     name: string;
@@ -416,40 +410,27 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     comment?: string;
     generatedAs?: string;
   }): string {
-    let def = `${this.escapeId(column.name)} ${column.type}`;
+    const type = column.generatedAs
+      ? this.tableDdl.storedGeneratedColumn(column.type, column.generatedAs)
+      : column.type;
+    let def = `${this.escapeId(column.name)} ${type}`;
 
-    // Before the constraints, which every engine here accepts and is where each documents it. The
-    // clause takes the place of a `DEFAULT`, which is mutually exclusive with it; everything else -
-    // `NOT NULL`, `UNIQUE`, an enum `CHECK`, a comment - a generated column carries like any other.
-    if (column.generatedAs) {
-      def += ` GENERATED ALWAYS AS (${column.generatedAs}) STORED`;
-    }
-
-    if (!column.nullable && !column.isPrimaryKey) {
+    if (!column.nullable) {
       def += ' NOT NULL';
     }
     if (column.isUnique && !column.isPrimaryKey) {
       def += ' UNIQUE';
     }
+    def += this.tableDdl.defaultClause(column);
+    if (column.comment) {
+      def += this.generateColumnComment(column.comment);
+    }
     if (column.enum?.length) {
       const values = column.enum.map((value) => this.dialect.escape(value)).join(', ');
       def += ` CHECK (${this.escapeId(column.name)} IN (${values}))`;
     }
-    def += this.defaultClause(column);
-
-    if (column.comment) {
-      def += this.generateColumnComment(column.comment);
-    }
 
     return def;
-  }
-
-  /** ` DEFAULT <sql>`, or nothing where the column declares none. Empty rather than `DEFAULT NULL`
-   * so an absent default stays absent - `defaultValue: null` is the way to ask for one. */
-  private defaultClause(column: { defaultValue?: unknown; type: string }): string {
-    return column.defaultValue === undefined
-      ? ''
-      : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
 
   public getSqlType(field: FieldMeta): string {
@@ -474,40 +455,9 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.canonicalTypeToSql(canonical);
   }
 
-  /**
-   * Generate ALTER COLUMN statements (database-specific)
-   */
+  /** The statements that alter `column` in place, as this dialect spells them. */
   public generateAlterColumnStatements(tableName: string, column: ColumnSchema, newDefinition: string): string[] {
-    const table = this.escapeId(tableName);
-    const colName = this.escapeId(column.name);
-
-    if (this.dialect.alterColumnSyntax === 'none') {
-      throw new TypeError(
-        `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
-          `This database does not support ALTER COLUMN.`,
-      );
-    }
-
-    if (this.dialect.alterColumnStrategy === 'separate-clauses') {
-      const statements: string[] = [];
-      // Separate ALTER COLUMN clauses for different changes (Postgres)
-      statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} TYPE ${column.type};`);
-
-      if (column.nullable) {
-        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP NOT NULL;`);
-      } else {
-        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} SET NOT NULL;`);
-      }
-
-      if (column.defaultValue !== undefined) {
-        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} SET${this.defaultClause(column)};`);
-      } else {
-        statements.push(`ALTER TABLE ${table} ALTER COLUMN ${colName} DROP DEFAULT;`);
-      }
-      return statements;
-    }
-
-    return [`ALTER TABLE ${table} ${this.dialect.alterColumnSyntax} ${newDefinition};`];
+    return this.tableDdl.alterColumn(tableName, column, newDefinition);
   }
 
   /** The inline ` COMMENT '...'` a column declaration carries, where the engine takes one there. */
@@ -816,10 +766,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
-    if (this.dialect.renameTableSyntax === 'rename-table') {
-      return `RENAME TABLE ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
-    }
-    return `ALTER TABLE ${this.escapeId(oldName)} RENAME TO ${this.escapeId(newName)};`;
+    return this.tableDdl.renameTable(oldName, newName);
   }
 
   /**
@@ -833,7 +780,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string {
     this.assertColumnAddable(tableName, column);
     const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
-    const statements = [`ALTER TABLE ${this.escapeId(tableName)} ADD COLUMN ${colSql};`];
+    const statements = [this.tableDdl.addColumn(tableName, colSql)];
 
     const foreignKey = columnForeignKey(column);
     if (foreignKey) {
@@ -857,11 +804,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateDropColumnSql(tableName: string, columnName: string): string {
-    return `ALTER TABLE ${this.escapeId(tableName)} DROP COLUMN ${this.escapeId(columnName)};`;
+    return this.tableDdl.dropColumn(tableName, columnName).join('\n');
   }
 
   generateRenameColumnSql(tableName: string, oldName: string, newName: string): string {
-    return `ALTER TABLE ${this.escapeId(tableName)} RENAME COLUMN ${this.escapeId(oldName)} TO ${this.escapeId(newName)};`;
+    return this.tableDdl.renameColumn(tableName, oldName, newName);
   }
 
   /**

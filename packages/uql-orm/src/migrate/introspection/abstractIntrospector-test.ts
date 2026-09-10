@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
-import type { TypeCategory } from '../../schema/types.js';
+import type { ForeignKeyAction, TypeCategory } from '../../schema/types.js';
 import type { Spec } from '../../test/index.js';
 import type {
   ColumnSchema,
@@ -101,15 +101,15 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Self-referencing table
     await builder.createTable(INTROSPECT_TABLES.SELF_REF, (t) => {
       t.id();
-      t.bigint('parent_id').nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete('SET NULL');
+      t.bigint('parent_id').nullable().references(INTROSPECT_TABLES.SELF_REF).onDelete(this.selfReferenceOnDelete());
       t.string('name', { length: 255 }).notNullable();
     });
 
     // Multiple FKs to same table
     await builder.createTable(INTROSPECT_TABLES.MULTI_FK, (t) => {
       t.id();
-      t.bigint('created_by').nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
-      t.bigint('updated_by').nullable().references(INTROSPECT_TABLES.A).onDelete('RESTRICT');
+      t.bigint('created_by').nullable().references(INTROSPECT_TABLES.A).onDelete(this.restrictOnDelete());
+      t.bigint('updated_by').nullable().references(INTROSPECT_TABLES.A).onDelete(this.restrictOnDelete());
     });
 
     // Composite unique constraint
@@ -164,6 +164,16 @@ export abstract class AbstractIntrospectorIt implements Spec {
    */
   protected expectedTimestampCategory(): TypeCategory {
     return 'timestamp';
+  }
+
+  /** The self-reference's `ON DELETE`, e.g. `NO ACTION` where a cascading one is refused. */
+  protected selfReferenceOnDelete(): ForeignKeyAction {
+    return 'SET NULL';
+  }
+
+  /** The `ON DELETE` of the two references to A, e.g. `NO ACTION` where there is no `RESTRICT`. */
+  protected restrictOnDelete(): ForeignKeyAction {
+    return 'RESTRICT';
   }
 
   /** Dialect-specific columns added to table A, e.g. Postgres's array columns. */
@@ -385,7 +395,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const fk = this.getForeignKey(schema, 'parent_id');
     expect(fk.references.table).toBe(INTROSPECT_TABLES.SELF_REF);
     expect(fk.references.columns).toEqual(['id']);
-    expect(fk.onDelete).toBe('SET NULL');
+    expect(fk.onDelete).toBe(this.selfReferenceOnDelete());
   }
 
   async shouldAllowNullOnSelfReferencingFK() {
@@ -411,7 +421,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.MULTI_FK);
 
     const fk = this.getForeignKey(schema, 'created_by');
-    expect(fk.onDelete).toBe('RESTRICT');
+    expect(fk.onDelete).toBe(this.restrictOnDelete());
   }
 
   async shouldIntrospectCompositeUniqueConstraint() {

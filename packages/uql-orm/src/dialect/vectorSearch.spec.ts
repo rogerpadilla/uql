@@ -4,6 +4,7 @@ import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
 import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
+import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -26,7 +27,7 @@ class L2Item {
  * metric, combined sort, field default, projection, rejection - are identical everywhere.
  *
  * Every mapping here was verified against a live engine (pgvector 0.8, CockroachDB 26, MariaDB 12.3,
- * sqlite-vec 0.1.9, `@libsql/client` 0.17, `@tursodatabase/database` 0.7, MySQL 26.7), because a wrong
+ * sqlite-vec 0.1.9, `@libsql/client` 0.17, `@tursodatabase/database` 0.7, MySQL 26.7, SQL Server 2025), because a wrong
  * function name or a missing conversion only surfaces at runtime.
  */
 type Engine = {
@@ -43,6 +44,7 @@ const SQLITE_VEC_FNS: Partial<Record<VectorDistance, string>> = {
   l2: 'vec_distance_L2',
   l1: 'vec_distance_L1',
 };
+const MSSQL_METRICS: Partial<Record<VectorDistance, string>> = { cosine: 'cosine', l2: 'euclidean', inner: 'dot' };
 const LIBSQL_FNS: Partial<Record<VectorDistance, string>> = {
   cosine: 'vector_distance_cos',
   l2: 'vector_distance_l2',
@@ -93,6 +95,14 @@ const engines: Engine[] = [
     dialect: new TursoDialect(),
     distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
     // The Rust engine adds a dot-product distance libSQL never had.
+    supported: ['cosine', 'l2', 'inner'],
+    unsupported: ['l1'],
+  },
+  {
+    name: 'MsSqlDialect',
+    dialect: new MsSqlDialect({}),
+    // One function taking the metric by name, and a query vector it refuses unless cast to `VECTOR`.
+    distance: (metric, ph) => `VECTOR_DISTANCE('${MSSQL_METRICS[metric]}', "vec", CAST(${ph} AS VECTOR(3)))`,
     supported: ['cosine', 'l2', 'inner'],
     unsupported: ['l1'],
   },

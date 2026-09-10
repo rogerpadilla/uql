@@ -44,7 +44,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     indexIfNotExists: false,
     schemas: true,
     dropTableCascade: false,
-    renameColumn: true,
     foreignKeyAlter: true,
     primaryKeyAlter: true,
     generatedColumnAdd: true,
@@ -54,7 +53,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     stringSizing: 'varchar',
     supportsUnsigned: true,
-    multipleCascadePaths: true,
     serverSideCursors: false,
   };
 
@@ -112,8 +110,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   override readonly dropPrimaryKeySyntax = 'DROP PRIMARY KEY';
 
   override readonly dropIndexSyntax = 'on-table';
-
-  override readonly renameTableSyntax = 'rename-table';
 
   override readonly alterColumnSyntax = 'MODIFY COLUMN';
 

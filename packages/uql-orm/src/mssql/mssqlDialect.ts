@@ -15,6 +15,8 @@ import type {
   QueryPager,
   QuerySizeComparisonOps,
   Type,
+  VectorDistance,
+  VectorMetric,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import { isAutoIncrement } from '../util/field.util.js';
@@ -40,22 +42,16 @@ export class MsSqlDialect extends MergeSqlDialect {
     indexIfNotExists: false,
     schemas: true,
     dropTableCascade: false,
-    // `sp_rename` is a stored procedure, not DDL, so a rename is refused by name rather than emitted
-    // as an `ALTER TABLE` the parser rejects.
-    renameColumn: false,
     foreignKeyAlter: true,
     primaryKeyAlter: true,
     generatedColumnAdd: true,
     // Extended properties are out-of-band metadata with their own procedures, not comments.
     commentSyntax: 'none',
     vectorIndexRequiresNotNull: false,
-    vectorSupportsLength: false,
+    vectorSupportsLength: true,
     supportsTimestamptz: false,
     stringSizing: 'varchar',
     supportsUnsigned: false,
-    // Error 1785: the constraint is refused at create time, so any diamond-shaped schema would fail
-    // to build at all rather than misbehave on write.
-    multipleCascadePaths: false,
     serverSideCursors: false,
   };
 
@@ -228,6 +224,27 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   protected override regexCondition(operand: string, placeholder: string): string {
     return `REGEXP_LIKE(${operand}, ${placeholder})`;
+  }
+
+  /**
+   * `VECTOR_DISTANCE('cosine', a, b)`, one function taking the metric by name; `dot` is the negated
+   * inner product, pgvector's `<#>` convention. Exact search, as on sqlite-vec: 2025's DiskANN index
+   * is a preview feature, and only `VECTOR_SEARCH` reads it, never an `ORDER BY VECTOR_DISTANCE`.
+   */
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+    ['cosine', { fn: 'VECTOR_DISTANCE', metricArg: 'cosine' }],
+    ['l2', { fn: 'VECTOR_DISTANCE', metricArg: 'euclidean' }],
+    ['inner', { fn: 'VECTOR_DISTANCE', metricArg: 'dot' }],
+  ]);
+
+  /**
+   * `VECTOR_DISTANCE` refuses the `nvarchar` a vector binds as, so it is cast - to the value's own
+   * length, which is its dimension. A write would convert implicitly, and shares the cast anyway.
+   */
+  protected override appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
+    ctx.append('CAST(');
+    super.appendVectorValue(ctx, value);
+    ctx.append(` AS VECTOR(${value.length}))`);
   }
 
   /** There is no `CREATE SCHEMA IF NOT EXISTS`, and `CREATE SCHEMA` has to be alone in its batch. */

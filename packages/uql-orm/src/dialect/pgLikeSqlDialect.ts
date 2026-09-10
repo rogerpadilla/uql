@@ -45,7 +45,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     indexIfNotExists: true,
     schemas: true,
     dropTableCascade: true,
-    renameColumn: true,
     foreignKeyAlter: true,
     primaryKeyAlter: true,
     generatedColumnAdd: true,
@@ -55,7 +54,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: true,
     stringSizing: 'bounded-text',
     supportsUnsigned: false,
-    multipleCascadePaths: true,
     serverSideCursors: true,
   };
 

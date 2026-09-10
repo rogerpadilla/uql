@@ -162,7 +162,8 @@ export abstract class VectorSqlDialect extends AbstractDialect {
       throw unsupportedVectorMetric(this.dialectName, distance);
     }
     if ('fn' in metric) {
-      ctx.append(`${metric.fn}(${this.escapeId(colName)}, `);
+      const leading = metric.metricArg === undefined ? '' : `'${metric.metricArg}', `;
+      ctx.append(`${metric.fn}(${leading}${this.escapeId(colName)}, `);
       this.appendVectorValue(ctx, search.$vector, field);
       ctx.append(')');
       return;

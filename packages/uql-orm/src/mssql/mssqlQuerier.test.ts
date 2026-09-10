@@ -1,9 +1,9 @@
-import { AbstractSqlQuerierIt } from '../querier/abstractSqlQuerier-test.js';
+import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 
 /** Integration suite against a live SQL Server, run by `bun run test` with every other engine's. */
-class MsSqlQuerierIt extends AbstractSqlQuerierIt {
+class MsSqlQuerierIt extends VectorQuerierIt {
   constructor() {
     super(
       new MsSqlQuerierPool({

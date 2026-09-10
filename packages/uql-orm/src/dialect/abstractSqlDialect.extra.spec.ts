@@ -18,7 +18,6 @@ class TestSqlDialect extends AbstractSqlDialect {
     ifNotExists: true,
     indexIfNotExists: false,
     dropTableCascade: false,
-    renameColumn: true,
     foreignKeyAlter: true,
     primaryKeyAlter: true,
     generatedColumnAdd: true,
@@ -28,7 +27,6 @@ class TestSqlDialect extends AbstractSqlDialect {
     supportsTimestamptz: false,
     stringSizing: 'varchar',
     supportsUnsigned: false,
-    multipleCascadePaths: true,
     serverSideCursors: false,
   };
 

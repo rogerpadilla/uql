@@ -96,7 +96,6 @@ export interface EngineFeatures {
    */
   readonly schemas: boolean;
   readonly dropTableCascade: boolean;
-  readonly renameColumn: boolean;
   readonly foreignKeyAlter: boolean;
   /**
    * Whether a table's primary key can be changed on an existing table. False on SQLite, whose only
@@ -147,13 +146,6 @@ export interface EngineFeatures {
   readonly stringSizing: 'text' | 'bounded-text' | 'varchar';
   /** Whether the engine has unsigned integers, so `@Field({ unsigned: true })` reaches the column. */
   readonly supportsUnsigned: boolean;
-  /**
-   * Whether one table can be reached by two cascading foreign-key paths. SQL Server refuses the
-   * constraint outright ("may cause cycles or multiple cascade paths", error 1785) and Oracle
-   * likewise, so a cascade is downgraded to `NO ACTION` there rather than emitting DDL the engine
-   * rejects - which would otherwise fail on any diamond-shaped schema at create time.
-   */
-  readonly multipleCascadePaths: boolean;
   /**
    * Whether the engine has SQL-level cursors (`DECLARE`/`FETCH FORWARD`/`CLOSE`), which is how a
    * driver with no cursor API of its own still streams a result set instead of buffering it - see

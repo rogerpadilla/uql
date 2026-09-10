@@ -64,9 +64,12 @@ export type WithDistance<E, K extends string = '_distance'> = E & Record<K, numb
  *
  * `opsSuffix` rides along on the operator form because pgvector's index operator class is named from
  * the same metric (`vector_cosine_ops`): keeping them together is what stops a dialect from having
- * the operator but not the class it indexes with.
+ * the operator but not the class it indexes with. `metricArg` is for the engine with one function
+ * taking the metric by name: SQL Server's `VECTOR_DISTANCE('cosine', a, b)`.
  */
-export type VectorMetric = { readonly op: string; readonly opsSuffix: string } | { readonly fn: string };
+export type VectorMetric =
+  | { readonly op: string; readonly opsSuffix: string }
+  | { readonly fn: string; readonly metricArg?: string };
 
 /** The operator form, for the pgvector-family dialects whose index DDL also needs `opsSuffix`. */
 export type VectorOperatorMetric = Extract<VectorMetric, { op: string }>;

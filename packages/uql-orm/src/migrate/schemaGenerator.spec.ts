@@ -513,14 +513,10 @@ describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
     expect(addColumn({ isUnique: true })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER UNIQUE;');
   });
 
-  /**
-   * A key column carries none of the three: `NOT NULL` and `UNIQUE` are implied by the key, and the
-   * key itself belongs to the table, declared as its own named constraint beside the columns rather
-   * than smuggled into one of them.
-   */
-  it('should emit a key column bare, leaving the key to the table', () => {
+  /** `UNIQUE` is the key's, which the table declares as its own constraint; `NOT NULL` is not left to it. */
+  it('should emit a key column NOT NULL, leaving the key to the table', () => {
     expect(addColumn({ nullable: false, isUnique: true, isPrimaryKey: true })).toBe(
-      'ALTER TABLE "users" ADD COLUMN "col" INTEGER;',
+      'ALTER TABLE "users" ADD COLUMN "col" INTEGER NOT NULL;',
     );
   });
 
@@ -591,7 +587,7 @@ describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
         },
       ],
     });
-    expect(sql).toEqual(['ALTER TABLE `users` MODIFY COLUMN `id` BIGINT UNSIGNED AUTO_INCREMENT;']);
+    expect(sql).toEqual(['ALTER TABLE `users` MODIFY COLUMN `id` BIGINT UNSIGNED AUTO_INCREMENT NOT NULL;']);
   });
 });
 
@@ -757,10 +753,10 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     ).toThrow('does not support adding foreign keys to existing tables');
   });
 
-  it('should rename a table with the dialect syntax', () => {
+  it('should rename a table with ALTER TABLE, which MySQL takes too', () => {
     expect(generator.generateRenameTableSql('old', 'new')).toBe('ALTER TABLE "old" RENAME TO "new";');
     expect(new SqlSchemaGenerator(new MySqlDialect()).generateRenameTableSql('old', 'new')).toBe(
-      'RENAME TABLE `old` TO `new`;',
+      'ALTER TABLE `old` RENAME TO `new`;',
     );
   });
   describe('generateCreateSchema', () => {

@@ -479,4 +479,36 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
     const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
     expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
   }
+
+  /**
+   * What a column declares for itself - a default, an enum's `CHECK`, `UNIQUE` - goes with it. SQL
+   * Server keeps each as a constraint under a name of its own, and refuses the drop while one stands.
+   */
+  async shouldDropAColumnCarryingItsConstraints() {
+    await this.withBuilder(async (builder) => {
+      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+        t.id();
+        t.string('state', { length: 10 }).defaultValue('on').enum(['on', 'off']).unique();
+      });
+      await builder.dropColumn(BUILDER_TABLES.MAIN, 'state');
+    });
+
+    expect(await this.getColumnNames(BUILDER_TABLES.MAIN)).toEqual(['id']);
+  }
+
+  /** A retype under a default, which SQL Server refuses until the default is out of the way. */
+  async shouldAlterAColumnTypeUnderItsDefault() {
+    await this.withBuilder(async (builder) => {
+      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+        t.id();
+        t.integer('payload').defaultValue(1);
+      });
+      await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.bigint('payload').defaultValue(2));
+    });
+
+    const schema = await this.getTableSchema(BUILDER_TABLES.MAIN);
+    const payload = schema.columns.find((column) => column.name === 'payload');
+    expect(payload?.type.toUpperCase()).toContain('BIGINT');
+    expect(payload?.defaultValue).toBe(2);
+  }
 }
