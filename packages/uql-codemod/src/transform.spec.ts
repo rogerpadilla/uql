@@ -178,6 +178,20 @@ class Entity {
     expect(unresolved).toContain("/entities.ts: import 'idKey' from 'uql-orm' for the brand(s) written here");
   });
 
+  /** Options it cannot read may still hold `virtual`, so the rename is reported rather than silently skipped. */
+  it('reports a virtual option it cannot reach inside options it cannot read', () => {
+    const { unresolved } = codemod(`
+      declare const options: { virtual: FieldOptions };
+      class Entity {
+        @Field(options.virtual) total?: number;
+      }
+    `);
+
+    expect(unresolved).toContainEqual(
+      expect.stringMatching(/^\/entities\.ts:\d+: its options are passed as 'options\.virtual'$/),
+    );
+  });
+
   it('leaves a decorator it cannot name alone', () => {
     const { text, changed } = codemod(`
       const decorators = { Field };
