@@ -2,6 +2,18 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.55.0] - 2026-09-10
+
+- **Breaking: the empty driver subclasses are gone.** Pools build `PostgresDialect`, `MySqlDialect` and `MongoDialect` themselves; `CrdbQuerier`/`NeonQuerier` are `PgQuerier`, `LibsqlQuerier`/`TursoQuerier` are `HranaQuerier`. `npx uql-codemod` names each.
+- **Breaking: a custom `AbstractPoolQuerier` takes its connection first**, like every driver's querier, and `AbstractPgQuerierPool`/`AbstractHranaQuerierPool` build their querier themselves.
+- **Breaking: `BunSqlQuerier` no longer exposes `sql`**, the pool's client, which ran outside the querier's transaction. Raw access is `pool.sql`.
+- **Breaking: a BIGINT past 2^53 reads back as its exact text**, where most drivers rounded it silently; the SQLite drivers keep their own answer.
+- **A `bigint` past 2^53 is written exactly** on every driver, where each bound a rounded number; D1, whose API refuses one, gets its text.
+- **A dropped SQL Server connection no longer crashes the process**, and every pool's idle-connection error goes through its own `logger`.
+- **SQL Server streams with backpressure**, through the driver's own stream, where a slow loop held every row the server sent.
+- **A JSON path's `$in` or `$nin` that is not an array is refused**, as a column's already was, instead of matching nothing.
+- **SQLite through `uql-orm/bunSql` is deprecated** for `Sqlite3QuerierPool`, which runs on `bun:sqlite` under Bun; it now opens in WAL like the others.
+
 ## [0.54.0] - 2026-09-10
 
 - **Breaking: `virtual` and `raw('sql')` are gone**, deprecated since 0.46.0 and 0.40.0. `npx uql-codemod` rewrites both.
