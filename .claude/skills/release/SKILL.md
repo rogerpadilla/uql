@@ -17,8 +17,6 @@ Compress `[Unreleased]` - the CHANGELOG.md header says how - then rename its hea
 
 `release.github` looks the entry up by the version it bumped to, so a heading naming a different version stops the release. What nothing checks is severity: decide the heading and the bump level together.
 
-A raised size budget needs its own line saying which entry grew and that nothing became newly reachable.
-
 ## 3. Verify the tests
 
 `bun run check` is the gate. Beyond green: does every fix have a test that would have failed before it, at the cheapest level that pins it - exact SQL in a dialect spec, cross-backend behaviour in the shared suite?

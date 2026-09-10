@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.54.0] - 2026-09-10
+
+- **Breaking: `virtual` and `raw('sql')` are gone**, deprecated since 0.46.0 and 0.40.0. `npx uql-codemod` rewrites both.
+- **An `after*` hook sees the row as written**: the generated id and every `onInsert`/`onUpdate` value. Global listeners get the same rows.
+- **Every upsert reports every id, in payload order.** What a statement cannot place is read back by the conflict columns: MySQL, CockroachDB, SQL Server and MongoDB, and mixed-shape batches everywhere.
+- **A composite key reports a column its `onInsert` filled**, which came back `undefined` from inserts and saves.
+
 ## [0.53.0] - 2026-09-10
 
 - **Breaking: `$where` takes a map and nothing else**, so TypeScript reports a wrong value on its own key. Ids are `{ id: [1, 2] }`, a bare `raw()` goes in `$and`; HTTP answers 400 otherwise.
@@ -20,7 +27,6 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 - **A `bun:sql` URL for an engine Bun cannot dial is refused by the pool.** An `mssql://` connection string read as Postgres and failed on the first statement.
 - **Breaking: `BunSqlPostgresDialect`, `BunSqlCockroachDialect` and `BunSqliteDialect` are gone.** The pool builds the engine's own dialect with the wire driver's capabilities; `POSTGRES_WIRE_DRIVER_CAPABILITIES` now carries both `nativeArrays: false` and `explicitJsonCast: true`.
 - **Breaking: `defaultStringAsText` is now the three-way `stringSizing`**, joined by `supportsUnsigned` and `multipleCascadePaths`. Only a hand-written dialect declares them.
-- The `./migrate` budget rose to 52.1 KB gzipped for the SQL Server introspector, which the introspector registry makes reachable from that entry; nothing else became reachable.
 
 ## [0.51.0] - 2026-09-09
 
@@ -46,7 +52,6 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 - **A batch mixing supplied and generated ids reports every id on MySQL**, so a cascade no longer writes a null foreign key.
 - **A one-to-one update replaces its child** instead of leaving the old row for `$populate` to choose between.
 - **A computed field's expression is table-qualified**, so one opening a subquery reads the outer column rather than the inner table's.
-- The `.` and `./postgres` budgets rose to 29.4 and 27.7 KB gzipped: the write path's own growth, nothing newly reachable.
 
 ## [0.47.1] - 2026-09-09
 
@@ -54,13 +59,12 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 - **`{ $and: [] }` no longer breaks the query.** An empty group left SQL a dangling `WHERE` and MongoDB an operator it rejects; it now constrains nothing.
 - **A populated to-many no longer breaks on an id like `__proto__`.** It threw `push is not a function`, and the relation's `_count` read back as an object.
 - **Populating a relation allocates a third less.** A page of 50 parents with 200 children drops from 245 KB to 190 KB.
-- Two entry budgets rose, `.` to 28.8 KB gzipped and `./migrate` to 50.4 KB; nothing newly reachable.
 
 ## [0.47.0] - 2026-09-09
 
 - **`$limit`/`$skip` inside a to-many `$populate` are now per parent.** They capped the whole page, so a parent that had children could come back with `[]`. One bounded subquery per parent, on every engine.
 - **A many-to-many `$populate` can order and page.** `$sort`, `$limit`, `$skip` and `$distinct` reached the target's join, which rejects all four, so any of them threw.
-- **Postgres, CockroachDB, PGlite and Neon page a relation with `LATERAL`**, so the cost stays flat as the parent page grows: 3.5x faster than the portable shape at 100 parents, 8.3x at 500. The `./postgres` budget rose to 27 KB gzipped for `schema/canonicalType`, which spells the key type its row source has to name.
+- **Postgres, CockroachDB, PGlite and Neon page a relation with `LATERAL`**, so the cost stays flat as the parent page grows: 3.5x faster than the portable shape at 100 parents, 8.3x at 500.
 - **MongoDB reads a bounded relation in one round trip**, through `$unionWith` rather than a query per parent - around 6x faster on a page of 50 or more.
 - **Bun SQL now enforces foreign keys on SQLite.** `bun:sql` leaves the pragma off, so declared constraints were decorative: dangling rows inserted, `ON DELETE CASCADE` left orphans.
 - **`BunSqlCockroachDialect` is now exported** from `uql-orm/bunSql`, like its Postgres and SQLite siblings.
@@ -87,7 +91,6 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 - **Breaking: a key filled by `onInsert` is no longer auto-increment.** The schema and the insert path asked separately and disagreed.
 - **Breaking: `serial`, `bigserial` and `smallserial` are gone as `columnType`.** Declare the width: `@Id({ type: Number })` is a big integer, `columnType: 'int'` a four-byte one.
 - **Breaking:** `TableForeignKeyDefinition` is gone. `ForeignKeySchema` describes every foreign key, its target under `references: { table, columns }`.
-- The `./migrate` budget rose to 49.4 KB gzipped for the foreign-key diff and its DDL; nothing newly reachable.
 
 ## [0.44.0] - 2026-09-07
 
@@ -127,7 +130,7 @@ Keys are compared by their columns, so no existing database is rewritten. SQLite
 
 **Composite key fixes:** upserts work on one; a migration no longer makes each key column a serial; MongoDB refuses a many-to-one at a composite target; `$count` reads each parent through the relation's own join columns.
 
-- **Breaking:** every key is now declared as a table constraint, so the dialect's `serialPrimaryKey` is `serialType` (the type alone) plus `serialDeclaresPrimaryKey` for SQLite, whose `AUTOINCREMENT` must stay inline. `ColumnSchema.declaresPrimaryKey` is gone, `SchemaDiff` gained `primaryKey`, and `./migrate` grew ~1.2 KB gzipped.
+- **Breaking:** every key is now declared as a table constraint, so the dialect's `serialPrimaryKey` is `serialType` (the type alone) plus `serialDeclaresPrimaryKey` for SQLite, whose `AUTOINCREMENT` must stay inline. `ColumnSchema.declaresPrimaryKey` is gone, and `SchemaDiff` gained `primaryKey`.
 
 ## [0.42.0] - 2026-09-04
 
@@ -144,7 +147,6 @@ await pool.deleteOneById(Membership, { userId: 1, groupId: 2 });
 - Every key is taken wherever a row is named: inserts, by-id addressing, relation loading, relation filtering, `$count`, and the settled set a paged write names its rows by.
 - An insert reports `undefined` for a composite id, as a key the driver cannot report already does; `idOf(meta, row)` names such a row. `saveMany`, saving a relation, MongoDB and the HTTP `/:id` route refuse one by name.
 - An array `$where` of maps is now the OR it was documented to be.
-- The `.` and `./postgres` bundle budgets rose ~3%: `rowKey`/`parentJoins` and the id helpers are reachable from every entry.
 - **Breaking:** `EntityMeta.id` is now `ids`; `typeFromReference` moved to the new `FieldMeta`; the insert and save methods return `IdValue<E> | undefined`, which they already did on MySQL. A second `@Id` composes the key rather than replacing the first.
 
 **A typo'd `@Field` / `@Id` option is now a compile error.** `@Field({ nulable: true })` used to compile and be ignored, because TypeScript skips excess-property checking on a naked type parameter.
@@ -206,7 +208,6 @@ Bounds are `$lt`/`$lte`/`$gt`/`$gte`/`$between`, at least one; no `$eq`, a dista
 - **`$candidates` sets ANN recall per query**, in the index's own units: `hnsw.ef_search`/`ivfflat.probes` on Postgres, `mhnsw_ef_search` on MariaDB, `numCandidates` on Atlas. Postgres needs an open transaction - a `SET LOCAL` outside one applies to nothing - and a `$near` over HNSW adds `iterative_scan = strict_order` so the scan fills its limit.
 - **`$near` throws on MongoDB**, which scores by index-defined similarity rather than distance. Project the score with `$project` and filter on that.
 - **Unsupported metrics throw `TypeError` everywhere**; MariaDB and the SQLite family threw a bare `Error`. Their `vectorDistanceFns` folded into `vectorMetrics`, one map per dialect.
-- Entry budgets, nothing newly reachable: root 26.4 KB gzipped (was 25.6), `./postgres` 23.7 KB (was 22.9).
 
 ## [0.38.0] - 2026-09-03
 
