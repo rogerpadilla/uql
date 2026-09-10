@@ -45,6 +45,7 @@ const PEER_ENTRIES = {
   postgres: ['pg'],
   cockroachdb: ['pg'],
   maria: ['mariadb'],
+  mssql: ['mssql'],
   mongo: ['mongodb'],
   express: ['express'],
   // Two value imports, so which one the runtime names first is not ours to pick.
