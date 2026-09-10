@@ -1,5 +1,4 @@
-import type { ExtraOptions, RawRow, TransactionOptions } from '../type/index.js';
-import { throwNoPendingTransaction, throwPendingTransaction } from '../util/index.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
 import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
@@ -72,41 +71,24 @@ export class HranaQuerier extends AbstractSqliteQuerier {
     return this.buildUpdateResult({ rows, changes: rows.length || res.rowsAffected, id: res.lastInsertRowid });
   }
 
-  override get hasOpenTransaction() {
-    return !!this.tx;
-  }
-
-  override async beginTransaction(_opts?: TransactionOptions) {
-    return this.serialize(async () => {
-      if (this.tx) {
-        throwPendingTransaction();
-      }
-      this.tx = await this.client.transaction('write');
-    });
+  protected override async internalBegin() {
+    this.tx = await this.client.transaction('write');
   }
 
   /**
-   * Both drop the handle before the call, not after: one that outlived a failed commit or rollback left
-   * the querier unreleasable. The optional call in the rollback is also what makes it a no-op when
-   * there is nothing open.
+   * Both drop the handle before the call, not after: one that outlived a failed commit would carry
+   * every later statement into a transaction the server may already have ended.
    */
-  override async commitTransaction() {
-    return this.serialize(async () => {
-      const tx = this.tx;
-      if (!tx) {
-        throwNoPendingTransaction();
-      }
-      this.tx = undefined;
-      await tx.commit();
-    });
+  protected override async internalCommit() {
+    const tx = this.tx;
+    this.tx = undefined;
+    await tx?.commit();
   }
 
-  override async rollbackTransaction() {
-    return this.serialize(async () => {
-      const tx = this.tx;
-      this.tx = undefined;
-      await tx?.rollback();
-    });
+  protected override async internalRollback() {
+    const tx = this.tx;
+    this.tx = undefined;
+    await tx?.rollback();
   }
 
   override async internalRelease() {

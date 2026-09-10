@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
-import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -55,7 +55,7 @@ const cockroach = new CockroachDialect();
 const mysql = new MySqlDialect();
 const maria = new MariaDialect();
 const sqlite = new SqliteDialect();
-const mongo = new MongodbNativeDialect();
+const mongo = new MongoDialect();
 
 describe('canonicalType', () => {
   describe('sqlToCanonical', () => {

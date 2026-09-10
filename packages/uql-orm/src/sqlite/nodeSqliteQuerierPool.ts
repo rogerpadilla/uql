@@ -41,8 +41,6 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSq
       // `node:sqlite` refuses `loadExtension` unless the database was opened with this on.
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });
-    nodeDb.exec('PRAGMA journal_mode = WAL');
-    nodeDb.exec('PRAGMA foreign_keys = ON');
     return adaptNodeSqlite(nodeDb);
   }
 }

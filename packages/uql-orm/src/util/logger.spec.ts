@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { afterEach, beforeEach, describe, expect, it, type MockInstance, vi } from 'vitest';
 import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.js';
 
@@ -6,6 +7,20 @@ import { attachPoolErrorHandler, DefaultLogger, LoggerWrapper } from './logger.j
 const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('DefaultLogger', () => {
+  /** `JSON.stringify` refuses a `bigint`, so a query binding one would fail for having been logged. */
+  it('renders a bigint value by its digits rather than failing to serialize it', () => {
+    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
+    const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
+
+    new DefaultLogger().logQuery('SELECT ?', [9007199254740993n]);
+    new DefaultLogger().logSlowQuery('SELECT ?', [9007199254740993n]);
+
+    expect(log).toHaveBeenCalledWith(expect.stringContaining('9007199254740993'));
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('9007199254740993'));
+    log.mockRestore();
+    warn.mockRestore();
+  });
+
   let spyLog: MockInstance<typeof console.log>;
   let spyWarn: MockInstance<typeof console.warn>;
   let spyInfo: MockInstance<typeof console.info>;
@@ -313,5 +328,28 @@ describe('attachPoolErrorHandler', () => {
       expect.stringContaining('Idle test pool encountered an error'),
       connectionError,
     );
+  });
+
+  it("routes the error to the pool's own logger when it has one", () => {
+    const pool = new EventEmitter();
+    const logger = { logError: vi.fn() };
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    attachPoolErrorHandler(pool, 'Idle test pool encountered an error', logger);
+    const connectionError = new Error('Connection terminated unexpectedly');
+    pool.emit('error', connectionError);
+
+    expect(logger.logError).toHaveBeenCalledWith('Idle test pool encountered an error', connectionError);
+    expect(consoleSpy).not.toHaveBeenCalled();
+  });
+
+  it('still reports the error when the pool turned its logging off', () => {
+    const pool = new EventEmitter();
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    attachPoolErrorHandler(pool, 'Idle test pool encountered an error', false);
+    pool.emit('error', new Error('Connection terminated unexpectedly'));
+
+    expect(consoleSpy).toHaveBeenCalledOnce();
   });
 });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { getMeta } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
-import { PgDialect } from '../postgres/pgDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { idKey } from '../type/index.js';
 import type { QueryUpdateResult, RawRow, Type } from '../type/index.js';
@@ -102,7 +102,7 @@ describe('per-parent limits: the LATERAL shape', () => {
   });
 
   it('should correlate one branch against an array of the parent keys', () => {
-    const dialect = new PgDialect();
+    const dialect = new PostgresDialect();
     const ctx = dialect.createContext();
 
     dialect.findPerParent(
@@ -122,7 +122,7 @@ describe('per-parent limits: the LATERAL shape', () => {
   });
 
   it('should pair one array per column of a composite parent key', () => {
-    const dialect = new PgDialect();
+    const dialect = new PostgresDialect();
     const ctx = dialect.createContext();
 
     dialect.findPerParent(
@@ -144,6 +144,18 @@ describe('per-parent limits: the LATERAL shape', () => {
     expect(ctx.sql).toContain('UNNEST($1::TEXT[], $2::TEXT[]) AS "_uql_keys_1"(k0, k1)');
     expect(ctx.sql).toContain('WHERE "cityCountry" = "_uql_keys_1".k0 AND "cityArea" = "_uql_keys_1".k1');
     expect(ctx.values).toEqual([['es'], ['north']]);
+  });
+
+  it('should refuse a bounded read for no parents at all, rather than emit an empty statement', () => {
+    const dialect = new PostgresDialect();
+    expect(() =>
+      dialect.findPerParent(
+        dialect.createContext(),
+        Post,
+        { $limit: 1 },
+        partitionOf(Blog, [{ parent: 'id', joined: 'blogId' }], []),
+      ),
+    ).toThrow('cannot read a bounded relation for no parents at all');
   });
 
   /** MySQL has `LATERAL` and plans it worse than its own `UNION ALL`, so it stays on the default. */

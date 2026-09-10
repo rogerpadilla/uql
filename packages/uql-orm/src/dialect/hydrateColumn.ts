@@ -1,3 +1,4 @@
+import { decodeWideNumber } from '../util/wideNumber.js';
 import { parseVectorLiteral, type VectorCast } from './vectorCast.js';
 
 /**
@@ -42,8 +43,7 @@ export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
   }
 
   if (kind === 'number') {
-    const decoded = Number(text);
-    return Number.isNaN(decoded) ? value : decoded;
+    return Number.isNaN(Number(text)) ? value : decodeWideNumber(text);
   }
 
   if (kind === 'json') {

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { HranaClient } from '../sqlite/hranaQuerier.js';
-import { TursoDialect, TursoQuerier, TursoQuerierPool } from './index.js';
+import { HranaQuerier } from '../sqlite/hranaQuerier.js';
+import { TursoDialect, TursoQuerierPool } from './index.js';
 
 const { createClient } = vi.hoisted(() => ({ createClient: vi.fn() }));
 
@@ -31,7 +32,7 @@ describe('TursoQuerierPool', () => {
     const querier = await pool.getQuerier();
 
     expect(createClient).toHaveBeenCalledWith(config);
-    expect(querier).toBeInstanceOf(TursoQuerier);
+    expect(querier).toBeInstanceOf(HranaQuerier);
     expect(querier.client).toBe(client);
   });
 

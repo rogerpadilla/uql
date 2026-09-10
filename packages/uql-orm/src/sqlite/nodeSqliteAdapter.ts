@@ -18,7 +18,6 @@ type NodeSqliteStatement = {
  */
 export type NodeSqliteDatabase = {
   prepare(sql: string): NodeSqliteStatement;
-  exec(sql: string): void;
   loadExtension(path: string): void;
   close(): void;
 };

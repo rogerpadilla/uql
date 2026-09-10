@@ -463,6 +463,8 @@ export class TypedRow {
    * the numeric path, so a value wider than 2^53 survives as the exact text the driver returned.
    */
   @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
+  /** A BIGINT written from a `bigint`, which only an exact bind keeps apart from its rounded neighbour. */
+  @Field({ type: BigInt }) wide?: bigint;
 }
 
 @Entity()

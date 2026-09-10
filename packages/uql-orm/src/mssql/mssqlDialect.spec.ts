@@ -1,7 +1,9 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import { Company, createSpec, Invoice, Item, TaxCategory, TypedRow, User } from '../test/index.js';
-import type { QueryLockWait } from '../type/index.js';
+import { idKey, type QueryLockWait } from '../type/index.js';
+import { raw } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 
 /**
@@ -70,6 +72,10 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
     expect(this.dialect.commitTransactionCommand).toBe('COMMIT TRANSACTION');
     expect(this.dialect.rollbackTransactionCommand).toBe('ROLLBACK TRANSACTION');
+    expect(this.dialect.getBeginTransactionStatements('serializable')).toEqual([
+      'SET TRANSACTION ISOLATION LEVEL SERIALIZABLE',
+      'BEGIN TRANSACTION',
+    ]);
   }
 
   override shouldEstimatedCount() {
@@ -309,6 +315,33 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   shouldCreateASchemaOnlyWhenAbsent() {
     expect(this.dialect.createSchemaSql('crm')).toBe(`IF SCHEMA_ID(N'crm') IS NULL EXEC(N'CREATE SCHEMA "crm"')`);
   }
+
+  /** `OUTPUT` names one id column, so a composite key merges with nothing to report. */
+  shouldMergeACompositeKeyWithNoOutputClause() {
+    const ctx = this.dialect.createContext();
+    this.dialect.upsert(ctx, Enrolment, { studentId: true, courseId: true }, { studentId: 1, courseId: 2, grade: 'A' });
+    expect(ctx.sql).not.toContain('OUTPUT');
+    expect(ctx.sql).toMatch(/;$/);
+  }
+
+  /** Outside the types, which give a JSON key no `raw()`: rendered in place rather than bound as an object. */
+  shouldSetAJsonKeyToARawExpression() {
+    const res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
+        kind: { $set: { private: raw`1 + ${1}` } },
+      } as never),
+    );
+    expect(res.sql).toContain("'$.private', 1 + @p1)");
+    expect(res.values).toEqual([1, expect.any(Number), '1']);
+  }
+}
+
+@Entity()
+class Enrolment {
+  [idKey]?: 'studentId' | 'courseId';
+  @Id({ type: Number }) studentId?: number;
+  @Id({ type: Number }) courseId?: number;
+  @Field({ type: String }) grade?: string;
 }
 
 createSpec(new MsSqlDialectSpec());

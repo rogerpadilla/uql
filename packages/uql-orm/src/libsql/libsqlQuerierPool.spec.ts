@@ -1,6 +1,6 @@
 import { type Config, createClient } from '@libsql/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { LibsqlQuerier } from './libsqlQuerier.js';
+import { HranaQuerier } from '../sqlite/hranaQuerier.js';
 import { LibsqlQuerierPool, libsqlUseRemoteForMigrations } from './libsqlQuerierPool.js';
 
 vi.mock('@libsql/client', () => ({
@@ -33,7 +33,7 @@ describe('LibsqlQuerierPool', () => {
 
     const querier = await pool.getQuerier();
 
-    expect(querier).toBeInstanceOf(LibsqlQuerier);
+    expect(querier).toBeInstanceOf(HranaQuerier);
     expect(createClient).toHaveBeenCalledWith(config);
   });
 
@@ -50,7 +50,7 @@ describe('LibsqlQuerierPool', () => {
     const pool = new LibsqlQuerierPool(config);
 
     const q = await pool.getMigrationQuerier();
-    expect(q).toBeInstanceOf(LibsqlQuerier);
+    expect(q).toBeInstanceOf(HranaQuerier);
     expect(createClient).toHaveBeenCalledTimes(1);
 
     const remoteArg = vi.mocked(createClient).mock.calls[0][0] as Config;

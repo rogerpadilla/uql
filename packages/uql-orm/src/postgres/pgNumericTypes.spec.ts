@@ -13,7 +13,10 @@ describe('numericTypes', () => {
   const parsers = numericTypes(types);
 
   it('decodes the two wide numerics Postgres returns as text', () => {
-    expect(parsers.getTypeParser(types.builtins.INT8, 'text')).toBe(Number);
+    const int8 = parsers.getTypeParser(types.builtins.INT8, 'text');
+    expect(int8('9')).toBe(9);
+    // Past 2^53 a number would round, so the exact text comes back instead.
+    expect(int8('9007199254740993')).toBe('9007199254740993');
     expect(parsers.getTypeParser(types.builtins.FLOAT8, 'text')).toBe(Number);
   });
 
@@ -37,7 +40,7 @@ describe('numericTypes', () => {
   it('takes the registry as an argument, so `uql-orm/neon` never has to import `pg`', () => {
     // Neon ships its own copy; anything with the same two members works, which is the point.
     const foreign = { builtins: { INT8: 20, FLOAT8: 701 }, getTypeParser: () => String };
-    expect(numericTypes(foreign).getTypeParser(20, 'text')).toBe(Number);
+    expect(numericTypes(foreign).getTypeParser(20, 'text')('9')).toBe(9);
     expect(numericTypes(foreign).getTypeParser(25, 'text')).toBe(String);
   });
 });

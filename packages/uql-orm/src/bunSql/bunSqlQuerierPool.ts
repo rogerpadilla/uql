@@ -8,7 +8,9 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from '../postgres/postgresWireDriverCapabilities.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { SQLITE_PRAGMAS } from '../sqlite/sqlitePragmas.js';
 import type { DialectFeatures, ExtraOptions, SqlPoolCompat } from '../type/index.js';
+import { decodeBigInts } from '../util/wideNumber.js';
 import {
   type BunSqlConn,
   type BunSqlDialectName,
@@ -16,7 +18,6 @@ import {
   getAffectedRows,
   inferDialectName,
   normalizeBunOpts,
-  normalizeRows,
 } from './bunSql.util.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 
@@ -38,12 +39,20 @@ const DialectMap = {
   sqlite: [SqliteDialect],
 } as const satisfies Record<BunSqlDialectName, readonly [DialectConstructor, Partial<DialectFeatures>?]>;
 
+const SQLITE_DEPRECATION =
+  'SQLite through uql-orm/bunSql is deprecated; use Sqlite3QuerierPool from uql-orm/sqlite, which runs on bun:sqlite under Bun';
+
 export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, AbstractSqlDialect> {
   readonly sql: SQL;
   readonly sqlDialectName: BunSqlDialectName;
 
-  private foreignKeysOn?: Promise<unknown>;
+  private sqliteConfigured?: Promise<void>;
 
+  /**
+   * @param config Bun's own `SQL.Options`, from which the engine is inferred. SQLite through here is
+   * deprecated: `Sqlite3QuerierPool` (`uql-orm/sqlite`) runs on `bun:sqlite` under Bun, and streams,
+   * loads extensions and prepares statements, none of which `bun:sql`'s SQLite adapter can.
+   */
   constructor(
     readonly config: SQL.Options,
     extra?: ExtraOptions,
@@ -52,6 +61,9 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
     const [Dialect, driverCapabilities] = DialectMap[dialectName];
     super(new Dialect({ ...dialectOptionsFrom(extra), driverCapabilities }), extra);
     this.sqlDialectName = dialectName;
+    if (dialectName === 'sqlite') {
+      process.emitWarning(SQLITE_DEPRECATION, { type: 'DeprecationWarning', code: 'UQL_BUNSQL_SQLITE' });
+    }
 
     const opts = normalizeBunOpts(config, dialectName);
     this.sql = new SQL(opts);
@@ -65,7 +77,7 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
     return {
       query: (text: string, values?: unknown[]) =>
         this.sql.unsafe<BunSqlResult>(text, this.dialect.normalizeValues(values)).then((res) => {
-          const rows = normalizeRows(res);
+          const rows = Array.from(res, decodeBigInts);
           return { rows, rowCount: getAffectedRows(res) ?? rows.length };
         }),
       on: () => {
@@ -75,22 +87,27 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
   }
 
   async getQuerier() {
-    return new BunSqlQuerier(this.sql, this.dialect, () => this.acquire(), this.extra);
+    return new BunSqlQuerier(() => this.acquire(), this.dialect, this.extra);
   }
 
   /**
-   * Bun's SQLite adapter does not support connection reservation (it's unpooled), and leaves
-   * `foreign_keys` off as `bun:sqlite` does, so without the pragma the constraints uql emits in its
-   * own DDL are decorative. One connection means one pragma, issued on the first acquisition, and a
-   * `release` that does nothing: the handle is the pool's, and outlives every querier over it.
+   * Bun's SQLite adapter does not support connection reservation (it's unpooled), so the pool hands out
+   * its one handle, configured like every other local SQLite connection on the first acquisition, and
+   * a `release` that does nothing: the handle is the pool's, and outlives every querier over it.
    */
   private async acquire(): Promise<BunSqlConn> {
     if (this.sqlDialectName !== 'sqlite') {
       return this.sql.reserve();
     }
-    this.foreignKeysOn ??= this.sql.unsafe('PRAGMA foreign_keys = ON');
-    await this.foreignKeysOn;
+    this.sqliteConfigured ??= this.configureSqlite();
+    await this.sqliteConfigured;
     return { unsafe: this.sql.unsafe.bind(this.sql), release: () => {} };
+  }
+
+  private async configureSqlite(): Promise<void> {
+    for (const pragma of SQLITE_PRAGMAS) {
+      await this.sql.unsafe(`PRAGMA ${pragma}`);
+    }
   }
 
   async end() {

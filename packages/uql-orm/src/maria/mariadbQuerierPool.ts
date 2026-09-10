@@ -13,12 +13,9 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
     super(new MariaDialect(dialectOptionsFrom(extra)), extra);
-    // `mariadb` defaults to handing BIGINT back as a BigInt, and uql maps `type: Number` to BIGINT
-    // (see `schema/canonicalType.ts`), so every auto-increment id reached a field declared `number`
-    // as `9n` without this. Same trade as the pg pools: exact to 2^53, and `...opts` wins for a
-    // caller who needs more. This belongs to the pool, not to the suites - it lived in
-    // `mariadbQuerier.test.ts`, which meant the tests passed on behaviour the library never shipped.
-    this.pool = createPool({ bigIntAsNumber: true, ...opts });
+    // BIGINT stays the driver's `bigint`, which `MariadbQuerier` decodes by the rule every driver here
+    // shares (`decodeWideNumber`) - not `bigIntAsNumber`, which rounds past 2^53 without a word.
+    this.pool = createPool(opts);
     // `mariadb`'s own `createPool` already attaches a silent no-op 'error'
     // listener (so a dropped connection can't crash the process), but its
     // `Pool` type only declares `on` for 'acquire' | 'connection' | 'enqueue'
@@ -28,6 +25,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
     attachPoolErrorHandler(
       this.pool as unknown as ErrorEmittingPool,
       'Idle MariaDB pool connection encountered an error',
+      extra?.logger,
     );
   }
 

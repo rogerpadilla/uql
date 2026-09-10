@@ -8,7 +8,6 @@ import type { ExtraOptions } from '../type/index.js';
  */
 export type TursoDatabase = {
   prepare(sql: string): Promise<SqlitePreparedStatement>;
-  pragma(source: string, options?: unknown): Promise<unknown[]>;
   close(): Promise<void>;
 };
 

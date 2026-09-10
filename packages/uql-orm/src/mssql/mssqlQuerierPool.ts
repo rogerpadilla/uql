@@ -2,6 +2,7 @@ import { ConnectionPool, type config as MsSqlConfig } from 'mssql';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
+import { attachPoolErrorHandler } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 import { MsSqlQuerier } from './mssqlQuerier.js';
 
@@ -12,6 +13,7 @@ export class MsSqlQuerierPool extends AbstractSqlQuerierPool<MsSqlQuerier, MsSql
   constructor(opts: MsSqlConfig, extra?: ExtraOptions) {
     super(new MsSqlDialect(dialectOptionsFrom(extra)), extra);
     this.pool = new ConnectionPool(opts);
+    attachPoolErrorHandler(this.pool, 'Idle SQL Server pool connection encountered an error', extra?.logger);
   }
 
   /**

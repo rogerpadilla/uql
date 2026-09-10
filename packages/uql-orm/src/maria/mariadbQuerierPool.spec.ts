@@ -1,3 +1,4 @@
+import { createPool } from 'mariadb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { MariadbQuerier } from './mariadbQuerier.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
@@ -29,6 +30,13 @@ describe('MariadbQuerierPool', () => {
     const pool = new MariadbQuerierPool({ host: '0.0.0.0' });
     await pool.end();
     expect(mockPoolInstance.end).toHaveBeenCalled();
+  });
+
+  /** `bigIntAsNumber` rounds past 2^53; the querier decodes exactly instead. */
+  it('leaves BIGINT for the querier to decode', () => {
+    new MariadbQuerierPool({ host: '0.0.0.0' });
+
+    expect(createPool).toHaveBeenCalledWith({ host: '0.0.0.0' });
   });
 
   it('wires the pool error handler', () => {

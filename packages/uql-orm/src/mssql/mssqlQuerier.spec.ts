@@ -1,17 +1,20 @@
-import { ISOLATION_LEVEL } from 'mssql';
+import { EventEmitter } from 'node:events';
+import { ISOLATION_LEVEL, Request } from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MsSqlDialect } from './mssqlDialect.js';
 import { MsSqlQuerier } from './mssqlQuerier.js';
 
 function buildRequest() {
-  const request = {
+  return Object.assign(new EventEmitter(), {
     input: vi.fn(),
     query: vi.fn().mockResolvedValue({ recordset: [], rowsAffected: [0] }),
-    on: vi.fn(),
     cancel: vi.fn(),
+    pause: vi.fn(),
+    resume: vi.fn(),
     stream: false,
-  };
-  return request;
+    // The driver's own stream over the request's events, so the tests drive its real backpressure.
+    toReadableStream: Request.prototype.toReadableStream,
+  });
 }
 
 function buildTransaction(request: ReturnType<typeof buildRequest>) {
@@ -103,20 +106,20 @@ describe('MsSqlQuerier', () => {
     expect(transaction.rollback).toHaveBeenCalled();
   });
 
-  /** `tedious` streams by event rather than by async iterator, so the rows are collected as they arrive. */
+  /** Emits `count` rows and the end, the way `tedious` does once the query is under way. */
+  function emitRows(count: number) {
+    request.query.mockImplementation(async () => {
+      for (let id = 1; id <= count; id++) {
+        request.emit('row', { id });
+      }
+      request.emit('done', {});
+    });
+  }
+
   it('should stream rows', async () => {
     // `internalStream` is reached through `findManyStream`, which connects first.
     await querier.all('SELECT 1');
-    const handlers: Record<string, (arg?: unknown) => void> = {};
-    request.on.mockImplementation((event: string, fn: (arg?: unknown) => void) => {
-      handlers[event] = fn;
-    });
-    request.query.mockImplementation(() => {
-      handlers['row']?.({ id: 1 });
-      handlers['row']?.({ id: 2 });
-      handlers['done']?.();
-      return Promise.resolve();
-    });
+    emitRows(2);
 
     const rows = [];
     for await (const row of querier.internalStream('SELECT * FROM "User"')) {
@@ -127,15 +130,34 @@ describe('MsSqlQuerier', () => {
     expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
   });
 
+  /** Without it a slow loop holds every row the server sends, which is `all()` with extra steps. */
+  it('should pause the request while the loop is behind', async () => {
+    await querier.all('SELECT 1');
+    emitRows(100);
+
+    for await (const _row of querier.internalStream('SELECT * FROM "User"')) {
+      break;
+    }
+
+    // Once as the stream is built, then again for each push the buffer refused.
+    expect(request.pause.mock.calls.length).toBeGreaterThan(1);
+  });
+
+  it('should cancel the request when the loop stops early', async () => {
+    await querier.all('SELECT 1');
+    emitRows(100);
+
+    for await (const _row of querier.internalStream('SELECT * FROM "User"')) {
+      break;
+    }
+
+    expect(request.cancel).toHaveBeenCalledOnce();
+  });
+
   it('should surface a streaming failure', async () => {
     await querier.all('SELECT 1');
-    const handlers: Record<string, (arg?: unknown) => void> = {};
-    request.on.mockImplementation((event: string, fn: (arg?: unknown) => void) => {
-      handlers[event] = fn;
-    });
-    request.query.mockImplementation(() => {
-      handlers['error']?.(new Error('boom'));
-      return Promise.resolve();
+    request.query.mockImplementation(async () => {
+      request.emit('error', new Error('boom'));
     });
 
     await expect(async () => {
@@ -143,6 +165,31 @@ describe('MsSqlQuerier', () => {
         // the failure arrives before any row does
       }
     }).rejects.toThrow('boom');
+  });
+
+  /** A failure reported through the promise alone would otherwise leave the loop waiting for rows. */
+  it('should end the stream when the request rejects without an error event', async () => {
+    await querier.all('SELECT 1');
+    request.query.mockRejectedValue(new Error('connection closed'));
+
+    await expect(async () => {
+      for await (const _row of querier.internalStream('SELECT 1')) {
+        // no row ever arrives
+      }
+    }).rejects.toThrow('connection closed');
+  });
+
+  /** Cancelling makes `mssql` report an error on a stream the loop has already left. */
+  it('should absorb the error a cancel reports after the loop has gone', async () => {
+    await querier.all('SELECT 1');
+    emitRows(100);
+    request.cancel.mockImplementation(() => request.emit('error', new Error('Canceled.')));
+
+    for await (const _row of querier.internalStream('SELECT * FROM "User"')) {
+      break;
+    }
+
+    expect(request.cancel).toHaveBeenCalledOnce();
   });
 
   /**

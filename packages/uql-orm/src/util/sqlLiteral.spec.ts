@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { escapeAnsiSqlLiteral, escapeMysqlSqlLiteral } from './sqlLiteral.js';
 
 describe('escapeAnsiSqlLiteral', () => {
@@ -52,6 +52,19 @@ describe('escapeAnsiSqlLiteral', () => {
   it('encodes only the bytes a subarray view covers', () => {
     expect(escapeAnsiSqlLiteral(new Uint8Array([1, 2, 3, 4, 5]).subarray(1, 4))).toBe("X'020304'");
     expect(escapeAnsiSqlLiteral(Buffer.from([9, 8, 7, 6]).subarray(2))).toBe("X'0706'");
+  });
+
+  describe('where there is no Node Buffer (browsers)', () => {
+    beforeEach(() => {
+      vi.stubGlobal('Buffer', undefined);
+    });
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('encodes bytes through the lookup table', () => {
+      expect(escapeAnsiSqlLiteral(new Uint8Array([0x48, 0x69, 0xff, 0]).subarray(1))).toBe("X'69ff00'");
+    });
   });
 
   it('toSqlString raw hatch (caller must trust return value)', () => {

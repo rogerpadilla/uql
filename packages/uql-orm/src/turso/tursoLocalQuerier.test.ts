@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
+import { FLOATED_DECIMAL, ROUNDED_WIDE_INTEGER, type WideRow } from '../querier/abstractSqlQuerier-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, probeForeignKeys } from '../test/index.js';
 import { TursoLocalQuerierPool } from './tursoLocalQuerierPool.js';
@@ -12,6 +12,11 @@ export class TursoLocalQuerierIt extends VectorQuerierIt {
   }
   protected override expectedExactDecimal() {
     return FLOATED_DECIMAL;
+  }
+
+  /** The embedded engine reads the integer as a plain number, as better-sqlite3 does. */
+  protected override async assertWideInteger(read: Promise<WideRow[]>) {
+    expect((await read)[0]?.big).toBe(ROUNDED_WIDE_INTEGER);
   }
 
   // No `foreign_keys` pragma here: the pool sets it on connect, and a suite enabling it for itself is

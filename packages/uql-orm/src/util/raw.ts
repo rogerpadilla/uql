@@ -33,18 +33,18 @@ export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly 
   if (!rest.length) {
     // Nothing to bind, so this is the string form: keep it one, for the DDL paths that need to read
     // the expression back as text (an index expression cannot carry a parameter).
-    return new QueryRaw(value[0] ?? '');
+    return new QueryRaw(value[0]);
   }
   return new QueryRaw((opts) => {
     const { ctx } = opts;
-    ctx.append(value[0] ?? '');
+    ctx.append(value[0]);
     rest.forEach((interpolated, i) => {
       if (interpolated instanceof QueryRaw) {
         interpolated.render(opts);
       } else {
         ctx.addValue(interpolated);
       }
-      ctx.append(value[i + 1] ?? '');
+      ctx.append(value[i + 1]);
     });
   });
 }

@@ -1140,7 +1140,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     },
   };
 
-  /** A `$set` value that would be falsy in JS (`false`), to confirm it isn't dropped like a missing key. */
+  /** Outside the types, which give a JSON key no `raw()`: evaluated in place, where stringified it was `{}`. */
+  shouldSetAJsonKeyToARawExpression() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
+        kind: { $set: { private: raw`1 + ${1}` } },
+      } as never),
+    );
+    expect(sql).toBe(
+      'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb' +
+        ' || JSONB_BUILD_OBJECT(\'private\', 1 + $2), "updatedAt" = $3 WHERE "id" = $4',
+    );
+    expect(values).toEqual(['{}', 1, expect.any(Number), '1']);
+  }
 
   /** A `$set` value that would be falsy in JS (`false`), to confirm it isn't dropped like a missing key. */
   shouldUpdateWithJsonSetBooleanFalse() {

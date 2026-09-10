@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/index.js';
 import { SqliteDialect } from '../sqlite/index.js';
+import { BunSqlQuerier } from './bunSqlQuerier.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
 describe('BunSqlQuerierPool', () => {
@@ -59,9 +60,7 @@ describe('BunSqlQuerierPool', () => {
 
   it('should return a BunSqlQuerier', async () => {
     const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
-    const querier = await pool.getQuerier();
-    expect(querier).toBeDefined();
-    expect(querier.sql).toBe(pool.sql);
+    expect(await pool.getQuerier()).toBeInstanceOf(BunSqlQuerier);
   });
 
   it('should wire sqlite querier to sql without reserve', async () => {
@@ -78,6 +77,27 @@ describe('BunSqlQuerierPool', () => {
     // Releasing an unpooled handle must leave it usable: it is the pool's, not this querier's.
     await querier.release();
     expect(await pool.all('SELECT 1')).toEqual([{ n: 1 }]);
+  });
+
+  it('should warn that SQLite through bun:sql is deprecated', () => {
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => {});
+
+    new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
+
+    expect(warn).toHaveBeenCalledWith(
+      expect.stringContaining('Sqlite3QuerierPool'),
+      expect.objectContaining({ type: 'DeprecationWarning' }),
+    );
+    warn.mockRestore();
+  });
+
+  it('should not warn for an engine it drives in full', () => {
+    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => {});
+
+    new BunSqlQuerierPool({ url: 'postgres://localhost' });
+
+    expect(warn).not.toHaveBeenCalled();
+    warn.mockRestore();
   });
 
   it('should close the sql client on end', async () => {

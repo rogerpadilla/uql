@@ -1057,6 +1057,30 @@ class MongoDialectSpec implements Spec {
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $sort: { count: -1 } }]);
   }
 
+  shouldBuildAggregateStagesWithEmptySort() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $agg: { count: { $count: '*' } },
+      $sort: {},
+    });
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  shouldRejectAnAggregateHavingOrSortOnAColumnItDoesNotEmit() {
+    const cause = 'it is neither a $group column nor an $agg alias';
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $agg: { count: { $count: '*' } },
+        $having: { conut: 1 } as never,
+      }),
+    ).toThrow(`cannot $having by 'conut': ${cause}`);
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $agg: { count: { $count: '*' } },
+        $sort: { conut: 1 } as never,
+      }),
+    ).toThrow(`cannot $sort by 'conut': ${cause}`);
+  }
+
   shouldBuildAggregateStagesWithSkipAndLimit() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $agg: { count: { $count: '*' } },

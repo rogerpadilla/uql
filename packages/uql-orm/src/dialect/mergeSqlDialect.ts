@@ -97,10 +97,8 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
    */
   protected readonly mergeTargetHint: string = '';
 
-  /** How the merge reports the row it wrote. Oracle has no such clause on a `MERGE` and omits it. */
-  protected mergeReturning(expression: string): string {
-    return `RETURNING ${expression}`;
-  }
+  /** How the merge reports the row it wrote: SQL Server's `OUTPUT`. Oracle has no such clause on a `MERGE`. */
+  protected abstract mergeReturning(expression: string): string;
 
   /** `MERGE` must be terminated on SQL Server; nothing else here cares. */
   protected readonly statementTerminator: string = '';

@@ -10,19 +10,24 @@ const DEFAULT_LOG_LEVELS = [
   'skippedMigration',
 ] as const satisfies LogLevel[];
 
+/** Bound values as JSON, a `bigint` by its digits: `JSON.stringify` refuses one outright. */
+function renderValues(values: unknown[]): string {
+  return JSON.stringify(values, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value));
+}
+
 /**
  * Default implementation of the Logger interface using console methods.
  */
 export class DefaultLogger implements Logger {
   logQuery(query: string, values?: unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
-    const params = values?.length ? ` -- ${JSON.stringify(values)}` : '';
+    const params = values?.length ? ` -- ${renderValues(values)}` : '';
     console.log(`\x1b[36mquery:\x1b[0m ${query}${params}\x1b[32m${time}\x1b[0m`);
   }
 
   logSlowQuery(query: string, values?: unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
-    const params = values?.length ? ` -- ${JSON.stringify(values)}` : '';
+    const params = values?.length ? ` -- ${renderValues(values)}` : '';
     console.warn(`\x1b[33mslow query:\x1b[0m ${query}${params}\x1b[31m${time}\x1b[0m`);
   }
 
@@ -176,17 +181,21 @@ export interface ErrorEmittingPool {
 }
 
 /**
- * Attaches an error listener to a connection pool so a dropped connection is
- * logged instead of left unhandled - which crashes the process for drivers
- * that don't guard against it themselves (node-postgres), or silently
- * swallowed with zero visibility for drivers that already install their own
- * no-op safety net (`mariadb`'s `createPool`). Always logs via a dedicated
- * logger (ignoring the consumer's configured log level) since a silently
- * swallowed pool error is exactly the failure mode this guards against.
+ * Attaches an error listener to a connection pool so a dropped connection is logged instead of left
+ * unhandled - which crashes the process for drivers that don't guard against it themselves
+ * (node-postgres, `mssql`), or is silently swallowed by those that install a no-op of their own
+ * (`mariadb`). Reported through the pool's own logger when it has one, and through the default one
+ * otherwise: never dropped, whatever levels were configured, since a swallowed pool error is exactly
+ * the failure this guards against.
  */
-export function attachPoolErrorHandler(pool: ErrorEmittingPool, message: string): void {
-  const logger = new LoggerWrapper(true);
+export function attachPoolErrorHandler(pool: ErrorEmittingPool, message: string, logging?: LoggingOptions): void {
+  const logger = new LoggerWrapper(isOwnLogger(logging) ? logging : true);
   pool.on('error', (err) => {
     logger.logError(message, err);
   });
+}
+
+/** A logger the consumer wrote, as opposed to a switch or a level list for the default one. */
+function isOwnLogger(logging: LoggingOptions | undefined): logging is Logger | LoggerFunction {
+  return typeof logging === 'function' || (typeof logging === 'object' && !Array.isArray(logging));
 }

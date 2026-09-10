@@ -43,10 +43,6 @@ const mysqlStringLiteral: StringLiteralEscaper = (val) =>
 
 const pad = (value: number, len: number): string => String(value).padStart(len, '0');
 
-function isByteSource(val: object): val is Uint8Array {
-  return (typeof Buffer !== 'undefined' && Buffer.isBuffer(val)) || val instanceof Uint8Array;
-}
-
 const HEX_BYTES = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, '0'));
 
 /** Native hex encoder where available (~130x faster on 4 KB); lookup table for browsers. */
@@ -88,7 +84,8 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
     if (Array.isArray(value)) {
       return sqlList(value);
     }
-    if (isByteSource(value)) {
+    // A Node `Buffer` is a `Uint8Array` too.
+    if (value instanceof Uint8Array) {
       return bytesToHexLiteral(value);
     }
     if ('toSqlString' in value && typeof (value as { toSqlString?: unknown }).toSqlString === 'function') {
@@ -115,11 +112,8 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
         return escapeString(value);
       case 'object':
         return escapeObject(value);
-      case 'symbol':
-      case 'function':
-        throw new TypeError('escapeSqlLiteral: symbol and function values are not supported; use bound parameters.');
       default:
-        // Unreachable today; throwing keeps a future JS type from silently becoming SQL.
+        // A symbol or a function, or a future JS type: none of them may silently become SQL.
         throw new TypeError(`escapeSqlLiteral: unsupported value type '${typeof value}'; use bound parameters.`);
     }
   };

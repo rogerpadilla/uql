@@ -4,14 +4,11 @@ import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { Company, createSpec, User } from '../test/index.js';
 import type { UpdatePayload } from '../type/index.js';
-import { PgDialect } from './pgDialect.js';
 import { PostgresDialect } from './postgresDialect.js';
 import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilities.js';
 
 /** What is Postgres' alone: pgvector's narrower vector types, its wire drivers, `pg_class` stats. */
 class PostgresDialectSpec extends PgFamilySpec {
-  readonly pgDialect = new PgDialect();
-
   /** What `uql-orm/bunSql` builds for Postgres: the engine's dialect, with the wire driver's binding. */
   readonly wirePostgresDialect = new PostgresDialect({ driverCapabilities: POSTGRES_WIRE_DRIVER_CAPABILITIES });
 
@@ -19,31 +16,11 @@ class PostgresDialectSpec extends PgFamilySpec {
     super(new PostgresDialect({}));
   }
 
-  /** The family's `$1::jsonb`, then the node-pg driver's, which binds it the same way. */
-  override shouldUpdateWithJsonbField() {
-    super.shouldUpdateWithJsonbField();
-    const payload: UpdatePayload<Company>['kind'] = { private: 1 };
-    const res = this.exec(
-      (ctx) => this.pgDialect.update(ctx, Company, { $where: { id: '1' } }, { kind: payload, updatedAt: 123 }),
-      this.pgDialect,
-    );
-    expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
-    expect(res.values).toEqual(['{"private":1}', 123, '1']);
-  }
-
-  /** The family's binding, then each wire driver's: node-pg a native array, the wire clients a literal. */
+  /** The family's native array, then the wire clients' array literal (`toPgArray`). */
   override shouldFind$nin() {
     super.shouldFind$nin();
     const values = ['1', '2'];
-    let res = this.exec(
-      (ctx) => this.pgDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
-      this.pgDialect,
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
-    expect(res.values).toEqual([values]);
-
-    // Bun SQL / wire clients: array literal strings (`toPgArray`)
-    res = this.exec(
+    const res = this.exec(
       (ctx) => this.wirePostgresDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
       this.wirePostgresDialect,
     );

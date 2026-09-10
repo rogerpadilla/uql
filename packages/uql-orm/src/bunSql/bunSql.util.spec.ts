@@ -1,6 +1,6 @@
 import type { SQL } from 'bun';
 import { describe, expect, test } from 'vitest';
-import { getAffectedRows, getInsertId, inferDialectName, normalizeBunOpts, normalizeRows } from './bunSql.util.js';
+import { getAffectedRows, getInsertId, inferDialectName, normalizeBunOpts } from './bunSql.util.js';
 
 describe('bunSql.util', () => {
   describe('inferDialectName', () => {
@@ -46,6 +46,10 @@ describe('bunSql.util', () => {
 
     test('should default to postgres', () => {
       expect(inferDialectName({} as SQL.Options)).toBe('postgres');
+    });
+
+    test('should not take an inherited object key for a scheme', () => {
+      expect(inferDialectName({ url: 'constructor://localhost' } as SQL.Options)).toBe('postgres');
     });
 
     test('should refuse an engine bun cannot dial rather than reading it as postgres', () => {
@@ -126,30 +130,11 @@ describe('bunSql.util', () => {
     test('coerces bigint to number', () => {
       expect(getInsertId(Object.assign([], { lastInsertRowid: 99n }) as any)).toBe(99);
     });
+    test('answers the exact text for an id past 2^53', () => {
+      expect(getInsertId(Object.assign([], { lastInsertRowid: 9007199254740993n }) as any)).toBe('9007199254740993');
+    });
     test('returns numeric id as-is', () => {
       expect(getInsertId(Object.assign([], { lastInsertRowid: 7 }) as any)).toBe(7);
-    });
-  });
-
-  describe('normalizeRows', () => {
-    test('coerces bigint fields to number', () => {
-      const rows = [{ id: 5n }];
-      expect(normalizeRows(rows as any)).toEqual([{ id: 5 }]);
-    });
-
-    test('preserves row reference when no bigint exists', () => {
-      const row = { id: 1, name: 'a' };
-      const rows = [row];
-      const normalized = normalizeRows(rows as any);
-      expect(normalized[0]).toBe(row);
-    });
-
-    test('clones row when bigint exists', () => {
-      const row = { id: 5n, name: 'a' };
-      const rows = [row];
-      const normalized = normalizeRows(rows as any);
-      expect(normalized[0]).not.toBe(row);
-      expect(normalized[0]).toEqual({ id: 5, name: 'a' });
     });
   });
 });

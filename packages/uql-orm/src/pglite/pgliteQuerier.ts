@@ -1,7 +1,7 @@
 import { streamViaCursor } from '../postgres/pgCursorStream.js';
+import type { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
-import type { PgliteDialect } from './pgliteDialect.js';
 
 /**
  * Structural subset of the `@electric-sql/pglite` API actually used here, declared locally so this
@@ -20,7 +20,7 @@ export type PgliteDatabase = {
 /**
  * Querier for PGlite, Postgres compiled to WASM and run in this process.
  *
- * @remarks Extends {@link AbstractSqlQuerier} rather than `AbstractPgQuerier`, whose `internalStream`
+ * @remarks Extends {@link AbstractSqlQuerier} rather than `PgQuerier`, whose `internalStream`
  * hands a `pg-query-stream` object to `query()`, which PGlite's client has no equivalent of - so
  * streaming pages the rows in SQL instead. `BEGIN`/`COMMIT` are plain statements on the single
  * connection, leaving transactions to the base class.
@@ -28,7 +28,7 @@ export type PgliteDatabase = {
 export class PgliteQuerier extends AbstractSqlQuerier {
   constructor(
     readonly db: PgliteDatabase,
-    dialect: PgliteDialect,
+    dialect: PostgresDialect,
     override readonly extra?: ExtraOptions,
   ) {
     super(dialect, extra);

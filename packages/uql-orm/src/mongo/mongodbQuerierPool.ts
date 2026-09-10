@@ -2,14 +2,14 @@ import { MongoClient, type MongoClientOptions } from 'mongodb';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { MongodbNativeDialect } from './mongodbNativeDialect.js';
+import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
-export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, MongodbNativeDialect> {
+export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, MongoDialect> {
   private readonly client: MongoClient;
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
-    super(new MongodbNativeDialect(dialectOptionsFrom(extra)), extra);
+    super(new MongoDialect(dialectOptionsFrom(extra)), extra);
     this.client = new MongoClient(uri, opts);
   }
 

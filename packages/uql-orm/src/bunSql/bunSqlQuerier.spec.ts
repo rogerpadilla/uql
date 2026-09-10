@@ -1,4 +1,3 @@
-import type { SQL } from 'bun';
 import { describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { MySqlDialect } from '../mysql/index.js';
@@ -20,7 +19,7 @@ function makeSql(result: object) {
 }
 
 function createQuerier(sql: ReturnType<typeof makeSql>, dialect: AbstractSqlDialect) {
-  return new BunSqlQuerier(sql as unknown as SQL, dialect, () => sql.reserve());
+  return new BunSqlQuerier(() => sql.reserve(), dialect);
 }
 
 /** Reaches into the protected `conn` field to assert connection lifecycle in tests. */
@@ -113,7 +112,7 @@ describe('BunSqlQuerier', () => {
 
     it('should release an unpooled connection, whose release is the one that does nothing', async () => {
       const conn = { unsafe: vi.fn().mockResolvedValue([]), release: vi.fn() };
-      const querier = new BunSqlQuerier({} as SQL, new SqliteDialect(), async () => conn);
+      const querier = new BunSqlQuerier(async () => conn, new SqliteDialect());
       await querier.run('SELECT 1');
 
       await expect(querier.release()).resolves.toBeUndefined();

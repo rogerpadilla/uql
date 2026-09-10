@@ -1,14 +1,8 @@
 import type { Connection } from 'mysql2';
 import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
-import type { ExtraOptions } from '../type/index.js';
-import type { MySqlDialect } from './mysqlDialect.js';
 
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
-  constructor(connect: () => Promise<PoolConnection>, dialect: MySqlDialect, extra?: ExtraOptions) {
-    super(dialect, connect, extra);
-  }
-
   override async internalAll<T>(query: string, values?: unknown[]) {
     const [res] = await this.getConn().query(query, values);
     return res as T[];

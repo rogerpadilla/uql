@@ -1,5 +1,5 @@
 import { AbstractSqlQuerierPool } from '../querier/index.js';
-import type { HranaClient, HranaQuerier, HranaQuerierConnectionOptions } from './hranaQuerier.js';
+import { type HranaClient, HranaQuerier } from './hranaQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
 /**
@@ -11,10 +11,10 @@ import type { SqliteDialect } from './sqliteDialect.js';
  * constructor, so building a pool never throws when the optional driver peer is absent, which is what
  * lets a Workers bundle construct one at module scope.
  */
-export abstract class AbstractHranaQuerierPool<
-  Q extends HranaQuerier,
-  D extends SqliteDialect,
-> extends AbstractSqlQuerierPool<Q, D> {
+export abstract class AbstractHranaQuerierPool<D extends SqliteDialect> extends AbstractSqlQuerierPool<
+  HranaQuerier,
+  D
+> {
   private client?: HranaClient;
 
   /** False when the caller injected their own client, in which case they own its lifecycle. */
@@ -22,11 +22,9 @@ export abstract class AbstractHranaQuerierPool<
 
   protected abstract openClient(): Promise<HranaClient>;
 
-  protected abstract buildQuerier(client: HranaClient, connection?: HranaQuerierConnectionOptions): Q;
-
   async getQuerier() {
     this.client ??= await this.openClient();
-    return this.buildQuerier(this.client);
+    return new HranaQuerier(this.client, this.dialect, this.extra);
   }
 
   async end() {

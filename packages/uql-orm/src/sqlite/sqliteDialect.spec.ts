@@ -14,6 +14,7 @@ import {
   User,
 } from '../test/index.js';
 import type { Type } from '../type/index.js';
+import { raw } from '../util/index.js';
 
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -524,6 +525,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_EXTRACT(`kind`, '$.theme.color') DESC");
+  }
+
+  /** Outside the types, which give a JSON key no `raw()`: rendered in place rather than bound as an object. */
+  shouldSetAJsonKeyToARawExpression() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
+        kind: { $set: { private: raw`1 + ${1}` } },
+      } as never),
+    );
+    expect(sql).toBe(
+      "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', 1 + ?), `updatedAt` = ? WHERE `id` = ?",
+    );
+    expect(values).toEqual([1, expect.any(Number), '1']);
   }
 }
 

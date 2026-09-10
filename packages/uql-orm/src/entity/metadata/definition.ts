@@ -274,6 +274,15 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
   return meta.ids[0];
 }
 
+/** The field `key` names, for a caller that took `key` from the metadata itself. */
+export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
+  const field = meta.fields[key];
+  if (!field) {
+    throw new TypeError(`'${meta.entity.name}' has no field '${key}'`);
+  }
+  return field;
+}
+
 /**
  * Whether the caller named every column of the row's primary key, so {@link idOf} can name the row.
  *

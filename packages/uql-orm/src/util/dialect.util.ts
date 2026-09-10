@@ -531,12 +531,8 @@ export function throwUnknownAggregateColumn(key: string, clause: string): never 
 }
 
 /** {@link throwUnknownAggregateColumn} over every key of a clause, for backends that check up front. */
-export function assertAggregateColumns(
-  clauseMap: object | undefined,
-  emitted: ReadonlySet<string>,
-  clause: string,
-): void {
-  for (const key of getKeys(clauseMap ?? {})) {
+export function assertAggregateColumns(clauseMap: object, emitted: ReadonlySet<string>, clause: string): void {
+  for (const key of getKeys(clauseMap)) {
     if (!emitted.has(key)) {
       throwUnknownAggregateColumn(key, clause);
     }

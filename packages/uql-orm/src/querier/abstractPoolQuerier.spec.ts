@@ -16,10 +16,10 @@ class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
   releaseFails = false;
 
   constructor() {
-    super(new SqliteDialect({}), async () => {
+    super(async () => {
       this.connects += 1;
       return { id: this.connects, release: async () => {} };
-    });
+    }, new SqliteDialect({}));
   }
 
   protected override async releaseConn(conn: Conn) {

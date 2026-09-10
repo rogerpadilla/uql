@@ -1,7 +1,7 @@
 import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
+import { fieldOf, getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
   EntityData,
@@ -543,9 +543,9 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.timed('internalDeleteMany', undefined, async () => {
       const meta = getMeta(entity);
       // Soft-delete (stamp) unless `hardDelete` is requested or the entity has no soft-delete field.
-      const field = !opts.hardDelete && meta.softDelete ? meta.fields[meta.softDelete] : undefined;
+      const softDelete = opts.hardDelete ? undefined : meta.softDelete;
       // Hard delete targets matching rows regardless of soft-delete state (keeps other filters).
-      const findOpts = field ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
+      const findOpts = softDelete ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
       // Delete has always resolved its ids first (it stamps or removes them by `_id`), so a relation
       // condition needs nothing extra here - and passing the whole query is what makes its page apply.
       const ids = await this.settleIds(entity, qm, findOpts);
@@ -553,10 +553,11 @@ export class MongodbQuerier extends AbstractQuerier {
         return 0;
       }
       let changes: number;
-      if (field) {
+      if (softDelete) {
+        const field = fieldOf(meta, softDelete);
         // Stamp the mapped column: reads filter on it, so a `@Field({ name })` mismatch here would
         // report a successful delete and leave the row visible.
-        const softDeleteColumn = this.dialect.resolveColumnName(meta.softDelete as string, field);
+        const softDeleteColumn = this.dialect.resolveColumnName(softDelete, field);
         const updateResult = await this.execute((session) =>
           this.collection(entity).updateMany(
             { _id: { $in: this.dialect.toWireId(ids) } } as Filter<E>,

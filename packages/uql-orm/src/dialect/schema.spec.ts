@@ -10,8 +10,8 @@ import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
 import { MongoSchemaGenerator } from '../migrate/generator/mongoSchemaGenerator.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
-import { MongodbNativeDialect } from '../mongo/mongodbNativeDialect.js';
-import { PgDialect } from '../postgres/pgDialect.js';
+import { MongoDialect } from '../mongo/mongoDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { mockTableNode } from '../test/schemaMock.js';
@@ -56,7 +56,7 @@ const sqlOf = (dialect: AbstractSqlDialect, build: (ctx: QueryContext) => void) 
 };
 
 describe('schema', () => {
-  const dialect = new PgDialect();
+  const dialect = new PostgresDialect();
 
   /** The generated statements of one kind, so an assertion names the one it is about. */
   const ddlOf = (entities: Type<unknown>[], startsWith: string) =>
@@ -82,19 +82,19 @@ describe('schema', () => {
   });
 
   it("takes the pool's default when the entity names none", () => {
-    const scoped = new PgDialect({ schema: 'tenant_a' });
+    const scoped = new PostgresDialect({ schema: 'tenant_a' });
     const sql = sqlOf(scoped, (ctx) => scoped.find(ctx, Plain, { $select: { id: true } }));
     expect(sql).toBe('SELECT "id" FROM "tenant_a"."Plain" "Plain"');
   });
 
   it('lets the entity override the pool, which is how a shared table sits beside tenant ones', () => {
-    const scoped = new PgDialect({ schema: 'tenant_a' });
+    const scoped = new PostgresDialect({ schema: 'tenant_a' });
     const sql = sqlOf(scoped, (ctx) => scoped.find(ctx, Order, { $select: { id: true } }));
     expect(sql).toBe('SELECT "id" FROM "sales"."Order" "Order"');
   });
 
   it('never passes the schema through the naming strategy, only the table', () => {
-    const scoped = new PgDialect({
+    const scoped = new PostgresDialect({
       schema: 'myCrm',
       namingStrategy: { tableName: (n) => n.toLowerCase(), columnName: (n) => n, joinTableName: (a, b) => `${a}_${b}` },
     });
@@ -115,7 +115,7 @@ describe('schema', () => {
   });
 
   it('is ignored by MongoDB, whose collections take no dot', () => {
-    const mongo = new MongodbNativeDialect({ schema: 'tenant_a' });
+    const mongo = new MongoDialect({ schema: 'tenant_a' });
     expect(mongo.resolveTableName(getMeta(Plain))).toBe('Plain');
   });
 

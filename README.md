@@ -9,7 +9,7 @@
 
 <h3>The JSON-native TypeScript ORM</h3>
 
-<p>UQL stands for Unified Query Language. With pure (type-safe) JSON queries, complex jobs can be done simply across SQL vendors + MongoDB. It got some inspiration from Mongo's best syntax.
+<p align="left">UQL stands for Unified Query Language. With pure (type-safe) JSON queries, complex jobs can be done simply across SQL vendors + MongoDB. It got some inspiration from Mongo's best syntax.
 </p>
 
 <p>

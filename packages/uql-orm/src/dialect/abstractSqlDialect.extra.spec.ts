@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { getMeta } from '../entity/index.js';
-import { Company, Item, ItemAdjustment, MeasureUnitCategory, User } from '../test/index.js';
+import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { Company, Item, ItemAdjustment, MeasureUnitCategory, User, VectorItem } from '../test/index.js';
 import type { DialectFeatures, SqlDialectName } from '../type/index.js';
 import { col, raw } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
@@ -105,6 +105,13 @@ class TestSqlDialect extends AbstractSqlDialect {
   }
 }
 
+@Entity()
+class Shelf {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => VectorItem }) vectorItemId?: number;
+  @ManyToOne({ entity: () => VectorItem }) vectorItem?: VectorItem;
+}
+
 describe('AbstractSqlDialect (extra coverage)', () => {
   const dialect = new TestSqlDialect();
   const pgr = (limit?: number, skip?: number, sorted = false) => {
@@ -143,6 +150,52 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   it('normalizeValue keeps Date for driver-native binding', () => {
     const date = new Date('2026-01-02T03:04:05.000Z');
     expect(dialect.normalizeValue(date)).toBe(date);
+  });
+
+  it('normalizeValue hands a bigint to the driver as it is, which every driver binds exactly', () => {
+    expect(dialect.normalizeValue(9007199254740993n)).toBe(9007199254740993n);
+  });
+
+  it('rejects a $near that brings no $vector of its own', () => {
+    const ctx = dialect.createContext();
+    expect(() => dialect.where(ctx, VectorItem, { vec: { $near: { $lt: 0.5 } } } as never)).toThrow(
+      "$near on 'vec' needs its own $vector",
+    );
+  });
+
+  it('rejects a $sort by relation in a statement that joins none', () => {
+    const ctx = dialect.createContext();
+    expect(() => dialect.sort(ctx, ItemAdjustment, { item: { name: 1 } })).toThrow(
+      "cannot $sort by relation 'item': this statement joins no relations",
+    );
+  });
+
+  it('rejects a $vector sort through a relation', () => {
+    const ctx = dialect.createContext();
+    expect(() =>
+      dialect.find(ctx, Shelf, {
+        $populate: { vectorItem: true },
+        $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
+      } as never),
+    ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
+  });
+
+  it('emits no HAVING when every condition is undefined', () => {
+    const ctx = dialect.createContext();
+    dialect.aggregate(ctx, User, { $group: { name: true }, $agg: { n: { $count: '*' } }, $having: { n: undefined } });
+    expect(ctx.sql).toBe('SELECT `name`, COUNT(*) `n` FROM `User` GROUP BY `name`');
+  });
+
+  it('hydrates an aggregate as its field does, and a count as a number', () => {
+    expect(
+      dialect.hydratableAggregates(User, {
+        $group: { name: true },
+        $agg: { first: { $min: 'createdAt' }, n: { $count: '*' } },
+      }),
+    ).toEqual([
+      ['first', 'number'],
+      ['n', 'number'],
+    ]);
   });
 
   it('getUpsertUpdateAssignments without callback', () => {
@@ -437,6 +490,23 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       dialect.where(ctx, Company, { 'kind.country': { $nin: ['x', 'y'] } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'country') NOT IN (?, ?)");
       expect(ctx.values).toEqual(['x', 'y']);
+    });
+
+    it('with $in and $nin over booleans, compared as JSON', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { 'kind.public': { $in: [true, false] }, 'kind.private': { $nin: [true] } } as never);
+      expect(ctx.sql).toBe(
+        " WHERE ((`kind`->'public') = CAST(? AS JSON) OR (`kind`->'public') = CAST(? AS JSON))" +
+          " AND ((`kind`->'private') <> CAST(? AS JSON))",
+      );
+      expect(ctx.values).toEqual(['true', 'false', 'true']);
+    });
+
+    it('rejects an $in that is not an array, as a column does', () => {
+      const ctx = dialect.createContext();
+      expect(() => dialect.where(ctx, Company, { 'kind.country': { $in: 'a' } } as never)).toThrow(
+        '$in expects an array, got string',
+      );
     });
 
     it('with array shorthand (maps to $in)', () => {

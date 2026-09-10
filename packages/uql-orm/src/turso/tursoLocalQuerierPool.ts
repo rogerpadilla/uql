@@ -1,5 +1,6 @@
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
+import { applySqlitePragmas } from '../sqlite/sqlitePragmas.js';
 import type { ExtraOptions } from '../type/index.js';
 import { TursoDialect } from './tursoDialect.js';
 import { type TursoDatabase, TursoLocalQuerier } from './tursoLocalQuerier.js';
@@ -37,8 +38,7 @@ export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
     const { connect } = await import('@tursodatabase/database');
     // Annotated rather than cast, so the structural contract is checked against the real driver.
     const db: TursoDatabase = await connect(this.filename, this.opts);
-    await db.pragma('journal_mode = WAL');
-    await db.pragma('foreign_keys = ON');
+    await applySqlitePragmas(db);
     return db;
   }
 

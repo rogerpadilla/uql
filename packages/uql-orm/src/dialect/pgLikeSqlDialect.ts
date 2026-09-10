@@ -272,13 +272,25 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return `JSONB_SET(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
   }
 
+  /**
+   * The plain values merge as one bound object; a `raw()` one is an SQL expression rather than JSON,
+   * so it merges through `JSONB_BUILD_OBJECT` and is evaluated in place - stringified with the rest,
+   * it would land as `{}`.
+   */
   protected override jsonSet(
     ctx: QueryContext,
     expr: string,
     set: Record<string, unknown>,
     field?: FieldOptions,
   ): string {
-    return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${this.jsonVal(ctx, set)}`;
+    const entries = Object.entries(set);
+    const merged = this.jsonVal(ctx, Object.fromEntries(entries.filter(([, value]) => !(value instanceof QueryRaw))));
+    const raws = entries.flatMap(([key, value]) =>
+      value instanceof QueryRaw
+        ? [` || JSONB_BUILD_OBJECT('${escapeSingleQuotes(key)}', ${this.rawFragment(ctx, value)})`]
+        : [],
+    );
+    return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${merged}${raws.join('')}`;
   }
 
   /** The only fragment that references `expr` twice - safe here because placeholders are numbered. */
@@ -303,7 +315,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * Helper to add a JSON value to context with appropriate stringification and cast.
    */
   private jsonVal(ctx: QueryContext, value: unknown, type: JsonColumnType = 'jsonb'): string {
-    if (value instanceof QueryRaw) return this.addValue(ctx.values, value);
+    if (value instanceof QueryRaw) return this.rawFragment(ctx, value);
     if (value == null) return `${this.addValue(ctx.values, null)}::${type}`;
 
     const json = JSON.stringify(value);

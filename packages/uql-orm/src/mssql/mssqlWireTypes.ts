@@ -1,4 +1,5 @@
 import type { RawRow } from '../type/index.js';
+import { decodeWideNumber } from '../util/wideNumber.js';
 
 /** The column metadata `tedious` reports beside a recordset, narrowed to the one field read here. */
 type ColumnTypes = Record<string, { readonly type: unknown }>;
@@ -15,10 +16,9 @@ type ColumnTypes = Record<string, { readonly type: unknown }>;
  * reads, the ids an `OUTPUT` reports, raw SQL, counts, aggregates - where the ORM's own hydration
  * only ever sees entity reads.
  *
- * Exact to 2^53, which covers any generated id. A value past it keeps the string the driver gave,
- * because a number could no longer represent it: that is the one case where handing back the exact
- * text is more useful than handing back the type that was asked for. The lighter escape hatch for a
- * column that big is the declaration - `@Field({ type: String, columnType: 'bigint' })`.
+ * By the rule every driver here shares, `decodeWideNumber`: a number where one is exact, the driver's
+ * exact text past 2^53. The lighter escape hatch for a column that big is the declaration -
+ * `@Field({ type: String, columnType: 'bigint' })`.
  */
 export function decodeWireTypes<T>(rows: T[] | undefined, columns: ColumnTypes | undefined): T[] {
   if (!rows?.length || !columns) {
@@ -34,10 +34,7 @@ export function decodeWireTypes<T>(rows: T[] | undefined, columns: ColumnTypes |
     for (const name of wide) {
       const value = decoded[name];
       if (typeof value === 'string') {
-        const asNumber = Number(value);
-        if (Number.isSafeInteger(asNumber)) {
-          decoded[name] = asNumber;
-        }
+        decoded[name] = decodeWideNumber(value);
       }
     }
     return decoded as T;

@@ -346,17 +346,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // The one path that does not go through `all`/`run`, so it connects on its own: streaming first on
     // a freshly acquired querier used to reach `getConn()` with nothing acquired.
     await this.lazyConnect();
+    // No `normalizeValues` here, unlike `all`/`run`: those also take raw SQL, while every value a
+    // context holds was normalized as it was bound.
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts);
-    const normalizedParams = this.dialect.normalizeValues(ctx.values);
     let attrsPaths: Record<string, string[]> | undefined;
     try {
-      for await (const row of this.internalStream<RawRow>(ctx.sql, normalizedParams)) {
+      for await (const row of this.internalStream<RawRow>(ctx.sql, ctx.values)) {
         attrsPaths ??= obtainAttrsPaths(row);
         yield this.hydrateFields(entity, unflatObject<E>(row, attrsPaths));
       }
     } catch (err) {
-      throw enrichError(err, this.logger, ctx.sql, normalizedParams);
+      throw enrichError(err, this.logger, ctx.sql, ctx.values);
     }
   }
 
@@ -366,8 +367,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * Drivers with native cursor/streaming APIs (SQLite, Pg) should override this.
    */
   protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
-    const rows = await this.internalAll<T>(query, this.dialect.normalizeValues(values));
-    yield* rows;
+    yield* await this.internalAll<T>(query, values);
   }
 
   /**
@@ -669,38 +669,52 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
         throwPendingTransaction();
       }
       await this.lazyConnect();
-      for (const sql of this.dialect.getBeginTransactionStatements(opts?.isolationLevel)) {
-        await this.runTransactionCommand(sql);
-      }
+      await this.internalBegin(opts);
       this.hasPendingTransaction = true;
     });
   }
 
+  /**
+   * Only an end that succeeded ends the transaction. A `COMMIT` that fails can leave it open (SQLite
+   * answers `SQLITE_BUSY` and keeps it), so the flag has to stay set for the `catch` in
+   * {@link AbstractQuerier.transaction} or {@link AbstractQuerier.release} to roll it back.
+   */
   override async commitTransaction() {
     return this.serialize(async () => {
       if (!this.hasPendingTransaction) {
         throwNoPendingTransaction();
       }
-      await this.endTransactionWith(this.dialect.commitTransactionCommand);
+      await this.internalCommit();
+      this.hasPendingTransaction = false;
     });
   }
 
   override async rollbackTransaction() {
     return this.serialize(async () => {
       if (this.hasPendingTransaction) {
-        await this.endTransactionWith(this.dialect.rollbackTransactionCommand);
+        await this.internalRollback();
+        this.hasPendingTransaction = false;
       }
     });
   }
 
   /**
-   * Only a statement that succeeded ends the transaction. A `COMMIT` that fails can leave it open
-   * (SQLite answers `SQLITE_BUSY` and keeps it), so the flag has to stay set for the `catch` in
-   * {@link AbstractQuerier.transaction} or {@link AbstractQuerier.release} to roll it back.
+   * How this driver opens, commits and rolls back: the dialect's statements, unless its transactions
+   * are objects rather than statements - Hrana's session handle, `mssql`'s `Transaction` - in which
+   * case it overrides all three. The bookkeeping around them stays above, written once.
    */
-  private async endTransactionWith(command: string) {
-    await this.runTransactionCommand(command);
-    this.hasPendingTransaction = false;
+  protected async internalBegin(opts?: TransactionOptions): Promise<void> {
+    for (const sql of this.dialect.getBeginTransactionStatements(opts?.isolationLevel)) {
+      await this.runTransactionCommand(sql);
+    }
+  }
+
+  protected internalCommit(): Promise<void> {
+    return this.runTransactionCommand(this.dialect.commitTransactionCommand);
+  }
+
+  protected internalRollback(): Promise<void> {
+    return this.runTransactionCommand(this.dialect.rollbackTransactionCommand);
   }
 
   /** Transaction statements skip `timed()`, so they attach their own query context to a failure. */

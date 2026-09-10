@@ -1,4 +1,4 @@
-import { getMeta, soleIdOf } from '../entity/index.js';
+import { fieldOf, getMeta, soleIdOf } from '../entity/index.js';
 import {
   type EntityData,
   type EntityMeta,
@@ -129,6 +129,14 @@ type HydratableField = readonly [string, HydrateKind];
 
 export type { HydrateKind };
 
+/** An `$in`/`$nin` operand, which the types require to be an array but `/http` hands over untyped. */
+function inOperands(op: string, value: unknown): unknown[] {
+  if (!Array.isArray(value)) {
+    throw TypeError(`${op} expects an array, got ${value === null ? 'null' : typeof value}`);
+  }
+  return value;
+}
+
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements QueryDialect, SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
@@ -253,6 +261,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return fragmentCtx.sql;
   }
 
+  /** A `raw()` operand, rendered in place: bound, it would reach the driver as the object itself. */
+  protected rawFragment(ctx: QueryContext, value: QueryRaw): string {
+    return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value }));
+  }
+
   /**
    * Each operand rendered into its own fragment, keeping only those that emitted SQL.
    *
@@ -277,20 +290,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * Normalizes a parameter value for the database driver.
-   * Handles bigint, boolean, and serializes plain objects/arrays to JSON strings.
-   * Date values are preserved so SQL drivers can apply native date/time binding.
-   * Postgres overrides to pass objects through to its native JSONB driver.
+   * A parameter value as this engine's driver takes it: a boolean as the integer an engine with no
+   * boolean type stores, and everything else as it is - a `bigint` included, which every driver here
+   * binds exactly, where a number would round it past 2^53. A driver that refuses one (D1) overrides.
    */
   normalizeValue(value: unknown): unknown {
-    if (value == null || value instanceof Date || value instanceof Uint8Array || value instanceof QueryRaw) {
-      return value;
-    }
-    if (typeof value === 'bigint') {
-      return Number(value);
-    }
-    if (typeof value === 'boolean') {
-      return this.booleanLiteral === 'native' ? value : value ? 1 : 0;
+    if (typeof value === 'boolean' && this.booleanLiteral !== 'native') {
+      return value ? 1 : 0;
     }
     return value;
   }
@@ -372,8 +378,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
           autoPrefixAlias: opts.autoPrefixAlias,
         });
       } else {
-        const field = meta.fields[key];
-        if (!field) return;
+        const field = fieldOf(meta, key);
         if (isInlinedExpression(field)) {
           // Qualified even when nothing else in this statement is: the expression is spliced in, and
           // one that opens a correlated subquery has the inner table's columns in scope, so a bare
@@ -676,7 +681,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const parts = this.renderOperands(ctx, items, (fragmentCtx, entry) => {
       if (entry instanceof QueryRaw) {
         this.getRawValue(fragmentCtx, { value: entry });
-      } else if (entry) {
+      } else {
         this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
       }
     });
@@ -871,13 +876,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       case '$regex':
         return this.regexCondition(operand, this.addValue(ctx.values, val));
       case '$in':
-      case '$nin': {
-        if (!Array.isArray(val)) {
-          // Not covered by the types: `/http` casts client JSON straight to `Query`, so this arrives untyped.
-          throw TypeError(`${op} expects an array, got ${val === null ? 'null' : typeof val}`);
-        }
-        return operand + this.formatIn(ctx, val, op === '$nin');
-      }
+      case '$nin':
+        return operand + this.formatIn(ctx, inOperands(op, val), op === '$nin');
       case '$between': {
         const [min, max] = val as [unknown, unknown];
         return `${operand} BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`;
@@ -960,7 +960,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     value: unknown,
     asJson: boolean,
   ): string {
-    const values = Array.isArray(value) ? value : [];
+    const values = inOperands(op, value);
     const negate = op === '$nin';
     if (!asJson) {
       return `${comparand(values)}${this.formatIn(ctx, values, negate)}`;
@@ -1075,7 +1075,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    */
   protected jsonScalarParam(ctx: QueryContext, value: unknown): string {
     if (value instanceof QueryRaw) {
-      return this.addValue(ctx.values, value);
+      return this.rawFragment(ctx, value);
     }
     ctx.pushValue(JSON.stringify(value));
     // The placeholder for the value just pushed, so a named or numbered one is spelled correctly.
@@ -1296,16 +1296,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     throw new TypeError(`${this.dialectName} does not support estimatedCount`);
   }
 
-  /** `$group` aggregate operator → SQL function name. An allowlist, not a formatter: the op key
-   * comes from query data, so anything outside this map must be rejected rather than passed
-   * through as a raw SQL function name. */
-  private static readonly AGGREGATE_FN_MAP = new Map<QueryAggregateOp, string>([
-    ['$count', 'COUNT'],
-    ['$sum', 'SUM'],
-    ['$avg', 'AVG'],
-    ['$min', 'MIN'],
-    ['$max', 'MAX'],
-  ]);
+  /** `$group` aggregate operator to SQL function name, over ops `resolveAggregateOp` has already allowlisted. */
+  private static readonly AGGREGATE_FN: Readonly<Record<QueryAggregateOp, string>> = {
+    $count: 'COUNT',
+    $sum: 'SUM',
+    $avg: 'AVG',
+    $min: 'MIN',
+    $max: 'MAX',
+  };
 
   aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     ctx: QueryContext,
@@ -1331,10 +1329,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         emittedColumns[entry.alias] = escaped;
         selectParts.push(columnName !== entry.alias ? `${escaped} ${this.escapeId(entry.alias)}` : escaped);
       } else {
-        const sqlFn = AbstractSqlDialect.AGGREGATE_FN_MAP.get(entry.op);
-        if (!sqlFn) {
-          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
-        }
+        const sqlFn = AbstractSqlDialect.AGGREGATE_FN[entry.op];
         const sqlArg = entry.fieldRef === '*' ? '*' : this.escapeId(this.columnOf(meta, entry.fieldRef));
         const expr = `${sqlFn}(${entry.distinct ? 'DISTINCT ' : ''}${sqlArg})`;
         emittedColumns[entry.alias] = expr;
@@ -1677,14 +1672,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     // Soft-delete (stamp only live rows) unless `hardDelete` is requested or the entity has no
     // soft-delete field (e.g. a cascade onto a non-soft-deletable child).
     if (!opts.hardDelete && meta.softDelete) {
-      const field = meta.fields[meta.softDelete];
-      if (field) {
-        const columnName = this.resolveColumnName(meta.softDelete, field);
-        ctx.append(`UPDATE ${tableName} SET ${this.escapeId(columnName)} = `);
-        this.formatPersistableValue(ctx, field, getSoftDeleteValue(field));
-        this.search(ctx, entity, q, opts);
-        return;
-      }
+      const field = fieldOf(meta, meta.softDelete);
+      const columnName = this.resolveColumnName(meta.softDelete, field);
+      ctx.append(`UPDATE ${tableName} SET ${this.escapeId(columnName)} = `);
+      this.formatPersistableValue(ctx, field, getSoftDeleteValue(field));
+      this.search(ctx, entity, q, opts);
+      return;
     }
 
     // Hard delete removes matching rows regardless of soft-delete state (keeps other filters, e.g. tenant).
@@ -2335,9 +2328,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return ` ${negate ? 'NOT IN' : 'IN'} (${phs})`;
   }
 
-  protected numericCast(expr: string): string {
-    return expr;
-  }
+  /** Reads extracted JSON text as a number, which every engine spells its own way. */
+  protected abstract numericCast(expr: string): string;
 
   override toString(): string {
     return this.dialectName;

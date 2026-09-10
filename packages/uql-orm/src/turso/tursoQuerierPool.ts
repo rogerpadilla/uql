@@ -3,7 +3,6 @@ import type { HranaClient } from '../sqlite/hranaQuerier.js';
 import { AbstractHranaQuerierPool } from '../sqlite/hranaQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { TursoDialect } from './tursoDialect.js';
-import { TursoQuerier } from './tursoQuerier.js';
 
 /**
  * Connection settings for Turso Cloud, mirroring `@tursodatabase/serverless`.
@@ -33,7 +32,7 @@ function isClient(conf: TursoConfig | HranaClient): conf is HranaClient {
  * because over plain HTTP consecutive requests need not share a connection. Compat's session-backed
  * transaction handle is the piece that makes it work.
  */
-export class TursoQuerierPool extends AbstractHranaQuerierPool<TursoQuerier, TursoDialect> {
+export class TursoQuerierPool extends AbstractHranaQuerierPool<TursoDialect> {
   protected override readonly ownsClient: boolean;
   private readonly conf: TursoConfig | HranaClient;
 
@@ -53,9 +52,5 @@ export class TursoQuerierPool extends AbstractHranaQuerierPool<TursoQuerier, Tur
     }
     const { createClient } = await import('@tursodatabase/serverless/compat');
     return createClient(this.conf);
-  }
-
-  protected override buildQuerier(client: HranaClient) {
-    return new TursoQuerier(client, this.dialect, this.extra);
   }
 }

@@ -31,6 +31,12 @@ describe('decodeColumn', () => {
     expect(decodeColumn('not a number', 'number')).toBe('not a number');
   });
 
+  it('keeps the exact text of a number past 2^53, where a number would round', () => {
+    const bytes = (text: string) => new TextEncoder().encode(text);
+    expect(decodeColumn('9007199254740993', 'number')).toBe('9007199254740993');
+    expect(decodeColumn(bytes('12345678901234567890.99'), 'number')).toBe('12345678901234567890.99');
+  });
+
   it('reads text a driver handed over as bytes', () => {
     // `bun:sql` returns a MySQL DECIMAL, and any SUM over one, as a Buffer of its digits.
     const bytes = (text: string) => new TextEncoder().encode(text);

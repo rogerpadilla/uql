@@ -1,4 +1,5 @@
 import type { CustomTypesConfig } from 'pg';
+import { decodeWideNumber } from '../util/wideNumber.js';
 
 /**
  * The shape every pg-family driver exposes as `types`: `pg`'s own, and `@neondatabase/serverless`'s
@@ -12,7 +13,8 @@ type PgTypes = {
 };
 
 /**
- * Decode `INT8` and `FLOAT8` as JS numbers, leaving every other type to the driver.
+ * Decode `INT8` and `FLOAT8`, leaving every other type to the driver: an INT8 by `decodeWideNumber` - a
+ * number where one is exact, its exact text past 2^53 - and a FLOAT8 as the float64 it already is.
  *
  * uql owes this to the caller because uql picks the column: `type: Number` maps to BIGINT (see
  * `schema/canonicalType.ts`), so without it a field declared `number` read back as `'9'` - including
@@ -34,16 +36,17 @@ type PgTypes = {
  * `types.setTypeParser` calls in `neon/neonQuerier.test.ts` - and both made the suite pass on
  * behaviour the library never shipped. Do not reintroduce one.
  *
- * Exact to 2^53, which covers any auto-increment id. A caller who needs more passes their own
- * `types` in the pool options: it is spread after this one and therefore wins. For a decimal, the
- * lighter escape hatch is the declaration itself: `@Field({ type: String, columnType: 'decimal' })`
- * keeps the column DECIMAL while leaving the value as the exact text the driver returned.
+ * A caller's own `types` in the pool options are spread after this one and therefore win. For a
+ * decimal, the lighter escape hatch is the declaration itself: `@Field({ type: String, columnType:
+ * 'decimal' })` keeps the column DECIMAL while leaving the value as the exact text the driver returned.
  */
 export function numericTypes(types: PgTypes): CustomTypesConfig {
   // Text only: in binary mode an INT8 arrives as an 8-byte Buffer, and `Number(buffer)` is `NaN`.
-  const textNumeric: ReadonlySet<number> = new Set([types.builtins['INT8'], types.builtins['FLOAT8']]);
+  const decoders = new Map<number, (text: string) => unknown>([
+    [types.builtins['INT8'], decodeWideNumber],
+    [types.builtins['FLOAT8'], Number],
+  ]);
   return {
-    getTypeParser: (oid, format) =>
-      format === 'text' && textNumeric.has(oid) ? Number : types.getTypeParser(oid, format),
+    getTypeParser: (oid, format) => (format === 'text' && decoders.get(oid)) || types.getTypeParser(oid, format),
   };
 }

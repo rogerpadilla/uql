@@ -6,15 +6,18 @@ import { idKey } from '../type/index.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
 import {
   applyFilters,
+  asSelectMap,
   assertWhere,
   fillOnFields,
   filterFieldKeys,
   getFieldCallbackValue,
   getSoftDeleteValue,
+  insertShapeOf,
   isCascadable,
   normalizeScalarFieldSelection,
   parseGroupMap,
   whereIds,
+  withoutSoftDeleteFilter,
 } from './dialect.util.js';
 import { raw } from './raw.js';
 
@@ -49,6 +52,22 @@ it('applyFilters disables one by name, force-enables a default-off one', () => {
 
 it('applyFilters resolves thunk conditions', () => {
   expect(applied({}, { filters: { recent: true } })).toEqual({ status: 'new', deletedAt: null });
+});
+
+it('applyFilters skips a convenience filter whose condition does not resolve', () => {
+  @Filter('mine', { condition: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) })
+  @Entity()
+  class Owned {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) ownerId?: number;
+  }
+  expect(applyFilters(getMeta(Owned), {})).toEqual({});
+});
+
+it('withoutSoftDeleteFilter disables soft-delete alone, and keeps filters:false as it is', () => {
+  expect(withoutSoftDeleteFilter({ active: true })).toEqual({ active: true, softDelete: false });
+  expect(withoutSoftDeleteFilter(undefined)).toEqual({ softDelete: false });
+  expect(withoutSoftDeleteFilter(false)).toBe(false);
 });
 
 it('applyFilters escape hatch: does not overwrite a key already in $where', () => {
@@ -226,6 +245,22 @@ it('parseGroupMap normalizes a flat distinct op to its base op', () => {
   const agg: QueryAggMap<Item> = { codes: { $countDistinct: 'code' } };
   const entries = parseGroupMap(undefined, agg);
   expect(entries).toEqual([{ kind: 'fn', alias: 'codes', op: '$count', fieldRef: 'code', distinct: true }]);
+});
+
+it('parseGroupMap rejects an aggregate function given no field', () => {
+  expect(() => parseGroupMap(undefined, { total: { $sum: undefined } } as never)).toThrow(
+    'empty aggregate function for: total',
+  );
+});
+
+it('asSelectMap reads a raw-array $select as no map', () => {
+  expect(asSelectMap<User>([raw`1`])).toBeUndefined();
+  expect(asSelectMap<User>({ name: true })).toEqual({ name: true });
+});
+
+it('insertShapeOf names only the insertable keys a row carries', () => {
+  const meta = getMeta(User);
+  expect(insertShapeOf(meta, { name: 'a', email: undefined, unknown: 1 } as Partial<User>)).toBe('name,');
 });
 
 it('parseGroupMap skips falsy and non-object values', () => {

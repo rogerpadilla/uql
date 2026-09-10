@@ -1,8 +1,9 @@
 import type { PGliteOptions } from '@electric-sql/pglite';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
-import { PgliteDialect } from './pgliteDialect.js';
+import { decodeWideNumber } from '../util/wideNumber.js';
 import { type PgliteDatabase, PgliteQuerier } from './pgliteQuerier.js';
 
 /**
@@ -29,21 +30,30 @@ export type PglitePoolOptions = Omit<PGliteOptions, 'dataDir'>;
  * The cost is that PGlite cannot see the transaction, so it flushes to the filesystem after each
  * statement within one: pass `relaxedDurability: true` on a persistent `dataDir` to skip waiting on
  * those flushes.
+ *
+ * The dialect is plain `PostgresDialect`, `dialectName` included: PGlite *is* Postgres, so the
+ * introspector, schema generator and CLI resolve to Postgres's. Both driver capabilities hold as
+ * they are - PGlite serializes every built-in array type itself, and the `$n::jsonb` cast is what
+ * makes its `Describe` report JSONB and pick its JSON serializer; a bare `$n` binds `[object Object]`.
  */
-export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PgliteDialect> {
+export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PostgresDialect> {
   constructor(
     readonly dataDir = 'memory://',
     readonly opts?: PglitePoolOptions,
     extra?: ExtraOptions,
   ) {
-    super(new PgliteDialect(dialectOptionsFrom(extra)), extra);
+    super(new PostgresDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override async openDb(): Promise<PgliteDatabase> {
-    const { PGlite } = await import('@electric-sql/pglite');
-    // The declared return type is what checks {@link PgliteDatabase} against the real driver, so no
-    // cast is needed here or anywhere below it.
-    return PGlite.create(this.dataDir, this.opts);
+    const { PGlite, types } = await import('@electric-sql/pglite');
+    // INT8 by the one wide-integer rule, where PGlite's own answers a `bigint` past 2^53; a caller's own
+    // `parsers` still win. The declared return type is what checks {@link PgliteDatabase} against the
+    // real driver, so no cast is needed here or anywhere below it.
+    return PGlite.create(this.dataDir, {
+      ...this.opts,
+      parsers: { [types.INT8]: decodeWideNumber, ...this.opts?.parsers },
+    });
   }
 
   protected override buildQuerier(db: PgliteDatabase) {

@@ -9,23 +9,26 @@ vi.mock('./sqliteQuerier.js', () => ({
   }),
 }));
 
+/** A statement both drivers can answer with: no rows, so `bun:sqlite`'s adapter derives `reader: false`. */
+const statement = { reader: false, columnNames: [], all: vi.fn(() => []), run: vi.fn(), iterate: vi.fn() };
+
 const mocks = {
-  bunDatabaseRun: vi.fn(),
+  bunDatabasePrepare: vi.fn(() => statement),
   bunDatabaseClose: vi.fn(),
   bunLoadExtension: vi.fn(),
-  betterDatabasePragma: vi.fn(),
+  betterDatabasePrepare: vi.fn(() => statement),
   betterDatabaseClose: vi.fn(),
   betterLoadExtension: vi.fn(),
 };
 
 const bunDatabaseCtor = vi.fn().mockImplementation(function (this: any) {
-  this.run = mocks.bunDatabaseRun;
+  this.prepare = mocks.bunDatabasePrepare;
   this.close = mocks.bunDatabaseClose;
   this.loadExtension = mocks.bunLoadExtension;
 });
 
 const betterDatabaseCtor = vi.fn().mockImplementation(function (this: any) {
-  this.pragma = mocks.betterDatabasePragma;
+  this.prepare = mocks.betterDatabasePrepare;
   this.close = mocks.betterDatabaseClose;
   this.loadExtension = mocks.betterLoadExtension;
 });
@@ -50,7 +53,8 @@ describe('Sqlite3QuerierPool', () => {
     const querier = await pool.getQuerier();
 
     expect(querier).toBeDefined();
-    expect(mocks.bunDatabaseRun).toHaveBeenCalledWith('PRAGMA journal_mode = WAL');
+    expect(mocks.bunDatabasePrepare).toHaveBeenCalledWith('PRAGMA journal_mode = WAL');
+    expect(mocks.bunDatabasePrepare).toHaveBeenCalledWith('PRAGMA foreign_keys = ON');
   });
 
   it('should use better-sqlite3 when Bun is undefined', async () => {
@@ -60,7 +64,8 @@ describe('Sqlite3QuerierPool', () => {
     const querier = await pool.getQuerier();
 
     expect(querier).toBeDefined();
-    expect(mocks.betterDatabasePragma).toHaveBeenCalledWith('journal_mode = WAL');
+    expect(mocks.betterDatabasePrepare).toHaveBeenCalledWith('PRAGMA journal_mode = WAL');
+    expect(mocks.betterDatabasePrepare).toHaveBeenCalledWith('PRAGMA foreign_keys = ON');
   });
 
   it('should share one database but hand out a distinct querier per acquisition', async () => {

@@ -24,6 +24,12 @@ const EXACT_DECIMAL = '12345678901234567890.99';
  */
 export const FLOATED_DECIMAL = 12345678901234567000;
 
+/** The row {@link AbstractSqlQuerierIt.wideIntegerSql} reads. */
+export type WideRow = { big: unknown };
+
+/** What a driver that reads every integer as a plain float makes of 9007199254740993. */
+export const ROUNDED_WIDE_INTEGER = 9007199254740992;
+
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
   /**
    * Locking outside a transaction is accepted by every engine and then released as the statement
@@ -142,6 +148,35 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    */
   protected expectedExactDecimal(): string | number {
     return EXACT_DECIMAL;
+  }
+
+  /**
+   * A `bigint` past 2^53 is written exactly: the database finds the row by its own value, and not by the
+   * neighbour a rounded bind would have stored in its place. Compared there rather than read back, so
+   * it holds on the SQLite drivers too, whose reads of a value that wide are the one exception.
+   */
+  async shouldWriteAWideBigIntExactly() {
+    await this.querier.insertOne(TypedRow, { name: 'wide', wide: 9007199254740993n });
+
+    expect(await this.querier.count(TypedRow, { $where: { wide: 9007199254740993n } })).toBe(1);
+    expect(await this.querier.count(TypedRow, { $where: { wide: 9007199254740992n } })).toBe(0);
+  }
+
+  /**
+   * Past 2^53 a JS number rounds silently, so a BIGINT that wide reads back as its exact text: the one
+   * rule every driver's decode shares (`decodeWideNumber`). The SQLite family is the exception - no
+   * driver there hands uql the digits - so each of its suites pins what its own driver does instead.
+   */
+  async shouldReadAWideIntegerExactly() {
+    await this.assertWideInteger(this.querier.all<WideRow>(this.wideIntegerSql()));
+  }
+
+  protected wideIntegerSql(): string {
+    return 'SELECT 9007199254740993 AS big';
+  }
+
+  protected async assertWideInteger(read: Promise<WideRow[]>): Promise<void> {
+    expect((await read)[0]?.big).toBe('9007199254740993');
   }
 
   override createTables() {

@@ -1,30 +1,22 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { MariaDialect } from '../../maria/mariaDialect.js';
-import { MySql2Dialect } from '../../mysql/mysql2Dialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
-import { PgDialect } from '../../postgres/pgDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import type { Except, IndexSchema } from '../../type/index.js';
 import { CockroachIndexDdl, IndexDdl, indexDdlFor, MariaIndexDdl, MySqlIndexDdl, PgIndexDdl } from './index.js';
 
 /**
- * The DDL a dialect gets is picked off its class, so a driver's own subclass (`PgDialect`,
- * `MySql2Dialect`) keeps the family's statement rather than falling back to the portable form -
- * which is what overriding on the dialect gave it before this moved to the migrator.
- */
-/**
  * Which DDL a dialect resolves to. The statements themselves are asserted once, below - what is at
- * stake here is only that a driver's own subclass (`PgDialect`, `MySql2Dialect`) keeps its family's
- * class rather than falling back to the portable form, which is what overriding on the dialect gave
- * it before this moved to the migrator.
+ * stake here is only that a subclass keeps its family's class rather than falling back to the
+ * portable form.
  */
 describe('indexDdlFor', () => {
   it.each([
-    ['a driver subclass of Postgres', new PgDialect(), PgIndexDdl],
+    ['a subclass of Postgres', new (class extends PostgresDialect {})(), PgIndexDdl],
     ['CockroachDB, over its Postgres base', new CockroachDialect(), CockroachIndexDdl],
-    ['a driver subclass of MySQL', new MySql2Dialect(), MySqlIndexDdl],
+    ['a subclass of MySQL', new (class extends MySqlDialect {})(), MySqlIndexDdl],
     ['MariaDB, over its MySQL base', new MariaDialect(), MariaIndexDdl],
     ['anything else, which is SQLite', new SqliteDialect(), IndexDdl],
   ] as const)('gives %s its own', (_name, dialect, expected) => {

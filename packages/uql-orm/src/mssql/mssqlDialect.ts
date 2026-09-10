@@ -75,12 +75,10 @@ export class MsSqlDialect extends MergeSqlDialect {
   override readonly rollbackTransactionCommand = 'ROLLBACK TRANSACTION';
 
   /**
-   * The level rides the `BEGIN` rather than preceding it as its own statement: a `SET TRANSACTION
-   * ISOLATION LEVEL` sent on its own would go to whichever pooled connection served it, not the one
-   * the transaction opens on, and would then stick to that connection for unrelated later queries.
-   * `MsSqlQuerier` reads the level back off this command and hands it to the driver.
+   * T-SQL has no inline form, so the level is set before the `BEGIN`. What a driver that sends these
+   * as statements would run; `MsSqlQuerier` opens its transactions through the driver instead.
    */
-  override readonly isolationLevelStrategy = 'inline';
+  override readonly isolationLevelStrategy = 'set-before';
 
   override readonly dropIndexSyntax = 'on-table';
 
@@ -328,11 +326,14 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * An object or array bound as JSON, which is the half both binders spell the same way, or
-   * `undefined` for a scalar - where they diverge.
+   * An object or array bound as JSON, or a `raw()` rendered in place, which is the half both binders
+   * spell the same way; `undefined` for a scalar - where they diverge.
    */
   #jsonCompound(ctx: QueryContext, value: unknown): string | undefined {
-    if (value === null || typeof value !== 'object' || value instanceof QueryRaw) {
+    if (value instanceof QueryRaw) {
+      return this.rawFragment(ctx, value);
+    }
+    if (value === null || typeof value !== 'object') {
       return undefined;
     }
     ctx.pushValue(JSON.stringify(value));

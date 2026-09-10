@@ -7,13 +7,11 @@ export function kebabCase(val: string): string {
 }
 
 export function upperFirst(text: string): string {
-  if (!text) return text;
-  return text[0].toUpperCase() + text.slice(1);
+  return text.charAt(0).toUpperCase() + text.slice(1);
 }
 
 export function lowerFirst(text: string): string {
-  if (!text) return text;
-  return text[0].toLowerCase() + text.slice(1);
+  return text.charAt(0).toLowerCase() + text.slice(1);
 }
 
 export function snakeCase(val: string): string {

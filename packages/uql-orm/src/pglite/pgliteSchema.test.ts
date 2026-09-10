@@ -5,7 +5,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineEntity } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
-import { PgliteDialect } from './pgliteDialect.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
 import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
@@ -115,7 +115,7 @@ describe('schema against postgres', () => {
     const tenant = await scoped.getQuerier();
     for (const [other, total] of TENANTS) {
       // Each tenant's DDL comes from a generator scoped to that schema, the same way its pool is.
-      const scopedDialect = new PgliteDialect({ schema: other });
+      const scopedDialect = new PostgresDialect({ schema: other });
       for (const sql of new SqlSchemaGenerator(scopedDialect).generateCreateSchema([Ledger])) {
         await tenant.run(sql);
       }

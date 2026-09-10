@@ -72,6 +72,7 @@ export default defineConfig({
         'packages/*/src/**/*-spec.ts',
         'packages/*/src/**/*.test.ts',
         'packages/*/src/**/*-test.ts',
+        'packages/*/src/**/*.test-d.ts',
         // `*.bun.ts` only ever executes under Bun, so this run cannot reach it; `test:bun` covers it.
         'packages/*/src/**/*.bun.ts',
         'packages/*/src/test/**/*.ts',

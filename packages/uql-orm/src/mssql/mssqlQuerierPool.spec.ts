@@ -2,14 +2,17 @@ import { describe, expect, it, vi } from 'vitest';
 import { MsSqlDialect } from './mssqlDialect.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 
-vi.mock('mssql', () => ({
-  ConnectionPool: class {
-    connect = vi.fn().mockResolvedValue(this);
-    close = vi.fn().mockResolvedValue(undefined);
-    request = vi.fn();
-    transaction = vi.fn();
-  },
-}));
+vi.mock('mssql', async () => {
+  const { EventEmitter } = await import('node:events');
+  return {
+    ConnectionPool: class extends EventEmitter {
+      connect = vi.fn().mockResolvedValue(this);
+      close = vi.fn().mockResolvedValue(undefined);
+      request = vi.fn();
+      transaction = vi.fn();
+    },
+  };
+});
 
 describe('MsSqlQuerierPool', () => {
   const config = { server: 'localhost', database: 'test' };
@@ -46,6 +49,16 @@ describe('MsSqlQuerierPool', () => {
     await expect((await pool.getQuerier()).all('SELECT 1')).rejects.toThrow('unreachable');
     await expect((await pool.getQuerier()).all('SELECT 1')).rejects.not.toThrow('unreachable');
     expect(pool.pool.connect).toHaveBeenCalledTimes(2);
+  });
+
+  /** `mssql` emits `error` when a pooled connection fails, and an unheard `error` event ends the process. */
+  it('should keep a failed pooled connection from crashing the process', () => {
+    const pool = new MsSqlQuerierPool(config);
+    const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
+
+    expect(() => pool.pool.emit('error', new Error('socket hang up'))).not.toThrow();
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('SQL Server'), expect.any(Error));
+    consoleSpy.mockRestore();
   });
 
   it('should close the underlying pool on end', async () => {

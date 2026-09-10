@@ -25,6 +25,18 @@ describe('MariadbQuerier', () => {
     expect(res.changes).toBe(2);
   });
 
+  /** The pool leaves BIGINT as the driver's `bigint`, so the querier owns the one exact decode. */
+  it('should decode the bigint cells a read hands back', async () => {
+    const query = vi.fn().mockResolvedValue([{ id: 5n, big: 9007199254740993n, name: 'a' }]);
+    const conn = { query } as any;
+    const querier = new MariadbQuerier(() => Promise.resolve(conn), new MariaDialect({}));
+    (querier as any).conn = conn;
+
+    expect(await querier.internalAll('SELECT id, big, name FROM t')).toEqual([
+      { id: 5, big: '9007199254740993', name: 'a' },
+    ]);
+  });
+
   it('should default changes to 0 if both affectedRows and length are missing', async () => {
     const query = vi.fn().mockResolvedValue({});
     const conn = { query } as any;

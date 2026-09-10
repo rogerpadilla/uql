@@ -4,11 +4,11 @@ import { getMeta } from '../entity/index.js';
 import type { QueryConflictPaths, QueryContext, SqlDialectName, Type } from '../type/index.js';
 
 /**
- * PostgreSQL dialect. For node-pg use PgDialect. Neon, Bun SQL, and Cockroach use driver-specific
- * subclasses. Shared Postgres-wire AST/quoting/JSONB/full-text-search/vector-search logic
- * (including BIGINT IDENTITY PKs) lives in {@link PgLikeSqlDialect}; this class adds what's
- * Postgres-only: the `vector` extension requirement, pgvector's index syntax, and `xmax`-based
- * upsert `created` detection.
+ * PostgreSQL dialect, the same class under every Postgres driver - `pg`, Neon, PGlite, `bun:sql` -
+ * where a driver that binds differently passes `driverCapabilities` rather than subclassing it.
+ * Shared Postgres-wire AST/quoting/JSONB/full-text-search/vector-search logic (including BIGINT
+ * IDENTITY PKs) lives in {@link PgLikeSqlDialect}; this class adds what's Postgres-only: the `vector`
+ * extension requirement, pgvector's index syntax, and `xmax`-based upsert `created` detection.
  */
 export class PostgresDialect extends PgLikeSqlDialect {
   override readonly dialectName: SqlDialectName = 'postgres';

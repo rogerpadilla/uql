@@ -1,5 +1,6 @@
 import type { SQL } from 'bun';
 import type { PrimaryKey, RawRow, SqlDialectName } from '../type/index.js';
+import { decodeWideNumber } from '../util/wideNumber.js';
 
 export type BunSqlResult<T = RawRow> = T[] & {
   count?: number;
@@ -48,6 +49,7 @@ export function normalizeBunOpts(config: SQL.Options, dialectName: BunSqlDialect
   }
 
   const adapter = dialectName === 'cockroachdb' ? 'postgres' : dialectName;
+  // BIGINT as a `bigint`, so a wide one reaches uql exact for `decodeBigInts` to decode.
   const opts: SQL.PostgresOrMySQLOptions = { bigint: true, ...config, adapter };
 
   if (!opts.url) {
@@ -63,83 +65,59 @@ export function normalizeBunOpts(config: SQL.Options, dialectName: BunSqlDialect
     }
   } catch (_) {}
 
-  return opts as SQL.Options;
+  return opts;
 }
 
 /**
- * Robustly infers the UQL SqlDialect from a Bun SQL.Options object.
+ * The engine a Bun `SQL.Options` points at: a SQLite file or `:memory:`, then the URL's scheme, then
+ * the `adapter` Bun itself would read, and Postgres last - which is Bun's own fallback.
  */
 export function inferDialectName(config: SQL.Options): BunSqlDialectName {
-  if ((config as SQL.SQLiteOptions).filename) return 'sqlite';
-  const opts = config as SQL.PostgresOrMySQLOptions;
-  if (opts.url) {
-    const urlStr = opts.url.toString();
-    if (urlStr === ':memory:' || urlStr.endsWith('.db') || urlStr.endsWith('.sqlite')) {
+  if ('filename' in config && config.filename) {
+    return 'sqlite';
+  }
+  const url = 'url' in config ? config.url?.toString() : undefined;
+  if (url) {
+    if (url === ':memory:' || url.endsWith('.db') || url.endsWith('.sqlite')) {
       return 'sqlite';
     }
-    const scheme = urlStr.split(':')[0] ?? '';
-    const elsewhere = ElsewhereMap[scheme as keyof typeof ElsewhereMap];
+    const scheme = url.split(':')[0] ?? '';
+    const elsewhere = ELSEWHERE.get(scheme);
     if (elsewhere) {
       throw new TypeError(`Bun SQL has no ${elsewhere} driver; use the dedicated uql-orm/${elsewhere} pool`);
     }
-    const dialect = DialectMap[scheme as keyof typeof DialectMap];
-    if (dialect) return dialect;
+    const dialect = SCHEMES.get(scheme);
+    if (dialect) {
+      return dialect;
+    }
   }
-  // Every Bun adapter name is a key here, so the same map answers both questions.
-  return (opts.adapter && DialectMap[opts.adapter]) || 'postgres';
+  // Every Bun adapter name is a scheme here too, so the one table answers both questions.
+  return (config.adapter && SCHEMES.get(config.adapter)) || 'postgres';
 }
 
-const DialectMap = {
-  postgres: 'postgres',
-  postgresql: 'postgres',
-  mysql: 'mysql',
-  mysql2: 'mysql',
-  mariadb: 'mariadb',
-  sqlite: 'sqlite',
-  sqlite3: 'sqlite',
-  cockroachdb: 'cockroachdb',
-} as const satisfies Record<string, BunSqlDialectName>;
+/** A `Map` rather than an object literal, whose inherited keys would answer for a `constructor://` URL. */
+const SCHEMES: ReadonlyMap<string, BunSqlDialectName> = new Map([
+  ['postgres', 'postgres'],
+  ['postgresql', 'postgres'],
+  ['mysql', 'mysql'],
+  ['mysql2', 'mysql'],
+  ['mariadb', 'mariadb'],
+  ['sqlite', 'sqlite'],
+  ['sqlite3', 'sqlite'],
+  ['cockroachdb', 'cockroachdb'],
+]);
 
 /**
  * Engines uql drives elsewhere but Bun cannot dial. Named rather than left out: Bun's `SQL` falls
  * back to Postgres for any scheme it does not know, so an unlisted `mssql://` would have connected
  * as Postgres and failed on the first statement instead of on the pool.
  */
-const ElsewhereMap = {
-  mssql: 'mssql',
-  sqlserver: 'mssql',
-} as const satisfies Record<string, SqlDialectName>;
+const ELSEWHERE: ReadonlyMap<string, SqlDialectName> = new Map([
+  ['mssql', 'mssql'],
+  ['sqlserver', 'mssql'],
+]);
 
-/**
- * Coerces the BigInts Bun returns (`bigint: true`, set by {@link normalizeBunOpts}) back to numbers.
- *
- * The `bun:sql` counterpart of `postgres/pgNumericTypes.ts`, and at the driver for the same reason:
- * `type: Number` maps to BIGINT, and everything crosses this decode exactly once - entity reads,
- * `RETURNING id`, counts, raw SQL - while hydration only ever sees entity reads. Exact to 2^53, which
- * covers any auto-increment id.
- */
-export function normalizeRows<T>(res: BunSqlResult<T>): T[] {
-  const rows: T[] = [];
-  for (const row of res) {
-    let cleanRow: RawRow | undefined;
-    const sourceRow = row as RawRow;
-    for (const key in sourceRow) {
-      const value = sourceRow[key];
-      if (typeof value === 'bigint') {
-        // Clone only when needed so non-bigint rows can pass through untouched.
-        cleanRow ??= { ...sourceRow };
-        cleanRow[key] = Number(value);
-      }
-    }
-    rows.push((cleanRow ?? sourceRow) as T);
-  }
-  return rows;
-}
-
-/**
- * Robustly extracts the last inserted ID from a Bun SQL result.
- * Handles BigInt-to-number coercion for cross-dialect consistency.
- */
+/** The id a MySQL-family insert reports, by the same wide-integer rule as every other BIGINT. */
 export function getInsertId(res: BunSqlResult): PrimaryKey | undefined {
-  return typeof res.lastInsertRowid === 'bigint' ? Number(res.lastInsertRowid) : res.lastInsertRowid;
+  return typeof res.lastInsertRowid === 'bigint' ? decodeWideNumber(res.lastInsertRowid) : res.lastInsertRowid;
 }

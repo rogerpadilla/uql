@@ -11,11 +11,11 @@ import type { DialectFeatures } from '../type/index.js';
  *
  * The pair is one constant because it is one driver's shape, and `BunSqlQuerierPool` hands it to
  * `PostgresDialect`/`CockroachDialect` as their `driverCapabilities` rather than subclassing either:
- * Bun changes how a parameter binds, never the SQL. `PgDialect` uses neither, keeping the base
+ * Bun changes how a parameter binds, never the SQL. `PgQuerierPool` uses neither, keeping the base
  * {@link PgLikeSqlDialect} defaults, since node-`pg` needs no fix.
  *
  * @remarks Optional import for custom pools. Neon uses its own serverless driver (not `bun:sql`),
- * so `NeonDialect` is a separate, unverified case - do not assume it needs this without testing.
+ * so `NeonQuerierPool` is a separate, unverified case - do not assume it needs this without testing.
  */
 export const POSTGRES_WIRE_DRIVER_CAPABILITIES = {
   nativeArrays: false,

@@ -1,7 +1,7 @@
 import { Pool } from '@neondatabase/serverless';
 import type { CustomTypesConfig } from 'pg';
 import { describe, expect, it, vi } from 'vitest';
-import { NeonQuerier } from './neonQuerier.js';
+import { PgQuerier } from '../postgres/pgQuerier.js';
 import { NeonQuerierPool } from './neonQuerierPool.js';
 
 const mockPoolInstance = {
@@ -26,13 +26,16 @@ describe('NeonQuerierPool', () => {
     const config = { connectionString: 'postgres://' };
     const pool = new NeonQuerierPool(config);
     const querier = await pool.getQuerier();
-    expect(querier).toBeInstanceOf(NeonQuerier);
+    expect(querier).toBeInstanceOf(PgQuerier);
   });
 
   it('decodes wide integers with Neon’s own type registry, not `pg`’s', () => {
     new NeonQuerierPool({ connectionString: 'postgres://' });
     const [{ types }] = vi.mocked(Pool).mock.calls[0] as [{ types: CustomTypesConfig }];
-    expect(types.getTypeParser(20, 'text')).toBe(Number);
+    const int8 = types.getTypeParser(20, 'text');
+    expect(int8('9')).toBe(9);
+    // Past 2^53 a number would round, so the exact text comes back instead.
+    expect(int8('9007199254740993')).toBe('9007199254740993');
     expect(types.getTypeParser(701, 'text')).toBe(Number);
     // Anything else, and anything not in text format, is the driver's own business.
     expect(types.getTypeParser(25, 'text')).toBe(String);

@@ -1,6 +1,6 @@
 import { getLoadablePath } from 'sqlite-vec';
 import { expect } from 'vitest';
-import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
+import { FLOATED_DECIMAL, ROUNDED_WIDE_INTEGER, type WideRow } from '../querier/abstractSqlQuerier-test.js';
 import type { AbstractSqlQuerierPool } from '../querier/index.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, VectorItem } from '../test/index.js';
@@ -26,6 +26,11 @@ export class Sqlite3QuerierIt extends VectorQuerierIt {
 
   protected override expectedExactDecimal() {
     return FLOATED_DECIMAL;
+  }
+
+  /** better-sqlite3 reads the integer as a plain number, so the digit past 2^53 is already gone. */
+  protected override async assertWideInteger(read: Promise<WideRow[]>) {
+    expect((await read)[0]?.big).toBe(ROUNDED_WIDE_INTEGER);
   }
 
   override async beforeEach() {

@@ -12,6 +12,7 @@ export {
   getMeta,
   removeEntity,
   assertSoleId,
+  fieldOf,
   idOf,
   namesKey,
   soleIdOf,

@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SqliteDialect } from '../sqlite/index.js';
 import { D1Querier, type D1Result } from './d1Querier.js';
+import { D1SqliteDialect } from './d1SqliteDialect.js';
 
 function buildStmt() {
   return { bind: vi.fn().mockReturnThis(), all: vi.fn(), run: vi.fn() };
@@ -19,6 +20,16 @@ describe('D1Querier', () => {
     mockStmt = buildStmt();
     mockDb = buildDb(mockStmt);
     querier = new D1Querier(mockDb, new SqliteDialect());
+  });
+
+  /** D1's API refuses a `bigint` bind, and a number would round it; the text lands as the same INTEGER. */
+  it('should bind a bigint as its exact text', async () => {
+    const d1 = new D1Querier(mockDb, new D1SqliteDialect());
+    mockStmt.all.mockResolvedValue({ results: [], success: true, meta: {} } satisfies D1Result<any>);
+
+    await d1.all('SELECT ?', [9007199254740993n]);
+
+    expect(mockStmt.bind).toHaveBeenCalledWith('9007199254740993');
   });
 
   it('should execute findMany via all()', async () => {

@@ -1,5 +1,10 @@
 import { describe, expect, it } from 'vitest';
-import { AbstractSqlQuerierIt, FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
+import {
+  AbstractSqlQuerierIt,
+  FLOATED_DECIMAL,
+  ROUNDED_WIDE_INTEGER,
+  type WideRow,
+} from '../querier/abstractSqlQuerier-test.js';
 import { AbstractSqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { createSpec, probeForeignKeys } from '../test/index.js';
 import type { BunSqlQuerier } from './bunSqlQuerier.js';
@@ -19,6 +24,11 @@ class BunSqliteIt extends AbstractSqlQuerierIt {
 
   protected override expectedExactDecimal() {
     return FLOATED_DECIMAL;
+  }
+
+  /** `bun:sql`'s SQLite adapter ignores `bigint: true` and reads the integer as a plain number. */
+  protected override async assertWideInteger(read: Promise<WideRow[]>) {
+    expect((await read)[0]?.big).toBe(ROUNDED_WIDE_INTEGER);
   }
 }
 

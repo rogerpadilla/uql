@@ -19,7 +19,13 @@ import {
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
-import { defineEntity, defineField, defineRelation, getEntities, getMeta } from './definition.js';
+import { defineEntity, defineField, defineRelation, fieldOf, getEntities, getMeta } from './definition.js';
+
+it('fieldOf names the field it reads, and refuses one the entity does not declare', () => {
+  const meta = getMeta(User);
+  expect(fieldOf(meta, 'name')).toBe(meta.fields.name);
+  expect(() => fieldOf(meta, 'nope')).toThrow("'User' has no field 'nope'");
+});
 
 it('User', () => {
   const meta = getMeta(User);

@@ -14,7 +14,6 @@ import type {
   Query,
   QueryAggMap,
   QueryAggregate,
-  QueryAggregateOp,
   QueryExclude,
   QueryGroupMap,
   QueryGroupOp,
@@ -127,15 +126,6 @@ export class MongoDialect extends AbstractDialect {
   private static readonly ID_KEY = '_id';
   /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
   private static readonly MAX_NUM_CANDIDATES = 10_000;
-
-  // Direct field aggregates → MongoDB accumulator. `$count` is handled separately (COUNT(*) vs
-  // COUNT(field) differ), so it is not listed here.
-  private static readonly AGGREGATE_OP_MAP = new Map<QueryAggregateOp, string>([
-    ['$sum', '$sum'],
-    ['$avg', '$avg'],
-    ['$min', '$min'],
-    ['$max', '$max'],
-  ]);
 
   /**
    * MongoDB stores the primary key as `_id`; everything else resolves as usual. Projections, sorts,
@@ -706,9 +696,9 @@ export class MongoDialect extends AbstractDialect {
    * Aggregate results are keyed by `$group`/`$agg` alias rather than by column, so an aggregate
    * `$sort` addresses those aliases as-is - the same reason the SQL dialects sort by alias there.
    */
-  private aliasSort(sort: Record<string, unknown> | undefined): Sort {
+  private aliasSort(sort: Record<string, unknown>): Sort {
     const normalized: Record<string, 1 | -1> = {};
-    for (const [alias, dir] of Object.entries(sort ?? {})) {
+    for (const [alias, dir] of Object.entries(sort)) {
       normalized[alias] = sortDirection(dir);
     }
     return normalized as Sort;
@@ -1298,11 +1288,8 @@ export class MongoDialect extends AbstractDialect {
         groupAccumulators[entry.alias] =
           entry.fieldRef === '*' ? { $sum: 1 } : { $sum: { $cond: [{ $ne: [ref, null] }, 1, 0] } };
       } else {
-        const mongoOp = MongoDialect.AGGREGATE_OP_MAP.get(entry.op);
-        if (!mongoOp) {
-          throw TypeError(`unsupported aggregate operator: ${entry.op}`);
-        }
-        groupAccumulators[entry.alias] = { [mongoOp]: ref };
+        // `$sum`, `$avg`, `$min` and `$max` are MongoDB accumulators of the same name.
+        groupAccumulators[entry.alias] = { [entry.op]: ref };
       }
     }
 

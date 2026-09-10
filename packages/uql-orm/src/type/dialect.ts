@@ -64,7 +64,7 @@ export interface DriverCapabilities {
   readonly explicitJsonCast: boolean;
   /**
    * Whether the driver natively supports JS arrays for the underlying database type.
-   * `PgDialect` keeps this `true` for node-postgres; Bun SQL PostgreSQL uses `false` and
+   * `PgQuerierPool` keeps this `true` for node-postgres; `BunSqlQuerierPool` sets `false` and binds
    * `toPgArray` string literals instead.
    */
   readonly nativeArrays: boolean;

@@ -17,9 +17,9 @@ export { CockroachIndexDdl, PgIndexDdl } from './pgIndexDdl.js';
 export { TableDdl } from './tableDdl.js';
 
 /**
- * The index DDL a dialect gets, most specific first. `instanceof` rather than `dialectName` so a
- * dialect subclassed by a user keeps its family's DDL, which is what overriding gave it while this
- * lived on the dialect itself. Anything else gets the portable form, which is SQLite's.
+ * The index DDL a dialect gets, most specific first. `instanceof` rather than the `dialectName`
+ * {@link tableDdlFor} reads, because each family's index DDL is typed to its dialect and the narrowing
+ * is what hands it one. Anything else gets the portable form, which is SQLite's.
  */
 export function indexDdlFor(dialect: AbstractSqlDialect): IndexDdl {
   if (dialect instanceof CockroachDialect) {

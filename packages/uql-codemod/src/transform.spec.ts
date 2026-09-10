@@ -452,6 +452,17 @@ type ParentOf<T> = Relation<T>;
     expect(unresolved[3]).toContain("'buildQueryWhereAsMap' was removed; a `$where` is a map already");
   });
 
+  it('reports a removed driver class where it is imported from its own entry', () => {
+    const { changed, unresolved } = codemod(`
+      import { PgDialect } from 'uql-orm/postgres';
+      import { LibsqlQuerier } from 'uql-orm/libsql';
+    `);
+
+    expect(changed).toBe(false);
+    expect(unresolved[0]).toContain("'PgDialect' was removed; the pools build `PostgresDialect`");
+    expect(unresolved[1]).toContain("'LibsqlQuerier' was removed; the libSQL and Turso pools return `HranaQuerier`");
+  });
+
   it('reports a decorator that no longer exists rather than removing it', () => {
     const { text, changed, unresolved } = codemod(`
       class Service {

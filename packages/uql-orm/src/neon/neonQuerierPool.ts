@@ -2,19 +2,14 @@ import { Pool, type PoolClient, type PoolConfig, types } from '@neondatabase/ser
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
 import { numericTypes } from '../postgres/pgNumericTypes.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { ExtraOptions } from '../type/index.js';
-import { NeonDialect } from './neonDialect.js';
-import { NeonQuerier } from './neonQuerier.js';
 
-export class NeonQuerierPool extends AbstractPgQuerierPool<PoolClient, NeonQuerier, NeonDialect> {
+export class NeonQuerierPool extends AbstractPgQuerierPool<PoolClient, PostgresDialect> {
   declare readonly pool: Pool;
 
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
     // Neon's own `types`, not `pg`'s: this entry has to load on an edge runtime where `pg` is absent.
-    super(new NeonDialect(dialectOptionsFrom(extra)), new Pool({ types: numericTypes(types), ...opts }), extra);
-  }
-
-  protected override buildQuerier(connect: () => Promise<PoolClient>) {
-    return new NeonQuerier(connect, this.dialect, this.extra);
+    super(new PostgresDialect(dialectOptionsFrom(extra)), new Pool({ types: numericTypes(types), ...opts }), extra);
   }
 }

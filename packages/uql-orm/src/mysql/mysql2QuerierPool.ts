@@ -2,15 +2,17 @@ import { createPool, type Pool, type PoolOptions } from 'mysql2/promise';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { MySql2Dialect } from './mysql2Dialect.js';
 import { MySql2Querier } from './mysql2Querier.js';
+import { MySqlDialect } from './mysqlDialect.js';
 
-export class MySql2QuerierPool extends AbstractSqlQuerierPool<MySql2Querier, MySql2Dialect> {
+export class MySql2QuerierPool extends AbstractSqlQuerierPool<MySql2Querier, MySqlDialect> {
   readonly pool: Pool;
 
   constructor(opts: PoolOptions, extra?: ExtraOptions) {
-    super(new MySql2Dialect(dialectOptionsFrom(extra)), extra);
-    this.pool = createPool(opts);
+    super(new MySqlDialect(dialectOptionsFrom(extra)), extra);
+    // A BIGINT past 2^53 as its exact text rather than a rounded number, the rule every driver here
+    // decodes by (`decodeWideNumber`); within that range it stays a number, and DECIMAL is untouched.
+    this.pool = createPool({ supportBigNumbers: true, ...opts });
   }
 
   async getQuerier() {

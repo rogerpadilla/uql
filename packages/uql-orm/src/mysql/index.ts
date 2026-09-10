@@ -1,4 +1,3 @@
-export * from './mysql2Dialect.js';
 export * from './mysql2Querier.js';
 export * from './mysql2QuerierPool.js';
 export * from './mysqlDialect.js';

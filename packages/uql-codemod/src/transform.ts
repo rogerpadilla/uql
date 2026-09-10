@@ -29,6 +29,16 @@ const REMOVED_EXPORTS = new Map([
   ['QueryWhereFieldMap', 'use `QueryWhere`'],
   ['augmentWhere', 'spread the two maps: `{ ...where, ...extra }`'],
   ['buildQueryWhereAsMap', 'a `$where` is a map already; name the key for ids: `{ id: [1, 2] }`'],
+  ['PgDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
+  ['NeonDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
+  ['PgliteDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
+  ['MySql2Dialect', 'the pool builds `MySqlDialect` (`uql-orm/mysql`)'],
+  ['MongodbNativeDialect', 'the pool builds `MongoDialect` (`uql-orm/mongo`)'],
+  ['AbstractPgQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`), which is concrete'],
+  ['CrdbQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`)'],
+  ['NeonQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`)'],
+  ['LibsqlQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
+  ['TursoQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
 ]);
 
 export type FileResult = {
@@ -424,9 +434,9 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
   }
 }
 
-/** Names an export that no longer exists, where it is imported from the package. */
+/** Names an export that no longer exists, where it is imported from the package or one of its entries. */
 function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
-  for (const element of uqlImports(source)) {
+  for (const element of uqlImports(source, true)) {
     const name = importedName(element);
     const advice = REMOVED_EXPORTS.get(name);
     if (advice) {
@@ -435,13 +445,18 @@ function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
   }
 }
 
-/** What the file imports from `uql-orm` by name, which is every import this codemod reads or writes. */
-function uqlImports(source: ts.SourceFile): readonly ts.ImportSpecifier[] {
+/**
+ * What the file imports from `uql-orm` by name, which is every import this codemod reads or writes.
+ * `entries` adds the driver entries (`uql-orm/postgres`, ...), for reporting only: an import written
+ * into one of those would land on an entry that may not export it.
+ */
+function uqlImports(source: ts.SourceFile, entries = false): readonly ts.ImportSpecifier[] {
   return source.statements.flatMap((statement) => {
     if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
       return [];
     }
-    if (statement.moduleSpecifier.text !== 'uql-orm') {
+    const specifier = statement.moduleSpecifier.text;
+    if (specifier !== 'uql-orm' && !(entries && specifier.startsWith('uql-orm/'))) {
       return [];
     }
     const bindings = statement.importClause?.namedBindings;

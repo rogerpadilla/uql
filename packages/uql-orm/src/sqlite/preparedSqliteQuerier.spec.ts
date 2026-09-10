@@ -33,7 +33,7 @@ const drivers = [
     wrap: <T>(value: T): T | Promise<T> => Promise.resolve(value),
     iterable: <T>(rows: T[]): Iterable<T> | AsyncIterable<T> => toAsync(rows),
     build(stmt: Stmt) {
-      const db = { prepare: vi.fn().mockResolvedValue(stmt), pragma: vi.fn(), close: vi.fn() };
+      const db = { prepare: vi.fn().mockResolvedValue(stmt), close: vi.fn() };
       return { db, querier: new TursoLocalQuerier(db, new SqliteDialect()) };
     },
   },
