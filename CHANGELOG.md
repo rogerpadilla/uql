@@ -4,10 +4,9 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 
 ## [0.56.0] - 2026-09-10
 
-- **`$text` with no `$fields` searches the entity's fulltext index**, and is refused where there is none or several. MySQL searched every field, Postgres emitted invalid SQL, SQLite crashed.
-- **Postgres refuses a `fulltext` index when the migration is generated**, instead of emitting `USING fulltext`, which the server can only answer with a syntax error.
-- **`drift:check` reports a foreign key whose `ON DELETE` or `ON UPDATE` changed**, as `relationship_mismatch`, naming both sides; migrations already applied such a change.
-- **The root and `uql-orm/postgres` entries grow by the `$text` resolver** in `util/dialect.util`, the one place every SQL dialect now reads its searched fields from.
+- **`$text` without `$fields` searches the entity's fulltext index.** On SQL, an entity with no such index, or more than one, has to name `$fields`.
+- **Postgres migrations refuse a `fulltext` index**, which Postgres does not have, instead of generating invalid SQL.
+- **`drift:check` reports a foreign key whose `ON DELETE` or `ON UPDATE` changed**.
 
 ## [0.55.0] - 2026-09-10
 
