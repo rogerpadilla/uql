@@ -32,14 +32,7 @@ import {
   emitSqlRunCalls,
 } from './codegen/migrationFile.js';
 import { runMongoCommand } from './generator/mongoCommand.js';
-import {
-  CockroachSchemaIntrospector,
-  MariadbSchemaIntrospector,
-  MongoSchemaIntrospector,
-  MysqlSchemaIntrospector,
-  PostgresSchemaIntrospector,
-  SqliteSchemaIntrospector,
-} from './introspection/index.js';
+import { introspectorFor } from './introspection/registry.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
@@ -114,26 +107,7 @@ export class Migrator {
 
   /** `schema` reads one namespace instead of the connection's own; see {@link BaseSqlIntrospector.schema}. */
   protected createIntrospector(schema?: string): SchemaIntrospector | undefined {
-    const d = this.dialectName;
-    if (!isKnownMigratorDialect(d)) {
-      return undefined;
-    }
-    switch (d) {
-      case 'postgres':
-        return new PostgresSchemaIntrospector(this.pool, schema);
-      case 'cockroachdb':
-        return new CockroachSchemaIntrospector(this.pool, schema);
-      case 'mysql':
-        return new MysqlSchemaIntrospector(this.pool, schema);
-      case 'mariadb':
-        return new MariadbSchemaIntrospector(this.pool, schema);
-      case 'sqlite':
-        return new SqliteSchemaIntrospector(this.pool);
-      case 'mongodb':
-        return new MongoSchemaIntrospector(this.pool);
-      default:
-        return undefined;
-    }
+    return introspectorFor(this.dialectName, this.pool, schema);
   }
 
   protected createGenerator(): SchemaGenerator | undefined {

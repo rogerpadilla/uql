@@ -95,3 +95,38 @@ services:
       timeout: 5s
       retries: 30
       start_period: 30s
+
+  # The one image here with no arm64 build, so it runs under emulation on Apple Silicon. 2025 needs
+  # AVX, which Docker Desktop's Rosetta layer did not expose until the engine's CU1 stopped requiring
+  # it; `2022-latest` never had that problem and passes the same suite unchanged, if this refuses to
+  # start.
+  mssql:
+    image: mcr.microsoft.com/mssql/server:2025-latest
+    platform: linux/amd64
+    restart: always
+    container_name: uql-mssql-2025
+    environment:
+      ACCEPT_EULA: 'Y'
+      MSSQL_SA_PASSWORD: 'test!Test'
+      MSSQL_PID: 'Developer'
+    ports:
+      - 1434:1433
+    # The database is created here because the image runs nothing from a volume on startup and has no
+    # `docker-entrypoint-initdb.d`. A one-shot init container is not enough: `docker compose up --wait`
+    # returns while such a container is still running, so CI would start testing before the database
+    # existed. Creating it in the check means healthy implies ready, and the statement is idempotent -
+    # after the first pass it is `IF <false>` and a `SELECT 1`.
+    #
+    # Snapshot isolation because SQL Server's default READ COMMITTED takes shared read locks where
+    # every other engine here uses MVCC, so a concurrent ORM workload deadlocks on patterns that
+    # deadlock nowhere else. It is the advice users need, and this way the suite runs on it.
+    healthcheck:
+      test:
+        [
+          'CMD-SHELL',
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "IF DB_ID(''test'') IS NULL BEGIN CREATE DATABASE test; ALTER DATABASE test SET READ_COMMITTED_SNAPSHOT ON; END SELECT 1"',
+        ]
+      interval: 5s
+      timeout: 10s
+      retries: 30
+      start_period: 20s

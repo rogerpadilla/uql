@@ -1,7 +1,7 @@
 {
   "name": "uql-orm",
   "homepage": "https://uql-orm.dev",
-  "description": "The JSON-native TypeScript ORM for Bun, Browsers, Edge, Deno, Node, Workers. Supports PostgreSQL, PGlite, MySQL, MariaDB, SQLite, CockroachDB, Turso, Neon, Cloudflare D1 and MongoDB. Queries are plain JSON, typed to the leaf.",
+  "description": "The JSON-native TypeScript ORM for Bun, Browsers, Edge, Deno, Node, Workers. Supports PostgreSQL, PGlite, MySQL, MariaDB, SQLite, CockroachDB, SQL Server, Turso, Neon, Cloudflare D1 and MongoDB. Queries are plain JSON, typed to the leaf.",
   "license": "MIT",
   "version": "0.51.0",
   "type": "module",
@@ -49,7 +49,8 @@
     "./pglite": "./dist/pglite/index.js",
     "./d1": "./dist/d1/index.js",
     "./bunSql": "./dist/bunSql/index.js",
-    "./package.json": "./package.json"
+    "./package.json": "./package.json",
+    "./mssql": "./dist/mssql/index.js"
   },
   "files": [
     "dist",
@@ -75,6 +76,7 @@
     "express": ">=5.0.0",
     "mariadb": ">=3.0.0",
     "mongodb": ">=6.0.0",
+    "mssql": ">=11.0.0",
     "mysql2": ">=3.0.0",
     "pg": ">=8.0.0",
     "pg-query-stream": ">=4.0.0",
@@ -125,6 +127,9 @@
     },
     "rxjs": {
       "optional": true
+    },
+    "mssql": {
+      "optional": true
     }
   },
   "devDependencies": {
@@ -139,12 +144,14 @@
     "@tursodatabase/serverless": "^1.4.0",
     "@types/better-sqlite3": "^9.6.0",
     "@types/express": "^5.0.6",
+    "@types/mssql": "^12.3.0",
     "@types/pg": "^8.23.1",
     "@types/ws": "^8.18.1",
     "better-sqlite3": "^13.0.3",
     "express": "^5.2.1",
     "mariadb": "^3.5.4",
     "mongodb": "^7.6.0",
+    "mssql": "^11",
     "mysql2": "^3.24.4",
     "pg": "^8.23.0",
     "pg-query-stream": "^4.17.0",
@@ -185,6 +192,9 @@
     "sqlite",
     "sqlite3",
     "cockroachdb",
+    "mssql",
+    "sqlserver",
+    "sql-server",
     "mongodb",
     "mongo",
     "libsql",
