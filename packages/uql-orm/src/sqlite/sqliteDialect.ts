@@ -13,6 +13,7 @@ import type {
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
+import { textSearchFields } from '../util/dialect.util.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
@@ -122,7 +123,9 @@ export class SqliteDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    const columns = search.$fields!.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    const columns = textSearchFields(meta, search).map((key) =>
+      this.escapeId(this.resolveColumnName(key, meta.fields[key])),
+    );
     ctx.append(`${this.escapedTableName(meta)} MATCH {${columns.join(' ')}} : `);
     ctx.addValue(search.$value);
   }

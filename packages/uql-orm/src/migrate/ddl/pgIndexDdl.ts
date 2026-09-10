@@ -19,7 +19,18 @@ export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
     return index.type === 'hnsw' || index.type === 'ivfflat';
   }
 
+  /**
+   * ` USING <method>`. `fulltext` is refused rather than compiled into a ` USING fulltext` the server
+   * can only answer with a syntax error: `$text` computes its `TO_TSVECTOR` per row, which no index
+   * over the raw columns serves.
+   */
   protected override indexAccessMethod(index: IndexSchema): string {
+    if (index.type === 'fulltext') {
+      throw new TypeError(
+        `${this.dialect.dialectName} has no fulltext index (index "${index.name}"). $text needs none there; ` +
+          'name the columns it searches with $fields.',
+      );
+    }
     return index.type ? ` USING ${index.type}` : '';
   }
 

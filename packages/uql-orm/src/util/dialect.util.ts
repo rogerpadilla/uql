@@ -26,6 +26,7 @@ import {
   type QuerySelectValue,
   type QuerySizeComparisonOps,
   type QuerySortMap,
+  type QueryTextSearchOptions,
   type QueryVectorSearch,
   type QueryWhere,
   type RelationKey,
@@ -537,4 +538,26 @@ export function assertAggregateColumns(clauseMap: object, emitted: ReadonlySet<s
       throwUnknownAggregateColumn(key, clause);
     }
   }
+}
+
+/**
+ * The fields a `$text` searches: those it names, or else the columns of the entity's fulltext index,
+ * the declaration MySQL's `MATCH` has to name exactly and a MongoDB text index already is. Refused
+ * where neither says, rather than guessed: every engine answers a guess with an error of its own.
+ */
+export function textSearchFields<E>(meta: EntityMeta<E>, search: QueryTextSearchOptions<E>): readonly string[] {
+  if (search.$fields?.length) {
+    return search.$fields;
+  }
+  const fulltext = (meta.indexes ?? []).filter((index) => index.type === 'fulltext');
+  if (fulltext.length === 1) {
+    return fulltext[0].columns.map((entry) => entry.column);
+  }
+  const name = entityName(meta);
+  const declared = fulltext.length
+    ? `${fulltext.length} fulltext indexes to choose from`
+    : 'no fulltext index to search';
+  throw new TypeError(
+    `$text on '${name}' names no $fields, and '${name}' declares ${declared}. Name them with $fields.`,
+  );
 }

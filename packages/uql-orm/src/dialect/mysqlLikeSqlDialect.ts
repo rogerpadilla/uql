@@ -2,7 +2,6 @@ import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   EntityMeta,
-  FieldKey,
   FieldOptions,
   InsertIdSource,
   QueryConflictPaths,
@@ -12,7 +11,7 @@ import type {
   QueryTextSearchOptions,
   Type,
 } from '../type/index.js';
-import { getFieldKeys } from '../util/index.js';
+import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { COUNT_ALIAS, JSON_PULL_ALIAS } from './aliases.js';
@@ -181,8 +180,9 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    const searchFields = search.$fields ?? (getFieldKeys(meta.fields) as FieldKey<E>[]);
-    const columns = searchFields.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    const columns = textSearchFields(meta, search).map((key) =>
+      this.escapeId(this.resolveColumnName(key, meta.fields[key])),
+    );
     ctx.append(`MATCH(${columns.join(', ')}) AGAINST(`);
     ctx.addValue(search.$value);
     ctx.append(')');

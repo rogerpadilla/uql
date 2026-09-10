@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
+import { Entity, Field, Filter, getMeta, Id, Index } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
@@ -16,6 +16,7 @@ import {
   isCascadable,
   normalizeScalarFieldSelection,
   parseGroupMap,
+  textSearchFields,
   whereIds,
   withoutSoftDeleteFilter,
 } from './dialect.util.js';
@@ -251,6 +252,51 @@ it('parseGroupMap rejects an aggregate function given no field', () => {
   expect(() => parseGroupMap(undefined, { total: { $sum: undefined } } as never)).toThrow(
     'empty aggregate function for: total',
   );
+});
+
+describe('textSearchFields', () => {
+  @Entity()
+  @Index(['title', 'body'], { type: 'fulltext' })
+  class Article {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String }) title?: string;
+    @Field({ type: String }) body?: string;
+    @Field({ type: String }) summary?: string;
+  }
+
+  @Entity()
+  class Plain {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String }) title?: string;
+  }
+
+  @Entity()
+  @Index(['title'], { type: 'fulltext' })
+  @Index(['body'], { type: 'fulltext' })
+  class TwiceIndexed {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String }) title?: string;
+    @Field({ type: String }) body?: string;
+  }
+
+  it('searches the fields it names, whatever the entity declares', () => {
+    expect(textSearchFields(getMeta(Article), { $fields: ['summary'], $value: 'x' })).toEqual(['summary']);
+  });
+
+  /** The declaration MySQL's `MATCH` has to match exactly, and the one a MongoDB text index is. */
+  it('searches the columns of the fulltext index the entity declares where it names none', () => {
+    expect(textSearchFields(getMeta(Article), { $value: 'x' })).toEqual(['title', 'body']);
+    expect(textSearchFields(getMeta(Article), { $fields: [], $value: 'x' })).toEqual(['title', 'body']);
+  });
+
+  it('refuses to guess where the entity declares no fulltext index, or more than one', () => {
+    expect(() => textSearchFields(getMeta(Plain), { $value: 'x' })).toThrow(
+      "$text on 'Plain' names no $fields, and 'Plain' declares no fulltext index to search. Name them with $fields.",
+    );
+    expect(() => textSearchFields(getMeta(TwiceIndexed), { $value: 'x' })).toThrow(
+      "$text on 'TwiceIndexed' names no $fields, and 'TwiceIndexed' declares 2 fulltext indexes to choose from. Name them with $fields.",
+    );
+  });
 });
 
 it('asSelectMap reads a raw-array $select as no map', () => {

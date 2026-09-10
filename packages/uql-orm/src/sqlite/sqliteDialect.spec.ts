@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, Field, getMeta, Id } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
 import {
   anyUuid,
   Company,
@@ -155,6 +155,20 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       'INSERT INTO `User` (`id`, `name`, `createdAt`, `email`) VALUES (?, ?, ?, NULL), (?, ?, ?, ?) RETURNING `id` `id`',
     );
     expect(values).toEqual(['5', 'Some name 1', 123, anyUuid, 'Some name 2', 456, 'someemail2@example.com']);
+  }
+
+  /** With no `$fields`, the FTS5 column filter names the columns of the fulltext index the entity declares. */
+  shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
+    @Entity()
+    @Index(['name', 'description'], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string;
+      @Field({ type: String }) description?: string;
+    }
+    const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
+    expect(sql).toBe(' WHERE `Listing` MATCH {`name` `description`} : ?');
+    expect(values).toEqual(['lamp']);
   }
 
   /** SQLite has no `DEFAULT` in a multi-row `VALUES`, so a row missing a column writes its declared default. */

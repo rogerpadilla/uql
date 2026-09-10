@@ -14,7 +14,7 @@ import {
   type VectorDistance,
   type VectorOperatorMetric,
 } from '../type/index.js';
-import { hasVectorNear } from '../util/dialect.util.js';
+import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { raw } from '../util/raw.js';
 import { type ParentPartition, queryNarrowedTo } from '../util/relationQuery.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
@@ -186,7 +186,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    const fields = (search.$fields ?? [])
+    const fields = textSearchFields(meta, search)
       .map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])))
       .join(` || ' ' || `);
     // The config is bound once and its numbered placeholder reused by both calls.

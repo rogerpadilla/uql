@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Entity, Id } from '../entity/index.js';
+import { Entity, Field, Id, Index } from '../entity/index.js';
 import { JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
@@ -33,12 +33,18 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['crm', 'Ledger']);
   }
 
-  /** With no `$fields`, the search runs over every column a read would select. */
-  shouldSearchTextOverEveryEagerField() {
-    const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, User, { $text: { $value: 'john' } }));
-    expect(sql).toMatch(/^ WHERE MATCH\(`id`, .*`email`\) AGAINST\(\?/);
-    expect(sql).not.toContain('`password`');
-    expect(values).toEqual(['john']);
+  /** With no `$fields`, the search runs over exactly the columns the `FULLTEXT` index `MATCH` needs covers. */
+  shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
+    @Entity()
+    @Index(['name', 'description'], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string;
+      @Field({ type: String }) description?: string;
+    }
+    const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
+    expect(sql).toBe(' WHERE MATCH(`name`, `description`) AGAINST(?)');
+    expect(values).toEqual(['lamp']);
   }
 
   /** InnoDB runs `FOR UPDATE` beside a window function, so a locked paged read stays one statement. */

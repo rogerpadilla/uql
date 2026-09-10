@@ -262,6 +262,20 @@ describe('CREATE INDEX', () => {
     );
   });
 
+  // Postgres has no `fulltext` access method, so `USING fulltext` could only fail at the server.
+  it('should refuse a fulltext index on Postgres', () => {
+    expect(() =>
+      pgDdl.getCreateIndexStatement('articles', {
+        name: 'text_idx',
+        entries: [{ column: 'title' }],
+        unique: false,
+        type: 'fulltext',
+      }),
+    ).toThrow(
+      'postgres has no fulltext index (index "text_idx"). $text needs none there; name the columns it searches with $fields.',
+    );
+  });
+
   // MySQL 26.7 has `VECTOR` columns but no vector index of any kind: `USING hnsw` is a syntax error
   // and the inline `VECTOR INDEX` form is MariaDB's, so both used to generate DDL it rejects.
   it.each(['hnsw', 'ivfflat', 'vector'] as const)('should reject a %s index on MySQL', (type) => {

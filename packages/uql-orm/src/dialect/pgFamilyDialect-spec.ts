@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, Field, Id, Index } from '../entity/index.js';
 import {
   anyUuid,
   Company,
@@ -1237,6 +1237,20 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     );
     expect(res.sql).toContain('TO_TSVECTOR($1::regconfig, "name") @@ WEBSEARCH_TO_TSQUERY($1::regconfig, $2)');
     expect(res.values).toEqual(['english', 'lamp']);
+  }
+
+  /** With no `$fields`, the search runs over the columns of the fulltext index the entity declares. */
+  shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
+    @Entity()
+    @Index(['name', 'description'], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string;
+      @Field({ type: String }) description?: string;
+    }
+    const res = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
+    expect(res.sql).toBe(` WHERE TO_TSVECTOR("name" || ' ' || "description") @@ WEBSEARCH_TO_TSQUERY($1)`);
+    expect(res.values).toEqual(['lamp']);
   }
 
   shouldMatchNothingForAnEmptySet() {
