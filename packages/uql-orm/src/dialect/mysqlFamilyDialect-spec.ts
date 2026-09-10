@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { Entity, Id } from '../entity/index.js';
 import { JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
@@ -17,6 +18,27 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       'SELECT TABLE_ROWS `_uql_count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
     );
     expect(values).toEqual(['User']);
+  }
+
+  /** A schema the entity names is bound where the connection's own database would be. */
+  shouldEstimateTheCountInTheSchemaTheEntityNames() {
+    @Entity({ schema: 'crm' })
+    class Ledger {
+      @Id({ type: Number }) id?: number;
+    }
+    const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Ledger));
+    expect(sql).toBe(
+      'SELECT TABLE_ROWS `_uql_count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+    );
+    expect(values).toEqual(['crm', 'Ledger']);
+  }
+
+  /** With no `$fields`, the search runs over every column a read would select. */
+  shouldSearchTextOverEveryEagerField() {
+    const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, User, { $text: { $value: 'john' } }));
+    expect(sql).toMatch(/^ WHERE MATCH\(`id`, .*`email`\) AGAINST\(\?/);
+    expect(sql).not.toContain('`password`');
+    expect(values).toEqual(['john']);
   }
 
   /** InnoDB runs `FOR UPDATE` beside a window function, so a locked paged read stays one statement. */

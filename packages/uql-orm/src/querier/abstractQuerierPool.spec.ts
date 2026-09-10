@@ -150,6 +150,26 @@ it('every read helper delegates to a fresh querier and releases it', async () =>
   }
 });
 
+it('exists and estimatedCount delegate to a fresh querier and release it', async () => {
+  const pool = new CountingPool(
+    () =>
+      ({
+        exists: vi.fn(async () => true),
+        estimatedCount: vi.fn(async () => 7),
+        release: vi.fn(async () => {}),
+      }) as unknown as Querier,
+  );
+
+  expect(await pool.exists(User, { $where: { name: 'a' } })).toBe(true);
+  expect(await pool.estimatedCount(User)).toBe(7);
+
+  const [exists, estimated] = pool.acquired;
+  expect(exists.exists).toHaveBeenCalledWith(User, { $where: { name: 'a' } }, undefined);
+  expect(estimated.estimatedCount).toHaveBeenCalledWith(User);
+  expect(exists.release).toHaveBeenCalledTimes(1);
+  expect(estimated.release).toHaveBeenCalledTimes(1);
+});
+
 /** Stub querier exposing the write methods the pool delegates to, plus a stream. */
 function createWriteStubQuerier() {
   const querier = {

@@ -60,6 +60,29 @@ describe('cli-config', () => {
     await expect(loadConfig()).rejects.toThrow('Could not find uql configuration file');
   });
 
+  it('loadConfig should name a config that fails to import', async () => {
+    const brokenPath = path.resolve(process.cwd(), 'broken-uql.config.js');
+    try {
+      await fs.writeFile(brokenPath, 'export default {');
+      await expect(loadConfig('broken-uql.config.js')).rejects.toThrow(
+        `Could not load configuration file at broken-uql.config.js: Could not import ${brokenPath}`,
+      );
+    } finally {
+      await fs.unlink(brokenPath).catch(() => {});
+    }
+  });
+
+  it('loadConfig should read a config with no default export as the module itself', async () => {
+    const namedPath = path.resolve(process.cwd(), 'named-uql.config.js');
+    try {
+      await fs.writeFile(namedPath, 'export const pool = { dialect: { dialectName: "sqlite" } };');
+      const config = await loadConfig('named-uql.config.js');
+      expect(config.pool.dialect.dialectName).toBe('sqlite');
+    } finally {
+      await fs.unlink(namedPath).catch(() => {});
+    }
+  });
+
   it('loadConfig should throw if custom config path not found', async () => {
     await expect(loadConfig('non-existent.config.js')).rejects.toThrow(
       'Could not find uql configuration file at non-existent.config.js',

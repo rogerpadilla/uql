@@ -173,6 +173,13 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
   });
 
+  it('findOneById answers a count of zero where no row matches', async () => {
+    mockQuerier.findOne.mockResolvedValue(undefined);
+    const handle = createRequestHandler({ pool, include: [User] });
+    const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
+    expect(resp).toEqual({ status: 200, body: { data: undefined, count: 0 } });
+  });
+
   it('findOneById merges an object $where', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const handle = createRequestHandler({ pool, include: [User] });

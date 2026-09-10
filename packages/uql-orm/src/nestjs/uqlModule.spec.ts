@@ -82,4 +82,23 @@ describe('UqlContextInterceptor', () => {
     await firstValueFrom(interceptor.intercept(execContext, next));
     expect(seen).toEqual({ tenantId: 7 });
   });
+
+  it('runs the handler in an empty context where the request resolves none', async () => {
+    let seen: unknown;
+    const interceptor = new UqlContextInterceptor(() => undefined);
+    const execContext = {
+      switchToHttp: () => ({ getRequest: () => ({}) }),
+    } as unknown as ExecutionContext;
+    const next: CallHandler = {
+      handle: () =>
+        new Observable((subscriber) => {
+          seen = getContext();
+          subscriber.next(undefined);
+          subscriber.complete();
+        }),
+    };
+
+    await firstValueFrom(interceptor.intercept(execContext, next));
+    expect(seen).toEqual({});
+  });
 });

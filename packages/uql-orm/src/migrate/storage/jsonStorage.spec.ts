@@ -15,6 +15,12 @@ describe('JsonMigrationStorage', () => {
     } catch {}
   });
 
+  /** Only a missing file is created; any other read failure is the caller's to see. */
+  it('ensureStorage should rethrow a read failure other than a missing file', async () => {
+    const directory = new JsonMigrationStorage(process.cwd());
+    await expect(directory.ensureStorage()).rejects.toMatchObject({ code: 'EISDIR' });
+  });
+
   it('ensureStorage should create file if not exists', async () => {
     // File shouldn't exist initially
     await expect(fs.access(filePath)).rejects.toThrow();
