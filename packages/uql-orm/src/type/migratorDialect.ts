@@ -6,6 +6,7 @@ const KNOWN_MIGRATOR_DIALECTS = [
   'mysql',
   'mariadb',
   'sqlite',
+  'mssql',
   'mongodb',
 ] as const satisfies readonly DialectName[];
 

@@ -101,6 +101,12 @@ const engines: Engine[] = [
 describe.each(engines)('$name vector search', ({ dialect, distance, supported, unsupported }) => {
   const q = (id: string) => dialect.escapeId(id);
   const ph = (index: number) => dialect.placeholder(index);
+  /** The pager this dialect emits, so a second paging syntax needs no change here. */
+  const pgr = (limit?: number, skip?: number, sorted = false) => {
+    const ctx = dialect.createContext();
+    dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
+    return ctx.sql;
+  };
   const find = <E>(entity: typeof VectorItem | typeof L2Item, query: object) => {
     const ctx = dialect.createContext();
     dialect.find(ctx, entity, query);
@@ -114,20 +120,26 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
       $limit: 10,
     });
 
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance(metric, ph(1))} LIMIT 10`);
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance(metric, ph(1))}${pgr(10, undefined, true)}`,
+    );
     expect(values).toEqual(['[1,2,3]']);
   });
 
   it('should default to cosine', () => {
     const { sql } = find(VectorItem, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
 
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance('cosine', ph(1))} LIMIT 10`);
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance('cosine', ph(1))}${pgr(10, undefined, true)}`,
+    );
   });
 
   it("should take the field's own default metric", () => {
     const { sql } = find(L2Item, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
 
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('L2Item')} ORDER BY ${distance('l2', ph(1))} LIMIT 10`);
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('L2Item')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
+    );
   });
 
   it('should compose with a filter and a regular sort', () => {
@@ -140,7 +152,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
 
     expect(sql).toBe(
       `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${q('name')} = ${ph(1)} ` +
-        `ORDER BY ${distance('cosine', ph(2))}, ${q('name')} DESC LIMIT 10`,
+        `ORDER BY ${distance('cosine', ph(2))}, ${q('name')} DESC${pgr(10, undefined, true)}`,
     );
     expect(values).toEqual(['test', '[1,2,3]']);
   });
@@ -154,7 +166,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
 
     expect(sql).toBe(
       `SELECT ${q('id')}, ${distance('cosine', ph(1))} AS ${q('similarity')} ` +
-        `FROM ${q('VectorItem')} ORDER BY ${q('similarity')} LIMIT 10`,
+        `FROM ${q('VectorItem')} ORDER BY ${q('similarity')}${pgr(10, undefined, true)}`,
     );
   });
 
@@ -208,7 +220,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     expect(sql).toBe(
       `SELECT ${q('id')}, ${distance('cosine', ph(1))} AS ${q('score')} FROM ${q('VectorItem')} ` +
         `WHERE ${q('name')} = ${ph(2)} AND ${distance('cosine', ph(3))} < ${ph(4)} ` +
-        `ORDER BY ${q('score')} LIMIT 30`,
+        `ORDER BY ${q('score')}${pgr(30, undefined, true)}`,
     );
     expect(values).toEqual(['[1,2,3]', 'docs', '[1,2,3]', 0.35]);
   });

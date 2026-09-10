@@ -36,11 +36,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual(['BEGIN TRANSACTION']);
   }
 
-  /** SQLite has no standalone `OFFSET` either - `LIMIT -1` is its own spelling of "no limit". */
-  protected override expected$skipClause(): string {
-    return 'LIMIT -1 OFFSET 30';
-  }
-
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.upsert(

@@ -111,12 +111,13 @@ describe('BunSqlQuerier', () => {
       expect(getConn(querier)).toBeUndefined();
     });
 
-    it('should skip release when connection has no release method', async () => {
-      const conn = { unsafe: vi.fn().mockResolvedValue([]) };
-      const sql = { reserve: vi.fn().mockResolvedValue(conn) };
-      const querier = new BunSqlQuerier(sql as unknown as SQL, new SqliteDialect(), () => sql.reserve());
+    it('should release an unpooled connection, whose release is the one that does nothing', async () => {
+      const conn = { unsafe: vi.fn().mockResolvedValue([]), release: vi.fn() };
+      const querier = new BunSqlQuerier({} as SQL, new SqliteDialect(), async () => conn);
       await querier.run('SELECT 1');
+
       await expect(querier.release()).resolves.toBeUndefined();
+      expect(conn.release).toHaveBeenCalled();
     });
 
     it('should roll back an open transaction rather than refuse to release', async () => {

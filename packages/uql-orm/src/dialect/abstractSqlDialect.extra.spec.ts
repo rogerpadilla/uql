@@ -26,7 +26,10 @@ class TestSqlDialect extends AbstractSqlDialect {
     vectorIndexRequiresNotNull: true,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
-    defaultStringAsText: false,
+    stringSizing: 'varchar',
+    supportsUnsigned: false,
+    multipleCascadePaths: true,
+    serverSideCursors: false,
   };
 
   get escapeIdChar() {
@@ -106,6 +109,11 @@ class TestSqlDialect extends AbstractSqlDialect {
 
 describe('AbstractSqlDialect (extra coverage)', () => {
   const dialect = new TestSqlDialect();
+  const pgr = (limit?: number, skip?: number, sorted = false) => {
+    const ctx = dialect.createContext();
+    dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
+    return ctx.sql;
+  };
 
   it('selectFields with empty selectArr', () => {
     const ctx = dialect.createContext();
@@ -890,7 +898,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
         $limit: 10,
         $skip: 5,
       });
-      expect(ctx.sql).toBe('SELECT DISTINCT `email` FROM `User` LIMIT 10 OFFSET 5');
+      expect(ctx.sql).toBe(`SELECT DISTINCT \`email\` FROM \`User\`${pgr(10, 5, false)}`);
       expect(ctx.values).toEqual([]);
     });
   });

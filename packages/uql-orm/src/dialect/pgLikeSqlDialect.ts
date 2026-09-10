@@ -53,7 +53,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     vectorIndexRequiresNotNull: false,
     vectorSupportsLength: true,
     supportsTimestamptz: true,
-    defaultStringAsText: true,
+    stringSizing: 'bounded-text',
+    supportsUnsigned: false,
+    multipleCascadePaths: true,
+    serverSideCursors: true,
   };
 
   override readonly escapeIdChar = '"';

@@ -52,7 +52,10 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
-    defaultStringAsText: false,
+    stringSizing: 'varchar',
+    supportsUnsigned: true,
+    multipleCascadePaths: true,
+    serverSideCursors: false,
   };
 
   /**

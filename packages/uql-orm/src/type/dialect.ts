@@ -135,8 +135,35 @@ export interface EngineFeatures {
   readonly vectorSupportsLength: boolean;
   /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
   readonly supportsTimestamptz: boolean;
-  /** Whether the dialect defaults to TEXT for strings when no length is specified (e.g. Postgres). */
-  readonly defaultStringAsText: boolean;
+  /**
+   * How a `string` column is sized: `text` is always the unbounded type whatever length was asked
+   * for (SQLite, whose affinity makes a bound meaningless), `bounded-text` takes the bound when there
+   * is one and the unbounded type otherwise (the Postgres family), `varchar` is always bounded and
+   * falls back to 255 (the MySQL family, SQL Server).
+   *
+   * Three-way for the reason {@link commentSyntax} is: a boolean puts SQLite and Postgres on the
+   * same branch, and they need different answers.
+   */
+  readonly stringSizing: 'text' | 'bounded-text' | 'varchar';
+  /** Whether the engine has unsigned integers, so `@Field({ unsigned: true })` reaches the column. */
+  readonly supportsUnsigned: boolean;
+  /**
+   * Whether one table can be reached by two cascading foreign-key paths. SQL Server refuses the
+   * constraint outright ("may cause cycles or multiple cascade paths", error 1785) and Oracle
+   * likewise, so a cascade is downgraded to `NO ACTION` there rather than emitting DDL the engine
+   * rejects - which would otherwise fail on any diamond-shaped schema at create time.
+   */
+  readonly multipleCascadePaths: boolean;
+  /**
+   * Whether the engine has SQL-level cursors (`DECLARE`/`FETCH FORWARD`/`CLOSE`), which is how a
+   * driver with no cursor API of its own still streams a result set instead of buffering it - see
+   * `postgres/pgCursorStream.ts`. True across the Postgres wire family, whose spelling that helper
+   * speaks; SQL Server and Oracle have cursors of their own but not this syntax.
+   *
+   * The node-`pg` family reports `true` and goes on using `pg-query-stream`: the flag says the engine
+   * has cursors, not that the driver needs them.
+   */
+  readonly serverSideCursors: boolean;
 }
 
 export interface DialectFeatures extends EngineFeatures, DriverCapabilities {}
@@ -245,14 +272,14 @@ export interface QueryDialect {
 /**
  * Supported SQL dialect identifiers.
  */
-export type SqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite';
+export type SqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite' | 'mssql';
 
 /**
  * Minimal dialect interface exposing escapeIdChar for SQL operations
  */
 export interface SqlQueryDialect extends QueryDialect {
   /**
-   * The SQL dialect name (postgres, mysql, mariadb, sqlite).
+   * The SQL dialect name (postgres, mysql, mariadb, sqlite, mssql).
    */
   readonly dialectName: SqlDialectName;
 

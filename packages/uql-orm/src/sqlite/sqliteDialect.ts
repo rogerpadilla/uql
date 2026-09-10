@@ -32,7 +32,10 @@ export class SqliteDialect extends AbstractSqlDialect {
     vectorIndexRequiresNotNull: false,
     vectorSupportsLength: false,
     supportsTimestamptz: false,
-    defaultStringAsText: true,
+    stringSizing: 'text',
+    supportsUnsigned: false,
+    multipleCascadePaths: true,
+    serverSideCursors: false,
   };
 
   override readonly dialectName = 'sqlite';

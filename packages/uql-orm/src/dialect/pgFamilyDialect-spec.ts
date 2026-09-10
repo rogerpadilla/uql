@@ -312,7 +312,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $limit: 10,
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
+    expect(res.sql).toBe(`SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2)${this.pgr(10)}`);
     expect(res.values).toEqual(['some', ['1', '2', '3']]);
 
     res = this.exec((ctx) =>
@@ -322,7 +322,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $limit: 10,
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2) LIMIT 10');
+    expect(res.sql).toBe(`SELECT "id" FROM "User" WHERE "name" = $1 AND "companyId" = ANY($2)${this.pgr(10)}`);
     expect(res.values).toEqual(['some', ['1', '2', '3']]);
   }
 
@@ -376,7 +376,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       'SELECT "id" FROM "User" WHERE "creatorId" = $1' +
         ' AND ("name" = ANY($2) OR "email" = $3)' +
         ' AND "id" = $4 AND "email" = $5' +
-        ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
+        ` ORDER BY "name", "createdAt" DESC${this.pgr(10, 50, true)}`,
     );
     expect(res3.values).toEqual(['1', ['a', 'b', 'c'], 'abc@example.com', '1', 'e']);
 
@@ -401,7 +401,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res4.sql).toBe(
       'SELECT "id" FROM "User" WHERE ("creatorId" = $1 AND "id" = $2 AND "email" = $3)' +
         ' OR ("name" = ANY($4) AND "email" = $5)' +
-        ' ORDER BY "name", "createdAt" DESC LIMIT 10 OFFSET 50',
+        ` ORDER BY "name", "createdAt" DESC${this.pgr(10, 50, true)}`,
     );
     expect(res4.values).toEqual(['1', '1', 'e', ['a', 'b', 'c'], 'abc@example.com']);
   }
@@ -741,7 +741,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || \' \' || "description") @@ WEBSEARCH_TO_TSQUERY($1) AND "code" = $2 LIMIT 30',
+      `SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || ' ' || "description") @@ WEBSEARCH_TO_TSQUERY($1) AND "code" = $2${this.pgr(30)}`,
     );
     expect(res.values).toEqual(['some text', '1']);
 
@@ -757,7 +757,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "User" WHERE TO_TSVECTOR("name") @@ WEBSEARCH_TO_TSQUERY($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3 LIMIT 10',
+      `SELECT "id" FROM "User" WHERE TO_TSVECTOR("name") @@ WEBSEARCH_TO_TSQUERY($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }

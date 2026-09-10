@@ -1,14 +1,6 @@
 import type { SQL } from 'bun';
 import { describe, expect, test } from 'vitest';
-import {
-  getAffectedRows,
-  getInsertId,
-  inferDialectName,
-  isPoolableDialect,
-  isReservedConnection,
-  normalizeBunOpts,
-  normalizeRows,
-} from './bunSql.util.js';
+import { getAffectedRows, getInsertId, inferDialectName, normalizeBunOpts, normalizeRows } from './bunSql.util.js';
 
 describe('bunSql.util', () => {
   describe('inferDialectName', () => {
@@ -54,6 +46,13 @@ describe('bunSql.util', () => {
 
     test('should default to postgres', () => {
       expect(inferDialectName({} as SQL.Options)).toBe('postgres');
+    });
+
+    test('should refuse an engine bun cannot dial rather than reading it as postgres', () => {
+      expect(() => inferDialectName({ url: 'mssql://localhost' } as SQL.Options)).toThrow(
+        'Bun SQL has no mssql driver; use the dedicated uql-orm/mssql pool',
+      );
+      expect(() => inferDialectName({ url: 'sqlserver://localhost' } as SQL.Options)).toThrow('uql-orm/mssql pool');
     });
   });
 
@@ -104,11 +103,22 @@ describe('bunSql.util', () => {
     test('prefers affectedRows over count', () => {
       expect(getAffectedRows(Object.assign([], { affectedRows: 2, count: 1 }) as any)).toBe(2);
     });
-    test('uses count when affectedRows absent', () => {
-      expect(getAffectedRows(Object.assign([], { count: 3 }))).toBe(3);
+
+    test('uses count when the adapter leaves affectedRows null (postgres, sqlite)', () => {
+      expect(getAffectedRows(Object.assign([], { count: 3, affectedRows: null }) as any)).toBe(3);
     });
-    test('defaults to 0', () => {
-      expect(getAffectedRows([] as any)).toBe(0);
+
+    test('uses count when a mysql read reports affectedRows 0', () => {
+      expect(getAffectedRows(Object.assign([{}, {}], { count: 2, affectedRows: 0 }) as any)).toBe(2);
+    });
+
+    test('counts the rows a returning insert wrote, not the rows it returned', () => {
+      expect(getAffectedRows(Object.assign([{}], { count: 1, affectedRows: null }) as any)).toBe(1);
+    });
+
+    test('reports nothing when the header carries neither, leaving the rows to answer', () => {
+      expect(getAffectedRows([] as any)).toBeUndefined();
+      expect(getAffectedRows(Object.assign([{}], {}) as any)).toBeUndefined();
     });
   });
 
@@ -118,25 +128,6 @@ describe('bunSql.util', () => {
     });
     test('returns numeric id as-is', () => {
       expect(getInsertId(Object.assign([], { lastInsertRowid: 7 }) as any)).toBe(7);
-    });
-  });
-
-  describe('isReservedConnection', () => {
-    test('true when release is a function', () => {
-      expect(isReservedConnection({ release: () => {} })).toBe(true);
-    });
-    test('false otherwise', () => {
-      expect(isReservedConnection(null)).toBe(false);
-      expect(isReservedConnection({})).toBe(false);
-    });
-  });
-
-  describe('isPoolableDialect', () => {
-    test('sqlite is not poolable', () => {
-      expect(isPoolableDialect('sqlite')).toBe(false);
-    });
-    test('postgres is poolable', () => {
-      expect(isPoolableDialect('postgres')).toBe(true);
     });
   });
 

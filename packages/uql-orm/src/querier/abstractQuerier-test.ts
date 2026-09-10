@@ -2136,6 +2136,60 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(collected).toHaveLength(0);
   }
 
+  async shouldFindManyStreamInsideATransaction() {
+    await this.querier.beginTransaction();
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+
+    const collected: User[] = [];
+    for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
+      collected.push(row);
+    }
+
+    expect(collected.map((it) => it.name)).toEqual(['Alice', 'Bob']);
+    // The stream must leave the caller's transaction open, and its own rows visible to it.
+    expect(this.querier.hasOpenTransaction).toBe(true);
+    expect(await this.querier.count(User, {})).toBe(2);
+    await this.querier.commitTransaction();
+  }
+
+  async shouldReleaseTheStreamWhenTheCallerStopsEarly() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+      { name: 'Charlie', email: 'charlie@test.com' },
+    ]);
+
+    for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
+      expect(row.name).toBe('Alice');
+      break;
+    }
+
+    // An abandoned cursor holds its connection, so what proves the cleanup is the next statement.
+    expect(await this.querier.count(User, {})).toBe(3);
+  }
+
+  async shouldStreamTwiceOverOneQuerier() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+
+    const first: User[] = [];
+    for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
+      first.push(row);
+    }
+    const second: User[] = [];
+    for await (const row of this.querier.findManyStream(User, { $sort: { name: -1 } })) {
+      second.push(row);
+    }
+
+    expect(first.map((it) => it.name)).toEqual(['Alice', 'Bob']);
+    expect(second.map((it) => it.name)).toEqual(['Bob', 'Alice']);
+  }
+
   async shouldAggregate() {
     await this.querier.insertMany(User, [
       { name: 'Alice', createdAt: 100 },

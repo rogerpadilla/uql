@@ -50,6 +50,11 @@ export const DIALECT_DEFAULTS: Readonly<Record<SqlDialectName, DialectDefaults>>
   mysql: { expressions: MYSQL, wrapTypes: MYSQL_LARGE_TYPES },
   mariadb: { expressions: { ...MYSQL, uuidv7: 'UUID_v7()' }, wrapTypes: MYSQL_LARGE_TYPES },
   sqlite: { expressions: ANSI },
+  // `SYSUTCDATETIME()` over `CURRENT_TIMESTAMP`, which is local time in the server's zone. No
+  // `uuidv7`: `NEWSEQUENTIALID()` is an ordered v4 GUID, so it carries no readable timestamp and
+  // does not sort the way a v7 does elsewhere - a `uuidv7()` default is refused rather than served
+  // something that only looks like one.
+  mssql: { expressions: { ...ANSI, now: 'SYSUTCDATETIME()', uuid: 'NEWID()' } },
 };
 
 /**

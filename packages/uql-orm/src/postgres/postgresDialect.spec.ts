@@ -1,5 +1,4 @@
 import { expect } from 'vitest';
-import { BunSqlPostgresDialect } from '../bunSql/bunSqlPostgresDialect.js';
 import { JSON_UPDATE_PAYLOADS } from '../dialect/abstractSqlDialect-spec.js';
 import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
@@ -13,11 +12,8 @@ import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilit
 class PostgresDialectSpec extends PgFamilySpec {
   readonly pgDialect = new PgDialect();
 
-  readonly wireArrayPostgresDialect = new PostgresDialect({
-    driverCapabilities: { ...POSTGRES_WIRE_DRIVER_CAPABILITIES },
-  });
-
-  readonly bunSqlPostgresDialect = new BunSqlPostgresDialect();
+  /** What `uql-orm/bunSql` builds for Postgres: the engine's dialect, with the wire driver's binding. */
+  readonly wirePostgresDialect = new PostgresDialect({ driverCapabilities: POSTGRES_WIRE_DRIVER_CAPABILITIES });
 
   constructor() {
     super(new PostgresDialect({}));
@@ -48,9 +44,8 @@ class PostgresDialectSpec extends PgFamilySpec {
 
     // Bun SQL / wire clients: array literal strings (`toPgArray`)
     res = this.exec(
-      (ctx) =>
-        this.wireArrayPostgresDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
-      this.wireArrayPostgresDialect,
+      (ctx) => this.wirePostgresDialect.find(ctx, User, { $select: { id: true }, $where: { id: { $nin: values } } }),
+      this.wirePostgresDialect,
     );
     expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" <> ALL($1)');
     expect(res.values).toEqual(['{"1","2"}']);
@@ -147,13 +142,13 @@ class PostgresDialectSpec extends PgFamilySpec {
   shouldUpdateWithJsonPushViaBunSql() {
     const { sql, values } = this.exec(
       (ctx) =>
-        this.bunSqlPostgresDialect.update(
+        this.wirePostgresDialect.update(
           ctx,
           Company,
           { $where: { id: '1' } },
           { kind: JSON_UPDATE_PAYLOADS.push, updatedAt: 123 },
         ),
-      this.bunSqlPostgresDialect,
+      this.wirePostgresDialect,
     );
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',

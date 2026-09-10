@@ -105,7 +105,10 @@ export const mongoDialectFeatures: DialectFeatures = {
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
   supportsTimestamptz: false,
-  defaultStringAsText: false,
+  stringSizing: 'bounded-text',
+  supportsUnsigned: false,
+  multipleCascadePaths: true,
+  serverSideCursors: false,
 };
 
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */

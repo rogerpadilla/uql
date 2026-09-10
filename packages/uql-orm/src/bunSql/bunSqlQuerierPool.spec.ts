@@ -72,9 +72,12 @@ describe('BunSqlQuerierPool', () => {
 
     const querier = await pool.getQuerier();
     expect(reserve).not.toHaveBeenCalled();
-    await querier.all('SELECT 1');
-    expect((querier as any).conn).toBe(pool.sql);
+
+    expect(await querier.all('SELECT 1')).toEqual([{ n: 1 }]);
+    expect(pool.sql.unsafe).toHaveBeenCalledWith('PRAGMA foreign_keys = ON');
+    // Releasing an unpooled handle must leave it usable: it is the pool's, not this querier's.
     await querier.release();
+    expect(await pool.all('SELECT 1')).toEqual([{ n: 1 }]);
   });
 
   it('should close the sql client on end', async () => {

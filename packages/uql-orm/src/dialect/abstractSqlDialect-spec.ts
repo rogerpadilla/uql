@@ -207,6 +207,21 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return this.dialect.placeholder(n);
   }
 
+  /**
+   * The pager clause this dialect emits, asked of the dialect rather than written out: `LIMIT`/
+   * `OFFSET` on most, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` on SQL Server and Oracle. `sorted`
+   * says whether the statement under test already carries an `ORDER BY`, which is what decides
+   * whether those two have to synthesize one.
+   *
+   * Asked of the dialect rather than spelled out, so a second pager syntax needs no change to the
+   * 54 assertions that carry one.
+   */
+  protected pgr(limit?: number, skip?: number, sorted = false): string {
+    const ctx = this.dialect.createContext();
+    this.dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
+    return ctx.sql;
+  }
+
   protected neSql(field: string, n = 1): string {
     const ph = this.ph(n);
     switch (this.dialect.dialectName) {
@@ -497,11 +512,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe("UPDATE `Company` SET `kind` = 'value', `updatedAt` = ? WHERE `id` = ?");
+    const e = this.dialect.escapeIdChar;
+    expect(sql).toBe(
+      `UPDATE ${e}Company${e} SET ${e}kind${e} = 'value', ${e}updatedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)}`,
+    );
     expect(values).toEqual([123, '1']);
   }
 
   shouldUpdateWithJsonbField() {
+    const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
@@ -513,7 +532,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
+    expect(sql).toBe(
+      `UPDATE ${e}Company${e} SET ${e}kind${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
+    );
     expect(values).toEqual(['{"private":1}', 123, '1']);
   }
 
@@ -784,6 +805,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldBeSecure() {
+    const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true, something: true } as any,
@@ -797,7 +819,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         } as any,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `id` = ? AND `something` = ? ORDER BY `id`, `something`');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}something${e} = ${this.ph(2)} ORDER BY ${e}id${e}, ${e}something${e}`,
+    );
     expect(res.values).toEqual([1, 1]);
 
     res = this.exec((ctx) =>
@@ -808,7 +832,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       } as any),
     );
     expect(res.sql).toBe(
-      'INSERT INTO `User` (`name`, `createdAt`, `id`) VALUES (?, ?, ?)' + this.returningClause(User),
+      `INSERT INTO ${e}User${e} (${e}name${e}, ${e}createdAt${e}, ${e}id${e}) VALUES (${this.ph(1)}, ${this.ph(2)}, ${this.ph(3)})` +
+        this.returningClause(User),
     );
     expect(res.values).toEqual(['Some Name', 1, anyUuid]);
 
@@ -826,7 +851,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         } as any,
       ),
     );
-    expect(res.sql).toBe('UPDATE `User` SET `name` = ?, `updatedAt` = ? WHERE `something` = ?');
+    expect(res.sql).toBe(
+      `UPDATE ${e}User${e} SET ${e}name${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}something${e} = ${this.ph(3)}`,
+    );
     expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
     res = this.exec((ctx) =>
@@ -834,7 +861,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { something: 'anything' } as any,
       }),
     );
-    expect(res.sql).toBe('DELETE FROM `User` WHERE `something` = ?');
+    expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}something${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['anything']);
   }
 
@@ -909,13 +936,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$not() {
+    const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: { $not: [{ name: 'Some' }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT `name` = ?');
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT ${e}name${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['Some']);
 
     res = this.exec((ctx) =>
@@ -924,7 +952,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { id: { $not: '123' } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` = ?)');
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Company${e} WHERE NOT (${e}id${e} = ${this.ph(1)})`);
     expect(res.values).toEqual(['123']);
 
     res = this.exec((ctx) =>
@@ -933,7 +961,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { id: { $not: ['123', '456'] } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT (`id` IN (?, ?))');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Company${e} WHERE NOT (${e}id${e} IN (${this.ph(1)}, ${this.ph(2)}))`,
+    );
     expect(res.values).toEqual(['123', '456']);
 
     res = this.exec((ctx) =>
@@ -942,7 +972,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { id: '123', name: { $not: { $startsWith: 'a' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE `id` = ? AND NOT (`name` LIKE ?)');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Company${e} WHERE ${e}id${e} = ${this.ph(1)} AND NOT (${e}name${e} LIKE ${this.ph(2)})`,
+    );
     expect(res.values).toEqual(['123', 'a%']);
 
     res = this.exec((ctx) =>
@@ -951,7 +983,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Company` WHERE NOT ((`name` LIKE ? AND `name` LIKE ?))');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Company${e} WHERE NOT ((${e}name${e} LIKE ${this.ph(1)} AND ${e}name${e} LIKE ${this.ph(2)}))`,
+    );
     expect(res.values).toEqual(['a%', '%z']);
 
     res = this.exec((ctx) =>
@@ -960,7 +994,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
     );
-    expect(res.sql).toBe(`SELECT \`id\` FROM \`User\` WHERE NOT (\`name\` LIKE ? AND ${this.neSql('`name`', 2)})`);
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)})`,
+    );
     expect(res.values).toEqual(['Some', 'Something']);
 
     res = this.exec((ctx) =>
@@ -969,7 +1005,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $not: [{ name: 'abc' }, { creatorId: '1' }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE NOT (`name` = ? AND `creatorId` = ?)');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE NOT (${e}name${e} = ${this.ph(1)} AND ${e}creatorId${e} = ${this.ph(2)})`,
+    );
     expect(res.values).toEqual(['abc', '1']);
 
     res = this.exec((ctx) =>
@@ -978,7 +1016,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { companyId: '1', name: { $not: { $startsWith: 'a' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Tax` WHERE `companyId` = ? AND NOT (`name` LIKE ?)');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Tax${e} WHERE ${e}companyId${e} = ${this.ph(1)} AND NOT (${e}name${e} LIKE ${this.ph(2)})`,
+    );
     expect(res.values).toEqual(['1', 'a%']);
   }
 
@@ -1047,6 +1087,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$orAnd$and() {
+    const e = this.dialect.escapeIdChar;
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1054,7 +1095,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `creatorId` = ? AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ?',
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND (${e}name${e} IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)}) OR ${e}email${e} = ${this.ph(5)}) AND ${e}id${e} = ${this.ph(6)}`,
     );
     expect(res.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1']);
 
@@ -1070,8 +1111,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res2.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `creatorId` = ?' +
-        ' AND (`name` IN (?, ?, ?) OR `email` = ?) AND `id` = ? AND `email` = ?',
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)}` +
+        ` AND (${e}name${e} IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)}) OR ${e}email${e} = ${this.ph(5)}) AND ${e}id${e} = ${this.ph(6)} AND ${e}email${e} = ${this.ph(7)}`,
     );
     expect(res2.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1', 'e']);
 
@@ -1090,10 +1131,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res3.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `creatorId` = ?' +
-        ' AND (`name` IN (?, ?, ?) OR `email` = ?)' +
-        ' AND `id` = ? AND `email` = ?' +
-        ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)}` +
+        ` AND (${e}name${e} IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)}) OR ${e}email${e} = ${this.ph(5)})` +
+        ` AND ${e}id${e} = ${this.ph(6)} AND ${e}email${e} = ${this.ph(7)}` +
+        ` ORDER BY ${e}name${e}, ${e}createdAt${e} DESC${this.pgr(10, 50, true)}`,
     );
     expect(res3.values).toEqual(['1', 'a', 'b', 'c', 'abc@example.com', '1', 'e']);
 
@@ -1116,9 +1157,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res4.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (`creatorId` = ? AND `id` = ? AND `email` = ?)' +
-        ' OR (`name` IN (?, ?, ?) AND `email` = ?)' +
-        ' ORDER BY `name`, `createdAt` DESC LIMIT 10 OFFSET 50',
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}creatorId${e} = ${this.ph(1)} AND ${e}id${e} = ${this.ph(2)} AND ${e}email${e} = ${this.ph(3)})` +
+        ` OR (${e}name${e} IN (${this.ph(4)}, ${this.ph(5)}, ${this.ph(6)}) AND ${e}email${e} = ${this.ph(7)})` +
+        ` ORDER BY ${e}name${e}, ${e}createdAt${e} DESC${this.pgr(10, 50, true)}`,
     );
     expect(res4.values).toEqual(['1', '1', 'e', 'a', 'b', 'c', 'abc@example.com']);
   }
@@ -1132,7 +1173,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 3,
       }),
     );
-    expect(sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} LIMIT 3`);
+    expect(sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)}${this.pgr(3)}`);
     expect(values).toEqual(['some']);
   }
 
@@ -1179,7 +1220,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}createdAt${e} >= ${this.ph(1)} AND ${e}createdAt${e} <= ${this.ph(2)}) LIMIT 10`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}createdAt${e} >= ${this.ph(1)} AND ${e}createdAt${e} <= ${this.ph(2)})${this.pgr(10)}`,
     );
     expect(res.values).toEqual([123, 999]);
 
@@ -1191,7 +1232,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}createdAt${e} > ${this.ph(1)} AND ${e}createdAt${e} < ${this.ph(2)}) LIMIT 10`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}createdAt${e} > ${this.ph(1)} AND ${e}createdAt${e} < ${this.ph(2)})${this.pgr(10)}`,
     );
     expect(res.values).toEqual([123, 999]);
   }
@@ -1249,7 +1290,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${this.neSql(`${e}companyId${e}`, 2)} LIMIT 20`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${this.neSql(`${e}companyId${e}`, 2)}${this.pgr(20)}`,
     );
     expect(values).toEqual(['some', '5']);
   }
@@ -1264,7 +1305,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NULL LIMIT 5`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NULL${this.pgr(5)}`,
     );
     expect(res.values).toEqual(['123']);
 
@@ -1276,12 +1317,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NOT NULL LIMIT 5`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}creatorId${e} = ${this.ph(1)} AND ${e}companyId${e} IS NOT NULL${this.pgr(5)}`,
     );
     expect(res.values).toEqual(['123']);
   }
 
   shouldFind$in() {
+    const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1289,7 +1331,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 10,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}companyId${e} IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)})${this.pgr(10)}`,
+    );
     expect(res.values).toEqual(['some', '1', '2', '3']);
 
     res = this.exec((ctx) =>
@@ -1299,7 +1343,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 10,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` IN (?, ?, ?) LIMIT 10');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}companyId${e} IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)})${this.pgr(10)}`,
+    );
     expect(res.values).toEqual(['some', '1', '2', '3']);
   }
 
@@ -1330,6 +1376,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$nin() {
+    const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
@@ -1337,7 +1384,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 10,
       }),
     );
-    expect(sql).toBe('SELECT `id` FROM `User` WHERE `name` = ? AND `companyId` NOT IN (?, ?, ?) LIMIT 10');
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}companyId${e} NOT IN (${this.ph(2)}, ${this.ph(3)}, ${this.ph(4)})${this.pgr(10)}`,
+    );
     expect(values).toEqual(['some', '1', '2', '3']);
   }
 
@@ -1438,7 +1487,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}tax${e}.${e}id${e} ${e}tax.id${e}, ${e}tax${e}.${e}name${e} ${e}tax.name${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
   }
 
@@ -1651,7 +1700,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ` INNER JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${this.neSql(`${e}measureUnit${e}.${e}name${e}`)} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL` +
         ` LEFT JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e}` +
         ` WHERE ${e}Item${e}.${e}salePrice${e} >= ${this.ph(2)} AND ${e}Item${e}.${e}name${e} LIKE ${this.ph(3)}` +
-        ` ORDER BY ${e}tax${e}.${e}name${e}, ${e}measureUnit${e}.${e}name${e}, ${e}Item${e}.${e}createdAt${e} DESC LIMIT 100`,
+        ` ORDER BY ${e}tax${e}.${e}name${e}, ${e}measureUnit${e}.${e}name${e}, ${e}Item${e}.${e}createdAt${e} DESC${this.pgr(100, undefined, true)}`,
     );
     expect(values).toEqual(['unidad', 1000, 'A%']);
   }
@@ -1806,7 +1855,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, (SELECT COUNT(*) ${e}_uql_count${e} FROM ${e}ItemTag${e} WHERE ${e}ItemTag${e}.${e}itemId${e} = ${e}Item${e}.${e}id${e}) ${e}tagsCount${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
   }
 
@@ -1829,7 +1878,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit${e}.${e}categoryId${e} ${e}measureUnit.categoryId${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
 
     res = this.exec((ctx) =>
@@ -1849,7 +1898,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}Item${e}.${e}id${e}, ${e}Item${e}.${e}name${e}, ${e}Item${e}.${e}code${e}, ${e}measureUnit${e}.${e}id${e} ${e}measureUnit.id${e}, ${e}measureUnit${e}.${e}name${e} ${e}measureUnit.name${e}, ${e}measureUnit.category${e}.${e}id${e} ${e}measureUnit.category.id${e}, ${e}measureUnit.category${e}.${e}name${e} ${e}measureUnit.category.name${e} FROM ${e}Item${e} LEFT JOIN ${e}MeasureUnit${e} ${e}measureUnit${e} ON ${e}measureUnit${e}.${e}id${e} = ${e}Item${e}.${e}measureUnitId${e} AND ${e}measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}measureUnit.category${e} ON ${e}measureUnit.category${e}.${e}id${e} = ${e}measureUnit${e}.${e}categoryId${e} AND ${e}measureUnit.category${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
 
     res = this.exec((ctx) =>
@@ -1878,7 +1927,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}ItemAdjustment${e}.${e}id${e}, ${e}ItemAdjustment${e}.${e}buyPrice${e}, ${e}ItemAdjustment${e}.${e}number${e}, ${e}item${e}.${e}id${e} ${e}item.id${e}, ${e}item${e}.${e}name${e} ${e}item.name${e}, ${e}item.measureUnit${e}.${e}id${e} ${e}item.measureUnit.id${e}, ${e}item.measureUnit${e}.${e}name${e} ${e}item.measureUnit.name${e}, ${e}item.measureUnit.category${e}.${e}id${e} ${e}item.measureUnit.category.id${e}, ${e}item.measureUnit.category${e}.${e}name${e} ${e}item.measureUnit.category.name${e} FROM ${e}ItemAdjustment${e} INNER JOIN ${e}Item${e} ${e}item${e} ON ${e}item${e}.${e}id${e} = ${e}ItemAdjustment${e}.${e}itemId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}item.measureUnit${e} ON ${e}item.measureUnit${e}.${e}id${e} = ${e}item${e}.${e}measureUnitId${e} AND ${e}item.measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}item.measureUnit.category${e} ON ${e}item.measureUnit.category${e}.${e}id${e} = ${e}item.measureUnit${e}.${e}categoryId${e} AND ${e}item.measureUnit.category${e}.${e}deletedAt${e} IS NULL LIMIT 100`,
+      `SELECT ${e}ItemAdjustment${e}.${e}id${e}, ${e}ItemAdjustment${e}.${e}buyPrice${e}, ${e}ItemAdjustment${e}.${e}number${e}, ${e}item${e}.${e}id${e} ${e}item.id${e}, ${e}item${e}.${e}name${e} ${e}item.name${e}, ${e}item.measureUnit${e}.${e}id${e} ${e}item.measureUnit.id${e}, ${e}item.measureUnit${e}.${e}name${e} ${e}item.measureUnit.name${e}, ${e}item.measureUnit.category${e}.${e}id${e} ${e}item.measureUnit.category.id${e}, ${e}item.measureUnit.category${e}.${e}name${e} ${e}item.measureUnit.category.name${e} FROM ${e}ItemAdjustment${e} INNER JOIN ${e}Item${e} ${e}item${e} ON ${e}item${e}.${e}id${e} = ${e}ItemAdjustment${e}.${e}itemId${e} LEFT JOIN ${e}MeasureUnit${e} ${e}item.measureUnit${e} ON ${e}item.measureUnit${e}.${e}id${e} = ${e}item${e}.${e}measureUnitId${e} AND ${e}item.measureUnit${e}.${e}deletedAt${e} IS NULL LEFT JOIN ${e}MeasureUnitCategory${e} ${e}item.measureUnit.category${e} ON ${e}item.measureUnit.category${e}.${e}id${e} = ${e}item.measureUnit${e}.${e}categoryId${e} AND ${e}item.measureUnit.category${e}.${e}deletedAt${e} IS NULL${this.pgr(100)}`,
     );
   }
 
@@ -1891,7 +1940,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 1,
       }),
     );
-    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} LIMIT 1`);
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}${this.pgr(1)}`);
     expect(res.values).toEqual(['9']);
 
     res = this.exec((ctx) =>
@@ -1902,7 +1951,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} LIMIT 1`,
+      `SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}${this.pgr(1)}`,
     );
     expect(res.values).toEqual(['9']);
 
@@ -1914,7 +1963,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}creatorId${e} = ${this.ph(2)} LIMIT 1`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} = ${this.ph(1)} AND ${e}creatorId${e} = ${this.ph(2)}${this.pgr(1)}`,
     );
     expect(res.values).toEqual(['something', '123']);
 
@@ -1924,14 +1973,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $limit: 25,
       }),
     );
-    expect(res.sql).toBe(`SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e} LIMIT 25`);
+    expect(res.sql).toBe(`SELECT ${e}id${e}, ${e}name${e}, ${e}creatorId${e} FROM ${e}User${e}${this.pgr(25)}`);
   }
 
   /** Zero rows is a page like any other; read as "unset" it returned the whole table instead. */
   shouldFind$limitZero() {
     const e = this.dialect.escapeIdChar;
     const res = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $limit: 0 }));
-    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e} LIMIT 0`);
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}User${e}${this.pgr(0)}`);
   }
 
   /** A page arrives from arithmetic and from REST query strings, so it is checked before it is emitted. */
@@ -1946,12 +1995,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
-  /**
-   * The `OFFSET` clause a bare `$skip` produces. The MySQL family has no standalone `OFFSET` - it is
-   * only legal after a `LIMIT` - so those dialects precede it with their "all remaining rows" count.
-   */
+  /** The clause a bare `$skip` produces, minus the leading space its call site already writes. */
   protected expected$skipClause(): string {
-    return 'OFFSET 30';
+    return this.pgr(undefined, 30).trimStart();
   }
 
   shouldFind$skip() {
@@ -2095,13 +2141,16 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFind$whereRaw() {
+    const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
         $where: { $and: [{ companyId: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
-    expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `companyId` = ? AND SUM(salePrice) > 500');
+    expect(res.sql).toBe(
+      `SELECT ${e}creatorId${e} FROM ${e}Item${e} WHERE ${e}companyId${e} = ${this.ph(1)} AND SUM(salePrice) > 500`,
+    );
     expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
@@ -2110,7 +2159,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $or: [{ companyId: '1' }, { id: '5' }, raw`SUM(salePrice) > 500`] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `companyId` = ? OR `id` = ? OR SUM(salePrice) > 500');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE ${e}companyId${e} = ${this.ph(1)} OR ${e}id${e} = ${this.ph(2)} OR SUM(salePrice) > 500`,
+    );
     expect(res.values).toEqual(['1', '5']);
 
     res = this.exec((ctx) =>
@@ -2119,7 +2170,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $or: [{ id: '1' }, raw`SUM(salePrice) > 500`] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `id` = ? OR SUM(salePrice) > 500');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE ${e}id${e} = ${this.ph(1)} OR SUM(salePrice) > 500`,
+    );
     expect(res.values).toEqual(['1']);
 
     res = this.exec((ctx) =>
@@ -2128,7 +2181,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $or: [raw`SUM(salePrice) > 500`, { id: '1' }, { companyId: '1' }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500 OR `id` = ? OR `companyId` = ?');
+    expect(res.sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500 OR ${e}id${e} = ${this.ph(1)} OR ${e}companyId${e} = ${this.ph(2)}`,
+    );
     expect(res.values).toEqual(['1', '1']);
 
     res = this.exec((ctx) =>
@@ -2137,7 +2192,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $and: [raw`SUM(salePrice) > 500`] },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500`);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -2145,7 +2200,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: raw`SUM(salePrice) > 500`,
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE SUM(salePrice) > 500');
+    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500`);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -2153,7 +2208,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { $or: [{ id: { $in: ['1', '2'] } }, { code: 'abc' }] },
       }),
     );
-    expect(res.sql).toBe('SELECT `creatorId` FROM `Item` WHERE `id` IN (?, ?) OR `code` = ?');
+    expect(res.sql).toBe(
+      `SELECT ${e}creatorId${e} FROM ${e}Item${e} WHERE ${e}id${e} IN (${this.ph(1)}, ${this.ph(2)}) OR ${e}code${e} = ${this.ph(3)}`,
+    );
     expect(res.values).toEqual(['1', '2', 'abc']);
   }
 
@@ -2169,7 +2226,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}createdAt${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}createdAt${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['Some%']);
 
@@ -2183,7 +2240,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['Some%', 'Something']);
   }
@@ -2201,7 +2258,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value]);
 
@@ -2215,7 +2272,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value, 'Something']);
   }
@@ -2232,7 +2289,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['%Some']);
 
@@ -2246,7 +2303,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['%Some', 'Something']);
   }
@@ -2264,7 +2321,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value]);
 
@@ -2278,7 +2335,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value, 'Something']);
   }
@@ -2295,7 +2352,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['%Some%']);
 
@@ -2309,7 +2366,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['%Some%', 'Something']);
   }
@@ -2327,7 +2384,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value]);
 
@@ -2341,7 +2398,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value, 'Something']);
   }
@@ -2358,7 +2415,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}name${e} LIKE ${this.ph(1)} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['Some']);
 
@@ -2372,7 +2429,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${e}name${e} LIKE ${this.ph(1)} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual(['Some', 'Something']);
   }
@@ -2390,7 +2447,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${one.sql} ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value]);
 
@@ -2404,7 +2461,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC LIMIT 50 OFFSET 0`,
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE (${one.sql} AND ${this.neSql(`${e}name${e}`, 2)}) ORDER BY ${e}name${e}, ${e}id${e} DESC${this.pgr(50, 0, true)}`,
     );
     expect(res.values).toEqual([one.value, 'Something']);
   }
@@ -2429,7 +2486,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `Item` WHERE MATCH(`name`, `description`) AGAINST(?) AND `companyId` = ? LIMIT 30',
+      `SELECT \`id\` FROM \`Item\` WHERE MATCH(\`name\`, \`description\`) AGAINST(?) AND \`companyId\` = ?${this.pgr(30)}`,
     );
     expect(res.values).toEqual(['some text', '1']);
 
@@ -2445,12 +2502,13 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT \`id\` FROM \`User\` WHERE MATCH(\`name\`) AGAINST(?) AND ${this.neSql('`name`')} AND \`companyId\` = ? LIMIT 10`,
+      `SELECT \`id\` FROM \`User\` WHERE MATCH(\`name\`) AGAINST(?) AND ${this.neSql('`name`')} AND \`companyId\` = ?${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
 
   shouldUpdateWithJsonNull() {
+    const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(
         ctx,
@@ -2462,7 +2520,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         },
       ),
     );
-    expect(sql).toBe('UPDATE `Company` SET `kind` = ?, `updatedAt` = ? WHERE `id` = ?');
+    expect(sql).toBe(
+      `UPDATE ${e}Company${e} SET ${e}kind${e} = ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
+    );
     expect(values).toEqual([null, 123, '1']);
   }
 
@@ -2674,7 +2734,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toContain(`${e}name${e} IS NOT NULL`);
-    expect(sql).toContain('ORDER BY COUNT(*) DESC LIMIT 10');
+    expect(sql).toContain(`ORDER BY COUNT(*) DESC${this.pgr(10, undefined, true)}`);
     expect(values).toEqual([]);
   }
 
@@ -2785,7 +2845,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toContain('SELECT DISTINCT');
     expect(sql).toContain('IS NOT NULL');
-    expect(sql).toContain('LIMIT 50');
+    expect(sql).toContain(`${this.pgr(50, undefined, true)}`.trimStart());
     expect(values).toEqual([]);
   }
 
@@ -2965,7 +3025,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toContain(`GROUP BY ${e}name${e}`);
     expect(sql).toContain('ORDER BY COUNT(*) DESC');
-    expect(sql).toContain('LIMIT 10');
+    expect(sql).toContain(`${this.pgr(10, 20, true)}`.trimStart());
     expect(sql).toContain('OFFSET 20');
     expect(values).toEqual([]);
   }

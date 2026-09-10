@@ -10,7 +10,7 @@
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
-import type { DialectName } from '../type/index.js';
+import type { DialectFeatures, DialectName } from '../type/index.js';
 import { columnFamily } from '../util/field.util.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
@@ -55,6 +55,9 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   char: { category: 'string' },
   character: { category: 'string' },
   varchar: { category: 'string' },
+  varchar2: { category: 'string' },
+  nvarchar: { category: 'string' },
+  nchar: { category: 'string' },
   'character varying': { category: 'string' },
   text: { category: 'string', size: 'small' },
   tinytext: { category: 'string', size: 'tiny' },
@@ -77,6 +80,9 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   'timestamp with time zone': { category: 'timestamp', withTimezone: true },
   timestamptz: { category: 'timestamp', withTimezone: true },
   datetime: { category: 'timestamp' },
+  datetime2: { category: 'timestamp' },
+  smalldatetime: { category: 'timestamp' },
+  datetimeoffset: { category: 'timestamp', withTimezone: true },
 
   // === JSON ===
   json: { category: 'json' },
@@ -84,6 +90,7 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
 
   // === UUID ===
   uuid: { category: 'uuid' },
+  uniqueidentifier: { category: 'uuid' },
 
   // === Binary ===
   blob: { category: 'blob' },
@@ -93,6 +100,7 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   tinyblob: { category: 'blob', size: 'tiny' },
   mediumblob: { category: 'blob', size: 'medium' },
   longblob: { category: 'blob', size: 'big' },
+  image: { category: 'blob', size: 'big' },
 
   // === Vector (for AI/embeddings) ===
   vector: { category: 'vector' },
@@ -100,13 +108,26 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
   sparsevec: { category: 'sparsevec' },
 };
 
-/** The scalar half of a dialect's type map; the vector categories are added per dialect below. */
+/** The scalar half of an engine's type map; the vector categories are added per engine below. */
 type ScalarTypeMap = Record<Exclude<TypeCategory, VectorCast>, string>;
 
 /**
- * pgvector is the only engine with three vector column types, so every other dialect maps all three
- * canonical categories onto the single type it does have (see `hasNarrowVectorTypes` on the dialect, the
- * dialect-side half of the same fact).
+ * How one engine spells the canonical types: the base name per category, the variants a `size` picks
+ * instead, and the precision a `decimal` falls back to where the engine insists on one.
+ *
+ * One table per engine rather than one table per question, so every answer for an engine is stated
+ * once and in one place.
+ */
+type EngineTypes = {
+  readonly scalars: Record<TypeCategory, string>;
+  readonly sizes?: Partial<Record<TypeCategory, Record<SizeVariant, string>>>;
+  readonly decimal?: { readonly precision: number; readonly scale: number };
+};
+
+/**
+ * pgvector is the only engine with three vector column types, so every other engine maps all three
+ * canonical categories onto the single type it does have (see `hasNarrowVectorTypes` on the dialect,
+ * the dialect-side half of the same fact).
  */
 function withVectorType(scalars: ScalarTypeMap, vector: string): Record<TypeCategory, string> {
   return { ...scalars, vector, halfvec: vector, sparsevec: vector };
@@ -126,11 +147,9 @@ const PG_SCALAR_MAP: ScalarTypeMap = {
   blob: 'BYTEA',
 };
 
-const PG_TYPE_MAP: Record<TypeCategory, string> = {
-  ...PG_SCALAR_MAP,
-  vector: 'VECTOR',
-  halfvec: 'HALFVEC',
-  sparsevec: 'SPARSEVEC',
+const PG_SIZES: EngineTypes['sizes'] = {
+  integer: { tiny: 'SMALLINT', small: 'SMALLINT', medium: 'INTEGER', big: 'BIGINT' },
+  float: { tiny: 'REAL', small: 'REAL', medium: 'DOUBLE PRECISION', big: 'DOUBLE PRECISION' },
 };
 
 const MYSQL_SCALAR_MAP: ScalarTypeMap = {
@@ -147,6 +166,14 @@ const MYSQL_SCALAR_MAP: ScalarTypeMap = {
   blob: 'BLOB',
 };
 
+/** MariaDB is a MySQL fork and spells every one of these the same way, so both take the one map. */
+const MYSQL_SIZES: EngineTypes['sizes'] = {
+  integer: { tiny: 'TINYINT', small: 'SMALLINT', medium: 'MEDIUMINT', big: 'BIGINT' },
+  float: { tiny: 'FLOAT', small: 'FLOAT', medium: 'DOUBLE', big: 'DOUBLE' },
+  string: { tiny: 'TINYTEXT', small: 'TEXT', medium: 'MEDIUMTEXT', big: 'LONGTEXT' },
+  blob: { tiny: 'TINYBLOB', small: 'BLOB', medium: 'MEDIUMBLOB', big: 'LONGBLOB' },
+};
+
 const SQLITE_SCALAR_MAP: ScalarTypeMap = {
   integer: 'INTEGER',
   float: 'REAL',
@@ -159,6 +186,37 @@ const SQLITE_SCALAR_MAP: ScalarTypeMap = {
   json: 'TEXT',
   uuid: 'TEXT',
   blob: 'BLOB',
+};
+
+/**
+ * Every string column is `NVARCHAR`: `VARCHAR` is a codepage type on SQL Server and silently destroys
+ * anything outside it on write. UQL never exposes the choice, so there is nothing to weigh per column.
+ */
+const MSSQL_SCALAR_MAP: ScalarTypeMap = {
+  integer: 'INT',
+  float: 'REAL',
+  decimal: 'DECIMAL',
+  string: 'NVARCHAR',
+  boolean: 'BIT',
+  date: 'DATE',
+  time: 'TIME',
+  timestamp: 'DATETIME2',
+  json: 'NVARCHAR(MAX)',
+  uuid: 'UNIQUEIDENTIFIER',
+  blob: 'VARBINARY(MAX)',
+};
+
+/** `FLOAT` is eight bytes here and `REAL` four - the opposite of the MySQL family's spelling. */
+const MSSQL_SIZES: EngineTypes['sizes'] = {
+  integer: { tiny: 'TINYINT', small: 'SMALLINT', medium: 'INT', big: 'BIGINT' },
+  float: { tiny: 'REAL', small: 'REAL', medium: 'FLOAT', big: 'FLOAT' },
+  string: { tiny: 'NVARCHAR(255)', small: 'NVARCHAR(MAX)', medium: 'NVARCHAR(MAX)', big: 'NVARCHAR(MAX)' },
+  blob: {
+    tiny: 'VARBINARY(255)',
+    small: 'VARBINARY(MAX)',
+    medium: 'VARBINARY(MAX)',
+    big: 'VARBINARY(MAX)',
+  },
 };
 
 /** MongoDB uses BSON types, not SQL types. These are placeholders for compatibility. */
@@ -176,76 +234,31 @@ const MONGO_SCALAR_MAP: ScalarTypeMap = {
   blob: 'binData',
 };
 
-/** Every engine's scalars, and the one spelling it gives all three vector widths. */
-const CANONICAL_TO_SQL: Record<DialectName, Record<TypeCategory, string>> = {
-  postgres: PG_TYPE_MAP,
+/** Every engine's spelling of the canonical types. A new engine is one entry here and nothing else. */
+const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
+  postgres: {
+    scalars: { ...PG_SCALAR_MAP, vector: 'VECTOR', halfvec: 'HALFVEC', sparsevec: 'SPARSEVEC' },
+    sizes: PG_SIZES,
+  },
   // CockroachDB's VECTOR is native, no extension needed.
-  cockroachdb: withVectorType(PG_SCALAR_MAP, 'VECTOR'),
+  cockroachdb: { scalars: withVectorType(PG_SCALAR_MAP, 'VECTOR'), sizes: PG_SIZES },
   // MySQL does have a `VECTOR` type (26.7), but no distance function outside HeatWave and no vector
   // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
-  mysql: withVectorType(MYSQL_SCALAR_MAP, 'JSON'),
-  mariadb: withVectorType(MYSQL_SCALAR_MAP, 'VECTOR'),
-  sqlite: withVectorType(SQLITE_SCALAR_MAP, 'TEXT'),
-  mongodb: withVectorType(MONGO_SCALAR_MAP, 'array'),
-};
-
-/**
- * Size variant modifiers for SQL types.
- */
-const PG_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string>>> = {
-  integer: {
-    tiny: 'SMALLINT',
-    small: 'SMALLINT',
-    medium: 'INTEGER',
-    big: 'BIGINT',
+  mysql: {
+    scalars: withVectorType(MYSQL_SCALAR_MAP, 'JSON'),
+    sizes: MYSQL_SIZES,
+    decimal: { precision: 10, scale: 2 },
   },
-  float: {
-    tiny: 'REAL',
-    small: 'REAL',
-    medium: 'DOUBLE PRECISION',
-    big: 'DOUBLE PRECISION',
+  mariadb: {
+    scalars: withVectorType(MYSQL_SCALAR_MAP, 'VECTOR'),
+    sizes: MYSQL_SIZES,
+    decimal: { precision: 10, scale: 2 },
   },
-};
-
-/**
- * MariaDB is a MySQL fork and spells every one of these the same way, so both take the one map.
- * Listed per-dialect, MariaDB's had only `integer`: a `double` column was created `FLOAT` there, four
- * bytes where the entity asked for eight, and a `big` string or blob lost its `LONG` prefix.
- */
-const MYSQL_SIZE_MODIFIERS: Partial<Record<TypeCategory, Record<SizeVariant, string>>> = {
-  integer: {
-    tiny: 'TINYINT',
-    small: 'SMALLINT',
-    medium: 'MEDIUMINT',
-    big: 'BIGINT',
-  },
-  float: {
-    tiny: 'FLOAT',
-    small: 'FLOAT',
-    medium: 'DOUBLE',
-    big: 'DOUBLE',
-  },
-  string: {
-    tiny: 'TINYTEXT',
-    small: 'TEXT',
-    medium: 'MEDIUMTEXT',
-    big: 'LONGTEXT',
-  },
-  blob: {
-    tiny: 'TINYBLOB',
-    small: 'BLOB',
-    medium: 'MEDIUMBLOB',
-    big: 'LONGBLOB',
-  },
-};
-
-const SIZE_MODIFIERS: Record<DialectName, Partial<Record<TypeCategory, Record<SizeVariant, string>>>> = {
-  postgres: PG_SIZE_MODIFIERS,
-  cockroachdb: PG_SIZE_MODIFIERS,
-  mysql: MYSQL_SIZE_MODIFIERS,
-  sqlite: {}, // SQLite uses affinity, no size modifiers
-  mariadb: MYSQL_SIZE_MODIFIERS,
-  mongodb: {},
+  // SQLite uses affinity, so no size variants.
+  sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'TEXT') },
+  // A 2025 server has a native `VECTOR`; below that the column is JSON text, which stays queryable.
+  mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'NVARCHAR(MAX)'), sizes: MSSQL_SIZES },
+  mongodb: { scalars: withVectorType(MONGO_SCALAR_MAP, 'array') },
 };
 
 /**
@@ -361,60 +374,47 @@ export function canonicalColumnType(
 export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): string {
   if (type.raw) return type.raw;
 
-  const dialectName = dialect.dialectName;
-  let sqlType = getBaseSqlType(type, dialectName);
+  const engine = ENGINE_TYPES[dialect.dialectName];
+  const { features } = dialect;
+  // A `size` the engine spells out wins outright; anything else falls through to the rules below.
+  // `TEXT` canonicalizes to `size: 'small'`, so a string counts as unsized only where the engine
+  // declares no variant for it, which is how Postgres reaches `TEXT` rather than its base `VARCHAR`.
+  const sized = engine.sizes?.[type.category]?.[type.size!];
+  let sqlType = sized ?? engine.scalars[type.category];
 
-  if (type.category === 'string') {
-    sqlType = formatStringSqlType(type, dialect);
+  if (type.category === 'string' && !sized) {
+    sqlType = formatStringSqlType(type, engine.scalars.string, features.stringSizing);
   } else if (type.category === 'decimal') {
-    sqlType = formatDecimalSqlType(type, dialectName, sqlType);
-  } else if (isVectorCategory(type.category) && type.length && dialect.features.vectorSupportsLength) {
+    sqlType = formatDecimalSqlType(type, engine.decimal, sqlType);
+  } else if (isVectorCategory(type.category) && type.length && features.vectorSupportsLength) {
     sqlType = `${sqlType}(${type.length})`;
   }
 
-  if (type.category === 'timestamp' && type.withTimezone && dialect.features.supportsTimestamptz) {
+  if (type.category === 'timestamp' && type.withTimezone && features.supportsTimestamptz) {
     sqlType = 'TIMESTAMPTZ';
   }
 
-  if (type.unsigned && (dialectName === 'mysql' || dialectName === 'mariadb')) {
-    sqlType = `${sqlType} UNSIGNED`;
-  }
-
-  return sqlType;
+  return type.unsigned && features.supportsUnsigned ? `${sqlType} UNSIGNED` : sqlType;
 }
 
-function getBaseSqlType(type: CanonicalType, dialect: DialectName): string {
-  let sqlType = CANONICAL_TO_SQL[dialect][type.category];
-  if (type.size) {
-    const sizeMap = SIZE_MODIFIERS[dialect][type.category];
-    if (sizeMap?.[type.size]) {
-      sqlType = sizeMap[type.size];
-    }
+/** See {@link EngineFeatures.stringSizing} for what each mode means. */
+function formatStringSqlType(type: CanonicalType, base: string, sizing: DialectFeatures['stringSizing']): string {
+  if (sizing === 'text') {
+    return base;
   }
-  return sqlType;
+  if (type.length) {
+    return `${base}(${type.length})`;
+  }
+  return sizing === 'bounded-text' ? 'TEXT' : `${base}(255)`;
 }
 
-function formatStringSqlType(type: CanonicalType, dialect: AbstractDialect): string {
-  const { dialectName, features } = dialect;
-  if (dialectName === 'sqlite') return 'TEXT';
-  if (features.defaultStringAsText) return type.length ? `VARCHAR(${type.length})` : 'TEXT';
-  if (dialectName === 'mysql' || dialectName === 'mariadb') {
-    if (type.size === 'tiny') return 'TINYTEXT';
-    if (type.size === 'small') return 'TEXT';
-    if (type.size === 'medium') return 'MEDIUMTEXT';
-    if (type.size === 'big') return 'LONGTEXT';
-    return type.length ? `VARCHAR(${type.length})` : 'VARCHAR(255)';
+function formatDecimalSqlType(type: CanonicalType, fallback: EngineTypes['decimal'], baseType: string): string {
+  const p = type.precision ?? fallback?.precision;
+  const s = type.scale ?? fallback?.scale;
+  if (p === undefined) {
+    return baseType;
   }
-  return type.length ? `VARCHAR(${type.length})` : 'VARCHAR(255)';
-}
-
-function formatDecimalSqlType(type: CanonicalType, dialect: DialectName, baseType: string): string {
-  const p = type.precision ?? (dialect === 'mysql' || dialect === 'mariadb' ? 10 : undefined);
-  const s = type.scale ?? (dialect === 'mysql' || dialect === 'mariadb' ? 2 : undefined);
-  if (p !== undefined) {
-    return s !== undefined ? `${baseType}(${p}, ${s})` : `${baseType}(${p})`;
-  }
-  return baseType;
+  return s === undefined ? `${baseType}(${p})` : `${baseType}(${p}, ${s})`;
 }
 
 /**

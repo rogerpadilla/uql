@@ -1,5 +1,6 @@
 import { getMeta, soleIdOf } from '../entity/index.js';
 import {
+  type EntityData,
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
@@ -111,6 +112,16 @@ type JsonUpdateOperators = {
 
 /** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
 type PersistKind = 'plain' | 'json' | 'vector';
+
+/** What {@link AbstractSqlDialect.insertShape} resolves once for a write, indexed in step. */
+type InsertShape<E> = {
+  readonly meta: EntityMeta<E>;
+  readonly payloads: EntityData<E>[];
+  readonly keys: FieldKey<E>[];
+  readonly fields: (FieldOptions | undefined)[];
+  readonly columns: string[];
+  readonly kinds: PersistKind[];
+};
 
 /** One entry of {@link AbstractSqlDialect.LIKE_OPS}: how the pattern is built, and whether it ignores case. */
 type LikeOp = { readonly pattern: (value: string) => string; readonly insensitive: boolean };
@@ -325,8 +336,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       opts = { ...opts, prefix };
     }
     this.where<E>(ctx, entity, q.$where, opts);
-    this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
-    this.pager(ctx, q);
+    const sorted = this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
+    this.pager(ctx, q, sorted);
   }
 
   selectFields<E>(
@@ -394,6 +405,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
+   * What follows `SELECT` before the projection. Empty everywhere but SQL Server, whose `FETCH` will
+   * not take a zero and which spells "no rows" as `TOP (0)` instead.
+   */
+  protected selectModifier<E>(_q: Query<E>): string {
+    return '';
+  }
+
+  /**
    * The expression a scalar field is read through, the plain column by default. MariaDB reads a
    * vector column back with `VEC_ToText`, since selecting it raw yields its binary form.
    */
@@ -429,6 +448,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
 
     ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
+    ctx.append(this.selectModifier(q));
     this.selectFields(ctx, entity, q.$select, { prefix }, q.$exclude);
     // Add related fields BEFORE FROM clause
     this.selectRelationFields(ctx, joins);
@@ -442,7 +462,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (totalAlias) {
       ctx.append(`, ${this.totalOverExpr} ${this.escapeId(totalAlias, true)}`);
     }
-    ctx.append(` FROM ${ref}`);
+    ctx.append(` FROM ${ref}${this.lockHint(q)}`);
     // Add JOINs AFTER FROM clause
     this.selectRelationJoins(ctx, meta, alias, joins);
   }
@@ -856,7 +876,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       case '$ne':
         return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, this.addValue(ctx.values, val));
       case '$regex':
-        return `${operand} ${this.regexpOp} ${this.addValue(ctx.values, val)}`;
+        return this.regexCondition(operand, this.addValue(ctx.values, val));
       case '$in':
       case '$nin': {
         if (!Array.isArray(val)) {
@@ -924,7 +944,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         if (value === null) return `${jsonField} IS NOT NULL`;
         return this.neExpr(comparand(value), this.jsonOperand(ctx, value, asJson));
       case '$regex':
-        return `${jsonField} ${this.regexpOp} ${this.addValue(ctx.values, value)}`;
+        return this.regexCondition(jsonField, this.addValue(ctx.values, value));
       case '$in':
       case '$nin':
         return this.jsonInNin(ctx, jsonField, comparand, op, value, asJson);
@@ -1065,7 +1085,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       return this.addValue(ctx.values, value);
     }
     ctx.pushValue(JSON.stringify(value));
-    return this.jsonCast('?');
+    // The placeholder for the value just pushed, so a named or numbered one is spelled correctly.
+    return this.jsonCast(this.placeholder(ctx.values.length));
   }
 
   /** {@link resolveOperandField}, appended. */
@@ -1073,9 +1094,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ctx.append(this.resolveOperandField(ctx, entity, key, opts));
   }
 
-  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, opts: QuerySortOptions = {}): void {
+  /** Appends the `ORDER BY`, reporting whether there was one - which {@link pager} needs on the
+   * engines that refuse to page an unordered statement. */
+  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, opts: QuerySortOptions = {}): boolean {
     if (!hasKeys(sort)) {
-      return;
+      return false;
     }
     // Collected before anything is appended so an unorderable key is reported instead of half a
     // clause, and because a vector distance is the primary ordering wherever it appears in the map.
@@ -1087,6 +1110,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (terms.length) {
       ctx.append(` ORDER BY ${terms.join(', ')}`);
     }
+    return terms.length > 0;
   }
 
   /**
@@ -1174,7 +1198,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return json ? this.jsonPathExpr(json.column, json.jsonPath, 'text') : this.escapeId(key);
   }
 
-  pager(ctx: QueryContext, opts: QueryPager): void {
+  /**
+   * `LIMIT`/`OFFSET`. `sorted` says whether an `ORDER BY` was emitted just before, which
+   * {@link MergeSqlDialect} needs: SQL Server refuses to page a statement that has none.
+   */
+  pager(ctx: QueryContext, opts: QueryPager, _sorted = false): void {
     // `!== undefined`, not truthiness: `$limit: 0` asks for no rows, where "unset" means every row.
     if (opts.$limit !== undefined) {
       ctx.append(` LIMIT ${assertNonNegativeInteger(opts.$limit, '$limit')}`);
@@ -1211,6 +1239,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined relation`,
       );
     }
+  }
+
+  /**
+   * The lock as a hint on the table itself, for the engine that has no trailing `FOR UPDATE`. Empty
+   * everywhere else, which is where {@link appendLock} does the work instead - the two are the same
+   * lock spelled at opposite ends of the statement, so exactly one of them ever emits.
+   */
+  protected lockHint<E>(_q: Query<E>): string {
+    return '';
   }
 
   /**
@@ -1327,8 +1364,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       this.having(ctx, q.$having, emittedColumns);
     }
 
-    this.aggregateSort(ctx, q.$sort, emittedColumns);
-    this.pager(ctx, q);
+    const sorted = this.aggregateSort(ctx, q.$sort, emittedColumns);
+    this.pager(ctx, q, sorted);
   }
 
   /**
@@ -1340,14 +1377,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ctx: QueryContext,
     sort: QuerySortMap<object> | undefined,
     emittedColumns: Record<string, string>,
-  ): void {
-    if (!hasKeys(sort)) return;
+  ): boolean {
+    if (!hasKeys(sort)) return false;
 
     ctx.append(' ORDER BY ');
     Object.entries(sort).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
       ctx.append(this.aggregateRef(emittedColumns, key, '$sort') + this.resolveSortDirection(dir));
     });
+    return true;
   }
 
   /** The SQL referencing one of an aggregate's emitted columns, rejecting any other name. */
@@ -1412,24 +1450,56 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
-    this.appendInsertValues(ctx, entity, payload);
-
     // Every engine whose ids come back from the statement itself wants the same clause, so it is
-    // appended once here instead of in an identical `insert` override per dialect. `returningId` is
+    // built once here instead of in an identical `insert` override per dialect. `returningId` is
     // empty on a composite key, which has no id to ask for.
-    if (this.insertIdSource === 'returning') {
-      const returning = this.returningId(getMeta(entity));
-      if (returning) {
-        ctx.append(` ${returning}`);
-      }
+    const returning = this.insertIdSource === 'returning' ? this.returningId(getMeta(entity)) : '';
+
+    if (returning && this.returningPosition === 'after-target') {
+      this.appendInsertValues(ctx, entity, payload, returning);
+      return;
+    }
+    this.appendInsertValues(ctx, entity, payload);
+    if (returning) {
+      ctx.append(` ${returning}`);
     }
   }
+
+  /**
+   * Where the clause reporting an insert's generated ids goes. `suffix` is `RETURNING ...` at the end
+   * of the statement, which every engine here but one spells that way; SQL Server's `OUTPUT` has no
+   * trailing form and sits between the column list and `VALUES`.
+   *
+   * A knob rather than a pair of hooks: one concept decides where the string {@link returningId}
+   * already built ends up, so the two ends cannot disagree.
+   */
+  readonly returningPosition: 'suffix' | 'after-target' = 'suffix';
 
   /**
    * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than
    * {@link insert}: their own clause has to come before the `RETURNING`, not after it.
    */
-  protected appendInsertValues<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[]): void {
+  protected appendInsertValues<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    payload: E | E[],
+    /** Spliced between the column list and `VALUES`; see {@link returningPosition}. */
+    afterTarget = '',
+  ): void {
+    const shape = this.insertShape(entity, payload);
+    const tableName = this.escapedTableName(getMeta(entity));
+    ctx.append(`INSERT INTO ${tableName} (${shape.columns.join(', ')})${afterTarget ? ` ${afterTarget}` : ''} VALUES `);
+    this.appendValueRows(ctx, shape);
+  }
+
+  /**
+   * The columns an insert writes and the records it writes them from, resolved once.
+   *
+   * Split out of {@link appendInsertValues} because a `MERGE` needs the same rows as a `VALUES` row
+   * source rather than as an `INSERT`, and both have to apply `onInsert` defaults and the
+   * JSON/vector binding rules identically.
+   */
+  protected insertShape<E>(entity: Type<E>, payload: E | E[]): InsertShape<E> {
     const meta = getMeta(entity);
     const payloads = fillOnFields(meta, payload, 'onInsert');
     const keys = getInsertFieldKeys(meta, payloads);
@@ -1447,14 +1517,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       columns[i] = this.escapedColumnName(meta, key);
       kinds[i] = this.persistKind(field);
     }
+    return { meta, payloads, keys, fields, columns, kinds };
+  }
 
-    const tableName = this.escapedTableName(meta);
-    ctx.append(`INSERT INTO ${tableName} (${columns.join(', ')}) VALUES (`);
-
+  /** `(a, b), (c, d)` - the row constructor an INSERT and a MERGE source both write. */
+  protected appendValueRows<E>(ctx: QueryContext, { payloads, keys, fields, kinds }: InsertShape<E>): void {
+    const width = keys.length;
     for (let r = 0; r < payloads.length; r++) {
-      if (r > 0) {
-        ctx.append('), (');
-      }
+      ctx.append(r > 0 ? '), (' : '(');
       const record = payloads[r];
       for (let i = 0; i < width; i++) {
         if (i > 0) {
@@ -2227,6 +2297,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   protected get regexpOp(): string {
     return 'REGEXP';
+  }
+
+  /**
+   * The `$regex` predicate. An infix operator on the MySQL family (`REGEXP`) and the Postgres one
+   * (`~`), but a function on Oracle and SQL Server 2025 (`REGEXP_LIKE(col, ?)`) - which is why this
+   * is a method rather than the operator token alone. An engine with no regex at all overrides it to
+   * throw, the way {@link appendTextSearch} already does.
+   */
+  protected regexCondition(operand: string, placeholder: string): string {
+    return `${operand} ${this.regexpOp} ${placeholder}`;
   }
 
   protected get likeFn(): string {

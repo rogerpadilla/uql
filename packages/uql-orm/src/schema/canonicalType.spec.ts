@@ -376,9 +376,14 @@ describe('canonicalType', () => {
   });
 
   describe('canonicalToSql edge cases', () => {
+    // BSON names, from MongoDB's own row of the type table. It used to answer `VARCHAR`, which no
+    // caller ever saw: every path into `canonicalToSql` is SQL-only (the SQL schema generator, the
+    // drift detector, `PgLikeSqlDialect`), and MongoDB migrates through `MongoSchemaGenerator`.
+    // That answer came from a branch that ignored the engine's map and hardcoded `VARCHAR` - the same
+    // branch that would have created every SQL Server string column non-Unicode.
     it('should format string for mongodb dialect', () => {
-      expect(canonicalToSql({ category: 'string', length: 100 }, mongo)).toBe('VARCHAR(100)');
-      expect(canonicalToSql({ category: 'string' }, mongo)).toBe('VARCHAR(255)');
+      expect(canonicalToSql({ category: 'string', length: 100 }, mongo)).toBe('string(100)');
+      expect(canonicalToSql({ category: 'string' }, mongo)).toBe('TEXT');
     });
 
     it('should format string with size variants for mysql', () => {

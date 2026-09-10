@@ -43,6 +43,9 @@ export const REL_NESTED_KEY = '_uql_target';
  */
 export const UPSERT_NEW_ROW_ALIAS = '_uql_new';
 
+/** The row source a `MERGE` upsert reads its incoming values from, on SQL Server and Oracle. */
+export const UPSERT_SOURCE_ALIAS = '_uql_src';
+
 /**
  * Where a `$sort` by a relation's size parks its tally until the ordering has run. A function, so the
  * `$sort` that names the field and the stage that produces it cannot spell it differently - MongoDB
