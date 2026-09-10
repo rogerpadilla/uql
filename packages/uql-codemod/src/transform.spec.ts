@@ -439,6 +439,19 @@ type ParentOf<T> = Relation<T>;
     expect(unresolved[1]).toContain("'getQuerier' was removed; use `pool.withQuerier(...)`");
   });
 
+  /** A `$where` is one map now; the compiler points at every call site still passing an id or a list. */
+  it('reports the `$where` types and helpers that no longer exist', () => {
+    const { changed, unresolved } = codemod(`
+      import { QueryWhereMap, QueryWhereFieldMap, augmentWhere, buildQueryWhereAsMap } from 'uql-orm';
+    `);
+
+    expect(changed).toBe(false);
+    expect(unresolved[0]).toContain("'QueryWhereMap' was removed; it is `QueryWhere` now");
+    expect(unresolved[1]).toContain("'QueryWhereFieldMap' was removed; use `QueryWhere`");
+    expect(unresolved[2]).toContain("'augmentWhere' was removed; spread the two maps");
+    expect(unresolved[3]).toContain("'buildQueryWhereAsMap' was removed; a `$where` is a map already");
+  });
+
   it('reports a decorator that no longer exists rather than removing it', () => {
     const { text, changed, unresolved } = codemod(`
       class Service {

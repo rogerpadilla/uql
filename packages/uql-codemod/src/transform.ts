@@ -19,12 +19,16 @@ const REMOVED_DECORATORS = new Map([
 
 /**
  * Exports that no longer exist, mapped to what to do instead. Reported rather than rewritten, for the
- * same reason as the decorators: which pool belongs at a given call site is a judgement call.
+ * same reason as the decorators: what replaces each is decided at its call site.
  */
 const REMOVED_EXPORTS = new Map([
   ['setQuerierPool', 'pass the pool where it is used: `createFetchHandler({ pool })`, `querierMiddleware({ pool })`'],
   ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
   ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
+  ['QueryWhereMap', 'it is `QueryWhere` now'],
+  ['QueryWhereFieldMap', 'use `QueryWhere`'],
+  ['augmentWhere', 'spread the two maps: `{ ...where, ...extra }`'],
+  ['buildQueryWhereAsMap', 'a `$where` is a map already; name the key for ids: `{ id: [1, 2] }`'],
 ]);
 
 export type FileResult = {
