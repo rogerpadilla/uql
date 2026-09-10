@@ -14,7 +14,7 @@ import type { QuerierPool } from '../type/index.js';
 import * as cliConfig from './cli-config.js';
 import * as cli from './cli.js';
 import type { Migrator } from './migrator.js';
-import { createSchemaGenerator } from './schemaGenerator.js';
+import { createSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class TestEntity {
@@ -233,6 +233,7 @@ describe('CLI', () => {
 
   it('createSchemaGeneratorAsync loads MongoDB generator', async () => {
     expect(await cli.createSchemaGeneratorAsync(new MongoDialect())).toBeDefined();
+    expect(await cli.createSchemaGeneratorAsync(new SqliteDialect())).toBeInstanceOf(SqlSchemaGenerator);
   });
 
   it('main should throw if pool is missing', async () => {

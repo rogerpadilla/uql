@@ -1230,6 +1230,22 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['{"private":1}', 123, '1']);
   }
 
+  /** The configuration binds once and both calls reuse its placeholder, so the document and the query agree. */
+  shouldSearchTextUnderAConfiguration() {
+    const res = this.exec((ctx) =>
+      this.dialect.where(ctx, Item, { $text: { $fields: ['name'], $value: 'lamp', $config: 'english' } }),
+    );
+    expect(res.sql).toContain('TO_TSVECTOR($1::regconfig, "name") @@ WEBSEARCH_TO_TSQUERY($1::regconfig, $2)');
+    expect(res.values).toEqual(['english', 'lamp']);
+  }
+
+  shouldMatchNothingForAnEmptySet() {
+    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $in: [] } })).sql).toContain('"name" IN (NULL)');
+    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $nin: [] } })).sql).toContain(
+      '"name" NOT IN (NULL)',
+    );
+  }
+
   /** Outside the types, which give a JSON array no `raw()`: rendered in place rather than bound as an object. */
   shouldPushARawExpressionOntoAJsonArray() {
     const res = this.exec((ctx) =>

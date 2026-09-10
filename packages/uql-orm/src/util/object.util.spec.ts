@@ -1,5 +1,21 @@
 import { describe, expect, it } from 'vitest';
-import { clone, getKeys, hasKeys, isScalarId } from './object.util.js';
+import { defineField } from '../entity/index.js';
+import { clone, entityName, getKeys, hasKeys, isScalarId } from './object.util.js';
+
+describe('clone of what has nothing to copy', () => {
+  it('hands back a primitive and null as they are', () => {
+    expect(clone(5)).toBe(5);
+    expect(clone(null)).toBe(null);
+  });
+});
+
+describe('entityName', () => {
+  /** A meta registered through `@Field` alone never named its table, so it goes by its class. */
+  it('falls back to the class for a meta that names no table', () => {
+    class Unnamed {}
+    expect(entityName(defineField(Unnamed, 'label', { type: String }))).toBe('Unnamed');
+  });
+});
 
 it('clone', () => {
   expect(clone({})).toEqual({});

@@ -335,6 +335,16 @@ class Entity {
     expect(notes[0]).toContain("If the column should be 'uuid'");
   });
 
+  it('treats a union of branded template literals as a string column', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Id() id?: \`user_\${string}\` | \`team_\${string}\`;
+      }
+    `);
+
+    expect(text).toContain('@Id({ type: String }) id?: `user_${string}` | `team_${string}`;');
+  });
+
   it('says nothing about a plain string field', () => {
     const { notes } = codemod(`
       class Entity {

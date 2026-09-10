@@ -3,6 +3,13 @@ import type { Item, User } from '../test/index.js';
 import type { Query, QueryStringified } from '../type/index.js';
 import { parseQueryParams, stringifyQuery } from './query.js';
 
+describe('parseQueryParams rejections', () => {
+  /** A row lock outlives the request that asked for it over HTTP, so it is refused rather than dropped. */
+  it('refuses a $lock', () => {
+    expect(() => parseQueryParams({ $lock: 'true' })).toThrow("'$lock' is not supported over HTTP");
+  });
+});
+
 describe('parseQueryParams', () => {
   it('empty', () => {
     expect(parseQueryParams()).toEqual({ $where: {} });

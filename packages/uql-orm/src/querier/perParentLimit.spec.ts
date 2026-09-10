@@ -146,6 +146,18 @@ describe('per-parent limits: the LATERAL shape', () => {
     expect(ctx.values).toEqual([['es'], ['north']]);
   });
 
+  it('should refuse to page by a parent key the parent entity does not have', () => {
+    const dialect = new PostgresDialect();
+    expect(() =>
+      dialect.findPerParent(
+        dialect.createContext(),
+        Post,
+        { $limit: 1 },
+        partitionOf(Blog, [{ parent: 'nope', joined: 'blogId' }], [{ nope: 7 }]),
+      ),
+    ).toThrow("cannot page a relation per parent: 'nope' is not a field of the parent entity");
+  });
+
   it('should refuse a bounded read for no parents at all, rather than emit an empty statement', () => {
     const dialect = new PostgresDialect();
     expect(() =>

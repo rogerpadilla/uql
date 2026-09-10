@@ -81,7 +81,7 @@ export function inferDialectName(config: SQL.Options): BunSqlDialectName {
     if (url === ':memory:' || url.endsWith('.db') || url.endsWith('.sqlite')) {
       return 'sqlite';
     }
-    const scheme = url.split(':')[0] ?? '';
+    const scheme = url.split(':')[0];
     const elsewhere = ELSEWHERE.get(scheme);
     if (elsewhere) {
       throw new TypeError(`Bun SQL has no ${elsewhere} driver; use the dedicated uql-orm/${elsewhere} pool`);

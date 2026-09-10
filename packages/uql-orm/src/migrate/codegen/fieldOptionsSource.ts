@@ -28,7 +28,7 @@ const OPTION_SOURCE = {
   type: (col) => {
     const columnType = canonicalToColumnType(col.type);
     return [
-      ...(columnType ? [`columnType: ${quoted(columnType)}`] : []),
+      `columnType: ${quoted(columnType)}`,
       ...(col.type.length && col.type.category === 'string' ? [`length: ${col.type.length}`] : []),
       ...(col.type.precision === undefined ? [] : [`precision: ${col.type.precision}`]),
       ...(col.type.precision !== undefined && col.type.scale !== undefined ? [`scale: ${col.type.scale}`] : []),

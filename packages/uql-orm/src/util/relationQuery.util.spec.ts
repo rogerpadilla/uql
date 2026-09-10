@@ -15,6 +15,15 @@ import {
   targetKeyColumns,
 } from './relationQuery.util.js';
 
+/** `/http` parses a populate out of client JSON, so a key the types would refuse can still arrive. */
+it('getRelationRequestSummary passes over a relation populated false and a key that is no relation', () => {
+  expect(getRelationRequestSummary(getMeta(User), { company: false, nope: true } as never)).toEqual({
+    requestedKeys: [],
+    joinableKeys: [],
+    toManyKeys: [],
+  });
+});
+
 it('getRelationRequestSummary', () => {
   const meta = getMeta(User);
   const popProfile = { profile: 1 } satisfies QueryPopulate<User>;

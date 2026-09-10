@@ -4,6 +4,7 @@ import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
   derivedCheckName,
+  derivedConstraintName,
   derivedForeignKeyName,
   derivedIndexName,
   derivedPrimaryKeyName,
@@ -13,6 +14,15 @@ import {
   unflatObject,
   unflatObjects,
 } from './sql.util.js';
+
+it('derivedConstraintName names a constraint over no parts after its table alone', () => {
+  expect(derivedConstraintName('users', [], 'ck')).toBe('users_ck');
+});
+
+/** A string key has no successor to infer, so only a single-row write can be named by it. */
+it('buildUpdateResult infers no ids from a string key reported for several rows', () => {
+  expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
+});
 
 it('unflatObjects - empty', () => {
   const res1 = unflatObjects(undefined as any);

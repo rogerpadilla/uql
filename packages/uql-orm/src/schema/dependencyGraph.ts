@@ -46,11 +46,9 @@ export function findCycles<N>(nodes: Iterable<N>, dependenciesOf: DependenciesOf
   const onPath = new Set<N>();
 
   const visit = (node: N, path: N[]): void => {
+    // A node on the walk was handed down in `path` too, so the cycle closes where it first appears.
     if (onPath.has(node)) {
-      const start = path.indexOf(node);
-      if (start !== -1) {
-        cycles.push(path.slice(start));
-      }
+      cycles.push(path.slice(path.indexOf(node)));
       return;
     }
     if (visited.has(node)) {

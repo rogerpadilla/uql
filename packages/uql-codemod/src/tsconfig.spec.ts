@@ -57,6 +57,14 @@ describe('tsconfig', () => {
     expect(unresolved[0]).toContain('not an object, so nothing was changed');
   });
 
+  it('leaves a config with no compiler options of its own untouched and unreported', () => {
+    const { text, changed, unresolved } = transformTsconfig('/tsconfig.json', `{"include":["src"]}`);
+
+    expect(text).toBe(`{"include":["src"]}`);
+    expect(changed).toBe(false);
+    expect(unresolved).toEqual([]);
+  });
+
   it('points at the base config when the flags are not local', () => {
     const { changed, unresolved } = transformTsconfig(
       '/tsconfig.json',

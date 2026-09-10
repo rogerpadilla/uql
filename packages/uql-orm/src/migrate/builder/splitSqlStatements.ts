@@ -29,11 +29,11 @@ export function splitSqlStatements(sql: string): string[] {
 
   for (const match of sql.matchAll(masterRegex)) {
     if (match[0] === ';') {
-      const stmt = sql.substring(lastIndex, match.index ?? 0).trim();
+      const stmt = sql.substring(lastIndex, match.index).trim();
       if (stmt) {
         statements.push(stmt);
       }
-      lastIndex = (match.index ?? 0) + match[0].length;
+      lastIndex = match.index + match[0].length;
     }
   }
 

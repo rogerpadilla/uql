@@ -170,6 +170,12 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     );
   });
 
+  it('reads an undefined group operator as no condition at all', () => {
+    const ctx = dialect.createContext();
+    dialect.where(ctx, Company, { $and: undefined });
+    expect(ctx.sql).toBe('');
+  });
+
   it('rejects a $sort by relation that is not a map of its fields', () => {
     const ctx = dialect.createContext();
     expect(() => dialect.find(ctx, ItemAdjustment, { $populate: { item: true }, $sort: { item: 1 } } as never)).toThrow(
