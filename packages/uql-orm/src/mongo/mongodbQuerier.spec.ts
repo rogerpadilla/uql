@@ -52,18 +52,24 @@ function createMockedQuerier(aggregateResults: unknown[] = []) {
   const toArray = vi.fn().mockResolvedValue(aggregateResults);
   const aggregate = vi.fn().mockReturnValue({ toArray });
   // Every cursor method chains, so one self-returning stub stands in for the whole builder.
-  const cursor: Record<string, unknown> = { toArray };
+  const cursor: Record<string | symbol, unknown> = {
+    toArray,
+    async *[Symbol.asyncIterator]() {
+      yield* aggregateResults;
+    },
+  };
   for (const method of ['filter', 'project', 'sort', 'skip', 'limit', 'map']) {
     cursor[method] = () => cursor;
   }
   const find = vi.fn().mockReturnValue(cursor);
+  const estimatedDocumentCount = vi.fn().mockResolvedValue(0);
 
   const dialect = new MongoDialect();
   const querier = new MongodbQuerier(dialect, {} as any);
 
-  vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, find } as any);
+  vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, find, estimatedDocumentCount } as any);
 
-  return { querier, aggregate, find };
+  return { querier, aggregate, find, cursor, estimatedDocumentCount };
 }
 
 /**
@@ -72,6 +78,21 @@ function createMockedQuerier(aggregateResults: unknown[] = []) {
  * dropped silently for want of this test. Both directions are pinned - the fast path staying fast
  * matters as much as an unexpressible clause reaching the pipeline.
  */
+describe('MongodbQuerier counts', () => {
+  /** A `$distinct` read counts through the pipeline, whose `$count` stage emits no row for no match. */
+  it('reports a page and a total of zero where a pipeline read matches nothing', async () => {
+    const { querier } = createMockedQuerier();
+    expect(await querier.findManyAndCount(Item, { $distinct: true })).toEqual([[], 0]);
+  });
+
+  /** The collection's metadata count, which takes no filter. */
+  it('reads the estimated count off the collection', async () => {
+    const { querier, estimatedDocumentCount } = createMockedQuerier();
+    estimatedDocumentCount.mockResolvedValue(7);
+    expect(await querier.estimatedCount(Item)).toBe(7);
+  });
+});
+
 describe('MongodbQuerier read routing', () => {
   it('serves a plain query from the find cursor', async () => {
     const { querier, aggregate, find } = createMockedQuerier();
@@ -374,6 +395,39 @@ describe('MongodbQuerier soft delete', () => {
 });
 
 describe('MongodbQuerier findManyStream', () => {
+  it('yields nothing, and opens no cursor, for a page of no rows', async () => {
+    const { querier, find } = createMockedQuerier([{ _id: 1 }]);
+    const rows: unknown[] = [];
+    for await (const row of querier.findManyStream(Item, { $limit: 0 })) {
+      rows.push(row);
+    }
+    expect(rows).toEqual([]);
+    expect(find).not.toHaveBeenCalled();
+  });
+
+  it('names only the kind of relation it was asked to load', async () => {
+    const { querier } = createMockedQuerier();
+    const drain = async (stream: AsyncIterable<unknown>) => {
+      for await (const _ of stream);
+    };
+    await expect(drain(querier.findManyStream(Post, { $populate: { author: true } }))).rejects.toThrow(
+      '(joinable: author)',
+    );
+    await expect(drain(querier.findManyStream(Item, { $populate: { tags: true } }))).rejects.toThrow('(toMany: tags)');
+  });
+
+  it('surfaces a failure the cursor meets while iterating', async () => {
+    const { querier, cursor } = createMockedQuerier();
+    cursor[Symbol.asyncIterator] = async function* () {
+      yield* [];
+      throw new Error('connection reset');
+    };
+    const drain = async () => {
+      for await (const _ of querier.findManyStream(Item, {}));
+    };
+    await expect(drain()).rejects.toThrow('connection reset');
+  });
+
   it('throws when relations are requested (stream uses find cursor only)', async () => {
     const querier = new MongodbQuerier(new MongoDialect(), {} as any, {});
     await expect(

@@ -17,6 +17,13 @@ import {
 } from './canonicalType.js';
 import type { CanonicalType, TypeCategory } from './types.js';
 
+describe('sqlToCanonical with parameters it cannot read', () => {
+  it('keeps the category and drops what is not a number', () => {
+    expect(sqlToCanonical('DECIMAL(x,y)')).toEqual({ category: 'decimal' });
+    expect(sqlToCanonical('VECTOR(n)')).toEqual({ category: 'vector' });
+  });
+});
+
 /**
  * The family each canonical category belongs to. Stated here rather than shipped because the two
  * classifiers are deliberately separate: `sqlToCanonical` knows every dialect spelling and size, and

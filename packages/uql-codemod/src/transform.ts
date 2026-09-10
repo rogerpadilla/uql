@@ -251,7 +251,7 @@ function dropDeclare(node: ts.PropertyDeclaration, ctx: Context): void {
     // break left the rest behind.
     const text = node.getSourceFile().text;
     let end = modifier.getEnd();
-    while (/\s/.test(text[end] ?? '')) {
+    while (/\s/.test(text[end])) {
       end += 1;
     }
     ctx.edits.push({ start: modifier.getStart(), end, text: '' });

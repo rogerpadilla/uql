@@ -54,97 +54,92 @@ export abstract class BaseSqlIntrospector {
    */
   protected buildAST(tableSchemas: TableSchema[]): SchemaAST {
     const ast = new SchemaAST();
-    const tableNodes = new Map<string, TableNode>();
-
-    this.buildTables(ast, tableNodes, tableSchemas);
-    this.buildRelationships(ast, tableNodes, tableSchemas);
-    this.buildIndexes(ast, tableNodes, tableSchemas);
+    // Every table first, so a foreign key reaches a table introspected after the one it leaves from.
+    const tables = tableSchemas.map((schema) => ({ schema, table: this.buildTable(schema) }));
+    const tableNodes = new Map(tables.map(({ schema, table }) => [schema.name, table]));
+    for (const { table } of tables) {
+      ast.addTable(table);
+    }
+    for (const { schema, table } of tables) {
+      this.buildRelationships(ast, tableNodes, schema, table);
+      this.buildIndexes(ast, schema, table);
+    }
 
     return ast;
   }
 
-  private buildTables(ast: SchemaAST, tableNodes: Map<string, TableNode>, tableSchemas: TableSchema[]) {
-    for (const schema of tableSchemas) {
-      const table = createTableNode(schema.name, this.schema);
-      const { columns } = table;
+  private buildTable(schema: TableSchema): TableNode {
+    const table = createTableNode(schema.name, this.schema);
+    const { columns } = table;
 
-      for (const col of schema.columns) {
-        // Spread, not field by field: a `ColumnSchema` is a `ColumnNode` minus the graph links, so
-        // everything but the type crosses unchanged and a field either shape gains cannot be dropped
-        // here. Listed by hand this had already lost `enum` and `generatedAs`.
-        const { type, length: _length, precision: _precision, scale: _scale, ...rest } = col;
-        const column: ColumnNode = {
-          ...rest,
-          type: canonicalColumnType(type, col),
-          table,
-          referencedBy: [],
+    for (const col of schema.columns) {
+      // Spread, not field by field: a `ColumnSchema` is a `ColumnNode` minus the graph links, so
+      // everything but the type crosses unchanged and a field either shape gains cannot be dropped
+      // here. Listed by hand this had already lost `enum` and `generatedAs`.
+      const { type, length: _length, precision: _precision, scale: _scale, ...rest } = col;
+      const column: ColumnNode = {
+        ...rest,
+        type: canonicalColumnType(type, col),
+        table,
+        referencedBy: [],
+      };
+      columns.set(col.name, column);
+    }
+
+    // From the ordered list the query returned, not from the per-column flags: `(a, b)` is a
+    // different key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back
+    // to the flags for an introspector that reports no key of its own.
+    const keyColumns = schema.primaryKey ?? schema.columns.filter((col) => col.isPrimaryKey).map((col) => col.name);
+    table.primaryKey.push(...keyColumns.flatMap((name) => columns.get(name) ?? []));
+    table.primaryKeyName = schema.primaryKeyName;
+
+    return table;
+  }
+
+  private buildRelationships(
+    ast: SchemaAST,
+    tableNodes: ReadonlyMap<string, TableNode>,
+    schema: TableSchema,
+    fromTable: TableNode,
+  ): void {
+    for (const fk of schema.foreignKeys ?? []) {
+      const toTable = tableNodes.get(fk.references.table);
+      if (!toTable) continue;
+
+      const fromColumns = fk.columns.flatMap((name) => fromTable.columns.get(name) ?? []);
+      const toColumns = fk.references.columns.flatMap((name) => toTable.columns.get(name) ?? []);
+
+      if (fromColumns.length > 0 && toColumns.length > 0) {
+        const rel: RelationshipNode = {
+          name: fk.name ?? derivedForeignKeyName(schema.name, fk.columns),
+          type: fromColumns[0].isUnique ? 'OneToOne' : 'ManyToOne',
+          from: { table: fromTable, columns: fromColumns },
+          to: { table: toTable, columns: toColumns },
+          onDelete: fk.onDelete || 'NO ACTION',
+          onUpdate: fk.onUpdate || 'NO ACTION',
         };
-        columns.set(col.name, column);
-      }
-
-      // From the ordered list the query returned, not from the per-column flags: `(a, b)` is a
-      // different key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back
-      // to the flags for an introspector that reports no key of its own.
-      const keyColumns = schema.primaryKey ?? schema.columns.filter((col) => col.isPrimaryKey).map((col) => col.name);
-      table.primaryKey.push(...keyColumns.flatMap((name) => columns.get(name) ?? []));
-      table.primaryKeyName = schema.primaryKeyName;
-
-      tableNodes.set(schema.name, table);
-      ast.addTable(table);
-    }
-  }
-
-  private buildRelationships(ast: SchemaAST, tableNodes: Map<string, TableNode>, tableSchemas: TableSchema[]) {
-    for (const schema of tableSchemas) {
-      if (!schema.foreignKeys) continue;
-      const fromTable = tableNodes.get(schema.name);
-      if (!fromTable) continue;
-
-      for (const fk of schema.foreignKeys) {
-        const toTable = tableNodes.get(fk.references.table);
-        if (!toTable) continue;
-
-        const fromColumns = fk.columns.flatMap((name) => fromTable.columns.get(name) ?? []);
-        const toColumns = fk.references.columns.flatMap((name) => toTable.columns.get(name) ?? []);
-
-        if (fromColumns.length > 0 && toColumns.length > 0) {
-          const rel: RelationshipNode = {
-            name: fk.name ?? derivedForeignKeyName(schema.name, fk.columns),
-            type: fromColumns[0].isUnique ? 'OneToOne' : 'ManyToOne',
-            from: { table: fromTable, columns: fromColumns },
-            to: { table: toTable, columns: toColumns },
-            onDelete: fk.onDelete || 'NO ACTION',
-            onUpdate: fk.onUpdate || 'NO ACTION',
-          };
-          ast.addRelationship(rel);
-        }
+        ast.addRelationship(rel);
       }
     }
   }
 
-  private buildIndexes(ast: SchemaAST, tableNodes: Map<string, TableNode>, tableSchemas: TableSchema[]) {
-    for (const schema of tableSchemas) {
-      if (!schema.indexes) continue;
-      const table = tableNodes.get(schema.name);
-      if (!table) continue;
-
-      for (const idx of schema.indexes) {
-        // An expression has no column to resolve. Dropping the entries that name a column this table
-        // does not have, and the index if that leaves none, is what the entity side does too.
-        const entries = idx.entries.filter((entry) => entry.expression || table.columns.has(entry.column));
-        if (entries.length > 0) {
-          const index: IndexNode = {
-            name: idx.name,
-            table,
-            entries,
-            unique: idx.unique,
-            type: idx.type,
-            where: idx.where,
-            include: idx.include,
-            source: 'database',
-          };
-          ast.addIndex(index);
-        }
+  private buildIndexes(ast: SchemaAST, schema: TableSchema, table: TableNode): void {
+    for (const idx of schema.indexes ?? []) {
+      // An expression has no column to resolve. Dropping the entries that name a column this table
+      // does not have, and the index if that leaves none, is what the entity side does too.
+      const entries = idx.entries.filter((entry) => entry.expression || table.columns.has(entry.column));
+      if (entries.length > 0) {
+        const index: IndexNode = {
+          name: idx.name,
+          table,
+          entries,
+          unique: idx.unique,
+          type: idx.type,
+          where: idx.where,
+          include: idx.include,
+          source: 'database',
+        };
+        ast.addIndex(index);
       }
     }
   }

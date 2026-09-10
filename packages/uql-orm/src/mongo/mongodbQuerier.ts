@@ -106,7 +106,7 @@ export class MongodbQuerier extends AbstractQuerier {
         } else {
           const cursor = this.buildFindCursor(entity, q, opts);
           documents = await this.execute(() => cursor.toArray());
-          documents = this.dialect.normalizeIds(meta, documents) || [];
+          documents = this.dialect.normalizeIds(meta, documents);
         }
       }
 
@@ -141,7 +141,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const pipelines = queries.map((it) => this.dialect.aggregationPipeline(entity, it));
     // Counted, not estimated: the leading branch's own length grows with every `$lookup` a populate
     // adds, so a fixed parent budget would let a richer query overflow at the server instead.
-    const stages = (pipelines[0]?.length ?? 0) + pipelines.length - 1;
+    const stages = pipelines[0].length + pipelines.length - 1;
     return stages > MAX_PIPELINE_STAGES
       ? this.readEachInTurn(entity, queries)
       : this.readInOnePipeline(entity, q, pipelines);
@@ -202,7 +202,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
     try {
       for await (const doc of cursor) {
-        const [normalized] = this.dialect.normalizeIds(meta, [doc]) || [doc];
+        const [normalized] = this.dialect.normalizeIds(meta, [doc]);
         yield normalized;
       }
     } catch (err) {
@@ -250,7 +250,7 @@ export class MongodbQuerier extends AbstractQuerier {
     const documents = await this.execute((session) =>
       this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
     );
-    return this.dialect.normalizeIds(meta, documents) || [];
+    return this.dialect.normalizeIds(meta, documents);
   }
 
   /**
@@ -375,7 +375,7 @@ export class MongodbQuerier extends AbstractQuerier {
     );
     // `normalizeIds` has already spread a compound `_id` back into its columns, so the settled rows
     // are named the same way every other driver names them.
-    return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => idOf(meta, found));
+    return this.dialect.normalizeIds(meta, founds).map((found) => idOf(meta, found));
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
@@ -521,7 +521,7 @@ export class MongodbQuerier extends AbstractQuerier {
 
       const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
 
-      const changes = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
+      const changes = res.upsertedCount + res.modifiedCount;
       // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
       // its own row; an updated document's `_id` is read back by the conflict fields instead.
       const reported = payload.map((_, index) => {

@@ -320,8 +320,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   private async hydrateRows<E extends object>(entity: Type<E>, q: Query<E>, rows: RawRow[]): Promise<E[]> {
-    const founds = unflatObjects<E>(rows).map((row) => this.hydrateFields(entity, row));
-    await this.fillToManyRelations(entity, founds, q.$populate);
+    const founds = unflatObjects<E>(rows);
+    this.hydrateAll(entity, founds);
+    if (q.$populate) {
+      await this.fillToManyRelations(entity, founds, q.$populate);
+    }
     return founds;
   }
 
@@ -349,11 +352,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // context holds was normalized as it was bound.
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, entity, q, opts);
+    const fields = this.dialect.hydratableFields(entity);
     let attrsPaths: Record<string, string[]> | undefined;
     try {
       for await (const row of this.internalStream<RawRow>(ctx.sql, ctx.values)) {
         attrsPaths ??= obtainAttrsPaths(row);
-        yield this.hydrateFields(entity, unflatObject<E>(row, attrsPaths));
+        const found = unflatObject<E>(row, attrsPaths);
+        this.hydrateFields(meta, fields, found);
+        yield found;
       }
     } catch (err) {
       throw enrichError(err, this.logger, ctx.sql, ctx.values);
@@ -370,25 +376,37 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Turn what a driver returned back into the types the entity declares, for the row and everything
-   * populated under it. Which columns, and as what, is `hydratableFields`; the per-cell decode is
-   * `decodeColumn`. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
-   *
-   * `visited` guards a populated graph that points back at itself, and makes a node two paths reach
-   * decode once. Only a populated relation can lead the walk back somewhere it has been, so the guard
-   * is created at the first one a row carries: rows that populated nothing, every row of a flat read
-   * among them, never allocate one.
+   * Turn what a driver returned back into the types the entity declares, for every row and everything
+   * populated under them. Which columns, and as what, is `hydratableFields`, resolved once for all the
+   * rows; the per-cell decode is `decodeColumn`. Both live with the dialect, because a `sparsevec` is
+   * only sparse on Postgres.
    */
-  private hydrateFields<E extends object>(entity: Type<E>, dto: E, visited?: WeakSet<object>): E {
+  private hydrateAll<E extends object>(entity: Type<E>, dtos: readonly E[], visited?: WeakSet<object>): void {
+    const meta = getMeta(entity);
+    const fields = this.dialect.hydratableFields(entity);
+    for (const dto of dtos) {
+      this.hydrateFields(meta, fields, dto, visited);
+    }
+  }
+
+  /**
+   * One row of {@link hydrateAll}. `visited` guards a populated graph that points back at itself, and
+   * makes a node two paths reach decode once. Only a populated relation can lead the walk back, so the
+   * guard is created at the first one a row carries: rows that populated nothing never allocate one.
+   */
+  private hydrateFields<E extends object>(
+    meta: EntityMeta<E>,
+    fields: ReturnType<AbstractSqlDialect['hydratableFields']>,
+    dto: E,
+    visited?: WeakSet<object>,
+  ): void {
     if (!dto || typeof dto !== 'object' || visited?.has(dto)) {
-      return dto;
+      return;
     }
     visited?.add(dto);
 
-    const meta = getMeta(entity);
     const row = dto as Record<string, unknown>;
-
-    for (const [key, kind] of this.dialect.hydratableFields(entity)) {
+    for (const [key, kind] of fields) {
       const value = row[key];
       if (value != null) {
         row[key] = decodeColumn(value, kind);
@@ -406,14 +424,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       visited ??= new WeakSet([dto]);
       const relEntity = rel.entity();
       if (Array.isArray(value)) {
-        for (const it of value) {
-          this.hydrateFields(relEntity, it, visited);
-        }
+        this.hydrateAll(relEntity, value, visited);
         continue;
       }
-      this.hydrateFields(relEntity, value, visited);
+      this.hydrateFields(getMeta(relEntity), this.dialect.hydratableFields(relEntity), value, visited);
     }
-    return dto;
   }
 
   /**

@@ -18,10 +18,17 @@ import {
 import { getKeys, someKey } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
-  readonly requestedKeys: RelationKey<E>[];
-  readonly joinableKeys: RelationKey<E>[];
-  readonly toManyKeys: RelationKey<E>[];
+  readonly requestedKeys: readonly RelationKey<E>[];
+  readonly joinableKeys: readonly RelationKey<E>[];
+  readonly toManyKeys: readonly RelationKey<E>[];
 };
+
+/** What a query populating nothing requests, shared: most reads populate nothing, and ask on every one. */
+const NOTHING_REQUESTED: RelationRequestSummary<never> = Object.freeze({
+  requestedKeys: Object.freeze([]),
+  joinableKeys: Object.freeze([]),
+  toManyKeys: Object.freeze([]),
+});
 
 /**
  * Whether a relation holds many rows per parent, so it cannot be joined into the parent's row. Takes
@@ -210,11 +217,11 @@ export function getRelationRequestSummary<E>(
   meta: EntityMeta<E>,
   populate?: QueryPopulate<E>,
 ): RelationRequestSummary<E> {
+  if (!populate) return NOTHING_REQUESTED;
+
   const requestedKeys: RelationKey<E>[] = [];
   const joinableKeys: RelationKey<E>[] = [];
   const toManyKeys: RelationKey<E>[] = [];
-
-  if (!populate) return { requestedKeys, joinableKeys, toManyKeys };
 
   for (const key of getKeys(populate)) {
     if (!populate[key]) continue;

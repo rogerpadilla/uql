@@ -29,11 +29,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: { count?: number | bigint }[]): boolean {
-    const row = results[0];
-    if (row?.count !== undefined) {
-      return (this.toNumber(row.count) ?? 0) > 0;
-    }
-    return false;
+    // No row, or no count in it, reads as `NaN`, which is not above zero.
+    return Number(results[0]?.count) > 0;
   }
 
   protected getColumnsQuery(_tableName: string): string {
@@ -111,7 +108,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<ColumnSchema[]> {
     return results.map((row) => ({
       name: row.column_name,
-      type: (row.column_type || '').toUpperCase(),
+      type: row.column_type.toUpperCase(),
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.column_key === 'PRI',
@@ -153,8 +150,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<ForeignKeySchema[]> {
     return results.map((row) => ({
       name: row.constraint_name,
-      columns: (row.columns || '').split(','),
-      references: { table: row.referenced_table, columns: (row.referenced_columns || '').split(',') },
+      columns: row.columns.split(','),
+      references: { table: row.referenced_table, columns: row.referenced_columns.split(',') },
       onDelete: this.normalizeReferentialAction(row.delete_rule),
       onUpdate: this.normalizeReferentialAction(row.update_rule),
     }));

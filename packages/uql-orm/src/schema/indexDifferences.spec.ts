@@ -1,5 +1,25 @@
 import { describe, expect, it } from 'vitest';
-import { indexNameStem, indexSignature } from './indexDifferences.js';
+import { mockTableNode } from '../test/index.js';
+import { describeIndexDifferences, indexNameStem, indexSignature } from './indexDifferences.js';
+import type { IndexNode } from './types.js';
+
+describe('describeIndexDifferences', () => {
+  const table = mockTableNode('users', [{ name: 'email' }]);
+  const index = (overrides: Partial<IndexNode>): IndexNode => ({
+    name: 'users__email_idx',
+    table,
+    entries: [{ column: 'email' }],
+    unique: false,
+    ...overrides,
+  });
+
+  /** An access method neither side states is btree, so an unstated one compares as that default. */
+  it('reports a uniqueness change, and reads an unstated access method as btree', () => {
+    expect(
+      describeIndexDifferences(index({}), index({ unique: true, type: 'hash' }), new Set(['accessMethod'])),
+    ).toEqual([expect.stringMatching(/^unique: true .* false$/), expect.stringMatching(/^type: hash .* btree$/)]);
+  });
+});
 
 describe('indexNameStem', () => {
   /**

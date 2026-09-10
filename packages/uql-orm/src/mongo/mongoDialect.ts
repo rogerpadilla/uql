@@ -2,7 +2,7 @@ import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } fr
 import { AbstractDialect } from '../dialect/abstractDialect.js';
 import { COUNT_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
 import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
-import { assertSoleId, getMeta, soleIdOf } from '../entity/index.js';
+import { assertSoleId, fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import type {
   DialectFeatures,
   EntityData,
@@ -965,8 +965,8 @@ export class MongoDialect extends AbstractDialect {
   readonly #renamedColumns = new WeakMap<object, readonly [string, string][]>();
   readonly #referenceKeys = new WeakMap<object, readonly string[]>();
 
-  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[] | undefined): E[] | undefined {
-    return docs?.map((doc) => this.normalizeId(meta, doc)) as E[] | undefined;
+  public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[]): E[] {
+    return docs.map((doc) => this.normalizeId(meta, doc)) as E[];
   }
 
   /** `doc` is the wire shape - `_id`, stored names, `ObjectId`s - and what comes back is the code's. */
@@ -1005,9 +1005,7 @@ export class MongoDialect extends AbstractDialect {
     const relKeys = getKeys(meta.relations).filter((key) => res[key]) as RelationKey<E>[];
 
     for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
-      const relMeta = getMeta(relOpts.entity());
+      const relMeta = getMeta(relationOf(meta, relKey).entity());
       res[relKey] = Array.isArray(res[relKey])
         ? this.normalizeIds(relMeta, res[relKey] as Document[])
         : this.normalizeId(relMeta, res[relKey] as Document);
@@ -1168,7 +1166,7 @@ export class MongoDialect extends AbstractDialect {
       const named = inserting && it[idKey] != null;
       if (inserting && !named) {
         // Nothing named the key, so the database is being asked to mint one.
-        this.assertMintableKey(meta, meta.fields[idKey]!);
+        this.assertMintableKey(meta, fieldOf(meta, idKey));
       }
       const doc: Record<string, unknown> = named ? { [MongoDialect.ID_KEY]: this.toWireId(it[idKey]) } : {};
       for (const key of filterFieldKeys(meta, it, callbackKey)) {

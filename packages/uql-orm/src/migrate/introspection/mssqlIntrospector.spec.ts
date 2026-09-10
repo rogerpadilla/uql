@@ -106,6 +106,26 @@ describe('MsSqlSchemaIntrospector', () => {
     expect(columns?.map((column) => column.defaultValue)).toEqual([0, 'x', undefined]);
   });
 
+  /** A stored `NULL` is no default at all; a decimal reads back as a number; only a Unicode type halves its bytes. */
+  it('should read a NULL and a decimal default, and size a column by its encoding', async () => {
+    const introspector = new MsSqlSchemaIntrospector(
+      poolAnswering({
+        'COUNT(*) as count': [{ count: 1 }],
+        'sys.columns': [
+          { column_name: 'a', data_type: 'varchar', max_length: 20, is_nullable: true, column_default: '(NULL)' },
+          { column_name: 'b', data_type: 'nvarchar', max_length: 20, is_nullable: true, column_default: '((1.5))' },
+        ],
+      }),
+    );
+
+    const columns = (await introspector.getTableSchema('T'))?.columns;
+
+    expect(columns?.map((column) => [column.defaultValue, column.length])).toEqual([
+      [null, 20],
+      [1.5, 10],
+    ]);
+  });
+
   /** `sys` spells a referential action with an underscore, where the shared vocabulary uses a space. */
   it('should normalize the referential actions sys reports', async () => {
     const introspector = new MsSqlSchemaIntrospector(

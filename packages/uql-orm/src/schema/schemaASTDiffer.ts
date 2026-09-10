@@ -124,8 +124,8 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
   const tablesToAlter = matched
     .map(([sourceTable, targetTable]) => diffTable(sourceTable, targetTable, opts))
     .filter((tableDiff) => tableDiff !== undefined);
-  const columnDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.columnDiffs ?? []);
-  const indexDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.indexDiffs ?? []);
+  const columnDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.columnDiffs);
+  const indexDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.indexDiffs);
   const primaryKeyDiffs = tablesToAlter.flatMap((tableDiff) => tableDiff.primaryKeyDiff ?? []);
   // Relationships span tables, so they are compared over the whole schema rather than per table.
   const relationshipDiffs = opts.compareRelationships
@@ -164,7 +164,11 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
  * against the one the database reported, then projects the result into a `SchemaDiff`. One
  * comparison serves both, so drift and migrations can no longer disagree about what has changed.
  */
-export function diffTable(source: TableNode, target: TableNode, options: DiffOptions = {}): TableDiff | undefined {
+export function diffTable(
+  source: TableNode,
+  target: TableNode,
+  options: DiffOptions = {},
+): (TableDiff & { readonly columnDiffs: ColumnDiff[]; readonly indexDiffs: IndexDiff[] }) | undefined {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const columnDiffs = diffTableColumns(source, target, opts);
   const indexDiffs = opts.compareIndexes ? diffTableIndexes(source, target, opts) : [];

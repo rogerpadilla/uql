@@ -8,11 +8,13 @@ import {
   createSpec,
   Invoice,
   Item,
+  ItemAdjustment,
   MeasureUnitCategory,
   type Spec,
   Tax,
   TaxCategory,
   User,
+  VectorItem,
 } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import { raw } from '../util/index.js';
@@ -530,7 +532,6 @@ class MongoDialectSpec implements Spec {
         { _id: 'def' } as Partial<User> as User,
       ]),
     ).toMatchObject([{ id: 'abc' }, { id: 'def' }]);
-    expect(this.dialect.normalizeIds(meta, undefined)).toBe(undefined);
     expect(this.dialect.normalizeId(meta, undefined)).toBe(undefined);
     expect(
       this.dialect.normalizeId(meta, { _id: 'abc', company: {}, users: [] } as Partial<User> as User),
@@ -1063,6 +1064,76 @@ class MongoDialectSpec implements Spec {
       $sort: {},
     });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  shouldBuildAggregateStagesWithAnEmptyWhere() {
+    const stages = this.dialect.buildAggregateStages(Item, { $agg: { count: { $count: '*' } }, $where: {} });
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+  }
+
+  /** A key declared by a type name, not a class, reads as that name in the refusal. */
+  shouldRefuseToMintAKeyDeclaredByTypeName() {
+    @Entity()
+    class BigKeyed {
+      @Id({ type: 'bigint' }) id?: bigint;
+      @Field({ type: String }) title?: string;
+    }
+    expect(() => this.dialect.getPersistables(getMeta(BigKeyed), { title: 't' }, 'onInsert')).toThrow(
+      "'BigKeyed.id' is declared 'bigint' and left to the database",
+    );
+  }
+
+  /** Nothing projected is every column, key included, so a `$distinct` over it has nothing to collapse. */
+  shouldGroupNothingForADistinctThatProjectsNoColumn() {
+    expect(this.dialect.aggregationPipeline(Item, { $distinct: true })).toEqual(
+      expect.not.arrayContaining([expect.objectContaining({ $group: expect.anything() })]),
+    );
+  }
+
+  shouldRejectARowLock() {
+    expect(() => this.dialect.assertNoLock({ $lock: true })).toThrow(
+      '$lock (row-level locking) is not supported on MongoDB',
+    );
+  }
+
+  shouldReadAnUndefinedGroupOperatorAsConstrainingNoRelation() {
+    expect(this.dialect.constrainsRelations(Item, { $and: undefined })).toBe(false);
+  }
+
+  /** A `$lookup` brings a relation in one row at a time, so there is nothing under it to rank by distance. */
+  shouldRejectAVectorSortUnderARelation() {
+    @Entity()
+    class Shelf {
+      @Id({ type: String }) id?: string;
+      @Field({ references: () => VectorItem }) vectorItemId?: number;
+      @ManyToOne({ entity: () => VectorItem }) vectorItem?: VectorItem;
+    }
+    expect(() =>
+      this.dialect.aggregationPipeline(Shelf, {
+        $populate: { vectorItem: true },
+        $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
+      } as never),
+    ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
+  }
+
+  /** The tally rides on a field only the queried entity's own pipeline adds, so a nested one is refused. */
+  shouldRejectACountSortUnderARelation() {
+    expect(() =>
+      this.dialect.aggregationPipeline(ItemAdjustment, {
+        $populate: { item: true },
+        $sort: { item: { tags: { $count: -1 } } },
+      }),
+    ).toThrow("$sort by 'item.tags.$count' is only supported on the queried entity");
+  }
+
+  /** A key MongoDB itself names `_id` stays `_id`: there is no second name to move it to. */
+  shouldKeepAKeyThatIsAlreadyNamedId() {
+    @Entity()
+    class RawDoc {
+      @Id({ type: String }) _id?: string;
+      @Field({ type: String }) title?: string;
+    }
+    expect(this.dialect.normalizeId(getMeta(RawDoc), { _id: 'x', title: 't' })).toEqual({ _id: 'x', title: 't' });
   }
 
   shouldRejectAnAggregateHavingOrSortOnAColumnItDoesNotEmit() {

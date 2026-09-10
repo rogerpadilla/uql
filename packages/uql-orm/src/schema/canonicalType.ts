@@ -563,7 +563,5 @@ export function canonicalToColumnType(type: CanonicalType): ColumnType {
       return 'halfvec';
     case 'sparsevec':
       return 'sparsevec';
-    default:
-      return 'varchar';
   }
 }

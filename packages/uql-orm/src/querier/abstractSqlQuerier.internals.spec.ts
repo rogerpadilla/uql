@@ -157,6 +157,39 @@ describe('AbstractSqlQuerier JSON hydration', () => {
     expect(founds.map((found) => found.settings)).toEqual([{ a: 1 }, { a: 2 }]);
     expect(guards).toBe(0);
   });
+
+  /** Which columns decode is a fact of the entity, so a page of rows looks it up once. */
+  it('should resolve the columns to decode once per read, not once per row', async () => {
+    const querier = new StubSqlQuerier();
+    querier.rows = [
+      { id: 1, settings: '{"a":1}' },
+      { id: 2, settings: '{"a":2}' },
+      { id: 3, settings: '{"a":3}' },
+    ];
+    const lookups = vi.spyOn(querier.dialect, 'hydratableFields');
+
+    const founds = await querier.findMany(HydratedParent, {});
+
+    expect(founds.map((found) => found.settings)).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }]);
+    expect(lookups).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe('AbstractQuerier logger', () => {
+  /** Exposes the logger a querier was built with, which is otherwise the querier's own business. */
+  class LoggedQuerier extends StubSqlQuerier {
+    get sharedLogger() {
+      return this.logger;
+    }
+  }
+
+  /** A pool builds a querier per statement, and each one logs by the pool's options alone. */
+  it.each([
+    ['no options', undefined],
+    ['the same options', { logger: ['query'] } satisfies ExtraOptions],
+  ])('should share one logger between queriers built with %s', (_, extra) => {
+    expect(new LoggedQuerier(extra).sharedLogger).toBe(new LoggedQuerier(extra).sharedLogger);
+  });
 });
 
 describe('AbstractSqlQuerier error context', () => {

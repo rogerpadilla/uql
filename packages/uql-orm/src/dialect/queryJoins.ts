@@ -1,4 +1,4 @@
-import { getMeta } from '../entity/index.js';
+import { getMeta, relationOf } from '../entity/index.js';
 import type { EntityMeta, Query, QueryPopulate, QuerySortMap, RelationKey, RelationMeta, Type } from '../type/index.js';
 import {
   getKeys,
@@ -114,8 +114,7 @@ function addPopulateJoins<E>(
   parent?: QueryJoin,
 ): void {
   for (const key of getRelationRequestSummary(meta, populate).joinableKeys) {
-    const relation = meta.relations[key];
-    if (!relation) continue;
+    const relation = relationOf(meta, key);
     const { query, required } = parseRelationAtKey(key, populate);
     const join = addJoin(joins, parent, key, relation, query, required, true);
     addPopulateJoins(joins, join.meta, query.$populate, join);

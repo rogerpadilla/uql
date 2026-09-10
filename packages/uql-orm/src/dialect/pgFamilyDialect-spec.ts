@@ -1229,4 +1229,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.sql).toBe('UPDATE "Company" SET "kind" = $1::jsonb, "updatedAt" = $2 WHERE "id" = $3');
     expect(res.values).toEqual(['{"private":1}', 123, '1']);
   }
+
+  /** Outside the types, which give a JSON array no `raw()`: rendered in place rather than bound as an object. */
+  shouldPushARawExpressionOntoAJsonArray() {
+    const res = this.exec((ctx) =>
+      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
+        kind: { $push: { tags: raw`to_jsonb(${'new'}::text)` } },
+      } as never),
+    );
+    expect(res.sql).toContain('JSONB_BUILD_ARRAY(to_jsonb($1::text))');
+    expect(res.values).toEqual(['new', expect.any(Number), '1']);
+  }
 }

@@ -92,8 +92,8 @@ export function describeIndexDifferences(
     }
   }
 
-  if ((source.unique ?? false) !== (target.unique ?? false)) {
-    differences.push(`unique: ${target.unique ?? false} → ${source.unique ?? false}`);
+  if (source.unique !== target.unique) {
+    differences.push(`unique: ${target.unique} → ${source.unique}`);
   }
 
   if (facets.has('accessMethod') && (source.type ?? 'btree') !== (target.type ?? 'btree')) {

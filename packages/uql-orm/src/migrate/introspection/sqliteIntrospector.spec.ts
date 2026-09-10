@@ -185,6 +185,9 @@ describe('SqliteSchemaIntrospector', () => {
     expect(introspector.parseDefaultValue('123')).toBe(123);
     expect(introspector.parseDefaultValue('123.45')).toBe(123.45);
     expect(introspector.parseDefaultValue('random')).toBe('random');
+    // SQLite stores a boolean as 0/1, so a `TRUE`/`FALSE` default reads back as the number it is.
+    expect(introspector.parseDefaultValue('TRUE')).toBe(1);
+    expect(introspector.parseDefaultValue('false')).toBe(0);
   });
 
   it('normalizeReferentialAction utility', () => {

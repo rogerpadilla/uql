@@ -15,5 +15,6 @@ export {
   fieldOf,
   idOf,
   namesKey,
+  relationOf,
   soleIdOf,
 } from './metadata/definition.js';

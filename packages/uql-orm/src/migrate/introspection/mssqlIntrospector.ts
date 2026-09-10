@@ -32,7 +32,8 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: { count?: number }[]): boolean {
-    return (this.toNumber(results[0]?.count) ?? 0) > 0;
+    // No row, or no count in it, reads as `NaN`, which is not above zero.
+    return Number(results[0]?.count) > 0;
   }
 
   /**

@@ -80,7 +80,7 @@ export class LoggerWrapper implements Logger {
   private readonly logValues: boolean;
   private readonly slowQuery?: number;
 
-  constructor(options: LoggingOptions, config: LoggerWrapperConfig = {}) {
+  constructor(options?: LoggingOptions, config: LoggerWrapperConfig = {}) {
     this.logValues = config.logValues ?? false;
     this.slowQuery = config.slowQuery;
     this.levels = new Set();
@@ -170,6 +170,30 @@ export class LoggerWrapper implements Logger {
       }
     }
   }
+}
+
+const wrappersByOptions = new WeakMap<object, LoggerWrapper>();
+let unconfigured: LoggerWrapper | undefined;
+
+/**
+ * The wrapper a querier logs through, one per options object and read once: a pool builds a querier
+ * for every statement, and all of them log by the same options.
+ */
+export function queryLoggerFor(extra?: {
+  readonly logger?: LoggingOptions;
+  readonly logValues?: boolean;
+  readonly slowQuery?: number;
+}): LoggerWrapper {
+  if (!extra) {
+    unconfigured ??= new LoggerWrapper();
+    return unconfigured;
+  }
+  let wrapper = wrappersByOptions.get(extra);
+  if (!wrapper) {
+    wrapper = new LoggerWrapper(extra.logger, { logValues: extra.logValues, slowQuery: extra.slowQuery });
+    wrappersByOptions.set(extra, wrapper);
+  }
+  return wrapper;
 }
 
 /**

@@ -128,6 +128,74 @@ describe('codemod transforms', () => {
     expect(text.match(/\[idKey\]/g)).toHaveLength(1);
   });
 
+  it('reports a key written as a computed name rather than guess its brand', () => {
+    const { text, unresolved } = codemod(`
+      const code = 'code';
+      class Entity {
+        @Id({ type: String }) [code]?: string;
+      }
+    `);
+
+    expect(text).not.toContain('[idKey]');
+    expect(unresolved).toContainEqual(
+      expect.stringContaining("a key written as a computed name; add the 'idKey' brand by hand"),
+    );
+  });
+
+  it('writes the brand without importing idKey a second time', () => {
+    const { text } = codemodFile(`import { Id, idKey } from 'uql-orm';
+
+class Entity {
+  @Id({ type: String }) code?: string;
+}
+`);
+
+    expect(text).toContain("[idKey]?: 'code';");
+    expect(text).toContain("import { Id, idKey } from 'uql-orm';");
+  });
+
+  it('imports idKey into the uql-orm import it finds', () => {
+    const { text } = codemodFile(`import { Id } from 'uql-orm';
+
+class Entity {
+  @Id({ type: String }) code?: string;
+}
+`);
+
+    expect(text).toContain("import { idKey, Id } from 'uql-orm';");
+  });
+
+  /** A namespace import has no list to add a name to, so the import is left to the author. */
+  it('reports the idKey import it cannot add beside a namespace import', () => {
+    const { unresolved } = codemodFile(`import * as uql from 'uql-orm';
+declare function Id(opts?: object): PropertyDecorator;
+
+class Entity {
+  @Id({ type: String }) code?: string;
+}
+`);
+
+    expect(unresolved).toContain("/entities.ts: import 'idKey' from 'uql-orm' for the brand(s) written here");
+  });
+
+  it('leaves a decorator it cannot name alone', () => {
+    const { text, changed } = codemod(`
+      const decorators = { Field };
+      class Entity {
+        @decorators.Field() title?: string;
+      }
+    `);
+
+    expect(changed).toBe(false);
+    expect(text).toContain('@decorators.Field() title?: string;');
+  });
+
+  it('removes a statement from the last line of a file that has no line after it', () => {
+    const { text } = codemodFile(`class Item {}\nimport 'reflect-metadata';`);
+
+    expect(text).toBe('class Item {}\n');
+  });
+
   it('renames the virtual option to computed, leaving its expression alone', () => {
     const { text } = codemod(`
       class Entity {

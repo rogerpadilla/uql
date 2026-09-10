@@ -26,11 +26,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected parseTableExistsResult(results: SqliteCountRow[]): boolean {
-    const row = results[0];
-    if (row?.count !== undefined) {
-      return (this.toNumber(row.count) ?? 0) > 0;
-    }
-    return false;
+    // No row, or no count in it, reads as `NaN`, which is not above zero.
+    return Number(results[0]?.count) > 0;
   }
 
   /**

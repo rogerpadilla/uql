@@ -13,6 +13,7 @@ import type {
   IdKey,
   Key,
   QueryWhere,
+  RelationKey,
   RelationKeyMap,
   RelationMeta,
   RelationOptions,
@@ -275,12 +276,21 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
 }
 
 /** The field `key` names, for a caller that took `key` from the metadata itself. */
-export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
+export function fieldOf<E>(meta: EntityMeta<E>, key: FieldKey<E>): FieldMeta {
   const field = meta.fields[key];
   if (!field) {
     throw new TypeError(`'${meta.entity.name}' has no field '${key}'`);
   }
   return field;
+}
+
+/** The relation `key` names, for a caller that took `key` from the metadata itself. */
+export function relationOf<E>(meta: EntityMeta<E>, key: RelationKey<E>): RelationMeta {
+  const relation = meta.relations[key];
+  if (!relation) {
+    throw new TypeError(`'${meta.entity.name}' has no relation '${key}'`);
+  }
+  return relation;
 }
 
 /**
@@ -524,7 +534,7 @@ function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
 }
 
 /** `<entityName><IdColumn>`, not the `<relationKey>Id` an owning to-one derives: a junction row has no relation key to borrow from. */
-function junctionColumn<E>(meta: EntityMeta<E>, idKey: string): string {
+function junctionColumn<E>(meta: EntityMeta<E>, idKey: IdKey<E>): string {
   return lowerFirst(entityName(meta)) + upperFirst(fieldOf(meta, idKey).name ?? idKey);
 }
 

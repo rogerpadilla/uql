@@ -63,6 +63,23 @@ describe('SchemaAST', () => {
       expect(ast.removeTable('nonexistent')).toBe(false);
     });
 
+    it('should keep the relationships and indexes of the tables it does not remove', () => {
+      const users = createTable('users');
+      const posts = createTable('posts');
+      const tags = createTable('tags');
+      ast.addTable(users);
+      ast.addTable(posts);
+      ast.addTable(tags);
+      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
+      ast.addIndex({ name: 'users__col1_idx', table: users, entries: [], unique: false });
+      ast.addIndex({ name: 'tags__col1_idx', table: tags, entries: [], unique: false });
+
+      ast.removeTable('tags');
+
+      expect(ast.relationships.map((rel) => rel.name)).toEqual(['posts_user_fk']);
+      expect(ast.indexes.map((index) => index.name)).toEqual(['users__col1_idx']);
+    });
+
     it('should return empty indexes for non-existent table', () => {
       expect(ast.getTableIndexes('nonexistent')).toEqual([]);
     });
@@ -435,6 +452,20 @@ describe('SchemaAST', () => {
       expect(clone.getTable('users')?.name).toBe('users');
       expect(clone.getIndex('users__name_idx')).toBeDefined();
       expect(clone.getIndex('users__name_idx')?.table.name).toBe('users');
+    });
+
+    it('should point a cloned relationship at the clone of its junction', () => {
+      const users = createTable('users');
+      const tags = createTable('tags');
+      const junction = createTable('user_tags');
+      ast.addTable(users);
+      ast.addTable(tags);
+      ast.addTable(junction);
+      ast.addRelationship({ ...createRelationship('user_tags_fk', users, tags), through: junction });
+
+      const clone = ast.clone();
+
+      expect(clone.relationships[0].through).toBe(clone.getTable('user_tags'));
     });
 
     it('should handle cloning relationships with missing tables defensively', () => {

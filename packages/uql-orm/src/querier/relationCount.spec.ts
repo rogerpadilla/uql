@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { COUNT_RESULT_KEY, type Querier } from '../type/index.js';
-import { fillRelationCounts } from './relationCount.js';
+import { fillRelationCounts, withIdForCounts } from './relationCount.js';
 
 @Entity()
 class Team {
@@ -32,7 +32,25 @@ function querierOf(rows: Record<string, unknown>[]): Pick<Querier, 'aggregate' |
   } as unknown as Pick<Querier, 'aggregate' | 'findMany'>;
 }
 
+describe('withIdForCounts', () => {
+  /** The tallies group by each row's key, so an `$exclude` naming it gives up only the key. */
+  it('keeps a key an $exclude names, and whatever else it excludes', () => {
+    expect(withIdForCounts(Team, { $count: { players: true }, $exclude: { id: true, ownerId: true } })).toEqual({
+      $count: { players: true },
+      $exclude: { ownerId: true },
+    });
+  });
+});
+
 describe('fillRelationCounts', () => {
+  it('passes over a relation it was told not to count, and a key that is no relation', async () => {
+    const payload = [{ id: 1 }] as Team[];
+
+    await fillRelationCounts(querierOf([]), Team, payload, { players: false, nope: true } as never);
+
+    expect(payload.map((it) => (it as Record<string, unknown>)[COUNT_RESULT_KEY])).toEqual([{}]);
+  });
+
   it('matches a to-many tally to its parent', async () => {
     const payload = [{ id: 1 }, { id: 2 }] as Team[];
     const querier = querierOf([{ teamId: 1, [COUNT_ALIAS]: 3 }]);

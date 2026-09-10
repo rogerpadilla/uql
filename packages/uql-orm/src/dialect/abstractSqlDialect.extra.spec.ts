@@ -170,6 +170,13 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     );
   });
 
+  it('rejects a $sort by relation that is not a map of its fields', () => {
+    const ctx = dialect.createContext();
+    expect(() => dialect.find(ctx, ItemAdjustment, { $populate: { item: true }, $sort: { item: 1 } } as never)).toThrow(
+      "$sort by relation 'item' expects a map of its fields, got 1",
+    );
+  });
+
   it('rejects a $vector sort through a relation', () => {
     const ctx = dialect.createContext();
     expect(() =>

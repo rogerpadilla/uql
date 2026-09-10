@@ -29,6 +29,7 @@ import {
   getEntities,
   getMeta,
   idOf,
+  relationOf,
 } from './definition.js';
 
 it('defineEntity passes over a member given as undefined', () => {
@@ -69,7 +70,30 @@ it('assertSoleId names the columns of a composite key, and idOf names its row by
 it('fieldOf names the field it reads, and refuses one the entity does not declare', () => {
   const meta = getMeta(User);
   expect(fieldOf(meta, 'name')).toBe(meta.fields.name);
-  expect(() => fieldOf(meta, 'nope')).toThrow("'User' has no field 'nope'");
+  // Outside the types, which name a field; the throw is for a key that reached it untyped.
+  expect(() => fieldOf(meta, 'nope' as never)).toThrow("'User' has no field 'nope'");
+});
+
+it('relationOf names the relation it reads, and refuses one the entity does not declare', () => {
+  const meta = getMeta(User);
+  expect(relationOf(meta, 'company')).toBe(meta.relations.company);
+  // Outside the types, which name a relation; the throw is for a key that reached it untyped.
+  expect(() => relationOf(meta, 'name' as never)).toThrow("'User' has no relation 'name'");
+});
+
+it('defineEntity reduces a check constraint to the text of its expression', () => {
+  class Stocked {
+    id?: number;
+    quantity?: number;
+  }
+  const meta = defineEntity(Stocked, {
+    fields: { id: { type: Number, isId: true }, quantity: { type: Number } },
+    checks: [{ name: 'quantity_positive', expression: raw`quantity > 0` }, { expression: raw`quantity < 1000` }],
+  });
+  expect(meta.checks).toEqual([
+    { name: 'quantity_positive', expression: 'quantity > 0' },
+    { name: undefined, expression: 'quantity < 1000' },
+  ]);
 });
 
 it('defineField refuses an option the column type does not take', () => {

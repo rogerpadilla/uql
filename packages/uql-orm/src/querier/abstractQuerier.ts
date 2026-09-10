@@ -1,4 +1,4 @@
-import { assertSoleId, getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
+import { assertSoleId, getMeta, idOf, namesKey, relationOf, soleIdOf } from '../entity/index.js';
 
 import type {
   EntityData,
@@ -8,7 +8,6 @@ import type {
   FieldKey,
   HookEvent,
   IdValue,
-  LoggingOptions,
   Querier,
   Query,
   QueryAggMap,
@@ -44,6 +43,7 @@ import {
   childrenOf,
   clone,
   dataKeyed,
+  entityName,
   fillOnFields,
   filterPersistableRelationKeys,
   forEachRequestedRelation,
@@ -60,6 +60,7 @@ import {
   type JoinedRelationRejectedKey,
   parentJoins,
   queryChildrenOfAll,
+  queryLoggerFor,
   parseRelationAtKey,
   parseRelationQueryValue,
   type RelationQuery,
@@ -159,14 +160,11 @@ export abstract class AbstractQuerier implements Querier {
   protected readonly logger: LoggerWrapper;
 
   constructor(readonly extra?: ExtraOptions) {
-    this.logger = new LoggerWrapper(extra?.logger as LoggingOptions, {
-      logValues: extra?.logValues,
-      slowQuery: extra?.slowQuery,
-    });
+    this.logger = queryLoggerFor(extra);
   }
 
   protected validateProjectionQuery<E extends object>(entity: Type<E>, q: Query<E>): void {
-    this.validateProjectionQueryRecursive(entity, q, getMeta(entity).name ?? entity.name);
+    this.validateProjectionQueryRecursive(entity, q, entityName(getMeta(entity)));
   }
 
   private validateProjectionQueryRecursive<E extends object>(
@@ -185,8 +183,7 @@ export abstract class AbstractQuerier implements Querier {
       }
     }
     forEachRequestedRelation(meta, q.$populate, (relKey, relValue) => {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) return;
+      const relOpts = relationOf(meta, relKey);
       type Related = InstanceType<ReturnType<typeof relOpts.entity>>;
       const relEntity = relOpts.entity();
       const parsed = parseRelationQueryValue<Related>(relValue);
@@ -313,8 +310,14 @@ export abstract class AbstractQuerier implements Querier {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
     const founds = await this.internalFindMany(entity, withIdForCounts(entity, q), opts);
-    await fillRelationCounts(this, entity, founds, q.$count);
-    await this.emitHook(entity, 'afterLoad', founds);
+    // Guarded here rather than only inside: awaiting a call that returns at once still costs every read
+    // a promise and a turn of the microtask queue, and most reads count nothing and hook nothing.
+    if (q.$count) {
+      await fillRelationCounts(this, entity, founds, q.$count);
+    }
+    if (this.hasHook(entity, 'afterLoad')) {
+      await this.emitHook(entity, 'afterLoad', founds);
+    }
     return founds;
   }
 
@@ -760,8 +763,7 @@ export abstract class AbstractQuerier implements Querier {
     const relKeys = getRelationRequestSummary(meta, populate).toManyKeys;
 
     for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
+      const relOpts = relationOf(meta, relKey);
       const relEntity = relOpts.entity();
       type RelEntity = typeof relEntity;
       const relationQuery = clone(parseRelationAtKey(relKey, populate).query) as RelationQuery<RelEntity>;
@@ -961,8 +963,7 @@ export abstract class AbstractQuerier implements Querier {
     const relKeys = filterPersistableRelationKeys(meta, meta.relations, 'delete');
     // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
     for (const relKey of relKeys) {
-      const relOpts = meta.relations[relKey];
-      if (!relOpts) continue;
+      const relOpts = relationOf(meta, relKey);
       const relEntity = relOpts.entity();
       const target = relOpts.through ? relOpts.through() : relEntity;
       const where = childrenOf(parentJoins(relOpts, meta.ids.length), ids) as QueryWhere<object>;
@@ -983,8 +984,7 @@ export abstract class AbstractQuerier implements Querier {
     isUpdate?: boolean,
   ) {
     const meta = getMeta(entity);
-    const relOpts = meta.relations[relKey];
-    if (!relOpts) return;
+    const relOpts = relationOf(meta, relKey);
     // Here rather than only in the callers below: writing the parent's key into a child is one column
     // per key, so a composite takes a statement per parent. `soleParentColumn` and the sole
     // `targetKeyColumns` under it read the *first* pair, which is a real column of a wrong pairing
@@ -1202,7 +1202,7 @@ export abstract class AbstractQuerier implements Querier {
    * another one would wait for a task queued behind itself. Callers below keep their `serialize` calls
    * sequential rather than nested.
    */
-  protected async serialize<T>(task: () => Promise<T>): Promise<T> {
+  protected serialize<T>(task: () => Promise<T>): Promise<T> {
     const res = this.taskQueue.then(task);
     this.taskQueue = res.catch(() => {});
     return res;
