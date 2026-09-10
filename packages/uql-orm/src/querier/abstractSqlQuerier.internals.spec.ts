@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
@@ -66,6 +66,10 @@ class StubSqlQuerier extends AbstractSqlQuerier {
 }
 
 describe('AbstractSqlQuerier JSON hydration', () => {
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
   it('should parse JSON columns of the root entity', async () => {
     const querier = new StubSqlQuerier();
     querier.rows = [{ id: 1, settings: '{"a":1}', name: 'maz' }];
@@ -128,6 +132,30 @@ describe('AbstractSqlQuerier JSON hydration', () => {
 
     expect(found.settings).toEqual({ a: 1 });
     expect(found.children?.[0].payload).toEqual({ b: 2 });
+  });
+
+  /** Only a populated relation can lead the walk back, so rows that populated none need no guard. */
+  it('should allocate no cycle guard for rows that populated no relation', async () => {
+    let guards = 0;
+    vi.stubGlobal(
+      'WeakSet',
+      class extends WeakSet<object> {
+        constructor(values?: readonly object[]) {
+          super(values);
+          guards += 1;
+        }
+      },
+    );
+    const querier = new StubSqlQuerier();
+    querier.rows = [
+      { id: 1, settings: '{"a":1}' },
+      { id: 2, settings: '{"a":2}' },
+    ];
+
+    const founds = await querier.findMany(HydratedParent, {});
+
+    expect(founds.map((found) => found.settings)).toEqual([{ a: 1 }, { a: 2 }]);
+    expect(guards).toBe(0);
   });
 });
 

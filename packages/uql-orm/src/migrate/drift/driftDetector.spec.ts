@@ -37,6 +37,84 @@ describe('DriftDetector', () => {
       expect(drifts[0].details).toContain('Default mismatch');
     });
 
+    it('should compare a missing default as NULL, and pass over an equal one', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(
+        mockTableNode('users', [
+          { name: 'status' },
+          { name: 'role', defaultValue: 'user', nullable: false },
+          { name: 'plan', defaultValue: 'free' },
+        ]),
+      );
+      actual.addTable(
+        mockTableNode('users', [
+          { name: 'status', defaultValue: 'pending' },
+          { name: 'role', defaultValue: 'user', nullable: true },
+          { name: 'plan' },
+        ]),
+      );
+
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true }).drifts;
+
+      expect(drifts.map((drift) => [drift.column, drift.expected, drift.actual])).toEqual([
+        ['status', 'NULL', 'pending'],
+        ['role', 'NOT NULL', 'NULLABLE'],
+        ['plan', 'free', 'NULL'],
+      ]);
+    });
+
+    it('should name a primary key the database lacks as none', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]));
+      actual.addTable(mockTableNode('users', [{ name: 'id' }]));
+
+      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect() });
+
+      expect(drifts).toContainEqual(
+        expect.objectContaining({ details: 'Primary key of "users" is (none) in the database but (id) in the entity' }),
+      );
+    });
+
+    it('should name a primary key the entity lacks as none', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(mockTableNode('users', [{ name: 'id' }]));
+      actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]));
+
+      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect() });
+
+      expect(drifts).toContainEqual(
+        expect.objectContaining({ details: 'Primary key of "users" is (id) in the database but (none) in the entity' }),
+      );
+    });
+
+    /** With no dialect there is no engine to render either type through, so types go uncompared. */
+    it('should report no type drift without a dialect', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(mockTableNode('users', [{ name: 'age', type: { category: 'integer' } }]));
+      actual.addTable(mockTableNode('users', [{ name: 'age', type: { category: 'string' } }]));
+
+      expect(detectDrift(expected, actual).drifts.filter((drift) => drift.type === 'type_mismatch')).toEqual([]);
+    });
+
+    it('should compare the type of a primary key the entity types itself', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(
+        mockTableNode('users', [{ name: 'id', isPrimaryKey: true, type: { category: 'string', length: 36 } }]),
+      );
+      actual.addTable(
+        mockTableNode('users', [{ name: 'id', isPrimaryKey: true, type: { category: 'string', length: 20 } }]),
+      );
+
+      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect() });
+
+      expect(drifts).toContainEqual(expect.objectContaining({ type: 'type_mismatch', column: 'id' }));
+    });
+
     it('should call a truncating type change critical, and a widening one a warning', () => {
       const drifts = (entity: { category: 'string'; length?: number }, database: typeof entity) => {
         const expected = new SchemaAST();

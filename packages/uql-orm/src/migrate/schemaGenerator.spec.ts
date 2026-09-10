@@ -630,6 +630,18 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     expect(sql).toContain('PRIMARY KEY ("userId", "groupId")');
   });
 
+  /** A table's comment is its own statement where the engine takes one, and part of the CREATE where it does not. */
+  it('should comment the table the way its engine spells a comment', () => {
+    const definition = tableDefinition({ comment: 'Who belongs where' });
+
+    expect(generator.generateCreateTableFromDefinition(definition)).toContain(
+      `COMMENT ON TABLE "memberships" IS 'Who belongs where';`,
+    );
+
+    const [createSql] = new SqlSchemaGenerator(new MySqlDialect()).generateCreateTableFromDefinition(definition);
+    expect(createSql).toMatch(/\) .*COMMENT='Who belongs where';$/);
+  });
+
   it('should ignore a declared key column that no column definition matches', () => {
     const sql = generator
       .generateCreateTableFromDefinition(tableDefinition({ primaryKey: ['userId', 'nope', 'groupId'] }))

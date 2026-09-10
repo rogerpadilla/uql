@@ -185,7 +185,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       return { tableName: collectionName, type: 'create' };
     }
 
-    const existingIndexes = new Set(currentTable.indexes?.map((i) => i.name) ?? []);
+    const existingIndexes = new Set(currentTable.indexes.map((i) => i.name));
     const indexesToAdd = this.fieldIndexes(meta, collectionName).filter((index) => !existingIndexes.has(index.name));
 
     if (indexesToAdd.length === 0) {

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
-import { buildSchemaAST } from './schemaASTBuilder.js';
+import { buildSchemaAST, resolveColumnCanonicalType } from './schemaASTBuilder.js';
 
 // Test entities
 @Entity()
@@ -385,6 +385,28 @@ describe('SchemaASTBuilder', () => {
   });
 
   describe('Edge Cases', () => {
+    it('should keep an include column that names no field as written', () => {
+      @Entity()
+      // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
+      @Index(['tenantId'], { include: ['legacy_total'] as never })
+      class Covering {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) tenantId?: number;
+      }
+      const [index] = buildSchemaAST([Covering]).getTable('Covering')!.indexes;
+      expect(index.include).toEqual(['legacy_total']);
+    });
+
+    it('should resolve a foreign key by its own options where the target lacks the referenced key', () => {
+      const field = {
+        type: 'uuid' as const,
+        references: () => User,
+        referencedKey: 'nonesuch',
+        typeFromReference: true,
+      };
+      expect(resolveColumnCanonicalType(field)).toEqual(resolveColumnCanonicalType({ type: 'uuid' }));
+    });
+
     it('should handle OneToOne with missing local field', () => {
       @Entity()
       class Related {

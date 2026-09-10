@@ -32,7 +32,6 @@ import {
   getInsertFieldKeys,
   insertShapeOf,
   getRelationRequestSummary,
-  hasKeys,
   idOnlyQuery,
   isAutoIncrement,
   isPagedQuery,
@@ -376,14 +375,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * `decodeColumn`. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
    *
    * `visited` guards a populated graph that points back at itself, and makes a node two paths reach
-   * decode once. Only a relation can lead the walk back somewhere it has been, so an entity that
-   * declares none skips the guard rather than allocating a set per row to hold a single object -
-   * which cost more than the decoding it guards, on a flat read.
+   * decode once. Only a populated relation can lead the walk back somewhere it has been, so the guard
+   * is created at the first one a row carries: rows that populated nothing, every row of a flat read
+   * among them, never allocate one.
    */
   private hydrateFields<E extends object>(entity: Type<E>, dto: E, visited?: WeakSet<object>): E {
     if (!dto || typeof dto !== 'object' || visited?.has(dto)) {
       return dto;
     }
+    visited?.add(dto);
 
     const meta = getMeta(entity);
     const row = dto as Record<string, unknown>;
@@ -395,13 +395,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       }
     }
 
-    // Allocated only where the walk can continue: an entity declaring no relation cannot lead back
-    // to a node already decoded, and the loop below is a no-op for it anyway.
-    if (hasKeys(meta.relations)) {
-      visited ??= new WeakSet();
-    }
-    visited?.add(dto);
-
     // The value is read before the relation's target is resolved: a query that populated nothing
     // still walks every relation the entity declares, and `rel.entity()` is a call per row per
     // relation that only the populated ones need.
@@ -410,6 +403,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       if (!value || typeof value !== 'object') continue;
       const rel = meta.relations[key];
       if (!rel) continue;
+      visited ??= new WeakSet([dto]);
       const relEntity = rel.entity();
       if (Array.isArray(value)) {
         for (const it of value) {

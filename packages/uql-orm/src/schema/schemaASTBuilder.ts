@@ -14,6 +14,7 @@ import { ddlText } from '../util/ddlExpression.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
+import { definedEntries } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { fieldOptionsToCanonical } from './canonicalType.js';
 import { createTableNode, SchemaAST } from './schemaAST.js';
@@ -123,11 +124,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
   table.checks?.push(...(meta.checks ?? []));
 
   // Add columns from fields
-  const fields = meta.fields;
-  for (const key of Object.keys(fields)) {
-    const field = fields[key];
-    if (!field) continue;
-
+  for (const [key, field] of definedEntries(meta.fields)) {
     // An inlined expression has no column; a stored one is a column like any other.
     if (isInlinedExpression(field)) continue;
 
@@ -176,11 +173,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
   const table = tableOf(ctx, meta);
   if (!table) return;
 
-  const relations = meta.relations;
-  for (const key of Object.keys(relations)) {
-    const relation = relations[key];
-    if (!relation) continue;
-
+  for (const [key, relation] of definedEntries(meta.relations)) {
     const relatedMeta = getMeta(relation.entity());
     const relatedTable = tableOf(ctx, relatedMeta);
     if (!relatedTable) continue;

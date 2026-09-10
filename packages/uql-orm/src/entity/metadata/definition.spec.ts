@@ -19,12 +19,169 @@ import {
 import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
-import { defineEntity, defineField, defineRelation, fieldOf, getEntities, getMeta } from './definition.js';
+import {
+  assertSoleId,
+  defineEntity,
+  defineField,
+  defineId,
+  defineRelation,
+  fieldOf,
+  getEntities,
+  getMeta,
+  idOf,
+} from './definition.js';
+
+it('defineEntity passes over a member given as undefined', () => {
+  class Sparse {
+    id?: number;
+    note?: string;
+    parent?: Sparse;
+  }
+  const meta = defineEntity(Sparse, {
+    fields: { id: { type: Number, isId: true }, note: undefined },
+    relations: { parent: undefined },
+  });
+  expect(getKeys(meta.fields)).toEqual(['id']);
+  expect(meta.relations).toEqual({});
+});
+
+it('assertSoleId names an entity that declares no primary key', () => {
+  class Keyless {}
+  const meta = defineField(Keyless, 'name', { type: String });
+  expect(() => assertSoleId(meta, 'a key lookup')).toThrow("'Keyless' has no primary key, which a key lookup needs.");
+});
+
+it('assertSoleId names the columns of a composite key, and idOf names its row by every one', () => {
+  @Entity()
+  class Seat {
+    [idKey]?: 'row' | 'number';
+    @Id({ type: String }) row?: string;
+    @Id({ type: Number }) number?: number;
+    @Field({ type: String }) holder?: string;
+  }
+  const meta = getMeta(Seat);
+  expect(() => assertSoleId(meta, 'a key lookup')).toThrow(
+    "'Seat' has a composite primary key (row, number), which a key lookup does not support yet.",
+  );
+  expect(idOf(meta, { row: 'F', number: 12, holder: 'Ada' })).toEqual({ row: 'F', number: 12 });
+});
 
 it('fieldOf names the field it reads, and refuses one the entity does not declare', () => {
   const meta = getMeta(User);
   expect(fieldOf(meta, 'name')).toBe(meta.fields.name);
   expect(() => fieldOf(meta, 'nope')).toThrow("'User' has no field 'nope'");
+});
+
+it('defineField refuses an option the column type does not take', () => {
+  class Conflicted {}
+  expect(() => defineField(Conflicted, 'amount', { type: Number, length: 10 })).toThrow(
+    "'Conflicted.amount' cannot use 'length': it applies to a string column, not to a numeric one.",
+  );
+});
+
+it('defineEntity refuses a dotted name, pointing at the schema option', () => {
+  class Dotted {}
+  expect(() => defineEntity(Dotted, { name: 'crm.users', fields: { id: { type: Number, isId: true } } })).toThrow(
+    "'Dotted' has a dotted name 'crm.users'. Name the schema separately as { schema: 'crm', name: 'users' }.",
+  );
+});
+
+it('a to-one onto a composite key derives one column per key, named after each', () => {
+  @Entity()
+  class Pair {
+    [idKey]?: 'left' | 'right';
+    @Id({ type: String }) left?: string;
+    @Id({ type: Number }) right?: number;
+  }
+  @Entity()
+  class PairOwner {
+    @Id({ type: Number }) id?: number;
+    @ManyToOne({ entity: () => Pair }) pair?: Pair;
+  }
+  const meta = getMeta(PairOwner);
+  expect(meta.relations.pair?.references).toEqual([
+    { local: 'pairLeft', foreign: 'left' },
+    { local: 'pairRight', foreign: 'right' },
+  ]);
+  expect(meta.fields['pairLeft']).toMatchObject({ type: String, referencedKey: 'left' });
+  expect(meta.fields['pairRight']).toMatchObject({ type: Number, referencedKey: 'right' });
+});
+
+it('a derived foreign key onto a key typed only by its own reference falls back to Number', () => {
+  @Entity()
+  class Root {
+    @Id({ type: Number }) id?: number;
+  }
+  class Extension {
+    id?: number;
+  }
+  // Imperative, because `@Id` requires a `type` the runtime lets a reference supply instead.
+  defineId(Extension, 'id', { references: () => Root });
+  defineEntity(Extension);
+  @Entity()
+  class ExtensionNote {
+    @Id({ type: Number }) id?: number;
+    @ManyToOne({ entity: () => Extension }) extension?: Extension;
+  }
+  expect(getMeta(ExtensionNote).fields['extensionId']).toMatchObject({ type: Number, typeFromReference: true });
+});
+
+it('an inverse side keeps the columns it names itself', () => {
+  @Entity()
+  class Shelf {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({ entity: () => Book, mappedBy: 'shelf', references: [{ local: 'id', foreign: 'shelfRef' }] })
+    books?: Book[];
+  }
+  @Entity()
+  class Book {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Shelf }) shelfRef?: number;
+    @ManyToOne({ entity: () => Shelf, references: [{ local: 'shelfRef', foreign: 'id' }] }) shelf?: Shelf;
+  }
+  expect(getMeta(Shelf).relations.books?.references).toEqual([{ local: 'id', foreign: 'shelfRef' }]);
+});
+
+it('a foreign key derives no relation where its name has no relation to take', () => {
+  class Unregistered {}
+  @Entity()
+  class Target {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Referrer {
+    @Id({ type: Number }) id?: number;
+    // Points at a class that registered nothing, so there is no key to derive a relation from.
+    @Field({ type: Number, references: () => Unregistered }) unregisteredId?: number;
+    // `Id` alone leaves no name once the key's suffix is taken off it.
+    @Field({ type: Number, references: () => Target }) Id?: number;
+    // `target` is already a field, so `targetId` stays a plain foreign key.
+    @Field({ type: String }) target?: string;
+    @Field({ type: Number, references: () => Target }) targetId?: number;
+  }
+  expect(getMeta(Referrer).relations).toEqual({});
+});
+
+it('a junction column is spelled from the column name a key declares', () => {
+  @Entity()
+  class Course {
+    @Id({ type: Number, name: 'course_pk' }) id?: number;
+    @ManyToMany({ entity: () => Student, through: () => Enrolment }) students?: Student[];
+  }
+  @Entity()
+  class Student {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Enrolment {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) courseCourse_pk?: number;
+    @Field({ type: Number }) studentId?: number;
+  }
+  expect(getMeta(Course).relations.students?.references).toEqual([
+    { local: 'courseCourse_pk', foreign: 'id' },
+    { local: 'studentId', foreign: 'id' },
+  ]);
 });
 
 it('User', () => {

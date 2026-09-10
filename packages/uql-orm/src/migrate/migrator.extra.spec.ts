@@ -6,7 +6,7 @@ import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { MigrationStorage, MongoQuerier, Querier, QuerierPool, SqlQuerier } from '../type/index.js';
-import { defineMigration, Migrator } from './migrator.js';
+import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn(),
@@ -154,6 +154,39 @@ describe('Migrator (extra coverage)', () => {
   it('getMigrationFiles should throw error other than ENOENT', async () => {
     (readdir as Mock).mockRejectedValue(new Error('Other error'));
     await expect(migrator.getMigrationFiles()).rejects.toThrow('Other error');
+  });
+
+  it('getMigrations leaves out a file that is not a migration', async () => {
+    vi.mocked(readdir).mockResolvedValue(['1_notes.ts'] as never);
+    vi.spyOn(migrator, 'loadMigration').mockResolvedValue(undefined);
+    expect(await migrator.getMigrations()).toEqual([]);
+  });
+
+  /** Only a create or an alter is something to apply; a table the entities do not name is left alone. */
+  it('planSync and generateFromEntities pass over a table the entities drop', async () => {
+    vi.spyOn(migrator, 'getDiffs').mockResolvedValue([{ tableName: 'legacy', type: 'drop' }]);
+    expect(await migrator.planSync()).toEqual([]);
+    expect(await migrator.generateFromEntities('noop')).toBe('');
+  });
+
+  it('executeMongoSyncStatements runs a command without logging it unless asked', async () => {
+    const logger = vi.fn();
+    const createCollection = vi.fn();
+    const mongoMigrator = new Migrator(createMockQuerierPool(new MongoDialect(), vi.fn()), {
+      storage: mockStorage,
+      logger,
+    });
+    const querier = { db: { createCollection } } as unknown as MongoQuerier;
+
+    await mongoMigrator.executeMongoSyncStatements(['{"action":"createCollection","name":"notes"}'], {}, querier);
+
+    expect(createCollection).toHaveBeenCalledWith('notes');
+    expect(logger).not.toHaveBeenCalled();
+  });
+
+  it('defineBuilderMigration returns the migration it is given, for its type alone', () => {
+    const migration = { async up() {}, async down() {} };
+    expect(defineBuilderMigration(migration)).toBe(migration);
   });
 
   it('loadMigration should return undefined on invalid migration', async () => {

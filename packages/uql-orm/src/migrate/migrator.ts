@@ -34,7 +34,6 @@ import {
 import { runMongoCommand } from './generator/mongoCommand.js';
 import { introspectorFor } from './introspection/registry.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
-import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 
 /**
@@ -66,7 +65,7 @@ export class Migrator {
     private readonly pool: QuerierPool,
     options: MigratorOptions = {},
   ) {
-    this.dialectName = pool.dialect.dialectName ?? 'postgres';
+    this.dialectName = pool.dialect.dialectName;
     this._defaultForeignKeyAction = options.defaultForeignKeyAction;
     this.storage =
       options.storage ??
@@ -81,20 +80,17 @@ export class Migrator {
       options.schemaGenerator ?? (this.dialectName === 'mongodb' ? undefined : this.createGenerator());
   }
 
-  /** Loads MongoDB schema generator on first use; SQL generators are set in the constructor (or via {@link setSchemaGenerator}). */
-  private async ensureSchemaGenerator(): Promise<void> {
+  /**
+   * Loads MongoDB's schema generator on first use, so the optional `mongodb` peer loads only then. SQL
+   * generators are set in the constructor (or via {@link setSchemaGenerator}).
+   */
+  async ensureSchemaGenerator(): Promise<void> {
     if (this.schemaGenerator || this.dialectName !== 'mongodb') {
       return;
     }
-    if (!this._mongoSchemaLoadPromise) {
-      this._mongoSchemaLoadPromise = createSchemaGeneratorAsync(this.pool.dialect, this._defaultForeignKeyAction).then(
-        (gen) => {
-          if (gen) {
-            this.schemaGenerator = gen;
-          }
-        },
-      );
-    }
+    this._mongoSchemaLoadPromise ??= import('./generator/mongoSchemaGenerator.js').then(({ MongoSchemaGenerator }) => {
+      this.schemaGenerator = new MongoSchemaGenerator(this.pool.dialect.namingStrategy, this._defaultForeignKeyAction);
+    });
     await this._mongoSchemaLoadPromise;
   }
 
@@ -378,12 +374,9 @@ export class Migrator {
 
   public async findEntityForTable(tableName: string): Promise<Type<unknown> | undefined> {
     await this.ensureSchemaGenerator();
-    if (!this.schemaGenerator) {
-      return undefined;
-    }
     for (const entity of this.entities) {
       const meta = getMeta(entity);
-      const name = this.schemaGenerator.resolveTableName(meta);
+      const name = this.generator.resolveTableName(meta);
       if (name === tableName) {
         return entity;
       }

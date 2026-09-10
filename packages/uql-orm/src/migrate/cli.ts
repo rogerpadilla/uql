@@ -46,8 +46,6 @@ export async function main(args = process.argv.slice(2)) {
     const config = await loadConfig(customPath);
     assertCliConfig(config);
 
-    const dialectName = config.pool.dialect.dialectName ?? 'postgres';
-
     const options: MigratorOptions = {
       migrationsPath: config.migrationsPath ?? './migrations',
       tableName: config.tableName,
@@ -57,13 +55,7 @@ export async function main(args = process.argv.slice(2)) {
     };
 
     const migrator = new Migrator(config.pool, options);
-    if (!migrator.schemaGenerator) {
-      const generator = await createSchemaGeneratorAsync(config.pool.dialect, config.defaultForeignKeyAction);
-      if (!generator) {
-        throw new TypeError(`Could not find a schema generator for dialect: ${dialectName}`);
-      }
-      migrator.setSchemaGenerator(generator);
-    }
+    await migrator.ensureSchemaGenerator();
 
     switch (command) {
       case 'up':
@@ -373,7 +365,7 @@ function printDriftGroup(title: string, drifts: Drift[], icon: string, showSugge
       if (drift.expected && drift.actual) {
         console.log(`    Expected: ${drift.expected}, Actual: ${drift.actual}`);
       }
-      if (showSuggestion && drift.suggestion) {
+      if (showSuggestion) {
         console.log(`    → ${drift.suggestion}`);
       }
     }

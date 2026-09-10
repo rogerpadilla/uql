@@ -1,4 +1,4 @@
-import { readFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -44,7 +44,7 @@ class DriftedEntity {
 const mockMigrator = {
   // A real generator, because `runDriftCheck` names the expected schema through it.
   schemaGenerator: createSchemaGenerator(new SqliteDialect()),
-  setSchemaGenerator: vi.fn(),
+  ensureSchemaGenerator: vi.fn(),
   up: vi.fn().mockResolvedValue([]),
   down: vi.fn().mockResolvedValue([]),
   status: vi.fn().mockResolvedValue({ executed: [], pending: [] }),
@@ -94,6 +94,8 @@ describe('CLI', () => {
     await cli.main(['up']);
     expect(cliConfig.loadConfig).toHaveBeenCalledWith(undefined);
     expect(mockMigrator.up).toHaveBeenCalled();
+    expect(console.error).not.toHaveBeenCalled();
+    expect(mockPool.end).toHaveBeenCalled();
   });
 
   it('main up with custom config', async () => {
@@ -241,7 +243,7 @@ describe('CLI', () => {
   });
 
   it('main should handle migration error', async () => {
-    mockMigrator.up.mockRejectedValue(new Error('Migration failed'));
+    mockMigrator.up.mockRejectedValueOnce(new Error('Migration failed'));
     await cli.main(['up']);
     expect(console.error).toHaveBeenCalledWith('Error:', 'Migration failed');
     expect(process.exit).toHaveBeenCalledWith(1);
@@ -411,5 +413,84 @@ describe('CLI', () => {
 
     await cli.main(['up']);
     expect(mockMigrator.up).toHaveBeenCalled();
+  });
+
+  /** MongoDB's generator loads lazily; every command may need it, so it is loaded before any runs. */
+  it('main loads the schema generator before running the command', async () => {
+    await cli.main(['status']);
+    expect(mockMigrator.ensureSchemaGenerator).toHaveBeenCalled();
+  });
+
+  it('main generate:from-db and its hyphenated alias pull entities from the database', async () => {
+    await cli.main(['generate:from-db']);
+    await cli.main(['generate-from-db']);
+    // The shared mock has no introspector, which is the first thing the command needs.
+    expect(console.error).toHaveBeenNthCalledWith(1, 'No introspector available. Check your pool configuration.');
+    expect(console.error).toHaveBeenNthCalledWith(2, 'No introspector available. Check your pool configuration.');
+  });
+
+  it('main drift-check (hyphenated alias)', async () => {
+    await cli.main(['drift-check']);
+    expect(console.error).toHaveBeenCalledWith('No entities configured. Add entities to your uql config.');
+  });
+
+  it('runUp ignores a flag it does not know, and a --step with no value', async () => {
+    await cli.runUp(mockMigrator as unknown as Migrator, ['--verbose', '--step']);
+    expect(mockMigrator.up).toHaveBeenCalledWith({});
+  });
+
+  it('runDown ignores a flag it does not know', async () => {
+    await cli.runDown(mockMigrator as unknown as Migrator, ['--verbose']);
+    expect(mockMigrator.down).toHaveBeenCalledWith({ step: 1 });
+  });
+
+  it('runGenerate and runGenerateFromEntities name a migration given no name', async () => {
+    await cli.runGenerate(mockMigrator as unknown as Migrator, []);
+    await cli.runGenerateFromEntities(mockMigrator as unknown as Migrator, []);
+    expect(mockMigrator.generate).toHaveBeenCalledWith('migration');
+    expect(mockMigrator.generateFromEntities).toHaveBeenCalledWith('schema');
+  });
+
+  it('runTypes writes ./uql-entities.d.ts given no --output', () => {
+    const cwd = process.cwd();
+    const dir = mkdtempSync(join(tmpdir(), 'uql-types-'));
+    process.chdir(dir);
+    try {
+      cli.runTypes(mockMigrator as unknown as Migrator, []);
+      expect(readFileSync(join(dir, 'uql-entities.d.ts'), 'utf-8')).toContain('export interface TestEntity {');
+    } finally {
+      process.chdir(cwd);
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('runDriftCheck should exit if there is no introspector to compare against', async () => {
+    const migrator = { ...mockMigrator, schemaIntrospector: undefined } as unknown as Migrator;
+    await cli.runDriftCheck(migrator, { entities: [TestEntity] });
+    expect(console.error).toHaveBeenCalledWith('No introspector available. Check your pool configuration.');
+    expect(process.exit).toHaveBeenCalledWith(1);
+  });
+
+  /** An informational drift names no fix, so the INFO group prints none. */
+  it('runDriftCheck should print an index the entities do not declare as info, with no suggestion', async () => {
+    @Entity({ name: 'IndexedTable' })
+    class Indexed {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String, index: true }) code?: string;
+    }
+    @Entity({ name: 'IndexedTable' })
+    class Unindexed {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) code?: string;
+    }
+    const migrator = {
+      ...mockMigrator,
+      schemaIntrospector: { introspect: vi.fn().mockResolvedValue(buildSchemaAST([Indexed])) },
+    } as unknown as Migrator;
+
+    await cli.runDriftCheck(migrator, { entities: [Unindexed] });
+
+    expect(console.log).toHaveBeenCalledWith('INFO:');
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Add @Field({ index })'));
   });
 });

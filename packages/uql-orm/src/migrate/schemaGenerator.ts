@@ -631,7 +631,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     if (current == null || desired == null) return current == null && desired == null;
 
     const normalize = (value: unknown): string => {
-      if (value === null) return 'null';
       // Render first: the desired side may be a symbolic expression, the current side is always the
       // engine's own text, and `{"kind":"now"}` matches no spelling of `CURRENT_TIMESTAMP`.
       const val = SqlExpression.isExpression(value) ? formatDefaultValue(value, this.dialect) : value;
@@ -685,10 +684,8 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     });
 
     for (const rel of table.outgoingRelations) {
-      if (rel.from.columns.length > 0) {
-        const refTable = this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema);
-        constraints.push(this.foreignKeyConstraint(table.name, foreignKeyOf(rel), refTable));
-      }
+      const refTable = this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema);
+      constraints.push(this.foreignKeyConstraint(table.name, foreignKeyOf(rel), refTable));
     }
 
     const ifNotExists = options.ifNotExists && this.features.ifNotExists ? 'IF NOT EXISTS ' : '';

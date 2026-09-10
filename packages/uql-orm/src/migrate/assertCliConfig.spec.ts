@@ -24,6 +24,18 @@ describe('assertCliConfig', () => {
     expect(() => assertCliConfig({})).toThrow(/Config\.pool/);
   });
 
+  it('throws when a pool method is not a function', () => {
+    expect(() => assertCliConfig({ pool: { ...minimalPool, transaction: undefined } })).toThrow(
+      'Config.pool.transaction must be a function',
+    );
+  });
+
+  it('throws when the dialect is missing', () => {
+    expect(() => assertCliConfig({ pool: { ...minimalPool, dialect: undefined } })).toThrow(
+      'Config.pool.dialect is required and must be an object',
+    );
+  });
+
   it('throws when dialect.dialectName is not a string', () => {
     expect(() =>
       assertCliConfig({

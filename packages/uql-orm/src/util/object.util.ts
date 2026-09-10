@@ -61,6 +61,11 @@ export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }
 
+/** The entries of `record` holding a value: a key declared but left `undefined` is no entry at all. */
+export function definedEntries<K extends string, V>(record: Partial<Record<K, V>>): [K, V][] {
+  return (Object.entries(record) as [K, V | undefined][]).filter((entry): entry is [K, V] => entry[1] !== undefined);
+}
+
 /**
  * The entity's own name, declared or its class's. `meta.name` holds only what the author wrote, so
  * the fallback is what an entity that named no table is called - which is why the sites spelling this

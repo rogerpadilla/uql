@@ -31,6 +31,7 @@ import {
   lowerFirst,
   normalizeIndexColumn,
   upperFirst,
+  definedEntries,
 } from '../../util/index.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
@@ -139,20 +140,19 @@ export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptio
  * API converge on one registration path before anything is finalized.
  */
 export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefined): void {
-  for (const [key, spec] of Object.entries(specs?.fields ?? {})) {
-    if (!spec) continue;
+  for (const [key, spec] of definedEntries(specs?.fields ?? {})) {
     if (spec.isId) {
       defineId(entity, key, spec);
     } else {
       defineField(entity, key, spec);
     }
   }
-  for (const [key, spec] of Object.entries(specs?.relations ?? {})) {
-    if (spec) defineRelation(entity, key, spec);
+  for (const [key, spec] of definedEntries(specs?.relations ?? {})) {
+    defineRelation(entity, key, spec);
   }
-  for (const [event, methodNames] of Object.entries(specs?.hooks ?? {})) {
-    for (const methodName of methodNames ?? []) {
-      defineHook(entity, methodName, event as HookEvent);
+  for (const [event, methodNames] of definedEntries(specs?.hooks ?? {})) {
+    for (const methodName of methodNames) {
+      defineHook(entity, methodName, event);
     }
   }
 }
@@ -188,8 +188,8 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   for (const index of opts.indexes ?? []) {
     defineIndex(entity, index);
   }
-  for (const [name, filter] of Object.entries<FilterOptions<E> | undefined>(opts.filters ?? {})) {
-    if (filter) defineFilter(entity, name, filter);
+  for (const [name, filter] of definedEntries(opts.filters ?? {})) {
+    defineFilter(entity, name, filter);
   }
 
   if (!hasKeys(meta.fields)) {
@@ -366,10 +366,9 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 }
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
-  for (const relKey in meta.relations) {
+  for (const [relKey, relation] of definedEntries(meta.relations)) {
     // The authored view: `mappedBy` may still be the callback and `references` unset until this settles them.
-    const relOpts: RelationOptions | undefined = meta.relations[relKey];
-    if (!relOpts) continue;
+    const relOpts: RelationOptions = relation;
     const at = `'${meta.entity.name}.${relKey}'`;
 
     if (relOpts.mappedBy) {
@@ -434,7 +433,7 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
   for (const { local, foreign } of relOpts.references) {
     fields[local] ??= {
       name: local,
-      type: relMeta.fields[foreign]?.type ?? Number,
+      type: fieldOf(relMeta, foreign).type ?? Number,
       references: relOpts.entity,
       referencedKey: foreign,
       typeFromReference: true,
@@ -495,10 +494,9 @@ function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationOp
  */
 function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
   const joined = new Set(
-    getKeys(meta.relations).flatMap((key) => meta.relations[key]?.references.map(({ local }) => local) ?? []),
+    definedEntries(meta.relations).flatMap(([, relation]) => relation.references.map(({ local }) => local)),
   );
-  for (const fieldKey of getKeys(meta.fields)) {
-    const references = meta.fields[fieldKey]?.references;
+  for (const [fieldKey, { references }] of definedEntries(meta.fields)) {
     if (!references || joined.has(fieldKey)) continue;
     const target = ensureMeta(references());
     // Nothing to derive from an entity that has not registered its own fields yet.
@@ -527,7 +525,7 @@ function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
 
 /** `<entityName><IdColumn>`, not the `<relationKey>Id` an owning to-one derives: a junction row has no relation key to borrow from. */
 function junctionColumn<E>(meta: EntityMeta<E>, idKey: string): string {
-  return lowerFirst(entityName(meta)) + upperFirst(meta.fields[idKey]?.name ?? idKey);
+  return lowerFirst(entityName(meta)) + upperFirst(fieldOf(meta, idKey).name ?? idKey);
 }
 
 /** A callback only reads one property off the key map, and that property is the key, so one serves every entity. */
@@ -565,11 +563,8 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
   // Merge hooks from parent entity (parent hooks execute first)
   if (source.hooks) {
     if (!target.hooks) target.hooks = {};
-    for (const event of Object.keys(source.hooks) as HookEvent[]) {
-      const sourceList = source.hooks[event];
-      if (sourceList?.length) {
-        target.hooks[event] = [...sourceList, ...(target.hooks[event] ?? [])];
-      }
+    for (const [event, sourceList] of definedEntries(source.hooks)) {
+      target.hooks[event] = [...sourceList, ...(target.hooks[event] ?? [])];
     }
   }
 }

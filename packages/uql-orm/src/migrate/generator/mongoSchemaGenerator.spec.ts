@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
+import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
 import type { IndexNode, TableNode } from '../../schema/types.js';
 import type { IndexSchema } from '../../type/index.js';
 import type { TableDefinition } from '../builder/types.js';
@@ -14,6 +15,24 @@ class MongoUser {
 
 describe('MongoSchemaGenerator', () => {
   const generator = new MongoSchemaGenerator();
+
+  it('should drop one collection per entity', () => {
+    expect(generator.generateDropSchema([MongoUser]).map((json) => JSON.parse(json))).toEqual([
+      { action: 'dropCollection', name: 'MongoUser' },
+    ]);
+  });
+
+  it('should alter nothing, either way, where no index is missing', () => {
+    const diff = { tableName: 'MongoUser', type: 'alter' as const };
+    expect(generator.generateAlterTable(diff)).toEqual([]);
+    expect(generator.generateAlterTableDown(diff)).toEqual([]);
+  });
+
+  it('should create a collection from its node, with an index command per index it holds', () => {
+    const table = buildSchemaAST([MongoUser]).getTable('MongoUser')!;
+    const statements = generator.generateCreateTableFromNode(table).map((json) => JSON.parse(json));
+    expect(statements.map((statement) => statement.action)).toEqual(['createCollection', 'createIndex', 'createIndex']);
+  });
 
   /**
    * A collection plus one `createIndex` command per index, mirroring the SQL generator's

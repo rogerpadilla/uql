@@ -172,7 +172,7 @@ function detectColumnDrifts(diff: SchemaDiffResult, opts: DriftDetectorSettings)
         details: `Column "${colDiff.column}" exists in database but not in entity`,
         suggestion: 'Add to entity or create migration to drop',
       });
-    } else if (colDiff.type === 'alter') {
+    } else {
       addAlterColumnDrifts(colDiff, drifts, opts);
     }
   }
@@ -183,12 +183,11 @@ function detectColumnDrifts(diff: SchemaDiffResult, opts: DriftDetectorSettings)
 /**
  * Add drifts for column alterations (type/nullable mismatches).
  */
-function addAlterColumnDrifts(colDiff: ColumnDiff, drifts: Drift[], opts: DriftDetectorSettings): void {
-  // Every check below compares the two sides, so there is nothing to report without both.
-  if (!colDiff.expected || !colDiff.actual) {
-    return;
-  }
-
+function addAlterColumnDrifts(
+  colDiff: Extract<ColumnDiff, { type: 'alter' }>,
+  drifts: Drift[],
+  opts: DriftDetectorSettings,
+): void {
   // An auto-increment key is created through the dialect's `serialPrimaryKey`, whose spelling the
   // entity never states - `BIGINT UNSIGNED AUTO_INCREMENT` on the MySQL family, where the column then
   // reads back as `BIGINT UNSIGNED` against an entity that can only say `BIGINT`. Comparing the two
@@ -270,7 +269,7 @@ function detectIndexDrifts(diff: SchemaDiffResult): Drift[] {
         details: `Index "${idxDiff.name}" exists in database but not defined in entity`,
         suggestion: 'Add @Field({ index }) or create migration to drop',
       });
-    } else if (idxDiff.type === 'alter') {
+    } else {
       // No `expected`/`actual` here: the CLI prints those by interpolation, where an `IndexNode`
       // renders as `[object Object]`. What differs is already spelled out in `description`.
       drifts.push({
@@ -344,7 +343,7 @@ function createSummary(drifts: Drift[]): { critical: number; warning: number; in
 /**
  * Format type for display.
  */
-function formatType(type: CanonicalType | undefined, dialect: AbstractDialect | undefined): string {
-  if (!type || !dialect) return 'unknown';
+function formatType(type: CanonicalType, dialect: AbstractDialect | undefined): string {
+  if (!dialect) return 'unknown';
   return canonicalToSql(type, dialect);
 }

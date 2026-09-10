@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { sqlToCanonical } from '../schema/canonicalType.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
 import { raw } from '../util/index.js';
-import { SqlSchemaGenerator } from './schemaGenerator.js';
+import { buildEntityAST, SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class DiffUser {
@@ -38,6 +39,75 @@ class ComputedEntity {
 describe('SqlSchemaGenerator Advanced', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
   const ast = new SchemaAST();
+
+  it('refuses to drop a key whose constraint introspection did not name', () => {
+    expect(() => generator.generateDropPrimaryKeySql('users')).toThrow(
+      'Cannot drop the primary key of "users": postgres names the constraint',
+    );
+  });
+
+  it('exposes the naming strategy of its dialect', () => {
+    const namingStrategy = new SnakeCaseNamingStrategy();
+    expect(new SqlSchemaGenerator(new PostgresDialect({ namingStrategy })).namingStrategy).toBe(namingStrategy);
+  });
+
+  it('types a foreign key as the key it points at, declared or derived from a relation', () => {
+    @Entity()
+    class RefTarget {
+      @Id({ type: String, columnType: 'uuid' }) id?: string;
+    }
+    @Entity()
+    class RefSource {
+      @Id({ type: Number }) id?: number;
+      @Field({ references: () => RefTarget }) ownerId?: string;
+      @ManyToOne({ entity: () => RefTarget }) target?: RefTarget;
+    }
+    const { fields } = getMeta(RefSource);
+    expect(generator.getSqlType(fields.ownerId!)).toBe('UUID');
+    expect(generator.getSqlType(fields['targetId']!)).toBe('UUID');
+  });
+
+  it('comments a column of a table that has no comment of its own', () => {
+    @Entity()
+    class Commented {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String, comment: 'Shown to users' }) label?: string;
+    }
+    const statements = generator.generateCreateSchema([Commented]);
+    expect(statements).toContainEqual(expect.stringContaining('COMMENT ON COLUMN'));
+    expect(statements.filter((statement) => statement.startsWith('COMMENT ON TABLE'))).toEqual([]);
+  });
+
+  /** Reversing a key change restores only the side that had one: a key added from none drops, one removed adds back. */
+  it('reverses a primary key change that added a key, or removed one', () => {
+    const added = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      primaryKey: { from: [], to: ['id'] },
+    });
+    expect(added).toEqual([expect.stringContaining('DROP CONSTRAINT')]);
+
+    const removed = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      primaryKey: { from: ['id'], to: [] },
+    });
+    expect(removed).toEqual([expect.stringContaining('ADD CONSTRAINT')]);
+  });
+
+  it('diffs nothing where the desired schema has no table for the entity', () => {
+    const current = buildEntityAST(generator, [DiffUser]).getTable('DiffUser');
+    expect(generator.diffSchema(DiffUser, current, new SchemaAST())).toBeUndefined();
+  });
+
+  it('reads a cast NULL as no default, whichever side spells it', () => {
+    class DefaultsProbe extends SqlSchemaGenerator {
+      equal(current: unknown, desired: unknown): boolean {
+        return this.isDefaultValueEqual(current, desired);
+      }
+    }
+    expect(new DefaultsProbe(new PostgresDialect()).equal('NULL::character varying', 'NULL')).toBe(true);
+  });
 
   it('diffSchema should detect new columns', () => {
     const currentSchema = createTableNode('DiffUser', ast, [
