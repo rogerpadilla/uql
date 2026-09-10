@@ -265,8 +265,8 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
   // UPDATE` convention makes `changes` a per-row weighted sum (1=insert, 2=update, 0=no-op), so a
   // batch mixing an insert and an update would fabricate ids for rows that were never touched. This
   // function has no way to tell the two call sites apart (`internalRun` reports the same header
-  // shape either way), so `AbstractSqlQuerier.upsertMany` strips `ids`/`firstId`/`created` back down
-  // to just `changes` for a multi-row `firstId`-dialect upsert after calling this.
+  // shape either way), so `AbstractSqlQuerier`'s `runUpsert` discards them for a multi-row `firstId`
+  // upsert and reads the ids back by the conflict columns instead.
   let ids: PrimaryKey[] = [];
   if (rows?.length) {
     ids = rows.map((r) => r['id'] as PrimaryKey);

@@ -185,6 +185,29 @@ class Late {
   }
 }
 
+/** A key the database generates and a field the ORM fills, neither of which the caller passed. */
+@Entity()
+class Stamped {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String, unique: true })
+  code?: string;
+
+  @Field({ type: Number, onInsert: () => 7 })
+  createdAt?: number;
+
+  @AfterInsert()
+  recordInsert(this: Stamped) {
+    log.push(`afterInsert:${this.id}:${this.createdAt}`);
+  }
+
+  @AfterUpsert()
+  recordUpsert(this: Stamped) {
+    log.push(`afterUpsert:${this.id}`);
+  }
+}
+
 /** The documented use for `HookContext`: query through the hook's own querier. */
 @Entity()
 class Unique {
@@ -238,6 +261,7 @@ const TABLES = {
   Note: '`id` INTEGER PRIMARY KEY, `title` TEXT',
   Guarded: '`id` INTEGER PRIMARY KEY, `title` TEXT',
   Late: '`id` INTEGER PRIMARY KEY, `title` TEXT',
+  Stamped: '`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `createdAt` BIGINT',
   Unique: '`id` INTEGER PRIMARY KEY, `email` TEXT',
   Shelf: '`id` INTEGER PRIMARY KEY',
   ShelvedBook: '`id` INTEGER PRIMARY KEY, `shelfId` INTEGER, `title` TEXT',
@@ -310,6 +334,16 @@ describe('lifecycle hooks', () => {
     await querier.insertOne(Book, { title: 'Hello World' });
 
     expect(await querier.findMany(Book, { $select: { slug: true } })).toEqual([{ slug: 'hello-world' }]);
+  });
+
+  it('should hand an after* hook the row as written, leaving the caller its own', async () => {
+    const payload = [{ code: 'a' }, { code: 'b' }];
+
+    await querier.insertMany(Stamped, payload);
+    await querier.upsertOne(Stamped, { code: true }, { code: 'c' });
+
+    expect(log).toEqual(['afterInsert:1:7', 'afterInsert:2:7', 'afterUpsert:3']);
+    expect(payload).toEqual([{ code: 'a' }, { code: 'b' }]);
   });
 
   it('should return what an @AfterLoad hook assigned', async () => {

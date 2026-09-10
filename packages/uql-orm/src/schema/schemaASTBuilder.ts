@@ -11,7 +11,7 @@ import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, FieldMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { ddlText } from '../util/ddlExpression.util.js';
-import { computedExpression, isInlinedExpression } from '../util/field.util.js';
+import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
@@ -146,7 +146,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
-      generatedAs: ddlText(computedExpression(field), `the computed column '${columnName}'`),
+      generatedAs: ddlText(field.computed, `the computed column '${columnName}'`),
       comment: field.comment,
       enum: field.enum,
       table,
@@ -259,17 +259,17 @@ function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): voi
   }
 }
 
-/**
- * One `@Index([...])`. Its entries keep the authored form (expression, prefix length, order) with
- * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
- * subset, which is what diffing and introspection compare.
- */
 /** An `include` column is named like any other, so a naming strategy has to reach it too. */
 function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<unknown>, column: string): string {
   const field = meta.fields[column as keyof typeof meta.fields];
   return field ? ctx.resolveColumnName(column, field) : column;
 }
 
+/**
+ * One `@Index([...])`. Its entries keep the authored form (expression, prefix length, order) with
+ * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
+ * subset, which is what diffing and introspection compare.
+ */
 function addCompositeIndex(
   ctx: BuildContext,
   table: TableNode,

@@ -414,9 +414,6 @@ export interface SchemaIntrospector {
    */
   readonly indexFacets: ReadonlySet<IndexFacet>;
 
-  /**
-   * Introspect entire database schema and return SchemaAST.
-   */
   /** The whole database, or just the tables named. Names nothing matches are left out. */
   introspect(tables?: readonly string[]): Promise<SchemaAST>;
 

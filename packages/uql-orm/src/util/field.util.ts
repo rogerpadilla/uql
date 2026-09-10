@@ -10,7 +10,6 @@ import type {
   StringColumnType,
   VectorColumnType,
 } from '../type/index.js';
-import type { QueryRaw } from '../type/queryRaw.js';
 import { getKeys } from './object.util.js';
 
 /**
@@ -83,34 +82,20 @@ export function columnFamily(type: unknown): ColumnFamily | undefined {
 }
 
 /**
- * The expression the database computes for this field, whichever key declared it.
- *
- * `virtual` is `computed` under its old name and is read here so both spell one behaviour. Giving
- * both is refused at registration rather than resolved, since only the author knows which was meant.
- */
-export function computedExpression(field: FieldOptions): QueryRaw | undefined {
-  return field.computed ?? field.virtual;
-}
-
-/**
  * Whether the field's expression is spliced into each statement that reads it, rather than stored.
- *
- * One of the two questions `virtual` used to answer alone. Every read site asks this - the DDL skip,
- * the projection, the `$where` operand, the `ORDER BY` operand - because an inlined field has no
- * column to name, while a stored one is read exactly like any other.
+ * Every read site asks this - the DDL skip, the projection, the `$where` and `ORDER BY` operands -
+ * because an inlined field has no column to name, while a stored one is read like any other.
  */
 export function isInlinedExpression(field: FieldOptions): boolean {
-  return computedExpression(field) !== undefined && field.stored !== true;
+  return field.computed !== undefined && field.stored !== true;
 }
 
 /**
- * Whether the database supplies this field's value, so no insert or update may write it.
- *
- * The other question, and the one that makes `stored` more than a rename: a stored computed column
- * *is* a real column, so it is read like one - but writing to it is an error on every engine.
+ * Whether the database supplies this field's value, so no insert or update may write it: a stored
+ * computed column *is* a real column, read like one, but writing to it is an error on every engine.
  */
 export function isDatabaseWritten(field: FieldOptions): boolean {
-  return computedExpression(field) !== undefined;
+  return field.computed !== undefined;
 }
 
 /**

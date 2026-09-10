@@ -53,7 +53,7 @@ import {
   type UpdatePayload,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
-import { computedExpression, isInlinedExpression } from '../util/field.util.js';
+import { isInlinedExpression } from '../util/field.util.js';
 import {
   asSelectMap,
   assertNonNegativeInteger,
@@ -381,7 +381,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
           // is valid on every engine, so naming the table costs nothing where it is not needed.
           const qualified = opts.prefix ?? this.resolveTableAlias(meta);
           this.getRawValue(ctx, {
-            value: computedExpression(field)!.as(key),
+            value: field.computed!.as(key),
             prefix: qualified,
             escapedPrefix: this.escapeId(qualified, true, true),
             autoPrefixAlias: opts.autoPrefixAlias,
@@ -790,7 +790,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * alias exists only when the field was also selected, which `$where` and `$sort` cannot assume.
    */
   private inlinedOperand(ctx: QueryContext, field: FieldOptions | undefined, prefix: string | undefined) {
-    const inlined = field && isInlinedExpression(field) ? computedExpression(field) : undefined;
+    const inlined = field && isInlinedExpression(field) ? field.computed : undefined;
     return inlined
       ? this.buildFragment(ctx, (fragmentCtx) =>
           this.getRawValue(fragmentCtx, {
@@ -1467,6 +1467,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * already built ends up, so the two ends cannot disagree.
    */
   readonly returningPosition: 'suffix' | 'after-target' = 'suffix';
+
+  /**
+   * Whether a multi-row upsert's `RETURNING` lists its rows in payload order. Where it does not, the
+   * ids are read back by the conflict columns instead, since placing them in order would name the
+   * wrong rows.
+   */
+  readonly upsertReturningOrdered: boolean = true;
 
   /**
    * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than

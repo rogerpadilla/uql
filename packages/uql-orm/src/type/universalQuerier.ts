@@ -9,7 +9,6 @@ import type {
   QueryProjected,
   QuerySearch,
   QueryStreamProjected,
-  QueryUpdateResult,
   QueryUpsertOneResult,
   QueryUpsertManyResult,
 } from './query.js';
@@ -217,7 +216,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
    * auto-increment keys in batches without explicit IDs - otherwise those entries are
    * `undefined` rather than potentially wrong values. A composite key is never one the statement
-   * reports, so those rows are named from the payload instead.
+   * reports, so those rows are named as written, `onInsert` columns included.
    * @param entity the entity to persist on
    * @param payload the data to be persisted
    * @return the IDs
@@ -229,7 +228,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param entity the entity to persist on
    * @param conflictPaths the keys to use for the unique search
    * @param payload the data to be persisted
-   * @return operation metadata; see {@link QueryUpdateResult}
+   * @return the id and whether it was created; see {@link QueryUpsertOneResult}
    */
   upsertOne<E extends object>(
     entity: Type<E>,
@@ -242,7 +241,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param entity the entity to persist on
    * @param conflictPaths the keys to use for the unique search
    * @param payload the data to be persisted
-   * @return operation metadata; see {@link QueryUpdateResult}
+   * @return the ids, in payload order; see {@link QueryUpsertManyResult}
    */
   upsertMany<E extends object>(
     entity: Type<E>,

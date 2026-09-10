@@ -53,12 +53,6 @@ const metas: Meta = globalMap('uql-orm/entity/metadata/v1');
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
-  if (opts.virtual !== undefined && opts.computed !== undefined) {
-    throw new TypeError(
-      `'${entity.name}.${key}' gives both 'virtual' and 'computed'. They are one option under two names - ` +
-        "keep 'computed'; 'npx uql-codemod' rewrites the other.",
-    );
-  }
   // A stored computed column is a real column and still needs a type; only an inlined one is exempt,
   // its expression being spliced in rather than declared.
   if (!opts.type && !opts.references && !isInlinedExpression(opts)) {

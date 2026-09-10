@@ -26,7 +26,6 @@ const FIELD_OPTION_FAMILY = {
   references: '*',
   onDelete: '*',
   enum: '*',
-  virtual: '*',
   computed: '*',
   stored: '*',
   updatable: '*',
@@ -54,7 +53,6 @@ const FIELD_OPTION_FAMILY = {
  */
 const INLINE_READS = [
   'type',
-  'virtual',
   'computed',
   'stored',
   'enum',
@@ -145,7 +143,7 @@ type FamilyOfType<T> = T extends NumericColumnType | NumberConstructor | BigIntC
 type DeadOptions<O> =
   | (O extends { readonly stored: true }
       ? GeneratedWrite
-      : O extends { readonly virtual: QueryRaw } | { readonly computed: QueryRaw }
+      : O extends { readonly computed: QueryRaw }
         ? Exclude<keyof FieldOptions, InlineRead>
         : never)
   | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)

@@ -423,14 +423,10 @@ export class Migrator {
   }
 
   /**
-   * Sync one entity, for a schema that grows while the process runs: a content type an admin just
-   * created is one table to add, where the whole set would read the catalogue to work that out.
-   *
-   * The new-table case costs one existence check and creates with `IF NOT EXISTS`, so instances racing
-   * the same admin save settle instead of colliding. An existing table still pays for introspection,
-   * since a column diff needs the columns.
+   * The DDL for one entity: {@link planSync} narrowed to the table it names. A new table costs one
+   * existence check and is created with `IF NOT EXISTS`, so instances racing the same admin save
+   * settle instead of colliding; an existing one still pays for introspection, as a diff needs columns.
    */
-  /** The DDL for one entity: {@link planSync} narrowed to the table it names. */
   private async planEntity(entity: Type<unknown>, options: SyncOptions): Promise<string[]> {
     const meta = getMeta(entity);
     // Before anything reads `this.generator`, whose own failure names neither the entity nor the

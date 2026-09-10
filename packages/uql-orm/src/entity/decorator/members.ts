@@ -25,12 +25,6 @@ import { memberRegistrations } from './bag.js';
 type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext<unknown, V>) => void;
 
 /**
- * The property type a set of field options describes, in the same order schema generation resolves the
- * column: a declared `type` wins, and otherwise the column - and so the property - is the referenced
- * primary key's own type. Which is what makes `@Field({ references: () => User })` on a `number`, where
- * `User.id` is a `uuid`, a compile error rather than a column that disagrees with its property.
- */
-/**
  * Maps any option the type does not declare to `never`, turning a typo into a compile error.
  *
  * Needed because the decorators capture their options as a naked type parameter, and TypeScript
@@ -42,10 +36,9 @@ type RejectUnknown<O, Known> = [Exclude<keyof O, keyof Known>] extends [never]
   : Record<Exclude<keyof O, keyof Known> & string, never>;
 
 /**
- * The value type the options declare, which the decorated property is then checked against.
- *
- * `enum` narrows it to its own values, so the property must spell out the same set. Only the values
- * the declared `type` admits count, which is what keeps `enum: [2]` off a `String` field.
+ * The property type a set of field options describes: the declared `type`, narrowed by `enum` to the
+ * values that type admits (so `enum: [2]` stays off a `String`), or else the referenced key's own type,
+ * which makes `@Field({ references: () => User })` on a `number` an error when `User.id` is a `uuid`.
  */
 type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
   ? O extends { readonly enum: infer E extends readonly unknown[] }

@@ -67,6 +67,15 @@ class Attempt {
   @Field({ type: String }) score?: string;
 }
 
+/** A composite whose second column the ORM mints, so only the written row carries it. */
+@Entity()
+class Ticket {
+  [idKey]?: 'tenant' | 'code';
+  @Id({ type: String }) tenant?: string;
+  @Id({ type: String, onInsert: () => 'minted' }) code?: string;
+  @Field({ type: String }) title?: string;
+}
+
 @Entity()
 class Term {
   [idKey]?: 'year' | 'season';
@@ -99,6 +108,7 @@ beforeAll(async () => {
     Badge,
     EnrolmentBadge,
     Attempt,
+    Ticket,
   ])) {
     await pool.run(stmt);
   }
@@ -128,9 +138,8 @@ beforeAll(async () => {
 
 describe('writing composite rows', () => {
   /**
-   * No column holds a composite key, so no statement reports one. `insertMany` names the rows from
-   * the payload instead, which the caller wrote every column of - the same map `saveMany` reports,
-   * so the two write methods answer in one shape.
+   * No column holds a composite key, so no statement reports one. `insertMany` names the rows as
+   * written instead - the same map `saveMany` reports, so the two write methods answer in one shape.
    */
   it('inserts rows whose key it did not generate, and reports that key', async () => {
     const [autumn, winter] = await pool.insertMany(Term, [
@@ -143,6 +152,12 @@ describe('writing composite rows', () => {
       year: 2027,
       season: 'winter',
     });
+  });
+
+  it('reports a key column the ORM filled, which the payload never carried', async () => {
+    const [id] = await pool.insertMany(Ticket, [{ tenant: 'acme', title: 'x' }]);
+
+    expect(id).toEqual({ tenant: 'acme', code: 'minted' });
   });
 
   /**

@@ -37,8 +37,8 @@ class IncompatibleRejected {
   @Field({ type: String, precision: 10 }) d?: string;
   // @ts-expect-error - an inlined computed field is never in the DDL, so its index would never be created
   @Field({ type: Number, computed: raw`1`, index: true }) e?: number;
-  // @ts-expect-error - and the deprecated 'virtual' spelling is read the same way
-  @Field({ type: Number, virtual: raw`1`, index: true }) e2?: number;
+  // @ts-expect-error - not an option: an expression the database computes is 'computed'
+  @Field({ type: Number, virtual: raw`1` }) e2?: number;
   // @ts-expect-error - an update never carries the field, so the callback could not fire
   @Field({ type: Number, updatable: false, onUpdate: () => 1 }) f?: number;
   // @ts-expect-error - a primary key is NOT NULL in every engine

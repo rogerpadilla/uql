@@ -30,9 +30,6 @@ const MAX_LIMIT = BigInt.asUintN(64, -1n);
  * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
  * - the update operators `$set` (JSON_SET), `$unset` (JSON_REMOVE), `$push` (JSON_MERGE_PRESERVE)
  *   and `$pull` (JSON_REPLACE over JSON_TABLE)
- *
- * Neither has `FOR NO KEY UPDATE`/`FOR KEY SHARE`, PostgreSQL's weaker pair, so asking for one is
- * rejected rather than served a stronger lock.
  */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */

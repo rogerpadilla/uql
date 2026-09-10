@@ -52,9 +52,6 @@ export class DefaultLogger implements Logger {
 }
 
 /**
- * A wrapper class that implements the Logger interface and handles different logging options.
- */
-/**
  * Secondary {@link LoggerWrapper} settings, alongside the primary `options: LoggingOptions`
  * constructor argument.
  */
@@ -68,6 +65,9 @@ export interface LoggerWrapperConfig {
   slowQuery?: number;
 }
 
+/**
+ * A wrapper class that implements the Logger interface and handles different logging options.
+ */
 export class LoggerWrapper implements Logger {
   private readonly levels: Set<LogLevel>;
   private readonly logger?: Logger;

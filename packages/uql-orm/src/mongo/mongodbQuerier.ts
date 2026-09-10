@@ -1,7 +1,7 @@
 import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { getMeta, idOf, soleIdOf } from '../entity/index.js';
+import { getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
   EntityData,
@@ -378,16 +378,10 @@ export class MongodbQuerier extends AbstractQuerier {
     return (this.dialect.normalizeIds(meta, founds as E[]) || []).map((found) => idOf(meta, found));
   }
 
-  override async internalInsertMany<E extends Document>(entity: Type<E>, payloads: EntityData<E>[]) {
+  override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
     return this.timed('internalInsertMany', undefined, async () => {
-      if (!payloads?.length) {
-        return [];
-      }
-
-      payloads = clone(payloads);
-
       const meta = getMeta(entity);
-      const persistables = this.dialect.getPersistables(meta, payloads, 'onInsert') as OptionalUnlessRequiredId<E>[];
+      const persistables = this.dialect.getPersistables(meta, rows, 'onInsert') as OptionalUnlessRequiredId<E>[];
 
       const { insertedIds } = await this.execute((session) =>
         this.collection(entity).insertMany(persistables, { session }),
@@ -396,13 +390,11 @@ export class MongodbQuerier extends AbstractQuerier {
       const ids = Object.values(insertedIds).map((id) => this.dialect.fromWireId(id)) as IdValue<E>[];
 
       const idKey = soleIdOf(meta, 'insert');
-      for (const [index, it] of payloads.entries()) {
-        it[idKey] = ids[index];
+      for (let index = 0; index < rows.length; index++) {
+        rows[index][idKey] = ids[index];
       }
 
-      await this.insertRelations(entity, payloads);
-
-      return ids;
+      await this.insertRelations(entity, rows);
     });
   }
 
@@ -488,11 +480,12 @@ export class MongodbQuerier extends AbstractQuerier {
         }),
       );
 
-      const firstId = this.dialect.fromWireId(res?.value?._id) as PrimaryKey | undefined;
+      // Read off the document as written, which carries its `_id` on either branch.
+      const id = this.dialect.fromWireId(res?.value?._id) as PrimaryKey | undefined;
       // `updatedExisting` is false when a new document was inserted (upserted).
       const created = res?.lastErrorObject?.['updatedExisting'] === false;
 
-      return { firstId, changes: firstId ? 1 : 0, created };
+      return { ids: [id], changes: id === undefined ? 0 : 1, created };
     });
   }
 
@@ -506,9 +499,11 @@ export class MongodbQuerier extends AbstractQuerier {
         return { changes: 0 };
       }
 
-      payload = clone(payload);
-
       const meta = getMeta(entity);
+      // Asked before `getPersistable` fills an `onInsert` key into rows it may only update.
+      const unnamed = payload.map((row) => !namesKey(meta, row));
+
+      payload = clone(payload);
 
       const operations = payload.map((item) => {
         const persistable = this.dialect.getPersistable(meta, item, 'onInsert');
@@ -527,15 +522,16 @@ export class MongodbQuerier extends AbstractQuerier {
       const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
 
       const changes = (res.upsertedCount ?? 0) + (res.modifiedCount ?? 0);
-      // `upsertedIds` only covers newly-inserted documents, keyed by operation index: a matched and
-      // updated document's `_id` is not in the response. Read by that index rather than flattened,
-      // so each id lands on the row it belongs to and the gaps stay gaps.
-      const ids = payload.map((_, index) => {
+      // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
+      // its own row; an updated document's `_id` is read back by the conflict fields instead.
+      const reported = payload.map((_, index) => {
         const id = res.upsertedIds[index];
         return id === undefined ? undefined : (this.dialect.fromWireId(id) as PrimaryKey);
       });
+      const unplaced = reported.some((id, index) => id === undefined && unnamed[index]);
+      const found = unplaced ? await this.idsByConflict(entity, conflictPaths, payload) : [];
 
-      return { changes, ids, firstId: ids.find((id) => id !== undefined) };
+      return { changes, ids: reported.map((id, index) => id ?? found[index]) };
     });
   }
 

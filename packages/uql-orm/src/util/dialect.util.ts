@@ -32,6 +32,7 @@ import {
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
   type UqlContext,
+  type UpdatePayload,
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { isDatabaseWritten } from './field.util.js';
@@ -124,11 +125,12 @@ export function getSoftDeleteValue(field: FieldOptions) {
   return field.softDelete === true ? new Date() : getFieldCallbackValue(field.softDelete as OnFieldCallback);
 }
 
-export function fillOnFields<E>(
+/** Fills each field `callbackKey` generates on `payload` in place, where the caller left it unset. */
+export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   meta: EntityMeta<E>,
-  payload: EntityData<E> | EntityData<E>[],
+  payload: R | R[],
   callbackKey: CallbackKey,
-): EntityData<E>[] {
+): R[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
   const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];
   if (keys.length === 0) {
@@ -137,7 +139,7 @@ export function fillOnFields<E>(
   for (const it of payloads) {
     for (const key of keys) {
       if (it[key] === undefined) {
-        it[key] = getFieldCallbackValue(meta.fields[key]![callbackKey]!) as E[typeof key];
+        it[key] = getFieldCallbackValue(meta.fields[key]![callbackKey]!) as R[typeof key];
       }
     }
   }

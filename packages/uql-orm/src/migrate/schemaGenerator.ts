@@ -100,9 +100,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /**
-   * Primary key type for auto-increment integer IDs
-   */
-  /**
    * How an auto-increment key of `type` is spelled: the type as any other column renders it, plus what
    * the engine appends to make it generated.
    *
@@ -503,9 +500,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /**
-   * Compare an entity with a database table node and return the differences.
-   */
-  /**
    * How this entity differs from the table the database reported, as the migrator's `SchemaDiff`.
    *
    * The comparison itself is {@link diffTable}, the same one drift detection runs, so the two can no
@@ -602,13 +596,6 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     };
   }
 
-  /**
-   * What the shared differ needs from a dialect: a type as this engine would actually store it.
-   *
-   * `boolean` is `TINYINT(1)` on MySQL and `INTEGER` on SQLite, so two canonical types that differ on
-   * paper can be one column in the database. Round-tripping through the engine's own spelling is what
-   * stops every such column reporting an alteration on every sync.
-   */
   /**
    * Indexes the entity declares that the table does not already have, in any shape.
    *

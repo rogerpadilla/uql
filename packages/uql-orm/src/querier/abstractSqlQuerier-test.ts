@@ -172,18 +172,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * `upsertMany` on a batch mixing one insert and one update, keyed on a non-PK unique column (an
-   * auto-increment PK, unknown ahead of time). `'returning'` dialects report an exact ID for every
-   * row regardless of insert/update - but not necessarily in input order (CockroachDB's distributed
-   * execution doesn't preserve it the way Postgres/MariaDB happen to), so this compares the set of
-   * IDs, not position. {@link MySqlLikeQuerierIt} overrides: MySQL's `affectedRows` convention is a
-   * weighted sum across rows once more than one is touched, so `ids` stays `undefined` (see
-   * `AbstractSqlQuerier.upsertMany`) rather than fabricating per-row values.
+   * `code`, not the key, is the conflict path, so a row's id is only the database's to report: on an
+   * engine with no ordered `RETURNING` it is read back by that column. Every backend reports each one.
    */
-  protected assertUpsertManyIds(ids: readonly (PrimaryKey | undefined)[], expectedIds: PrimaryKey[]): void {
-    expect(ids.map(String).sort()).toEqual(expectedIds.map(String).sort());
-  }
-
   async shouldUpsertManyReturnIdsForNonPkConflictPath() {
     const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
 
@@ -194,9 +185,28 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(result.changes).toBeGreaterThanOrEqual(2);
 
     const inserted = await this.querier.findOne(Coupon, { $select: { id: true }, $where: { code: 'BRAND-NEW' } });
-    expect(inserted).toBeDefined();
+    expect(result.ids.map(String)).toEqual([String(inserted!.id), String(existingId)]);
+  }
 
-    this.assertUpsertManyIds(result.ids, [inserted!.id!, existingId!]);
+  /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
+  async shouldUpsertManyReportIdsInPayloadOrder() {
+    const { ids } = await this.querier.upsertMany(Coupon, { code: true }, [
+      { code: 'A', label: 'x' },
+      { code: 'B' },
+      { code: 'C', label: 'y' },
+    ]);
+    const found = await this.querier.findMany(Coupon, { $select: { id: true }, $sort: { code: 1 } });
+
+    expect(ids.map(String)).toEqual(found.map(({ id }) => String(id)));
+  }
+
+  /** Matched on a column that is not the key, which leaves MySQL's header with no id for the row. */
+  async shouldUpsertOneReportTheIdOfTheRowItUpdated() {
+    const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
+
+    const { id } = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
+
+    expect(String(id)).toBe(String(existingId));
   }
 
   override async shouldUpsertOne() {

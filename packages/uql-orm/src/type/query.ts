@@ -67,17 +67,17 @@ export type QueryPopulate<E> = {
 };
 
 /**
- * How many rows each named relation holds per parent, `true` for all of them or a filter to narrow
- * which ones count. One statement per relation named here, batched over every parent at once, so it
- * stays flat however many rows the read returned. Comes back under `_count`, which keeps it clear of
- * a relation of the same name that `$populate` filled with rows.
- */
-/**
  * The key a read carries its relation tallies under. One spelling for the type and the runtime that
  * fills it: they sit in different modules, so a drift would type-check and answer `undefined`.
  */
 export const COUNT_RESULT_KEY = '_count';
 
+/**
+ * How many rows each named relation holds per parent, `true` for all of them or a filter to narrow
+ * which ones count. One statement per relation named here, batched over every parent at once, so it
+ * stays flat however many rows the read returned. Comes back under `_count`, which keeps it clear of
+ * a relation of the same name that `$populate` filled with rows.
+ */
 export type QueryCount<E> = {
   [K in ToManyRelationKey<E>]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
 };
@@ -163,6 +163,14 @@ type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends true ? 
 type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
 
 /**
+ * Ordering parents by how many rows a to-many relation holds - "the ten users with the most posts".
+ * The tally is computed per parent as a correlated count, never by loading the rows.
+ */
+export type QuerySortByCount = {
+  $count: QuerySortDirection;
+};
+
+/**
  * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
  * like `QueryWhere`), relation sort via nested objects, and vector similarity search on
  * `number[]` fields. `Vector` is what confines a vector search to the level the statement ranks:
@@ -174,14 +182,6 @@ type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
  * against an intersection is repeated per constituent, which made this the single most expensive
  * type in the package to check.
  */
-/**
- * Ordering parents by how many rows a to-many relation holds - "the ten users with the most posts".
- * The tally is computed per parent as a correlated count, never by loading the rows.
- */
-export type QuerySortByCount = {
-  $count: QuerySortDirection;
-};
-
 export type QuerySortMap<E, Vector extends boolean = true> = {
   [K in FieldKey<E> | JsonFieldPaths<E> | RelationKey<E>]?: K extends RelationKey<E>
     ? // A to-many has no single value to order by, so what it offers instead is its own size.

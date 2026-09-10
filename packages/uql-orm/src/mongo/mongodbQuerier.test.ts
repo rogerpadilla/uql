@@ -181,6 +181,29 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     });
   }
 
+  /** Upserted on a field that is not the key, so only the database knows the id it minted. */
+  async shouldReportTheIdAnUpsertMinted() {
+    const { id } = await this.querier.upsertOne(Ticket, { subject: true }, { subject: 'upserted' });
+
+    expect(String(id)).toMatch(/^[0-9a-f]{24}$/);
+    expect(await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'upserted' } })).toEqual({
+      id,
+    });
+  }
+
+  /** `bulkWrite` names only the documents it inserted, so the one it updated is read back by `subject`. */
+  async shouldReportEveryIdAnUpsertManyWrote() {
+    const existingId = await this.querier.insertOne(Ticket, { subject: 'kept' });
+
+    const { ids } = await this.querier.upsertMany(Ticket, { subject: true }, [
+      { subject: 'kept' },
+      { subject: 'fresh' },
+    ]);
+
+    const fresh = await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'fresh' } });
+    expect(ids).toEqual([existingId, fresh!.id]);
+  }
+
   /**
    * A reference crosses both seams: written as the `ObjectId` the `$lookup` joins on, read back as
    * the same hex string the parent's own key reads as, so the two compare equal in code.

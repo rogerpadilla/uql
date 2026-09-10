@@ -92,6 +92,9 @@ export class MsSqlDialect extends MergeSqlDialect {
   /** `OUTPUT` has no trailing form: it sits between the column list and `VALUES`. */
   override readonly returningPosition = 'after-target';
 
+  /** Microsoft documents no row order for a `MERGE ... OUTPUT`. */
+  override readonly upsertReturningOrdered = false;
+
   override readonly insertIdSource: InsertIdSource = 'returning';
 
   /** Holds the update key lock across the insert; without it two concurrent upserts of one key race. */

@@ -1,4 +1,4 @@
-import { QueryRaw, type QueryRawFn, type Scalar } from '../type/index.js';
+import { QueryRaw, type QueryRawFn } from '../type/index.js';
 
 /**
  * Create a raw SQL expression.
@@ -20,19 +20,12 @@ import { QueryRaw, type QueryRawFn, type Scalar } from '../type/index.js';
  * The callback form remains for SQL a template cannot express, such as a sub-query generated through
  * `dialect.find(...)`. See {@link col} for a context-aware column reference.
  *
- * **⚠️ Security:** the tag is safe because it binds; the other two forms are not. `raw('SQL')` emits
- * its argument verbatim and a callback emits whatever it writes, so build neither from user input.
- * Inside a callback, bind with `ctx.addValue()`.
+ * **⚠️ Security:** the tag is safe because it binds; a callback is not, since it emits whatever it
+ * writes, so never build one from user input. Inside a callback, bind with `ctx.addValue()`.
  */
 export function raw(strings: TemplateStringsArray, ...values: readonly unknown[]): QueryRaw;
 export function raw(value: QueryRawFn, alias?: string): QueryRaw;
-/**
- * @deprecated Emits its argument verbatim, so it cannot bind a value. Use the tagged template:
- * `raw('"a" > 1')` becomes `` raw`"a" > 1` ``, and `raw('LOG10(x)', 'score')` becomes
- * `` raw`LOG10(x)`.as('score') ``. `npx uql-codemod` rewrites both.
- */
-export function raw(value: Scalar, alias?: string): QueryRaw;
-export function raw(value: Scalar | QueryRawFn | TemplateStringsArray, ...rest: readonly unknown[]): QueryRaw {
+export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly unknown[]): QueryRaw {
   const [alias] = rest;
   if (!isTemplateStrings(value)) {
     return new QueryRaw(value, typeof alias === 'string' ? alias : undefined);

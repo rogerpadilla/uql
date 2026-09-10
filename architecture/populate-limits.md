@@ -1,6 +1,6 @@
 # Per-parent limits on a populated relation
 
-Design for the [roadmap](roadmap.md)'s per-parent populate item. Every SQL dialect and MongoDB; no R7 dependency.
+Design for the per-parent populate item, shipped in 0.47.0. Every SQL dialect and MongoDB; no R7 dependency.
 
 ## The problem
 
@@ -14,9 +14,9 @@ $populate: { comments: { $sort: { id: -1 }, $limit: 2 } }
 
 The docs called this inherent - "the 5 newest posts of each author is not expressible through `$populate`" - and recommended dropping to a window-function `raw()`. It is not inherent.
 
-## What ships
+## What shipped
 
-**`$limit` and `$skip` inside a to-many `$populate` become per-parent.**
+**`$limit` and `$skip` inside a to-many `$populate` became per-parent.**
 
 ```ts
 await pool.findMany(User, {
@@ -25,7 +25,7 @@ await pool.findMany(User, {
 // every user carries their own five newest posts
 ```
 
-**A minor, not a major.** Existing code compiles and returns different rows, which normally forces a major - but the rows it returns today are wrong, attributed to parents that did not own them while parents that did get `[]`. That is a fix, not a behaviour change, and it ships the way other `Breaking:` entries here have. It is also the reading the surrounding design already implies, since `$sort`, `$limit`, `$skip` and `$distinct` are documented as belonging to the relation's own query; global was the leaky detail.
+**A minor, not a major.** Existing code compiled and returned different rows, which normally forces a major - but the rows it returned were wrong, attributed to parents that did not own them while parents that did got `[]`. That is a fix, not a behaviour change, and it shipped the way other `Breaking:` entries here have. It is also the reading the surrounding design already implies, since `$sort`, `$limit`, `$skip` and `$distinct` are documented as belonging to the relation's own query; global was the leaky detail.
 
 Emitted only when a to-many populate actually carries `$limit` or `$skip`. Otherwise the existing flat statement with its `IN (...)` list stays, and stays cheaper.
 

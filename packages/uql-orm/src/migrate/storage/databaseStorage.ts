@@ -9,13 +9,13 @@ interface MigrationRecord {
   executed_at: Date | number;
 }
 
+/** Where executed migrations are recorded when the config does not name a table. */
+export const DEFAULT_MIGRATIONS_TABLE = 'uql_migrations';
+
 /**
  * Stores migration state in a database table.
  * Uses the querier's dialect for escaping and placeholders.
  */
-/** Where executed migrations are recorded when the config does not name a table. */
-export const DEFAULT_MIGRATIONS_TABLE = 'uql_migrations';
-
 export class DatabaseMigrationStorage implements MigrationStorage {
   private readonly tableName: string;
   private storageInitialized = false;

@@ -27,11 +27,8 @@ export class CockroachDialect extends PgLikeSqlDialect {
     ['inner', { op: '<#>', opsSuffix: 'ip' }],
   ]);
 
-  /**
-   * `noKeyUpdate`/`keyShare` are omitted on purpose, not by oversight: CockroachDB parses both and
-   * treats them as aliases of `FOR UPDATE`/`FOR SHARE`, so offering them would hand back a stronger
-   * lock than was asked for, with nothing signalling it.
-   */
+  /** Verified live on v26.2: an upsert batch mixing an update and an insert returned the update first. */
+  override readonly upsertReturningOrdered = false;
 
   /**
    * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an

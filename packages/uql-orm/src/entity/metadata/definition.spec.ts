@@ -804,16 +804,6 @@ it('at most one softDelete field', () => {
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
 });
 
-it('refuses a field giving both the computed option and its deprecated alias', () => {
-  class TwoNames {
-    total?: number;
-  }
-
-  expect(() => defineField(TwoNames, 'total', { type: Number, virtual: raw`1`, computed: raw`1` })).toThrow(
-    "'TwoNames.total' gives both 'virtual' and 'computed'.",
-  );
-});
-
 it('auto-generates the FK column from a relation-only declaration', () => {
   @Entity()
   class AutoFkTarget {

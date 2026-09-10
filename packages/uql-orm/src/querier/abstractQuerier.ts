@@ -34,7 +34,6 @@ import type {
   RawRow,
   RelationKey,
   RelationMeta,
-  RelationValue,
   TransactionOptions,
   Type,
   UpdatePayload,
@@ -45,6 +44,7 @@ import {
   childrenOf,
   clone,
   dataKeyed,
+  fillOnFields,
   filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
@@ -116,27 +116,33 @@ function soleParentColumn(relOpts: RelationMeta): string {
 }
 
 /**
- * Base class for all database queriers.
- * It provides a standardized way to execute tasks serially to prevent race conditions on database connections.
+ * The id each written row is named by, in payload order. Read off the rows as written, so a key the
+ * database generated or the ORM filled is there, and a composite is named by every column of it.
  */
-/**
- * The ids an upsert reports, payload-aligned so the result zips with the rows that were passed.
- *
- * A composite is named from the payload, as an insert's is: no column holds that key, so no
- * statement reports one. A sole key takes what the statement reported when it spoke for every row,
- * and otherwise falls back to the key the caller supplied - a `firstId` dialect reports nothing for
- * a batch, which is not the same as those rows having no id.
- */
-function upsertIds<E>(
-  meta: EntityMeta<E>,
-  payload: EntityData<E>[],
-  reported: (PrimaryKey | undefined)[] | undefined,
-): (WrittenId<E> | undefined)[] {
-  return meta.ids.length === 1 && reported?.length === payload.length
-    ? (reported as (WrittenId<E> | undefined)[])
-    : payload.map((it) => (namesKey(meta, it) ? idOf(meta, it) : undefined));
+function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E> | undefined)[] {
+  return rows.map((row) => (namesKey(meta, row) ? idOf(meta, row) : undefined));
 }
 
+/**
+ * Writes the key an upsert reported onto each row that named none - only the key, since an `onInsert`
+ * value was never written to a row the upsert updated. A report aligns with the rows only when it
+ * speaks for every one: a `firstId` dialect reports nothing for a batch.
+ */
+function adoptReportedIds<E>(
+  meta: EntityMeta<E>,
+  rows: EntityData<E>[],
+  reported: readonly (PrimaryKey | undefined)[] | undefined,
+): void {
+  if (meta.ids.length !== 1 || reported?.length !== rows.length) {
+    return;
+  }
+  const [idKey] = meta.ids;
+  for (let index = 0; index < rows.length; index++) {
+    rows[index][idKey] ??= reported[index] as E[typeof idKey];
+  }
+}
+
+/** Base class for all database queriers. */
 export abstract class AbstractQuerier implements Querier {
   /**
    * Internal promise used to queue database operations.
@@ -507,22 +513,23 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * A composite key is named here rather than by the statement: no column holds it, so no database
-   * reports one, but the caller wrote every column of it and the payload still carries them.
+   * The `onInsert` values are filled here, before the write, so the after hooks and the ids read the
+   * same rows the statement wrote.
    */
   async insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
+    if (!payload?.length) {
+      return [];
+    }
     const meta = getMeta(entity);
-    return this.hooked(entity, 'Insert', payload, async () => {
-      const reported = await this.internalInsertMany(entity, payload);
-      // Neither branch can be shown to be `WrittenId` for an unresolved `E`; `idOf` narrows likewise.
-      return meta.ids.length === 1 ? (reported as (WrittenId<E> | undefined)[]) : payload.map((it) => idOf(meta, it));
+    return this.hooked(entity, 'Insert', payload, async (rows) => {
+      fillOnFields(meta, rows, 'onInsert');
+      await this.internalInsertMany(entity, rows);
+      return writtenIds(meta, rows);
     });
   }
 
-  protected abstract internalInsertMany<E extends object>(
-    entity: Type<E>,
-    payload: EntityData<E>[],
-  ): Promise<(IdValue<E> | undefined)[]>;
+  /** Writes `rows`, and onto each one the key the database generated for it, where it can tell. */
+  protected abstract internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void>;
 
   async updateOneById<E extends object>(
     entity: Type<E>,
@@ -540,7 +547,10 @@ export abstract class AbstractQuerier implements Querier {
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ): Promise<number> {
-    return this.hooked(entity, 'Update', [payload], () => this.internalUpdateMany(entity, q, payload, opts));
+    return this.hooked(entity, 'Update', [payload], ([row]) => {
+      fillOnFields(getMeta(entity), [row], 'onUpdate');
+      return this.internalUpdateMany(entity, q, row, opts);
+    });
   }
 
   protected abstract internalUpdateMany<E extends object>(
@@ -577,9 +587,11 @@ export abstract class AbstractQuerier implements Querier {
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
   ): Promise<QueryUpsertOneResult<E>> {
-    return this.hooked(entity, 'Upsert', [payload], async () => {
-      const { ids, changes, created } = await this.internalUpsertOne(entity, conflictPaths, payload);
-      const [id] = upsertIds(getMeta(entity), [payload], ids);
+    const meta = getMeta(entity);
+    return this.hooked(entity, 'Upsert', [payload], async (rows) => {
+      const { ids, changes, created } = await this.internalUpsertOne(entity, conflictPaths, rows[0]);
+      adoptReportedIds(meta, rows, ids);
+      const [id] = writtenIds(meta, rows);
       return { id, changes, created };
     });
   }
@@ -589,9 +601,11 @@ export abstract class AbstractQuerier implements Querier {
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
   ): Promise<QueryUpsertManyResult<E>> {
-    return this.hooked(entity, 'Upsert', payload, async () => {
-      const { ids, changes } = await this.internalUpsertMany(entity, conflictPaths, payload);
-      return { ids: upsertIds(getMeta(entity), payload, ids), changes };
+    const meta = getMeta(entity);
+    return this.hooked(entity, 'Upsert', payload, async (rows) => {
+      const { ids, changes } = await this.internalUpsertMany(entity, conflictPaths, rows);
+      adoptReportedIds(meta, rows, ids);
+      return { ids: writtenIds(meta, rows), changes };
     });
   }
 
@@ -677,20 +691,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * Insert or update, as the name has always promised - and now as one statement per kind rather
-   * than a guess.
-   *
-   * Whether a row names its key decides which statement it takes, never whether the row exists: an
-   * id the caller invented is not proof of anything, and a stale one used to issue an `UPDATE` that
-   * matched nothing and reported success. A named row upserts on its own key, so it is written
-   * either way and no read can go stale between deciding and writing. An unnamed one inserts, and
-   * the database assigns the key.
-   *
-   * A composite key is always supplied by the caller, so it always takes the upsert branch - which
-   * is why nothing here special-cases one, and why this is the method that stopped refusing them.
-   *
-   * The hooks follow the statement: a named row fires `beforeUpsert`/`afterUpsert`, never the
-   * update pair, because the database picks the branch as the statement runs.
+   * Whether a row names its key decides its statement, never whether the row exists: a named row
+   * upserts on that key, so a stale id is written rather than silently missed, and an unnamed one
+   * inserts. A composite is always named. The hooks follow the statement: a named row fires the upsert pair.
    */
   async saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
@@ -724,19 +727,19 @@ export abstract class AbstractQuerier implements Querier {
           entity,
           toInsert.map((index) => payload[index]),
         );
-        toInsert.forEach((index, position) => {
-          ids[index] = inserted[position];
-        });
+        for (let position = 0; position < toInsert.length; position++) {
+          ids[toInsert[position]] = inserted[position];
+        }
       }
       if (toUpsert.length) {
         const conflictPaths = Object.fromEntries(meta.ids.map((key) => [key, true])) as QueryConflictPaths<E>;
-        await this.upsertMany(
+        const { ids: upserted } = await this.upsertMany(
           entity,
           conflictPaths,
           toUpsert.map((index) => payload[index]),
         );
-        for (const index of toUpsert) {
-          ids[index] = idOf(meta, payload[index]);
+        for (let position = 0; position < toUpsert.length; position++) {
+          ids[toUpsert[position]] = upserted[position];
         }
       }
     };
@@ -988,16 +991,15 @@ export abstract class AbstractQuerier implements Querier {
     // unless this has run - and this method is `protected`, so a caller can arrive without them.
     assertSoleId(meta, 'saving a relation');
     const relEntity = relOpts.entity();
-    const relPayload = relValue as RelationValue<E>[];
 
     switch (relOpts.cardinality) {
       case '1m':
       case 'mm':
-        return this.saveToMany(relOpts, relEntity, ids, relPayload as unknown as object[], isUpdate);
+        return this.saveToMany(relOpts, relEntity, ids, relValue as object[], isUpdate);
       case '11':
-        return this.saveOneToOne(relEntity, relOpts, ids, relPayload as unknown as object, isUpdate);
+        return this.saveOneToOne(relEntity, relOpts, ids, relValue as object, isUpdate);
       case 'm1':
-        if (relPayload) return this.saveManyToOne(entity, relEntity, relOpts, ids, relPayload as unknown as object);
+        if (relValue) return this.saveManyToOne(entity, relEntity, relOpts, ids, relValue as object);
     }
   }
 
@@ -1135,25 +1137,50 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * Emit a lifecycle hook event for the given entity.
-   * Fires global listeners first, then entity-level hooks.
+   * The ids of `rows`, read back by the columns an upsert matched them on, for a statement that could
+   * not report them in payload order. A row that no read row matches, or that two do, keeps
+   * `undefined`: a missing id is honest where a guessed one is not.
    */
+  protected async idsByConflict<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    rows: EntityData<E>[],
+  ): Promise<(PrimaryKey | undefined)[]> {
+    const meta = getMeta(entity);
+    const [idKey] = meta.ids;
+    const keys = getKeys(conflictPaths) as FieldKey<E>[];
+    const q = {
+      $select: Object.fromEntries([idKey, ...keys].map((key) => [key, true])),
+      $where: { $or: rows.map((row) => Object.fromEntries(keys.map((key) => [key, row[key]]))) },
+    } as Query<E>;
+    const found = await this.internalFindMany(entity, q, { filters: withoutSoftDeleteFilter(undefined) });
+    const byConflict = new Map<string, PrimaryKey | undefined>();
+    for (const row of found) {
+      const key = rowKey(row, keys);
+      byConflict.set(key, byConflict.has(key) ? undefined : (row[idKey] as PrimaryKey));
+    }
+    return rows.map((row) => byConflict.get(rowKey(row, keys)));
+  }
+
   /**
-   * Runs `write` between the event's `before`/`after` pair. Every hooked write is this shape, and
-   * each one spelled out was a place the pair could drift - `upsert` had none at all for a release.
+   * Runs `write` between the event's `before`/`after` pair. The before hooks get the caller's rows, so
+   * what they assign is written; `write` and the after hooks get a copy, which by then carries what
+   * the write filled in - a generated key, an `onInsert` value - without it landing on the caller's.
    */
   private async hooked<E extends object, T>(
     entity: Type<E>,
     event: 'Insert' | 'Update' | 'Upsert',
     payloads: E[],
-    write: () => Promise<T>,
+    write: (rows: E[]) => Promise<T>,
   ): Promise<T> {
     await this.emitHook(entity, `before${event}`, payloads);
-    const result = await write();
-    await this.emitHook(entity, `after${event}`, payloads);
+    const rows = clone(payloads);
+    const result = await write(rows);
+    await this.emitHook(entity, `after${event}`, rows);
     return result;
   }
 
+  /** Fires the global listeners first, then the entity's own hooks. */
   private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: E[]): Promise<void> {
     if (!this.hasHook(entity, event)) return;
 

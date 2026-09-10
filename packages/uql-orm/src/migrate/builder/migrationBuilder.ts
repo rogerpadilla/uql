@@ -27,10 +27,6 @@ import type {
 } from './types.js';
 
 /**
- * Builder for altering a table.
- * Delegates to parent builder for operation recording.
- */
-/**
  * One `createIndex` operation. Shared because the alter-table builder, the recorder and the
  * executing builder all record the same thing, and an entry left unnormalized reaches the generator
  * as a column literally named `[object Object]`.

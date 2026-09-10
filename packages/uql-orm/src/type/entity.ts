@@ -478,11 +478,6 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    */
   readonly enum?: EnumValues;
   /**
-   * @deprecated Renamed to {@link FieldOptions.computed}, which also takes `stored`. `npx uql-codemod`
-   * rewrites it. Giving both throws.
-   */
-  readonly virtual?: QueryRaw;
-  /**
    * An expression the database computes, rather than a value the caller writes. Never part of an
    * insert or update either way.
    *
@@ -1011,12 +1006,6 @@ export type EntityMeta<E> = {
 };
 
 /**
- * Configurable options for an entity (`@Entity()` / `defineEntity`).
- *
- * Optional `fields`, `relations`, `indexes`, and `hooks` register metadata in one call for
- * decorator-free setups. Omit them when using `@Field` / `@ManyToOne` / etc.
- */
-/**
  * A table-level `CHECK`. The expression is `raw` with no interpolation, like an index expression:
  * this is DDL, so there is no placeholder a bound value could go into.
  */
@@ -1037,6 +1026,12 @@ export type EntityMembers = {
   readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
 };
 
+/**
+ * Configurable options for an entity (`@Entity()` / `defineEntity`).
+ *
+ * Optional `fields`, `relations`, `indexes`, and `hooks` register metadata in one call for
+ * decorator-free setups. Omit them when using `@Field` / `@ManyToOne` / etc.
+ */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
   /**

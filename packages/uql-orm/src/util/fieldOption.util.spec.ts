@@ -22,10 +22,6 @@ it('reports the option another option leaves unread', () => {
   expect(fieldOptionConflict({ type: Number, computed: raw`1`, index: true })).toBe(
     "cannot use 'index': it is ignored on an inlined computed field",
   );
-  // The deprecated alias reaches the same rules, which is the point of reading both spellings.
-  expect(fieldOptionConflict({ type: Number, virtual: raw`1`, index: true })).toBe(
-    "cannot use 'index': it is ignored on an inlined computed field",
-  );
   expect(fieldOptionConflict({ type: Number, updatable: false, onUpdate: () => 1 })).toBe(
     "cannot use 'onUpdate': it is ignored on a field declared 'updatable: false'",
   );

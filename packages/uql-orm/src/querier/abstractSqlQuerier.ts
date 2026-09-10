@@ -1,13 +1,12 @@
 import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta, idOf, soleIdOf } from '../entity/index.js';
+import { getMeta, idOf, namesKey } from '../entity/index.js';
 import type {
   EntityData,
   EntityMeta,
   ExtraOptions,
   IdKey,
-  IdValue,
   Query,
   QueryAggMap,
   QueryAggregate,
@@ -70,62 +69,44 @@ function partitionBySuppliedId<E extends object>(payload: EntityData<E>[], idKey
 }
 
 /**
- * Rows grouped by the columns they carry, payload order kept within each group - or `undefined` when
- * they all carry the same ones, which is the batch as it stands and needs no grouping at all.
+ * Row indexes grouped by the columns their rows carry, payload order kept within each group.
  *
  * Deliberately finer than {@link partitionBySuppliedId}: an upsert's `DO UPDATE SET` is one
  * assignment list for the whole statement, so rows of different shapes cannot share one at all.
  */
-function groupByInsertShape<E extends object>(
-  meta: EntityMeta<E>,
-  payload: EntityData<E>[],
-): EntityData<E>[][] | undefined {
-  const first = insertShapeOf(meta, payload[0]);
-  let index = 1;
-  while (index < payload.length && insertShapeOf(meta, payload[index]) === first) {
-    index++;
-  }
-  if (index === payload.length) {
-    return undefined;
-  }
-  const groups = new Map<string, EntityData<E>[]>([[first, payload.slice(0, index)]]);
-  for (; index < payload.length; index++) {
-    const row = payload[index];
-    const shape = insertShapeOf(meta, row);
+function groupByInsertShape<E extends object>(meta: EntityMeta<E>, payload: EntityData<E>[]): number[][] {
+  const groups = new Map<string, number[]>();
+  for (let index = 0; index < payload.length; index++) {
+    const shape = insertShapeOf(meta, payload[index]);
     const group = groups.get(shape);
     if (group) {
-      group.push(row);
+      group.push(index);
     } else {
-      groups.set(shape, [row]);
+      groups.set(shape, [index]);
     }
   }
   return [...groups.values()];
 }
 
 /**
- * How many rows one statement can carry within the dialect's bind budget. `DEFAULT` cells bind no
- * parameter, so fields-per-record is a safe upper bound. Every multi-row write splits on this: D1
- * allows 100 binds, which a couple of dozen rows reach.
+ * A group's row indexes split into statements within the dialect's bind budget, payload order kept.
+ * `DEFAULT` cells bind no parameter, so fields-per-record is a safe upper bound. Every multi-row
+ * write splits on this: D1 allows 100 binds, which a couple of dozen rows reach.
  */
-function bindBudgetChunkSize<E extends object>(
-  meta: EntityMeta<E>,
-  rows: EntityData<E>[],
-  maxBindValues: number,
-): number {
-  const fieldsPerRecord = getInsertFieldKeys(meta, rows).length || 1;
-  return Math.max(1, Math.floor(maxBindValues / fieldsPerRecord));
-}
-
-/** `rows` split into statement-sized slices, payload order kept. */
 function chunkByBindBudget<E extends object>(
   meta: EntityMeta<E>,
-  rows: EntityData<E>[],
+  payload: EntityData<E>[],
+  group: number[],
   maxBindValues: number,
-): EntityData<E>[][] {
-  const size = bindBudgetChunkSize(meta, rows, maxBindValues);
-  const chunks: EntityData<E>[][] = [];
-  for (let start = 0; start < rows.length; start += size) {
-    chunks.push(rows.slice(start, start + size));
+): number[][] {
+  const fieldsPerRecord = getInsertFieldKeys(
+    meta,
+    group.map((index) => payload[index]),
+  ).length;
+  const size = Math.max(1, Math.floor(maxBindValues / (fieldsPerRecord || 1)));
+  const chunks: number[][] = [];
+  for (let start = 0; start < group.length; start += size) {
+    chunks.push(group.slice(start, start + size));
   }
   return chunks;
 }
@@ -274,17 +255,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * One statement for both: the page carries its own unpaged total in an extra column. An empty page
-   * has no row to carry it, which is the one case still needing a count of its own - a `$skip` past
-   * the end, or a filter nothing matched.
-   *
-   * A `$required` relation needs no special case: the window counts what the INNER JOIN left, which
-   * is exactly the total a caller of a filtered read is asking for. A `$lock` is the one clause an
-   * engine may refuse to have in the same statement, which {@link AbstractSqlDialect.supportsWindowWithRowLock}
-   * answers; where it does, the total comes from a count of its own. A `$distinct` read needs one
-   * too, and a deduplicating one: see {@link AbstractSqlDialect.countDistinct}.
-   */
-  /**
    * How to count when the total cannot ride along in the read's own `COUNT(*) OVER ()` column, or
    * `undefined` when it can. Two clauses rule the window out: `$distinct`, because a window counts
    * before the deduplication and so overstates the page, and `$lock` on an engine that refuses the
@@ -304,6 +274,17 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return undefined;
   }
 
+  /**
+   * One statement for both: the page carries its own unpaged total in an extra column. An empty page
+   * has no row to carry it, which is the one case still needing a count of its own - a `$skip` past
+   * the end, or a filter nothing matched.
+   *
+   * A `$required` relation needs no special case: the window counts what the INNER JOIN left, which
+   * is exactly the total a caller of a filtered read is asking for. A `$lock` is the one clause an
+   * engine may refuse to have in the same statement, which {@link AbstractSqlDialect.supportsWindowWithRowLock}
+   * answers; where it does, the total comes from a count of its own. A `$distinct` read needs one
+   * too, and a deduplicating one: see {@link AbstractSqlDialect.countDistinct}.
+   */
   protected override async internalFindManyAndCount<E extends object>(
     entity: Type<E>,
     q: Query<E>,
@@ -485,29 +466,16 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return res;
   }
 
-  override async internalInsertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]) {
-    if (!payload?.length) {
-      return [];
-    }
-    payload = clone(payload);
+  override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {
     const meta = getMeta(entity);
-    // What comes back is one column's value, so a composite reports nothing here and `insertMany`
-    // names those rows from the payload instead. `sole` is what keeps every id path off a key that
-    // is several columns.
+    // What comes back is one column's value, so nothing is read back for a composite: its rows
+    // already carry every column of it. `sole` is what keeps every id path off such a key.
     const [idKey] = meta.ids;
     const sole = meta.ids.length === 1;
     const idField = sole ? meta.fields[idKey] : undefined;
     const generatedKey = !!idField && isAutoIncrement(idField, true);
-    const payloadIds: (IdValue<E> | undefined)[] = new Array(payload.length);
 
-    for (const group of partitionBySuppliedId(payload, idKey)) {
-      // Per group, not per batch: the two carry different columns - one names the key, one does not -
-      // so a budget taken over their union would under-fill the statement that is missing one.
-      const chunkSize = bindBudgetChunkSize(
-        meta,
-        group.map((index) => payload[index]),
-        this.dialect.maxBindValues,
-      );
+    for (const group of partitionBySuppliedId(rows, idKey)) {
       // RETURNING-based ids are exact per row. Header-derived ones (LAST_INSERT_ID / lastInsertRowid
       // arithmetic) are only sound when the key is database-generated and every row *in this
       // statement* left it to the database. That is a property of the statement, not of the batch:
@@ -517,32 +485,30 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       const idsReliable =
         sole &&
         (this.dialect.insertIdSource === 'returning' ||
-          (generatedKey && group.every((index) => payload[index][idKey] === undefined)));
+          (generatedKey && group.every((index) => rows[index][idKey] === undefined)));
       // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
       // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
       if (idsReliable && group.length > 1 && this.dialect.insertIdSource === 'firstId') {
         this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
       }
-      for (let start = 0; start < group.length; start += chunkSize) {
-        const indexes = group.slice(start, start + chunkSize);
+      // Per group, not per batch: the two carry different columns - one names the key, one does not -
+      // so a budget taken over their union would under-fill the statement that is missing one.
+      for (const indexes of chunkByBindBudget(meta, rows, group, this.dialect.maxBindValues)) {
         const ctx = this.dialect.createContext();
         this.dialect.insert(
           ctx,
           entity,
-          indexes.map((index) => payload[index]),
+          indexes.map((index) => rows[index]),
         );
         const { ids = [] } = await this.run(ctx.sql, ctx.values);
-        indexes.forEach((index, position) => {
-          const it = payload[index];
-          if (idsReliable) {
-            it[idKey] ??= ids[position] as E[typeof idKey];
+        if (idsReliable) {
+          for (let position = 0; position < indexes.length; position++) {
+            rows[indexes[position]][idKey] ??= ids[position] as E[typeof idKey];
           }
-          payloadIds[index] = sole ? it[idKey] : undefined;
-        });
+        }
       }
     }
-    await this.insertRelations(entity, payload);
-    return payloadIds;
+    await this.insertRelations(entity, rows);
   }
 
   override async internalUpdateMany<E extends object>(
@@ -599,9 +565,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // One statement per shape, each split again to stay inside the bind budget. Grouping first is
     // what makes the budget arithmetic right: every row of a group carries the same columns, so the
     // `DO UPDATE SET` resolves to non-binding `EXCLUDED` references rather than inlined values.
-    const groups = groupByInsertShape(meta, payload);
-    const statements = (groups ?? [payload]).flatMap((group) =>
-      chunkByBindBudget(meta, group, this.dialect.maxBindValues),
+    const statements = groupByInsertShape(meta, payload).flatMap((group) =>
+      chunkByBindBudget(meta, payload, group, this.dialect.maxBindValues),
     );
     if (statements.length === 1) {
       return this.runUpsert(entity, conflictPaths, payload);
@@ -614,16 +579,24 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // than one statement; `transaction` is re-entrant, so this is free inside a caller's own.
     return this.transaction(async () => {
       let changes = 0;
-      const ids: (PrimaryKey | undefined)[] = [];
-      for (const statement of statements) {
-        const result = await this.runUpsert(entity, conflictPaths, statement);
-        changes += result.changes ?? 0;
-        if (result.ids) {
-          ids.push(...result.ids);
+      // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
+      // than it wrote places none.
+      const ids: (PrimaryKey | undefined)[] = new Array(payload.length);
+      for (const indexes of statements) {
+        const { changes: written = 0, ids: reported } = await this.runUpsert(
+          entity,
+          conflictPaths,
+          indexes.map((index) => payload[index]),
+        );
+        changes += written;
+        if (reported?.length === indexes.length) {
+          for (let position = 0; position < indexes.length; position++) {
+            ids[indexes[position]] = reported[position];
+          }
         }
       }
-      // No `created`/`firstId`: both speak for a single statement, and there were several.
-      return ids.length ? { changes, ids } : { changes };
+      // No `created`: it speaks for a single statement, and there were several.
+      return { changes, ids };
     });
   }
 
@@ -632,18 +605,25 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
   ): Promise<QueryUpdateResult> {
+    const meta = getMeta(entity);
+    // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
+    const unnamed = meta.ids.length === 1 && payload.some((row) => !namesKey(meta, row));
     const ctx = this.dialect.createContext();
     this.dialect.upsert(ctx, entity, conflictPaths, payload);
     const result = await this.run(ctx.sql, ctx.values);
-    // On a `firstId` dialect (MySQL: no `RETURNING`), a multi-row upsert's `affectedRows` is a
-    // per-row weighted sum (1=insert, 2=update, 0=no-op), not a row count, so `buildUpdateResult`'s
-    // header-derived `ids`/`firstId`/`created` can't be trusted the moment more than one row is
-    // involved (verified: a 1-insert-1-update batch reports `changes: 3`, which would otherwise
-    // infer 3 sequential ids for only 2 real rows). A single-row batch (`upsertOne`) is unambiguous.
-    if (this.dialect.insertIdSource !== 'returning' && payload.length > 1) {
-      return { changes: result.changes };
+    const ordered =
+      payload.length === 1 || (this.dialect.insertIdSource === 'returning' && this.dialect.upsertReturningOrdered);
+    if (ordered && result.ids?.length === payload.length) {
+      return result;
     }
-    return result;
+    // The statement's ids name its rows only in order and for every one. A MySQL batch reports a
+    // weighted count (1=insert, 2=update) instead, CockroachDB and SQL Server answer out of order, and
+    // `DO NOTHING` skips rows, so there the ids are read back by the conflict columns.
+    const { changes } = result;
+    const created = payload.length === 1 ? result.created : undefined;
+    return unnamed
+      ? { changes, created, ids: await this.idsByConflict(entity, conflictPaths, payload) }
+      : { changes, created };
   }
 
   protected override async internalDeleteMany<E extends object>(

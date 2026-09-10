@@ -1,6 +1,6 @@
 /**
  * Type-level regression tests for `$select`: the field-map form and the raw-projection array form
- * (`[raw('*'), raw('LOG10(points)', 'score')]`). `$select`/`$exclude` mutual exclusivity is
+ * (`raw` templates, each named with `.as()`). `$select`/`$exclude` mutual exclusivity is
  * enforced at runtime (a union-shaped `Query` would degrade error messages), so it has no
  * compile-time negative here.
  *
