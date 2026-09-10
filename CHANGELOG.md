@@ -2,6 +2,17 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.53.0] - 2026-09-10
+
+- **Breaking: `$where` takes a map and nothing else**, so TypeScript reports a wrong value on its own key. Ids are `{ id: [1, 2] }`, a bare `raw()` goes in `$and`; HTTP answers 400 otherwise.
+- **Breaking: `QueryWhereMap` is now `QueryWhere`**, and `QueryWhereFieldMap`, `augmentWhere` and `buildQueryWhereAsMap` are gone; `npx uql-codemod` names what replaces each.
+- **A MongoDB `raw()` inside `$and`/`$or` is refused with its error** instead of recursing until the stack gave out.
+- **Vector search on MSSQL** through `VECTOR_DISTANCE`: cosine, euclidean (`l2`) and dot (`inner`), exact rather than indexed. Needs SQL Server 2025 and a declared `dimensions`.
+- **MSSQL `sync()` alters an existing table**: it adds plain, computed and key columns, and no longer re-alters an identity key it read back as unique.
+- **MSSQL migrations rename, drop and retype columns**: renames through `sp_rename`, and the default, `CHECK` and `UNIQUE` the server names itself dropped first rather than blocking the statement.
+- **A key column is declared `NOT NULL`**, which SQLite does not imply for a composite or non-integer key, so one could store NULL.
+- **An enum column with a default is created on MariaDB.** Its `CHECK` came before the `DEFAULT`, which MariaDB's grammar refuses; the `CHECK` now comes last.
+
 ## [0.52.0] - 2026-09-09
 
 - **Microsoft SQL Server 2017+, through `uql-orm/mssql` and the `mssql` driver.** `$regex` needs a 2025 server at compatibility level 170; `$text` and vector search are refused.
