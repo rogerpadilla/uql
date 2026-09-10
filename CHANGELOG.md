@@ -5,11 +5,11 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 ## [0.52.0] - 2026-09-09
 
 - **Microsoft SQL Server 2017+, through `uql-orm/mssql` and the `mssql` driver.** `$regex` needs a 2025 server at compatibility level 170; `$text` and vector search are refused.
-- **Breaking: `defaultStringAsText` is now the three-way `stringSizing`**, joined by `supportsUnsigned` and `multipleCascadePaths`. Only a hand-written dialect declares them.
-- The `./migrate` budget rose to 52.1 KB gzipped for the SQL Server introspector.
 - **`findManyStream` streams for real on `bunSql` (Postgres, CockroachDB) and PGlite.** Both clients expose no cursor, so the rows page through a server-side `DECLARE`/`FETCH` instead of buffering the whole result.
 - **A `bun:sql` URL for an engine Bun cannot dial is refused by the pool.** An `mssql://` connection string read as Postgres and failed on the first statement.
-- **Breaking: `BunSqlPostgresDialect`, `BunSqlCockroachDialect` and `BunSqliteDialect` are gone.** The pool builds the engine's own dialect with the wire driver's capabilities.
+- **Breaking: `BunSqlPostgresDialect`, `BunSqlCockroachDialect` and `BunSqliteDialect` are gone.** The pool builds the engine's own dialect with the wire driver's capabilities; `POSTGRES_WIRE_DRIVER_CAPABILITIES` now carries both `nativeArrays: false` and `explicitJsonCast: true`.
+- **Breaking: `defaultStringAsText` is now the three-way `stringSizing`**, joined by `supportsUnsigned` and `multipleCascadePaths`. Only a hand-written dialect declares them.
+- The `./migrate` budget rose to 52.1 KB gzipped for the SQL Server introspector, which the introspector registry makes reachable from that entry; nothing else became reachable.
 
 ## [0.51.0] - 2026-09-09
 
