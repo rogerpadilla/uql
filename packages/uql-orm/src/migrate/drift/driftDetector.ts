@@ -9,13 +9,14 @@ import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql, engineType } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
-import { diffSchemas } from '../../schema/schemaASTDiffer.js';
+import { diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
   ColumnDiff,
   Drift,
   DriftReport,
   DriftStatus,
+  RelationshipNode,
   SchemaDiffResult,
 } from '../../schema/types.js';
 import type { Except } from '../../type/utility.js';
@@ -311,10 +312,27 @@ function detectRelationshipDrifts(diff: SchemaDiffResult): Drift[] {
         details: `FK "${relDiff.name}" exists in database but not in entity`,
         suggestion: 'Add relation to entity or drop FK',
       });
+    } else {
+      drifts.push({
+        type: 'relationship_mismatch',
+        severity: 'warning',
+        table: relDiff.fromTable,
+        relationship: relDiff.name,
+        expected: formatActions(relDiff.expected),
+        actual: formatActions(relDiff.actual),
+        details: `FK "${relDiff.name}" has other referential actions in the database than in the entity`,
+        suggestion: 'Generate a migration, which drops and re-adds the constraint',
+      });
     }
   }
 
   return drifts;
+}
+
+/** Both actions spelled out, so a side that left one unstated reads the same as one that stated the default. */
+function formatActions(rel: RelationshipNode): string {
+  const { onDelete, onUpdate } = referentialActions(rel);
+  return `ON DELETE ${onDelete} ON UPDATE ${onUpdate}`;
 }
 
 /**

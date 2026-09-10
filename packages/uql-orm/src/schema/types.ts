@@ -419,7 +419,8 @@ export type DriftType =
   | 'unexpected_index'
   | 'index_mismatch'
   | 'missing_relationship'
-  | 'unexpected_relationship';
+  | 'unexpected_relationship'
+  | 'relationship_mismatch';
 
 /**
  * A single schema drift issue.

@@ -353,6 +353,43 @@ describe('DriftDetector', () => {
       expect(report.drifts.some((d) => d.type === 'missing_relationship')).toBe(true);
     });
 
+    /** A migration can change an action - it drops and re-adds the constraint - so the report has to name one. */
+    it('should report a foreign key whose actions differ from the entity', () => {
+      const schema = (onDelete: 'CASCADE' | 'SET NULL') => {
+        const ast = new SchemaAST();
+        const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+        const posts = mockTableNode('posts', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'author_id', type: { category: 'integer' } },
+        ]);
+        ast.addTable(users);
+        ast.addTable(posts);
+        ast.addRelationship({
+          name: 'posts_users_fk',
+          type: 'ManyToOne',
+          from: { table: posts, columns: [posts.columns.get('author_id')!] },
+          to: { table: users, columns: [users.columns.get('id')!] },
+          onDelete,
+        });
+        return ast;
+      };
+
+      const report = detectDrift(schema('CASCADE'), schema('SET NULL'), { checkForeignKeys: true });
+
+      expect(report.drifts).toEqual([
+        {
+          type: 'relationship_mismatch',
+          severity: 'warning',
+          table: 'posts',
+          relationship: 'posts_users_fk',
+          expected: 'ON DELETE CASCADE ON UPDATE NO ACTION',
+          actual: 'ON DELETE SET NULL ON UPDATE NO ACTION',
+          details: 'FK "posts_users_fk" has other referential actions in the database than in the entity',
+          suggestion: 'Generate a migration, which drops and re-adds the constraint',
+        },
+      ]);
+    });
+
     it('should detect unexpected columns', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();

@@ -15,6 +15,7 @@ import type { CanonicalType } from './types.js';
 import type {
   ColumnDiff,
   ColumnNode,
+  ForeignKeyAction,
   IndexDiff,
   IndexNode,
   PrimaryKeyDiff,
@@ -381,20 +382,23 @@ export function diffRelationshipNodes(
   ];
 }
 
-/**
- * Compare two relationships.
- */
-function diffRelationship(source: RelationshipNode, target: RelationshipNode): RelationshipDiff | undefined {
-  // Compare on delete/update actions (normalizing defaults)
-  const sDelete = source.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION;
-  const tDelete = target.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION;
-  const sUpdate = source.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION;
-  const tUpdate = target.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION;
+/** A relationship's `ON DELETE` and `ON UPDATE`, an unstated one read as the action the database applies. */
+export function referentialActions(rel: RelationshipNode): {
+  readonly onDelete: ForeignKeyAction;
+  readonly onUpdate: ForeignKeyAction;
+} {
+  return {
+    onDelete: rel.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION,
+    onUpdate: rel.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION,
+  };
+}
 
-  if (sDelete !== tDelete || sUpdate !== tUpdate) {
+/** Two relationships over the same columns differ only in what they do when the row they point at goes. */
+function diffRelationship(source: RelationshipNode, target: RelationshipNode): RelationshipDiff | undefined {
+  const [expected, actual] = [referentialActions(source), referentialActions(target)];
+  if (expected.onDelete !== actual.onDelete || expected.onUpdate !== actual.onUpdate) {
     return { ...relationEnds(source), type: 'alter', expected: source, actual: target };
   }
-
   return undefined;
 }
 
