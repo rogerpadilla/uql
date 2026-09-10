@@ -7,6 +7,7 @@ import type {
   QuerySelect,
   RelationKey,
   RelationMeta,
+  QueryWhere,
 } from '../type/index.js';
 import {
   QUERY_BOOLEAN_CLAUSES,
@@ -152,7 +153,7 @@ export function queryChildrenOfAll<E>(
  * shape, as a reference to a row source.
  */
 export function queryNarrowedTo<E>(query: Query<E>, filter: Record<string, unknown>): Query<E> {
-  return { ...query, $where: { ...query.$where, ...filter } };
+  return { ...query, $where: { ...query.$where, ...filter } as QueryWhere<E> };
 }
 
 /**

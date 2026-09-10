@@ -7,7 +7,7 @@ import type {
   QueryCount,
   QueryExclude,
   QueryGroupMap,
-  QueryWhereMap,
+  QueryWhere,
   RelationMeta,
   Type,
 } from '../type/index.js';
@@ -104,7 +104,7 @@ export async function fillRelationCounts<E>(
     if (!value || !relOpts) {
       continue;
     }
-    const where = typeof value === 'object' ? (value.$where as QueryWhereMap<CountedRow> | undefined) : undefined;
+    const where = typeof value === 'object' ? (value.$where as QueryWhere<CountedRow> | undefined) : undefined;
     const joins = parentJoins(relOpts, meta.ids.length);
     counted.set(relKey, {
       parentKeys: keyColumns(joins, 'parent'),
@@ -130,7 +130,7 @@ async function countPerParent(
   relOpts: RelationMeta,
   joins: readonly ParentJoin[],
   parents: readonly unknown[],
-  where: QueryWhereMap<CountedRow> | undefined,
+  where: QueryWhere<CountedRow> | undefined,
 ): Promise<Record<string, number>> {
   const through = relOpts.through;
   if (through) {
@@ -139,7 +139,7 @@ async function countPerParent(
   return groupedCount(querier, relOpts.entity() as Type<CountedRow>, joins, {
     ...where,
     ...parentsIn(joins, parents),
-  } as QueryWhereMap<CountedRow>);
+  } as QueryWhere<CountedRow>);
 }
 
 /**
@@ -153,9 +153,9 @@ async function countThroughPerParent(
   throughEntity: Type<CountedRow>,
   joins: readonly ParentJoin[],
   parents: readonly unknown[],
-  where: QueryWhereMap<CountedRow> | undefined,
+  where: QueryWhere<CountedRow> | undefined,
 ): Promise<Record<string, number>> {
-  const throughWhere = parentsIn(joins, parents) as QueryWhereMap<CountedRow>;
+  const throughWhere = parentsIn(joins, parents) as QueryWhere<CountedRow>;
 
   if (where) {
     const target = relOpts.entity() as Type<CountedRow>;
@@ -173,7 +173,7 @@ async function groupedCount(
   querier: CountingQuerier,
   entity: Type<CountedRow>,
   joins: readonly ParentJoin[],
-  where: QueryWhereMap<CountedRow>,
+  where: QueryWhere<CountedRow>,
 ): Promise<Record<string, number>> {
   const $agg: QueryAggMap<CountedRow> = { [COUNT_ALIAS]: { $count: '*' } };
   const $group = joinedColumns(joins) as QueryGroupMap<CountedRow>;

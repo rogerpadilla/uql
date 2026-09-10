@@ -139,19 +139,11 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(Item, '507f191e810c19729de860ea' as any)).toEqual({
-      _id: new ObjectId('507f191e810c19729de860ea'),
-    });
-
     expect(this.dialect.where(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
     expect(this.dialect.where(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
-      _id: new ObjectId('507f191e810c19729de860ea'),
-    });
-
-    expect(this.dialect.where(TaxCategory, '507f191e810c19729de860ea')).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
@@ -415,6 +407,8 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { $not: [{ tags: { name: 'x' } }] } as never)).toBe(true);
     expect(this.dialect.constrainsRelations(Item, { $nor: [{ tags: { name: 'x' } }] } as never)).toBe(true);
     expect(this.dialect.constrainsRelations(Item, { $nor: [] } as never)).toBe(false);
+    // Refused later by the render, rather than recursing forever on the way there.
+    expect(this.dialect.constrainsRelations(Item, { $or: [raw`code IS NOT NULL`] })).toBe(false);
   }
 
   /** To-many relations are populated with a second query, so they contribute no `$lookup` stage. */
@@ -632,7 +626,7 @@ class MongoDialectSpec implements Spec {
     expect(
       this.dialect.aggregationPipeline(User, {
         $populate: { profile: true },
-        $where: '65496146f8f7899f63768df1' as any,
+        $where: { id: '65496146f8f7899f63768df1' },
         $limit: 1,
       }),
     ).toEqual([

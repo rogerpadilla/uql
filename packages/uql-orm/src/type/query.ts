@@ -164,7 +164,7 @@ type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
 
 /**
  * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
- * like `QueryWhereMap`), relation sort via nested objects, and vector similarity search on
+ * like `QueryWhere`), relation sort via nested objects, and vector similarity search on
  * `number[]` fields. `Vector` is what confines a vector search to the level the statement ranks:
  * the queried entity. A relation of it is joined in one row at a time, so there is nothing to rank
  * there - the SQL dialects throw, and MongoDB would quietly drop it, so this is its only guard.

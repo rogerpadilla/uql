@@ -42,7 +42,6 @@ import {
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOperatorMap,
-  type QueryWhereMap,
   type QueryWhereOptions,
   RAW_ALIAS,
   RAW_VALUE,
@@ -58,7 +57,6 @@ import { computedExpression, isInlinedExpression } from '../util/field.util.js';
 import {
   asSelectMap,
   assertNonNegativeInteger,
-  buildQueryWhereAsMap,
   escapeSqlId,
   fillOnFields,
   filterFieldKeys,
@@ -164,11 +162,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return `CREATE SCHEMA IF NOT EXISTS ${this.escapeId(schema, true)}`;
   }
 
+  /** A stored generated column's type and clause. SQL Server spells it `AS (...) PERSISTED`, typeless. */
+  storedGeneratedColumn(type: string, expression: string): string {
+    return `${type} GENERATED ALWAYS AS (${expression}) STORED`;
+  }
+
   readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
 
   readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
 
   readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none' = 'ALTER COLUMN';
+
+  /** T-SQL alone rejects the optional `COLUMN` keyword after `ADD`. */
+  readonly addColumnSyntax: 'ADD COLUMN' | 'ADD' = 'ADD COLUMN';
 
   readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
 
@@ -543,7 +549,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   where<E>(ctx: QueryContext, entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryWhereOptions = {}): void {
     const meta = getMeta(entity);
     // Filters are applied once, here at the scope entry point; recursion uses `renderWhere`.
-    this.renderWhere(ctx, entity, this.scopedWhereMap(meta, where, opts), opts);
+    this.renderWhere(ctx, entity, this.scopedWhere(meta, where, opts), opts);
   }
 
   /** Renders a `$where` tree without applying entity filters (used for same-scope group-operator recursion). */
@@ -553,14 +559,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     where: QueryWhere<E> = {},
     opts: QueryWhereOptions = {},
   ): void {
-    const meta = getMeta(entity);
     const { clause = 'WHERE' } = opts;
-
-    const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
 
     // An `undefined` value emits nothing, so it must not count towards the terms either: it decides
     // whether the keys below render as operands of an `AND`.
-    const whereKeys = getKeys(whereMap).filter((key) => whereMap[key] !== undefined);
+    const whereKeys = getKeys(where).filter((key) => where[key] !== undefined);
 
     // Each key is an operand of the `AND` joining them; a lone key emits this fragment verbatim, so
     // it inherits this one's position instead.
@@ -568,7 +571,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const childOpts = opts.operand === childOperand ? opts : { ...opts, operand: childOperand };
 
     const parts = this.renderOperands(ctx, whereKeys, (fragmentCtx, key) =>
-      this.compare(fragmentCtx, entity, key, whereMap[key], childOpts),
+      this.compare(fragmentCtx, entity, key, where[key], childOpts),
     );
 
     if (!parts.length) {
@@ -636,7 +639,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         this.compareRelationSize(ctx, entity, sizeVal, rel, opts);
         return;
       }
-      this.compareRelation(ctx, entity, val as QueryWhereMap<unknown>, rel, opts);
+      this.compareRelation(ctx, entity, val as QueryWhere<unknown>, rel, opts);
       return;
     }
 
@@ -826,7 +829,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     switch (op) {
       case '$not':
         ctx.append('NOT (');
-        this.compare(ctx, entity, key as keyof QueryWhereMap<E>, val as QueryWhereMap<E>[keyof QueryWhereMap<E>], opts);
+        this.compare(ctx, entity, key, val, opts);
         ctx.append(')');
         break;
       case '$all':
@@ -2094,7 +2097,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationMeta,
     opts: QueryComparisonOptions,
     projection: '1' | 'COUNT(*)',
-    val: QueryWhereMap<unknown>,
+    val: QueryWhere<unknown>,
   ): void {
     // Aliases, not paths, everywhere a column is prefixed; `tableRef` declares them in the FROM.
     const parentAlias = this.resolveTableAlias(meta);
@@ -2102,7 +2105,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const relatedMeta = getMeta(relatedEntity);
     const { alias: relatedAlias, ref: relatedRef } = this.tableRef(relatedMeta);
     // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
-    const targetWhere = this.scopedWhereMap(relatedMeta, val);
+    const targetWhere = this.scopedWhere(relatedMeta, val);
 
     ctx.append(`(SELECT ${projection} FROM `);
 
@@ -2148,7 +2151,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected compareRelation<E>(
     ctx: QueryContext,
     entity: Type<E>,
-    val: QueryWhereMap<unknown>,
+    val: QueryWhere<unknown>,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {

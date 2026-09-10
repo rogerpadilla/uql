@@ -21,7 +21,7 @@ class Person {
 declare const querier: Querier;
 
 export async function rootClauseArrays() {
-  // $and/$or/$not/$nor take an array of clauses, each a QueryWhereMap or a raw subquery.
+  // $and/$or/$not/$nor take an array of clauses, each a QueryWhere or a raw subquery.
   await querier.findMany(Person, { $where: { $and: [{ name: 'x' }, { age: { $gt: 1 } }] } });
   await querier.findMany(Person, { $where: { $or: [{ id: 1 }, { id: 2 }] } });
   await querier.findMany(Person, { $where: { $not: [{ active: true }] } });
@@ -53,6 +53,35 @@ export async function existsSubqueries() {
 
   // @ts-expect-error $exists takes a raw subquery, not a plain string
   await querier.findMany(Person, { $where: { $exists: 'SELECT 1' } });
+}
+
+export async function rootIsOneMap() {
+  await querier.findMany(Person, { $where: { id: 1 } });
+  await querier.findMany(Person, { $where: { id: [1, 2] } });
+  await querier.findMany(Person, { $where: { $and: [raw`age > 1`] } });
+
+  // @ts-expect-error a bare id is `{ id: 1 }`, or a by-id method
+  await querier.findMany(Person, { $where: 1 });
+  // @ts-expect-error a list of ids is `{ id: [1, 2] }`
+  await querier.findMany(Person, { $where: [1, 2] });
+  // @ts-expect-error a bare raw() goes inside `$and`
+  await querier.findMany(Person, { $where: raw`age > 1` });
+}
+
+/** Each directive sits on the line its error must land on: one reported on `$where` leaves it unused. */
+export async function errorsLandOnTheProperty() {
+  await querier.findMany(Person, {
+    $where: {
+      // @ts-expect-error a string against a numeric column
+      age: 'one',
+    },
+  });
+  await querier.findMany(Person, {
+    $where: {
+      // @ts-expect-error a misspelled column
+      naem: 'x',
+    },
+  });
 }
 
 export async function rawFieldValue() {

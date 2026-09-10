@@ -4,6 +4,7 @@ import type { IndexType } from '../schema/types.js';
 import {
   type CascadeType,
   type EntityData,
+  type EntityId,
   type EntityIndexMeta,
   type EntityMeta,
   type FieldKey,
@@ -27,7 +28,6 @@ import {
   type QuerySortMap,
   type QueryVectorSearch,
   type QueryWhere,
-  type QueryWhereMap,
   type RelationKey,
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
@@ -35,7 +35,7 @@ import {
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { isDatabaseWritten } from './field.util.js';
-import { entityName, getFieldKeys, getKeys, hasKeys, isScalarId, someKey } from './object.util.js';
+import { entityName, getFieldKeys, getKeys, hasKeys, isScalarId, isWhereMap, someKey } from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -317,42 +317,25 @@ export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
   return value !== null && typeof value === 'object' && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
 }
 
-export function augmentWhere<E>(
-  meta: EntityMeta<E>,
-  target: QueryWhere<E> = {},
-  source: QueryWhere<E> = {},
-): QueryWhere<E> {
-  const targetComparison = buildQueryWhereAsMap(meta, target);
-  const sourceComparison = buildQueryWhereAsMap(meta, source);
-  return {
-    ...targetComparison,
-    ...sourceComparison,
-  };
+/**
+ * The `$where` naming rows by key: a bare value names the one key column (refused on a composite), a
+ * composite's key map is a `$where` already, and a list is an `IN` of bare values or an OR of maps.
+ */
+export function whereIds<E>(meta: EntityMeta<E>, ids: EntityId<E> | EntityId<E>[]): QueryWhere<E> {
+  if (Array.isArray(ids) ? ids.every(isScalarId) : isScalarId(ids)) {
+    return { [soleIdOf(meta, 'addressing by a bare id value')]: ids } as QueryWhere<E>;
+  }
+  return (Array.isArray(ids) ? { $or: ids } : ids) as QueryWhere<E>;
 }
 
 /**
- * Normalizes any `$where` shape (id, id[], raw, or map) to a `QueryWhereMap`. Read-only: for a map
- * input it returns that same object by reference (no copy), so callers must not mutate the result -
- * {@link applyFilters} and {@link augmentWhere} return new objects instead.
+ * Refuses a `$where` that is not a map. Untyped JS and parsed JSON can still pass an id or a list of
+ * them, and a scalar read as a map has no keys: the statement would address every row.
  */
-export function buildQueryWhereAsMap<E>(meta: EntityMeta<E>, filter: QueryWhere<E> = {}): QueryWhereMap<E> {
-  if (filter instanceof QueryRaw) {
-    return { $and: [filter] } as QueryWhereMap<E>;
+export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
+  if (!isWhereMap(where)) {
+    throw new TypeError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
   }
-  if (Array.isArray(filter)) {
-    // A list of bare ids is an `IN` over the one key column; a list of anything else is a list of
-    // `$where`s, which is an OR - and that is how a composite's id objects name a settled set of rows.
-    return filter.every(isScalarId)
-      ? ({ [soleIdOf(meta, 'addressing by a bare id value')]: filter } as QueryWhereMap<E>)
-      : ({ $or: filter } as QueryWhereMap<E>);
-  }
-  if (isScalarId(filter)) {
-    // A scalar can only name one column, so on a composite it would address every row agreeing on
-    // that one. A composite is addressed by a map, which falls through below as the `$where` it
-    // already is - an id object and a where map are the same shape by design.
-    return { [soleIdOf(meta, 'addressing by a bare id value')]: filter } as QueryWhereMap<E>;
-  }
-  return filter as QueryWhereMap<E>;
 }
 
 /** Returns a `QueryOptions.filters` value with the built-in soft-delete filter disabled (used by hard delete). */
@@ -373,11 +356,7 @@ export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): Query
  * (`{}`) resolved to "no restriction" and adds nothing - the escape hatch for trusted cross-tenant
  * work (e.g. a maintenance job running under a `system` context).
  */
-export function applyFilters<E>(
-  meta: EntityMeta<E>,
-  whereMap: QueryWhereMap<E>,
-  opts?: QueryOptions,
-): QueryWhereMap<E> {
+export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: QueryOptions): QueryWhere<E> {
   if (!meta.filters) {
     return whereMap;
   }
@@ -411,7 +390,7 @@ export function applyFilters<E>(
       continue;
     }
 
-    const conditionMap = buildQueryWhereAsMap(meta, condition) as Record<string, unknown>;
+    const conditionMap = condition as Record<string, unknown>;
     if (!hasKeys(conditionMap)) {
       continue; // resolved to "no restriction" (e.g. a trusted system context) - nothing to merge
     }
@@ -431,7 +410,7 @@ export function applyFilters<E>(
     result['$and'] = existing ? [...existing, ...securityConditions] : securityConditions;
   }
 
-  return result as QueryWhereMap<E>;
+  return result as QueryWhere<E>;
 }
 
 /**

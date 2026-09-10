@@ -183,16 +183,6 @@ describe('createRequestHandler', () => {
     );
   });
 
-  it('findOneById preserves an array $where via $and (no silent overwrite)', async () => {
-    mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const handle = createRequestHandler({ pool, include: [User] });
-    await handle(req({ method: 'GET', entityPath: 'user', subPath: '123', query: { $where: '[1, 2]' } }));
-    expect(mockQuerier.findOne).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({ $where: { $and: [{ id: { $in: [1, 2] } }, { id: '123' }] } }),
-    );
-  });
-
   it('findMany', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     const handle = createRequestHandler({ pool, include: [User] });
@@ -277,19 +267,6 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('updateOneById preserves an array $where via $and', async () => {
-    mockQuerier.updateMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    await handle(
-      req({ method: 'PATCH', entityPath: 'user', subPath: '9', query: { $where: '[1, 9]' }, body: { name: 'x' } }),
-    );
-    expect(mockQuerier.updateMany).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({ $where: { $and: [{ id: { $in: [1, 9] } }, { id: '9' }] } }),
-      { name: 'x' },
-    );
-  });
-
   it('updateMany (bulk)', async () => {
     mockQuerier.updateMany.mockResolvedValue(3);
     const handle = createRequestHandler({ pool, include: [User] });
@@ -314,24 +291,13 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('deleteOneById preserves an array $where via $and (soft by default)', async () => {
-    mockQuerier.deleteMany.mockResolvedValue(1);
-    const handle = createRequestHandler({ pool, include: [User] });
-    await handle(req({ method: 'DELETE', entityPath: 'user', subPath: '9', query: { $where: '[1, 9]' } }));
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(
-      User,
-      expect.objectContaining({ $where: { $and: [{ id: { $in: [1, 9] } }, { id: '9' }] } }),
-      { hardDelete: false },
-    );
-  });
-
   it('deleteMany deletes by found ids (soft by default)', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
     mockQuerier.deleteMany.mockResolvedValue(2);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
     expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: [1, 2] }, { hardDelete: false });
+    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: { id: [1, 2] } }, { hardDelete: false });
   });
 
   it('deleteMany when nothing found', async () => {

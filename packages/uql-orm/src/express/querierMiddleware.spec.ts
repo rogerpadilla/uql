@@ -75,14 +75,20 @@ describe('querierMiddleware', () => {
     expect(res.body).toEqual({ data: '1', count: 1 });
   });
 
-  it('the extended query parser yields arrays for bracket params ($where[]=1)', async () => {
+  it('the extended query parser reads bracket params as a $where map ($where[name]=John)', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
-    const res = await request(app).get('/api/user/123?$where[]=1');
+    const res = await request(app).get('/api/user/123?$where[name]=John');
     expect(res.status).toBe(200);
     expect(mockQuerier.findOne).toHaveBeenCalledWith(
       User,
-      expect.objectContaining({ $where: { $and: [{ id: { $in: ['1'] } }, { id: '123' }] } }),
+      expect.objectContaining({ $where: { name: 'John', id: '123' } }),
     );
+  });
+
+  it('a bracket list is not a $where ($where[]=1)', async () => {
+    const res = await request(app).get('/api/user/123?$where[]=1');
+    expect(res.status).toBe(400);
+    expect(mockQuerier.findOne).not.toHaveBeenCalled();
   });
 
   it('QUERY /api/user (RFC 10008) reads with the query in the body', async () => {

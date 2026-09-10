@@ -6,11 +6,13 @@ import type {
   Querier,
   QuerierPool,
   Query,
+  QueryWhere,
   RequestSuccessResponse,
   Type,
   UpdatePayload,
   UqlContext,
 } from '../type/index.js';
+import { whereIds } from '../util/dialect.util.js';
 import { type CrudOperation, entityPath, type HttpMethod, matchRoute, type RouteMatch } from './contract.js';
 import { parseQueryParams } from './query.js';
 
@@ -294,7 +296,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
             if (founds.length) {
               const idKey = soleIdOf(meta, 'the HTTP handler');
               ids = founds.map((found) => found[idKey]);
-              count = await querier.deleteMany(entity, { $where: ids }, { hardDelete });
+              count = await querier.deleteMany(entity, { $where: whereIds(meta, ids) }, { hardDelete });
             }
             return ok({ data: ids, count });
           });
@@ -308,14 +310,6 @@ function ok(body: unknown): HandlerResponse {
 }
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
-  const idKey = soleIdOf(meta, 'the HTTP handler');
-  const where = query.$where;
-  if (Array.isArray(where)) {
-    query.$where = { $and: [{ [idKey]: { $in: where } }, { [idKey]: id }] } as Query<E>['$where'];
-  } else if (typeof where === 'object' && where !== null) {
-    query.$where = { ...where, [idKey]: id } as Query<E>['$where'];
-  } else {
-    query.$where = { [idKey]: id } as Query<E>['$where'];
-  }
+  query.$where = { ...query.$where, [soleIdOf(meta, 'the HTTP handler')]: id } as QueryWhere<E>;
   return query;
 }

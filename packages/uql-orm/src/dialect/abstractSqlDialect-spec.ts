@@ -1936,7 +1936,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: '9',
+        $where: { id: '9' },
         $limit: 1,
       }),
     );
@@ -1946,7 +1946,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: 1, name: 1, creatorId: 1 },
-        $where: '9',
+        $where: { id: '9' },
         $limit: 1,
       }),
     );
@@ -2095,24 +2095,24 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldDelete() {
     const e = this.dialect.escapeIdChar;
     // Entity without a soft-delete field: always a plain DELETE.
-    let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: '123' }));
+    let res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: { id: '123' } }));
     expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['123']);
 
     // `hardDelete` on a non-soft-deletable entity is still a plain DELETE (e.g. a cascade onto one).
-    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: '123' }, { hardDelete: true }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: { id: '123' } }, { hardDelete: true }));
     expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['123']);
 
     // Soft-deletable entity: UPDATE stamping only live rows.
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: '123' }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: '123' } }));
     expect(res.sql).toBe(
       `UPDATE ${e}MeasureUnit${e} SET ${e}deletedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)} AND ${e}deletedAt${e} IS NULL`,
     );
     expect(res.values).toEqual([expect.any(Number), '123']);
 
     // `hardDelete` removes the row regardless of soft-delete state (no `IS NULL` filter).
-    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: '123' }, { hardDelete: true }));
+    res = this.exec((ctx) => this.dialect.delete(ctx, MeasureUnit, { $where: { id: '123' } }, { hardDelete: true }));
     expect(res.sql).toBe(`DELETE FROM ${e}MeasureUnit${e} WHERE ${e}id${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['123']);
   }
@@ -2190,14 +2190,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, Item, {
         $select: { id: true },
         $where: { $and: [raw`SUM(salePrice) > 500`] },
-      }),
-    );
-    expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500`);
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, Item, {
-        $select: { id: true },
-        $where: raw`SUM(salePrice) > 500`,
       }),
     );
     expect(res.sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} WHERE SUM(salePrice) > 500`);

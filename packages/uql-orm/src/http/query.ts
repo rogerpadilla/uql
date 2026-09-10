@@ -8,7 +8,7 @@ import {
   QUERY_ROOT_OBJECT_CLAUSES,
 } from '../type/query.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
-import { getKeys } from '../util/object.util.js';
+import { getKeys, isWhereMap } from '../util/object.util.js';
 
 /**
  * Keys accepted from the wire - query structure ({@link Query}) plus the `hardDelete`/`count` scalar
@@ -61,6 +61,9 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
   }
 
   query['$where'] ??= {};
+  if (!isWhereMap(query['$where'])) {
+    throw Object.assign(new TypeError("'$where' must be a JSON object"), { status: 400 });
+  }
 
   // A query string carries every value as text, so what decodes a clause is the shape its group
   // declares. `'false'` is the reason the boolean pass exists rather than the raw value being taken:

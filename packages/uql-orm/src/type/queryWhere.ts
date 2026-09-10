@@ -1,4 +1,4 @@
-import type { EntityId, FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
+import type { FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
@@ -23,11 +23,6 @@ export type QueryTextSearchOptions<E> = {
 };
 
 /**
- * comparison by fields.
- */
-export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<E[K]> };
-
-/**
  * Field comparison, JSON dot-path access, and relation filtering - all fully typed.
  * JSON dot-paths are restricted to real JSON fields, and typed payloads type each path's value
  * (untyped `Json` payloads accept any `field.suffix` path with a permissive value). Relations are
@@ -38,12 +33,15 @@ export type QueryWhereFieldMap<E> = { [K in FieldKey<E>]?: QueryWhereFieldValue<
  * {@link QuerySortMap} is: the sets are disjoint, and an assignability check against an
  * intersection is repeated per constituent, which every `$where` in a codebase pays. The root
  * operators stay a separate member - they are a fixed shape, not keyed off the entity.
+ *
+ * An object and nothing else: in a union with ids or lists, TypeScript reports a wrong value against
+ * the whole `$where` instead of the key holding it. Ids are `{ id: 1 }`, or the by-id methods.
  */
-export type QueryWhereMap<E> = QueryWhereRootOperator<E> & {
+export type QueryWhere<E> = QueryWhereRootOperator<E> & {
   [K in FieldKey<E> | RelationKey<E> | JsonFieldPaths<E>]?: K extends FieldKey<E>
     ? QueryWhereFieldValue<E[K]>
     : K extends RelationKey<E>
-      ? QueryWhereMap<RelationTarget<E[K]>> | QueryRelationSizeFilter
+      ? QueryWhere<RelationTarget<E[K]>> | QueryRelationSizeFilter
       : QueryWhereFieldValue<JsonFieldPathValue<E, K & string>>;
 };
 
@@ -383,14 +381,4 @@ export type QueryWhereFieldValue<T> =
 /**
  * query filter array - the value every {@link QueryGroupOp} takes.
  */
-export type QueryWhereArray<E> = (QueryWhereMap<E> | QueryRaw)[];
-
-/**
- * query filter.
- */
-/**
- * `EntityId` rather than `IdValue`: a by-id method reduces to `$where: id`, and a composite key is
- * addressed by an object carrying every key. That object is a where map naming those columns, so the
- * two spellings meet here rather than needing a conversion.
- */
-export type QueryWhere<E> = EntityId<E> | EntityId<E>[] | QueryWhereMap<E> | QueryWhereArray<E> | QueryRaw;
+export type QueryWhereArray<E> = (QueryWhere<E> | QueryRaw)[];

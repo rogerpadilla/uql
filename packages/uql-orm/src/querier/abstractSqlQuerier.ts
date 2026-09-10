@@ -43,6 +43,7 @@ import {
   throwPendingTransaction,
   unflatObject,
   unflatObjects,
+  whereIds,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
@@ -559,7 +560,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       if (!ids.length) {
         return 0;
       }
-      target = { $where: ids };
+      target = { $where: whereIds(getMeta(entity), ids) };
     }
     const ctx = this.dialect.createContext();
     this.dialect.update(ctx, entity, target, payload, opts);
@@ -673,7 +674,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
     await this.deleteRelations(entity, ids, opts);
     const deleteCtx = this.dialect.createContext();
-    this.dialect.delete(deleteCtx, entity, { $where: ids }, opts);
+    this.dialect.delete(deleteCtx, entity, { $where: whereIds(meta, ids) }, opts);
     const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);
     return changes;
   }

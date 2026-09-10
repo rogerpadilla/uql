@@ -7,7 +7,7 @@ import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { idKey } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { raw, whereIds } from '../util/index.js';
 
 @Entity()
 class Enrolment {
@@ -421,16 +421,15 @@ describe('a composite key across a relation', () => {
 describe('naming settled rows', () => {
   /**
    * A list of ids is an `IN` over the one key column, which a composite has no single column for.
-   * The same list of id objects is a list of `$where`s, so it is an OR of them - which is also what
-   * makes the documented array `$where` work, rather than being read as a list of bare ids.
+   * Each of its id objects is a `$where` already, so the list is an OR of them.
    */
   it('names a list of composite rows by an OR of their keys', () => {
     const ctx = new PostgresDialect().createContext();
     new PostgresDialect().delete(ctx, Enrolment, {
-      $where: [
+      $where: whereIds(getMeta(Enrolment), [
         { studentId: 1, courseId: 'maths' },
         { studentId: 2, courseId: 'physics' },
-      ],
+      ]),
     });
     expect(ctx.sql).toBe(
       'DELETE FROM "Enrolment" WHERE ("studentId" = $1 AND "courseId" = $2) OR ("studentId" = $3 AND "courseId" = $4)',

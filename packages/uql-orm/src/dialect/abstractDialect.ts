@@ -12,9 +12,8 @@ import type {
   QueryOptions,
   QueryWhere,
   QueryWhereArray,
-  QueryWhereMap,
 } from '../type/index.js';
-import { applyFilters, buildQueryWhereAsMap } from '../util/dialect.util.js';
+import { applyFilters, assertWhere } from '../util/dialect.util.js';
 import { entityName } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
 
@@ -127,12 +126,13 @@ export abstract class AbstractDialect {
   }
 
   /**
-   * A `$where` normalized to a map with the entity's active filters merged in - the only way any
-   * dialect should enter a new query scope, so a scope cannot be rendered with its `security: true`
-   * filters skipped. Recursion within one scope renders the returned map directly instead.
+   * A `$where` with the entity's active filters merged in - the only way any dialect should enter a
+   * new query scope, so a scope cannot be rendered with its `security: true` filters skipped.
+   * Recursion within one scope renders the returned map directly instead.
    */
-  protected scopedWhereMap<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhereMap<E> {
-    return applyFilters(meta, buildQueryWhereAsMap(meta, where), opts);
+  protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhere<E> {
+    assertWhere(meta, where);
+    return applyFilters(meta, where, opts);
   }
 
   /**

@@ -94,3 +94,8 @@ export function isScalarId(value: unknown): boolean {
   const proto = Object.getPrototypeOf(value);
   return proto !== Object.prototype && proto !== null;
 }
+
+/** Whether `value` is a plain object naming columns, the one shape a `$where` takes. */
+export function isWhereMap(value: unknown): value is Record<string, unknown> {
+  return !Array.isArray(value) && !isScalarId(value);
+}

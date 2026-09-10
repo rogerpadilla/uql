@@ -123,6 +123,13 @@ describe('parseQueryParams', () => {
     );
   });
 
+  it('throws a 400-status error on a $where that is not a map', () => {
+    expect(() => parseQueryParams({ $where: '[1, 2]' })).toThrow(
+      expect.objectContaining({ message: "'$where' must be a JSON object", status: 400 }),
+    );
+    expect(() => parseQueryParams({ $where: '5' })).toThrow(expect.objectContaining({ status: 400 }));
+  });
+
   it('drops unknown query keys (allowlist) so clients cannot inject filters/context', () => {
     const query = parseQueryParams({ $customKey: 'value', filters: 'false', context: '{}' }) as Record<string, unknown>;
     expect(query['$customKey']).toBeUndefined();

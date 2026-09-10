@@ -42,7 +42,6 @@ import type {
 } from '../type/index.js';
 import {
   asSelectMap,
-  augmentWhere,
   childrenOf,
   clone,
   dataKeyed,
@@ -68,6 +67,7 @@ import {
   runHooks,
   someKey,
   targetKeyColumns,
+  whereIds,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
@@ -75,9 +75,10 @@ import { fillRelationCounts, withIdForCounts } from './relationCount.js';
 
 /**
  * Rejects a nullish primary key before it reaches a statement. The by-id methods reduce to
- * `{ $where: id }`, and a nullish `$where` is *no filter*, so an unchecked one addresses the whole
- * table. An entity declares its id optional, which puts `undefined` inside `IdValue<E>`, and the
- * HTTP layer reaches these methods with parsed JSON regardless, so the guard belongs at runtime.
+ * `{ $where: { id } }`, and a key compared to `undefined` is *no filter*, so an unchecked one
+ * addresses the whole table. An entity declares its id optional, which puts `undefined` inside
+ * `IdValue<E>`, and the HTTP layer reaches these methods with parsed JSON regardless, so the guard
+ * belongs at runtime.
  *
  * Its callers are all `async` so this surfaces as a rejection on every one of them: a guard that
  * threw synchronously from some and rejected from others would escape a caller's `.catch()`.
@@ -87,7 +88,7 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
     throw new TypeError(`'${entity.name}' was addressed by id, but the id is ${String(id)}`);
   }
   if (isScalarId(id)) {
-    // One value names one column, which `buildQueryWhereAsMap` refuses on a composite.
+    // One value names one column, which `whereIds` refuses on a composite.
     return;
   }
   // Every key, or the `$where` names only some of the columns and addresses each row that agrees on
@@ -231,7 +232,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<E | undefined> {
     assertIdValue(entity, id);
-    return this.findOne(entity, { ...q, $where: augmentWhere(getMeta(entity), q.$where, id) }, opts);
+    return this.findOne(entity, { ...q, $where: { ...q.$where, ...whereIds(getMeta(entity), id) } }, opts);
   }
 
   /**
@@ -530,7 +531,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ) {
     assertIdValue(entity, id);
-    return this.updateMany(entity, { $where: id }, payload, opts);
+    return this.updateMany(entity, { $where: whereIds(getMeta(entity), id) }, payload, opts);
   }
 
   async updateMany<E extends object>(
@@ -551,7 +552,7 @@ export abstract class AbstractQuerier implements Querier {
 
   async restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number> {
     assertIdValue(entity, id);
-    return this.restoreMany(entity, { $where: id });
+    return this.restoreMany(entity, { $where: whereIds(getMeta(entity), id) });
   }
 
   async restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
@@ -559,7 +560,7 @@ export abstract class AbstractQuerier implements Querier {
     if (!meta.softDelete) {
       throw new TypeError(`'${entity.name}' has not enabled 'softDelete'`);
     }
-    const $where = augmentWhere(meta, q.$where, { [meta.softDelete]: { $ne: null } } as QuerySearch<E>['$where']);
+    const $where = { ...q.$where, [meta.softDelete]: { $ne: null } } as QueryWhere<E>;
     return this.updateMany(entity, { ...q, $where }, { [meta.softDelete]: null } as UpdatePayload<E>, {
       filters: { softDelete: false },
     });
@@ -608,7 +609,7 @@ export abstract class AbstractQuerier implements Querier {
 
   async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions) {
     assertIdValue(entity, id);
-    return this.deleteMany(entity, { $where: id }, opts);
+    return this.deleteMany(entity, { $where: whereIds(getMeta(entity), id) }, opts);
   }
 
   /**
@@ -634,7 +635,8 @@ export abstract class AbstractQuerier implements Querier {
     let target: QuerySearch<E> = q;
     if (doomed) {
       const meta = getMeta(entity);
-      target = { $where: doomed.map((it) => idOf(meta, it)) };
+      const ids = doomed.map((it) => idOf(meta, it));
+      target = { $where: whereIds(meta, ids) };
     }
     await this.emitHook(entity, 'beforeDelete', doomed ?? []);
     const changes = await this.internalDeleteMany(entity, target, opts);

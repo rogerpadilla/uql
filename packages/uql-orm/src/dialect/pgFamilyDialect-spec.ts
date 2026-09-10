@@ -456,14 +456,6 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
-        $select: { id: true },
-        $where: raw`SUM(salePrice) > 500`,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "Item" WHERE SUM(salePrice) > 500');
-
-    res = this.exec((ctx) =>
-      this.dialect.find(ctx, Item, {
         $select: { creatorId: true },
         $where: { $or: [{ id: { $in: ['1', '2'] } }, { code: 'abc' }] },
       }),

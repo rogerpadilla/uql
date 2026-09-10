@@ -3,11 +3,10 @@ import { UqlSecurityError, withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
-import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhereMap } from '../type/index.js';
+import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
 import {
   applyFilters,
-  augmentWhere,
-  buildQueryWhereAsMap,
+  assertWhere,
   fillOnFields,
   filterFieldKeys,
   getFieldCallbackValue,
@@ -15,6 +14,7 @@ import {
   isCascadable,
   normalizeScalarFieldSelection,
   parseGroupMap,
+  whereIds,
 } from './dialect.util.js';
 import { raw } from './raw.js';
 
@@ -30,7 +30,7 @@ class Filtered {
   deletedAt?: Date;
 }
 
-function applied(where: QueryWhereMap<Filtered>, opts?: Parameters<typeof applyFilters>[2]) {
+function applied(where: QueryWhere<Filtered>, opts?: Parameters<typeof applyFilters>[2]) {
   return applyFilters(getMeta(Filtered), where, opts);
 }
 
@@ -70,7 +70,7 @@ class Tenanted {
   deletedAt?: Date;
 }
 
-function tenantApplied(where: QueryWhereMap<Tenanted>, opts?: Parameters<typeof applyFilters>[2]) {
+function tenantApplied(where: QueryWhere<Tenanted>, opts?: Parameters<typeof applyFilters>[2]) {
   return applyFilters(getMeta(Tenanted), where, opts);
 }
 
@@ -117,15 +117,15 @@ it('a condition resolving to {} means "no restriction" and merges nothing (trust
 });
 
 it('applyFilters never mutates the input where map (returns a new object)', () => {
-  const input: QueryWhereMap<Filtered> = { status: 'x' };
+  const input: QueryWhere<Filtered> = { status: 'x' };
   const out = applied(input);
   expect(input).toEqual({ status: 'x' }); // input untouched - no injected `deletedAt`
   expect(out).not.toBe(input);
 });
 
 it('applyFilters does not mutate a client $and array when AND-merging a security filter', () => {
-  const clientAnd: QueryWhereMap<Tenanted>[] = [{ companyId: 1 }];
-  const input: QueryWhereMap<Tenanted> = { $and: clientAnd };
+  const clientAnd: QueryWhere<Tenanted>[] = [{ companyId: 1 }];
+  const input: QueryWhere<Tenanted> = { $and: clientAnd };
   const out = withContext({ tenantId: 5 }, () => tenantApplied(input));
   expect(clientAnd).toEqual([{ companyId: 1 }]); // original array untouched
   expect(out.$and).toEqual([{ companyId: 1 }, { companyId: 5 }]);
@@ -135,30 +135,6 @@ it('applyFilters does not mutate a client $and array when AND-merging a security
 function malformedGroupMapFixture(): QueryGroupMap<Item> {
   return { a: false, b: 0, c: '', d: true } as unknown as QueryGroupMap<Item>;
 }
-
-it('augmentWhere empty', () => {
-  const meta = getMeta(User);
-  expect(augmentWhere(meta)).toEqual({});
-  expect(augmentWhere(meta, {})).toEqual({});
-  expect(augmentWhere(meta, {}, {})).toEqual({});
-});
-
-it('augmentWhere', () => {
-  const meta = getMeta(User);
-  expect(augmentWhere(meta, { name: 'a' }, { name: 'b' })).toEqual({ name: 'b' });
-  expect(augmentWhere(meta, { name: 'a' }, { id: '1' })).toEqual({ name: 'a', id: '1' });
-  expect(augmentWhere(meta, { name: 'a' }, { $and: [{ id: '1' }, { id: '2' }] })).toEqual({
-    name: 'a',
-    $and: [{ id: '1' }, { id: '2' }],
-  });
-  expect(augmentWhere(meta, '1', { $or: [{ id: '2' }, { id: '3' }] })).toEqual({
-    id: '1',
-    $or: [{ id: '2' }, { id: '3' }],
-  });
-  const rawFilter = raw(() => 'a > 1');
-  expect(augmentWhere(meta, rawFilter, '1')).toEqual({ $and: [rawFilter], id: '1' });
-  expect(augmentWhere(meta, '1', rawFilter)).toEqual({ id: '1', $and: [rawFilter] });
-});
 
 it('getFieldCallbackValue', () => {
   expect(getFieldCallbackValue(() => 'fn')).toBe('fn');
@@ -266,30 +242,41 @@ class Enrolled {
   @Field({ type: String }) grade?: string;
 }
 
-describe('buildQueryWhereAsMap', () => {
+describe('whereIds', () => {
   it('names the one key column for a bare value, and an `IN` for a list of them', () => {
-    expect(buildQueryWhereAsMap(getMeta(User), '1')).toEqual({ id: '1' });
-    expect(buildQueryWhereAsMap(getMeta(User), ['1', '2'])).toEqual({ id: ['1', '2'] });
-    expect(buildQueryWhereAsMap(getMeta(User), [])).toEqual({ id: [] });
+    expect(whereIds(getMeta(User), '1')).toEqual({ id: '1' });
+    expect(whereIds(getMeta(User), ['1', '2'])).toEqual({ id: ['1', '2'] });
+    expect(whereIds(getMeta(User), [])).toEqual({ id: [] });
   });
 
-  /** The documented array `$where`, which used to be read as a list of bare ids and mangled. */
-  it('reads a list of maps as the OR it is', () => {
-    const where = [{ name: 'a' }, { name: 'b' }];
-    expect(buildQueryWhereAsMap(getMeta(User), where)).toEqual({ $or: where });
-  });
-
-  it('returns a map unchanged, which is what a composite id already is', () => {
-    const where = { studentId: 1, courseId: 'maths' };
-    expect(buildQueryWhereAsMap(getMeta(Enrolled), where)).toBe(where);
-    expect(buildQueryWhereAsMap(getMeta(Enrolled), [where])).toEqual({ $or: [where] });
+  it('names a composite row by its key map, which is a `$where` already, and a list of them by an OR', () => {
+    const id = { studentId: 1, courseId: 'maths' };
+    expect(whereIds(getMeta(Enrolled), id)).toBe(id);
+    expect(whereIds(getMeta(Enrolled), [id])).toEqual({ $or: [id] });
   });
 
   /** A scalar names one column, which on a composite would address every row agreeing on it. */
   it('refuses a bare value where the key is composite', () => {
-    expect(() => buildQueryWhereAsMap(getMeta(Enrolled), 1)).toThrow(
+    expect(() => whereIds(getMeta(Enrolled), 1)).toThrow(
       /composite primary key \(studentId, courseId\), which addressing by a bare id value does not support/,
     );
-    expect(() => buildQueryWhereAsMap(getMeta(Enrolled), [1, 2])).toThrow(/addressing by a bare id value/);
+    expect(() => whereIds(getMeta(Enrolled), [1, 2])).toThrow(/addressing by a bare id value/);
+  });
+});
+
+describe('assertWhere', () => {
+  it('passes a map, with or without a prototype', () => {
+    expect(() => assertWhere(getMeta(User), { id: '1' })).not.toThrow();
+    expect(() => assertWhere(getMeta(User), Object.assign(Object.create(null), { id: '1' }))).not.toThrow();
+  });
+
+  /** Untyped JS and parsed JSON can still pass these; read as a map, a scalar has no keys and filters nothing. */
+  it.each([
+    ['an id', '1'],
+    ['a list of ids', [1, 2]],
+    ['a bare raw()', raw`a > 1`],
+    ['null', null],
+  ])('refuses %s', (_, where) => {
+    expect(() => assertWhere(getMeta(User), where)).toThrow("$where on 'User' must be a map of conditions");
   });
 });

@@ -39,7 +39,6 @@ import {
   asSelectMap,
   assertAggregateColumns,
   assertNonNegativeInteger,
-  buildQueryWhereAsMap,
   type CallbackKey,
   columnFamily,
   entityName,
@@ -162,7 +161,7 @@ export class MongoDialect extends AbstractDialect {
   public where<E extends Document>(entity: Type<E>, where: QueryWhere<E> = {}, opts: QueryOptions = {}): Filter<E> {
     const meta = getMeta(entity);
     // Filters are applied once, here at the scope entry point; recursion uses `renderFilter`.
-    return this.renderFilter(entity, this.scopedWhereMap(meta, where, opts));
+    return this.renderFilter(entity, this.scopedWhere(meta, where, opts));
   }
 
   /**
@@ -184,7 +183,7 @@ export class MongoDialect extends AbstractDialect {
   } {
     const meta = getMeta(entity);
     const lookups: RelationLookups = { stages: [], temps: [] };
-    const filter = this.renderFilter(entity, this.scopedWhereMap(meta, where, opts), opts, lookups);
+    const filter = this.renderFilter(entity, this.scopedWhere(meta, where, opts), opts, lookups);
     return { stages: lookups.stages, filter, unset: lookups.temps };
   }
 
@@ -194,10 +193,12 @@ export class MongoDialect extends AbstractDialect {
       return false;
     }
     const meta = getMeta(entity);
-    const whereMap = buildQueryWhereAsMap(meta, where) as Record<string, unknown>;
+    const whereMap = where as Record<string, unknown>;
     return someKey(whereMap, (key) =>
       MongoDialect.isGroupOp(key)
-        ? ((whereMap[key] as QueryWhereArray<E>) ?? []).some((it) => this.constrainsRelations(entity, it))
+        ? ((whereMap[key] as QueryWhereArray<E>) ?? []).some(
+            (it) => !(it instanceof QueryRaw) && this.constrainsRelations(entity, it),
+          )
         : Boolean(meta.relations[key as RelationKey<E>]),
     );
   }
@@ -214,10 +215,8 @@ export class MongoDialect extends AbstractDialect {
     lookups?: RelationLookups,
   ): Filter<E> {
     const meta = getMeta(entity);
-    const whereMap = buildQueryWhereAsMap(meta, where);
-
     const filter: Record<string, unknown> = {};
-    for (const [rawKey, rawVal] of Object.entries(whereMap)) {
+    for (const [rawKey, rawVal] of Object.entries(where)) {
       let key = rawKey;
       let val: unknown = rawVal;
       if (MongoDialect.isGroupOp(key)) {
@@ -271,8 +270,6 @@ export class MongoDialect extends AbstractDialect {
     const { join, negate } = MongoDialect.GROUP_OPS[key];
     const parts = MongoDialect.groupClauses(key, val)
       .map((filterIt) => {
-        // A `QueryRaw` here would recurse forever: `buildQueryWhereAsMap` re-wraps it as
-        // `{ $and: [raw] }`, which lands back on this branch.
         this.assertNoRaw(filterIt);
         return this.renderFilter(entity, filterIt, opts, lookups);
       })
@@ -316,7 +313,7 @@ export class MongoDialect extends AbstractDialect {
     // `withDeleted()` or `hardDelete` on the parent must not un-hide trashed rows of the target, the
     // same rule the SQL dialects' relation subqueries follow.
     const targetCondition = (sizeVal === undefined ? val : {}) as QueryWhere<Document>;
-    const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, targetCondition), opts);
+    const targetScope = this.renderFilter(relEntity, this.scopedWhere(relMeta, targetCondition), opts);
 
     lookups.temps.push(temp);
     lookups.stages.push(this.relationLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts));
@@ -368,7 +365,7 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<Document> {
     const throughEntity = relOpts.through!();
     const throughMeta = getMeta(throughEntity);
-    const junctionScope = this.renderFilter(throughEntity, this.scopedWhereMap(throughMeta, {}), opts);
+    const junctionScope = this.renderFilter(throughEntity, this.scopedWhere(throughMeta, {}), opts);
     const nested = REL_NESTED_KEY;
     // Both ends are one column here - each `$lookup` matches one field against `_id` - so both sides
     // must be sole-keyed. Sliced rather than indexed positionally: `references[1]` is the parent's
@@ -442,7 +439,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
-  private assertNoRaw(value: unknown): void {
+  private assertNoRaw<T>(value: T): asserts value is Exclude<T, QueryRaw> {
     if (value instanceof QueryRaw) {
       throw new TypeError('raw() in $where is not supported on MongoDB');
     }
@@ -686,7 +683,7 @@ export class MongoDialect extends AbstractDialect {
       const relEntity = relOpts.entity();
       const relMeta = getMeta(relEntity);
       const temp = sortCountField(key);
-      const targetScope = this.renderFilter(relEntity, this.scopedWhereMap(relMeta, {}), opts);
+      const targetScope = this.renderFilter(relEntity, this.scopedWhere(relMeta, {}), opts);
       const tail = [{ $count: COUNT_ALIAS }];
 
       stages.push(this.relationLookup(meta, relOpts, relMeta, relEntity, targetScope, temp, tail, opts), {
