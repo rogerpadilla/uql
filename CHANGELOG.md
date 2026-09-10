@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.52.0] - 2026-09-09
+
+- **Microsoft SQL Server 2017+, through `uql-orm/mssql` and the `mssql` driver.** `$regex` needs a 2025 server at compatibility level 170; `$text` and vector search are refused.
+- **Breaking: `defaultStringAsText` is now the three-way `stringSizing`**, joined by `supportsUnsigned` and `multipleCascadePaths`. Only a hand-written dialect declares them.
+- The `./migrate` budget rose to 52.1 KB gzipped for the SQL Server introspector.
+- **`findManyStream` streams for real on `bunSql` (Postgres, CockroachDB) and PGlite.** Both clients expose no cursor, so the rows page through a server-side `DECLARE`/`FETCH` instead of buffering the whole result.
+- **A `bun:sql` URL for an engine Bun cannot dial is refused by the pool.** An `mssql://` connection string read as Postgres and failed on the first statement.
+- **Breaking: `BunSqlPostgresDialect`, `BunSqlCockroachDialect` and `BunSqliteDialect` are gone.** The pool builds the engine's own dialect with the wire driver's capabilities.
+
 ## [0.51.0] - 2026-09-09
 
 - **Breaking: an upsert reports the entity's id, not the driver's result.** `upsertOne` returns `{ id, changes, created }` and `upsertMany` `{ ids, changes }`, ids in payload order. `firstId` is gone from both; `run()` keeps it.

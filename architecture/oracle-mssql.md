@@ -2,6 +2,8 @@
 
 Design for two engines the [roadmap](roadmap.md) does not yet name. **SQL Server first, Oracle second**, behind one shared family base.
 
+**SQL Server has shipped.** What follows describes what was built; the Oracle half is still design.
+
 Two conclusions the first draft of this design got wrong, both corrected by reading what shipped elsewhere (`../mikro-orm`, `../knex`, `../kysely`, `../typeorm`, `../sequelize`):
 
 - **R5 is not a prerequisite.** Oracle's generated ids ride in the values array.
@@ -22,7 +24,7 @@ For reference, `pg` is 190M/month and `mariadb` - which UQL already supports - i
 
 So: SQL Server is a gap that loses comparisons and blocks a real population - the .NET shop writing new Node services against a database it already has. Oracle is a differentiator; Prisma has had [an open request since June 2020](https://github.com/prisma/prisma/issues/2853).
 
-**Version floors, stated once.** SQL Server **2019+**, Oracle **23ai and up**, which Oracle [renamed AI Database 26ai](https://mikedietrichde.com/2025/10/14/oracle-ai-database-26ai-replaces-oracle-database-23ai/) in October 2025 while keeping the internal `23.x` version. The Oracle floor is what keeps this design small: 23ai brought multi-row `VALUES`, native `BOOLEAN`, a native `JSON` type with `JSON_TRANSFORM`, and `VECTOR_DISTANCE`. Below it each of those needs a second code path - `INSERT ALL ... SELECT FROM dual`, `NUMBER(1)`, CLOB JSON - which is what TypeORM carries and why its Oracle driver is 4,700 lines.
+**Version floors, stated once.** SQL Server **2017+** - derived, not chosen: `STRING_AGG` is the newest thing the dialect emits, and everything else is 2016 or older. Oracle **23ai and up**, which Oracle [renamed AI Database 26ai](https://mikedietrichde.com/2025/10/14/oracle-ai-database-26ai-replaces-oracle-database-23ai/) in October 2025 while keeping the internal `23.x` version. The Oracle floor is what keeps this design small: 23ai brought multi-row `VALUES`, native `BOOLEAN`, a native `JSON` type with `JSON_TRANSFORM`, and `VECTOR_DISTANCE`. Below it each of those needs a second code path - `INSERT ALL ... SELECT FROM dual`, `NUMBER(1)`, CLOB JSON - which is what TypeORM carries and why its Oracle driver is 4,700 lines.
 
 ## What this costs, measured
 
@@ -200,9 +202,9 @@ Engine differences inside the suites use the existing idiom: a capability flag o
 Containers:
 
 - **Oracle**: `gvenzl/oracle-free`, [natively multi-arch since 23.5](https://www.geraldonit.com/oracle-database-free-for-arm-and-multi-platform-images-now-available/), healthy in ~45s.
-- **SQL Server**: `mcr.microsoft.com/mssql/server` is **amd64 only**, and [2025 RTM additionally requires AVX](https://www.nocentino.com/posts/2025-11-26-sql-server-2025-docker-desktop-avx-issue/), which Docker Desktop's Rosetta layer does not provide. **Pin 2022** unless the 2025 vector or JSON types are being worked on.
+- **SQL Server**: `mcr.microsoft.com/mssql/server:2025-latest`. There is still **no arm64 image**, so this runs under emulation on Apple Silicon; the AVX requirement that stopped 2025 starting under Docker Desktop's Rosetta layer was lifted by the engine's CU1, and it is healthy in about twenty seconds. The image runs nothing from a volume on startup, so the database and its snapshot isolation are created by the healthcheck itself - idempotently, and there rather than in a one-shot init container because `docker compose up --wait` returns while such a container is still running, which would let CI start testing before the database existed.
 
-`bun run test` already runs the vitest and Bun suites sequentially because they share the containers. Two engines that take a minute to become healthy would push the everyday gate past the point where it gets run. **Both go behind a separate `test:enterprise` script from the first commit**, in CI and on demand, not in `bun run check`. That is a decision to make now, not after the first engine lands.
+**The suite runs with every other engine's, in `bun run test`.** The first draft of this design put it behind a separate script on the assumption the container was too slow for the everyday gate; measured, it is healthy in 12 seconds - no worse than MySQL or Postgres - and the 307 cases run in 5.5. What is actually different about it is worth knowing but not worth a second entry point: the image is ~2.4GB, roughly double the next largest, it is the only one with no arm64 build, and it is the only one needing a second container to create its database. A suite outside the gate is a suite that stops being run.
 
 ## Vectors, declined for now
 
@@ -212,13 +214,52 @@ Both engines have native vector search - [Oracle 23ai](https://www.oracle.com/da
 
 ## Build order
 
-| Phase | Work                                                                                     | Size     |
-| :---- | :--------------------------------------------------------------------------------------- | :------- |
-| **0** | The five seams, the introspector registry, `MergeSqlDialect` with no subclass yet        | ~1 week  |
-| **1** | SQL Server: dialect, introspector, querier and pool, index DDL, specs, `test:enterprise` | ~2 weeks |
-| **2** | Oracle: the same, plus the out-bind path and the `''`-is-`NULL` expectations             | ~2 weeks |
+| Phase | Work                                                                          | State    |
+| :---- | :---------------------------------------------------------------------------- | :------- |
+| **0** | The five seams, the introspector registry, `MergeSqlDialect`                  | shipped  |
+| **1** | SQL Server: dialect, introspector, querier and pool, specs, integration suite | shipped  |
+| **2** | Oracle: the same, plus the out-bind path and the `''`-is-`NULL` expectations  | designed |
 
-Phase 0 is worth doing for SQL Server alone, and four of its six items - the pager spec hook, the type-map split, `regexCondition`, the introspector registry - are cleanups the codebase wants whether or not either engine is ever built. Only `returningPosition` and `MergeSqlDialect` exist solely to serve them.
+Four of Phase 0's six items - the pager spec hook, the type-map split, `regexCondition`, the introspector registry - are cleanups the codebase wanted whether or not either engine was built. Only `returningPosition` and `MergeSqlDialect` exist solely to serve them.
+
+### What Phase 0 turned out to cost
+
+The pager hook was the whole of it: 54 assertions across five spec files carried a `LIMIT` in their expected SQL, and the two dialects whose paging already differs each carried an override of the one case that showed it. Both overrides are gone, replaced by one `pgr()` helper that asks the dialect.
+
+The type-table collapse found two things the seams had not predicted. `defaultStringAsText` was a boolean that could not describe SQLite, so SQLite carried a second check by name to escape the branch the boolean put it in - it is now the three-way `stringSizing`, and `canonicalType.ts` has no `dialectName` checks left. And `jsonScalarParam` bound its value against a hardcoded `?`, which held only because the two dialects reaching it both spell one that way; it asks the dialect now.
+
+Two capabilities landed as `EngineFeatures` rather than the prose rules this design first wrote them as: `supportsUnsigned` and `multipleCascadePaths`.
+
+### What the live suite settled
+
+The shared integration suite runs against SQL Server 2025 and **all 307 cases pass**. Four things only a real server showed:
+
+**JSON reading and writing need different binders.** There is no "parse this text as JSON" cast to bind through - `JSON_QUERY` marks text as JSON but answers NULL for a scalar, where `CAST(? AS JSON)` and `json(?)` serve the other families in both directions. So a write binds the type the engine should store (a `BIT` becomes a JSON boolean, a number a JSON number) and a read binds the text `JSON_VALUE` yields (`'true'`, `'12'`). One binder served neither: booleans were stored as `1` and compared as `1` against text.
+
+**`JSON_QUERY` cannot serve the JSON access mode at all**, for the same reason, so it falls back to the `OPENJSON` text read - which is what makes a boolean or number dot-path operand match. An array or object still comes back as its own JSON text, which is what `OPENJSON` takes next.
+
+**`JSON_MODIFY` creates a path it does not find**, so a `$pull` against an absent key added an empty array where every other engine leaves the document alone. Guarded on `JSON_QUERY(col, path) IS NULL`.
+
+**`tedious` types two columns the opposite way to `pg`.** `BIGINT` arrives as a string, which `decodeWireTypes` decodes - at the wire, for the reason [`pgNumericTypes`](../packages/uql-orm/src/postgres/pgNumericTypes.ts) gives: everything crosses it once, where hydration only sees entity reads. `DECIMAL` arrives as a JS number with the digits past 2^53 already gone, so a `String`-declared decimal is converted to text in the projection instead - the hook MariaDB uses to read a vector column.
+
+`SET IDENTITY_INSERT` wraps an insert that states a key the engine would have generated, keyed off the same `isAutoIncrement` rule the schema generator asks.
+
+### What 2025 adds, and what of it is worth taking
+
+**`$regex` is emitted**, as `REGEXP_LIKE`. It needs 2025 at database compatibility level 170 and a server below that rejects it itself - the same terms `uuidv7()` is emitted on, where neither the version nor a database-scoped setting is knowable here. A first draft gated it behind a declared capability, which meant a new `EngineFeatures` field, a constant to spread, and `driverCapabilities` threaded through `ExtraOptions`: machinery for one operator, and machinery that contradicted the rule this repo already follows for version-gated SQL.
+
+Three things were measured and declined, each for a reason rather than for later:
+
+- **Vector search.** `VECTOR_DISTANCE` is GA, but `CREATE VECTOR INDEX` and `VECTOR_SEARCH` need `ALTER DATABASE SCOPED CONFIGURATION SET PREVIEW_FEATURES = ON` - verified, the `CREATE` answers "Unknown object type 'VECTOR'" without it. uql's vector support is an ANN index plus `$candidates` tuning, so distance alone would serve `$sort: { $vector }` while refusing the index that makes it worth using.
+- **`JSON_ARRAYAGG`.** It would replace the `CASE [type]` re-encoding a `$pull` rebuilds its array with, but only above the floor, so both spellings would have to exist. More code, not less.
+- **The native `json` column type.** `JSON_VALUE` stays capped at `nvarchar(4000)` on it and `JSON_QUERY` still answers NULL for a scalar, so every read would be spelled exactly as it already is. It buys validation on write and nothing else.
+
+That last point settles something the design had assumed was a version gap: reading a scalar through `OPENJSON` is not a workaround for an old server, it is the permanent answer on every version including the newest.
+
+### Still not started
+
+- **The `OUTPUT`-into-`#out` fallback**, for a table carrying triggers. The plain form is emitted and the engine's own error is what a user sees.
+- **`sp_rename`**, so `renameColumn` is `false` and a rename is refused by name.
 
 ## Out of scope
 
