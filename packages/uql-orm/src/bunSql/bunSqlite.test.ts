@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest';
 import {
   AbstractSqlQuerierIt,
   FLOATED_DECIMAL,
-  JSON_FLOATED_DECIMAL,
   ROUNDED_WIDE_INTEGER,
   type WideRow,
 } from '../querier/abstractSqlQuerier-test.js';
@@ -25,10 +24,6 @@ class BunSqliteIt extends AbstractSqlQuerierIt {
 
   protected override expectedExactDecimal() {
     return FLOATED_DECIMAL;
-  }
-
-  protected override populatedExactDecimal() {
-    return JSON_FLOATED_DECIMAL;
   }
 
   /** `bun:sql`'s SQLite adapter ignores `bigint: true` and reads the integer as a plain number. */

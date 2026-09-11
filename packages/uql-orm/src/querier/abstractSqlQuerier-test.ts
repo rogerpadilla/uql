@@ -16,21 +16,18 @@ import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 
-/** Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. */
-const EXACT_DECIMAL = '12345678901234567890.99';
+/**
+ * Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. Its
+ * float needs only 15 significant digits, which SQLite writes into JSON before 3.53 and libSQL still does.
+ */
+const EXACT_DECIMAL = '12345678901234500000.99';
 
 /**
  * What {@link EXACT_DECIMAL} becomes on the SQLite family, which has no DECIMAL type: NUMERIC affinity
  * converts the literal to a float *on write*, so the digits are gone in the database before anything on
  * the read side could preserve them. Every SQLite driver here answers `expectedExactDecimal` with it.
  */
-export const FLOATED_DECIMAL = 12345678901234567000;
-
-/**
- * {@link FLOATED_DECIMAL} as a populated row reads it on libSQL and SQLite 3.51, which write a real into
- * JSON with 15 significant digits, where 3.53 writes all 17 a read of its own keeps.
- */
-export const JSON_FLOATED_DECIMAL = 12345678901234600000;
+export const FLOATED_DECIMAL = 12345678901234500000;
 
 /** The row {@link AbstractSqlQuerierIt.wideIntegerSql} reads. */
 export type WideRow = { big: unknown };
@@ -86,6 +83,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     for (let i = 0; i < 6; i++) {
       await this.querier.insertOne(LedgerAccount, { name: `job-${i}` });
     }
+    // A plain read resolves the inserts' intents, which CockroachDB's SKIP LOCKED would otherwise skip
+    // as locks: https://github.com/cockroachdb/cockroach/issues/167582
+    await this.querier.findMany(LedgerAccount, { $select: { id: true } });
 
     const other = await this.pool.getQuerier();
     try {
@@ -144,15 +144,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldPopulateRowsTypedAsTheirOwnRead() {
     const [own, populated] = await this.readTypedRowsBothWays();
 
-    expect(populated).toEqual([{ ...own[0], exact: this.populatedExactDecimal(own[0].exact) }, own[1]]);
-  }
-
-  /**
-   * The first row's DECIMAL as a populated row reads it back: exactly as its own read does, except where
-   * the engine writes a real into JSON with fewer digits than it holds.
-   */
-  protected populatedExactDecimal(own: string | undefined): string | number | undefined {
-    return own;
+    expect(populated).toEqual(own);
   }
 
   /** The same rows read on their own and populated under their group, both sorted by name. */
