@@ -16,7 +16,7 @@ export function paramFor(className: string | undefined): string {
 }
 
 function isIdentifierName(key: string): boolean {
-  return /^[A-Za-z_$][\w$]*$/.test(key);
+  return /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u.test(key);
 }
 
 /** `post.title`, or `post['first-name']` for a key that is no identifier. */

@@ -400,10 +400,11 @@ class Entity {
 
   it('rewrites a string mappedBy into the callback named after the target, leaving a callback alone', () => {
     const { text } = codemod(`
-      class Company { id?: number; owner?: Entity; 'owner-ref'?: Entity; }
+      class Company { id?: number; owner?: Entity; 'owner-ref'?: Entity; dueño?: Entity; }
       class Entity {
         @OneToMany({ entity: () => Company, mappedBy: 'owner' }) owned?: Company[];
         @OneToMany({ entity: () => Company, mappedBy: 'owner-ref' }) quoted?: Company[];
+        @OneToMany({ entity: () => Company, mappedBy: 'dueño' }) unicode?: Company[];
         @OneToMany({ entity: () => Company, mappedBy: (c) => c.owner }) kept?: Company[];
       }
     `);
@@ -413,6 +414,9 @@ class Entity {
     );
     expect(text).toContain(
       "@OneToMany({ entity: () => Company, mappedBy: (company) => company['owner-ref'] }) quoted?: Company[];",
+    );
+    expect(text).toContain(
+      '@OneToMany({ entity: () => Company, mappedBy: (company) => company.dueño }) unicode?: Company[];',
     );
     expect(text).toContain('@OneToMany({ entity: () => Company, mappedBy: (c) => c.owner }) kept?: Company[];');
   });
@@ -541,15 +545,15 @@ class Entity {
   it("rewrites an aggregate's $agg into $select, naming each field as a key", () => {
     const { text, unresolved } = codemod(`
       declare const querier: { aggregate(entity: unknown, q: unknown): void };
-      class Order { id?: number; amount?: number; 'unit-price'?: number; status?: string; }
+      class Order { id?: number; amount?: number; 'unit-price'?: number; größe?: number; status?: string; }
       querier.aggregate(Order, {
         $group: { status: true },
-        $agg: { n: { $count: '*' }, total: { $sum: 'amount' }, top: { $max: 'unit-price' }, ids: { $countDistinct: 'id' } },
+        $agg: { n: { $count: '*' }, total: { $sum: 'amount' }, top: { $max: 'unit-price' }, big: { $max: 'größe' }, ids: { $countDistinct: 'id' } },
       });
     `);
 
     expect(text).toContain(
-      "$select: { n: { $count: '*' }, total: { $sum: { amount: true } }, top: { $max: { 'unit-price': true } }, ids: { $countDistinct: { id: true } } },",
+      "$select: { n: { $count: '*' }, total: { $sum: { amount: true } }, top: { $max: { 'unit-price': true } }, big: { $max: { größe: true } }, ids: { $countDistinct: { id: true } } },",
     );
     expect(unresolved).toEqual([]);
   });
