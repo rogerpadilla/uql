@@ -57,9 +57,7 @@ resources?: Resource[];
 
 UQL derives from it the trigger, its function, `updatable: false` and `NOT NULL DEFAULT 0` on the column, the backfill in the generated migration, and the resync.
 
-**No index is created, on either side.** The column takes the existing `index?: boolean | string` like any other; auto-creating one would be wrong as often as right, since the case study's `resourceCount` is only ever read by primary key. The trigger's write path needs nothing new either, because `UPDATE parent SET c = c + <delta> WHERE id = NEW.<fk>` hits the parent's primary key.
-
-Only the backfill and resync would want one, running `SELECT <fk>, count(*) FROM child GROUP BY <fk>` where neither Postgres nor UQL indexes a foreign key. They still do not get one: a backfill runs once inside its migration, where a sequential scan and hash aggregate beat building an index first, and a resync is a maintenance command. Standing write cost on every child insert forever, to speed up a query that runs twice, is the wrong trade. The cost to name is that a resync on a very large child table is a full scan; add the index by hand before running one.
+**No index is created for it.** The column takes `index` like any other; auto-creating one would be wrong as often as right, since the case study's `resourceCount` is only ever read by primary key. The trigger's `UPDATE parent SET c = c + <delta> WHERE id = NEW.<fk>` hits the parent's primary key, and the backfill and resync group by the child's foreign key, which migrations already index.
 
 ### Which operators ship
 

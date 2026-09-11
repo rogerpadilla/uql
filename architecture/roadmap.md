@@ -96,7 +96,7 @@ const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 })
 
 R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips elsewhere: correct, not faster.
 
-**The entity-level API cannot keep its promise.** Only `count`, `exists` and the inserts are reliably one statement: `findMany` issues extras for to-many relations, `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
+**The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and the inserts are reliably one statement: `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
 
 ## Query cancellation
 
@@ -129,7 +129,7 @@ One id shape for every write in 0.50.0, upserts included in 0.51.0; per-parent `
 - **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
 - **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix; nearly free once the trigger design's `COMMENT ON` emission lands.
 - **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
-- **A relation's `$limit` is each parent's share, not a slice of one page.** Each parent's page is a correlated subquery inside the parent's statement, a `$lookup` sub-pipeline on MongoDB. A `ROW_NUMBER` window sorts every matching child to keep the top few, so its cost rides the axis nobody controls. [The design](relations-in-one-statement.md).
+- **A relation's `$limit` is each parent's share, not a slice of one page.** [The design](relations-in-one-statement.md).
 - **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
 - **An unstored `computed` is written out by every clause that names it.** `$sort` used the output alias, so ordering by one you had not selected failed on the server.
 - **Every field option states where it applies, in one table.** `FIELD_OPTION_FAMILY` pairs each option with its column family, `deadOn` with what makes it dead. A new option cannot be added without answering both. Only a contradiction is rejected, never a redundancy.
