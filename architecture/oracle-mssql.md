@@ -58,7 +58,7 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 | `maxBindValues`           | **2100** - [a hard server limit](https://github.com/yiisoft/yii2/issues/10371) | 65535                                         |
 | `schemas`                 | true, default `dbo`                                                            | true                                          |
 | `regexCondition`          | `REGEXP_LIKE`, which a server below 2025 refuses itself                        | `REGEXP_LIKE`                                 |
-| `$text`                   | throws - needs a full-text catalogue                                           | throws - needs a CONTEXT index                |
+| `$text`                   | throws - needs a full-text index and the FTS component                         | throws - needs a CONTEXT index                |
 
 **Identifiers stay `"`-quoted on both.** MikroORM and knex chose `[...]` for SQL Server, which would make `escapeIdChar` a pair. `"` is ANSI, and [tedious sets `enableQuotedIdentifier: true` by default](https://www.jsdocs.io/package/tedious). On Oracle, quoting is what keeps `createdAt` from folding to `CREATEDAT`: MikroORM's Oracle compiler drops quoting and pays for it with uppercase row keys.
 
@@ -86,7 +86,7 @@ The shared integration suite runs against SQL Server 2025 in `bun run test`, bes
 - **`SET IDENTITY_INSERT`** wraps an insert that states a key the engine would have generated.
 - **A column's own constraints pin it.** SQL Server names a `DEFAULT`, `CHECK` and `UNIQUE` itself and refuses to drop or retype the column past one, so `MsSqlTableDdl` drops them first (looked up at run time) and restores the default after a retype. Renames are `sp_rename`.
 - **`$regex` is emitted as `REGEXP_LIKE`**, needing 2025 at compatibility level 170, and a server below that refuses it: the same terms as `uuidv7()`, since neither the version nor a database-scoped setting is knowable here.
-- **Vector search is exact**, through `VECTOR_DISTANCE`. 2025's DiskANN index is a preview feature that only `VECTOR_SEARCH` reads, so an `@Index` on a vector column is left for the server to refuse.
+- **Vector search is exact**, through `VECTOR_DISTANCE`. 2025's DiskANN index is a preview feature that only `VECTOR_SEARCH` reads, so migrations refuse any vector index type there.
 - **`estimatedCount`** reads `sys.dm_db_partition_stats`, which is live.
 - **Declined**: `JSON_ARRAYAGG`, which exists only above the floor, so both spellings would have to be kept.
 
