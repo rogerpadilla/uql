@@ -43,22 +43,25 @@ const REMOVED_EXPORTS = new Map([
   ['RelationKeyMapper', 'it is `(keys: KeyMap<E>) => Key<E>` now'],
   ['augmentWhere', 'spread the two maps: `{ ...where, ...extra }`'],
   ['buildQueryWhereAsMap', 'a `$where` is a map already; name the key for ids: `{ id: [1, 2] }`'],
-  ['PgDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
-  ['NeonDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
-  ['PgliteDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
-  ['MySql2Dialect', 'the pool builds `MySqlDialect` (`uql-orm/mysql`)'],
-  ['MongodbNativeDialect', 'the pool builds `MongoDialect` (`uql-orm/mongo`)'],
   ['AbstractPgQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`), which is concrete'],
-  ['CrdbQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`)'],
-  ['NeonQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`)'],
-  ['LibsqlQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
-  ['TursoQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
 ]);
 
-/** Exports renamed and nothing else, so the import and every use of it in the file follow. */
-const RENAMED_EXPORTS = new Map([
-  ['QueryWhereMap', 'QueryWhere'],
-  ['RelationKeyMap', 'KeyMap'],
+/**
+ * Exports renamed and nothing else - the driver classes were empty subclasses - so the import and every
+ * use follow, the import moving to `from` where the new name lives in another entry.
+ */
+const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: string }>([
+  ['QueryWhereMap', { to: 'QueryWhere' }],
+  ['RelationKeyMap', { to: 'KeyMap' }],
+  ['PgDialect', { to: 'PostgresDialect', from: 'uql-orm/postgres' }],
+  ['NeonDialect', { to: 'PostgresDialect', from: 'uql-orm/postgres' }],
+  ['PgliteDialect', { to: 'PostgresDialect', from: 'uql-orm/postgres' }],
+  ['CrdbQuerier', { to: 'PgQuerier', from: 'uql-orm/postgres' }],
+  ['NeonQuerier', { to: 'PgQuerier', from: 'uql-orm/postgres' }],
+  ['MySql2Dialect', { to: 'MySqlDialect', from: 'uql-orm/mysql' }],
+  ['MongodbNativeDialect', { to: 'MongoDialect', from: 'uql-orm/mongo' }],
+  ['LibsqlQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
+  ['TursoQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
 ]);
 
 export type FileResult = {
@@ -559,12 +562,11 @@ function brandIdKey(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context
  * Imports `idKey` where a brand was written, into the file's own `uql-orm` import. Reported instead
  * where there is none: the package may be imported under a path this codemod does not recognise.
  */
-function addIdKeyImport(source: ts.SourceFile, ctx: Context): void {
-  const imported = uqlImports(source);
-  if (imported.some((element) => importedName(element) === 'idKey')) {
+function addIdKeyImport(source: ts.SourceFile, rewritten: ReadonlySet<ts.ImportDeclaration>, ctx: Context): void {
+  if (uqlImports(source).some((element) => importedName(element) === 'idKey')) {
     return;
   }
-  const [anchor] = imported;
+  const anchor = uqlImportDeclarations(source).find(({ declaration }) => !rewritten.has(declaration))?.elements[0];
   if (!anchor) {
     ctx.unresolved.push(`${source.fileName}: import 'idKey' from 'uql-orm' for the brand(s) written here`);
     return;
@@ -623,26 +625,50 @@ function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
 }
 
 /**
- * Renames each import of a {@link RENAMED_EXPORTS} name and every use of it in the file. An aliased
- * import only changes the name it imports; one whose new name the file already imports is dropped.
+ * Rewrites each import naming a {@link RENAMED_EXPORTS} export, renaming every use of it: a name moving
+ * entries gets an import from its new one, and a name the file already imports is dropped. Returns the
+ * rewritten imports, which nothing else may edit.
  */
-function renameExports(source: ts.SourceFile, ctx: Context): void {
-  const imported = uqlImports(source);
-  for (const element of imported) {
-    const renamed = RENAMED_EXPORTS.get(importedName(element));
-    if (!renamed) {
+function renameExports(source: ts.SourceFile, ctx: Context): ReadonlySet<ts.ImportDeclaration> {
+  const imports = uqlImportDeclarations(source, true);
+  const kept = imports.flatMap(({ elements }) => elements).filter((element) => !renamedTo(element));
+  const bound = new Set(kept.map((element) => element.name.text));
+  const rewritten = new Set<ts.ImportDeclaration>();
+  for (const { declaration, entry, elements } of imports) {
+    if (!elements.some(renamedTo)) {
       continue;
     }
-    if (element.propertyName) {
-      ctx.edits.push(replaced(element.propertyName, renamed));
-      continue;
+    const byEntry = new Map<string, string[]>([[entry, []]]);
+    for (const element of elements) {
+      const rename = renamedTo(element);
+      const local = element.propertyName || !rename ? element.name.text : rename.to;
+      if (rename && !element.propertyName) {
+        ctx.edits.push(...usesOf(source, element.name, ctx.checker).map((use) => replaced(use, rename.to)));
+      }
+      if (rename && bound.has(local)) {
+        continue;
+      }
+      bound.add(local);
+      const target = rename?.from ?? entry;
+      const text = rename
+        ? `${element.isTypeOnly ? 'type ' : ''}${rename.to}${element.propertyName ? ` as ${local}` : ''}`
+        : element.getText();
+      byEntry.set(target, [...(byEntry.get(target) ?? []), text]);
     }
-    ctx.edits.push(...usesOf(source, element.name, ctx.checker).map((use) => replaced(use, renamed)));
-    const duplicate = imported.some((other) => other.name.text === renamed);
-    ctx.edits.push(
-      duplicate ? removeFromList(element.parent.elements, element, source) : replaced(element.name, renamed),
-    );
+    const typeOnly = declaration.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
+    const keyword = typeOnly ? 'import type' : 'import';
+    const quote = declaration.moduleSpecifier.getText()[0];
+    const statements = [...byEntry]
+      .filter(([, names]) => names.length)
+      .map(([from, names]) => `${keyword} { ${names.join(', ')} } from ${quote}${from}${quote};`);
+    ctx.edits.push(statements.length ? replaced(declaration, statements.join('\n')) : removeStatement(declaration));
+    rewritten.add(declaration);
   }
+  return rewritten;
+}
+
+function renamedTo(element: ts.ImportSpecifier) {
+  return RENAMED_EXPORTS.get(importedName(element));
 }
 
 /** Every identifier in the file bound to the same symbol as `name`, besides `name` itself. */
@@ -661,23 +687,32 @@ function usesOf(source: ts.SourceFile, name: ts.Identifier, checker: ts.TypeChec
   return uses;
 }
 
+type UqlImport = {
+  readonly declaration: ts.ImportDeclaration;
+  readonly entry: string;
+  readonly elements: readonly ts.ImportSpecifier[];
+};
+
 /**
- * What the file imports from `uql-orm` by name, which is every import this codemod reads or writes.
- * `entries` adds the driver entries (`uql-orm/postgres`, ...), for reporting only: an import written
- * into one of those would land on an entry that may not export it.
+ * The file's named imports from `uql-orm`. `entries` adds the driver entries (`uql-orm/postgres`, ...),
+ * for what is read by name only: `idKey` written into one would land on an entry that may not export it.
  */
-function uqlImports(source: ts.SourceFile, entries = false): readonly ts.ImportSpecifier[] {
-  return source.statements.flatMap((statement) => {
-    if (!ts.isImportDeclaration(statement) || !ts.isStringLiteral(statement.moduleSpecifier)) {
+function uqlImportDeclarations(source: ts.SourceFile, entries = false): readonly UqlImport[] {
+  return source.statements.flatMap((declaration) => {
+    if (!ts.isImportDeclaration(declaration) || !ts.isStringLiteral(declaration.moduleSpecifier)) {
       return [];
     }
-    const specifier = statement.moduleSpecifier.text;
-    if (specifier !== 'uql-orm' && !(entries && specifier.startsWith('uql-orm/'))) {
+    const entry = declaration.moduleSpecifier.text;
+    if (entry !== 'uql-orm' && !(entries && entry.startsWith('uql-orm/'))) {
       return [];
     }
-    const bindings = statement.importClause?.namedBindings;
-    return bindings && ts.isNamedImports(bindings) ? [...bindings.elements] : [];
+    const bindings = declaration.importClause?.namedBindings;
+    return bindings && ts.isNamedImports(bindings) ? [{ declaration, entry, elements: bindings.elements }] : [];
   });
+}
+
+function uqlImports(source: ts.SourceFile, entries = false): readonly ts.ImportSpecifier[] {
+  return uqlImportDeclarations(source, entries).flatMap(({ elements }) => elements);
 }
 
 /** The name an import specifier brings in, which is the original one where it was renamed. */
@@ -748,11 +783,11 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     ts.forEachChild(node, visit);
   };
   visit(source);
-  renameExports(source, ctx);
+  const rewritten = renameExports(source, ctx);
   reportRemovedExports(source, ctx);
   dropDeadImports(source, ctx);
   if (branded) {
-    addIdKeyImport(source, ctx);
+    addIdKeyImport(source, rewritten, ctx);
   }
 
   return {

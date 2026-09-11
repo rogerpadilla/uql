@@ -768,15 +768,36 @@ const b: QueryWhere<User> = {};
 `);
   });
 
-  it('reports a removed driver class where it is imported from its own entry', () => {
+  it('renames a removed driver class to the one its entry exports', () => {
+    const { text, unresolved } = codemodFile(`import { PgDialect, PgQuerierPool } from 'uql-orm/postgres';
+const dialect: PgDialect = new PgDialect();
+`);
+
+    expect(text).toBe(`import { PostgresDialect, PgQuerierPool } from 'uql-orm/postgres';
+const dialect: PostgresDialect = new PostgresDialect();
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('moves a removed driver class to the entry that exports its replacement, once', () => {
+    const { text } = codemodFile(`import { NeonQuerierPool, NeonDialect, NeonQuerier } from 'uql-orm/neon';
+import type { PgliteDialect } from 'uql-orm/pglite';
+let a: NeonDialect; let b: NeonQuerier; let c: PgliteDialect;
+`);
+
+    expect(text).toBe(`import { NeonQuerierPool } from 'uql-orm/neon';
+import { PostgresDialect, PgQuerier } from 'uql-orm/postgres';
+let a: PostgresDialect; let b: PgQuerier; let c: PostgresDialect;
+`);
+  });
+
+  it('reports AbstractPgQuerier, whose replacement is concrete', () => {
     const { changed, unresolved } = codemod(`
-      import { PgDialect } from 'uql-orm/postgres';
-      import { LibsqlQuerier } from 'uql-orm/libsql';
+      import { AbstractPgQuerier } from 'uql-orm/postgres';
     `);
 
     expect(changed).toBe(false);
-    expect(unresolved[0]).toContain("'PgDialect' was removed; the pools build `PostgresDialect`");
-    expect(unresolved[1]).toContain("'LibsqlQuerier' was removed; the libSQL and Turso pools return `HranaQuerier`");
+    expect(unresolved[0]).toContain("'AbstractPgQuerier' was removed; every pg-compatible pool returns `PgQuerier`");
   });
 
   it('reports a decorator that no longer exists rather than removing it', () => {
