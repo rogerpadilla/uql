@@ -3,6 +3,7 @@ import { canonicalToTypeScript } from '../../schema/canonicalType.js';
 import { resolveColumnCanonicalType } from '../../schema/schemaASTBuilder.js';
 import type { EntityMeta, FieldMeta, RelationMeta, Type } from '../../type/index.js';
 import { isToManyRelation, upperFirst } from '../../util/index.js';
+import { isIdentifierName } from './sourceLiteral.js';
 
 /**
  * A `.d.ts` for the entities as registered, so a shape that only exists at runtime reaches the
@@ -51,13 +52,13 @@ function interfaceNames(metas: readonly EntityMeta<object>[]): Map<Type<object>,
 
 /** `text` as an identifier: what cannot be in one is dropped, and what cannot start one is prefixed. */
 function identifier(text: string): string {
-  const stripped = text.replace(/[^A-Za-z0-9_$]/g, '');
-  return /^[A-Za-z_$]/.test(stripped) ? stripped : `Entity${stripped}`;
+  const stripped = text.replace(/[^\p{ID_Continue}$\u200C\u200D]/gu, '');
+  return isIdentifierName(stripped) ? stripped : `Entity${stripped}`;
 }
 
 /** A column name a property cannot hold - `hero-image` - is quoted rather than dropped. */
 function member(key: string, type: string): string {
-  const name = key === identifier(key) ? key : JSON.stringify(key);
+  const name = isIdentifierName(key) ? key : JSON.stringify(key);
   return `  ${name}?: ${type};`;
 }
 

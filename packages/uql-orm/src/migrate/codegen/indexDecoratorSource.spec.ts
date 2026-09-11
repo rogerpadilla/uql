@@ -53,6 +53,16 @@ describe('buildIndexDecoratorSource', () => {
     expect(evaluateFirstTag(source)).toBe(where);
   });
 
+  it('should read a column off the key map by name, bracketed only where no identifier can name it', () => {
+    const index = indexNode([{ column: 'dueño' }, { column: 'first-name' }, { column: "o'clock" }], {
+      include: ['größe'],
+    });
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
+      "@Index((t) => [t.dueño, t['first-name'], t['o\\'clock']], { name: 'idx', include: (t) => [t.größe] })",
+    );
+  });
+
   it('should give a vector index the distance its operator class carries', () => {
     const index = indexNode([{ column: 'embedding', opsClass: 'vector_cosine_ops' }], { type: 'hnsw' });
 

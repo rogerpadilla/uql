@@ -79,3 +79,12 @@ it('emits names a generated file can carry, whatever a content type was called',
   expect(source).toContain('  outside?: unknown;');
   expect(entityTypesSource([dashed, Outside])).toContain('  outside?: Outside;');
 });
+
+it('keeps the letters of a name in any script', () => {
+  const owner = { dueño: class {} }.dueño;
+  defineEntity(owner, { fields: { id: { type: Number, isId: true }, größe: { type: String } } });
+
+  const source = entityTypesSource([owner]);
+  expect(source).toContain('export interface Dueño {');
+  expect(source).toContain('  größe?: string;');
+});

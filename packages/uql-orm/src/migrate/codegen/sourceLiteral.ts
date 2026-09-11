@@ -1,3 +1,8 @@
+/** Whether `text` can name a property unquoted, in any script: `dueño` can, `first-name` cannot. */
+export function isIdentifierName(text: string): boolean {
+  return /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u.test(text);
+}
+
 /**
  * A string as single-quoted source. Introspected text is arbitrary - a comment or a default
  * expression can hold a quote or a backslash - and only escaping both keeps the generated file
