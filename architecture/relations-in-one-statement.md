@@ -38,7 +38,7 @@ LIMIT 20
 - **Sort terms are carried out** as `_uql_sort_<path>` columns for the aggregate to order by, since a derived table's order is not guaranteed. A `$distinct` relation sorts only by what it selects.
 - **MySQL** has no ordered `JSON_ARRAYAGG`, so it uses `GROUP_CONCAT`, whose 1 KB cap a `SET_VAR` hint lifts per statement.
 - **MariaDB** cannot correlate a derived table, so it aggregates the related table directly and lifts the same cap with `SET STATEMENT`.
-- **Postgres** reads each row whole, as Kysely does: 5 to 25% faster than `JSON_BUILD_OBJECT`, with no argument limit.
+- **Postgres** reads each row whole: 5 to 25% faster than `JSON_BUILD_OBJECT`, with no argument limit.
 - **Wide objects** split across nested calls where arguments are capped: 127 on SQLite before 3.48 (libSQL, Turso), 32 on D1.
 - **A many-to-many** reads its targets through `IN (SELECT <target fk> FROM <junction> ...)`.
 - **Under a join**, a to-many correlates to the join's alias; on MongoDB its lookup runs inside the join's.
@@ -74,7 +74,7 @@ One statement ÷ 0.56.0's two, p50 of 300 rounds through each driver on Docker, 
 - **A saved round trip wins over a network**, less so next to the database: on native Postgres (30 µs), 50 × 4 takes 200 µs against 176 µs.
 - **The server builds the JSON**, so a wide fan-out costs more there: 1.4x on MySQL, 1.7x on CockroachDB, 2x on SQL Server.
 - **Not taken**, each measured on the same data:
-  - No numeric cast, as Kysely: 3 to 8% faster, but a `BIGINT` past 2^53 rounds.
+  - No numeric cast: 3 to 8% faster, but a `BIGINT` past 2^53 rounds.
   - Positional arrays, as Drizzle: 6 to 20% faster on wide reads only, needs each relation's keys, and SQL Server builds objects anyway.
   - `jsonb`, as Prisma: up to 1.7x slower on Postgres, 1.4 to 1.6x on SQLite.
   - A `LATERAL` join per relation: faster only on CockroachDB's 50 × 50, and missing on MariaDB and SQLite.
@@ -95,4 +95,4 @@ The subquery looks children up per parent, so the migrator indexes every foreign
 
 ## Prior art
 
-Kysely's `jsonArrayFrom` is this shape, trusting the subquery's order on MySQL and SQLite. Drizzle joins `LATERAL` and reads positional arrays. Prisma 7 builds `jsonb`. MikroORM pages with `ROW_NUMBER`.
+Drizzle joins `LATERAL` and reads positional arrays. Prisma 7 builds `jsonb`. MikroORM pages with `ROW_NUMBER`.

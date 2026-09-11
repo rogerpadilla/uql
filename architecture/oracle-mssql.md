@@ -4,7 +4,7 @@ Design for two engines the [roadmap](roadmap.md) does not yet name. **SQL Server
 
 **SQL Server has shipped.** What follows describes what was built; the Oracle half is still design.
 
-Two conclusions the first draft of this design got wrong, both corrected by reading what shipped elsewhere (`../mikro-orm`, `../knex`, `../kysely`, `../typeorm`, `../sequelize`):
+Two conclusions the first draft of this design got wrong, both corrected by reading what shipped elsewhere (`../mikro-orm`, `../knex`, `../typeorm`, `../sequelize`):
 
 - **R5 is not a prerequisite.** Oracle's generated ids ride in the values array.
 - **Only one new knob is needed**, not four. A family base and a column collation absorb the rest.
@@ -32,7 +32,6 @@ Lines of dialect/driver/introspection code in the sibling clones:
 
 | ORM          | SQL Server |  Oracle |
 | :----------- | ---------: | ------: |
-| Kysely       |      1,324 |    none |
 | Sequelize v7 |    1,520\* | 1,309\* |
 | Knex         |      2,036 |   2,520 |
 | MikroORM     |      2,498 |   3,577 |
@@ -40,9 +39,9 @@ Lines of dialect/driver/introspection code in the sibling clones:
 
 \* excludes the shared abstract query generator in core.
 
-The shape is consistent: **introspection and DDL are the bulk, not the query builder.** MikroORM's `MsSqlSchemaHelper` is 1,164 lines against 269 for its query builder; `OracleSchemaHelper` is 1,031 against 309. Kysely gets away with 127 lines of query compiler only because it never owns `$limit` - the user writes `.top()` or `.offset().fetch()` themselves. UQL owns it, so UQL pays where Kysely does not.
+The shape is consistent: **introspection and DDL are the bulk, not the query builder.** MikroORM's `MsSqlSchemaHelper` is 1,164 lines against 269 for its query builder; `OracleSchemaHelper` is 1,031 against 309.
 
-Budget **~1,000 lines per engine**: ~400 dialect, ~350 introspector, ~150 querier and pool, ~60 index DDL. Under everyone but Kysely, because `AbstractSqlDialect` already factors what those ORMs restate.
+Budget **~1,000 lines per engine**: ~400 dialect, ~350 introspector, ~150 querier and pool, ~60 index DDL. Under every ORM above, because `AbstractSqlDialect` already factors what those ORMs restate.
 
 ## The shape: a third family base
 
@@ -72,7 +71,7 @@ Five places in the core assume MySQL- or Postgres-shaped SQL. Each is small; non
 
 The dialect side is just `pager()`, already overridable. The cost is in the tests: **46 hardcoded `LIMIT` assertions** in [`abstractSqlDialect-spec.ts`](../packages/uql-orm/src/dialect/abstractSqlDialect-spec.ts) plus 14 across the family and vector specs. `expected$skipClause()` is already the hook for one of them; generalize it to `expectedPager({ limit, skip })` and the change is mechanical.
 
-**One design decision inside it.** SQL Server rejects `OFFSET` without an `ORDER BY`. Every other ORM works around that with a _second_ clause - `TOP (n)` in the select list when there is a limit and no offset, `OFFSET/FETCH` otherwise. Knex, MikroORM and Kysely all do it that way, which needs a select-list hook on top of the pager one.
+**One design decision inside it.** SQL Server rejects `OFFSET` without an `ORDER BY`. Every other ORM works around that with a _second_ clause - `TOP (n)` in the select list when there is a limit and no offset, `OFFSET/FETCH` otherwise. Knex and MikroORM both do it that way, which needs a select-list hook on top of the pager one.
 
 **UQL should not.** Emit `OFFSET 0 ROWS FETCH NEXT n ROWS ONLY` always and synthesize `ORDER BY (SELECT NULL)` when the query carries no `$sort`. One override instead of two, and it is the only way `$skip` without `$sort` keeps working: MikroORM throws `Order by clause is required for pagination` there, knex emits SQL the server rejects. A query that runs on four engines must not throw on the fifth.
 
@@ -154,7 +153,7 @@ Existing knobs get values; `returningPosition` is the only new one.
 | `regexCondition`          | throws below 2025                                                              | `REGEXP_LIKE`                                 |
 | `$text`                   | throws - needs a full-text catalogue                                           | throws - needs a CONTEXT index                |
 
-**Identifiers stay `"`-quoted on both.** MikroORM and knex both chose `[...]` for SQL Server, which would make `escapeIdChar` a pair rather than a char and break the ~50 spec assertions that read it. `"` is ANSI, Kysely uses it, and [tedious sets `enableQuotedIdentifier: true` by default](https://www.jsdocs.io/package/tedious). On Oracle, quoting is what preserves `createdAt` from being folded to `CREATEDAT` - the inlined Kysely compiler in MikroORM's Oracle package drops quoting entirely and pays for it with uppercase row keys. UQL already asks Postgres users to live with quoted camelCase; this is the same trade.
+**Identifiers stay `"`-quoted on both.** MikroORM and knex both chose `[...]` for SQL Server, which would make `escapeIdChar` a pair rather than a char and break the ~50 spec assertions that read it. `"` is ANSI, and [tedious sets `enableQuotedIdentifier: true` by default](https://www.jsdocs.io/package/tedious). On Oracle, quoting is what preserves `createdAt` from being folded to `CREATEDAT` - MikroORM's Oracle compiler drops quoting entirely and pays for it with uppercase row keys. UQL already asks Postgres users to live with quoted camelCase; this is the same trade.
 
 ## Upsert: one `MERGE`, with `HOLDLOCK`
 
