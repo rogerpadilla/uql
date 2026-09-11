@@ -253,6 +253,43 @@ class ShelvedBook {
   }
 }
 
+@Entity()
+class Author {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  name?: string;
+
+  @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author })
+  tomes?: Tome[];
+
+  @AfterLoad()
+  recordLoad(this: Author) {
+    log.push(`afterLoad:${this.name}`);
+  }
+}
+
+@Entity()
+class Tome {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  title?: string;
+
+  @Field({ references: () => Author })
+  authorId?: number;
+
+  @ManyToOne({ entity: () => Author })
+  author?: Author;
+
+  @AfterLoad()
+  recordLoad(this: Tome) {
+    log.push(`afterLoad:${this.title}`);
+  }
+}
+
 const TABLES = {
   Book: '`id` INTEGER PRIMARY KEY, `title` TEXT, `slug` TEXT',
   Plain: '`id` INTEGER PRIMARY KEY, `title` TEXT',
@@ -265,6 +302,8 @@ const TABLES = {
   Unique: '`id` INTEGER PRIMARY KEY, `email` TEXT',
   Shelf: '`id` INTEGER PRIMARY KEY',
   ShelvedBook: '`id` INTEGER PRIMARY KEY, `shelfId` INTEGER, `title` TEXT',
+  Author: '`id` INTEGER PRIMARY KEY, `name` TEXT',
+  Tome: '`id` INTEGER PRIMARY KEY, `title` TEXT, `authorId` INTEGER',
 };
 
 const pool = new Sqlite3QuerierPool(':memory:');
@@ -359,6 +398,56 @@ describe('lifecycle hooks', () => {
     await querier.findMany(Book, { $select: { title: true } });
 
     expect(log).toEqual(['afterLoad:One', 'afterLoad:Two']);
+  });
+
+  /**
+   * A populated relation's rows are loaded rows too. Theirs run first, so a parent's hook sees its
+   * children as their own hooks left them - whichever statement read them, and however they were paged.
+   */
+  describe('@AfterLoad on populated rows', () => {
+    beforeEach(async () => {
+      const authorId = await querier.insertOne(Author, { name: 'Ann' });
+      await querier.insertMany(Tome, [
+        { title: 'a', authorId },
+        { title: 'b', authorId },
+      ]);
+      log = [];
+    });
+
+    const pages = [
+      ['every child', {}],
+      ['a page of children', { $limit: 5 }],
+    ] as const;
+
+    for (const [shape, page] of pages) {
+      it(`should run it on ${shape} before their parent`, async () => {
+        await querier.findMany(Author, {
+          $select: { name: true },
+          $populate: { tomes: { $select: { title: true }, $sort: { title: 1 }, ...page } },
+        });
+
+        expect(log).toEqual(['afterLoad:a', 'afterLoad:b', 'afterLoad:Ann']);
+      });
+    }
+
+    it('should run it on a joined row before the row holding it', async () => {
+      await querier.findMany(Tome, {
+        $select: { title: true },
+        $sort: { title: 1 },
+        $populate: { author: { $select: { name: true } } },
+      });
+
+      expect(log).toEqual(['afterLoad:Ann', 'afterLoad:Ann', 'afterLoad:a', 'afterLoad:b']);
+    });
+
+    it('should run it on populated rows through findManyAndCount too', async () => {
+      await querier.findManyAndCount(Author, {
+        $select: { name: true },
+        $populate: { tomes: { $select: { title: true }, $sort: { title: 1 } } },
+      });
+
+      expect(log).toEqual(['afterLoad:a', 'afterLoad:b', 'afterLoad:Ann']);
+    });
   });
 
   it('should run inherited hooks first, then each own hook in declaration order', async () => {

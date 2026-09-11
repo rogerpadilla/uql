@@ -18,16 +18,13 @@ export const TOTAL_ALIAS = '_uql_total';
 /** The derived table a `$distinct` count wraps its deduplicated set in. MySQL requires the alias. */
 export const DISTINCT_DERIVED_ALIAS = '_uql_distinct';
 
-/** Prefix for the derived table each branch of a per-parent bounded read is wrapped in. */
-export const PER_PARENT_BRANCH_ALIAS = '_uql_p';
+/** The row a Postgres relation aggregates whole: a LATERAL projection of the columns it answers under. */
+export const RELATION_ROW_ALIAS = '_uql_row';
 
-/** The row source a `LATERAL` per-parent read correlates each of its branches against. */
-export const PER_PARENT_KEYS_ALIAS = '_uql_keys';
+/** The alias an exploded JSON array element is read through, `_uql_elem_2` and on where one nests in another. */
+export const JSON_ELEM_ALIAS = '_uql_elem';
 
-/** Prefix for the alias an exploded JSON array element is read through. */
-export const JSON_ELEM_ALIAS_PREFIX = '_uql_elem';
-
-/** The alias a `$pull` reads its surviving elements through, kept distinct from {@link JSON_ELEM_ALIAS_PREFIX}. */
+/** The alias a `$pull` reads its surviving elements through, kept distinct from {@link JSON_ELEM_ALIAS}. */
 export const JSON_PULL_ALIAS = '_uql_pull';
 
 /** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */
@@ -53,4 +50,12 @@ export const UPSERT_SOURCE_ALIAS = '_uql_src';
  */
 export function sortCountField(relKey: string): string {
   return `_uql_sort_count_${relKey}`;
+}
+
+/**
+ * The column a relation's rows carry one sort term out in, beside the columns they answer under, for
+ * the aggregate reading them to order by: `_uql_sort_createdAt`.
+ */
+export function relationSortColumn(path: string): string {
+  return `_uql_sort_${path}`;
 }

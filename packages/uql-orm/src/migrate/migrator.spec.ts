@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { defineEntity, Entity, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -13,6 +12,7 @@ import type {
   ForeignKeySchema,
   Migration,
   MigrationStorage,
+  MigratorDialect,
   QuerierPool,
   SchemaDiff,
   SchemaGenerator,
@@ -46,7 +46,7 @@ function lastWriteFileUtf8(writeFile: Mock): string {
 describe('Migrator Core Methods', () => {
   let migrator: Migrator;
   let storage: MigrationStorage;
-  let pool: QuerierPool;
+  let pool: QuerierPool<SqlQuerier, MigratorDialect>;
   let querier: SqlQuerier;
   let mockExecuted: Mock<MigrationStorage['executed']>;
 
@@ -649,7 +649,7 @@ describe('Migrator Core Methods', () => {
     it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
       const unknownPool = {
         ...pool,
-        dialect: { dialectName: 'unknown' } as unknown as AbstractDialect,
+        dialect: { dialectName: 'unknown' } as unknown as MigratorDialect,
       };
       const m = new Migrator(unknownPool, { storage });
       expect(m.schemaGenerator).toBeUndefined();
@@ -663,7 +663,7 @@ describe('Migrator Core Methods', () => {
       defineEntity(NoIntrospectorRow, { fields: { id: { type: Number, isId: true } } });
       const unknownPool = {
         ...pool,
-        dialect: { dialectName: 'unknown', resolveSchema: () => undefined } as unknown as AbstractDialect,
+        dialect: { dialectName: 'unknown', resolveSchema: () => undefined } as unknown as MigratorDialect,
       };
       const m = new Migrator(unknownPool, { storage });
       await expect(m.sync({ entity: NoIntrospectorRow })).rejects.toThrow(
@@ -702,7 +702,7 @@ describe('Migrator Core Methods', () => {
     it('a forced sync throws if the schema generator is missing', async () => {
       const unknownPool = {
         ...pool,
-        dialect: { dialectName: 'unknown' } as unknown as AbstractDialect,
+        dialect: { dialectName: 'unknown' } as unknown as MigratorDialect,
       };
       const m = new Migrator(unknownPool, { storage });
       await expect(m.sync({ force: true, logging: true })).rejects.toThrow('Schema generator not set');

@@ -905,7 +905,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'city\' ILIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'city\' ILIKE $1)',
     );
     expect(values).toEqual(['new%']);
   }
@@ -918,7 +918,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE (_uql_elem_1->>\'price\')::numeric > $1 AND _uql_elem_1->\'active\' = $2::jsonb)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE (_uql_elem->>\'price\')::numeric > $1 AND _uql_elem->\'active\' = $2::jsonb)',
     );
     // The boolean compares as JSON: extracting it as text loses the type.
     expect(values).toEqual([100, 'true']);
@@ -932,7 +932,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' = $1 AND _uql_elem_1->>\'status\' = ANY($2))',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'name\' = $1 AND _uql_elem->>\'status\' = ANY($2))',
     );
     expect(values).toEqual(['exact', ['active', 'pending']]);
   }
@@ -945,7 +945,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem_1 WHERE _uql_elem_1->>\'name\' LIKE $1)',
+      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'name\' LIKE $1)',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -958,7 +958,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("_uql_elem_1->>'status' IS DISTINCT FROM $1");
+    expect(res.sql).toContain("_uql_elem->>'status' IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -967,9 +967,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } } as any,
       }),
     );
-    expect(res.sql).toContain("(_uql_elem_1->>'qty')::numeric >= $1");
-    expect(res.sql).toContain("(_uql_elem_1->>'price')::numeric < $2");
-    expect(res.sql).toContain("(_uql_elem_1->>'discount')::numeric <= $3");
+    expect(res.sql).toContain("(_uql_elem->>'qty')::numeric >= $1");
+    expect(res.sql).toContain("(_uql_elem->>'price')::numeric < $2");
+    expect(res.sql).toContain("(_uql_elem->>'discount')::numeric <= $3");
 
     // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
     res = this.exec((ctx) =>
@@ -989,12 +989,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("_uql_elem_1->>'a' LIKE");
-    expect(res.sql).toContain("_uql_elem_1->>'b' LIKE");
-    expect(res.sql).toContain("_uql_elem_1->>'c' ILIKE");
-    expect(res.sql).toContain("_uql_elem_1->>'d' ILIKE");
-    expect(res.sql).toContain("_uql_elem_1->>'e' LIKE");
-    expect(res.sql).toContain("_uql_elem_1->>'f' ILIKE");
+    expect(res.sql).toContain("_uql_elem->>'a' LIKE");
+    expect(res.sql).toContain("_uql_elem->>'b' LIKE");
+    expect(res.sql).toContain("_uql_elem->>'c' ILIKE");
+    expect(res.sql).toContain("_uql_elem->>'d' ILIKE");
+    expect(res.sql).toContain("_uql_elem->>'e' LIKE");
+    expect(res.sql).toContain("_uql_elem->>'f' ILIKE");
 
     // Test $regex, $nin
     res = this.exec((ctx) =>
@@ -1003,8 +1003,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { kind: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } } as any,
       }),
     );
-    expect(res.sql).toContain("_uql_elem_1->>'code' ~ $1");
-    expect(res.sql).toContain("_uql_elem_1->>'tag' <> ALL($2)");
+    expect(res.sql).toContain("_uql_elem->>'code' ~ $1");
+    expect(res.sql).toContain("_uql_elem->>'tag' <> ALL($2)");
   }
 
   // JSONB dot-notation tests (Postgres-specific)
@@ -1067,7 +1067,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Item" WHERE EXISTS (SELECT 1 FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id" AND "ItemTag"."tagId" IN (SELECT "Tag"."id" FROM "Tag" WHERE "Tag"."id" = $1))',
+      'SELECT "id" FROM "Item" WHERE EXISTS (SELECT 1 FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id" AND "ItemTag"."tagId" IN (SELECT "tags"."id" FROM "Tag" "tags" WHERE "tags"."id" = $1))',
     );
     expect(values).toEqual([5]);
   }
@@ -1080,9 +1080,173 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "MeasureUnitCategory" WHERE EXISTS (SELECT 1 FROM "MeasureUnit" WHERE "MeasureUnit"."categoryId" = "MeasureUnitCategory"."id" AND "MeasureUnit"."name" = $1 AND "MeasureUnit"."deletedAt" IS NULL) AND "deletedAt" IS NULL',
+      'SELECT "id" FROM "MeasureUnitCategory" WHERE EXISTS (SELECT 1 FROM "MeasureUnit" "measureUnits" WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id" AND "measureUnits"."name" = $1 AND "measureUnits"."deletedAt" IS NULL) AND "deletedAt" IS NULL',
     );
     expect(values).toEqual(['kg']);
+  }
+
+  /**
+   * A to-many is read inside its parent's statement: an ordinary read under the relation's name, each row
+   * aggregated whole through a LATERAL projection of the columns it answers under, so a sort term carried
+   * out for the aggregate stays out of the object. A number crosses as text: JSON would round a BIGINT.
+   */
+  shouldReadAToManyInsideItsParentStatement() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true, createdAt: true }, $sort: { name: 1 }, $limit: 5 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "MeasureUnitCategory"."name", (SELECT COALESCE(JSON_AGG("_uql_row" ORDER BY "measureUnits"."_uql_sort_name"), '[]'::json)` +
+        ' FROM (SELECT "measureUnits"."name", "measureUnits"."createdAt"::text "createdAt", "measureUnits"."name" "_uql_sort_name"' +
+        ' FROM "MeasureUnit" "measureUnits" WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id"' +
+        ' AND "measureUnits"."deletedAt" IS NULL ORDER BY "_uql_sort_name" LIMIT 5) "measureUnits"' +
+        ' CROSS JOIN LATERAL (SELECT "measureUnits"."name", "measureUnits"."createdAt") "_uql_row") "measureUnits"' +
+        ' FROM "MeasureUnitCategory" WHERE "MeasureUnitCategory"."deletedAt" IS NULL',
+    );
+    expect(values).toEqual([]);
+  }
+
+  /** A many-to-many reads its targets, each once, through the junction rows pairing them to the parent. */
+  shouldReadAManyToManyInsideItsParentStatement() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { name: true }, $populate: { tags: { $select: { name: true } } } }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "Item"."name", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "tags"."name" FROM "Tag" "tags" WHERE "tags"."id" IN' +
+        ' (SELECT "ItemTag"."tagId" FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id")) "tags"' +
+        ' CROSS JOIN LATERAL (SELECT "tags"."name") "_uql_row") "tags" FROM "Item"',
+    );
+  }
+
+  /** A `$count` is the subquery a relation filter already counts with, aliased where the row reads it. */
+  shouldCountARelationInsideItsParentStatement() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $count: { measureUnits: { $where: { name: 'kg' } } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "name", (SELECT COUNT(*) FROM "MeasureUnit" "measureUnits" WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id"' +
+        ' AND "measureUnits"."name" = $1 AND "measureUnits"."deletedAt" IS NULL) "_count.measureUnits"' +
+        ' FROM "MeasureUnitCategory" WHERE "deletedAt" IS NULL',
+    );
+    expect(values).toEqual(['kg']);
+  }
+
+  /** The child reads under the relation's name, so a self-reference compares it with its parent. */
+  shouldReadASelfReferenceAgainstItsParent() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { name: true }, $populate: { users: { $select: { name: true } } } }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "User"."name", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "users"."name" FROM "User" "users" WHERE "users"."creatorId" = "User"."id") "users"' +
+        ' CROSS JOIN LATERAL (SELECT "users"."name") "_uql_row") "users" FROM "User"',
+    );
+  }
+
+  /**
+   * A child's to-one joins inside its own statement, and keeps its id there as a joined row always
+   * does. Every table of the statement claims an alias of its own, so no join inside shadows the parent.
+   */
+  shouldJoinAToOneInsideAToMany() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true }, $populate: { category: { $select: { name: true } } } } },
+      }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "MeasureUnitCategory"."name", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "measureUnits"."name", "category"."id" "category.id", "category"."name" "category.name"' +
+        ' FROM "MeasureUnit" "measureUnits" LEFT JOIN "MeasureUnitCategory" "category" ON "category"."id" = "measureUnits"."categoryId"' +
+        ' AND "category"."deletedAt" IS NULL' +
+        ' WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id" AND "measureUnits"."deletedAt" IS NULL) "measureUnits"' +
+        ' CROSS JOIN LATERAL (SELECT "measureUnits"."name", "measureUnits"."category.id", "measureUnits"."category.name") "_uql_row")' +
+        ' "measureUnits" FROM "MeasureUnitCategory" WHERE "MeasureUnitCategory"."deletedAt" IS NULL',
+    );
+  }
+
+  /** `json` has no equality, so a parent that deduplicates its rows compares the array as `jsonb`. */
+  shouldCompareARelationAsJsonbUnderADistinctParent() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $distinct: true,
+        $populate: { measureUnits: { $select: { name: true } } },
+      }),
+    );
+
+    expect(sql).toBe(
+      `SELECT DISTINCT "MeasureUnitCategory"."name", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "measureUnits"."name" FROM "MeasureUnit" "measureUnits"' +
+        ' WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id" AND "measureUnits"."deletedAt" IS NULL) "measureUnits"' +
+        ' CROSS JOIN LATERAL (SELECT "measureUnits"."name") "_uql_row")::jsonb "measureUnits"' +
+        ' FROM "MeasureUnitCategory" WHERE "MeasureUnitCategory"."deletedAt" IS NULL',
+    );
+  }
+
+  /**
+   * The children correlate on the parent's key without selecting it, so the parent keeps only what the
+   * query asked for, and each child crosses JSON with its numbers as text.
+   */
+  override shouldFind$excludeBesideAToMany() {
+    const children =
+      `(SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json) FROM (SELECT "users"."id", "users"."companyId",` +
+      ' "users"."creatorId", "users"."createdAt"::text "createdAt", "users"."updatedAt"::text "updatedAt",' +
+      ' "users"."name", "users"."email" FROM "User" "users" WHERE "users"."creatorId" = "User"."id") "users"' +
+      ' CROSS JOIN LATERAL (SELECT "users"."id", "users"."companyId", "users"."creatorId", "users"."createdAt",' +
+      ' "users"."updatedAt", "users"."name", "users"."email") "_uql_row") "users"';
+    const expected =
+      'SELECT "User"."companyId", "User"."creatorId", "User"."createdAt", "User"."updatedAt",' +
+      ` "User"."name", "User"."email", ${children} FROM "User"`;
+
+    expect(
+      this.exec((ctx) => this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } })).sql,
+    ).toBe(expected);
+    expect(
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } })).sql,
+    ).toBe(expected);
+  }
+
+  /** The rows of each parent are ordered and paged inside their own subquery. */
+  override shouldPageAToManyRelation() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 5, $skip: 1 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "Item"."id", (SELECT COALESCE(JSON_AGG("_uql_row" ORDER BY "tags"."_uql_sort_name"), '[]'::json)` +
+        ' FROM (SELECT "tags"."name", "tags"."name" "_uql_sort_name" FROM "Tag" "tags" WHERE "tags"."id" IN' +
+        ' (SELECT "ItemTag"."tagId" FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id")' +
+        ' ORDER BY "_uql_sort_name" LIMIT 5 OFFSET 1) "tags" CROSS JOIN LATERAL (SELECT "tags"."name") "_uql_row") "tags" FROM "Item"',
+    );
+  }
+
+  /**
+   * A hidden sort column would join what `$distinct` deduplicates on, so a relation deduplicating its
+   * rows is sorted only by what it selects.
+   */
+  shouldRejectSortingADistinctRelationByWhatItDoesNotSelect() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, MeasureUnitCategory, {
+          $populate: { measureUnits: { $select: { name: true }, $distinct: true, $sort: { createdAt: 1 } } },
+        }),
+      ),
+    ).toThrow("cannot $sort the $distinct relation 'measureUnits' by 'createdAt', which it does not select");
   }
 
   shouldFindByJsonDotNotationDeepPath() {

@@ -1,43 +1,34 @@
-import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
-import { MysqlLikeSqlDialect } from '../../dialect/mysqlLikeSqlDialect.js';
-import { PgLikeSqlDialect } from '../../dialect/pgLikeSqlDialect.js';
-import { MariaDialect } from '../../maria/mariaDialect.js';
-import { MySqlDialect } from '../../mysql/mysqlDialect.js';
+import type { SqlDialectName } from '../../type/index.js';
 import { IndexDdl } from './indexDdl.js';
+import { MsSqlIndexDdl } from './mssqlIndexDdl.js';
 import { MsSqlTableDdl } from './mssqlTableDdl.js';
-import { MariaIndexDdl, MySqlIndexDdl, MysqlLikeIndexDdl } from './mysqlIndexDdl.js';
+import { MariaIndexDdl, MySqlIndexDdl } from './mysqlIndexDdl.js';
 import { CockroachIndexDdl, PgIndexDdl } from './pgIndexDdl.js';
 import { TableDdl } from './tableDdl.js';
 
 export { IndexDdl } from './indexDdl.js';
+export { MsSqlIndexDdl } from './mssqlIndexDdl.js';
 export { MsSqlTableDdl } from './mssqlTableDdl.js';
 export { MariaIndexDdl, MySqlIndexDdl, MysqlLikeIndexDdl } from './mysqlIndexDdl.js';
 export { CockroachIndexDdl, PgIndexDdl } from './pgIndexDdl.js';
 export { TableDdl } from './tableDdl.js';
 
 /**
- * The index DDL a dialect gets, most specific first. `instanceof` rather than the `dialectName`
- * {@link tableDdlFor} reads, because each family's index DDL is typed to its dialect and the narrowing
- * is what hands it one. Anything else gets the portable form, which is SQLite's.
+ * Each engine's index DDL, by the `dialectName` a subclass inherits: by name, so this entry carries no
+ * dialect, and exhaustive, so a new engine has to name its own. SQLite's is the portable form.
  */
+const INDEX_DDL: Readonly<Record<SqlDialectName, new (dialect: AbstractSqlDialect) => IndexDdl>> = {
+  postgres: PgIndexDdl,
+  cockroachdb: CockroachIndexDdl,
+  mysql: MySqlIndexDdl,
+  mariadb: MariaIndexDdl,
+  mssql: MsSqlIndexDdl,
+  sqlite: IndexDdl,
+};
+
 export function indexDdlFor(dialect: AbstractSqlDialect): IndexDdl {
-  if (dialect instanceof CockroachDialect) {
-    return new CockroachIndexDdl(dialect);
-  }
-  if (dialect instanceof PgLikeSqlDialect) {
-    return new PgIndexDdl(dialect);
-  }
-  if (dialect instanceof MySqlDialect) {
-    return new MySqlIndexDdl(dialect);
-  }
-  if (dialect instanceof MariaDialect) {
-    return new MariaIndexDdl(dialect);
-  }
-  if (dialect instanceof MysqlLikeSqlDialect) {
-    return new MysqlLikeIndexDdl(dialect);
-  }
-  return new IndexDdl(dialect);
+  return new INDEX_DDL[dialect.dialectName](dialect);
 }
 
 /**

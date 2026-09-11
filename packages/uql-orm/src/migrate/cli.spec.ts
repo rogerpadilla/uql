@@ -10,7 +10,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { QuerierPool } from '../type/index.js';
+import type { Config } from '../type/index.js';
 import * as cliConfig from './cli-config.js';
 import * as cli from './cli.js';
 import type { Migrator } from './migrator.js';
@@ -73,7 +73,7 @@ vi.mock('./cli-config.js', () => {
 });
 
 describe('CLI', () => {
-  let mockPool: QuerierPool;
+  let mockPool: Config['pool'];
 
   beforeEach(() => {
     vi.clearAllMocks();
@@ -83,7 +83,7 @@ describe('CLI', () => {
       end: vi.fn(),
       transaction: vi.fn(),
       withQuerier: vi.fn(),
-    } as unknown as QuerierPool;
+    } as unknown as Config['pool'];
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: mockPool });
     vi.spyOn(console, 'log').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -228,7 +228,6 @@ describe('CLI', () => {
     expect(cli.getSchemaGenerator(new MySqlDialect())).toBeDefined();
     expect(cli.getSchemaGenerator(new SqliteDialect())).toBeDefined();
     expect(cli.getSchemaGenerator(new MongoDialect())).toBeUndefined();
-    expect(cli.getSchemaGenerator('unknown' as any)).toBeUndefined();
   });
 
   it('createSchemaGeneratorAsync loads MongoDB generator', async () => {

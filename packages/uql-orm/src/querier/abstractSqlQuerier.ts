@@ -2,6 +2,7 @@ import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta, idOf, namesKey } from '../entity/index.js';
+import { COUNT_RESULT_KEY } from '../type/index.js';
 import type {
   EntityData,
   EntityMeta,
@@ -31,12 +32,11 @@ import {
   clone,
   getInsertFieldKeys,
   insertShapeOf,
-  getRelationRequestSummary,
   idOnlyQuery,
   isAutoIncrement,
   isPagedQuery,
+  isRecord,
   obtainAttrsPaths,
-  type ParentPartition,
   throwNoPendingTransaction,
   throwPendingTransaction,
   unflatObject,
@@ -228,29 +228,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    return this.hydrateRows(entity, q, await this.selectRows(entity, q, opts));
-  }
-
-  /**
-   * One bounded subquery per parent, concatenated with `UNION ALL`, so each parent gets its own
-   * `$limit` rather than a share of one. Universal, and reads `parents x (skip + limit)` rows where a
-   * `ROW_NUMBER` window reads every matching child. [The design](../../../../architecture/populate-limits.md).
-   *
-   * Each branch is a wrapped derived table: SQLite rejects `ORDER BY`/`LIMIT` on a bare parenthesised
-   * compound branch, and the wrapper costs nothing elsewhere.
-   *
-   * Unlike {@link selectRows} this asserts no lock and tunes no vector search: `$lock` and
-   * `$candidates` describe the statement, and `parseRelationQueryValue` refuses both on a relation
-   * query, so neither can reach here.
-   */
-  protected override async internalFindManyPerParent<E extends object>(
-    entity: Type<E>,
-    q: Query<E>,
-    partition: ParentPartition,
-  ): Promise<E[]> {
-    const ctx = this.dialect.createContext();
-    this.dialect.findPerParent(ctx, entity, q, partition);
-    return this.hydrateRows(entity, q, await this.all<RawRow>(ctx.sql, ctx.values));
+    return this.hydrateRows(entity, await this.selectRows(entity, q, opts));
   }
 
   /**
@@ -298,7 +276,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     for (const row of rows) {
       delete row[TOTAL_ALIAS];
     }
-    return [await this.hydrateRows(entity, q, rows), total];
+    return [this.hydrateRows(entity, rows), total];
   }
 
   private async selectRows<E extends object>(
@@ -319,12 +297,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.all<RawRow>(ctx.sql, ctx.values);
   }
 
-  private async hydrateRows<E extends object>(entity: Type<E>, q: Query<E>, rows: RawRow[]): Promise<E[]> {
+  private hydrateRows<E extends object>(entity: Type<E>, rows: RawRow[]): E[] {
     const founds = unflatObjects<E>(rows);
     this.hydrateAll(entity, founds);
-    if (q.$populate) {
-      await this.fillToManyRelations(entity, founds, q.$populate);
-    }
     return founds;
   }
 
@@ -339,12 +314,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       await this.applyVectorTuning(entity, q);
     }
     const meta = getMeta(entity);
-    const { toManyKeys } = getRelationRequestSummary(meta, q.$populate);
-    if (toManyKeys.length) {
-      throw new TypeError(
-        `findManyStream does not load to-many relations (${toManyKeys.join(', ')}). Use findMany so fillToManyRelations can run, or omit those keys from the stream query.`,
-      );
-    }
     // The one path that does not go through `all`/`run`, so it connects on its own: streaming first on
     // a freshly acquired querier used to reach `getConn()` with nothing acquired.
     await this.lazyConnect();
@@ -381,35 +350,37 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * rows; the per-cell decode is `decodeColumn`. Both live with the dialect, because a `sparsevec` is
    * only sparse on Postgres.
    */
-  private hydrateAll<E extends object>(entity: Type<E>, dtos: readonly E[], visited?: WeakSet<object>): void {
+  private hydrateAll<E extends object>(entity: Type<E>, dtos: readonly E[]): void {
     const meta = getMeta(entity);
     const fields = this.dialect.hydratableFields(entity);
     for (const dto of dtos) {
-      this.hydrateFields(meta, fields, dto, visited);
+      this.hydrateFields(meta, fields, dto);
     }
   }
 
   /**
-   * One row of {@link hydrateAll}. `visited` guards a populated graph that points back at itself, and
-   * makes a node two paths reach decode once. Only a populated relation can lead the walk back, so the
-   * guard is created at the first one a row carries: rows that populated nothing never allocate one.
+   * One row of {@link hydrateAll}. A related row arrives as its parent's statement read it: a to-one
+   * joined and unflattened, there only when its key is, since an unmatched join still fills a computed
+   * column or a to-many's empty array; a to-many as a JSON array, which a driver may hand over as text.
+   * Each is an object of its own, so the walk reaches none twice.
    */
   private hydrateFields<E extends object>(
     meta: EntityMeta<E>,
     fields: ReturnType<AbstractSqlDialect['hydratableFields']>,
     dto: E,
-    visited?: WeakSet<object>,
   ): void {
-    if (!dto || typeof dto !== 'object' || visited?.has(dto)) {
-      return;
-    }
-    visited?.add(dto);
-
     const row = dto as Record<string, unknown>;
     for (const [key, kind] of fields) {
       const value = row[key];
       if (value != null) {
         row[key] = decodeColumn(value, kind);
+      }
+    }
+    // A tally read inside the statement comes back as its driver reads a COUNT, which on some is text.
+    const counts = row[COUNT_RESULT_KEY];
+    if (isRecord(counts)) {
+      for (const relKey in counts) {
+        counts[relKey] = Number(counts[relKey]);
       }
     }
 
@@ -418,16 +389,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // relation that only the populated ones need.
     for (const key in meta.relations) {
       const value = row[key];
-      if (!value || typeof value !== 'object') continue;
+      if (!value) continue;
       const rel = meta.relations[key];
       if (!rel) continue;
-      visited ??= new WeakSet([dto]);
       const relEntity = rel.entity();
-      if (Array.isArray(value)) {
-        this.hydrateAll(relEntity, value, visited);
-        continue;
+      if (typeof value === 'string' || Array.isArray(value)) {
+        // A to-many's rows, as flat as a statement's own.
+        const rows = unflatObjects<object>(typeof value === 'string' ? JSON.parse(value) : value);
+        row[key] = rows;
+        this.hydrateAll(relEntity, rows);
+      } else if (isRecord(value)) {
+        const relMeta = getMeta(relEntity);
+        if (value[relMeta.ids[0]] == null) {
+          delete row[key];
+        } else {
+          this.hydrateFields(relMeta, this.dialect.hydratableFields(relEntity), value);
+        }
       }
-      this.hydrateFields(getMeta(relEntity), this.dialect.hydratableFields(relEntity), value, visited);
     }
   }
 

@@ -44,7 +44,7 @@ export function isQueryAggregateOp(op: string): op is QueryAggregateOp {
 
 /**
  * DISTINCT-qualified aggregate ops, each mapped to the base op it applies to a field's distinct
- * values: `$countDistinct` → `COUNT(DISTINCT col)`, and likewise `$sumDistinct`/`$avgDistinct`. Flat
+ * values: `$countDistinct` -> `COUNT(DISTINCT col)`, and likewise `$sumDistinct`/`$avgDistinct`. Flat
  * (not a nested `{ $distinct }` argument) so the op is self-documenting and greppable. `$min`/`$max`
  * are omitted: DISTINCT is a no-op for them.
  */
@@ -121,11 +121,11 @@ type ExactlyOne<T> = {
  * compile error). Only `$count` accepts `'*'` (i.e. `COUNT(*)`); every other op requires a field.
  * DISTINCT variants are flat ops (`$countDistinct`/`$sumDistinct`/`$avgDistinct`) taking a field.
  *
- * @example { $count: '*' }            → COUNT(*)
- * @example { $countDistinct: 'id' }   → COUNT(DISTINCT "id")
- * @example { $sum: 'amount' }         → SUM("amount")
- * @example { $sumDistinct: 'amount' } → SUM(DISTINCT "amount")
- * @example { $avg: 'age' }            → AVG("age")
+ * @example { $count: '*' }            -> COUNT(*)
+ * @example { $countDistinct: 'id' }   -> COUNT(DISTINCT "id")
+ * @example { $sum: 'amount' }         -> SUM("amount")
+ * @example { $sumDistinct: 'amount' } -> SUM(DISTINCT "amount")
+ * @example { $avg: 'age' }            -> AVG("age")
  */
 export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>>;
 
@@ -142,7 +142,7 @@ type CountingOp = OpsOf<'$count' | '$countDistinct'>;
  *
  * @example
  * ```ts
- * { status: true } // → GROUP BY "status"
+ * { status: true } // -> GROUP BY "status"
  * ```
  */
 export type QueryGroupMap<E> = {
@@ -157,7 +157,7 @@ export type QueryGroupMap<E> = {
  * @example
  * ```ts
  * { count: { $count: '*' }, avgAge: { $avg: 'age' } }
- * // → COUNT(*) AS "count", AVG("age") AS "avgAge"
+ * // -> COUNT(*) AS "count", AVG("age") AS "avgAge"
  * ```
  */
 export type QueryAggMap<E> = {
@@ -208,11 +208,11 @@ export type QueryAggregateResult<E, G, A> = Simplify<
 >;
 
 /**
- * Erased runtime shape of a HAVING clause (alias → comparison), consumed by the dialect builders.
+ * Erased runtime shape of a HAVING clause (alias -> comparison), consumed by the dialect builders.
  * Values are `unknown` because the SQL is built generically; the typed, per-column value checking
  * lives in {@link QueryAggregate.$having}.
  *
- * @example { count: { $gt: 5 } }   → HAVING COUNT(*) > 5
+ * @example { count: { $gt: 5 } }   -> HAVING COUNT(*) > 5
  */
 export type QueryHavingMap = {
   readonly [alias: string]: QueryWhereFieldValue<unknown> | undefined;
@@ -239,7 +239,7 @@ export type QueryAggregate<
   A extends QueryAggMap<E> = QueryAggMap<E>,
 > = {
   // Fields are ordered to match how SQL and MongoDB process a query:
-  // WHERE → GROUP BY → aggregates → HAVING → ORDER BY → OFFSET/LIMIT.
+  // WHERE -> GROUP BY -> aggregates -> HAVING -> ORDER BY -> OFFSET/LIMIT.
 
   /**
    * Row-level filtering, applied before grouping (SQL `WHERE`, MongoDB `$match`).

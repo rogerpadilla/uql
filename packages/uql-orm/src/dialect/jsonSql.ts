@@ -12,10 +12,35 @@ export function jsonPath(path: string, suffix = ''): string {
   return `'$.${segments}${suffix}'`;
 }
 
+/** How many argument groups of `size` fit in one call beside its target, under `maxArgs`. */
+export function groupsPerCall(maxArgs: number, size: number): number {
+  return Math.max(1, Math.floor((maxArgs - 1) / size));
+}
+
+/**
+ * `fn(target, ...groups)`, nested wherever one call would take more than `maxArgs` arguments: each call
+ * applies its share to what the call inside it returned, as `JSON_SET`, `JSON_REMOVE` and `json_insert`
+ * do. A group, such as a path and its value, stays in one call.
+ */
+export function chainedCall(
+  fn: string,
+  target: string,
+  groups: readonly string[],
+  size: number,
+  maxArgs: number,
+): string {
+  const perCall = groupsPerCall(maxArgs, size);
+  let call = target;
+  for (let at = 0; at < groups.length; at += perCall) {
+    call = `${fn}(${call}, ${groups.slice(at, at + perCall).join(', ')})`;
+  }
+  return call;
+}
+
 /**
  * `FN(target, path, value, ...)` - the multi-pair JSON assignment shape shared by MySQL's
- * `JSON_SET` and SQLite's `JSON_SET`/`JSON_INSERT`. `pathSuffix` appends an accessor per key
- * (SQLite's `[#]` append). Values bind in key order through `bindValue`, the caller's
+ * `JSON_SET` and SQLite's `JSON_SET`/`JSON_INSERT`, nested past `maxArgs`. `pathSuffix` appends an
+ * accessor per key (SQLite's `[#]` append). Values bind in key order through `bindValue`, the caller's
  * `jsonScalarParam` bound to its `QueryContext`.
  */
 export function jsonAssignCall(
@@ -23,10 +48,11 @@ export function jsonAssignCall(
   fn: string,
   target: string,
   entries: Record<string, unknown>,
+  maxArgs: number,
   pathSuffix = '',
 ): string {
   const pairs = Object.entries(entries).map(([key, value]) => `${jsonPath(key, pathSuffix)}, ${bindValue(value)}`);
-  return `${fn}(${target}, ${pairs.join(', ')})`;
+  return chainedCall(fn, target, pairs, 2, maxArgs);
 }
 
 /** The `$set` target: a nullable column needs a `COALESCE` fallback to build on. */
@@ -36,10 +62,16 @@ export function jsonSetTarget(expr: string, field: FieldOptions | undefined, emp
 
 /**
  * `FN(expr, path, ...)` - the multi-path JSON removal shape shared by MySQL's `JSON_REMOVE` and
- * SQLite's `json_remove`, both of which take every path in a single call.
+ * SQLite's `json_remove`, nested past `maxArgs`.
  */
-export function jsonRemoveCall(fn: string, expr: string, keys: readonly string[]): string {
-  return `${fn}(${expr}, ${keys.map((key) => jsonPath(key)).join(', ')})`;
+export function jsonRemoveCall(fn: string, expr: string, keys: readonly string[], maxArgs: number): string {
+  return chainedCall(
+    fn,
+    expr,
+    keys.map((key) => jsonPath(key)),
+    1,
+    maxArgs,
+  );
 }
 
 /** `WHERE` is omitted for an empty `$elemMatch`, which asks only that the array has an element. */

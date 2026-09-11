@@ -14,6 +14,7 @@ class Comment {
   body!: string;
   approved?: boolean;
   storyId!: number;
+  replies?: Comment[];
 }
 
 class Writer {
@@ -63,8 +64,8 @@ export async function countShapesTheResult() {
 
   counted._count.comments.toFixed();
   counted.title.trim();
-  // The id survives the projection, the way it does for a populated relation: the tallies group by it.
-  counted.id.toFixed();
+  // @ts-expect-error the id, which the projection left out
+  counted.id;
   // @ts-expect-error a relation the query did not count
   counted._count.writer;
   // @ts-expect-error a field the projection left out
@@ -80,14 +81,10 @@ export async function countShapesTheResult() {
   fromPage._count.comments.toFixed();
 }
 
-/**
- * `$distinct` and a raw `$select` each take away what the tallies group by - the row's id - so both
- * are refused. Runtime, not type-level: `$distinct` is a sibling clause and a raw `$select` is a
- * valid value for its own clause, so neither is expressible as a type error without contorting both.
- */
-export async function countRefusesWhatTakesTheIdAway() {
-  // Asserted here only for what they are: legal to write. That each *rejects* at runtime is pinned
-  // on every backend by `shouldRejectCountingWithDistinct` / `shouldRejectCountingWithARawSelect`.
+/** A tally is read with its row, so it needs no id and composes with `$distinct` and a raw `$select`. */
+export async function countBesideDistinctAndARawSelect() {
+  // Asserted here only for what they are: legal to write. What each does at runtime is pinned on
+  // every backend by `shouldCountBeside$distinct` / `shouldCountBesideARawSelect`.
   await querier.findMany(Story, { $distinct: true, $count: { comments: true } });
   await querier.findMany(Story, { $select: [], $count: { comments: true } });
 }
@@ -111,10 +108,17 @@ export async function countComposesWithPopulate() {
   both._count.comments.toFixed();
 }
 
-/** A stream never holds its rows at once, so it has nothing to batch a count over. */
-export async function streamsCannotCount() {
-  // @ts-expect-error `$count` is batched over a result set a stream does not have
-  for await (const _row of querier.findManyStream(Story, { $count: { comments: true } })) break;
+/** A populated relation's rows keep their declared type, with no `_count` to land in, so one refuses `$count`. */
+export async function countIsStatementLevel() {
+  // @ts-expect-error `$count` belongs to the statement, not to a populated relation
+  await querier.findMany(Story, { $populate: { comments: { $count: { replies: true } } } });
+}
+
+/** A stream reads each row's tallies with it, in the statement `findMany` runs. */
+export async function streamsCount() {
+  for await (const row of querier.findManyStream(Story, { $select: { title: true }, $count: { comments: true } })) {
+    row._count.comments.toFixed();
+  }
 }
 
 /**

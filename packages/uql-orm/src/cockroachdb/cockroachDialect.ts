@@ -1,7 +1,8 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
+import { COCKROACH_VECTOR_METRICS } from '../dialect/pgVectorMetrics.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryContext, Type, VectorDistance, VectorOperatorMetric } from '../type/index.js';
+import type { QueryContext, Type } from '../type/index.js';
 
 /**
  * CockroachDB Dialect.
@@ -16,16 +17,7 @@ import type { QueryContext, Type, VectorDistance, VectorOperatorMetric } from '.
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
-  // CockroachDB implements 3 of pgvector's 4 metrics: `<+>` and `vector_l1_ops` throw
-  // "unimplemented: operator class ... is not supported" (verified live on v26.2), which its own docs
-  // list under "Known limitations": https://www.cockroachlabs.com/docs/stable/vector-indexes -
-  // tracked upstream at https://github.com/cockroachdb/cockroach/issues/147839. Re-check that issue
-  // before adding `l1` here; it is omitted on purpose, not an oversight.
-  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorOperatorMetric> = new Map([
-    ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
-    ['l2', { op: '<->', opsSuffix: 'l2' }],
-    ['inner', { op: '<#>', opsSuffix: 'ip' }],
-  ]);
+  override readonly vectorMetrics = COCKROACH_VECTOR_METRICS;
 
   /** Verified live on v26.2: an upsert batch mixing an update and an insert returned the update first. */
   override readonly upsertReturningOrdered = false;

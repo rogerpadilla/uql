@@ -48,6 +48,7 @@ describe('jsonAssignCall', () => {
       'JSON_SET',
       '`kind`',
       { public: 1, private: 2 },
+      Infinity,
     );
 
     expect(sql).toBe("JSON_SET(`kind`, '$.public', ?, '$.private', ?)");
@@ -55,9 +56,27 @@ describe('jsonAssignCall', () => {
   });
 
   it('should append the path suffix to every key', () => {
-    const sql = jsonAssignCall(() => '?', 'JSON_INSERT', '`kind`', { tags: 'a' }, '[#]');
+    const sql = jsonAssignCall(() => '?', 'JSON_INSERT', '`kind`', { tags: 'a' }, Infinity, '[#]');
 
     expect(sql).toBe("JSON_INSERT(`kind`, '$.tags[#]', ?)");
+  });
+
+  /** Past the cap each call assigns what fits onto the one inside it, a key and its value in the same call. */
+  it('should spread the pairs over nested calls past the argument cap', () => {
+    const bound: unknown[] = [];
+    const sql = jsonAssignCall(
+      (value) => {
+        bound.push(value);
+        return '?';
+      },
+      'JSON_SET',
+      '`kind`',
+      { a: 1, b: 2, c: 3 },
+      5,
+    );
+
+    expect(sql).toBe("JSON_SET(JSON_SET(`kind`, '$.a', ?, '$.b', ?), '$.c', ?)");
+    expect(bound).toEqual([1, 2, 3]);
   });
 });
 
@@ -78,23 +97,29 @@ describe('jsonSetTarget', () => {
 
 describe('jsonRemoveCall', () => {
   it('should remove every key in a single call', () => {
-    expect(jsonRemoveCall('JSON_REMOVE', '`kind`', ['public', 'tags'])).toBe(
+    expect(jsonRemoveCall('JSON_REMOVE', '`kind`', ['public', 'tags'], Infinity)).toBe(
       "JSON_REMOVE(`kind`, '$.public', '$.tags')",
+    );
+  });
+
+  it('should spread the paths over nested calls past the argument cap', () => {
+    expect(jsonRemoveCall('JSON_REMOVE', '`kind`', ['a', 'b', 'c'], 3)).toBe(
+      "JSON_REMOVE(JSON_REMOVE(`kind`, '$.a', '$.b'), '$.c')",
     );
   });
 });
 
 describe('jsonElemExists', () => {
   it('should AND the element conditions', () => {
-    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem_1', ['a = 1', 'b = 2'])).toBe(
-      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem_1 WHERE a = 1 AND b = 2)',
+    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem', ['a = 1', 'b = 2'])).toBe(
+      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem WHERE a = 1 AND b = 2)',
     );
   });
 
   /** With no conditions the question is only whether the array has any element at all. */
   it('should omit WHERE when there is no condition', () => {
-    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem_1', [])).toBe(
-      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem_1)',
+    expect(jsonElemExists('JSON_EACH(`kind`) AS _uql_elem', [])).toBe(
+      'EXISTS (SELECT 1 FROM JSON_EACH(`kind`) AS _uql_elem)',
     );
   });
 });

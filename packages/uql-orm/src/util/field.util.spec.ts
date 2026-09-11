@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { FieldOptions } from '../type/index.js';
-import { columnFamily, isAutoIncrement } from './field.util.js';
+import { columnFamily, isAutoIncrement, isIntegerColumn } from './field.util.js';
 
 describe('columnFamily', () => {
   it('places the constructors', () => {
@@ -43,6 +43,21 @@ describe('columnFamily', () => {
     expect(columnFamily(null)).toBe(undefined);
     expect(columnFamily(undefined)).toBe(undefined);
     expect(columnFamily({})).toBe(undefined);
+  });
+});
+
+describe('isIntegerColumn', () => {
+  it('reads a `Number` or `BigInt` with no scale as the BIGINT it is stored as', () => {
+    expect(isIntegerColumn({ type: Number })).toBe(true);
+    expect(isIntegerColumn({ type: BigInt })).toBe(true);
+    expect(isIntegerColumn({ type: Number, precision: 12, scale: 2 })).toBe(false);
+  });
+
+  it('reads a declared column type over the logical one', () => {
+    expect(isIntegerColumn({ type: Number, columnType: 'smallint' })).toBe(true);
+    expect(isIntegerColumn({ type: Number, columnType: 'double precision' })).toBe(false);
+    expect(isIntegerColumn({ type: String, columnType: 'decimal' })).toBe(false);
+    expect(isIntegerColumn({ type: 'BIGINT' as 'bigint' })).toBe(true);
   });
 });
 

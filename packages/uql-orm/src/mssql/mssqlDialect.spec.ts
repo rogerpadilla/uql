@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, createSpec, Invoice, Item, TaxCategory, TypedRow, User } from '../test/index.js';
+import { Company, createSpec, Invoice, Item, MeasureUnitCategory, TaxCategory, TypedRow, User } from '../test/index.js';
 import { idKey, type QueryLockWait } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
@@ -34,11 +34,11 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       values: ['new-tag', 123, '1'],
     },
     pull: {
-      sql: 'UPDATE "Company" SET "kind" = CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem_1."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem_1."value", \'json\') + \'"\' ELSE _uql_elem_1."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem_1 WHERE _uql_elem_1."value" IS NULL OR _uql_elem_1."value" <> @p1), \'[]\'))) END, "updatedAt" = @p2 WHERE "id" = @p3',
+      sql: 'UPDATE "Company" SET "kind" = CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem."value", \'json\') + \'"\' ELSE _uql_elem."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem WHERE _uql_elem."value" IS NULL OR _uql_elem."value" <> @p1), \'[]\'))) END, "updatedAt" = @p2 WHERE "id" = @p3',
       values: ['a', 123, '1'],
     },
     pullPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE(CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem_1."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem_1."value", \'json\') + \'"\' ELSE _uql_elem_1."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem_1 WHERE _uql_elem_1."value" IS NULL OR _uql_elem_1."value" <> @p1), \'[]\'))) END, \'{}\'), \'append $.tags\', @p2), "updatedAt" = @p3 WHERE "id" = @p4',
+      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE(CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem."value", \'json\') + \'"\' ELSE _uql_elem."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem WHERE _uql_elem."value" IS NULL OR _uql_elem."value" <> @p1), \'[]\'))) END, \'{}\'), \'append $.tags\', @p2), "updatedAt" = @p3 WHERE "id" = @p4',
       values: ['a', 'b', 123, '1'],
     },
     setPushCombined: {
@@ -244,7 +244,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $size: 2 } } }),
     );
     expect(sql).toBe(
-      `SELECT "id" FROM "Company" WHERE (SELECT COUNT(*) FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem_1) = @p1`,
+      `SELECT "id" FROM "Company" WHERE (SELECT COUNT(*) FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem) = @p1`,
     );
     expect(values).toEqual([2]);
   }
@@ -255,7 +255,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $all: ['a', 'b'] } } }),
     );
     expect(sql).toContain(
-      `EXISTS (SELECT 1 FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem_1 WHERE _uql_elem_1."value" = @p1)`,
+      `EXISTS (SELECT 1 FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem WHERE _uql_elem."value" = @p1)`,
     );
     expect(sql).toContain(' AND EXISTS');
     expect(values).toEqual(['a', 'b']);
@@ -270,8 +270,8 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM' +
-        ` OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'items')) _uql_elem_1` +
-        ` WHERE JSON_VALUE(_uql_elem_1."value", '$.name') = @p1)`,
+        ` OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'items')) _uql_elem` +
+        ` WHERE JSON_VALUE(_uql_elem."value", '$.name') = @p1)`,
     );
     expect(values).toEqual(['a']);
   }
@@ -333,6 +333,48 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(res.sql).toContain("'$.private', 1 + @p1)");
     expect(res.values).toEqual([1, expect.any(Number), '1']);
+  }
+
+  /**
+   * The rows read as they are, `FOR JSON PATH` making the array: a number crosses as its exact text,
+   * and the page is the engine's own `OFFSET ... FETCH`. A row with no joined column keeps its nulls.
+   */
+  shouldReadAToManyForJson() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true, createdAt: true }, $sort: { name: 1 }, $limit: 5 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "MeasureUnitCategory"."name", JSON_QUERY(COALESCE((SELECT "measureUnits"."name",' +
+        ' CONVERT(VARCHAR(40), "measureUnits"."createdAt", 3) "createdAt" FROM "MeasureUnit" "measureUnits"' +
+        ' WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id" AND "measureUnits"."deletedAt" IS NULL' +
+        ` ORDER BY "measureUnits"."name" OFFSET 0 ROWS FETCH NEXT 5 ROWS ONLY FOR JSON PATH, INCLUDE_NULL_VALUES), '[]')) "measureUnits"` +
+        ' FROM "MeasureUnitCategory" WHERE "MeasureUnitCategory"."deletedAt" IS NULL',
+    );
+  }
+
+  /**
+   * `FOR JSON PATH` nests a joined row under its path and leaves its nulls out, which is what
+   * unflattening a row with a joined column does - so such a row leaves every null out.
+   */
+  shouldLeaveNullsOutWhereARowNestsAJoin() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true }, $populate: { category: { $select: { name: true } } } } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "MeasureUnitCategory"."name", JSON_QUERY(COALESCE((SELECT "measureUnits"."name", "category"."id" "category.id",' +
+        ' "category"."name" "category.name" FROM "MeasureUnit" "measureUnits" LEFT JOIN "MeasureUnitCategory" "category"' +
+        ' ON "category"."id" = "measureUnits"."categoryId" AND "category"."deletedAt" IS NULL' +
+        ' WHERE "measureUnits"."categoryId" = "MeasureUnitCategory"."id" AND "measureUnits"."deletedAt" IS NULL' +
+        ` FOR JSON PATH), '[]')) "measureUnits" FROM "MeasureUnitCategory" WHERE "MeasureUnitCategory"."deletedAt" IS NULL`,
+    );
   }
 }
 

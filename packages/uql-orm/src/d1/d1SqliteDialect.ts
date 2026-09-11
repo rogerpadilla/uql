@@ -9,6 +9,9 @@ export class D1SqliteDialect extends SqliteDialect {
   // Cloudflare D1 caps bound parameters at 100 per query.
   override readonly maxBindValues: number = 100;
 
+  // And a function call at 32 arguments.
+  override readonly maxFunctionArgs: number = 32;
+
   /**
    * D1's Worker API refuses a `bigint` bind ([workerd#4195](https://github.com/cloudflare/workerd/issues/4195)),
    * so one goes as its exact text, which SQLite's INTEGER affinity stores as the same integer.

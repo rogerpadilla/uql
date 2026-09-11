@@ -3,7 +3,8 @@ import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, Item, Profile, TaxCategory, User, uuidPattern } from '../test/index.js';
+import { createSpec, Item, MeasureUnitCategory, Profile, TaxCategory, User, uuidPattern } from '../test/index.js';
+import { raw } from '../util/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -60,6 +61,13 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async dropTables() {
     await this.querier.conn.db().dropDatabase();
+  }
+
+  /** A raw projection is SQL, which MongoDB refuses before it could count anything beside one. */
+  override async shouldCountBesideARawSelect() {
+    await expect(
+      this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } } as never),
+    ).rejects.toThrow('raw $select is not supported on MongoDB');
   }
 
   /**

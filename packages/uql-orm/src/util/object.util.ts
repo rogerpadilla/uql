@@ -57,6 +57,11 @@ export function isOperatorOnlyObject(value: unknown): value is Record<string, un
   return hasKeys(value) && !Array.isArray(value) && !someKey(value, (key) => !isOperatorKey(key));
 }
 
+/** Whether `value` is an object that is not an array, whose keys can be read. */
+export function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === 'object' && !Array.isArray(value);
+}
+
 export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }

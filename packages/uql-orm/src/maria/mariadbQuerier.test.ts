@@ -1,3 +1,4 @@
+import { assertRelationPastConcatLimit } from '../querier/mysqlLikeQuerier-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
@@ -15,6 +16,10 @@ export class MariadbQuerierIt extends VectorQuerierIt {
         trace: true,
       }),
     );
+  }
+
+  shouldReadARelationPastTheConcatLimit() {
+    return assertRelationPastConcatLimit(this.querier);
   }
 }
 

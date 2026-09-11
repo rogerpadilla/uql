@@ -1,4 +1,13 @@
-import type { ClientSession, Document, Filter, MongoClient, OptionalUnlessRequiredId, UpdateFilter } from 'mongodb';
+import type {
+  AggregationCursor,
+  ClientSession,
+  Document,
+  Filter,
+  FindCursor,
+  MongoClient,
+  OptionalUnlessRequiredId,
+  UpdateFilter,
+} from 'mongodb';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { fieldOf, getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
@@ -26,14 +35,11 @@ import type {
 import {
   clone,
   getKeys,
-  getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
   idOnlyQuery,
   isPagedQuery,
-  type ParentPartition,
   populatesRelations,
-  queryChildrenOf,
   throwNoPendingTransaction,
   throwPendingTransaction,
   withoutSoftDeleteFilter,
@@ -49,13 +55,6 @@ import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
 function asksForNoRows<E>(q: Query<E>): boolean {
   return q.$limit === 0;
 }
-
-/**
- * What MongoDB accepts in one pipeline. Bisected against a real server: 1000 top-level stages are
- * accepted and 1001 refused (`Pipeline length must be no longer than 1000 stages`), and a
- * `$unionWith`'s own sub-pipeline stages do not count toward it.
- */
-const MAX_PIPELINE_STAGES = 1000;
 
 export class MongodbQuerier extends AbstractQuerier {
   private session?: ClientSession;
@@ -75,101 +74,13 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   protected override async internalFindMany<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    this.dialect.assertNoLock(q);
     if (asksForNoRows(q)) {
       return [];
     }
     return this.timed('internalFindMany', undefined, async () => {
-      const meta = getMeta(entity);
-      const vectorSort = this.dialect.extractVectorSort(q.$sort);
-
-      let documents: E[];
-
-      if (vectorSort) {
-        const pipeline = this.buildVectorPipeline(entity, q, vectorSort, opts);
-        documents = await this.runPipeline(entity, meta, pipeline);
-        // to-many relations need their own query, exactly as in the non-vector path
-        await this.fillToManyRelations(entity, documents, q.$populate);
-      } else {
-        // A relation condition needs `$lookup`, so it forces the aggregation path just like populating
-        // one does - and so does ordering by a relation, which reads what a lookup produced, and
-        // `$distinct`, which is a `$group`. A plain `find` cursor can express none of the four.
-        if (
-          q.$distinct ||
-          populatesRelations(meta, q.$populate) ||
-          this.dialect.constrainsRelations(entity, q.$where) ||
-          this.dialect.sortsRelations(entity, q.$sort)
-        ) {
-          const pipeline = this.dialect.aggregationPipeline(entity, q, opts);
-          documents = await this.runPipeline(entity, meta, pipeline);
-          await this.fillToManyRelations(entity, documents, q.$populate);
-        } else {
-          const cursor = this.buildFindCursor(entity, q, opts);
-          documents = await this.execute(() => cursor.toArray());
-          documents = this.dialect.normalizeIds(meta, documents);
-        }
-      }
-
-      return documents;
+      const cursor = this.readCursor(entity, q, opts);
+      return this.dialect.normalizeIds(getMeta(entity), await this.execute(() => cursor.toArray()));
     });
-  }
-
-  /**
-   * Every parent's own bounded page. One `$unionWith` per parent after the first, so the whole page is
-   * one round trip - measured ~6x faster than a query each (11.0 ms -> 1.9 ms at 50 parents, 87.5 ms
-   * -> 14.1 ms at 500), because `execute` serializes on the session and a query each is N round trips
-   * rather than N concurrent ones.
-   *
-   * Both arms return documents with their own relations already filled, so this only chooses between
-   * them: leaving that to the caller once meant the arm that fills its own did it twice.
-   * [The design](../../../../architecture/populate-limits.md).
-   */
-  protected override async internalFindManyPerParent<E extends Document>(
-    entity: Type<E>,
-    q: Query<E>,
-    { joins, parents }: ParentPartition,
-  ): Promise<E[]> {
-    const queries = parents.map((parent) => queryChildrenOf(q, joins, parent));
-    // A vector sort is not a degraded fallback here, it is the only expressible form: `$vectorSearch`
-    // has to be the first stage of a pipeline, so it cannot be one of N `$unionWith` branches. Read a
-    // parent at a time it stays correct, because `buildVectorSearchStage` passes the query's `$where`
-    // - which carries this parent's key - into the search as its filter, so each parent gets its own
-    // nearest rather than a share of the collection's.
-    if (this.dialect.extractVectorSort(q.$sort)) {
-      return this.readEachInTurn(entity, queries);
-    }
-    const pipelines = queries.map((it) => this.dialect.aggregationPipeline(entity, it));
-    // Counted, not estimated: the leading branch's own length grows with every `$lookup` a populate
-    // adds, so a fixed parent budget would let a richer query overflow at the server instead.
-    const stages = pipelines[0].length + pipelines.length - 1;
-    return stages > MAX_PIPELINE_STAGES
-      ? this.readEachInTurn(entity, queries)
-      : this.readInOnePipeline(entity, q, pipelines);
-  }
-
-  /** Every parent's page as one `$unionWith` pipeline. */
-  private async readInOnePipeline<E extends Document>(
-    entity: Type<E>,
-    q: Query<E>,
-    pipelines: Record<string, unknown>[][],
-  ): Promise<E[]> {
-    const meta = getMeta(entity);
-    const [first, ...rest] = pipelines;
-    const documents = await this.runPipeline(entity, meta, [
-      ...first,
-      ...rest.map((pipeline) => ({ $unionWith: { coll: meta.name, pipeline } })),
-    ]);
-    await this.fillToManyRelations(entity, documents, q.$populate);
-    return documents;
-  }
-
-  /** A query each, for what one pipeline cannot carry. `internalFindMany` fills its own relations. */
-  private async readEachInTurn<E extends Document>(entity: Type<E>, queries: Query<E>[]): Promise<E[]> {
-    const documents: E[] = [];
-    for (const query of queries) {
-      documents.push(...(await this.internalFindMany(entity, query)));
-    }
-    return documents;
   }
 
   protected override async *internalFindManyStream<E extends Document>(
@@ -181,25 +92,7 @@ export class MongodbQuerier extends AbstractQuerier {
       return;
     }
     const meta = getMeta(entity);
-    const { joinableKeys, toManyKeys } = getRelationRequestSummary(meta, q.$populate);
-    if (joinableKeys.length || toManyKeys.length) {
-      const parts: string[] = [];
-      if (joinableKeys.length) parts.push(`joinable: ${joinableKeys.join(', ')}`);
-      if (toManyKeys.length) parts.push(`toMany: ${toManyKeys.join(', ')}`);
-      throw new TypeError(
-        `findManyStream does not load relations on MongoDB (${parts.join('; ')}). Use findMany with $populate (or legacy relation keys in $select) so aggregation and fill logic can run.`,
-      );
-    }
-    // An ordering that names a relation reads a field only a `$lookup` produces, and a stream has no
-    // pipeline to add one: MongoDB ranks every document equal and hands back natural order. `findMany`
-    // takes the aggregation path for exactly this case, so it is the one that can honor the clause.
-    if (this.dialect.sortsRelations(entity, q.$sort)) {
-      throw new TypeError(
-        'findManyStream does not order by a relation on MongoDB. Use findMany, whose aggregation pipeline adds the $lookup the ordering reads.',
-      );
-    }
-    const cursor = this.buildFindCursor(entity, q, opts);
-
+    const cursor = this.readCursor(entity, q, opts);
     try {
       for await (const doc of cursor) {
         const [normalized] = this.dialect.normalizeIds(meta, [doc]);
@@ -208,6 +101,40 @@ export class MongodbQuerier extends AbstractQuerier {
     } catch (err) {
       throw enrichError(err, this.logger, 'internalFindManyStream');
     }
+  }
+
+  /**
+   * The cursor a read runs on: the aggregation pipeline for a clause only a stage can express - a
+   * lookup, a grouping, a vector search - and the plain `find` cursor for everything else. One routing
+   * for a read and a stream alike, so both load the same relations.
+   */
+  private readCursor<E extends Document>(
+    entity: Type<E>,
+    q: Query<E>,
+    opts?: QueryOptions,
+  ): AggregationCursor<E> | FindCursor<E> {
+    this.dialect.assertNoLock(q);
+    const vectorSort = this.dialect.extractVectorSort(q.$sort);
+    const pipeline = vectorSort
+      ? this.buildVectorPipeline(entity, q, vectorSort, opts)
+      : this.readsThroughPipeline(entity, q) && this.dialect.aggregationPipeline(entity, q, opts);
+    return pipeline
+      ? this.collection(entity).aggregate<E>(pipeline, { session: this.session })
+      : this.buildFindCursor(entity, q, opts);
+  }
+
+  /**
+   * Whether a read needs stages a `find` cursor cannot express: a lookup to populate, count, filter
+   * or order by a relation, and the grouping `$distinct` is.
+   */
+  private readsThroughPipeline<E extends Document>(entity: Type<E>, q: Query<E>): boolean {
+    return (
+      !!q.$distinct ||
+      hasKeys(q.$count) ||
+      populatesRelations(getMeta(entity), q.$populate) ||
+      this.dialect.constrainsRelations(entity, q.$where) ||
+      this.dialect.sortsRelations(entity, q.$sort)
+    );
   }
 
   private buildScalarProjection<E extends Document>(entity: Type<E>, q: Query<E>) {
@@ -241,18 +168,6 @@ export class MongodbQuerier extends AbstractQuerier {
     return cursor;
   }
 
-  /** Execute an aggregation pipeline and normalize `_id` → `id`. */
-  private async runPipeline<E extends Document>(
-    entity: Type<E>,
-    meta: EntityMeta<E>,
-    pipeline: Record<string, unknown>[],
-  ): Promise<E[]> {
-    const documents = await this.execute((session) =>
-      this.collection(entity).aggregate<E>(pipeline, { session }).toArray(),
-    );
-    return this.dialect.normalizeIds(meta, documents);
-  }
-
   /**
    * Build an aggregation pipeline for vector similarity search.
    * `$vectorSearch` is always the first stage; `$where` is merged into its `filter`.
@@ -279,7 +194,7 @@ export class MongodbQuerier extends AbstractQuerier {
       // that follow treat it like any other - and a query with no projection keeps its own columns.
       ...(scoreAlias ? [{ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } }] : []),
       // `$vectorSearch` has already applied `$limit`, so the pager is its own.
-      ...this.dialect.readStages(entity, q, opts, {
+      ...this.dialect.readStages(entity, q, {
         sort: this.dialect.sort(entity, vectorSort.regularSort, q.$populate),
         project: scoreAlias ? { [scoreAlias]: 1 } : undefined,
       }),

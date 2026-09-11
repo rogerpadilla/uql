@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
-import { Item, User } from '../test/entityMock.js';
+import { Item } from '../test/entityMock.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -50,8 +50,8 @@ class Chunk {
 
 function createMockedQuerier(aggregateResults: unknown[] = []) {
   const toArray = vi.fn().mockResolvedValue(aggregateResults);
-  const aggregate = vi.fn().mockReturnValue({ toArray });
-  // Every cursor method chains, so one self-returning stub stands in for the whole builder.
+  // Every cursor method chains, so one self-returning stub stands in for the whole builder, and for
+  // the aggregation cursor too.
   const cursor: Record<string | symbol, unknown> = {
     toArray,
     async *[Symbol.asyncIterator]() {
@@ -61,6 +61,7 @@ function createMockedQuerier(aggregateResults: unknown[] = []) {
   for (const method of ['filter', 'project', 'sort', 'skip', 'limit', 'map']) {
     cursor[method] = () => cursor;
   }
+  const aggregate = vi.fn().mockReturnValue(cursor);
   const find = vi.fn().mockReturnValue(cursor);
   const estimatedDocumentCount = vi.fn().mockResolvedValue(0);
 
@@ -405,15 +406,19 @@ describe('MongodbQuerier findManyStream', () => {
     expect(find).not.toHaveBeenCalled();
   });
 
-  it('names only the kind of relation it was asked to load', async () => {
-    const { querier } = createMockedQuerier();
-    const drain = async (stream: AsyncIterable<unknown>) => {
-      for await (const _ of stream);
-    };
-    await expect(drain(querier.findManyStream(Post, { $populate: { author: true } }))).rejects.toThrow(
-      '(joinable: author)',
-    );
-    await expect(drain(querier.findManyStream(Item, { $populate: { tags: true } }))).rejects.toThrow('(toMany: tags)');
+  /** A stream runs the pipeline `findMany` does, so it loads what `findMany` loads. */
+  it('streams the relations a query populates through the pipeline', async () => {
+    const { querier, aggregate, find } = createMockedQuerier([{ _id: 1, author: { _id: 2, name: 'ada' } }]);
+    const rows: unknown[] = [];
+    for await (const row of querier.findManyStream(Post, { $populate: { author: true } })) {
+      rows.push(row);
+    }
+
+    expect(rows).toEqual([{ id: 1, author: { id: 2, name: 'ada' } }]);
+    expect(find).not.toHaveBeenCalled();
+    expect(aggregate.mock.calls[0][0]).toContainEqual({
+      $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
+    });
   });
 
   it('surfaces a failure the cursor meets while iterating', async () => {
@@ -428,24 +433,13 @@ describe('MongodbQuerier findManyStream', () => {
     await expect(drain()).rejects.toThrow('connection reset');
   });
 
-  it('throws when relations are requested (stream uses find cursor only)', async () => {
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any, {});
-    await expect(
-      (async () => {
-        for await (const _ of querier.findManyStream(User, { $populate: { profile: true } })) {
-        }
-      })(),
-    ).rejects.toThrow('findManyStream does not load relations on MongoDB');
-  });
+  /** An ordering by a relation reads a field only a lookup adds, so the stream orders it in the pipeline. */
+  it('orders a stream by a relation through the pipeline', async () => {
+    const { querier, aggregate, find } = createMockedQuerier();
+    for await (const _ of querier.findManyStream(Post, { $sort: { author: { name: 1 } } } as never)) {
+    }
 
-  /** The cursor has no `$lookup`, so the ordering would read a field that is not on the document. */
-  it('throws when the ordering names a relation', async () => {
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any, {});
-    await expect(
-      (async () => {
-        for await (const _ of querier.findManyStream(User, { $sort: { profile: { picture: 1 } } } as never)) {
-        }
-      })(),
-    ).rejects.toThrow('findManyStream does not order by a relation on MongoDB');
+    expect(find).not.toHaveBeenCalled();
+    expect(aggregate.mock.calls[0][0]).toContainEqual({ $sort: { 'author.name': 1 } });
   });
 });

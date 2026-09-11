@@ -126,8 +126,8 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   }
 
   /**
-   * Append a vector distance projection.
-   * Delegates to `appendVectorSort` so each dialect's distance syntax is written once.
+   * The distance a vector `$sort` projects, which the projection names after `$project`. Delegates to
+   * `appendVectorSort` so each dialect's distance syntax is written once.
    */
   protected appendVectorProjection<E>(
     ctx: QueryContext,
@@ -143,7 +143,6 @@ export abstract class VectorSqlDialect extends AbstractDialect {
       throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
     }
     this.appendVectorSort(ctx, meta, key, search);
-    ctx.append(` AS ${this.escapeId(alias)}`);
   }
 
   /**

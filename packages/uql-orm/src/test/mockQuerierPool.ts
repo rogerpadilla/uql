@@ -11,12 +11,12 @@ export type CreateMockQuerierPoolOptions<Q extends Querier> = {
  * methods (`findMany`, `count`, ...) and the real `withQuerier`/`transaction` come for free: only
  * acquisition is mocked, so specs exercise the lifecycle the ORM actually runs.
  */
-class MockQuerierPool<Q extends Querier> extends AbstractQuerierPool<Q, AbstractDialect> {
+class MockQuerierPool<Q extends Querier, D extends AbstractDialect> extends AbstractQuerierPool<Q, D> {
   // Kept as the exact functions passed in (not wrapped), so tests can re-stub them (`pool.getQuerier.mockResolvedValue(...)`).
   override readonly getQuerier: () => Promise<Q>;
   readonly getMigrationQuerier?: () => Promise<Q>;
 
-  constructor(dialect: AbstractDialect, getQuerier: () => Promise<Q>, getMigrationQuerier?: () => Promise<Q>) {
+  constructor(dialect: D, getQuerier: () => Promise<Q>, getMigrationQuerier?: () => Promise<Q>) {
     super(dialect);
     this.getQuerier = getQuerier;
     this.getMigrationQuerier = getMigrationQuerier;
@@ -25,10 +25,10 @@ class MockQuerierPool<Q extends Querier> extends AbstractQuerierPool<Q, Abstract
   override async end(): Promise<void> {}
 }
 
-export function createMockQuerierPool<Q extends Querier>(
-  dialect: AbstractDialect,
+export function createMockQuerierPool<Q extends Querier, D extends AbstractDialect>(
+  dialect: D,
   getQuerier: () => Promise<Q>,
   options?: CreateMockQuerierPoolOptions<Q>,
-): QuerierPool<Q, AbstractDialect> {
+): QuerierPool<Q, D> {
   return new MockQuerierPool(dialect, getQuerier, options?.getMigrationQuerier);
 }

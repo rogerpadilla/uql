@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
-import type { IndexType } from '../../schema/types.js';
+import { INDEX_TYPES, type IndexType } from '../../schema/types.js';
 import {
   INDEX_FEATURE_LABELS,
   type IndexColumnSchema,
@@ -37,6 +37,7 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
   constructor(protected readonly dialect: D) {}
 
   getCreateIndexStatement(tableName: string, index: IndexSchema, opts: { ifNotExists?: boolean } = {}): string {
+    this.assertIndexType(index);
     this.assertIndexFeatures(index);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
@@ -58,6 +59,25 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     'partial',
     'jsonPath',
   ]);
+
+  /**
+   * Index types this dialect's `CREATE INDEX` takes. SQLite's grammar has no `USING` clause, so every
+   * type builds the plain index it has there, which is what lets an entity written for Postgres
+   * migrate unchanged. An engine that would reject a type narrows this, and the type is refused.
+   */
+  protected readonly indexTypes: ReadonlySet<IndexType> = new Set(INDEX_TYPES);
+
+  /** What to declare instead of a type this dialect lacks, appended to its refusal. */
+  protected readonly indexTypeHints: ReadonlyMap<IndexType, string> = new Map();
+
+  private assertIndexType(index: IndexSchema): void {
+    if (index.type && !this.indexTypes.has(index.type)) {
+      throw new TypeError(
+        `${this.dialect.dialectName} has no ${index.type} index (index "${index.name}")` +
+          (this.indexTypeHints.get(index.type) ?? ''),
+      );
+    }
+  }
 
   private assertIndexFeatures(index: IndexSchema): void {
     for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
@@ -135,7 +155,7 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     return '';
   }
 
-  /** pgvector's ` WITH (m = ..., ef_construction = ..., lists = ...)`. */
+  /** What trails the columns: pgvector's ` WITH (m = ...)`, MySQL's ` USING btree`, MariaDB's ` M=8`. */
   protected indexTuning(_index: IndexSchema): string {
     return '';
   }

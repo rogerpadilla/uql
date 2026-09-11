@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { Querier, QuerierPool } from '../type/index.js';
+import type { MigratorDialect, Querier, QuerierPool } from '../type/index.js';
 import { Migrator } from './migrator.js';
 
 @Entity()
@@ -13,7 +13,7 @@ class SyncMongoUser {
 
 describe('Migrator sync MongoDB Integration', () => {
   let migrator: Migrator;
-  let pool: QuerierPool;
+  let pool: QuerierPool<Querier, MigratorDialect>;
   let db: any;
 
   beforeEach(() => {

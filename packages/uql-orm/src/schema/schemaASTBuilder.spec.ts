@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { idKey } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
 import { buildSchemaAST, resolveColumnCanonicalType } from './schemaASTBuilder.js';
@@ -381,6 +382,115 @@ describe('SchemaASTBuilder', () => {
       }
       const ast = buildSchemaAST([BadComposite]);
       expect(ast.getTable('BadComposite')?.indexes.length).toBe(0);
+    });
+  });
+
+  /**
+   * A relation looks its rows up by the foreign key, and only MySQL indexes one on its own: without an
+   * index, reading a page's children scans the whole child table once per parent.
+   */
+  describe('foreign key indexes', () => {
+    @Entity()
+    class FkBlog {
+      @Id({ type: Number }) id?: number;
+    }
+
+    @Entity()
+    class FkTag {
+      @Id({ type: Number }) id?: number;
+    }
+
+    const indexedColumns = (ast: ReturnType<typeof buildSchemaAST>, table: string) =>
+      ast.getTable(table)?.indexes.map((index) => index.entries.map((entry) => entry.column));
+
+    it('should index a foreign key the entity does not index itself', () => {
+      @Entity()
+      class FkPost {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog }) fkBlogId?: number;
+      }
+
+      expect(buildSchemaAST([FkBlog, FkPost]).getTable('FkPost')?.indexes).toMatchObject([
+        { name: 'FkPost__fkBlogId_idx', unique: false, entries: [{ column: 'fkBlogId' }] },
+      ]);
+    });
+
+    it('should index every column of a composite foreign key, in order', () => {
+      @Entity()
+      class FkRegion {
+        [idKey]?: 'country' | 'area';
+        @Id({ type: String }) country?: string;
+        @Id({ type: String }) area?: string;
+      }
+
+      @Entity()
+      class FkCity {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) cityCountry?: string;
+        @Field({ type: String }) cityArea?: string;
+        @ManyToOne({
+          entity: () => FkRegion,
+          references: [
+            { local: 'cityCountry', foreign: 'country' },
+            { local: 'cityArea', foreign: 'area' },
+          ],
+        })
+        region?: FkRegion;
+      }
+
+      expect(indexedColumns(buildSchemaAST([FkRegion, FkCity]), 'FkCity')).toEqual([['cityCountry', 'cityArea']]);
+    });
+
+    it('should not index a foreign key again under an index the entity declares', () => {
+      @Entity()
+      @Index(['fkBlogId', 'title'])
+      class FkLeading {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) title?: string;
+        @Field({ references: () => FkBlog }) fkBlogId?: number;
+      }
+
+      @Entity()
+      class FkFieldIndexed {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog, index: 'by_blog' }) fkBlogId?: number;
+      }
+
+      const ast = buildSchemaAST([FkBlog, FkLeading, FkFieldIndexed]);
+
+      expect(indexedColumns(ast, 'FkLeading')).toEqual([['fkBlogId', 'title']]);
+      expect(indexedColumns(ast, 'FkFieldIndexed')).toEqual([['fkBlogId']]);
+    });
+
+    it('should not index a foreign key the primary key or a unique constraint already leads with', () => {
+      @Entity()
+      class FkBlogTag {
+        [idKey]?: 'fkBlogId' | 'fkTagId';
+        @Id({ type: Number, references: () => FkBlog }) fkBlogId?: number;
+        @Id({ type: Number, references: () => FkTag }) fkTagId?: number;
+      }
+
+      @Entity()
+      class FkBlogOwner {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog, unique: true }) fkBlogId?: number;
+      }
+
+      const ast = buildSchemaAST([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
+
+      // The key leads with its first column alone, so the second still needs an index of its own.
+      expect(indexedColumns(ast, 'FkBlogTag')).toEqual([['fkTagId']]);
+      expect(indexedColumns(ast, 'FkBlogOwner')).toEqual([]);
+    });
+
+    it('should leave a foreign key unindexed when its field opts out', () => {
+      @Entity()
+      class FkUnindexed {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog, index: false }) fkBlogId?: number;
+      }
+
+      expect(indexedColumns(buildSchemaAST([FkBlog, FkUnindexed]), 'FkUnindexed')).toEqual([]);
     });
   });
 

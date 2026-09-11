@@ -1,11 +1,17 @@
 import { readdir } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { MigrationStorage, MongoQuerier, Querier, QuerierPool, SqlQuerier } from '../type/index.js';
+import type {
+  MigrationStorage,
+  MigratorDialect,
+  MongoQuerier,
+  Querier,
+  QuerierPool,
+  SqlQuerier,
+} from '../type/index.js';
 import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 
 vi.mock('node:fs/promises', () => ({
@@ -16,7 +22,7 @@ vi.mock('node:fs/promises', () => ({
 }));
 
 describe('Migrator (extra coverage)', () => {
-  let pool: QuerierPool;
+  let pool: QuerierPool<SqlQuerier, MigratorDialect>;
   let mockQuerier: SqlQuerier;
   let mockStorage: MigrationStorage;
   let migrator: Migrator;
@@ -60,7 +66,7 @@ describe('Migrator (extra coverage)', () => {
   it('createIntrospector and createGenerator default case', () => {
     const invalidPool = {
       ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
     };
     const migrator = new Migrator(invalidPool);
     expect(migrator.schemaIntrospector).toBeUndefined();
@@ -90,7 +96,7 @@ describe('Migrator (extra coverage)', () => {
   it('generateFromEntities should throw if no schema generator', async () => {
     const invalidPool = {
       ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
     };
     const migrator = new Migrator(invalidPool);
     await expect(migrator.generateFromEntities('test')).rejects.toThrow(
@@ -118,7 +124,7 @@ describe('Migrator (extra coverage)', () => {
   it('sync should throw if no generator/introspector', async () => {
     const invalidPool = {
       ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as AbstractDialect,
+      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
     };
     const migrator = new Migrator(invalidPool);
     await expect(migrator.sync()).rejects.toThrow('Schema generator and introspector must be set');

@@ -85,10 +85,23 @@ describe('SqlSchemaGenerator foreign keys', () => {
     it('should report nothing where the table already has the foreign key the entity declares', () => {
       const { employee, company } = tables();
       addRelation(employee, company, 'employee_company_fk', 'CASCADE');
+      addCompanyIndex(employee, 'employee_company_idx');
 
       const diff = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
 
       expect(diff).toBeUndefined();
+    });
+
+    /** A table created before foreign keys were indexed gains the index on its next sync, and nothing else. */
+    it('should add the index a foreign key needs where the table has the constraint alone', () => {
+      const { employee, company } = tables();
+      addRelation(employee, company, 'employee_company_fk', 'CASCADE');
+
+      const diff = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
+
+      expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['FkEmployee__companyId_idx']);
+      expect(diff?.foreignKeysToAdd).toBeUndefined();
+      expect(diff?.foreignKeysToAlter).toBeUndefined();
     });
 
     /**
@@ -162,6 +175,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
     it('should report nothing for a SET DEFAULT foreign key that already matches', () => {
       const { setDefault, company } = tables();
       addRelation(setDefault, company, 'set_default_company_fk', 'SET DEFAULT');
+      addCompanyIndex(setDefault, 'set_default_company_idx');
 
       const diff = generator.diffSchema(FkSetDefault, setDefault, generator.buildAST(ENTITIES));
 
@@ -360,6 +374,11 @@ function addRelation(from: TableNode, to: TableNode, name: string, onDelete: For
   };
   from.outgoingRelations.push(relation);
   to.incomingRelations.push(relation);
+}
+
+/** The index the migrator gives a foreign key column, under a name of the database's own. */
+function addCompanyIndex(table: TableNode, name: string): void {
+  table.indexes.push({ name, table, entries: [{ column: 'companyId' }], unique: false });
 }
 
 function tableNode(

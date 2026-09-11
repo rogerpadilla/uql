@@ -4,9 +4,10 @@ import { parseVectorLiteral, type VectorCast } from './vectorCast.js';
 /**
  * How a stored column is decoded on read: the inverse of `AbstractSqlDialect.persistKind`. `json`
  * parses; a {@link VectorCast} says which literal; `boolean` undoes an engine with no boolean type,
- * `number` and `bigint` a driver that hands a wide integer or a decimal back as text.
+ * `number` and `bigint` a driver that hands a wide integer or a decimal back as text, and `date` and
+ * `bytes` a row that crossed JSON inside its parent's statement, which spells both as text.
  */
-export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | VectorCast;
+export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'bytes' | VectorCast;
 
 /**
  * Decode one non-null cell. Kept beside {@link HydrateKind} rather than inlined into the querier's
@@ -20,6 +21,16 @@ export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
   if (kind === 'boolean') {
     // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
     return typeof value === 'boolean' ? value : Boolean(value);
+  }
+
+  if (kind === 'date') {
+    return typeof value === 'string' ? (parseDate(value) ?? value) : value;
+  }
+
+  if (kind === 'bytes') {
+    return typeof value === 'string' && value.startsWith(BYTES_PREFIX)
+      ? hexBytes(value.slice(BYTES_PREFIX.length))
+      : value;
   }
 
   const text = asText(value);
@@ -43,7 +54,7 @@ export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
   }
 
   if (kind === 'number') {
-    return Number.isNaN(Number(text)) ? value : decodeWideNumber(text);
+    return decodeWideNumber(text);
   }
 
   if (kind === 'json') {
@@ -56,6 +67,33 @@ export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
   }
 
   return parseVectorLiteral(text, kind) ?? value;
+}
+
+/**
+ * An ISO 8601 timestamp as a `Date`, its fraction cut to the milliseconds one holds, and a bare date at
+ * local midnight, which is how `pg` reads a `date`. `undefined` for text that is neither.
+ */
+function parseDate(text: string): Date | undefined {
+  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
+  const date = day
+    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
+    : new Date(text.replace(/(\.\d{3})\d+/, '$1'));
+  return Number.isNaN(date.getTime()) ? undefined : date;
+}
+
+/**
+ * What bytes crossing JSON start with, before two hex digits per byte: Postgres's own text for `bytea`,
+ * which every dialect spells, so a string a driver reads from a column on its own is never mistaken.
+ */
+export const BYTES_PREFIX = '\\x';
+
+/** Two hex digits per byte, back to bytes. */
+function hexBytes(hex: string): Uint8Array {
+  const bytes = new Uint8Array(hex.length / 2);
+  for (let at = 0; at < bytes.length; at++) {
+    bytes[at] = Number.parseInt(hex.slice(at * 2, at * 2 + 2), 16);
+  }
+  return bytes;
 }
 
 /** Lazy so a consumer that never reads an encoded column never constructs one. */

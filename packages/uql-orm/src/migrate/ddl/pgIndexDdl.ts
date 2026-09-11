@@ -1,10 +1,29 @@
-import type { PgLikeSqlDialect } from '../../dialect/pgLikeSqlDialect.js';
+import { COCKROACH_VECTOR_METRICS, PG_VECTOR_METRICS } from '../../dialect/pgVectorMetrics.js';
+import type { IndexType } from '../../schema/types.js';
 import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/index.js';
 import { unsupportedVectorMetric } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
+/** `$text` computes its `TO_TSVECTOR` per row, which no index over the raw columns serves. */
+const PG_INDEX_TYPE_HINTS: ReadonlyMap<IndexType, string> = new Map([
+  ['fulltext', '. $text needs none there; name the columns it searches with $fields.'],
+]);
+
 /** `CREATE INDEX ... USING hnsw ("embedding" vector_cosine_ops) WITH (m = ...)`, pgvector's form. */
-export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
+export class PgIndexDdl extends IndexDdl {
+  /** Postgres 18's `pg_am`, with pgvector's two. */
+  protected override readonly indexTypes = new Set<IndexType>([
+    'btree',
+    'hash',
+    'gin',
+    'gist',
+    'brin',
+    'hnsw',
+    'ivfflat',
+  ]);
+
+  protected override readonly indexTypeHints = PG_INDEX_TYPE_HINTS;
+
   protected override readonly indexFeatures = new Set<IndexFeature>([
     'expression',
     'partial',
@@ -14,23 +33,15 @@ export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
     'jsonPath',
   ]);
 
+  /** The metrics its vector index takes, each naming the operator class it is built with. */
+  protected readonly vectorMetrics = PG_VECTOR_METRICS;
+
   /** pgvector's own index types; CockroachDB's native one widens this. */
   protected isVectorIndex(index: IndexSchema): boolean {
     return index.type === 'hnsw' || index.type === 'ivfflat';
   }
 
-  /**
-   * ` USING <method>`. `fulltext` is refused rather than compiled into a ` USING fulltext` the server
-   * can only answer with a syntax error: `$text` computes its `TO_TSVECTOR` per row, which no index
-   * over the raw columns serves.
-   */
   protected override indexAccessMethod(index: IndexSchema): string {
-    if (index.type === 'fulltext') {
-      throw new TypeError(
-        `${this.dialect.dialectName} has no fulltext index (index "${index.name}"). $text needs none there; ` +
-          'name the columns it searches with $fields.',
-      );
-    }
     return index.type ? ` USING ${index.type}` : '';
   }
 
@@ -45,7 +56,7 @@ export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
     if (!this.isVectorIndex(index) || !index.distance) {
       return entry.opsClass ? ` ${entry.opsClass}` : '';
     }
-    const metric = this.dialect.vectorMetrics.get(index.distance);
+    const metric = this.vectorMetrics.get(index.distance);
     if (!metric) {
       throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
     }
@@ -87,6 +98,16 @@ export class PgIndexDdl extends IndexDdl<PgLikeSqlDialect> {
 export class CockroachIndexDdl extends PgIndexDdl {
   protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include', 'jsonPath']);
 
+  /** v26.3 answers `hash` and `brin` "unimplemented", `ivfflat` "unrecognized"; `hnsw` builds its vector index. */
+  protected override readonly indexTypes = new Set<IndexType>(['btree', 'gin', 'gist', 'hnsw', 'vector']);
+
+  protected override readonly indexTypeHints = new Map<IndexType, string>([
+    ...PG_INDEX_TYPE_HINTS,
+    ['ivfflat', "; declare type: 'vector' instead"],
+  ]);
+
+  protected override readonly vectorMetrics = COCKROACH_VECTOR_METRICS;
+
   private isNativeVectorIndex(index: IndexSchema): boolean {
     return index.type === 'vector';
   }
@@ -103,7 +124,8 @@ export class CockroachIndexDdl extends PgIndexDdl {
     return this.isNativeVectorIndex(index) ? '' : super.indexAccessMethod(index);
   }
 
-  protected override indexTuning(index: IndexSchema): string {
-    return this.isNativeVectorIndex(index) ? '' : super.indexTuning(index);
+  /** None of pgvector's knobs: `WITH (m = 16)` answers "invalid storage parameter", `hnsw` included. */
+  protected override indexTuning(): string {
+    return '';
   }
 }

@@ -272,7 +272,7 @@ function diffColumn(
   const typeChanged =
     !generatedType && !areTypesEqual(opts.normalizeType(source.type), opts.normalizeType(target.type));
   if (typeChanged) {
-    differences.push(`type: ${formatType(source.type)} → ${formatType(target.type)}`);
+    differences.push(`type: ${formatType(source.type)} -> ${formatType(target.type)}`);
   }
 
   // Signedness is the one thing compared on a generated key, because it is the one part of the serial
@@ -281,16 +281,16 @@ function diffColumn(
   // a database created before the serial became signed could never gain a foreign key.
   const signednessChanged = generatedType && !!source.type.unsigned !== !!target.type.unsigned;
   if (signednessChanged) {
-    differences.push(`type: ${formatType(source.type)} → ${formatType(target.type)}`);
+    differences.push(`type: ${formatType(source.type)} -> ${formatType(target.type)}`);
   }
 
   if (!impliedNotNull && source.nullable !== target.nullable) {
-    differences.push(`nullable: ${target.nullable} → ${source.nullable}`);
+    differences.push(`nullable: ${target.nullable} -> ${source.nullable}`);
   }
 
   // Compare unique constraint
   if (source.isUnique !== target.isUnique) {
-    differences.push(`unique: ${target.isUnique} → ${source.isUnique}`);
+    differences.push(`unique: ${target.isUnique} -> ${source.isUnique}`);
   }
 
   // Four things are deliberately not compared, all for one reason: a difference here could only be
@@ -304,7 +304,7 @@ function diffColumn(
 
   // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {
-    differences.push(`default: ${target.defaultValue ?? 'NULL'} → ${source.defaultValue ?? 'NULL'}`);
+    differences.push(`default: ${target.defaultValue ?? 'NULL'} -> ${source.defaultValue ?? 'NULL'}`);
   }
 
   if (differences.length === 0) {

@@ -206,6 +206,15 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(sql).toContain('CREATE TABLE IF NOT EXISTS "TestUser"');
   });
 
+  /** A table created only if missing creates its indexes the same way, or re-creating a schema fails on the first. */
+  it('should create a table indexes IF NOT EXISTS along with the table', () => {
+    const guarded = generator.generateCreateSchema([TestUser, TestPost], { ifNotExists: true }).join('\n');
+    const plain = generator.generateCreateSchema([TestUser, TestPost]).join('\n');
+
+    expect(guarded).toContain('CREATE INDEX IF NOT EXISTS "blog_posts__authorId_idx" ON "blog_posts" ("authorId");');
+    expect(plain).toContain('CREATE INDEX "blog_posts__authorId_idx" ON "blog_posts" ("authorId");');
+  });
+
   it('should handle already-typed column schemas', () => {
     const sql = generator.generateAlterTable({
       tableName: 'users',
@@ -316,6 +325,14 @@ describe('SqlSchemaGenerator (Postgres)', () => {
 
 describe('SqlSchemaGenerator (MySQL)', () => {
   const generator = new SqlSchemaGenerator(new MySqlDialect());
+
+  /** MySQL's `CREATE INDEX` takes no `IF NOT EXISTS`, so a guarded table's indexes stay plain there. */
+  it('should leave a table indexes unguarded where the engine cannot guard one', () => {
+    const sql = generator.generateCreateSchema([TestUser, TestPost], { ifNotExists: true }).join('\n');
+
+    expect(sql).toContain('CREATE TABLE IF NOT EXISTS `blog_posts`');
+    expect(sql).not.toContain('INDEX IF NOT EXISTS');
+  });
 
   it('should generate CREATE TABLE for simple entity', () => {
     const sql = generator.generateCreateSchema([TestUser]).join('\n');

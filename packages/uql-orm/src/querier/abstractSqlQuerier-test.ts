@@ -5,11 +5,13 @@ import {
   dropTables,
   InventoryAdjustment,
   Invoice,
+  ItemAdjustment,
   LedgerAccount,
   TaxCategory,
+  TypedGroup,
   TypedRow,
 } from '../test/index.js';
-import type { IdValue, PrimaryKey } from '../type/index.js';
+import { col, raw } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -23,6 +25,12 @@ const EXACT_DECIMAL = '12345678901234567890.99';
  * the read side could preserve them. Every SQLite driver here answers `expectedExactDecimal` with it.
  */
 export const FLOATED_DECIMAL = 12345678901234567000;
+
+/**
+ * {@link FLOATED_DECIMAL} as a populated row reads it on libSQL and SQLite 3.51, which write a real into
+ * JSON with 15 significant digits, where 3.53 writes all 17 a read of its own keeps.
+ */
+export const JSON_FLOATED_DECIMAL = 12345678901234600000;
 
 /** The row {@link AbstractSqlQuerierIt.wideIntegerSql} reads. */
 export type WideRow = { big: unknown };
@@ -128,6 +136,65 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
+   * A populated row reads back exactly as a read of its own does, every declared type included. It
+   * crosses JSON inside its parent's statement, which has no 64-bit integer, exact decimal or date, so
+   * this pins the decode that puts each one back. A `bigint` within 2^53, since some SQLite drivers
+   * refuse to read a wider one at all.
+   */
+  async shouldPopulateRowsTypedAsTheirOwnRead() {
+    const [own, populated] = await this.readTypedRowsBothWays();
+
+    expect(populated).toEqual([{ ...own[0], exact: this.populatedExactDecimal(own[0].exact) }, own[1]]);
+  }
+
+  /**
+   * The first row's DECIMAL as a populated row reads it back: exactly as its own read does, except where
+   * the engine writes a real into JSON with fewer digits than it holds.
+   */
+  protected populatedExactDecimal(own: string | undefined): string | number | undefined {
+    return own;
+  }
+
+  /** The same rows read on their own and populated under their group, both sorted by name. */
+  protected async readTypedRowsBothWays() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'typed group' });
+    const at = new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123));
+    await this.querier.insertMany(TypedRow, [
+      {
+        groupId,
+        name: 'first',
+        count: 7,
+        amount: 12.5,
+        enabled: true,
+        exact: EXACT_DECIMAL,
+        wide: 42n,
+        at,
+      },
+      { groupId, name: 'second', count: -3, amount: 0.25, enabled: false },
+    ]);
+    const $select = {
+      id: true,
+      groupId: true,
+      name: true,
+      count: true,
+      amount: true,
+      enabled: true,
+      exact: true,
+      wide: true,
+      at: true,
+    } as const;
+
+    const own = await this.querier.findMany(TypedRow, { $select, $where: { groupId }, $sort: { name: 1 } });
+    const [group] = await this.querier.findMany(TypedGroup, {
+      $select: { name: true },
+      $where: { id: groupId },
+      $populate: { rows: { $select, $sort: { name: 1 } } },
+    });
+
+    return [own, group.rows] as const;
+  }
+
+  /**
    * The opt-out from that numeric decoding, for a decimal wider than a JS number can hold.
    *
    * `columnType: 'decimal'` still builds a DECIMAL column, but the declared `String` keeps the field
@@ -169,6 +236,68 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    */
   async shouldReadAWideIntegerExactly() {
     await this.assertWideInteger(this.querier.all<WideRow>(this.wideIntegerSql()));
+  }
+
+  /** A BIGINT past 2^53 crosses JSON as text, so a populated row keeps every digit JSON would round. */
+  async shouldPopulateAWideIntegerExactly() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'wide group' });
+    await this.querier.insertOne(TypedRow, { groupId, name: 'wide', wide: 9007199254740993n });
+
+    const [group] = await this.querier.findMany(TypedGroup, {
+      $select: { name: true },
+      $where: { id: groupId },
+      $populate: { rows: { $select: { wide: true } } },
+    });
+
+    expect(group.rows).toEqual([{ wide: 9007199254740993n }]);
+  }
+
+  /** Bytes cross JSON as `\x` and hex, which a populated row decodes back to the bytes written. */
+  async shouldPopulateBytes() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'bytes group' });
+    await this.querier.insertOne(TypedRow, { groupId, name: 'bytes', bytes: Buffer.from('hi') });
+
+    const [group] = await this.querier.findMany(TypedGroup, {
+      $select: { name: true },
+      $where: { id: groupId },
+      $populate: { rows: { $select: { bytes: true } } },
+    });
+
+    expect(group.rows).toEqual([{ bytes: new Uint8Array([0x68, 0x69]) }]);
+  }
+
+  /** A raw projection answers under its alias in a populated row, joined or aggregated alike. */
+  async shouldPopulateARawSelect() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'raw group' });
+    await this.querier.insertOne(TypedRow, { groupId, name: 'raw row' });
+    const $select = [raw`UPPER(${col('name')})`.as('label')];
+
+    const [group] = await this.querier.findMany(TypedGroup, {
+      $select: { name: true },
+      $where: { id: groupId },
+      $populate: { rows: { $select } },
+    });
+    const [row] = await this.querier.findMany(TypedRow, {
+      $select: { name: true },
+      $where: { groupId },
+      $populate: { group: { $select } },
+    });
+
+    expect(group.rows).toEqual([{ label: 'RAW ROW' }]);
+    expect(row.group).toEqual({ id: groupId, label: 'RAW GROUP' });
+  }
+
+  /** A joined row is there when its key is: an unmatched join's computed column, a count of 0, makes none. */
+  async shouldLeaveOutAnUnmatchedJoinWithAComputedField() {
+    const id = await this.querier.insertOne(ItemAdjustment, { number: 1 });
+
+    const [adjustment] = await this.querier.findMany(ItemAdjustment, {
+      $select: { number: true },
+      $where: { id },
+      $populate: { item: true },
+    });
+
+    expect(adjustment).not.toHaveProperty('item');
   }
 
   protected wideIntegerSql(): string {
@@ -273,24 +402,24 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect('name' in found).toBe(false);
   }
 
-  /** The children are looked up by the parent's id, so it comes back despite being subtracted. */
-  async shouldFillToManyRelationsWhen$excludeSubtractsTheParentId() {
-    const id = await this.querier.insertOne(InventoryAdjustment, {
+  /** Read with the parent, the children need no id of it, so the parent keeps what it selected. */
+  async shouldPopulateAToManyWhen$excludeSubtractsTheParentId() {
+    await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
 
     const [found] = await this.querier.findMany(InventoryAdjustment, {
       $exclude: { id: true },
-      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
+      $populate: { itemAdjustments: { $select: { buyPrice: true }, $sort: { buyPrice: 1 } } },
     });
 
-    expect(found.id).toBe(id);
-    expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
+    expect('id' in found).toBe(false);
+    expect(found.itemAdjustments).toEqual([{ buyPrice: 50 }, { buyPrice: 300 }]);
   }
 
-  /** Same for the FK the children are grouped onto their parent by. */
-  async shouldFillToManyRelationsWhen$excludeSubtractsTheChildForeignKey() {
+  /** The children's own `$exclude` applies to what they answer under. */
+  async shouldPopulateAToManyWhen$excludeSubtractsTheChildForeignKey() {
     await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
       itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],

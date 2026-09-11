@@ -168,6 +168,17 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.select(Tax, [raw`*`])).toThrow('raw $select is not supported on MongoDB');
   }
 
+  /** A relation's projection runs inside its lookup, which refuses a raw one as the statement's does. */
+  shouldThrowOnRawSelectArrayInARelation() {
+    const $select = [raw`*`];
+    expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $select } } })).toThrow(
+      'raw $select is not supported on MongoDB',
+    );
+    expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tags: { $select } } })).toThrow(
+      'raw $select is not supported on MongoDB',
+    );
+  }
+
   /** Reads address the stored column, never the property key. */
   shouldAddressStoredColumnsForRenamedFields() {
     expect(this.dialect.select(RenamedDoc, { id: true, label: true })).toEqual({ _id: 1, the_label: 1 });
@@ -265,16 +276,15 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.select(RenamedDoc, undefined, { id: true })).toEqual({ the_label: 1, deleted_at: 1, _id: 0 });
   }
 
-  /** ...but a populated query keeps it anyway: the to-many fill groups children by the parent's. */
-  shouldKeepThePrimaryKeyWhenPopulatingDespite$exclude() {
+  /** ...and a populated query too: its lookups read the key before the projection drops it. */
+  shouldExcludeThePrimaryKeyBesideAPopulatedRelation() {
     const pipeline = this.dialect.aggregationPipeline(Item, {
       $exclude: { id: true },
-      $populate: { tax: true },
+      $populate: { tax: true, tags: true },
     });
-    const projections = pipeline.filter((stage) => stage.$project);
+    const projections = pipeline.filter((stage) => stage.$project && stage.$project['tax']);
     expect(projections).toHaveLength(1);
-    expect(projections[0].$project).not.toHaveProperty('_id');
-    expect(projections[0].$project).toHaveProperty('tax', 1);
+    expect(projections[0].$project).toMatchObject({ _id: 0, tax: 1, tags: 1 });
   }
 
   shouldThrowOnRawInWhere() {
@@ -413,11 +423,6 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { $or: [raw`code IS NOT NULL`] })).toBe(false);
   }
 
-  /** To-many relations are populated with a second query, so they contribute no `$lookup` stage. */
-  shouldSkipToManyRelationsInLookupStages() {
-    expect(this.dialect.relationStages(MeasureUnitCategory, { $populate: { measureUnits: true } })).toEqual([]);
-  }
-
   /** A plain filter (`find`, `updateMany`) has nowhere to put the lookups a relation condition needs. */
   shouldThrowOnRelationInPlainFilter() {
     expect(() => this.dialect.where(Item, { tax: { name: 'VAT' } } as never)).toThrow(
@@ -551,7 +556,10 @@ class MongoDialectSpec implements Spec {
 
     expect(this.dialect.aggregationPipeline(Item, { $sort: { code: 1 } })).toEqual([{ $sort: { code: 1 } }]);
 
-    expect(this.dialect.aggregationPipeline(User, { $populate: { users: true } })).toEqual([]);
+    // A to-many is a lookup of its own read, joined on the parent's key like a to-one.
+    expect(this.dialect.aggregationPipeline(User, { $populate: { users: true } })).toEqual([
+      { $lookup: { from: 'User', localField: '_id', foreignField: 'creatorId', as: 'users' } },
+    ]);
 
     expect(
       this.dialect.aggregationPipeline(TaxCategory, {

@@ -1,4 +1,6 @@
-import { COUNT_ALIAS, JSON_ELEM_ALIAS_PREFIX } from '../dialect/aliases.js';
+import { type CarriedFields, type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
+import { COUNT_ALIAS, JSON_ELEM_ALIAS } from '../dialect/aliases.js';
+import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import { jsonPath } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
@@ -163,6 +165,28 @@ export class MsSqlDialect extends MergeSqlDialect {
     const exactDecimal = field.type === String && fieldOptionsToCanonical(field).category === 'decimal';
     return exactDecimal ? `CONVERT(NVARCHAR(41), ${escapedColumn})` : escapedColumn;
   }
+
+  /**
+   * The rows read as they are, `FOR JSON PATH` making the array. It nests a dotted key and leaves a
+   * null out, which is what unflattening a row with a joined column does, so a row with none keeps its
+   * nulls. `JSON_QUERY` keeps the array JSON inside a parent's own `FOR JSON`.
+   */
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+    const rowsCtx = ctx.createFragment();
+    const { terms } = this.read(rowsCtx, rows.entity, rows.query, { alias: rows.alias, json: true }, rows.joins);
+    const nulls = terms.some((term) => relationTermKey(term).includes('.')) ? '' : ', INCLUDE_NULL_VALUES';
+    ctx.append(`JSON_QUERY(COALESCE((${rowsCtx.sql} FOR JSON PATH${nulls}), '[]'))`);
+  }
+
+  /**
+   * What JSON would round or misread crosses it as text: a number exactly, style 3 keeping a float's
+   * 17 digits, bytes as hex, and a date in UTC with its offset, which is how `tedious` reads one.
+   */
+  protected override readonly carriedFields = {
+    numeric: (expr) => `CONVERT(VARCHAR(40), ${expr}, 3)`,
+    blob: (expr) => `${this.escape(BYTES_PREFIX)} + CONVERT(VARCHAR(MAX), ${expr}, 2)`,
+    date: (expr) => `CONVERT(VARCHAR(33), CAST(${expr} AS DATETIMEOFFSET), 127)`,
+  } satisfies CarriedFields;
 
   /** Named parameters, which `tedious` binds by name rather than by position. */
   override placeholder(index: number): string {
@@ -355,7 +379,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     const conditions = (value as unknown[]).map(
       (val) =>
         `EXISTS (SELECT 1 FROM OPENJSON(${jsonField}) ${alias} WHERE ${alias}.${this.#elem.value} = ${this.jsonScalarParam(ctx, val)})`,
@@ -364,7 +388,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     return this.buildFragment(ctx, (fragmentCtx) =>
       this.buildSizeComparison(
         fragmentCtx,
@@ -419,7 +443,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     key: string,
     value: unknown,
   ): string {
-    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     const val = `${alias}.${this.#elem.value}`;
     // `OPENJSON` hands back a string element unquoted and a null one as SQL NULL, so each survivor is
     // re-encoded from its reported `type` before the array is put back together - concatenated raw,

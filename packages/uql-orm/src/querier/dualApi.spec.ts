@@ -18,10 +18,6 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve([]);
   }
 
-  protected override internalFindManyPerParent<E>(entity: Type<E>, q: Query<E>): Promise<E[]> {
-    return this.internalFindMany(entity, q);
-  }
-
   protected override internalFindManyStream<E>(entity: Type<E>, q: Query<E>): AsyncIterable<E> {
     this.findManyStreamMock(entity, q);
     // Return an empty async iterable

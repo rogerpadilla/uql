@@ -54,7 +54,7 @@ describe('insertMany id semantics', () => {
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({ code: `c${index}`, label: `chunk ${index}` }));
     const ids = await querier.insertMany(Coupon, payload);
     expect(ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
-    // 2 bind params per record (code, label) → 3 records per statement → 3 INSERTs for 7 records.
+    // 2 bind params per record (code, label) -> 3 records per statement -> 3 INSERTs for 7 records.
     const insertCalls = runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
     expect(insertCalls).toHaveLength(3);
     const founds = await querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });
@@ -98,7 +98,7 @@ describe('insertMany id semantics', () => {
 
     await querier.upsertMany(Coupon, { id: true }, payload);
 
-    // 3 bind params per record (id, code, label) → 2 records per statement → 4 statements.
+    // 3 bind params per record (id, code, label) -> 2 records per statement -> 4 statements.
     const upsertCalls = runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'));
     expect(upsertCalls).toHaveLength(4);
     const founds = await querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });

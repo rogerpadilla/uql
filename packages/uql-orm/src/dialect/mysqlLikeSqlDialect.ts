@@ -4,8 +4,11 @@ import type {
   EntityMeta,
   FieldOptions,
   InsertIdSource,
+  Query,
+  QueryBuildFn,
   QueryConflictPaths,
   QueryContext,
+  QueryOptions,
   QueryPager,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
@@ -13,11 +16,21 @@ import type {
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import {
+  AbstractSqlDialect,
+  type CarriedFields,
+  type DerivedRelation,
+  type RelationRows,
+} from './abstractSqlDialect.js';
 import { COUNT_ALIAS, JSON_PULL_ALIAS } from './aliases.js';
+import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
+import { aggregatesRelations } from './queryJoins.js';
 
-/** The row count MySQL's manual gives for "all rows from the offset on": the largest `BIGINT UNSIGNED`. */
+/**
+ * The largest `BIGINT UNSIGNED`: the row count MySQL's manual gives for "all rows from the offset on",
+ * and the largest `group_concat_max_len` either engine takes.
+ */
 const MAX_LIMIT = BigInt.asUintN(64, -1n);
 
 /**
@@ -165,6 +178,63 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly maxBindValues: number = 65535;
 
+  /**
+   * An ordered `GROUP_CONCAT` of each row's object, which reads as a JSON array: MySQL's `JSON_ARRAYAGG`
+   * takes no `ORDER BY`, and as a window over the rows it rebuilds the array for every one of them.
+   */
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+    const objects = `${this.jsonObject(pairs)}${order ? ` ORDER BY ${order}` : ''} SEPARATOR ','`;
+    ctx.append(`(SELECT COALESCE(CONCAT('[', GROUP_CONCAT(${objects}), ']'), '[]') FROM ${from})`);
+  }
+
+  /** A read's statement, with the settings it needs applied to it alone. */
+  override find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string) {
+    this.settled(ctx, entity, q, (statement) => super.find(statement, entity, q, opts, totalAlias));
+  }
+
+  /** A `$distinct` read's count, which reads the relations the read does. */
+  override countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
+    this.settled(ctx, entity, q, (statement) => super.countDistinct(statement, entity, q, opts));
+  }
+
+  private settled<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, build: QueryBuildFn): void {
+    const settings = this.statementSettings(entity, q);
+    if (!settings.length) {
+      build(ctx);
+      return;
+    }
+    const statement = ctx.createFragment();
+    build(statement);
+    ctx.append(this.applySettings(statement.sql, settings));
+  }
+
+  /**
+   * `name=value` for each variable a read's statement sets for itself alone. `GROUP_CONCAT`, and
+   * MariaDB's `JSON_ARRAYAGG` built on it, cut a relation's array at `group_concat_max_len`.
+   */
+  protected statementSettings<E>(entity: Type<E>, q: Query<E>): string[] {
+    return aggregatesRelations(getMeta(entity), q) ? [`group_concat_max_len=${MAX_LIMIT}`] : [];
+  }
+
+  /** `sql` with `settings` scoped to it, in this engine's spelling. */
+  protected abstract applySettings(sql: string, settings: readonly string[]): string;
+
+  /** `JSON_OBJECT` of each key and its value. */
+  protected jsonObject(pairs: DerivedRelation['pairs']): string {
+    return `JSON_OBJECT(${this.jsonObjectArgs(pairs)})`;
+  }
+
+  /**
+   * A number and bytes cross JSON as text, where JSON would round the one and spell the other as base64,
+   * and a vector as the engine reads one back: text on MariaDB, which stores it packed.
+   */
+  protected override readonly carriedFields = {
+    numeric: (expr) => `CAST(${expr} AS CHAR)`,
+    blob: (expr) => `CONCAT(${this.escape(BYTES_PREFIX)}, HEX(${expr}))`,
+    vector: (expr, field) => this.selectFieldExpr(expr, field),
+  } satisfies CarriedFields;
+
   override escape(value: unknown): string {
     return escapeMysqlSqlLiteral(value);
   }
@@ -238,6 +308,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
       'JSON_SET',
       jsonSetTarget(expr, field, `'{}'`),
       set,
+      this.maxFunctionArgs,
     );
   }
 
@@ -254,7 +325,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall('JSON_REMOVE', expr, unset);
+    return jsonRemoveCall('JSON_REMOVE', expr, unset, this.maxFunctionArgs);
   }
 
   /**

@@ -2,10 +2,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { AbstractDialect } from '../dialect/index.js';
 import type { Drift, DriftReport } from '../schema/index.js';
 import type { ForeignKeyAction } from '../schema/types.js';
-import type { Config, MigratorOptions } from '../type/index.js';
+import type { Config, MigratorDialect, MigratorOptions } from '../type/index.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
@@ -17,7 +16,7 @@ import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 import { DEFAULT_MIGRATIONS_TABLE } from './storage/databaseStorage.js';
 
 /** Sync helper for SQL dialects only; returns `undefined` for MongoDB - use {@link createSchemaGeneratorAsync}. */
-export function getSchemaGenerator(dialect: AbstractDialect, defaultForeignKeyAction?: ForeignKeyAction) {
+export function getSchemaGenerator(dialect: MigratorDialect, defaultForeignKeyAction?: ForeignKeyAction) {
   return createSchemaGenerator(dialect, defaultForeignKeyAction);
 }
 
@@ -366,7 +365,7 @@ function printDriftGroup(title: string, drifts: Drift[], icon: string, showSugge
         console.log(`    Expected: ${drift.expected}, Actual: ${drift.actual}`);
       }
       if (showSuggestion) {
-        console.log(`    → ${drift.suggestion}`);
+        console.log(`    -> ${drift.suggestion}`);
       }
     }
     console.log('');
@@ -417,7 +416,7 @@ Configuration:
   Create a uql.config.ts or uql.config.js file in your project root.
   You can also specify a custom config path using --config or -c.
   The CLI requires pool.dialect (dialect id = pool.dialect.dialectName).
-  See the repo README section "Driver → pool → dialect class".
+  See the repo README section "Driver -> pool -> dialect class".
 
   export default {
     pool: new PgQuerierPool({ ... }),

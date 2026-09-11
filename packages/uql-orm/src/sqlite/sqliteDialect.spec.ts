@@ -257,7 +257,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE JSON_EXTRACT(_uql_elem_1.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem_1.value, '$.zip') = ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem.value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
@@ -270,7 +270,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE `name` -> _uql_elem_1.fullkey = JSON(?)))',
+      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE `name` -> _uql_elem.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE `name` -> _uql_elem.fullkey = JSON(?)))',
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
@@ -329,7 +329,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem_1 WHERE JSON_EXTRACT(_uql_elem_1.value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -342,8 +342,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toContain('EXISTS (SELECT 1 FROM JSON_EACH');
-    expect(sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.price') AS REAL) < ?");
-    expect(sql).toContain("_uql_elem_1.value -> '$.active' = JSON(?)");
+    expect(sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.price') AS REAL) < ?");
+    expect(sql).toContain("_uql_elem.value -> '$.active' = JSON(?)");
     // The boolean binds as JSON text, not as SQLite's 0/1 integer.
     expect(values).toEqual([100, 'true']);
   }
@@ -365,10 +365,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.a') IS NOT ?");
-    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.b') AS REAL) > ?");
-    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem_1.value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("_uql_elem_1.value -> '$.active' = JSON(?)");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') IS NOT ?");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.b') AS REAL) > ?");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.c') AS REAL) >= ?");
+    expect(res.sql).toContain("_uql_elem.value -> '$.active' = JSON(?)");
     expect(res.values).toContain('true');
 
     // Test $like, $startsWith, $endsWith
@@ -390,10 +390,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         } as any,
       }),
     );
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.a') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.d') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.e') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.g') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.d') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.e') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.g') LIKE ?");
 
     // Test $regex
     res = this.exec((ctx) =>
@@ -402,7 +402,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
       }),
     );
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem_1.value, '$.code') REGEXP ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.code') REGEXP ?");
   }
 
   // ─── JSONB dot-notation (SQLite-specific JSON_EXTRACT syntax) ──────
@@ -471,7 +471,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`id` = ?))',
+      'SELECT `id` FROM `Item` WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`id` = ?))',
     );
     expect(values).toEqual([5]);
   }
@@ -483,9 +483,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { measureUnits: { name: 'kg' } } as any,
       }),
     );
-    // MeasureUnitCategory has softDelete → parent query adds AND `deletedAt` IS NULL
+    // MeasureUnitCategory has softDelete -> parent query adds AND `deletedAt` IS NULL
     expect(sql).toBe(
-      'SELECT `id` FROM `MeasureUnitCategory` WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ? AND `MeasureUnit`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
+      'SELECT `id` FROM `MeasureUnitCategory` WHERE EXISTS (SELECT 1 FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id` AND `measureUnits`.`name` = ? AND `measureUnits`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
     );
     expect(values).toEqual(['kg']);
   }
@@ -564,6 +564,25 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', 1 + ?), `updatedAt` = ? WHERE `id` = ?",
     );
     expect(values).toEqual([1, expect.any(Number), '1']);
+  }
+
+  /** `json_group_array` over the rows, ordered by the sort terms they carry out beside them. */
+  shouldReadAToManyInsideItsParentStatement() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true, createdAt: true }, $sort: { name: 1 }, $limit: 5 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      "SELECT `MeasureUnitCategory`.`name`, (SELECT json_group_array(json_object('name', `measureUnits`.`name`," +
+        " 'createdAt', `measureUnits`.`createdAt`) ORDER BY `measureUnits`.`_uql_sort_name`)" +
+        ' FROM (SELECT `measureUnits`.`name`, CAST(`measureUnits`.`createdAt` AS TEXT) `createdAt`, `measureUnits`.`name` `_uql_sort_name`' +
+        ' FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
+        ' AND `measureUnits`.`deletedAt` IS NULL ORDER BY `_uql_sort_name` LIMIT 5) `measureUnits`) `measureUnits`' +
+        ' FROM `MeasureUnitCategory` WHERE `MeasureUnitCategory`.`deletedAt` IS NULL',
+    );
   }
 }
 

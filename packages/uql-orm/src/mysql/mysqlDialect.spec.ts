@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { anyUuid, Company, createSpec, User } from '../test/index.js';
+import { anyUuid, Company, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
 import type { QueryConflictPaths, UpdatePayload } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
@@ -215,6 +215,45 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     this.dialect.upsert(ctx, User, conflictPaths, { name: 'John' });
 
     expect(ctx.sql).toContain('INSERT IGNORE');
+  }
+
+  /**
+   * `JSON_ARRAYAGG` takes no `ORDER BY` here, so the objects join in an ordered `GROUP_CONCAT`, which
+   * reads as a JSON array. The rows keep their own `ORDER BY` for the page, and the statement lifts
+   * `group_concat_max_len`, which would cut the array at 1024 bytes, for itself alone.
+   */
+  shouldReadAToManyAsAnOrderedGroupConcat() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true, createdAt: true }, $sort: { name: 1 }, $limit: 5 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT /*+ SET_VAR(group_concat_max_len=18446744073709551615) */ `MeasureUnitCategory`.`name`,' +
+        " (SELECT COALESCE(CONCAT('[', GROUP_CONCAT(JSON_OBJECT('name', `measureUnits`.`name`, 'createdAt', `measureUnits`.`createdAt`)" +
+        " ORDER BY `measureUnits`.`_uql_sort_name` SEPARATOR ','), ']'), '[]')" +
+        ' FROM (SELECT `measureUnits`.`name`, CAST(`measureUnits`.`createdAt` AS CHAR) `createdAt`, `measureUnits`.`name` `_uql_sort_name`' +
+        ' FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
+        ' AND `measureUnits`.`deletedAt` IS NULL ORDER BY `_uql_sort_name` LIMIT 5) `measureUnits`) `measureUnits`' +
+        ' FROM `MeasureUnitCategory` WHERE `MeasureUnitCategory`.`deletedAt` IS NULL',
+    );
+  }
+
+  /** An unsorted relation's objects join in the order its rows come. */
+  shouldReadAManyToManyThroughItsJunction() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { name: true }, $populate: { tags: { $select: { name: true } } } }),
+    );
+
+    expect(sql).toBe(
+      'SELECT /*+ SET_VAR(group_concat_max_len=18446744073709551615) */ `Item`.`name`,' +
+        " (SELECT COALESCE(CONCAT('[', GROUP_CONCAT(JSON_OBJECT('name', `tags`.`name`) SEPARATOR ','), ']'), '[]')" +
+        ' FROM (SELECT `tags`.`name` FROM `Tag` `tags` WHERE `tags`.`id` IN' +
+        ' (SELECT `ItemTag`.`tagId` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)) `tags`) `tags`' +
+        ' FROM `Item`',
+    );
   }
 }
 

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
-import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, OneToMany } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
@@ -175,7 +175,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     });
 
     expect(sql).toBe(
-      `SELECT ${q('id')}, ${distance('cosine', ph(1))} AS ${q('similarity')} ` +
+      `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('similarity')} ` +
         `FROM ${q('VectorItem')} ORDER BY ${q('similarity')}${pgr(10, undefined, true)}`,
     );
   });
@@ -228,7 +228,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     });
 
     expect(sql).toBe(
-      `SELECT ${q('id')}, ${distance('cosine', ph(1))} AS ${q('score')} FROM ${q('VectorItem')} ` +
+      `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('score')} FROM ${q('VectorItem')} ` +
         `WHERE ${q('name')} = ${ph(2)} AND ${distance('cosine', ph(3))} < ${ph(4)} ` +
         `ORDER BY ${q('score')}${pgr(30, undefined, true)}`,
     );
@@ -386,7 +386,7 @@ describe('vector $project', () => {
   });
 
   it('accepts a name of its own', () => {
-    expect(exec('score')).toContain('AS "score"');
+    expect(exec('score')).toContain('::vector "score"');
   });
 });
 
@@ -515,5 +515,29 @@ describe('vector query-time tuning', () => {
 
     expect(ctx.sql.startsWith('SET STATEMENT mhnsw_ef_search=200 FOR SELECT ')).toBe(true);
     expect(maria.vectorTuningStatements(getMeta(MariaVecItem), rank)).toEqual([]);
+  });
+
+  /** One prefix sets every variable the statement needs: the tuning, and the cap a to-many lifts. */
+  it('sets the tuning beside the to-many cap in one prefix on MariaDB', () => {
+    @Entity({ name: 'MariaVecChunk' })
+    class MariaVecChunk {
+      @Id({ type: Number }) id?: number;
+      @Field({ references: () => MariaVecDoc }) docId?: number;
+    }
+    @Entity({ name: 'MariaVecDoc' })
+    @Index(['vec'], { type: 'vector', distance: 'cosine' })
+    class MariaVecDoc {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+      @OneToMany({ entity: () => MariaVecChunk, mappedBy: (chunk) => chunk.docId }) chunks?: MariaVecChunk[];
+    }
+    const maria = new MariaDialect();
+    const ctx = maria.createContext();
+
+    maria.find(ctx, MariaVecDoc, { ...rank, $populate: { chunks: true } });
+
+    expect(ctx.sql).toMatch(
+      /^SET STATEMENT mhnsw_ef_search=200, group_concat_max_len=18446744073709551615 FOR SELECT /,
+    );
   });
 });

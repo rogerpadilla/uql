@@ -14,6 +14,7 @@ import type { Query, QueryPage } from './query.js';
 class Team {
   id!: number;
   name!: string;
+  members?: Member[];
 }
 
 class Member {
@@ -48,14 +49,14 @@ export async function countSettlesAPageLikeAWrite(querier: Querier) {
 }
 
 /**
- * `$candidates` tunes the index behind a vector search, and a vector search only ranks the rows the
- * statement itself returns - so like `$lock` it is statement-level, and a populated relation's own
- * query has nothing to tune.
+ * `$candidates` tunes the index for the whole statement, so like `$lock` it is statement-level and a
+ * populated relation's own query refuses it.
  */
 export async function candidatesIsStatementLevel(querier: Querier) {
   await querier.findMany(Member, { $sort: { embedding: { $vector: [1, 2, 3] } }, $limit: 10, $candidates: 200 });
-
-  // @ts-expect-error a relation's rows are assembled after the ranking, so there is no index to tune
+  // @ts-expect-error it tunes the statement, not one relation's rows
+  await querier.findMany(Team, { $populate: { members: { $candidates: 200 } } });
+  // @ts-expect-error nor on a to-one, which is one row of the parent's
   await querier.findMany(Member, { $populate: { team: { $candidates: 200 } } });
 }
 

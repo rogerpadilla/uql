@@ -522,7 +522,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(id).toBeDefined();
 
     const foundItem = await this.querier.findOneById(Item, id, {
-      $select: { name: true, createdAt: true },
+      $select: { id: true, name: true, createdAt: true },
       $populate: { tags: { $select: { name: true, createdAt: true } } },
     });
 
@@ -533,7 +533,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const foundTags = await this.querier.findMany(Tag, {
       $select: { name: true, createdAt: true },
-      $populate: { items: { $select: { name: true, createdAt: true } } },
+      $populate: { items: { $select: { id: true, name: true, createdAt: true } } },
     });
 
     delete (foundItem as any).tags;
@@ -625,7 +625,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.updateOneById(Item, id, payload);
 
     const found = await this.querier.findOneById(Item, id, {
-      $select: { name: true, updatedAt: true },
+      $select: { id: true, name: true, updatedAt: true },
       $populate: { tags: true },
     });
 
@@ -993,34 +993,43 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found.map((it) => it._count.measureUnits)).toEqual([2, 1]);
   }
 
-  /**
-   * A raw `$select` has no map to put the id in, and without it every tally is looked up by
-   * `undefined` and comes back zero. Refused rather than answered wrong.
-   */
-  async shouldRejectCountingWithARawSelect() {
-    await expect(
-      this.querier.findMany(MeasureUnitCategory, {
-        $select: [raw`name`],
-        $count: { measureUnits: true },
-      } as never),
-    ).rejects.toThrow(/raw \$select cannot carry/);
+  /** Needing no id, a tally composes with a raw projection too. */
+  async shouldCountBesideARawSelect() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'raw category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId },
+      { name: 'two', categoryId },
+    ]);
+
+    const found = await this.querier.findMany(MeasureUnitCategory, {
+      $select: [raw`name`],
+      $count: { measureUnits: true },
+    } as never);
+
+    expect(found).toEqual([{ name: 'raw category', _count: { measureUnits: 2 } }]);
   }
 
-  /**
-   * The tallies group by each row's id, which would have to join the projection - and that is the
-   * very set `$distinct` collapses on, so adding a `$count` would quietly stop it collapsing.
-   */
-  async shouldRejectCountingWithDistinct() {
-    await expect(
-      this.querier.findMany(MeasureUnitCategory, {
-        $select: { name: true },
-        $distinct: true,
-        $count: { measureUnits: true },
-      }),
-    ).rejects.toThrow(/\$count cannot be combined with \$distinct/);
+  /** A tally read inside the statement needs no id, so `$distinct` deduplicates whole rows, tallies included. */
+  async shouldCountBeside$distinct() {
+    const [first, second] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'same name' },
+      { name: 'same name' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId: first },
+      { name: 'two', categoryId: second },
+    ]);
+
+    const found = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { name: true },
+      $distinct: true,
+      $count: { measureUnits: true },
+    });
+
+    expect(found).toEqual([{ name: 'same name', _count: { measureUnits: 1 } }]);
   }
 
-  /** A parent the grouped result has no row for counts zero, not a missing key. */
+  /** A parent with no related row counts zero, not a missing key. */
   async shouldCountARelationHoldingNothing() {
     await this.querier.insertOne(MeasureUnitCategory, { name: 'empty category' });
 
@@ -1030,6 +1039,84 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(found._count).toEqual({ measureUnits: 0 });
+  }
+
+  /** A to-many streams with each row: read with the row itself. */
+  async shouldStreamAToManyRelation() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'streamed category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'b', categoryId },
+      { name: 'a', categoryId },
+    ]);
+
+    const streamed: MeasureUnitCategory[] = [];
+    for await (const row of this.querier.findManyStream(MeasureUnitCategory, {
+      $select: { name: true },
+      $where: { id: categoryId },
+      $populate: { measureUnits: { $select: { name: true }, $sort: { name: 1 } } },
+    })) {
+      streamed.push(row);
+    }
+
+    expect(streamed).toMatchObject([{ name: 'streamed category', measureUnits: [{ name: 'a' }, { name: 'b' }] }]);
+  }
+
+  /**
+   * A to-many under a to-one hangs off the joined row: its rows where the join matched, none where the
+   * row has no children, and no row at all where the join matched nothing.
+   */
+  async shouldPopulateAToManyUnderAToOne() {
+    const [weightId, volumeId] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'weight' },
+      { name: 'volume' },
+    ]);
+    const ids = await this.querier.insertMany(MeasureUnit, [
+      { name: 'kg', categoryId: weightId },
+      { name: 'g', categoryId: weightId },
+      { name: 'l', categoryId: volumeId },
+      { name: 'orphan' },
+    ]);
+
+    const units = await this.querier.findMany(MeasureUnit, {
+      $select: { name: true },
+      $where: { id: ids },
+      $sort: { name: 1 },
+      $populate: {
+        category: {
+          $select: { name: true },
+          $populate: { measureUnits: { $select: { name: true }, $where: { name: { $ne: 'l' } }, $sort: { name: 1 } } },
+        },
+      },
+    });
+
+    const weight = { name: 'weight', measureUnits: [{ name: 'g' }, { name: 'kg' }] };
+    expect(units).toMatchObject([
+      { name: 'g', category: weight },
+      { name: 'kg', category: weight },
+      { name: 'l', category: { name: 'volume', measureUnits: [] } },
+      { name: 'orphan' },
+    ]);
+    expect(units[3]).not.toHaveProperty('category');
+  }
+
+  /** A tally streams with each row, read by the row's own statement. */
+  async shouldStreamACount() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'streamed count' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'a', categoryId },
+      { name: 'b', categoryId },
+    ]);
+
+    const streamed: unknown[] = [];
+    for await (const row of this.querier.findManyStream(MeasureUnitCategory, {
+      $select: { name: true },
+      $where: { id: categoryId },
+      $count: { measureUnits: true },
+    })) {
+      streamed.push(row);
+    }
+
+    expect(streamed).toMatchObject([{ name: 'streamed count', _count: { measureUnits: 2 } }]);
   }
 
   /** A filter narrows what counts, without touching which parents come back. */
@@ -1125,9 +1212,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
-   * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the second query the
-   * children are loaded with, which is where "each parent with its children in order" lives. The
-   * parent-level `$sort` cannot express it - it orders parents, and a parent has many children.
+   * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the children's own read,
+   * which is where "each parent with its children in order" lives. The parent-level `$sort` cannot
+   * express it - it orders parents, and a parent has many children.
    */
   async shouldPopulateToManySortedByItsOwnField() {
     const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Sorted category' });
@@ -1143,6 +1230,66 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(found.measureUnits?.map(({ name }) => name)).toEqual(['alpha unit', 'zulu unit']);
+  }
+
+  /**
+   * A `$limit` inside a to-many is each parent's own: every parent gets its own first rows rather than a
+   * share of one page, `$skip` pages each apart, and a parent with fewer keeps what it has.
+   */
+  async shouldPageAToManyPerParent() {
+    const [a, b, thin] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'paged a' },
+      { name: 'paged b' },
+      { name: 'paged thin' },
+      { name: 'paged without' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      ...[1, 2, 3, 4].map((n) => ({ name: `a${n}`, categoryId: a })),
+      ...[1, 2, 3, 4].map((n) => ({ name: `b${n}`, categoryId: b })),
+      { name: 'thin1', categoryId: thin },
+    ]);
+    const pageOf = async ($skip: number) => {
+      const founds = await this.querier.findMany(MeasureUnitCategory, {
+        $select: { name: true },
+        $where: { name: { $startsWith: 'paged ' } },
+        $sort: { name: 1 },
+        $populate: { measureUnits: { $select: { name: true }, $sort: { name: -1 }, $limit: 2, $skip } },
+      });
+      return founds.map(({ name, measureUnits }) => [name, measureUnits?.map((unit) => unit.name)]);
+    };
+
+    expect(await pageOf(0)).toEqual([
+      ['paged a', ['a4', 'a3']],
+      ['paged b', ['b4', 'b3']],
+      ['paged thin', ['thin1']],
+      ['paged without', []],
+    ]);
+    expect(await pageOf(2)).toEqual([
+      ['paged a', ['a2', 'a1']],
+      ['paged b', ['b2', 'b1']],
+      ['paged thin', []],
+      ['paged without', []],
+    ]);
+  }
+
+  /** A many-to-many is paged per parent too, over the targets its junction pairs each one with. */
+  async shouldPageAManyToManyPerParent() {
+    await this.querier.insertMany(Item, [
+      { name: 'tagged first', tags: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] },
+      { name: 'tagged second', tags: [{ name: 'x' }, { name: 'y' }, { name: 'z' }] },
+    ]);
+
+    const founds = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { name: { $startsWith: 'tagged ' } },
+      $sort: { name: 1 },
+      $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 2 } },
+    });
+
+    expect(founds.map(({ name, tags }) => [name, tags?.map((tag) => tag.name)])).toEqual([
+      ['tagged first', ['x', 'y']],
+      ['tagged second', ['x', 'y']],
+    ]);
   }
 
   /**
@@ -2224,6 +2371,22 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     // restore brings it back
     expect(await this.querier.restoreOneById(MeasureUnit, id)).toBe(1);
     expect(await this.querier.findOneById(MeasureUnit, id)).toMatchObject({ id, name: 'unit' });
+  }
+
+  /** `withDeleted()` reaches the read's own rows, not its relations': a trashed joined row stays out. */
+  async shouldKeepATrashedRelationOutOfAReadWithDeleted() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'trashed' });
+    await this.querier.insertOne(MeasureUnit, { name: 'unit', categoryId });
+    await this.querier.deleteOneById(MeasureUnitCategory, categoryId);
+
+    const [unit] = await this.querier.findMany(
+      MeasureUnit,
+      { $select: { name: true }, $where: { categoryId }, $populate: { category: true } },
+      withDeleted(),
+    );
+
+    expect(unit).toMatchObject({ name: 'unit' });
+    expect(unit).not.toHaveProperty('category');
   }
 
   async shouldListOnlyTrashed() {

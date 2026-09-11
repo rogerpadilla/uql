@@ -1,6 +1,5 @@
-import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ForeignKeyAction } from '../schema/types.js';
-import type { SchemaGenerator } from '../type/index.js';
+import type { MigratorDialect, SchemaGenerator } from '../type/index.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 
 /**
@@ -8,7 +7,7 @@ import { createSchemaGenerator } from './schemaGenerator.js';
  * `mongodb` is only loaded when this path runs. SQL dialects delegate to {@link createSchemaGenerator}.
  */
 export async function createSchemaGeneratorAsync(
-  dialect: AbstractDialect,
+  dialect: MigratorDialect,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): Promise<SchemaGenerator | undefined> {
   if (dialect.dialectName === 'mongodb') {

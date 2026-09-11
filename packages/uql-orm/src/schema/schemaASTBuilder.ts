@@ -225,8 +225,8 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
 }
 
 /**
- * Add indexes from field options (`@Field({ index })`) and from `@Index([...])`, which have nothing
- * in common beyond their target table.
+ * Add indexes from field options (`@Field({ index })`), from `@Index([...])`, and for every foreign
+ * key none of those already serves.
  */
 function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
   const table = tableOf(ctx, meta);
@@ -250,6 +250,49 @@ function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): voi
   for (const idxMeta of meta.indexes ?? []) {
     addCompositeIndex(ctx, table, meta, idxMeta);
   }
+
+  addForeignKeyIndexes(ctx, meta, table);
+}
+
+/**
+ * An index over each foreign key the table owns, unless one already leads with its columns or a field
+ * of it says `index: false`. A relation looks its rows up by these columns, and MySQL alone indexes
+ * them on its own. Last, so it sees every index the entity declared.
+ */
+function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<unknown>, table: TableNode): void {
+  const optedOut = new Set(
+    definedEntries(meta.fields).flatMap(([key, field]) =>
+      field.index === false ? [ctx.resolveColumnName(key, field)] : [],
+    ),
+  );
+  for (const { from } of table.outgoingRelations) {
+    const columns = from.columns.map((column) => column.name);
+    if (columns.some((column) => optedOut.has(column)) || isIndexedBy(table, columns)) continue;
+    ctx.ast.addIndex({
+      name: derivedIndexName(table.name, columns),
+      table,
+      entries: columns.map((column) => ({ column })),
+      unique: false,
+      source: 'entity',
+      syncStatus: 'entity_only',
+    });
+  }
+}
+
+/** Whether the key, a unique column or an index already leads with `columns`, which is all a lookup needs. */
+function isIndexedBy(table: TableNode, columns: readonly string[]): boolean {
+  const leads = (indexed: readonly (string | undefined)[]) => columns.every((column, at) => indexed[at] === column);
+  return (
+    leads(table.primaryKey.map((column) => column.name)) ||
+    (columns.length === 1 && table.columns.get(columns[0])?.isUnique === true) ||
+    table.indexes.some((index) =>
+      leads(
+        index.entries.map((entry) =>
+          entry.expression || entry.jsonPath || entry.jsonArray ? undefined : entry.column,
+        ),
+      ),
+    )
+  );
 }
 
 /** An `include` column is named like any other, so a naming strategy has to reach it too. */

@@ -1,5 +1,5 @@
-import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { ForeignKeyAction } from '../schema/types.js';
+import type { MigratorDialect } from './migratorDialect.js';
 import type { Querier } from './querier.js';
 import type { QuerierPool } from './querierPool.js';
 import type { Type } from './utility.js';
@@ -13,7 +13,7 @@ export interface Config {
    * This is required for both the application and the migrations CLI.
    * Must expose {@link QuerierPool.dialect}; migrations and the CLI read `pool.dialect.dialectName`.
    */
-  pool: QuerierPool<Querier, AbstractDialect>;
+  pool: QuerierPool<Querier, MigratorDialect>;
 
   /**
    * List of entity classes to be managed by the ORM.

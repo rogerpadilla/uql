@@ -17,14 +17,6 @@ class Writer {
   age?: number;
 }
 
-/** Its id is neither branded nor named `id`/`_id`/`uuid`, so `IdKey` cannot name it. */
-class Tag {
-  pk!: number;
-  label!: string;
-  weight?: number;
-  stories?: Story[];
-}
-
 class Story {
   id!: number;
   title!: string;
@@ -53,12 +45,14 @@ export async function projectedRows() {
   // @ts-expect-error a field the projection left out
   byId?.points;
 
-  // A populated relation comes back, and so does the id the rows are assembled by.
+  // A populated relation comes back beside what the row selected, and nothing else does.
   const [populated] = await querier.findMany(Story, {
     $select: { title: true },
     $populate: { writers: { $select: { name: true } } },
   });
-  populated.id.toFixed();
+  populated.title.trim();
+  // @ts-expect-error the id, which the projection left out
+  populated.id;
   // A populated to-many is a list, empty at worst, so it needs no `!` and no guard.
   populated.writers[0].name.trim();
   populated.writers.map((it) => it.name);
@@ -93,16 +87,6 @@ export async function mixedProjection() {
   const [row] = await querier.findMany(Story, { $select: { id: 1, points: 0 } });
   const whole: Story = row;
   return whole;
-}
-
-export async function unnameableId() {
-  // Populating keeps the id, but only where the id can be named: widening to every field would
-  // claim the whole entity came back.
-  const [tag] = await querier.findMany(Tag, { $select: { label: true }, $populate: { stories: true } });
-  tag.label.trim();
-  tag.stories[0].title.trim();
-  // @ts-expect-error a field the projection left out, even though the row carries an unnameable id
-  tag.weight;
 }
 
 export async function unprojectedRows() {

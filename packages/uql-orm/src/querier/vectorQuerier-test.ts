@@ -53,9 +53,9 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
 
     expect(results).toHaveLength(2);
     expect(results[0].name).toBe('close');
-    expect(results[0].distance).toBeCloseTo(0, 5); // identical vector → cosine distance 0
+    expect(results[0].distance).toBeCloseTo(0, 5); // identical vector -> cosine distance 0
     expect(results[1].name).toBe('far');
-    expect(results[1].distance).toBeCloseTo(1, 5); // orthogonal vectors → cosine distance 1
+    expect(results[1].distance).toBeCloseTo(1, 5); // orthogonal vectors -> cosine distance 1
   }
 
   async shouldFilterByDistance() {

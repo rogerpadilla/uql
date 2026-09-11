@@ -9,7 +9,7 @@ description: Cut and publish a uql release - review the diff, changelog entry, v
 
 ## 1. Review the whole diff
 
-Staged and unstaged alike. Correct what is wrong, simplify what is duplicated or overcomplicated, and delete comments the change made stale.
+Staged and unstaged alike (and related files). Make sure to understand everything first, then correct what is wrong, simplify what is duplicated or overcomplicated, and delete comments the change made stale.
 
 ## 2. Settle the changelog entry
 

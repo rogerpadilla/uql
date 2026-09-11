@@ -9,4 +9,9 @@ export class MySqlDialect extends MysqlLikeSqlDialect {
    * "subject to removal in a future version"; aliasing the inserted row (8.0.19+) is its replacement.
    */
   protected override readonly upsertNewRowAlias = UPSERT_NEW_ROW_ALIAS;
+
+  /** A `SET_VAR` hint, which MySQL reads only in a statement's first `SELECT`. */
+  protected override applySettings(sql: string, settings: readonly string[]): string {
+    return sql.replace('SELECT ', `SELECT /*+ ${settings.map((setting) => `SET_VAR(${setting})`).join(' ')} */ `);
+  }
 }

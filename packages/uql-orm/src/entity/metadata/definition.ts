@@ -410,9 +410,9 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
   const relMeta = ensureMeta(relOpts.entity());
 
   if (relOpts.through) {
-    // Both columns live on the junction, whatever the cardinality: `fillToManyThroughRelation`,
-    // `deleteRelations` and every dialect read them as junction columns. A composite key contributes
-    // one pair per column of it, which is what makes the join address a whole key rather than part.
+    // Both columns live on the junction, whatever the cardinality: `deleteRelations` and every dialect
+    // read them as junction columns. A composite key contributes one pair per column of it, which is
+    // what makes the join address a whole key rather than part.
     relOpts.references = [
       ...meta.ids.map((key) => ({ local: junctionColumn(meta, key), foreign: key })),
       ...relMeta.ids.map((key) => ({ local: junctionColumn(relMeta, key), foreign: key })),

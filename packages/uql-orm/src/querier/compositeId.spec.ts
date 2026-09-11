@@ -504,9 +504,7 @@ describe('reading composite rows', () => {
       $populate: { enrolment: { $select: { grade: true } } },
       $where: { body: 'other student' },
     });
-    expect(founds).toEqual([
-      { id: 3, body: 'other student', enrolment: { studentId: 2, courseId: 'maths', grade: 'C' } },
-    ]);
+    expect(founds).toEqual([{ body: 'other student', enrolment: { studentId: 2, courseId: 'maths', grade: 'C' } }]);
   });
 
   /**
@@ -527,16 +525,6 @@ describe('reading composite rows', () => {
       [2, 1, ['honours']],
       [3, 0, []],
     ]);
-  });
-
-  /** Both guards name what the tallies group by, which for a composite is every column of the key. */
-  it('refuses a $count it cannot group, naming every key', async () => {
-    await expect(pool.findMany(Enrolment, { $count: { notes: true }, $distinct: true })).rejects.toThrow(
-      /group by each row's 'studentId, courseId'/,
-    );
-    await expect(pool.findMany(Enrolment, { $count: { notes: true }, $select: [raw`"grade"`] })).rejects.toThrow(
-      /needs the 'studentId, courseId' of each row/,
-    );
   });
 
   it('filters by a many-to-many on every key of the parent', async () => {

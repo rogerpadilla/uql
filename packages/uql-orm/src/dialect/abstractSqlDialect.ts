@@ -1,5 +1,6 @@
-import { fieldOf, getMeta, soleIdOf } from '../entity/index.js';
+import { fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import {
+  COUNT_RESULT_KEY,
   type EntityData,
   type EntityMeta,
   type FieldKey,
@@ -18,6 +19,7 @@ import {
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
+  type QueryCount,
   type QueryDialect,
   type QueryExclude,
   type QueryFilter,
@@ -31,7 +33,6 @@ import {
   QueryRaw,
   type QueryRawFnOptions,
   type QuerySearch,
-  type QuerySelectOptions,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
   type QuerySortDirection,
@@ -47,13 +48,14 @@ import {
   RAW_VALUE,
   type RelationKey,
   type RelationMeta,
+  type RelationQuery,
   type SqlDialectName,
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
-import { isInlinedExpression } from '../util/field.util.js';
+import { type ColumnFamily, isInlinedExpression } from '../util/field.util.js';
 import {
   asSelectMap,
   assertNonNegativeInteger,
@@ -62,9 +64,11 @@ import {
   filterFieldKeys,
   getInsertFieldKeys,
   getKeys,
+  getRelationRequestSummary,
   getSoftDeleteValue,
   hasKeys,
   columnFamily,
+  countedRelations,
   isJsonUpdateOp,
   isOperatorMap,
   isOperatorObject,
@@ -72,20 +76,19 @@ import {
   isVectorSearch,
   normalizeScalarFieldSelection,
   parentJoins,
-  type ParentPartition,
   targetKeyColumns,
   parseGroupMap,
+  parseRelationAtKey,
   parseRelationSize,
   parseSortByCount,
   populatesRelations,
-  queryChildrenOf,
   raw,
   someValue,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS_PREFIX, PER_PARENT_BRANCH_ALIAS } from './aliases.js';
+import { COUNT_ALIAS, DISTINCT_DERIVED_ALIAS, JSON_ELEM_ALIAS, relationSortColumn } from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
 import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
 import { isJsonbOp, type JsonAccessMode, jsonCompareMode, jsonElemExists } from './jsonSql.js';
@@ -126,6 +129,93 @@ type LikeOp = { readonly pattern: (value: string) => string; readonly insensitiv
 
 /** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
 type HydratableField = readonly [string, HydrateKind];
+
+/**
+ * One `ORDER BY` term, taken apart: `key` is the path it sorts by, and `output` says `expr` already
+ * names a column of the result.
+ */
+type SortTerm = {
+  readonly key: string;
+  readonly expr: string;
+  readonly direction: string;
+  readonly output: boolean;
+};
+
+/** A sort term of a relation's rows as their aggregate orders by it: the column carrying it out. */
+export type SortRef = { readonly ref: string; readonly direction: string };
+
+/**
+ * One column of a read's projection: the key its row answers under, none for a raw expression written
+ * without an alias, and whether `sql` already answers under it, being a column of that very name.
+ */
+export type SelectTerm = { readonly sql: string; readonly key?: string; readonly bare?: boolean };
+
+/** What a read selected, and for a relation's rows, the columns carrying their sort terms out. */
+export type ReadProjection = { readonly terms: readonly SelectTerm[]; readonly order?: readonly SortRef[] };
+
+/**
+ * A read's options as its statement takes them: the caller's and the alias its table reads as. A
+ * relation's rows read inside the parent's statement cross JSON, and where their aggregate orders them,
+ * carry their sort terms out as columns.
+ */
+type ReadOptions = QueryOptions & {
+  readonly alias?: string;
+  readonly json?: boolean;
+  readonly carried?: boolean;
+};
+
+/**
+ * A projection's options: the alias its columns are qualified by, whether its values cross JSON, and
+ * whether it is a joined row's, which keeps its id.
+ */
+type SelectOptions = { readonly prefix?: string; readonly json?: boolean; readonly joined?: boolean };
+
+/** A to-many's rows as the parent's statement reads them: an ordinary read of the related entity. */
+export type RelationRows = {
+  readonly entity: Type<object>;
+  readonly query: Query<object>;
+  readonly alias: string;
+  readonly joins: QueryJoins;
+  /** Whether the parent deduplicates its rows, which compares this value with the rest. */
+  readonly distinct: boolean;
+};
+
+/**
+ * A relation's rows as a derived table: `from` is the table clause, `pairs` each key of a row with the
+ * column holding it, and `order` what their aggregate orders them by.
+ */
+export type DerivedRelation = {
+  readonly from: string;
+  readonly pairs: readonly (readonly [key: string, sql: string])[];
+  readonly order: string;
+};
+
+/** How each column family's value is spelled to cross JSON: see {@link AbstractSqlDialect.carriedFields}. */
+export type CarriedFields = { readonly [F in ColumnFamily]?: (expr: string, field: FieldOptions) => string };
+
+/** The key a term answers under in a populated relation's row, which a raw expression has only once aliased. */
+export function relationTermKey({ sql, key }: SelectTerm): string {
+  if (key === undefined) {
+    throw new TypeError(`a raw $select in a populated relation needs an alias, the key its value lands under: ${sql}`);
+  }
+  return key;
+}
+
+/**
+ * What a projection reads: its raw expressions, or its fields past any `$exclude`, and every field where
+ * none is left of a row crossing JSON, which answers only under keys.
+ */
+function projectedKeys<E>(
+  meta: EntityMeta<E>,
+  select: QuerySelectValue<E> | undefined,
+  exclude: QueryExclude<E> | undefined,
+  json: boolean | undefined,
+): readonly (FieldKey<E> | QueryRaw)[] {
+  const selected: readonly (FieldKey<E> | QueryRaw)[] = Array.isArray(select)
+    ? select
+    : normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
+  return selected.length || !json ? selected : normalizeScalarFieldSelection(meta);
+}
 
 export type { HydrateKind };
 
@@ -194,6 +284,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    */
   readonly maxBindValues: number = 32766;
 
+  /**
+   * The most arguments one SQL function call takes. A variadic call past it, a wide relation row or JSON
+   * update, is spread over nested calls. No cap binds unless a dialect declares one.
+   */
+  readonly maxFunctionArgs: number = Infinity;
+
   getBeginTransactionStatements(isolationLevel?: IsolationLevel): string[] {
     const level = isolationLevel?.toUpperCase();
     const strategy = this.isolationLevelStrategy;
@@ -205,41 +301,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
     // 'set-before' - MySQL/MariaDB pattern
     return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
-  }
-
-  /**
-   * Every parent's own bounded page in one statement: a subquery per parent, each filtered to that
-   * parent alone and carrying its own `ORDER BY`, `LIMIT` and `OFFSET`. Universal, and reads
-   * `parents x (skip + limit)` rows where a `ROW_NUMBER` window reads every matching child.
-   * [The design](../../../../architecture/populate-limits.md).
-   *
-   * Each branch is a wrapped derived table rather than a bare parenthesised select: SQLite rejects
-   * `ORDER BY`/`LIMIT` on the latter, and the wrapper costs nothing elsewhere.
-   */
-  findPerParent<E extends object>(ctx: QueryContext, entity: Type<E>, q: Query<E>, partition: ParentPartition): void {
-    if (!partition.parents.length) {
-      // Guarded on the contract rather than in either shape: this is the end that would otherwise
-      // append nothing and hand the driver an empty statement, and both shapes owe the same promise.
-      throw new TypeError('cannot read a bounded relation for no parents at all');
-    }
-    this.appendPerParent(ctx, entity, q, partition);
-  }
-
-  /** The shape {@link findPerParent} emits, which the Postgres family replaces with a `LATERAL` join. */
-  protected appendPerParent<E extends object>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    q: Query<E>,
-    { joins, parents }: ParentPartition,
-  ): void {
-    parents.forEach((parent, index) => {
-      if (index) {
-        ctx.append(' UNION ALL ');
-      }
-      ctx.append('SELECT * FROM (');
-      this.find(ctx, entity, queryChildrenOf(q, joins, parent));
-      ctx.append(`) ${this.escapeId(ctx.nextAlias(PER_PARENT_BRANCH_ALIAS))}`);
-    });
   }
 
   createContext(): QueryContext {
@@ -331,78 +392,91 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return meta.ids.length === 1 ? `${this.escapeId(this.columnOf(meta, idKey))} ${this.escapeId('id')}` : '';
   }
 
-  search<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts: QueryOptions = {}, joins = NO_JOINS): void {
+  search<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E> = {},
+    opts: ReadOptions = {},
+    joins = NO_JOINS,
+    order?: readonly SortRef[],
+  ): void {
     const meta = getMeta(entity);
     const prefix = this.resolveRelationAwarePrefix(this.resolveTableAlias(meta), meta, opts, q.$populate, joins);
     if (opts.prefix !== prefix) {
       opts = { ...opts, prefix };
     }
     this.where<E>(ctx, entity, q.$where, opts);
-    const sorted = this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
+    const sorted = order
+      ? this.orderCarried(ctx, q, order)
+      : this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
     this.pager(ctx, q, sorted);
   }
 
-  selectFields<E>(
+  /**
+   * A relation's rows ordered by the columns their sort terms were carried out in, where they are
+   * paged: otherwise the aggregate reading them orders them, and sorting them first is wasted work.
+   */
+  private orderCarried(ctx: QueryContext, q: QueryPager, order: readonly SortRef[]): boolean {
+    if (!order.length || (q.$limit === undefined && q.$skip === undefined)) {
+      return false;
+    }
+    ctx.append(` ORDER BY ${order.map(({ ref, direction }) => ref + direction).join(', ')}`);
+    return true;
+  }
+
+  /**
+   * The columns a projection reads: each field under its key, a raw expression under its alias, and
+   * `*` where nothing is left, or every field in a row crossing JSON, which answers only under keys. A
+   * joined row keeps its key, every column of a composite past any subtraction: it is what tells a
+   * matched row from no match.
+   */
+  selectTerms<E>(
     ctx: QueryContext,
     entity: Type<E>,
     select: QuerySelectValue<E> | undefined,
-    opts: QuerySelectOptions = {},
+    opts: SelectOptions = {},
     exclude?: QueryExclude<E>,
-  ): void {
+  ): SelectTerm[] {
     const meta = getMeta(entity);
-    const prefix = opts.prefix ? opts.prefix + '.' : '';
-    const escapedPrefix = this.escapeId(opts.prefix, true, true);
-
-    const scalars: (FieldKey<E> | QueryRaw)[] = Array.isArray(select)
-      ? select // raw SQL projections passed as QueryRaw[]
-      : normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
-
-    // A prefix means relations are in play: rows arrive keyed by the id and `fillToManyRelations`
-    // groups children by it, so it outlives any subtraction - `$exclude` or falsy `$select` alike.
-    // Every key of a composite, since grouping by part of one would gather the wrong rows together.
-    const missingIds = opts.prefix ? meta.ids.filter((key) => !scalars.includes(key)) : [];
-    const selectArr = missingIds.length ? [...missingIds, ...scalars] : scalars;
-
-    if (!selectArr.length) {
-      ctx.append(escapedPrefix + '*');
-      return;
+    const selected = projectedKeys(meta, select, exclude, opts.json);
+    const missingIds = opts.joined ? meta.ids.filter((key) => !selected.includes(key)) : [];
+    const keys = missingIds.length ? [...missingIds, ...selected] : selected;
+    if (!keys.length) {
+      return [{ sql: `${this.escapeId(opts.prefix, true, true)}*`, bare: true }];
     }
+    return keys.map((key) =>
+      key instanceof QueryRaw
+        ? { sql: this.rawSql(ctx, key, opts.prefix), key: key[RAW_ALIAS] }
+        : this.fieldTerm(ctx, meta, key, opts),
+    );
+  }
 
-    selectArr.forEach((key, index) => {
-      if (index > 0) ctx.append(', ');
-      if (key instanceof QueryRaw) {
-        this.getRawValue(ctx, {
-          value: key,
-          prefix: opts.prefix,
-          escapedPrefix,
-          autoPrefixAlias: opts.autoPrefixAlias,
-        });
-      } else {
-        const field = fieldOf(meta, key);
-        if (isInlinedExpression(field)) {
-          // Qualified even when nothing else in this statement is: the expression is spliced in, and
-          // one that opens a correlated subquery has the inner table's columns in scope, so a bare
-          // `"id"` would bind to *that* table instead of this one. `SELECT "Item"."id" FROM "Item"`
-          // is valid on every engine, so naming the table costs nothing where it is not needed.
-          const qualified = opts.prefix ?? this.resolveTableAlias(meta);
-          this.getRawValue(ctx, {
-            value: field.computed!.as(key),
-            prefix: qualified,
-            escapedPrefix: this.escapeId(qualified, true, true),
-            autoPrefixAlias: opts.autoPrefixAlias,
-          });
-          return;
-        }
-        const columnName = this.resolveColumnName(key, field);
-        const column = escapedPrefix + this.escapeId(columnName);
-        const expr = this.selectFieldExpr(column, field);
-        ctx.append(expr);
-        // An expression needs the alias too, or the row comes back keyed by the expression text.
-        if (expr !== column || columnName !== key || opts.autoPrefixAlias) {
-          ctx.append(' ' + this.escapeId(prefix + key, true));
-        }
-      }
-    });
+  /** One field's column, or the expression an inlined one stands for, as the projection reads it. */
+  private fieldTerm<E>(ctx: QueryContext, meta: EntityMeta<E>, key: FieldKey<E>, opts: SelectOptions): SelectTerm {
+    const field = fieldOf(meta, key);
+    if (isInlinedExpression(field)) {
+      // Qualified even when nothing else in this statement is: the expression is spliced in, and one
+      // that opens a correlated subquery has the inner table's columns in scope, so a bare `"id"`
+      // would bind to *that* table instead of this one.
+      const sql = this.rawSql(ctx, field.computed!, opts.prefix ?? this.resolveTableAlias(meta));
+      return { sql: opts.json ? this.carried(`(${sql})`, field) : sql, key };
+    }
+    const columnName = this.resolveColumnName(key, field);
+    const column = this.escapeId(opts.prefix, true, true) + this.escapeId(columnName);
+    const sql = opts.json ? this.carried(column, field) : this.selectFieldExpr(column, field);
+    return { sql, key, bare: sql === column && columnName === key };
+  }
+
+  /** A `raw()` rendered where it stands, without the alias a projection writes for it. */
+  private rawSql(ctx: QueryContext, value: QueryRaw, prefix: string | undefined): string {
+    return this.buildFragment(ctx, (fragmentCtx) =>
+      value.render({
+        ctx: fragmentCtx,
+        dialect: this,
+        prefix: prefix ?? '',
+        escapedPrefix: this.escapeId(prefix, true, true),
+      }),
+    );
   }
 
   /**
@@ -414,8 +488,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * The expression a scalar field is read through, the plain column by default. MariaDB reads a
-   * vector column back with `VEC_ToText`, since selecting it raw yields its binary form.
+   * The expression a scalar field is read through in the statement's own rows, the plain column by
+   * default. MariaDB reads a vector column back with `VEC_ToText`, since selecting it raw yields its
+   * binary form. A related row's column crosses JSON through {@link carriedFields} instead.
    */
   protected selectFieldExpr(escapedColumn: string, _field: FieldOptions): string {
     return escapedColumn;
@@ -440,32 +515,90 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ctx: QueryContext,
     entity: Type<E>,
     q: Query<E>,
-    opts: QueryOptions = {},
+    opts: ReadOptions = {},
     joins = NO_JOINS,
     totalAlias?: string,
-  ): void {
+  ): ReadProjection {
     const meta = getMeta(entity);
-    const { alias, ref } = this.tableRef(meta);
+    const { alias, ref } = this.tableRef(meta, opts.alias);
     const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
-
+    const terms = this.projection(ctx, entity, q, { prefix, json: opts.json }, joins);
+    const carried = opts.carried ? this.carrySort(ctx, meta, q, { prefix, joins, distinct: q.$distinct }) : undefined;
+    const columns = carried ? [...terms, ...carried.columns] : [...terms];
+    if (totalAlias) {
+      columns.push({ sql: this.totalOverExpr, key: totalAlias });
+    }
     ctx.append(q.$distinct ? 'SELECT DISTINCT ' : 'SELECT ');
     ctx.append(this.selectModifier(q));
-    this.selectFields(ctx, entity, q.$select, { prefix }, q.$exclude);
-    // Add related fields BEFORE FROM clause
-    this.selectRelationFields(ctx, joins);
-    // Inject vector distance projections when $project is set
-    for (const [key, val] of Object.entries(q.$sort ?? {})) {
-      if (isVectorSearch(val) && val.$project) {
-        ctx.append(', ');
-        this.appendVectorProjection(ctx, meta, key, val);
-      }
-    }
-    if (totalAlias) {
-      ctx.append(`, ${this.totalOverExpr} ${this.escapeId(totalAlias, true)}`);
-    }
+    ctx.append(columns.map((term) => this.termSql(term)).join(', '));
     ctx.append(` FROM ${ref}${this.lockHint(q)}`);
-    // Add JOINs AFTER FROM clause
     this.selectRelationJoins(ctx, meta, alias, joins);
+    return { terms, order: carried?.order };
+  }
+
+  /**
+   * Everything a read's rows answer under, in order: its own fields, each joined row's fields and to-many
+   * relations under its path, its own to-many relations and `$count`, and each vector distance a `$sort`
+   * projects.
+   */
+  protected projection<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E>,
+    opts: SelectOptions,
+    joins: QueryJoins,
+  ): SelectTerm[] {
+    const meta = getMeta(entity);
+    const parent = opts.prefix ?? this.resolveTableAlias(meta);
+    const distinct = !!q.$distinct;
+    return [
+      ...this.selectTerms(ctx, entity, q.$select, opts, q.$exclude),
+      ...this.selectJoinedRows(ctx, joins, opts.json, distinct),
+      ...this.selectToManyRelations(ctx, meta, q.$populate, parent, distinct),
+      ...this.selectRelationCounts(ctx, meta, q.$count, parent),
+      ...this.selectVectorProjections(ctx, meta, q),
+    ];
+  }
+
+  /** A term as a projection writes it, aliased unless its SQL already answers under its key. */
+  private termSql({ sql, key, bare }: SelectTerm): string {
+    return bare || key === undefined ? sql : `${sql} ${this.escapeId(key, true)}`;
+  }
+
+  /** The distance each vector `$sort` projects, under the name it asked for. */
+  private selectVectorProjections<E>(ctx: QueryContext, meta: EntityMeta<E>, q: Query<E>): SelectTerm[] {
+    return Object.entries(q.$sort ?? {}).flatMap(([key, value]) =>
+      isVectorSearch(value) && value.$project
+        ? [
+            {
+              sql: this.buildFragment(ctx, (fragmentCtx) => this.appendVectorProjection(fragmentCtx, meta, key, value)),
+              key: value.$project,
+            },
+          ]
+        : [],
+    );
+  }
+
+  /**
+   * A relation's sort terms carried out beside its rows as columns, for the aggregate reading them to
+   * order by: a term that names a column of theirs already is ordered by that one.
+   */
+  private carrySort<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    q: Query<E>,
+    opts: QuerySortOptions,
+  ): { columns: SelectTerm[]; order: SortRef[] } {
+    const columns: SelectTerm[] = [];
+    const order = this.sortTerms(ctx, meta, q.$sort, opts).map(({ key, expr, direction, output }) => {
+      if (output) {
+        return { ref: expr, direction };
+      }
+      const column = relationSortColumn(key);
+      columns.push({ sql: expr, key: column });
+      return { ref: this.escapeId(column, true), direction };
+    });
+    return { columns, order };
   }
 
   /**
@@ -477,49 +610,62 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * A FROM or JOIN operand plus the alias to prefix its columns by, aliased only once a schema puts
-   * something in front of the name. See {@link resolveTableAlias} for why the prefix cannot be the
-   * qualified path.
+   * A FROM or JOIN operand plus the alias to prefix its columns by, aliased once a schema puts something
+   * in front of the name, or the read takes an alias of its own. See {@link resolveTableAlias} for why
+   * the prefix cannot be the qualified path.
    */
-  protected tableRef<E>(meta: EntityMeta<E>): { alias: string; ref: string } {
-    const alias = this.resolveTableAlias(meta);
+  protected tableRef<E>(meta: EntityMeta<E>, alias = this.resolveTableAlias(meta)): { alias: string; ref: string } {
     const name = this.escapedTableName(meta);
-    const schema = this.resolveSchema(meta);
-    return { alias, ref: schema ? `${name} ${this.escapeId(alias, true)}` : name };
+    const aliased = !!this.resolveSchema(meta) || alias !== this.resolveTableAlias(meta);
+    return { alias, ref: aliased ? `${name} ${this.escapeId(alias, true)}` : name };
   }
 
-  /** Columns are alias-qualified once anything else is in play: a join, or a to-many being filled. */
+  /**
+   * Columns are qualified once anything else is in play: an alias of the read's own, a join, or a
+   * relation being read.
+   */
   private resolveRelationAwarePrefix<E>(
     tableName: string,
     meta: EntityMeta<E>,
-    opts: QueryOptions,
+    opts: ReadOptions,
     populate: QueryPopulate<E> | undefined,
     joins: QueryJoins,
   ): string | undefined {
+    if (opts.alias) {
+      return opts.alias;
+    }
     return (opts.prefix ?? (opts.autoPrefix || joins.size > 0 || populatesRelations(meta, populate)))
       ? tableName
       : undefined;
   }
 
-  protected selectRelationFields(ctx: QueryContext, joins: QueryJoins): void {
+  /** Each joined row's columns and to-many relations under its path, which is what unflattens it. */
+  protected selectJoinedRows(
+    ctx: QueryContext,
+    joins: QueryJoins,
+    json: boolean | undefined,
+    distinct: boolean,
+  ): SelectTerm[] {
+    const terms: SelectTerm[] = [];
     for (const join of joins.values()) {
       // A join `$sort` asked for adds no columns: it orders the rows, it does not widen them.
       if (!join.projected) continue;
-      ctx.append(', ');
-      this.selectFields(
-        ctx,
-        join.entity,
-        join.query.$select,
-        { prefix: join.path, autoPrefixAlias: true },
-        join.query.$exclude,
-      );
+      const opts = { prefix: join.alias, json, joined: true };
+      const row = [
+        ...this.selectTerms(ctx, join.entity, join.query.$select, opts, join.query.$exclude),
+        ...this.selectToManyRelations(ctx, join.meta, join.query.$populate, join.alias, distinct),
+      ];
+      for (const term of row) {
+        terms.push({ sql: term.sql, key: `${join.path}.${relationTermKey(term)}` });
+      }
     }
+    return terms;
   }
 
   protected selectRelationJoins<E>(ctx: QueryContext, meta: EntityMeta<E>, rootAlias: string, joins: QueryJoins): void {
     for (const join of joins.values()) {
-      const joinAlias = this.escapeId(join.path, true);
-      const parentAlias = join.parent ? this.escapeId(join.parent.path, true) : this.escapeId(rootAlias, true);
+      const joinAlias = this.escapeId(join.alias, true);
+      const parentAlias = this.escapeId(join.parent ? join.parent.alias : rootAlias, true);
 
       ctx.append(` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapedTableName(join.meta)} ${joinAlias} ON `);
       join.relation.references.forEach((reference, index) => {
@@ -537,7 +683,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       // particular `security: true` ones) must apply even to a bare `$populate: { rel: true }`
       // with no explicit `$where` - and equally to a join `$sort` brought in on its own.
       // `where()` -> `renderWhere()` no-ops cleanly (appends nothing) when there is nothing to add.
-      this.where(ctx, join.entity, join.query.$where ?? {}, { prefix: join.path, clause: 'AND' });
+      this.where(ctx, join.entity, join.query.$where ?? {}, { prefix: join.alias, clause: 'AND' });
     }
   }
 
@@ -589,9 +735,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (val instanceof QueryRaw) {
       if (key === '$exists' || key === '$nexists') {
         ctx.append(key === '$exists' ? 'EXISTS (' : 'NOT EXISTS (');
-        // The alias: the enclosing statement declares one, and Postgres forbids reaching past it
-        // to the qualified name it aliased.
-        const alias = this.resolveTableAlias(meta);
+        // The read's alias: the enclosing statement declares one, and Postgres forbids reaching past
+        // it to the qualified name it aliased.
+        const alias = opts.prefix ?? this.resolveTableAlias(meta);
         this.getRawValue(ctx, {
           value: val,
           prefix: alias,
@@ -631,10 +777,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (rel) {
       const sizeVal = parseRelationSize(val);
       if (sizeVal !== undefined) {
-        this.compareRelationSize(ctx, entity, sizeVal, rel, opts);
+        this.compareRelationSize(ctx, entity, key, sizeVal, rel, opts);
         return;
       }
-      this.compareRelation(ctx, entity, val as QueryWhere<unknown>, rel, opts);
+      this.compareRelation(ctx, entity, key, val as QueryWhere<unknown>, rel, opts);
       return;
     }
 
@@ -983,7 +1129,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /**
    * Explodes the JSON array at `jsonField` into rows, as the `FROM` of an `EXISTS` subquery, under
-   * `alias` (from {@link QueryContext.nextAlias} - a fresh name per call, since `$elemMatch`/`$all`
+   * `alias` (from {@link QueryContext.claimAlias} - a fresh name per call, since `$elemMatch`/`$all`
    * can recurse into this on a nested array and a fixed, reused alias would let the inner occurrence
    * shadow the outer one it needs to correlate against). An empty `fields` means the elements are
    * scalars, in which case `asJson` says whether they are read as JSON or as text; otherwise they
@@ -1033,7 +1179,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (isOperatorOnlyObject(match)) {
       const entries = Object.entries(match);
       const asJson = !this.jsonScalarElemKeepsType && entries.every(([op, val]) => isJsonbOp(op, val));
-      const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+      const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
       const conditions = entries.map(([op, val]) =>
         this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), '', op, val, asJson),
       );
@@ -1049,7 +1195,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       return this.jsonAll(ctx, jsonField, [match]);
     }
 
-    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
       const asJson = isJsonbOp(op, opVal);
       return this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), field, op, opVal, asJson);
@@ -1090,20 +1236,30 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   /** Appends the `ORDER BY`, reporting whether there was one - which {@link pager} needs on the
    * engines that refuse to page an unordered statement. */
   sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, opts: QuerySortOptions = {}): boolean {
-    if (!hasKeys(sort)) {
-      return false;
-    }
-    // Collected before anything is appended so an unorderable key is reported instead of half a
-    // clause, and because a vector distance is the primary ordering wherever it appears in the map.
-    const vectors: string[] = [];
-    const columns: string[] = [];
-    this.collectSortTerms(ctx, getMeta(entity), sort, opts, vectors, columns);
-
-    const terms = [...vectors, ...columns];
+    const terms = this.sortTerms(ctx, getMeta(entity), sort, opts);
     if (terms.length) {
-      ctx.append(` ORDER BY ${terms.join(', ')}`);
+      ctx.append(` ORDER BY ${terms.map(({ expr, direction }) => expr + direction).join(', ')}`);
     }
     return terms.length > 0;
+  }
+
+  /**
+   * The terms of an `ORDER BY`, collected before anything is appended so an unorderable key is reported
+   * instead of half a clause, and because a vector distance is the primary ordering wherever it appears.
+   */
+  private sortTerms<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    sort: QuerySortMap<E> | undefined,
+    opts: QuerySortOptions,
+  ): SortTerm[] {
+    if (!hasKeys(sort)) {
+      return [];
+    }
+    const vectors: SortTerm[] = [];
+    const columns: SortTerm[] = [];
+    this.collectSortTerms(ctx, meta, sort, opts, vectors, columns);
+    return [...vectors, ...columns];
   }
 
   /**
@@ -1117,46 +1273,48 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     meta: EntityMeta<E>,
     sort: QuerySortMap<E>,
     opts: QuerySortOptions,
-    vectors: string[],
-    columns: string[],
+    vectors: SortTerm[],
+    columns: SortTerm[],
     path = '',
+    // Below the first level, the alias of the join the path walked to.
+    prefix = opts.prefix,
   ): void {
-    // Below the first level the alias a column is qualified by *is* the path walked to reach it.
-    const prefix = path || opts.prefix;
-
     for (const [key, value] of Object.entries(sort)) {
       const relation = meta.relations[key as RelationKey<E>];
+      const keyPath = path ? `${path}.${key}` : key;
       if (relation) {
-        const relPath = path ? `${path}.${key}` : key;
         const countDirection = parseSortByCount(value);
         if (countDirection !== undefined) {
           // A correlated count, not a join: a parent has many of these, so what is being ordered by
           // is how many, and `SELECT DISTINCT` cannot order by an expression it did not select.
           if (opts.distinct) {
-            throw new TypeError(`cannot $sort by '${relPath}.$count' with $distinct: it is not a selected column`);
+            throw new TypeError(`cannot $sort by '${keyPath}.$count' with $distinct: it is not a selected column`);
           }
-          columns.push(
-            this.buildFragment(ctx, (fragmentCtx) =>
-              this.appendRelationSubquery(fragmentCtx, meta, relation, { prefix }, 'COUNT(*)', {}),
-            ) + this.resolveSortDirection(countDirection),
-          );
+          columns.push({
+            key: keyPath,
+            expr: this.buildFragment(ctx, (fragmentCtx) =>
+              this.appendRelationSubquery(fragmentCtx, meta, key, relation, { prefix }, 'COUNT(*)', {}),
+            ),
+            direction: this.resolveSortDirection(countDirection),
+            output: false,
+          });
           continue;
         }
         const { join, sort: relationSort } = resolveSortableJoin(
           relation,
-          relPath,
+          keyPath,
           value,
           opts.joins ?? NO_JOINS,
-          `cannot $sort by relation '${relPath}': this statement joins no relations`,
+          `cannot $sort by relation '${keyPath}': this statement joins no relations`,
         );
         // `SELECT DISTINCT` can only order by what it selected, on every engine here, so a join
         // brought in for the sort alone has nothing to order by. Populating it selects its columns.
         if (opts.distinct && !join.projected) {
           throw new TypeError(
-            `cannot $sort by relation '${relPath}' with $distinct unless '${relPath}' is populated: SELECT DISTINCT orders only by selected columns`,
+            `cannot $sort by relation '${keyPath}' with $distinct unless '${keyPath}' is populated: SELECT DISTINCT orders only by selected columns`,
           );
         }
-        this.collectSortTerms(ctx, join.meta, relationSort, opts, vectors, columns, relPath);
+        this.collectSortTerms(ctx, join.meta, relationSort, opts, vectors, columns, keyPath, join.alias);
         continue;
       }
       if (isVectorSearch(value)) {
@@ -1166,12 +1324,21 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         // Already projected in the SELECT list: order by that alias rather than recomputing it.
         vectors.push(
           value.$project
-            ? this.escapeId(value.$project)
-            : this.buildFragment(ctx, (fragmentCtx) => this.appendVectorSort(fragmentCtx, meta, key, value)),
+            ? { key: keyPath, expr: this.escapeId(value.$project), direction: '', output: true }
+            : {
+                key: keyPath,
+                expr: this.buildFragment(ctx, (fragmentCtx) => this.appendVectorSort(fragmentCtx, meta, key, value)),
+                direction: '',
+                output: false,
+              },
         );
         continue;
       }
-      columns.push(this.sortColumn(ctx, meta, key, prefix) + this.resolveSortDirection(value));
+      columns.push({
+        key: keyPath,
+        ...this.sortColumn(ctx, meta, key, prefix),
+        direction: this.resolveSortDirection(value),
+      });
     }
   }
 
@@ -1179,16 +1346,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * The `ORDER BY` operand for one key. A key that is not a field of `meta` - a `raw()` projection, a
    * `$agg` alias - is an output alias, which is never table-qualified and needs no resolving.
    */
-  private sortColumn<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, prefix: string | undefined): string {
+  private sortColumn<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    prefix: string | undefined,
+  ): Pick<SortTerm, 'expr' | 'output'> {
     const field = meta.fields[key as FieldKey<E>];
     if (field) {
-      return (
+      const expr =
         this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta)) ??
-        this.columnWithPrefix(key, field, prefix)
-      );
+        this.columnWithPrefix(key, field, prefix);
+      return { expr, output: false };
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
-    return json ? this.jsonPathExpr(json.column, json.jsonPath, 'text') : this.escapeId(key);
+    return json
+      ? { expr: this.jsonPathExpr(json.column, json.jsonPath, 'text'), output: false }
+      : { expr: this.escapeId(key), output: true };
   }
 
   /**
@@ -1248,7 +1422,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * joined: Postgres refuses a bare `FOR UPDATE` over the nullable side of an outer join outright,
    * and the other engines quietly widen the lock to the joined rows.
    */
-  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, joins = NO_JOINS): void {
+  protected appendLock<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, joins = NO_JOINS, alias?: string): void {
     const wait = parseQueryLock(q.$lock);
     if (!wait) {
       return;
@@ -1256,7 +1430,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     this.assertLockSupported(entity, q, joins);
     const meta = getMeta(entity);
     // `OF` names the alias in the FROM, never the schema-qualified path it was aliased from.
-    const target = joins.size > 0 ? ` OF ${this.escapeId(this.resolveTableAlias(meta), true)}` : '';
+    const target = joins.size > 0 ? ` OF ${this.escapeId(alias ?? this.resolveTableAlias(meta), true)}` : '';
     const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
     ctx.append(` FOR UPDATE${target}${suffix}`);
   }
@@ -1281,9 +1455,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * many rows there are beyond the page it already has.
    */
   countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions): void {
+    const read = this.readOptions(ctx, getMeta(entity), opts);
     ctx.append(`SELECT COUNT(*) ${this.escapeId(COUNT_ALIAS, true)} FROM (`);
-    this.select(ctx, entity, q, opts);
-    this.search(ctx, entity, { $where: q.$where }, opts);
+    this.select(ctx, entity, q, read);
+    this.search(ctx, entity, { $where: q.$where }, read);
     ctx.append(`) ${this.escapeId(DISTINCT_DERIVED_ALIAS, true)}`);
   }
 
@@ -1427,14 +1602,50 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected readonly totalOverExpr = 'COUNT(*) OVER ()';
 
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string): void {
+    const meta = getMeta(entity);
+    const read = this.readOptions(ctx, meta, opts);
     // The one statement that can join, so the one that resolves the join set; everything else renders
-    // against `NO_JOINS` and rejects a `$sort` that would need one.
-    const joins = resolveQueryJoins(getMeta(entity), q);
-    this.select(ctx, entity, q, opts, joins, totalAlias);
-    this.search(ctx, entity, q, opts, joins);
-    // Appended here rather than in `search`, which `count`/`update`/`delete` share: a lock belongs
-    // to a SELECT alone. Every engine spells it after LIMIT/OFFSET, so it goes last.
-    this.appendLock(ctx, entity, q, joins);
+    // against `NO_JOINS` and rejects a `$sort` that would need one. The joins claim their aliases after
+    // the table's own.
+    this.read(
+      ctx,
+      entity,
+      q,
+      read,
+      resolveQueryJoins(meta, q, (path) => ctx.claimAlias(path)),
+      totalAlias,
+    );
+  }
+
+  /**
+   * A read's whole statement. The lock is appended here rather than in `search`, which `count`,
+   * `update` and `delete` share: it belongs to a SELECT alone, and every engine spells it last.
+   */
+  protected read<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E>,
+    opts: ReadOptions,
+    joins: QueryJoins,
+    totalAlias?: string,
+  ): ReadProjection {
+    const projection = this.select(ctx, entity, q, opts, joins, totalAlias);
+    this.search(ctx, entity, q, opts, joins, projection.order);
+    this.appendLock(ctx, entity, q, joins, opts.alias);
+    return projection;
+  }
+
+  /**
+   * `opts` with the alias the read's table claims: its own name, which needs no alias written, unless
+   * another table of the statement took it first.
+   */
+  private readOptions<E>(ctx: QueryContext, meta: EntityMeta<E>, opts: ReadOptions = {}): ReadOptions {
+    if (opts.alias !== undefined) {
+      return opts;
+    }
+    const name = this.resolveTableAlias(meta);
+    const alias = ctx.claimAlias(name);
+    return alias === name ? opts : { ...opts, alias };
   }
 
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
@@ -1793,7 +2004,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   }
 
   /**
-   * The mirror of {@link persistKind}: what one column decodes as, or nothing if it needs no decode.
+   * The mirror of {@link persistKind}: what one column decodes as, or nothing if it needs no decode. A
+   * date and bytes decode because a related row crosses JSON, which spells both as text.
    *
    * `BigInt` is asked first because it shares the numeric family with `Number`: let the switch answer
    * it and every `type: BigInt` property silently decodes to a JS number again.
@@ -1812,6 +2024,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         return 'boolean';
       case 'numeric':
         return 'number';
+      case 'date':
+        return 'date';
+      case 'blob':
+        return 'bytes';
       default:
         return undefined;
     }
@@ -1922,8 +2138,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   /** Remove object keys. */
   protected abstract jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string;
 
-  getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw; autoPrefixAlias?: boolean }) {
-    const { value, prefix = '', escapedPrefix, autoPrefixAlias } = opts;
+  getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw }) {
+    const { value, prefix = '', escapedPrefix } = opts;
     value.render({
       ...opts,
       ctx,
@@ -1933,8 +2149,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     });
     const alias = value[RAW_ALIAS];
     if (alias) {
-      const fullAlias = autoPrefixAlias && prefix ? `${prefix}.${alias}` : alias;
-      ctx.append(' ' + this.escapeId(fullAlias, true));
+      ctx.append(' ' + this.escapeId(alias, true));
     }
   }
 
@@ -2063,18 +2278,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return this.escapeId(table, false, true) + this.escapedColumnName(meta, key);
   }
 
-  /** As {@link escapedColumn}, but qualified by the query alias when the parent is nested. */
-  private escapedParentColumn<E>(
-    parentTable: string,
-    meta: EntityMeta<E>,
-    opts: QueryComparisonOptions,
-    key: string,
-  ): string {
-    return opts.prefix
-      ? this.escapeId(opts.prefix, true, true) + this.escapedColumnName(meta, key)
-      : this.escapedColumn(parentTable, meta, key);
-  }
-
   /**
    * The single path from a relation operator to its target, so none can emit an unscoped subquery:
    * the target's `$where` is merged with its active filters, making a trashed or out-of-scope row
@@ -2084,82 +2287,256 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   private appendRelationSubquery<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
+    relKey: string,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
     projection: '1' | 'COUNT(*)',
     val: QueryWhere<unknown>,
   ): void {
-    // Aliases, not paths, everywhere a column is prefixed; `tableRef` declares them in the FROM.
-    const parentAlias = this.resolveTableAlias(meta);
     const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
-    const { alias: relatedAlias, ref: relatedRef } = this.tableRef(relatedMeta);
-    // Resolved before any SQL is emitted: it also decides whether the mm form reaches the target.
+    const parent = opts.prefix ?? this.resolveTableAlias(meta);
+    // Resolved before any SQL is emitted: it also decides whether the junction form reaches the target.
     const targetWhere = this.scopedWhere(relatedMeta, val);
 
     ctx.append(`(SELECT ${projection} FROM `);
 
-    // One equality per key of the parent, anded: a composite correlates on every column, and matching
-    // on part of one would find the rows of a different parent. `parentJoins` is what keeps the two
-    // ends the right way round, whether the join lands on the junction or on the target.
-    const correlation = (alias: string, joinedMeta: EntityMeta<unknown>) =>
-      parentJoins(rel, meta.ids.length)
-        .map(
-          ({ parent, joined }) =>
-            `${this.escapedColumn(alias, joinedMeta, joined)} = ${this.escapedParentColumn(parentAlias, meta, opts, parent)}`,
-        )
-        .join(' AND ');
-
-    if (rel.cardinality === 'mm' && rel.through) {
-      const throughEntity = rel.through();
-      const throughMeta = getMeta(throughEntity);
-      const { alias: throughAlias, ref: throughRef } = this.tableRef(throughMeta);
-
-      ctx.append(throughRef);
-      ctx.append(` WHERE ${correlation(throughAlias, throughMeta)}`);
-      // The junction is a row being read too: a soft-deleted link is not a link.
-      this.where(ctx, throughEntity, {}, { prefix: throughAlias, clause: 'AND' });
-
+    if (rel.through) {
+      const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
+      ctx.append(junction.from);
       if (hasKeys(targetWhere)) {
+        const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey));
         const targetKey = soleIdOf(relatedMeta, 'a many-to-many target');
-        const [targetColumn] = targetKeyColumns(rel, meta.ids.length);
-        ctx.append(` AND ${this.escapedColumn(throughAlias, throughMeta, targetColumn)} IN (`);
-        ctx.append(`SELECT ${this.escapedColumn(relatedAlias, relatedMeta, targetKey)} FROM ${relatedRef}`);
-        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'WHERE' });
+        ctx.append(` AND ${junction.target} IN (`);
+        ctx.append(`SELECT ${this.escapedColumn(related.alias, relatedMeta, targetKey)} FROM ${related.ref}`);
+        this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'WHERE' });
         ctx.append(')');
       }
     } else {
-      ctx.append(relatedRef);
-      ctx.append(` WHERE ${correlation(relatedAlias, relatedMeta)}`);
-      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: relatedAlias, clause: 'AND' });
+      const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey, parent));
+      ctx.append(related.ref);
+      ctx.append(` WHERE ${this.correlation(meta, rel, parent, related.alias, relatedMeta)}`);
+      this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'AND' });
     }
 
     ctx.append(')');
+  }
+
+  /**
+   * One equality per key of the parent, anded: a composite correlates on every column, and matching on
+   * part of one would find the rows of a different parent. `parentJoins` keeps the two ends the right
+   * way round, whether the join lands on the junction or on the target.
+   */
+  private correlation<E>(
+    meta: EntityMeta<E>,
+    rel: RelationMeta,
+    parent: string,
+    alias: string,
+    joinedMeta: EntityMeta<unknown>,
+  ): string {
+    const escapedParent = this.escapeId(parent, true, true);
+    return parentJoins(rel, meta.ids.length)
+      .map(
+        ({ parent: key, joined }) =>
+          `${this.escapedColumn(alias, joinedMeta, joined)} = ${escapedParent}${this.escapedColumnName(meta, key)}`,
+      )
+      .join(' AND ');
+  }
+
+  /**
+   * Each to-many a row populates, as a subquery of the statement's select list correlated to `parent`,
+   * the row's alias. [The design](../../../../architecture/relations-in-one-statement.md).
+   */
+  private selectToManyRelations<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    populate: QueryPopulate<E> | undefined,
+    parent: string,
+    distinct: boolean,
+  ): SelectTerm[] {
+    return getRelationRequestSummary(meta, populate).toManyKeys.map((relKey) => {
+      const { query } = parseRelationAtKey(relKey, populate);
+      const sql = this.buildFragment(ctx, (fragmentCtx) =>
+        this.appendToManyRelation(fragmentCtx, meta, relKey, query, parent, distinct),
+      );
+      return { sql, key: relKey };
+    });
+  }
+
+  /** Each relation a read's `$count` tallies, as a correlated count of its select list. */
+  private selectRelationCounts<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    count: QueryCount<E> | undefined,
+    parent: string,
+  ): SelectTerm[] {
+    return countedRelations(meta, count).map(({ relKey, relation, where }) => {
+      const sql = this.buildFragment(ctx, (fragmentCtx) =>
+        this.appendRelationSubquery(fragmentCtx, meta, relKey, relation, { prefix: parent }, 'COUNT(*)', where),
+      );
+      return { sql, key: `${COUNT_RESULT_KEY}.${relKey}` };
+    });
+  }
+
+  /**
+   * A to-many's rows as one JSON array: an ordinary read of the related entity under the relation's
+   * name, narrowed to the parent's rows, in the engine's own spelling.
+   */
+  private appendToManyRelation<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    relKey: RelationKey<E>,
+    query: RelationQuery,
+    parent: string,
+    distinct: boolean,
+  ): void {
+    const relation = relationOf(meta, relKey);
+    const entity = relation.entity();
+    const relMeta = getMeta(entity);
+    this.assertDistinctSort(relMeta, relKey, query);
+    const alias = ctx.claimAlias(relKey, parent);
+    const correlation = raw(({ ctx: rowsCtx }) => this.appendCorrelation(rowsCtx, meta, relation, parent, alias));
+    const rows = { ...query, $where: { ...query.$where, $and: [...(query.$where?.$and ?? []), correlation] } };
+    const joins = resolveQueryJoins(relMeta, rows, (path) => ctx.claimAlias(path));
+    this.appendRelationArray(ctx, { entity, query: rows, alias, joins, distinct });
+  }
+
+  /**
+   * A relation that deduplicates its rows is sorted only by what it selects: `SELECT DISTINCT` orders by
+   * nothing else, and a column carrying a sort term out would join the set it deduplicates on.
+   */
+  private assertDistinctSort(meta: EntityMeta<object>, relKey: string, query: RelationQuery): void {
+    if (!query.$distinct || !query.$sort) {
+      return;
+    }
+    const selected: readonly unknown[] = projectedKeys(meta, query.$select, query.$exclude, true);
+    for (const key of getKeys(query.$sort)) {
+      if (!selected.includes(key)) {
+        throw new TypeError(`cannot $sort the $distinct relation '${relKey}' by '${key}', which it does not select`);
+      }
+    }
+  }
+
+  /**
+   * What makes a relation's row one of the parent's: its foreign key on the parent's key, or, through a
+   * junction, a pairing of the two that the junction's own filters let through.
+   */
+  private appendCorrelation<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    rel: RelationMeta,
+    parent: string,
+    alias: string,
+  ): void {
+    const relMeta = getMeta(rel.entity());
+    if (!rel.through) {
+      ctx.append(this.correlation(meta, rel, parent, alias, relMeta));
+      return;
+    }
+    const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
+    const targetKey = soleIdOf(relMeta, 'a many-to-many target');
+    ctx.append(`${this.escapedColumn(alias, relMeta, targetKey)} IN (SELECT ${junction.target} FROM ${junction.from})`);
+  }
+
+  /**
+   * A junction's rows pairing the parent with the relation's targets, as far as its own filters let them
+   * through, since a soft-deleted link is not a link; and the column naming each row's target.
+   */
+  private junctionRows<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    rel: RelationMeta,
+    junction: Type<unknown>,
+    parent: string,
+  ): { readonly from: string; readonly target: string } {
+    const junctionMeta = getMeta(junction);
+    const { alias, ref } = this.tableRef(junctionMeta, ctx.claimAlias(this.resolveTableAlias(junctionMeta), parent));
+    const scope = this.buildFragment(ctx, (fragmentCtx) =>
+      this.where(fragmentCtx, junction, {}, { prefix: alias, clause: 'AND' }),
+    );
+    const [target] = targetKeyColumns(rel, meta.ids.length);
+    return {
+      from: `${ref} WHERE ${this.correlation(meta, rel, parent, alias, junctionMeta)}${scope}`,
+      target: this.escapedColumn(alias, junctionMeta, target),
+    };
+  }
+
+  /**
+   * A relation's rows as one JSON array, in the engine's own spelling: an aggregate over them read as
+   * a derived table ({@link derivedRelation}), or over the related table itself where the engine cannot
+   * correlate a derived table. [The design](../../../../architecture/relations-in-one-statement.md).
+   */
+  protected abstract appendRelationArray(ctx: QueryContext, rows: RelationRows): void;
+
+  /**
+   * Whether the engine's JSON aggregate takes an `ORDER BY` of its own. Where it does not, a relation's
+   * rows carry no sort term out and keep their own order, which a derived table hands its aggregate.
+   */
+  protected readonly orderedAggregates: boolean = true;
+
+  /**
+   * The rows read as a derived table, their values crossing JSON and, where the aggregate orders, each
+   * sort term carried out beside them for it to order by, since a derived table's order is not promised
+   * past it. The table takes the relation's name, which nothing inside it can see.
+   */
+  protected derivedRelation(ctx: QueryContext, rows: RelationRows): DerivedRelation {
+    const rowsCtx = ctx.createFragment();
+    const readOpts = { alias: rows.alias, json: true, carried: this.orderedAggregates };
+    const { terms, order = [] } = this.read(rowsCtx, rows.entity, rows.query, readOpts, rows.joins);
+    const alias = this.escapeId(rows.alias, true);
+    return {
+      from: `(${rowsCtx.sql}) ${alias}`,
+      pairs: terms.map((term) => {
+        const key = relationTermKey(term);
+        return [key, `${alias}.${this.escapeId(key, true)}`] as const;
+      }),
+      order: order.map(({ ref, direction }) => `${alias}.${ref}${direction}`).join(', '),
+    };
+  }
+
+  /**
+   * How each column family crosses JSON inside its parent's statement, where JSON would round it or
+   * cannot spell it: as text, which the field's hydrate kind decodes back, and bytes as `\x` and hex,
+   * the `BYTES_PREFIX`. A family missing here crosses as it is.
+   */
+  protected readonly carriedFields: CarriedFields = {};
+
+  /** `expr` as it crosses JSON, by its field's family: see {@link carriedFields}. */
+  private carried(expr: string, field: FieldOptions): string {
+    const family = columnFamily(field.columnType ?? field.type);
+    return (family && this.carriedFields[family]?.(expr, field)) ?? expr;
+  }
+
+  /** `'key', column, ...`: the arguments of a JSON object call over `pairs`. */
+  protected jsonObjectArgs(pairs: DerivedRelation['pairs']): string {
+    return pairs.map(([key, sql]) => `${this.escape(key)}, ${sql}`).join(', ');
   }
 
   /** Filter by relation: a parent matches when {@link appendRelationSubquery} finds one target row. */
   protected compareRelation<E>(
     ctx: QueryContext,
     entity: Type<E>,
+    relKey: string,
     val: QueryWhere<unknown>,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
     ctx.append('EXISTS ');
-    this.appendRelationSubquery(ctx, getMeta(entity), rel, opts, '1', val);
+    this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, '1', val);
   }
 
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */
   protected compareRelationSize<E>(
     ctx: QueryContext,
     entity: Type<E>,
+    relKey: string,
     sizeVal: number | QuerySizeComparisonOps,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
     this.buildSizeComparison(
       ctx,
-      () => this.appendRelationSubquery(ctx, getMeta(entity), rel, opts, 'COUNT(*)', {}),
+      () => this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, 'COUNT(*)', {}),
       sizeVal,
     );
   }

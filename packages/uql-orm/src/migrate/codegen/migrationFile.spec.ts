@@ -46,7 +46,7 @@ describe('emitSqlRunCall', () => {
 
   it('backslashes and quotes', () => {
     const sql = String.raw`SELECT '\\' AS x, "'" AS y;`;
-    // Two backslashes inside the JSON string literal → four `\` in this template source.
+    // Two backslashes inside the JSON string literal -> four `\` in this template source.
     expect(emitSqlRunCall(sql)).toBe(`    await querier.run("SELECT '\\\\\\\\' AS x, \\"'\\" AS y;");`);
     assertEmittedRunCallParses(sql);
   });

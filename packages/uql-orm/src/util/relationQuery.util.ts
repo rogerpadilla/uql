@@ -1,21 +1,20 @@
 import type {
   EntityMeta,
-  FieldMeta,
-  Except,
-  Query,
+  QueryCount,
   QueryPopulate,
   QuerySelect,
   RelationKey,
   RelationMeta,
+  RelationQuery,
   QueryWhere,
 } from '../type/index.js';
 import {
   QUERY_BOOLEAN_CLAUSES,
   QUERY_NUMBER_CLAUSES,
   QUERY_OBJECT_CLAUSES,
-  QUERY_ROOT_NUMBER_CLAUSES,
+  QUERY_STATEMENT_CLAUSES,
 } from '../type/query.js';
-import { getKeys, someKey } from './object.util.js';
+import { getKeys, isRecord, someKey } from './object.util.js';
 
 export type RelationRequestSummary<E> = {
   readonly requestedKeys: readonly RelationKey<E>[];
@@ -73,109 +72,19 @@ export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, pare
   return relOpts.references.slice(parentKeyCount).map(({ local }) => local);
 }
 
-/** `{ joined column: true }`: the projection or grouping that keeps a parent's key on the rows read. */
-export function joinedColumns(joins: readonly ParentJoin[]): Record<string, true> {
-  return Object.fromEntries(keyColumns(joins, 'joined').map((column) => [column, true]));
-}
-
-/**
- * One side's columns: `'parent'` for the columns a parent is keyed by, `'joined'` for the ones a
- * child or tally row carries that key in. Matching the two halves means agreeing on every column, so
- * each side is read through `joins` rather than through the parent's own key list - the same set only
- * for a to-many, and silently a different one otherwise. `keyof ParentJoin` is what keeps the two
- * sides from being spelled apart.
- *
- * Lifted out of `joins` once per relation, not once per row: {@link rowKey} takes the list and reads
- * each row itself, so a page of children costs one key each and nothing else.
- */
-export function keyColumns(joins: readonly ParentJoin[], side: keyof ParentJoin): string[] {
-  return joins.map((join) => join[side]);
-}
-
-/**
- * `{ joined column: every parent's value for it }`, the filter that fetches a whole page of parents'
- * children in one statement.
- *
- * A composite over-selects, because the lists are independent and a pairing no parent has can still
- * match. Regrouping the rows keys on every column, so those rows find no parent and are dropped -
- * cheaper than the row-value comparison no engine spells the same way.
- */
-export function parentsIn(joins: readonly ParentJoin[], parents: readonly unknown[]): Record<string, unknown[]> {
-  return Object.fromEntries(joins.map(({ parent, joined }) => [joined, parents.map((it) => read(it, parent))]));
-}
-
-/**
- * The parents a bounded to-many read fans out over: the rows themselves, the columns matching them to
- * their children.
- */
-export type ParentPartition = {
-  readonly joins: readonly ParentJoin[];
-  readonly parents: readonly unknown[];
-  /** The parent's own fields: a `LATERAL` row source has to spell its key column's type. */
-  readonly parentFields: Readonly<Record<string, FieldMeta | undefined>>;
-};
-
-/**
- * Whether a to-many's own query asks for a share *per parent* rather than a slice of the whole page.
- * Only `$limit`/`$skip` do: without one, a single flat statement over an `IN (...)` list is both
- * correct and cheaper.
- */
-export function isBoundedPerParent(query: Pick<RelationQuery, '$limit' | '$skip'>): boolean {
-  return query.$limit !== undefined || query.$skip !== undefined;
-}
-
-/**
- * The `$where` naming exactly one parent's children: every joined column equal to that parent's value.
- * What a per-parent bounded read filters each of its branches by, and the composite half of
- * {@link childrenOf}.
- */
-function childOf(joins: readonly ParentJoin[], parent: unknown): Record<string, unknown> {
-  return Object.fromEntries(joins.map(({ parent: key, joined }) => [joined, read(parent, key)]));
-}
-
-/**
- * `query` narrowed to one parent's children: what a single branch of a bounded per-parent read asks
- * for. Shared by the backends so how the parent's filter merges into the relation's own is decided
- * once - both spelled it out, and a rule that ever needs more than a spread would have to change twice.
- */
-export function queryChildrenOf<E>(query: Query<E>, joins: readonly ParentJoin[], parent: unknown): Query<E> {
-  return queryNarrowedTo(query, childOf(joins, parent));
-}
-
-/**
- * `query` narrowed to the children of a whole page of parents, which is the flat read a relation with
- * no share of its own takes. Over-selects on a composite key exactly as {@link parentsIn} does.
- */
-export function queryChildrenOfAll<E>(
-  query: Query<E>,
-  joins: readonly ParentJoin[],
-  parents: readonly unknown[],
-): Query<E> {
-  return queryNarrowedTo(query, parentsIn(joins, parents));
-}
-
-/**
- * `query` with `filter` merged into its own `$where`: the one rule for narrowing a relation's query to
- * the parents it is being read for, whether the filter names their keys as values or, for a correlated
- * shape, as a reference to a row source.
- */
-export function queryNarrowedTo<E>(query: Query<E>, filter: Record<string, unknown>): Query<E> {
-  return { ...query, $where: { ...query.$where, ...filter } as QueryWhere<E> };
-}
-
 /**
  * The `$where` naming exactly the children of the rows `parentIds` identifies: an `IN` over the one
- * column a single key contributes, an OR of key maps for several.
- *
- * Exact, unlike {@link parentsIn}: a read absorbs over-selection by regrouping its rows, and a write
- * has nothing to regroup - a pairing no parent has would delete a child of a parent that survives.
+ * column a single key contributes, an OR of whole key maps for several - lists of each column apart
+ * would pair values no parent has, and a delete would take a child of a parent that survives.
  */
 export function childrenOf(joins: readonly ParentJoin[], parentIds: readonly unknown[]): Record<string, unknown> {
   const [first] = joins;
   if (joins.length === 1) {
     return { [first.joined]: parentIds };
   }
-  return { $or: parentIds.map((id) => childOf(joins, id)) };
+  return {
+    $or: parentIds.map((id) => Object.fromEntries(joins.map(({ parent, joined }) => [joined, read(id, parent)]))),
+  };
 }
 
 function read(row: unknown, key: string): unknown {
@@ -250,18 +159,27 @@ export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopul
   return someKey(populate, (key) => !!populate[key] && key in meta.relations);
 }
 
-// `$lock` and `$candidates` are statement-level, so they are not part of a relation query:
-// `parseRelationQueryValue` rejects them explicitly rather than letting one fall through as an
-// unrecognized shape.
-export type RelationQuery<E extends object = object> = Except<Query<E>, StatementOnlyClause> & {
-  $required?: boolean;
-};
-
-/** The clauses that describe the statement rather than what a query selects. */
-type StatementOnlyClause = '$lock' | '$candidates';
-
-/** Their runtime half, so the check below cannot drift from the type above. */
-const STATEMENT_ONLY_CLAUSES: readonly StatementOnlyClause[] = ['$lock', ...QUERY_ROOT_NUMBER_CLAUSES];
+/**
+ * Each relation a `$count` tallies, and the filter narrowing what it counts: the target's, whose type
+ * only the metadata knows this far down, as for a relation filter reaching the same subquery.
+ */
+export function countedRelations<E>(
+  meta: EntityMeta<E>,
+  counts: QueryCount<E> | undefined,
+): { readonly relKey: RelationKey<E>; readonly relation: RelationMeta; readonly where: QueryWhere<unknown> }[] {
+  if (!counts) {
+    return [];
+  }
+  return getKeys(counts).flatMap((relKey) => {
+    const count = counts[relKey];
+    const relation = meta.relations[relKey];
+    if (!count || !relation) {
+      return [];
+    }
+    const where = typeof count === 'object' ? count.$where : undefined;
+    return [{ relKey, relation, where: where ?? {} }];
+  });
+}
 
 // Taken from the clause groups declared beside `Query` itself, so a renamed clause fails to compile
 // here instead of quietly narrowing what a relation query accepts. `$required` is the one key that
@@ -290,7 +208,7 @@ export function parseRelationQueryValue<E extends object = object>(value: unknow
   // Caught before the shape check so the message names the key, rather than reporting the whole
   // object as an unrecognized relation query value.
   if (isRecord(value)) {
-    const statementOnly = STATEMENT_ONLY_CLAUSES.find((clause) => clause in value);
+    const statementOnly = QUERY_STATEMENT_CLAUSES.find((clause) => clause in value);
     if (statementOnly) {
       throw new TypeError(
         `'${statementOnly}' applies to the whole statement, not to a populated relation. Move it to the top level of the query.`,
@@ -330,10 +248,6 @@ export function forEachRequestedRelation<E extends object>(
   }
 }
 
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
 function isBooleanLikeValue(value: unknown): value is boolean | 0 | 1 {
   return value === true || value === false || value === 0 || value === 1;
 }
@@ -348,7 +262,7 @@ function isValidRelationQueryShape(query: Record<string, unknown>): boolean {
     if (RELATION_QUERY_BOOLEAN_KEYS.has(key) && !isBooleanLikeValue(value)) {
       return false;
     }
-    if (RELATION_QUERY_OBJECT_KEYS.has(key) && !isRecord(value)) {
+    if (RELATION_QUERY_OBJECT_KEYS.has(key) && !isRecord(value) && !(key === '$select' && Array.isArray(value))) {
       return false;
     }
     if (RELATION_QUERY_NUMBER_KEYS.has(key) && (typeof value !== 'number' || !Number.isFinite(value))) {

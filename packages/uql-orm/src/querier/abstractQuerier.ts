@@ -24,25 +24,22 @@ import type {
   QueryPopulate,
   QueryProjected,
   QuerySearch,
-  QueryStreamProjected,
   PrimaryKey,
   QueryUpdateResult,
   QueryUpsertOneResult,
   QueryUpsertManyResult,
   QueryWhere,
-  RawRow,
   RelationKey,
   RelationMeta,
+  RelationQuery,
   TransactionOptions,
   Type,
   UpdatePayload,
   WrittenId,
 } from '../type/index.js';
 import {
-  asSelectMap,
   childrenOf,
   clone,
-  dataKeyed,
   entityName,
   fillOnFields,
   filterPersistableRelationKeys,
@@ -51,19 +48,11 @@ import {
   getRelationRequestSummary,
   idOnlyQuery,
   isScalarId,
-  joinedColumns,
-  keyColumns,
   LoggerWrapper,
-  type ParentJoin,
-  type ParentPartition,
-  isBoundedPerParent,
-  type JoinedRelationRejectedKey,
   parentJoins,
-  queryChildrenOfAll,
   queryLoggerFor,
   parseRelationAtKey,
   parseRelationQueryValue,
-  type RelationQuery,
   rowKey,
   runHooks,
   someKey,
@@ -72,7 +61,6 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { enrichError } from './queryError.js';
-import { fillRelationCounts, withIdForCounts } from './relationCount.js';
 
 /**
  * Rejects a nullish primary key before it reaches a statement. The by-id methods reduce to
@@ -309,18 +297,19 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<E[]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    const founds = await this.internalFindMany(entity, withIdForCounts(entity, q), opts);
+    const founds = await this.internalFindMany(entity, q, opts);
     // Guarded here rather than only inside: awaiting a call that returns at once still costs every read
-    // a promise and a turn of the microtask queue, and most reads count nothing and hook nothing.
-    if (q.$count) {
-      await fillRelationCounts(this, entity, founds, q.$count);
-    }
-    if (this.hasHook(entity, 'afterLoad')) {
-      await this.emitHook(entity, 'afterLoad', founds);
+    // a promise and a turn of the microtask queue, and most reads hook nothing.
+    if (this.listensForLoad(entity, q.$populate)) {
+      await this.emitLoaded(entity, founds, q.$populate);
     }
     return founds;
   }
 
+  /**
+   * The rows matching `q`, each populated relation and `$count` read with them in the same statement
+   * or pipeline. [The design](../../../../architecture/relations-in-one-statement.md).
+   */
   protected abstract internalFindMany<E extends object>(
     entity: Type<E>,
     q: Query<E>,
@@ -328,16 +317,9 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<E[]>;
 
   /**
-   * Stream records as an async iterable.
-   * Supports both entity-as-argument and entity-as-field patterns.
-   *
-   * **SQL:** Joinable relations (e.g. m1 / one-to-one) are still emitted in the streamed SQL; **to-many**
-   * relations are not filled (no second query) - requesting them throws a clear `TypeError`.
-   *
-   * **MongoDB:** Relation loading uses aggregation + follow-up queries in `findMany`; **streams use a plain
-   * find cursor**, so any requested relation keys in `$select` / `$populate` throw a `TypeError`.
-   *
-   * No `afterLoad` hooks on streamed rows.
+   * Stream records as an async iterable, in both the entity-as-argument and entity-as-field patterns.
+   * Each row streams with its populated relations and counts, read by the same statement or pipeline
+   * `findMany` runs. No `afterLoad` hooks on streamed rows.
    */
   findManyStream<
     E extends object,
@@ -345,21 +327,23 @@ export abstract class AbstractQuerier implements Querier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryStreamProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
   findManyStream<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryStreamProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
   findManyStream<E extends object>(
     entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
     maybeQueryOrOpts?: Query<E> | QueryOptions,
@@ -369,19 +353,6 @@ export abstract class AbstractQuerier implements Querier {
     this.validateProjectionQuery(entity, q);
     return this.internalFindManyStream(entity, q, opts);
   }
-
-  /**
-   * The children of every parent in `parents`, at most `$limit` each after `$skip` - what a to-many
-   * `$populate` carrying either one means. One statement, not one per parent.
-   *
-   * Abstract rather than defaulted: a default would be N queries, which is the N+1 that batched
-   * population exists to prevent, and it would be invisible to whichever backend forgot to override.
-   */
-  protected abstract internalFindManyPerParent<E extends object>(
-    entity: Type<E>,
-    q: Query<E>,
-    partition: ParentPartition,
-  ): Promise<E[]>;
 
   protected abstract internalFindManyStream<E extends object>(
     entity: Type<E>,
@@ -423,9 +394,10 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<[E[], number]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
     this.validateProjectionQuery(entity, q);
-    const [founds, count] = await this.internalFindManyAndCount(entity, withIdForCounts(entity, q), opts);
-    await fillRelationCounts(this, entity, founds, q.$count);
-    await this.emitHook(entity, 'afterLoad', founds);
+    const [founds, count] = await this.internalFindManyAndCount(entity, q, opts);
+    if (this.listensForLoad(entity, q.$populate)) {
+      await this.emitLoaded(entity, founds, q.$populate);
+    }
     return [founds, count];
   }
 
@@ -754,164 +726,6 @@ export abstract class AbstractQuerier implements Querier {
     return ids;
   }
 
-  protected async fillToManyRelations<E>(entity: Type<E>, payload: E[], populate?: QueryPopulate<E>) {
-    if (!payload.length) {
-      return;
-    }
-
-    const meta = getMeta(entity);
-    const relKeys = getRelationRequestSummary(meta, populate).toManyKeys;
-
-    for (const relKey of relKeys) {
-      const relOpts = relationOf(meta, relKey);
-      const relEntity = relOpts.entity();
-      type RelEntity = typeof relEntity;
-      const relationQuery = clone(parseRelationAtKey(relKey, populate).query) as RelationQuery<RelEntity>;
-
-      if (relOpts.through) {
-        await this.fillToManyThroughRelation(payload, meta, relKey, relOpts, relationQuery as RelationQuery);
-      } else if (relOpts.cardinality === '1m') {
-        await this.fillToManyOneToMany(payload, meta, relKey, relOpts, relationQuery as RelationQuery, relEntity);
-      }
-    }
-  }
-
-  private async fillToManyThroughRelation<E>(
-    payload: E[],
-    meta: EntityMeta<E>,
-    relKey: RelationKey<E>,
-    relOpts: RelationMeta,
-    relationQuery: RelationQuery,
-  ): Promise<void> {
-    const joins = parentJoins(relOpts, meta.ids.length);
-    const [targetColumn] = targetKeyColumns(relOpts, meta.ids.length);
-    const throughEntity = relOpts.through!();
-    const throughMeta = getMeta(throughEntity);
-    const targetRelKey = getKeys(throughMeta.relations).find((key) =>
-      throughMeta.relations[key]?.references.some(({ local }) => local === targetColumn),
-    );
-    if (!targetRelKey) {
-      // Asserted rather than assumed: used as a key regardless, it spells the literal string
-      // `undefined`, and the statement asks the junction for a relation of that name.
-      throw new TypeError(
-        `'${meta.name}.${relKey}' goes through '${throughMeta.name}', which declares no relation on its ` +
-          `'${targetColumn}' column. Give it one, so the target's rows can be read through it.`,
-      );
-    }
-    // A relation query names the target's columns, not the junction's, so its projection and filter
-    // belong on the populate below, resolved against the entity that has them. Spread onto the
-    // junction query instead they asked `ItemTag` for `Tag`'s columns and failed with "no such
-    // column".
-    //
-    // Ordering and paging split the other way: they describe the statement with one row per pairing,
-    // which is the junction's. Left on the populate they reached a to-one join, which rejects all
-    // four by name - so a many-to-many carrying any of them threw rather than paging.
-    //
-    // Those four are not a coincidence: they are exactly the clauses a joined relation rejects, for
-    // the same reason - each needs a statement with many rows per parent, which only the junction's
-    // is. The `satisfies` ties the two lists together, so a fifth clause added there fails to compile
-    // here rather than quietly staying on the populate and throwing again.
-    const { $sort, $limit, $skip, $distinct, ...targetQuery } = relationQuery;
-    const junctionClauses = {
-      $limit,
-      $skip,
-      $distinct,
-      // Qualified by the relation that reaches them, since the columns it names are the target's.
-      $sort: $sort && { [targetRelKey]: $sort },
-    } satisfies Record<JoinedRelationRejectedKey, unknown>;
-    const junctionQuery: RelationQuery = {
-      $select: joinedColumns(joins),
-      ...junctionClauses,
-      $populate: {
-        [targetRelKey]: {
-          ...targetQuery,
-          $required: true,
-        },
-      },
-    };
-    const throughFounds = await this.findChildrenOf(throughEntity, junctionQuery, joins, payload, meta.fields);
-    // The junction's own columns carried onto the target's row, which is where `putChildrenInParents`
-    // reads them back from - a junction row holds the parent's key under `joined`, not under `parent`.
-    const founds = throughFounds.map((it) => ({
-      ...(it[targetRelKey] as RawRow),
-      ...Object.fromEntries(joins.map(({ joined }) => [joined, it[joined]])),
-    }));
-    this.putChildrenInParents(payload, founds, joins, relKey);
-  }
-
-  private async fillToManyOneToMany<E>(
-    payload: E[],
-    meta: EntityMeta<E>,
-    relKey: RelationKey<E>,
-    relOpts: RelationMeta,
-    relationQuery: RelationQuery,
-    relEntity: Type<object>,
-  ): Promise<void> {
-    const joins = parentJoins(relOpts, meta.ids.length);
-    // The FK is what putChildrenInParents groups on, so it outlives the relation's projection
-    // either way: added to a whitelisting `$select` (the raw-array form has nothing to augment),
-    // dropped from a subtractive `$exclude`. `relationQuery` is already a clone.
-    const select = asSelectMap(relationQuery.$select) as Record<string, unknown> | undefined;
-    const exclude = relationQuery.$exclude as Record<string, unknown> | undefined;
-    for (const { joined } of joins) {
-      if (select && !select[joined]) {
-        select[joined] = true;
-      }
-      delete exclude?.[joined];
-    }
-    this.putChildrenInParents(
-      payload,
-      await this.findChildrenOf(relEntity, relationQuery, joins, payload, meta.fields),
-      joins,
-      relKey,
-    );
-  }
-
-  /**
-   * The children of a whole page of parents, however the relation asked for them: one bounded branch
-   * per parent when it wants a share of its own, otherwise a single flat statement over an `IN (...)`
-   * list, which is both correct and cheaper.
-   *
-   * The one place that decision is made - a one-to-many and the junction of a many-to-many differ in
-   * what they query, never in how the page is spread over its parents.
-   */
-  private async findChildrenOf(
-    entity: Type<object>,
-    query: RelationQuery,
-    joins: readonly ParentJoin[],
-    parents: readonly unknown[],
-    parentFields: ParentPartition['parentFields'],
-  ): Promise<RawRow[]> {
-    const founds = isBoundedPerParent(query)
-      ? await this.internalFindManyPerParent(entity, query, { joins, parents, parentFields })
-      : await this.findMany(entity, queryChildrenOfAll(query, joins, parents));
-    // Read back as rows rather than as the entity they hydrate to: what follows regroups them by the
-    // join columns, which a projected entity type does not carry.
-    return founds as RawRow[];
-  }
-
-  protected putChildrenInParents<E>(
-    parents: E[],
-    children: RawRow[],
-    joins: readonly ParentJoin[],
-    relKey: keyof E & string,
-  ): void {
-    const childrenByParentId = dataKeyed<RawRow[]>();
-    // Every joined column, so two children agreeing on one column of a composite key are not
-    // gathered under the same parent. Both column lists are read once, not once per row.
-    const joinedKeys = keyColumns(joins, 'joined');
-    const parentKeys = keyColumns(joins, 'parent');
-    for (const child of children) {
-      (childrenByParentId[rowKey(child, joinedKeys)] ??= []).push(child);
-    }
-    for (const parent of parents) {
-      // `[]` rather than nothing for a parent with no children: a populated to-many is a list the
-      // caller asked for, so it maps and counts without a guard, and its type can say so. An
-      // unpopulated one stays absent, which is what tells the two apart.
-      parent[relKey] = (childrenByParentId[rowKey(parent, parentKeys)] ?? []) as E[keyof E & string];
-    }
-  }
-
   protected async insertRelations<E extends object>(entity: Type<E>, payload: E[]) {
     const meta = getMeta(entity);
     const entries = payload.reduce<{ it: E; relKeys: RelationKey<E>[] }[]>((acc, it) => {
@@ -1134,6 +948,40 @@ export abstract class AbstractQuerier implements Querier {
     return (
       this.extra?.listeners?.some((listener) => listener[event]) || (getMeta(entity).hooks?.[event]?.length ?? 0) > 0
     );
+  }
+
+  /** Whether an `afterLoad` listens on the entity a read returns or on any relation it populated. */
+  private listensForLoad<E extends object>(entity: Type<E>, populate: QueryPopulate<E> | undefined): boolean {
+    if (this.hasHook(entity, 'afterLoad')) {
+      return true;
+    }
+    const meta = getMeta(entity);
+    return getRelationRequestSummary(meta, populate).requestedKeys.some((relKey) =>
+      this.listensForLoad(relationOf(meta, relKey).entity(), parseRelationAtKey(relKey, populate).query.$populate),
+    );
+  }
+
+  /**
+   * `afterLoad` for every row a read loaded, a populated relation's before the rows holding them, so a
+   * parent's hook sees its children as their own hooks left them. Rows are walked only where a hook
+   * listens.
+   */
+  private async emitLoaded<E extends object>(
+    entity: Type<E>,
+    rows: E[],
+    populate: QueryPopulate<E> | undefined,
+  ): Promise<void> {
+    const meta = getMeta(entity);
+    for (const relKey of getRelationRequestSummary(meta, populate).requestedKeys) {
+      const relEntity = relationOf(meta, relKey).entity();
+      const relPopulate = parseRelationAtKey(relKey, populate).query.$populate;
+      if (this.listensForLoad(relEntity, relPopulate)) {
+        // A to-many holds a list and a to-one a row, which `flatMap` takes alike; an absent one adds none.
+        const loaded = rows.flatMap((row) => (row as Record<string, object | object[] | undefined>)[relKey] ?? []);
+        await this.emitLoaded(relEntity, loaded, relPopulate);
+      }
+    }
+    await this.emitHook(entity, 'afterLoad', rows);
   }
 
   /**

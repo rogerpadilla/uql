@@ -120,44 +120,6 @@ describe('AbstractSqlQuerier JSON hydration', () => {
     ]);
   });
 
-  /** A back-reference makes the row graph cyclic; hydration walks each object once. */
-  it('should hydrate a cyclic row graph without recursing forever', async () => {
-    const querier = new StubSqlQuerier();
-    const child: RawRow = { id: 2, payload: '{"b":2}' };
-    const row: RawRow = { id: 1, settings: '{"a":1}', children: [child] };
-    child['parent'] = row;
-    querier.rows = [row];
-
-    const [found] = await querier.findMany(HydratedParent, {});
-
-    expect(found.settings).toEqual({ a: 1 });
-    expect(found.children?.[0].payload).toEqual({ b: 2 });
-  });
-
-  /** Only a populated relation can lead the walk back, so rows that populated none need no guard. */
-  it('should allocate no cycle guard for rows that populated no relation', async () => {
-    let guards = 0;
-    vi.stubGlobal(
-      'WeakSet',
-      class extends WeakSet<object> {
-        constructor(values?: readonly object[]) {
-          super(values);
-          guards += 1;
-        }
-      },
-    );
-    const querier = new StubSqlQuerier();
-    querier.rows = [
-      { id: 1, settings: '{"a":1}' },
-      { id: 2, settings: '{"a":2}' },
-    ];
-
-    const founds = await querier.findMany(HydratedParent, {});
-
-    expect(founds.map((found) => found.settings)).toEqual([{ a: 1 }, { a: 2 }]);
-    expect(guards).toBe(0);
-  });
-
   /** Which columns decode is a fact of the entity, so a page of rows looks it up once. */
   it('should resolve the columns to decode once per read, not once per row', async () => {
     const querier = new StubSqlQuerier();

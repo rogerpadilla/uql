@@ -3,6 +3,7 @@ import { getMeta } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import type { RelationMeta } from '../type/index.js';
 import type { QueryPopulate } from '../type/index.js';
+import { raw } from './raw.js';
 import {
   childrenOf,
   getRelationRequestSummary,
@@ -10,7 +11,6 @@ import {
   parseRelationAtKey,
   parseRelationQueryValue,
   parentJoins,
-  parentsIn,
   populatesRelations,
   targetKeyColumns,
 } from './relationQuery.util.js';
@@ -65,7 +65,7 @@ it('a joined relation rejects the keys only its own query can carry', () => {
     );
   }
 
-  // The very same keys on a to-many are what order and page its second query.
+  // The very same keys on a to-many order and page its own rows.
   expect(getRelationRequestSummary(meta, { users: rejected } as QueryPopulate<User>).toManyKeys).toEqual(['users']);
 
   // Nothing to inspect in the boolean and array forms.
@@ -111,12 +111,16 @@ it('parseRelationQueryValue', () => {
   expect(() => parseRelationQueryValue({ $select: 123 })).toThrow('Invalid relation query value');
 });
 
+it('a relation query takes a raw $select, as the statement does', () => {
+  const $select = [raw`1`.as('one')];
+  expect(parseRelationQueryValue({ $select })).toEqual({ query: { $select }, required: false, nested: true });
+});
+
 /**
  * A statement-level clause inside a populated relation is caught before the shape check, so the
  * message names the key rather than reporting the whole object as an unrecognized relation query.
- * Neither clause had a runtime test before `$candidates` joined `$lock` here.
  */
-it.each([['$lock'], ['$candidates']])('rejects %s inside a populated relation', (clause) => {
+it.each([['$lock'], ['$candidates'], ['$count']])('rejects %s inside a populated relation', (clause) => {
   expect(() => parseRelationQueryValue({ [clause]: 1 })).toThrow(
     `'${clause}' applies to the whole statement, not to a populated relation`,
   );
@@ -152,7 +156,7 @@ describe('the columns a relation joins its parent by', () => {
     expect(parentJoins(direct, 1)).toEqual([{ parent: 'id', joined: 'userId' }]);
   });
 
-  /** Exact where `parentsIn` over-selects: a delete has no chance to drop the rows it did not mean. */
+  /** Whole keys, so a delete has no chance to take a row no parent pairs with. */
   it('names the children of a set of parents by whole keys, not by independent lists', () => {
     const joins = parentJoins(through, 2);
     expect(childrenOf(joins, [{ userId: 1, groupId: 2 }])).toEqual({
@@ -161,18 +165,6 @@ describe('the columns a relation joins its parent by', () => {
     // One column takes the `IN` it always did, rather than an OR of one-key maps.
     expect(childrenOf(parentJoins({ references: [{ local: 'id', foreign: 'userId' }] } as never, 1), [1, 2])).toEqual({
       userId: [1, 2],
-    });
-  });
-
-  it('lists every parent value under the column that matches it', () => {
-    expect(
-      parentsIn(parentJoins(through, 2), [
-        { userId: 1, groupId: 2 },
-        { userId: 3, groupId: 4 },
-      ]),
-    ).toEqual({
-      membershipUserId: [1, 3],
-      membershipGroupId: [2, 4],
     });
   });
 });

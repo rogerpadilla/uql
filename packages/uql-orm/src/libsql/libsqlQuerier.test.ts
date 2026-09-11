@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it } from 'vitest';
-import { FLOATED_DECIMAL, type WideRow } from '../querier/abstractSqlQuerier-test.js';
+import { FLOATED_DECIMAL, JSON_FLOATED_DECIMAL, type WideRow } from '../querier/abstractSqlQuerier-test.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, probeForeignKeys } from '../test/index.js';
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
@@ -24,6 +24,10 @@ export class LibsqlQuerierIt extends VectorQuerierIt {
   /** The libSQL client refuses an integer no JS number can hold rather than rounding it. */
   protected override async assertWideInteger(read: Promise<WideRow[]>) {
     await expect(read).rejects.toThrow('safely represented');
+  }
+
+  protected override populatedExactDecimal() {
+    return JSON_FLOATED_DECIMAL;
   }
 
   // No `foreign_keys` pragma here: libSQL turns enforcement on itself, unlike vanilla SQLite. The test

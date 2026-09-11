@@ -1,12 +1,15 @@
 import { getMeta, relationOf } from '../entity/index.js';
-import type { EntityMeta, Query, QueryPopulate, QuerySortMap, RelationKey, RelationMeta, Type } from '../type/index.js';
-import {
-  getKeys,
-  getRelationRequestSummary,
-  isToManyRelation,
-  parseRelationAtKey,
-  type RelationQuery,
-} from '../util/index.js';
+import type {
+  EntityMeta,
+  Query,
+  QueryPopulate,
+  QuerySortMap,
+  RelationKey,
+  RelationMeta,
+  RelationQuery,
+  Type,
+} from '../type/index.js';
+import { getKeys, getRelationRequestSummary, isToManyRelation, parseRelationAtKey } from '../util/index.js';
 
 /**
  * One relation a statement joins, keyed by the alias its columns are addressed by (`tax`,
@@ -16,8 +19,10 @@ import {
 export type QueryJoin = {
   /** The relation key on its parent, which is how MongoDB names the field a `$lookup` adds. */
   readonly key: string;
-  /** Dotted path from the queried entity, which is how the SQL dialects alias the join. */
+  /** Dotted path from the queried entity, which is what a joined row's columns answer under. */
   readonly path: string;
+  /** The alias the statement reads it through: its path, unless another table of the statement took it. */
+  readonly alias: string;
   readonly entity: Type<object>;
   readonly meta: EntityMeta<object>;
   readonly relation: RelationMeta;
@@ -50,14 +55,19 @@ export type QuerySortOptions = {
  * related column needs that relation joined just as much as selecting it does. The two sources meet
  * here, so the columns, the `ORDER BY` and the row lock cannot disagree about what is in the
  * statement. `$sort` contributes to-one relations only; the rest is rejected where it is rendered.
+ * `claimAlias` names each join's table, parents first.
  */
-export function resolveQueryJoins<E>(meta: EntityMeta<E>, q: Query<E>): QueryJoins {
+export function resolveQueryJoins<E>(
+  meta: EntityMeta<E>,
+  q: Query<E>,
+  claimAlias: (path: string) => string = (path) => path,
+): QueryJoins {
   if (!q.$populate && !q.$sort) {
     return NO_JOINS;
   }
   const joins = new Map<string, QueryJoin>();
-  addPopulateJoins(joins, meta, q.$populate);
-  addSortJoins(joins, meta, q.$sort);
+  addPopulateJoins(joins, claimAlias, meta, q.$populate);
+  addSortJoins(joins, claimAlias, meta, q.$sort);
   return joins;
 }
 
@@ -75,8 +85,22 @@ export function hasRequiredJoin<E>(meta: EntityMeta<E>, q: Query<E>): boolean {
   return false;
 }
 
+/** Whether a statement aggregates a relation's rows: a to-many off its own row, or off a row it joins. */
+export function aggregatesRelations<E>(meta: EntityMeta<E>, q: Query<E>): boolean {
+  if (getRelationRequestSummary(meta, q.$populate).toManyKeys.length) {
+    return true;
+  }
+  for (const join of resolveQueryJoins(meta, q).values()) {
+    if (getRelationRequestSummary(join.meta, join.query.$populate).toManyKeys.length) {
+      return true;
+    }
+  }
+  return false;
+}
+
 function addJoin(
   joins: Map<string, QueryJoin>,
+  claimAlias: (path: string) => string,
   parent: QueryJoin | undefined,
   key: string,
   relation: RelationMeta,
@@ -95,6 +119,7 @@ function addJoin(
   const join: QueryJoin = {
     key,
     path,
+    alias: claimAlias(path),
     entity,
     meta: getMeta(entity),
     relation,
@@ -109,6 +134,7 @@ function addJoin(
 
 function addPopulateJoins<E>(
   joins: Map<string, QueryJoin>,
+  claimAlias: (path: string) => string,
   meta: EntityMeta<E>,
   populate: QueryPopulate<E> | undefined,
   parent?: QueryJoin,
@@ -116,13 +142,14 @@ function addPopulateJoins<E>(
   for (const key of getRelationRequestSummary(meta, populate).joinableKeys) {
     const relation = relationOf(meta, key);
     const { query, required } = parseRelationAtKey(key, populate);
-    const join = addJoin(joins, parent, key, relation, query, required, true);
-    addPopulateJoins(joins, join.meta, query.$populate, join);
+    const join = addJoin(joins, claimAlias, parent, key, relation, query, required, true);
+    addPopulateJoins(joins, claimAlias, join.meta, query.$populate, join);
   }
 }
 
 function addSortJoins<E>(
   joins: Map<string, QueryJoin>,
+  claimAlias: (path: string) => string,
   meta: EntityMeta<E>,
   sort: QuerySortMap<E> | undefined,
   parent?: QueryJoin,
@@ -138,8 +165,8 @@ function addSortJoins<E>(
     if (!relation || isToManyRelation(relation) || !isSortMap(value)) {
       continue;
     }
-    const join = addJoin(joins, parent, key, relation, {}, false, false);
-    addSortJoins(joins, join.meta, value, join);
+    const join = addJoin(joins, claimAlias, parent, key, relation, {}, false, false);
+    addSortJoins(joins, claimAlias, join.meta, value, join);
   }
 }
 

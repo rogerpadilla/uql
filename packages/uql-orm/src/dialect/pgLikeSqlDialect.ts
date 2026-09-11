@@ -1,4 +1,3 @@
-import { canonicalToSql, fieldOptionsToCanonical } from '../schema/canonicalType.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type DialectFeatures,
@@ -11,16 +10,14 @@ import {
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
   type Type,
-  type VectorDistance,
-  type VectorOperatorMetric,
 } from '../type/index.js';
 import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
-import { raw } from '../util/raw.js';
-import { type ParentPartition, queryNarrowedTo } from '../util/relationQuery.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { JSON_PULL_ALIAS, PER_PARENT_BRANCH_ALIAS, PER_PARENT_KEYS_ALIAS } from './aliases.js';
+import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
+import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
+import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonSetTarget } from './jsonSql.js';
+import { PG_VECTOR_METRICS } from './pgVectorMetrics.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /**
@@ -70,66 +67,35 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly alterColumnStrategy = 'separate-clauses';
 
   /**
-   * One `LATERAL` branch correlated against an array of the parent keys, in place of the base
-   * `UNION ALL` of a subquery per parent. Same rows and the same `parents x (skip + limit)` read, but
-   * the planner sees one correlated index loop rather than N branches to plan: flat in page size where
-   * `UNION ALL` is linear, and the statement's text stops changing with the number of parents, so one
-   * prepared statement serves every page.
-   *
-   * Postgres, CockroachDB, PGlite, Neon and bun-sql inherit it together. **MySQL has `LATERAL` and must
-   * not use it** - it does not plan this as a correlated index loop and measured slower than both its
-   * own `UNION ALL` and a query per parent, which is why this is an override rather than a capability
-   * flag. [The design](../../../../architecture/populate-limits.md).
+   * `JSON_AGG` of each row whole, read through a LATERAL projection of the columns it answers under:
+   * the sort terms carried out beside them order it without joining the object, and no function call
+   * builds it, so a wide row meets no argument limit. `json` has no equality, so under a parent's
+   * `DISTINCT` the array is compared as `jsonb`.
    */
-  protected override appendPerParent<E extends object>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    q: Query<E>,
-    { joins, parents, parentFields }: ParentPartition,
-  ): void {
-    const keys = this.escapeId(ctx.nextAlias(PER_PARENT_KEYS_ALIAS));
-    const branch = this.escapeId(ctx.nextAlias(PER_PARENT_BRANCH_ALIAS));
-    const column = (index: number) => `${keys}.k${index}`;
-    // `UNNEST` resolves an uncast parameter to `unknown` and refuses it ("function unnest(unknown) is
-    // not unique"), so the array says its type. It comes from the parent's key column, which always
-    // declares one, rather than the child's foreign key, which would have to be resolved through the
-    // reference it takes its own type from.
-    const sources = joins.map(({ parent }) => {
-      const field = parentFields[parent];
-      if (!field) {
-        throw new TypeError(`cannot page a relation per parent: '${parent}' is not a field of the parent entity`);
-      }
-      const values = parents.map((it) => (it as Record<string, unknown>)[parent]);
-      return `${this.addValue(ctx.values, values)}::${canonicalToSql(fieldOptionsToCanonical(field), this)}[]`;
-    });
-    const rowSource = `UNNEST(${sources.join(', ')}) AS ${keys}(${joins.map((_, index) => `k${index}`).join(', ')})`;
-    // The keys come from the row source rather than as values, which is the whole point of correlating:
-    // one branch, planned once, instead of one per parent.
-    const correlated = Object.fromEntries(
-      joins.map(({ joined }, index) => [joined, raw(({ ctx: inner }) => inner.append(column(index)))]),
-    );
-
-    ctx.append(`SELECT ${branch}.* FROM ${rowSource} JOIN LATERAL (`);
-    this.find(ctx, entity, queryNarrowedTo(q, correlated));
-    ctx.append(`) ${branch} ON TRUE`);
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+    const row = this.escapeId(RELATION_ROW_ALIAS, true);
+    const columns = pairs.map(([, column]) => column).join(', ');
+    const array = /*sql*/ `(SELECT COALESCE(JSON_AGG(${row}${order ? ` ORDER BY ${order}` : ''}), '[]'::json) FROM ${from} CROSS JOIN LATERAL (SELECT ${columns}) ${row})`;
+    ctx.append(rows.distinct ? `${array}::jsonb` : array);
   }
+
+  /**
+   * What JSON would round or cannot spell crosses it as text, for the field's own decode to read back:
+   * a column declared numeric, whatever it decodes as, a vector, and bytes as hex.
+   */
+  protected override readonly carriedFields = {
+    numeric: (expr) => `${expr}::text`,
+    vector: (expr) => `${expr}::text`,
+    blob: (expr) => `${this.escape(BYTES_PREFIX)} || ENCODE(${expr}, 'hex')`,
+  } satisfies CarriedFields;
 
   /** `$N` placeholders carry their own index, so the upsert's assignments need no scratch context. */
   protected override readonly upsertUpdateBindsInPlace = true;
   override readonly insertIdSource = 'returning';
   override readonly maxBindValues: number = 65535;
 
-  /**
-   * Each metric's pgvector distance operator and the operator-class suffix its index takes, in one
-   * place so a dialect cannot end up with the operator but not the opclass. The key set is the single
-   * source of truth for which metrics the dialect supports at all: CockroachDB narrows it to three.
-   */
-  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorOperatorMetric> = new Map([
-    ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
-    ['l2', { op: '<->', opsSuffix: 'l2' }],
-    ['inner', { op: '<#>', opsSuffix: 'ip' }],
-    ['l1', { op: '<+>', opsSuffix: 'l1' }],
-  ]);
+  override readonly vectorMetrics = PG_VECTOR_METRICS;
 
   /** `SET LOCAL` applies to the enclosing transaction and to nothing at all without one. */
   override readonly vectorTuningNeedsTransaction = true;

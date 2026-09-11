@@ -20,7 +20,6 @@ import type {
   QueryPage,
   QueryProjected,
   QuerySearch,
-  QueryStreamProjected,
   QueryUpsertOneResult,
   QueryUpsertManyResult,
   RelationKey,
@@ -128,11 +127,12 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryStreamProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): AsyncGenerator<QueryFindResult<E, S, V, X, P>> {
+  ): AsyncGenerator<QueryFindResult<E, S, V, X, P, C>> {
     await using querier = await this.getQuerier();
     yield* querier.findManyStream(entity, q, opts);
   }

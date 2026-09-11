@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, User, VectorItem } from '../test/index.js';
-import type { DialectFeatures, SqlDialectName } from '../type/index.js';
+import type { DialectFeatures, QueryContext, SqlDialectName } from '../type/index.js';
 import { col, raw } from '../util/index.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
   override readonly dialectName: SqlDialectName = 'mysql';
@@ -56,6 +56,11 @@ class TestSqlDialect extends AbstractSqlDialect {
 
   override get insertIdSource(): 'firstId' {
     return 'firstId';
+  }
+
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+    const { from, pairs } = this.derivedRelation(ctx, rows);
+    ctx.append(`(SELECT JSON_ARRAYAGG(JSON_OBJECT(${this.jsonObjectArgs(pairs)})) FROM ${from})`);
   }
 
   override escape(value: unknown): string {
@@ -120,10 +125,8 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     return ctx.sql;
   };
 
-  it('selectFields with empty selectArr', () => {
-    const ctx = dialect.createContext();
-    dialect.selectFields(ctx, User, []);
-    expect(ctx.sql).toBe('*');
+  it('selectTerms with empty selectArr', () => {
+    expect(dialect.selectTerms(dialect.createContext(), User, [])).toEqual([{ sql: '*', bare: true }]);
   });
 
   it('compareFieldOperator $in with empty array', () => {
@@ -587,7 +590,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { id: '5' } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`id` = ?))',
+        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`id` = ?))',
       );
       expect(ctx.values).toEqual(['5']);
     });
@@ -596,7 +599,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { name: { $like: '%react%' } } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `Tag`.`id` FROM `Tag` WHERE `Tag`.`name` LIKE ?))',
+        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`name` LIKE ?))',
       );
       expect(ctx.values).toEqual(['%react%']);
     });
@@ -605,8 +608,8 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { id: '1', name: 'urgent' } });
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
-      expect(ctx.sql).toContain('`Tag`.`id` = ?');
-      expect(ctx.sql).toContain('`Tag`.`name` = ?');
+      expect(ctx.sql).toContain('`tags`.`id` = ?');
+      expect(ctx.sql).toContain('`tags`.`name` = ?');
       expect(ctx.values).toEqual(['1', 'urgent']);
     });
 
@@ -616,7 +619,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       // Both entities have softDelete: the parent's condition sits outside the EXISTS, the target's
       // inside it, so a category never matches through a trashed measure unit.
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`name` = ? AND `MeasureUnit`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
+        ' WHERE EXISTS (SELECT 1 FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id` AND `measureUnits`.`name` = ? AND `measureUnits`.`deletedAt` IS NULL) AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual(['kg']);
     });
@@ -625,7 +628,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } });
       const existsPart = ctx.sql.split('EXISTS (')[1].split(')')[0];
-      expect(existsPart).toContain('`MeasureUnit`.`deletedAt` IS NULL');
+      expect(existsPart).toContain('`measureUnits`.`deletedAt` IS NULL');
       // the parent's own (unprefixed) condition stays out of the subquery
       expect(existsPart).not.toContain(' `deletedAt` IS NULL');
     });
@@ -655,7 +658,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { item: { name: 'Widget' } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `Item` WHERE `Item`.`id` = `ItemAdjustment`.`itemId` AND `Item`.`name` = ?)',
+        ' WHERE EXISTS (SELECT 1 FROM `Item` `item` WHERE `item`.`id` = `ItemAdjustment`.`itemId` AND `item`.`name` = ?)',
       );
       expect(ctx.values).toEqual(['Widget']);
     });
@@ -664,7 +667,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { item: { name: { $like: '%test%' } } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `Item` WHERE `Item`.`id` = `ItemAdjustment`.`itemId` AND `Item`.`name` LIKE ?)',
+        ' WHERE EXISTS (SELECT 1 FROM `Item` `item` WHERE `item`.`id` = `ItemAdjustment`.`itemId` AND `item`.`name` LIKE ?)',
       );
       expect(ctx.values).toEqual(['%test%']);
     });
@@ -753,8 +756,8 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 } });
       expect(ctx.sql).toBe(
-        ' ORDER BY (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id`' +
-          ' AND `MeasureUnit`.`deletedAt` IS NULL) DESC',
+        ' ORDER BY (SELECT COUNT(*) FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
+          ' AND `measureUnits`.`deletedAt` IS NULL) DESC',
       );
       expect(ctx.values).toEqual([]);
     });
@@ -785,7 +788,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: 3 } });
       expect(ctx.sql).toBe(
-        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`deletedAt` IS NULL) = ? AND `deletedAt` IS NULL',
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id` AND `measureUnits`.`deletedAt` IS NULL) = ? AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual([3]);
     });
@@ -794,7 +797,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
       expect(ctx.sql).toBe(
-        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` WHERE `MeasureUnit`.`categoryId` = `MeasureUnitCategory`.`id` AND `MeasureUnit`.`deletedAt` IS NULL) >= ? AND `deletedAt` IS NULL',
+        ' WHERE (SELECT COUNT(*) FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id` AND `measureUnits`.`deletedAt` IS NULL) >= ? AND `deletedAt` IS NULL',
       );
       expect(ctx.values).toEqual([2]);
     });

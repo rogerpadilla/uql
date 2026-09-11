@@ -1,12 +1,6 @@
-import { type AbstractDialect, AbstractSqlDialect } from '../dialect/index.js';
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta, soleIdOf } from '../entity/index.js';
-import {
-  areTypesEqual,
-  canonicalToSql,
-  engineType,
-  fieldOptionsToCanonical,
-  isVectorCategory,
-} from '../schema/canonicalType.js';
+import { canonicalToSql, engineType, fieldOptionsToCanonical, isVectorCategory } from '../schema/canonicalType.js';
 import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
@@ -26,11 +20,11 @@ import type {
   DialectFeatures,
   DropSchemaOptions,
   EntityMeta,
-  FieldKey,
   FieldMeta,
   FieldOptions,
   ForeignKeySchema,
   IndexSchema,
+  MigratorDialect,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -717,8 +711,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     }
     statements.push(createSql);
     statements.push(...this.generateCommentStatements(table));
+    // A table created only if missing creates its indexes the same way, or re-creating a schema fails on the first.
+    const indexOptions = { ifNotExists: !!options.ifNotExists && this.features.indexIfNotExists };
     for (const idx of table.indexes) {
-      statements.push(this.generateCreateIndexFromNode(idx));
+      statements.push(this.generateCreateIndexFromNode(idx, indexOptions));
     }
     return statements;
   }
@@ -943,11 +939,8 @@ export function buildEntityAST(
  * For MongoDB, use `createSchemaGeneratorAsync` from `./schemaGeneratorAsync.js` so the optional `mongodb` peer is not loaded at import time.
  */
 export function createSchemaGenerator(
-  dialect: AbstractDialect,
+  dialect: MigratorDialect,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SqlSchemaGenerator | undefined {
-  if (!(dialect instanceof AbstractSqlDialect)) {
-    return undefined;
-  }
-  return new SqlSchemaGenerator(dialect, defaultForeignKeyAction);
+  return dialect.dialectName === 'mongodb' ? undefined : new SqlSchemaGenerator(dialect, defaultForeignKeyAction);
 }

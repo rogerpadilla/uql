@@ -11,6 +11,7 @@ import type {
   MigrationDefinition,
   MigrationResult,
   MigrationStorage,
+  MigratorDialect,
   MigratorOptions,
   MongoQuerier,
   Querier,
@@ -62,7 +63,7 @@ export class Migrator {
   private _mongoSchemaLoadPromise?: Promise<void>;
 
   constructor(
-    private readonly pool: QuerierPool,
+    private readonly pool: QuerierPool<Querier, MigratorDialect>,
     options: MigratorOptions = {},
   ) {
     this.dialectName = pool.dialect.dialectName;

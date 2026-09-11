@@ -27,17 +27,6 @@ export type QueryOptions = {
   autoPrefix?: boolean;
 };
 
-export type QuerySelectOptions = {
-  /**
-   * prefix the query with this.
-   */
-  prefix?: string;
-  /**
-   * automatically add the prefix for the alias.
-   */
-  autoPrefixAlias?: boolean;
-};
-
 /**
  * Query field selection - `{ name: true }` whitelists specific fields. Fields only: a relation is a
  * sub-query rather than a projection flag, and a whitelist naming one could not say whether the
@@ -74,9 +63,8 @@ export const COUNT_RESULT_KEY = '_count';
 
 /**
  * How many rows each named relation holds per parent, `true` for all of them or a filter to narrow
- * which ones count. One statement per relation named here, batched over every parent at once, so it
- * stays flat however many rows the read returned. Comes back under `_count`, which keeps it clear of
- * a relation of the same name that `$populate` filled with rows.
+ * which ones count: a correlated count in the read's own statement, so no related row is loaded. Comes
+ * back under `_count`, which keeps it clear of a relation of the same name `$populate` filled.
  */
 export type QueryCount<E> = {
   [K in ToManyRelationKey<E>]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
@@ -92,13 +80,8 @@ export type QueryConflictPaths<E> = {
 /**
  * Options to populate a relation declared as `V`, by its cardinality.
  */
-export type QueryPopulateRelationOptions<V> = (IsMany<V> extends true
-  ? // `$lock` is statement-level, so it is excluded here rather than being silently ignored per
-    // relation. `QueryUnique` is a `Pick` and already leaves it out.
-    Except<Query<RelationTarget<V>>, '$lock'>
-  : QueryUnique<RelationTarget<V>>) & {
-  $required?: boolean;
-};
+export type QueryPopulateRelationOptions<V> =
+  IsMany<V> extends true ? RelationQuery<RelationTarget<V>> : QueryUnique<RelationTarget<V>> & { $required?: boolean };
 
 /**
  * Ambient per-request context (e.g. `{ tenantId, userId, roles }`) resolved by parameterized
@@ -331,8 +314,8 @@ export type Query<E> = {
  * Declared beside the type they describe so the two cannot drift, and `satisfies` fails the build
  * rather than the runtime if a clause is ever renamed.
  *
- * `$lock` belongs to no group on purpose: it is the one clause neither a wire query nor a relation's
- * query accepts, so leaving it out is what excludes it from both.
+ * `$lock` is only in {@link QUERY_STATEMENT_CLAUSES}: neither a wire query nor a relation's query
+ * accepts it.
  */
 export const QUERY_OBJECT_CLAUSES = [
   '$select',
@@ -343,9 +326,8 @@ export const QUERY_OBJECT_CLAUSES = [
 ] as const satisfies readonly (keyof Query<unknown>)[];
 
 /**
- * Object clauses only the statement itself takes, never a relation's own query - the mirror of
- * `$lock`, which neither takes. Counting a relation is batched over the rows a read returned, and a
- * populated relation's rows are assembled after that, so there is nothing for a nested one to count.
+ * Object clauses only the statement itself takes: a populated relation's rows keep their declared type,
+ * so a `$count` inside one would have no `_count` to land in.
  */
 export const QUERY_ROOT_OBJECT_CLAUSES = ['$count'] as const satisfies readonly (keyof Query<unknown>)[];
 
@@ -359,6 +341,27 @@ export const QUERY_NUMBER_CLAUSES = ['$skip', '$limit'] as const satisfies reado
 export const QUERY_ROOT_NUMBER_CLAUSES = ['$candidates'] as const satisfies readonly (keyof Query<unknown>)[];
 
 export const QUERY_BOOLEAN_CLAUSES = ['$distinct'] as const satisfies readonly (keyof Query<unknown>)[];
+
+/** The clauses that describe the statement, which a populated relation's own query refuses by name. */
+export const QUERY_STATEMENT_CLAUSES = [
+  '$lock',
+  ...QUERY_ROOT_OBJECT_CLAUSES,
+  ...QUERY_ROOT_NUMBER_CLAUSES,
+] as const satisfies readonly (keyof Query<unknown>)[];
+
+type RelationClause = (
+  | typeof QUERY_OBJECT_CLAUSES
+  | typeof QUERY_NUMBER_CLAUSES
+  | typeof QUERY_BOOLEAN_CLAUSES
+)[number];
+
+/**
+ * A populated relation's own query: the clause groups its runtime check accepts, so the two cannot
+ * drift, and a clause added to {@link Query} stays off it until it joins one of them.
+ */
+export type RelationQuery<E = object> = Pick<Query<E>, RelationClause> & {
+  $required?: boolean;
+};
 
 /**
  * options to get a single record.
@@ -390,35 +393,16 @@ type QueryProjection<
   X extends FieldKey<E>,
   P extends RelationKey<E>,
   C extends RelationKey<E>,
-> = QueryStreamProjection<E, S, V, X, P> & {
+> = {
+  $select?: { [K in S]?: V } | readonly QueryRaw[];
+  $exclude?: { [K in X]?: V };
+  $populate?: { [K in P]?: QueryPopulate<E>[K] };
   // Intersecting the captured names with {@link QueryCount}'s own leaves a to-one relation no key
   // here at all, so counting one is an excess property rather than a value to check. Narrowing the
   // key rather than the value also instantiates `QueryCount<E>` once instead of once per counted
   // relation, worth ~87k instantiations in a consuming project.
   $count?: { [K in C & keyof QueryCount<E>]?: QueryCount<E>[K] };
 };
-
-/**
- * {@link QueryProjection} without `$count`, which a stream cannot honor. Split out rather than
- * subtracted afterwards: an optional key is a *known* key even when its value maps over `never`, so
- * a statement that must not take the clause has to be built without it in the first place.
- * @internal
- */
-type QueryStreamProjection<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = {
-  $select?: { [K in S]?: V } | readonly QueryRaw[];
-  $exclude?: { [K in X]?: V };
-  $populate?: { [K in P]?: QueryPopulate<E>[K] };
-};
-
-/**
- * A {@link QueryProjected} a stream can honor: no `$count`, which is batched over a result set a
- * stream never holds all of.
- */
-export type QueryStreamProjected<E, S extends FieldKey<E>, V, X extends FieldKey<E>, P extends RelationKey<E>> = Except<
-  Query<E>,
-  '$count'
-> &
-  QueryStreamProjection<E, S, V, X, P>;
 
 /**
  * A {@link Query} whose projection is captured, so {@link QueryFindResult} can shape the row.
@@ -451,21 +435,9 @@ export type QueryOneProjected<
  * why `$exclude` is only read on the branch where there is none.
  * @internal
  */
-type ProjectedKeys<E, S, V, X, P, C> =
+type ProjectedKeys<E, S, V, X, P> =
   | ([V] extends [false | 0] ? Exclude<FieldKey<E>, S> : [S] extends [never] ? Exclude<FieldKey<E>, X> : S)
-  | P
-  // Populating a relation keeps the id whatever the projection says, and so does counting one: both
-  // assemble their result by it (`selectFields` puts it back, as does MongoDB's `pipelineProjection`).
-  | ([P | C] extends [never] ? never : NamedIdKey<E>);
-
-/**
- * The id key when it can be named, and nothing when it cannot: {@link IdKey} widens to *every* field
- * for an entity whose id is neither branded nor called `id`/`_id`/`uuid`, and adding that back would
- * hand the caller a row claiming fields the query never fetched. Missing an id costs a `$select`
- * entry; promising absent fields is the bug this type exists to prevent.
- * @internal
- */
-type NamedIdKey<E> = [FieldKey<E>] extends [IdKey<E>] ? never : IdKey<E>;
+  | P;
 
 /**
  * Whether every entry of the captured map says the same thing: all selected, or all subtracted.
@@ -518,12 +490,12 @@ type QueryProjectedRow<
       ? // `Pick`, not a key remap: an entity keyed by an index signature - a content type defined at
         // runtime - has `string` for its keys, and a remap keeps no literal one, so every projection
         // over one came back as `{}`.
-        Pick<E, ProjectedKeys<E, S, V, X, P, C> & keyof E>
+        Pick<E, ProjectedKeys<E, S, V, X, P> & keyof E>
       : // A populated to-many is always a list, empty where the parent has no children, so it maps
         // and counts without a guard. Only that promotion needs a second member, and only a query
         // that populates one pays for it; every other key keeps the modifier the entity declared,
         // a to-one relation included, since a join that finds no row leaves it absent.
-        Pick<E, Exclude<ProjectedKeys<E, S, V, X, P, C>, PopulatedToMany<E, P>> & keyof E> & {
+        Pick<E, Exclude<ProjectedKeys<E, S, V, X, P>, PopulatedToMany<E, P>> & keyof E> & {
           [K in PopulatedToMany<E, P>]-?: NonNullable<E[K]>;
         }
     : E;

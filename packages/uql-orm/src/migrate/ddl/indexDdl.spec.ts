@@ -1,11 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { MariaDialect } from '../../maria/mariaDialect.js';
+import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import { INDEX_TYPES, type IndexType } from '../../schema/types.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import type { Except, IndexSchema } from '../../type/index.js';
-import { CockroachIndexDdl, IndexDdl, indexDdlFor, MariaIndexDdl, MySqlIndexDdl, PgIndexDdl } from './index.js';
+import {
+  CockroachIndexDdl,
+  IndexDdl,
+  indexDdlFor,
+  MariaIndexDdl,
+  MsSqlIndexDdl,
+  MySqlIndexDdl,
+  PgIndexDdl,
+} from './index.js';
 
 /**
  * Which DDL a dialect resolves to. The statements themselves are asserted once, below - what is at
@@ -18,6 +28,7 @@ describe('indexDdlFor', () => {
     ['CockroachDB, over its Postgres base', new CockroachDialect(), CockroachIndexDdl],
     ['a subclass of MySQL', new (class extends MySqlDialect {})(), MySqlIndexDdl],
     ['MariaDB, over its MySQL base', new MariaDialect(), MariaIndexDdl],
+    ['SQL Server', new MsSqlDialect(), MsSqlIndexDdl],
     ['anything else, which is SQLite', new SqliteDialect(), IndexDdl],
   ] as const)('gives %s its own', (_name, dialect, expected) => {
     expect(indexDdlFor(dialect)).toBeInstanceOf(expected);
@@ -31,10 +42,72 @@ describe('index features', () => {
     mysql: new MySqlDialect(),
     mariadb: new MariaDialect(),
     sqlite: new SqliteDialect(),
+    mssql: new MsSqlDialect(),
   } as const;
 
   const render = (dialect: keyof typeof dialects, index: Except<IndexSchema, 'name' | 'unique'>) =>
     indexDdlFor(dialects[dialect]).getCreateIndexStatement('t', { name: 'i', unique: false, ...index } as IndexSchema);
+
+  /**
+   * The types each engine's `CREATE INDEX` takes, verified live: Postgres 18's `pg_am` with pgvector,
+   * CockroachDB 26.3, MySQL 26.7, MariaDB 12.3, SQL Server 2025. SQLite has no `USING` clause, so any
+   * type builds its plain index there, which is what lets an entity written for Postgres migrate.
+   */
+  const indexTypes: Record<keyof typeof dialects, readonly IndexType[]> = {
+    postgres: ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat'],
+    cockroachdb: ['btree', 'gin', 'gist', 'hnsw', 'vector'],
+    mysql: ['btree', 'hash', 'fulltext'],
+    mariadb: ['btree', 'hash', 'fulltext', 'vector'],
+    sqlite: INDEX_TYPES,
+    mssql: ['btree'],
+  };
+
+  const typePairs = (has: boolean) =>
+    Object.entries(indexTypes).flatMap(([dialect, types]) =>
+      INDEX_TYPES.filter((type) => types.includes(type) === has).map(
+        (type) => [dialect as keyof typeof dialects, type] as const,
+      ),
+    );
+
+  it.each(typePairs(true))('should take a %s %s index', (dialect, type) => {
+    expect(() => render(dialect, { entries: [{ column: 'c' }], type })).not.toThrow();
+  });
+
+  it.each(typePairs(false))('should refuse a %s %s index rather than emit one the server rejects', (dialect, type) => {
+    expect(() => render(dialect, { entries: [{ column: 'c' }], type })).toThrow(
+      `${dialect} has no ${type} index (index "i")`,
+    );
+  });
+
+  // SQL Server has neither: an expression answers Msg 16216 and the JSON path's subquery Msg 1046.
+  it.each([
+    ['expression', { column: 'lower("email")', expression: true }],
+    ['jsonPath', { column: 'kind', jsonPath: { path: 'theme.color', type: String } }],
+  ] as const)('should reject a %s index on SQL Server', (_feature, entry) => {
+    expect(() => render('mssql', { entries: [entry] })).toThrow('mssql does not support');
+  });
+
+  it('should emit a descending filtered index on SQL Server', () => {
+    expect(render('mssql', { entries: [{ column: 'email', order: 'desc' }], where: '"email" IS NOT NULL' })).toBe(
+      'CREATE INDEX "i" ON "t" ("email" DESC) WHERE "email" IS NOT NULL;',
+    );
+  });
+
+  // `ON t USING btree (c)` is a syntax error on both; the clause goes after the columns instead.
+  it.each([
+    ['mysql', 'CREATE INDEX `i` ON `t` (`c`) USING hash;'],
+    ['mariadb', 'CREATE INDEX IF NOT EXISTS `i` ON `t` (`c`) USING hash;'],
+  ] as const)('should put USING after the columns on %s', (dialect, expected) => {
+    expect(render(dialect, { entries: [{ column: 'c' }], type: 'hash' })).toBe(expected);
+  });
+
+  // CockroachDB builds `USING hnsw` as its native vector index, which answers pgvector's `WITH (m = 16)`
+  // with "invalid storage parameter".
+  it('should drop pgvector tuning from a CockroachDB hnsw index', () => {
+    expect(render('cockroachdb', { entries: [{ column: 'v' }], type: 'hnsw', distance: 'cosine', m: 16 })).toBe(
+      'CREATE INDEX IF NOT EXISTS "i" ON "t" USING hnsw ("v" vector_cosine_ops);',
+    );
+  });
 
   // MySQL requires the extra parentheses; Postgres, CockroachDB and SQLite accept them, so one
   // rendering serves all four. MariaDB 12.3 has no functional indexes at all.
@@ -242,7 +315,7 @@ describe('CREATE INDEX', () => {
       efConstruction: 64,
     });
     // MySQL: no operator class, no WITH params - just USING
-    expect(sql).toBe('CREATE INDEX `title_idx` ON `articles` USING btree (`title`);');
+    expect(sql).toBe('CREATE INDEX `title_idx` ON `articles` (`title`) USING btree;');
   });
 
   // `USING fulltext` is a syntax error on both, and it is the index `MATCH ... AGAINST` needs, so
@@ -338,12 +411,6 @@ describe('CREATE INDEX', () => {
       }),
     ).toThrow(`ivfflat has no ${opsClass} operator class`);
   });
-
-  /**
-   * The index features that some engines have and others reject outright, each verified against a
-   * live server: what a dialect cannot express is refused rather than emitted, since every one of
-   * these is a hard error at the server rather than a slower plan.
-   */
 
   /**
    * The index features that some engines have and others reject outright, each verified against a

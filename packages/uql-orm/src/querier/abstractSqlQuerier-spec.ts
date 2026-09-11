@@ -163,18 +163,17 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: { id: '1' },
     });
 
+    // One statement: the children are a correlated subquery of the parent's own, aggregated as JSON.
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ? LIMIT 1',
-      ['1'],
-    );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
-        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `id` IN (?, ?, ?) AND `inventoryAdjustmentId` IN (?)',
+      'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`description`' +
+        ", (SELECT json_group_array(json_object('id', `itemAdjustments`.`id`, 'companyId', `itemAdjustments`.`companyId`, 'creatorId', `itemAdjustments`.`creatorId`, 'createdAt', `itemAdjustments`.`createdAt`, 'updatedAt', `itemAdjustments`.`updatedAt`, 'itemId', `itemAdjustments`.`itemId`, 'number', `itemAdjustments`.`number`, 'buyPrice', `itemAdjustments`.`buyPrice`, 'storehouseId', `itemAdjustments`.`storehouseId`, 'inventoryAdjustmentId', `itemAdjustments`.`inventoryAdjustmentId`))" +
+        ' FROM (SELECT `itemAdjustments`.`id`, `itemAdjustments`.`companyId`, `itemAdjustments`.`creatorId`, CAST(`itemAdjustments`.`createdAt` AS TEXT) `createdAt`, CAST(`itemAdjustments`.`updatedAt` AS TEXT) `updatedAt`, `itemAdjustments`.`itemId`, CAST(`itemAdjustments`.`number` AS TEXT) `number`, CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`storehouseId`, `itemAdjustments`.`inventoryAdjustmentId` FROM `ItemAdjustment` `itemAdjustments`' +
+        ' WHERE `itemAdjustments`.`id` IN (?, ?, ?) AND `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
+        ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ? LIMIT 1',
       ['5', '6', '7', '1'],
     );
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -330,17 +329,16 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       'SELECT `InventoryAdjustment`.`id`, `InventoryAdjustment`.`companyId`, `InventoryAdjustment`.`creatorId`' +
         ', `InventoryAdjustment`.`createdAt`, `InventoryAdjustment`.`updatedAt`' +
         ', `InventoryAdjustment`.`date`, `InventoryAdjustment`.`description`' +
+        ", (SELECT json_group_array(json_object('id', `itemAdjustments`.`id`, 'buyPrice', `itemAdjustments`.`buyPrice`" +
+        ", 'itemId', `itemAdjustments`.`itemId`, 'creatorId', `itemAdjustments`.`creatorId`, 'createdAt', `itemAdjustments`.`createdAt`))" +
+        ' FROM (SELECT `itemAdjustments`.`id`, CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`itemId`' +
+        ', `itemAdjustments`.`creatorId`, CAST(`itemAdjustments`.`createdAt` AS TEXT) `createdAt` FROM `ItemAdjustment` `itemAdjustments`' +
+        ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
         ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
       [1],
     );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `id`, `buyPrice`, `itemId`, `creatorId`, `createdAt`, `inventoryAdjustmentId`' +
-        ' FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?, ?)',
-      ['123', '456'],
-    );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -394,23 +392,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $where: { createdAt: 1 },
     });
 
+    // Per parent, not one page across all of them: each parent's rows are paged inside its own
+    // correlated subquery, which is what `$limit` inside a to-many means.
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
+      "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('buyPrice', `itemAdjustments`.`buyPrice`))" +
+        ' FROM (SELECT CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice` FROM `ItemAdjustment` `itemAdjustments`' +
+        ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id` LIMIT 2 OFFSET 1) `itemAdjustments`) `itemAdjustments`' +
+        ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
       [1],
     );
-    // Per parent, not one page across all of them: each parent gets its own `LIMIT`/`OFFSET`, which
-    // is what `$limit` inside a to-many means. Flat, this handed two rows to whichever parents owned
-    // them and left the rest with `[]`.
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT * FROM (SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ? LIMIT 2 OFFSET 1) `_uql_p_1`' +
-        ' UNION ALL ' +
-        'SELECT * FROM (SELECT `buyPrice`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` = ? LIMIT 2 OFFSET 1) `_uql_p_2`',
-      [anyUuid, anyUuid],
-    );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(4);
   }
 
@@ -434,17 +427,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
+      "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('id', `itemAdjustments`.`id`, 'companyId', `itemAdjustments`.`companyId`, 'creatorId', `itemAdjustments`.`creatorId`, 'createdAt', `itemAdjustments`.`createdAt`, 'updatedAt', `itemAdjustments`.`updatedAt`, 'itemId', `itemAdjustments`.`itemId`, 'number', `itemAdjustments`.`number`, 'buyPrice', `itemAdjustments`.`buyPrice`, 'storehouseId', `itemAdjustments`.`storehouseId`, 'inventoryAdjustmentId', `itemAdjustments`.`inventoryAdjustmentId`))" +
+        ' FROM (SELECT `itemAdjustments`.`id`, `itemAdjustments`.`companyId`, `itemAdjustments`.`creatorId`, CAST(`itemAdjustments`.`createdAt` AS TEXT) `createdAt`, CAST(`itemAdjustments`.`updatedAt` AS TEXT) `updatedAt`, `itemAdjustments`.`itemId`, CAST(`itemAdjustments`.`number` AS TEXT) `number`, CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`storehouseId`, `itemAdjustments`.`inventoryAdjustmentId` FROM `ItemAdjustment` `itemAdjustments`' +
+        ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
+        ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`createdAt` = ?',
       [1],
     );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `id`, `companyId`, `creatorId`, `createdAt`, `updatedAt`, `itemId`, `number`, `buyPrice`, `storehouseId`' +
-        ', `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?, ?)',
-      ['123', '456'],
-    );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -462,20 +452,17 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
       $populate: { tags: { $select: { id: true } as any } },
     });
 
+    // Each target once, through the junction rows pairing it to the parent.
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` LIMIT 1',
+      'SELECT `Item`.`id`, `Item`.`createdAt`' +
+        ", (SELECT json_group_array(json_object('id', `tags`.`id`)) FROM (SELECT `tags`.`id` FROM `Tag` `tags`" +
+        ' WHERE `tags`.`id` IN (SELECT `ItemTag`.`tagId` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)) `tags`) `tags`' +
+        ' FROM `Item` LIMIT 1',
       [],
     );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
-        ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
-        ' WHERE `ItemTag`.`itemId` IN (?)',
-      ['123'],
-    );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -495,18 +482,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `Item`.`id`, `Item`.`createdAt` FROM `Item` WHERE `Item`.`id` = ? LIMIT 1',
-      ['123'],
-    );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `ItemTag`.`id`, `ItemTag`.`itemId`, `tag`.`id` `tag.id`' +
-        ' FROM `ItemTag` INNER JOIN `Tag` `tag` ON `tag`.`id` = `ItemTag`.`tagId`' +
-        ' WHERE `ItemTag`.`itemId` IN (?)',
+      'SELECT `Item`.`id`, `Item`.`createdAt`' +
+        ", (SELECT json_group_array(json_object('id', `tags`.`id`)) FROM (SELECT `tags`.`id` FROM `Tag` `tags`" +
+        ' WHERE `tags`.`id` IN (SELECT `ItemTag`.`tagId` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)) `tags`) `tags`' +
+        ' FROM `Item` WHERE `Item`.`id` = ? LIMIT 1',
       ['123'],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
@@ -1100,7 +1083,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
-      'DELETE FROM `Tag` WHERE EXISTS (SELECT 1 FROM `Company` WHERE `Company`.`id` = `Tag`.`companyId` AND `Company`.`name` = ?)',
+      'DELETE FROM `Tag` WHERE EXISTS (SELECT 1 FROM `Company` `company` WHERE `company`.`id` = `Tag`.`companyId` AND `company`.`name` = ?)',
       ['acme'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(0);
@@ -1153,25 +1136,24 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   /**
-   * The whole point of `$count`: one grouped statement per relation over every parent at once, so a
-   * page of three costs the same two statements a page of three hundred does - never one per row.
+   * A `$count` is a correlated subquery of the parent's own statement, so a page of three costs one
+   * statement, as a page of three hundred does - never one per row.
    */
-  async shouldCountARelationInOneBatchedStatement() {
-    mockAllResolvedValueOnce(this.querier.all, [{ id: 1 }, { id: 2 }, { id: 3 }]);
+  async shouldCountARelationInsideItsParentStatement() {
     mockAllResolvedValueOnce(this.querier.all, [
-      { creatorId: 1, _uql_count: 5 },
-      { creatorId: 3, _uql_count: 2 },
+      { id: 1, '_count.users': 5 },
+      { id: 2, '_count.users': 0 },
+      { id: 3, '_count.users': 2 },
     ]);
 
     const found = await this.querier.findMany(User, { $select: { id: true }, $count: { users: true } });
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `creatorId`, COUNT(*) `_uql_count` FROM `User` WHERE `creatorId` IN (?, ?, ?) GROUP BY `creatorId`',
-      [1, 2, 3],
+      1,
+      'SELECT `id`, (SELECT COUNT(*) FROM `User` `users` WHERE `users`.`creatorId` = `User`.`id`) `_count.users` FROM `User`',
+      [],
     );
-    // a parent the grouped result has no row for tallies zero, not a gap
     expect(found.map((it) => it._count.users)).toEqual([5, 0, 2]);
   }
 
@@ -1432,16 +1414,14 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT `InventoryAdjustment`.`id` FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ?',
-      ['999'],
-    );
-    expect(this.querier.all).toHaveBeenNthCalledWith(
-      2,
-      'SELECT `buyPrice`, `itemId`, `inventoryAdjustmentId` FROM `ItemAdjustment` WHERE `inventoryAdjustmentId` IN (?)',
+      "SELECT `InventoryAdjustment`.`id`, (SELECT json_group_array(json_object('buyPrice', `itemAdjustments`.`buyPrice`, 'itemId', `itemAdjustments`.`itemId`))" +
+        ' FROM (SELECT CAST(`itemAdjustments`.`buyPrice` AS TEXT) `buyPrice`, `itemAdjustments`.`itemId` FROM `ItemAdjustment` `itemAdjustments`' +
+        ' WHERE `itemAdjustments`.`inventoryAdjustmentId` = `InventoryAdjustment`.`id`) `itemAdjustments`) `itemAdjustments`' +
+        ' FROM `InventoryAdjustment` WHERE `InventoryAdjustment`.`id` = ?',
       ['999'],
     );
 
-    expect(this.querier.all).toHaveBeenCalledTimes(2);
+    expect(this.querier.all).toHaveBeenCalledTimes(1);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
   async shouldAggregate() {
@@ -1518,12 +1498,23 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(collected.map((u) => u.name).sort()).toEqual(['Alice', 'Bob']);
   }
 
-  async shouldThrowWhenStreamRequestsToManyRelation() {
-    await expect(
-      (async () => {
-        for await (const _ of this.querier.findManyStream(User, { $populate: { users: true } })) {
-        }
-      })(),
-    ).rejects.toThrow('findManyStream does not load to-many relations');
+  /** A to-many streams with each row: it is read inside the row's own statement. */
+  async shouldStreamAToManyRelation() {
+    const creatorId = await this.querier.insertOne(User, { name: 'creator' });
+    await this.querier.insertMany(User, [
+      { name: 'b', creatorId },
+      { name: 'a', creatorId },
+    ]);
+
+    const streamed: User[] = [];
+    for await (const row of this.querier.findManyStream(User, {
+      $select: { name: true },
+      $where: { id: creatorId },
+      $populate: { users: { $select: { name: true }, $sort: { name: 1 } } },
+    })) {
+      streamed.push(row);
+    }
+
+    expect(streamed).toEqual([{ name: 'creator', users: [{ name: 'a' }, { name: 'b' }] }]);
   }
 }

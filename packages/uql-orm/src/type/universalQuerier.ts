@@ -8,7 +8,6 @@ import type {
   QueryPage,
   QueryProjected,
   QuerySearch,
-  QueryStreamProjected,
   QueryUpsertOneResult,
   QueryUpsertManyResult,
 } from './query.js';
@@ -175,8 +174,8 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
  */
 export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> {
   /**
-   * streams the records matching the given search parameters as an async iterable.
-   * Does not fill relations or fire lifecycle hooks - designed for high-performance
+   * streams the records matching the given search parameters as an async iterable, each with the
+   * relations and counts `findMany` reads. Fires no lifecycle hooks, and holds one row at a time, for
    * bulk reads (ETL, exports, migrations).
    * @param entity the target entity
    * @param q the criteria options
@@ -188,11 +187,12 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryStreamProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
 
   /**
    * Insert a single record and return its ID (provided, `onInsert`-generated, or

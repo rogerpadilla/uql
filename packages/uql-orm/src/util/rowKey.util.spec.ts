@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dataKeyed, rowKey } from './rowKey.util.js';
+import { rowKey } from './rowKey.util.js';
 
 describe('rowKey', () => {
   it('keys a single column by its value', () => {
@@ -33,35 +33,5 @@ describe('rowKey', () => {
 
   it('reads a column the row does not carry as undefined rather than throwing', () => {
     expect(rowKey({}, ['missing'])).toBe('undefined');
-  });
-});
-
-describe('dataKeyed', () => {
-  /**
-   * A string primary key is data, so its value can spell a member of `Object.prototype`. On a plain
-   * `{}` grouping children under `__proto__` threw on the push, and a `_count` tally under one read
-   * back as an object instead of a number.
-   */
-  it.each(['__proto__', 'constructor', 'toString', 'hasOwnProperty', 'valueOf'])(
-    'holds %s as an ordinary key',
-    (key) => {
-      const lookup = dataKeyed<number[]>();
-      (lookup[key] ??= []).push(1);
-      (lookup[key] ??= []).push(2);
-      expect(lookup[key]).toEqual([1, 2]);
-    },
-  );
-
-  it('reads a key it was never given as undefined, not as a prototype member', () => {
-    const lookup = dataKeyed<number>();
-    expect(lookup.toString).toBeUndefined();
-    expect(lookup['__proto__']).toBeUndefined();
-    expect(lookup['absent'] ?? 0).toBe(0);
-  });
-
-  it('keys a row whose value spells a prototype member', () => {
-    const lookup = dataKeyed<number>();
-    lookup[rowKey({ slug: '__proto__' }, ['slug'])] = 7;
-    expect(lookup[rowKey({ slug: '__proto__' }, ['slug'])]).toBe(7);
   });
 });

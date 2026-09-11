@@ -138,7 +138,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS _uql_elem_1 WHERE _uql_elem_1.`city` LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS _uql_elem WHERE _uql_elem.`city` LIKE ?)",
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -150,8 +150,8 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
     expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain(`NOT (${this.jsonCastText('_uql_elem_1.`active`')} <=> ${this.jsonCastText('?')})`);
+    expect(ctx.sql).toContain('CAST(_uql_elem.`price` AS DECIMAL) >= ?');
+    expect(ctx.sql).toContain(`NOT (${this.jsonCastText('_uql_elem.`active`')} <=> ${this.jsonCastText('?')})`);
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -180,16 +180,16 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
         },
       },
     });
-    expect(ctx.sql).toContain('_uql_elem_1.`a` = ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`b` AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`c` AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`d` AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('_uql_elem_1.`e` LIKE ?');
+    expect(ctx.sql).toContain('_uql_elem.`a` = ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem.`b` AS DECIMAL) > ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem.`c` AS DECIMAL) < ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem.`d` AS DECIMAL) <= ?');
+    expect(ctx.sql).toContain('_uql_elem.`e` LIKE ?');
     // A JSON path folds case exactly as a column does: both sides, never the pattern alone.
-    expect(ctx.sql).toContain('LOWER(_uql_elem_1.`f`) LIKE ?');
+    expect(ctx.sql).toContain('LOWER(_uql_elem.`f`) LIKE ?');
     expect(ctx.values).toContain('hi');
-    expect(ctx.sql).toContain('_uql_elem_1.`m` REGEXP ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`n` AS DECIMAL) IN (');
-    expect(ctx.sql).toContain('CAST(_uql_elem_1.`o` AS DECIMAL) NOT IN (');
+    expect(ctx.sql).toContain('_uql_elem.`m` REGEXP ?');
+    expect(ctx.sql).toContain('CAST(_uql_elem.`n` AS DECIMAL) IN (');
+    expect(ctx.sql).toContain('CAST(_uql_elem.`o` AS DECIMAL) NOT IN (');
   }
 }

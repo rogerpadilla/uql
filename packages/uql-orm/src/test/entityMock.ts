@@ -465,6 +465,18 @@ export class TypedRow {
   @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
   /** A BIGINT written from a `bigint`, which only an exact bind keeps apart from its rounded neighbour. */
   @Field({ type: BigInt }) wide?: bigint;
+  @Field({ type: Date }) at?: Date;
+  @Field({ type: 'blob' }) bytes?: Uint8Array;
+  @Field({ references: () => TypedGroup }) groupId?: number;
+  @ManyToOne({ entity: () => TypedGroup }) group?: TypedGroup;
+}
+
+/** Holds {@link TypedRow}s, so a populated row can be read back beside a read of its own. */
+@Entity()
+export class TypedGroup {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
+  @OneToMany({ entity: () => TypedRow, mappedBy: (row) => row.group }) rows?: TypedRow[];
 }
 
 @Entity()

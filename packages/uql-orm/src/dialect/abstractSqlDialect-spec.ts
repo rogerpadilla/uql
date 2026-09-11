@@ -15,8 +15,19 @@ import {
   User,
 } from '../test/index.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
-import { raw } from '../util/index.js';
+import { col, raw } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
+
+/** Each field of a tag, which a relation excluding every one reads all the same. */
+const EVERY_TAG_FIELD = {
+  id: true,
+  companyId: true,
+  creatorId: true,
+  createdAt: true,
+  updatedAt: true,
+  name: true,
+  itemsCount: true,
+} as const;
 
 /** Exercises a soft-delete stamp whose value is a raw SQL expression. */
 @Entity()
@@ -1419,19 +1430,78 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /**
-   * A to-many is filled by a second query keyed on the parent's id, so subtracting it is refused -
-   * by `$exclude` and by a falsy `$select` alike. The relation itself adds no join of its own.
+   * The children correlate on the parent's key without selecting it, so the parent keeps only what the
+   * query asked for - after `$exclude` and a falsy `$select` alike - and the relation joins nothing.
    */
-  shouldFind$excludeKeepsTheParentIdAToManyFillNeeds() {
+  shouldFind$excludeBesideAToMany() {
     const e = this.dialect.escapeIdChar;
-    const expected = `SELECT ${e}User${e}.${e}id${e}, ${e}User${e}.${e}companyId${e}, ${e}User${e}.${e}creatorId${e}, ${e}User${e}.${e}createdAt${e}, ${e}User${e}.${e}updatedAt${e}, ${e}User${e}.${e}name${e}, ${e}User${e}.${e}email${e} FROM ${e}User${e}`;
+    const excluded = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } }),
+    ).sql;
+    const deselected = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } }),
+    ).sql;
 
-    expect(
-      this.exec((ctx) => this.dialect.find(ctx, User, { $exclude: { id: true }, $populate: { users: true } })).sql,
-    ).toBe(expected);
-    expect(
-      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: false }, $populate: { users: true } })).sql,
-    ).toBe(expected);
+    expect(deselected).toBe(excluded);
+    expect(excluded).toContain(` ${e}User${e}.${e}companyId${e}, `);
+    expect(excluded).not.toContain(`${e}User${e}.${e}id${e}, `);
+    expect(excluded).not.toContain(' JOIN ');
+  }
+
+  /** A relation excluding every field reads every one, as `*` does for the statement's own rows. */
+  shouldReadEveryFieldOfARelationExcludingAll() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags: { $exclude: EVERY_TAG_FIELD } } }),
+    );
+
+    expect(sql).toContain(`${e}tags${e}.${e}name${e}`);
+  }
+
+  /** Reading every field, such a relation deduplicates on each, so it sorts by any. */
+  shouldSortADistinctRelationExcludingAll() {
+    const e = this.dialect.escapeIdChar;
+    const tags = { $exclude: EVERY_TAG_FIELD, $distinct: true, $sort: { name: 1 } } as const;
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tags } }));
+
+    expect(sql).toContain(`${e}tags${e}.${e}name${e}`);
+  }
+
+  /** A raw projection reaches a populated relation qualified by its alias, as it reaches a read of its own. */
+  shouldPopulateARawSelect() {
+    const e = this.dialect.escapeIdChar;
+    const $select = [raw`UPPER(${col('name')})`.as('label')];
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $select }, tags: { $select } } }),
+    );
+
+    expect(sql).toContain(`UPPER(${e}tax${e}.${e}name${e}) ${e}tax.label${e}`);
+    expect(sql).toContain(`UPPER(${e}tags${e}.${e}name${e})`);
+  }
+
+  /** A relation's row answers under keys, so a raw projection inside one needs the alias it lands under. */
+  shouldRefuseAnUnaliasedRawSelectInARelation() {
+    const $select = [raw`1`];
+    expect(() => this.exec((ctx) => this.dialect.find(ctx, Item, { $populate: { tax: { $select } } }))).toThrow(
+      'a raw $select in a populated relation needs an alias',
+    );
+    expect(() => this.exec((ctx) => this.dialect.find(ctx, Item, { $populate: { tags: { $select } } }))).toThrow(
+      'a raw $select in a populated relation needs an alias',
+    );
+  }
+
+  /** A to-many under a to-one hangs off the joined row: correlated to its alias, keyed under its path. */
+  shouldPopulateAToManyUnderAToOne() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnit, {
+        $select: { name: true },
+        $populate: { category: { $populate: { measureUnits: { $select: { name: true } } } } },
+      }),
+    );
+
+    expect(sql).toContain(`${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e}`);
+    expect(sql).toContain(`${e}category.measureUnits${e}`);
   }
 
   shouldFind$excludeOnAJoinedRelation() {
@@ -1534,7 +1604,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(1)}) >= ${this.ph(2)}`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureChild${e} ${e}children${e} WHERE ${e}children${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}children${e}.${e}deletedAt${e} IS NULL AND ${e}children${e}.${e}tenantId${e} = ${this.ph(1)}) >= ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 2]);
   }
@@ -1548,7 +1618,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureParent${e} WHERE (SELECT COUNT(*) FROM ${e}SecureRelated${e} WHERE ${e}SecureRelated${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}SecureRelated${e}.${e}tenantId${e} = ${this.ph(1)}) = ${this.ph(2)}`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureParent${e} WHERE (SELECT COUNT(*) FROM ${e}SecureRelated${e} ${e}related${e} WHERE ${e}related${e}.${e}id${e} = ${e}SecureParent${e}.${e}relatedId${e} AND ${e}related${e}.${e}tenantId${e} = ${this.ph(1)}) = ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 1]);
   }
@@ -1565,7 +1635,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(1)})) >= ${this.ph(2)}`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}taggedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}taggedChildren${e} WHERE ${e}taggedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}taggedChildren${e}.${e}tenantId${e} = ${this.ph(1)})) >= ${this.ph(2)}`,
     );
     expect(values).toEqual([7, 2]);
   }
@@ -1580,7 +1650,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}parent_pk${e} ${e}id${e} FROM ${e}RenamedParent${e} WHERE EXISTS (SELECT 1 FROM ${e}RenamedChild${e} WHERE ${e}RenamedChild${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e} AND ${e}RenamedChild${e}.${e}id${e} = ${this.ph(1)}) AND (SELECT COUNT(*) FROM ${e}RenamedChild${e} WHERE ${e}RenamedChild${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e}) = ${this.ph(2)}`,
+      /*sql*/ `SELECT ${e}parent_pk${e} ${e}id${e} FROM ${e}RenamedParent${e} WHERE EXISTS (SELECT 1 FROM ${e}RenamedChild${e} ${e}children${e} WHERE ${e}children${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e} AND ${e}children${e}.${e}id${e} = ${this.ph(1)}) AND (SELECT COUNT(*) FROM ${e}RenamedChild${e} ${e}children_2${e} WHERE ${e}children_2${e}.${e}parent_fk${e} = ${e}RenamedParent${e}.${e}parent_pk${e}) = ${this.ph(2)}`,
     );
     expect(values).toEqual([3, 1]);
   }
@@ -1594,7 +1664,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionRenamed${e} WHERE ${e}SecureCollectionRenamed${e}.${e}renamed_collection${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionRenamed${e}.${e}renamed_child${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)}))`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionRenamed${e} WHERE ${e}SecureCollectionRenamed${e}.${e}renamed_collection${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionRenamed${e}.${e}renamed_child${e} IN (SELECT ${e}renamedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}renamedChildren${e} WHERE ${e}renamedChildren${e}.${e}id${e} = ${this.ph(1)} AND ${e}renamedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}renamedChildren${e}.${e}tenantId${e} = ${this.ph(2)}))`,
     );
     expect(values).toEqual([5, 7]);
   }
@@ -1606,7 +1676,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { $size: 2 } } }),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL) = ${this.ph(1)}`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL) = ${this.ph(1)}`,
     );
     expect(values).toEqual([2]);
   }
@@ -1618,7 +1688,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { linkedChildren: { id: 5 } } }),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL AND ${e}SecureCollectionLink${e}.${e}plainChildId${e} IN (SELECT ${e}PlainChild${e}.${e}id${e} FROM ${e}PlainChild${e} WHERE ${e}PlainChild${e}.${e}id${e} = ${this.ph(1)}))`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionLink${e} WHERE ${e}SecureCollectionLink${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionLink${e}.${e}deletedAt${e} IS NULL AND ${e}SecureCollectionLink${e}.${e}plainChildId${e} IN (SELECT ${e}linkedChildren${e}.${e}id${e} FROM ${e}PlainChild${e} ${e}linkedChildren${e} WHERE ${e}linkedChildren${e}.${e}id${e} = ${this.ph(1)}))`,
     );
     expect(values).toEqual([5]);
   }
@@ -1630,7 +1700,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, SecureCollection, { $select: { id: true }, $where: { plainChildren: { $size: 3 } } }),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionPlain${e} WHERE ${e}SecureCollectionPlain${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e}) = ${this.ph(1)}`,
+      /*sql*/ `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE (SELECT COUNT(*) FROM ${e}SecureCollectionPlain${e} WHERE ${e}SecureCollectionPlain${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e}) = ${this.ph(1)}`,
     );
     expect(values).toEqual([3]);
   }
@@ -1656,7 +1726,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)})`,
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureChild${e} ${e}children${e} WHERE ${e}children${e}.${e}collectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}children${e}.${e}id${e} = ${this.ph(1)} AND ${e}children${e}.${e}deletedAt${e} IS NULL AND ${e}children${e}.${e}tenantId${e} = ${this.ph(2)})`,
     );
     expect(values).toEqual([3, 7]);
   }
@@ -1670,7 +1740,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       ),
     );
     expect(sql).toBe(
-      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}SecureChild${e}.${e}id${e} FROM ${e}SecureChild${e} WHERE ${e}SecureChild${e}.${e}id${e} = ${this.ph(1)} AND ${e}SecureChild${e}.${e}deletedAt${e} IS NULL AND ${e}SecureChild${e}.${e}tenantId${e} = ${this.ph(2)}))`,
+      `SELECT ${e}id${e} FROM ${e}SecureCollection${e} WHERE EXISTS (SELECT 1 FROM ${e}SecureCollectionChild${e} WHERE ${e}SecureCollectionChild${e}.${e}secureCollectionId${e} = ${e}SecureCollection${e}.${e}id${e} AND ${e}SecureCollectionChild${e}.${e}secureChildId${e} IN (SELECT ${e}taggedChildren${e}.${e}id${e} FROM ${e}SecureChild${e} ${e}taggedChildren${e} WHERE ${e}taggedChildren${e}.${e}id${e} = ${this.ph(1)} AND ${e}taggedChildren${e}.${e}deletedAt${e} IS NULL AND ${e}taggedChildren${e}.${e}tenantId${e} = ${this.ph(2)}))`,
     );
     expect(values).toEqual([3, 7]);
   }
@@ -1703,6 +1773,39 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         ` ORDER BY ${e}tax${e}.${e}name${e}, ${e}measureUnit${e}.${e}name${e}, ${e}Item${e}.${e}createdAt${e} DESC${this.pgr(100, undefined, true)}`,
     );
     expect(values).toEqual(['unidad', 1000, 'A%']);
+  }
+
+  /**
+   * A renamed column answers under its key, like any other: only a joined row's carries its path. It
+   * carried the table's name whenever a relation was joined, so `picture` came back under `user_profile`.
+   */
+  shouldAliasARenamedColumnByItsKeyBesideAJoin() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Profile, {
+        $select: { picture: true },
+        $populate: { creator: { $select: { name: true } } },
+      }),
+    );
+
+    expect(sql).toContain(`${e}user_profile${e}.${e}image${e} ${e}picture${e}`);
+  }
+
+  /**
+   * The related table reads through an alias of its own, so a relation of an entity to itself compares
+   * the child against its parent. Unaliased, both sides named the inner table and every row matched.
+   */
+  shouldCorrelateASelfReferencingRelationAgainstItsParent() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { users: { name: 'x' } } }),
+    );
+
+    expect(sql).toBe(
+      `SELECT ${e}id${e} FROM ${e}User${e} WHERE EXISTS (SELECT 1 FROM ${e}User${e} ${e}users${e}` +
+        ` WHERE ${e}users${e}.${e}creatorId${e} = ${e}User${e}.${e}id${e} AND ${e}users${e}.${e}name${e} = ${this.ph(1)})`,
+    );
+    expect(values).toEqual(['x']);
   }
 
   /** A `$sort` reaching into a relation joins it, exactly as populating it would - filters included. */
@@ -1764,7 +1867,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * rejection surfacing through the query path rather than only from the parser.
    */
   shouldRejectPagingAJoinedRelation() {
-    const e = this.dialect.escapeIdChar;
     expect(() =>
       this.exec((ctx) =>
         this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $limit: 5 } } as never }),
@@ -1780,17 +1882,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     ).toThrow("'$sort' is not supported inside $populate of the to-one relation 'category'");
+  }
 
-    // The same keys order and page a to-many's second query, so they stay valid there. That query is
-    // issued by the querier, so the parent statement is simply the unjoined one.
-    expect(
-      this.exec((ctx) =>
-        this.dialect.find(ctx, Item, {
-          $select: { id: true },
-          $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 5, $skip: 1 } },
-        }),
-      ).sql,
-    ).toBe(`SELECT ${e}Item${e}.${e}id${e} FROM ${e}Item${e}`);
+  /**
+   * The keys a joined relation rejects order and page a to-many's own rows, so they stay valid there:
+   * each parent's rows are paged by the engine's own pager, inside the parent's statement.
+   */
+  shouldPageAToManyRelation() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: { tags: { $select: { name: true }, $sort: { name: 1 }, $limit: 5, $skip: 1 } },
+      }),
+    );
+
+    expect(sql).toContain(this.pgr(5, 1, true));
+    expect(sql).not.toContain(' JOIN ');
   }
 
   /** Every statement that cannot join says so, rather than emitting an alias nothing defines. */
@@ -2519,16 +2626,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldHandleRawFalsyValues() {
-    const e = this.dialect.escapeIdChar;
-    const { sql } = this.exec((ctx) => {
-      this.dialect.selectFields(ctx, User, [raw(() => 0, 'zero')]);
-    });
-    expect(sql).toBe(`0 ${e}zero${e}`);
+    const ctx = this.dialect.createContext();
 
-    const { sql: sql2 } = this.exec((ctx) => {
-      this.dialect.selectFields(ctx, User, [raw(() => '', 'empty')]);
-    });
-    expect(sql2).toBe(` ${e}empty${e}`);
+    expect(this.dialect.selectTerms(ctx, User, [raw(() => 0, 'zero')])).toEqual([{ sql: '0', key: 'zero' }]);
+    expect(this.dialect.selectTerms(ctx, User, [raw(() => '', 'empty')])).toEqual([{ sql: '', key: 'empty' }]);
   }
 
   shouldHandleEmptyAppend() {
@@ -3034,8 +3135,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * only by bypassing the type system) recurses into the same hook a second time within one query -
    * confirmed live against SQLite and MySQL that reusing one literal alias at both nesting depths
    * let the inner occurrence shadow the outer one it needed to correlate against, silently returning
-   * zero rows instead of the matching ones. Each nesting level must get its own alias, generated
-   * from `ctx.nextAlias`, so this only asserts they're distinct - not full result correctness, which
+   * zero rows instead of the matching ones. Each nesting level must get its own alias, claimed
+   * with `ctx.claimAlias`, so this only asserts they're distinct - not full result correctness, which
    * is a per-dialect SQL-generation concern already covered where reachable via the typed API.
    */
   shouldGenerateDistinctAliasesForNestedElemMatch() {
@@ -3045,7 +3146,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $where: { kind: { $elemMatch: { $elemMatch: { $eq: 5 } } } } as any,
       }),
     );
-    const aliases = new Set(sql.match(/_uql_elem_\d+/g));
+    const aliases = new Set(sql.match(/_uql_elem(?:_\d+)?/g));
     expect(aliases.size).toBe(2);
   }
 }

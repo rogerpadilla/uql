@@ -1,6 +1,21 @@
-import { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { JSON_ELEM_ALIAS_PREFIX, JSON_PULL_ALIAS } from '../dialect/aliases.js';
-import { jsonAssignCall, jsonElemExists, jsonPath, jsonRemoveCall, jsonSetTarget } from '../dialect/jsonSql.js';
+import {
+  AbstractSqlDialect,
+  type CarriedFields,
+  type DerivedRelation,
+  type HydrateKind,
+  type RelationRows,
+} from '../dialect/abstractSqlDialect.js';
+import { JSON_ELEM_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
+import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
+import {
+  chainedCall,
+  groupsPerCall,
+  jsonAssignCall,
+  jsonElemExists,
+  jsonPath,
+  jsonRemoveCall,
+  jsonSetTarget,
+} from '../dialect/jsonSql.js';
 import type {
   DialectFeatures,
   EntityMeta,
@@ -14,6 +29,7 @@ import type {
   VectorMetric,
 } from '../type/index.js';
 import { textSearchFields } from '../util/dialect.util.js';
+import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
@@ -62,6 +78,9 @@ export class SqliteDialect extends AbstractSqlDialect {
   override readonly supportsRowLocks = false;
 
   override readonly booleanLiteral = 'integer';
+
+  /** A function call takes 127 arguments before SQLite 3.48, as libSQL and Turso embed. */
+  override readonly maxFunctionArgs: number = 127;
 
   // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.
   override readonly insertIdSource = 'returning';
@@ -113,6 +132,37 @@ export class SqliteDialect extends AbstractSqlDialect {
     super.pager(ctx, opts);
   }
 
+  /** `json_group_array` of each row's object, ordered by the sort terms carried out beside them. */
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+    ctx.append(`(SELECT json_group_array(${this.jsonObject(pairs)}${order ? ` ORDER BY ${order}` : ''}) FROM ${from})`);
+  }
+
+  /**
+   * `json_object` of each key and its column. A row wider than one call takes inserts the rest into it,
+   * addressing each key as one path segment.
+   */
+  protected jsonObject(pairs: DerivedRelation['pairs']): string {
+    const perCall = groupsPerCall(this.maxFunctionArgs, 2);
+    const object = `json_object(${this.jsonObjectArgs(pairs.slice(0, perCall))})`;
+    const inserts = pairs.slice(perCall).map(([key, sql]) => `${this.escape(`$."${key}"`)}, ${sql}`);
+    return chainedCall('json_insert', object, inserts, 2, this.maxFunctionArgs);
+  }
+
+  /**
+   * An integer crosses JSON as its exact text, which JSON would round past 2^53, and bytes as hex, which
+   * `json_object` cannot hold at all. A real stays a number, since SQLite writes one to text with 15 digits.
+   */
+  protected override readonly carriedFields = {
+    numeric: (expr, field) => (isIntegerColumn(field) ? `CAST(${expr} AS TEXT)` : expr),
+    blob: (expr) => `${this.escape(BYTES_PREFIX)} || hex(${expr})`,
+  } satisfies CarriedFields;
+
+  /** A date reads back as SQLite stored it, a number or text, which JSON carries unchanged. */
+  protected override hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
+    return columnFamily(field?.type) === 'date' ? undefined : super.hydrateKind(field);
+  }
+
   /**
    * FTS5 matches the table itself rather than its columns, so this only works when the table *is* an
    * FTS5 virtual table (UQL does not create those; declare it outside your entities).
@@ -145,7 +195,7 @@ export class SqliteDialect extends AbstractSqlDialect {
    * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
    */
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    const alias = ctx.nextAlias(JSON_ELEM_ALIAS_PREFIX);
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
     const from = this.jsonElemFrom(jsonField, [], alias);
     const conditions = (value as unknown[]).map((val) =>
       jsonElemExists(from, [`${jsonField} -> ${alias}.fullkey = ${this.jsonScalarParam(ctx, val)}`]),
@@ -212,6 +262,7 @@ export class SqliteDialect extends AbstractSqlDialect {
       'JSON_SET',
       jsonSetTarget(expr, field, `'{}'`),
       set,
+      this.maxFunctionArgs,
     );
   }
 
@@ -223,10 +274,17 @@ export class SqliteDialect extends AbstractSqlDialect {
    * so it silently drops the element when the array already exists.
    */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return jsonAssignCall((value) => this.jsonScalarParam(ctx, value), 'JSON_SET', expr, push, '[#]');
+    return jsonAssignCall(
+      (value) => this.jsonScalarParam(ctx, value),
+      'JSON_SET',
+      expr,
+      push,
+      this.maxFunctionArgs,
+      '[#]',
+    );
   }
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall('JSON_REMOVE', expr, unset);
+    return jsonRemoveCall('JSON_REMOVE', expr, unset, this.maxFunctionArgs);
   }
 }

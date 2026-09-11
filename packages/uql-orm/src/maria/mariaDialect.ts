@@ -1,3 +1,4 @@
+import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
 import { jsonPath } from '../dialect/jsonSql.js';
 import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
@@ -7,7 +8,6 @@ import type {
   FieldOptions,
   Query,
   QueryContext,
-  QueryOptions,
   Type,
   VectorDistance,
   VectorMetric,
@@ -33,6 +33,25 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     vectorIndexRequiresNotNull: true,
     indexIfNotExists: true,
   };
+
+  /**
+   * A derived table here reads no column of the statement around it, so the aggregate reads the
+   * related table itself, and orders and pages inside `JSON_ARRAYAGG`, which takes both.
+   */
+  protected override appendRelationArray(ctx: QueryContext, { entity, query, alias, joins }: RelationRows): void {
+    const meta = getMeta(entity);
+    const terms = this.projection(ctx, entity, query, { prefix: alias, json: true }, joins);
+    const sortOpts = { prefix: alias, joins, distinct: query.$distinct };
+    const order = this.buildFragment(ctx, (fragmentCtx) => this.sort(fragmentCtx, entity, query.$sort, sortOpts));
+    const page = this.buildFragment(ctx, (fragmentCtx) => this.pager(fragmentCtx, query));
+    const from = this.buildFragment(ctx, (fragmentCtx) => {
+      this.selectRelationJoins(fragmentCtx, meta, alias, joins);
+      this.where(fragmentCtx, entity, query.$where, { prefix: alias });
+    });
+    const object = this.jsonObject(terms.map((term) => [relationTermKey(term), term.sql]));
+    const rows = `${query.$distinct ? 'DISTINCT ' : ''}${object}${order}${page}`;
+    ctx.append(`COALESCE((SELECT JSON_ARRAYAGG(${rows}) FROM ${this.tableRef(meta, alias).ref}${from}), JSON_ARRAY())`);
+  }
 
   protected override upsertReturning<E>(meta: EntityMeta<E>): string {
     const returning = this.returningId(meta);
@@ -87,18 +106,20 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /**
-   * `SET STATEMENT mhnsw_ef_search=N FOR SELECT ...` - MariaDB scopes a variable to one statement, so
-   * the tuning needs neither a transaction nor a restore afterwards, and cannot leak to the next
-   * query on this pooled connection. That is why it prefixes the SQL here instead of coming back
-   * from `vectorTuningStatements`, which is Postgres's `SET LOCAL` shape.
+   * `mhnsw_ef_search` too, where a vector search is tuned. A setting scoped to one statement needs
+   * neither a transaction nor a restore, and cannot leak to the next query on this pooled connection,
+   * which is why the tuning is not `vectorTuningStatements`, Postgres's `SET LOCAL` shape.
    */
-  override find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string) {
+  protected override statementSettings<E>(entity: Type<E>, q: Query<E>): string[] {
     // `$candidates` first: `getMeta` would otherwise be resolved on every read, to discover that
     // almost none of them tune anything.
-    if (q.$candidates !== undefined && this.tunedVectorIndex(getMeta(entity), q)) {
-      ctx.append(`SET STATEMENT mhnsw_ef_search=${q.$candidates} FOR `);
-    }
-    super.find(ctx, entity, q, opts, totalAlias);
+    const tuned = q.$candidates !== undefined && this.tunedVectorIndex(getMeta(entity), q);
+    return [...(tuned ? [`mhnsw_ef_search=${q.$candidates}`] : []), ...super.statementSettings(entity, q)];
+  }
+
+  /** `SET STATEMENT ... FOR`, which scopes a variable to the statement it prefixes. */
+  protected override applySettings(sql: string, settings: readonly string[]): string {
+    return `SET STATEMENT ${settings.join(', ')} FOR ${sql}`;
   }
 
   /** The reverse: selecting a `VECTOR` column raw yields that blob, so it is read back as text. */

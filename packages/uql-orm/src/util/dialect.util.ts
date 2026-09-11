@@ -426,7 +426,7 @@ export type ParsedGroupEntry =
       readonly alias: string;
       readonly op: QueryAggregateOp;
       readonly fieldRef: string;
-      /** `true` for a flat distinct op (`$countDistinct`, ...) → `COUNT(DISTINCT field)`. */
+      /** `true` for a flat distinct op (`$countDistinct`, ...) -> `COUNT(DISTINCT field)`. */
       readonly distinct: boolean;
     };
 

@@ -17,4 +17,7 @@ export class TursoDialect extends LibsqlDialect {
     ['l2', { fn: 'vector_distance_l2' }],
     ['inner', { fn: 'vector_distance_dot' }],
   ]);
+
+  /** The Rust engine takes no `ORDER BY` inside an aggregate. */
+  protected override readonly orderedAggregates = false;
 }

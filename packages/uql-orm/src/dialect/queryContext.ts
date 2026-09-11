@@ -10,7 +10,7 @@ import type { QueryContext, QueryDialect } from '../type/index.js';
 export class SqlQueryContext implements QueryContext {
   private readonly sqlChunks: string[] = [];
   private readonly params: unknown[];
-  private aliasCounter = 0;
+  private readonly tableAliases = new Set<string>();
 
   /**
    * @param dialect The SQL dialect used to determine how values should be formatted as placeholders.
@@ -18,7 +18,7 @@ export class SqlQueryContext implements QueryContext {
    * fragment context built via {@link AbstractSqlDialect.buildFragment}, so a bound value's
    * placeholder is numbered correctly against the real query from the moment it's added, rather
    * than needing to be reconciled after the fact.
-   * @param statement The context this one renders a fragment of, which owns the alias counter: a
+   * @param statement The context this one renders a fragment of, which owns the claimed aliases: a
    * fragment is part of one statement, so its aliases have to be unique across the whole of it.
    */
   constructor(
@@ -70,12 +70,17 @@ export class SqlQueryContext implements QueryContext {
     return this;
   }
 
-  /**
-   * A fresh alias unique within the statement being built, e.g. `nextAlias('_uql_elem')` ->
-   * `'_uql_elem_1'`, `'_uql_elem_2'`, ...
-   */
-  nextAlias(prefix: string): string {
-    return this.statement ? this.statement.nextAlias(prefix) : `${prefix}_${++this.aliasCounter}`;
+  claimAlias(name: string, parent?: string): string {
+    if (this.statement) {
+      return this.statement.claimAlias(name, parent);
+    }
+    const reserved = parent?.toLowerCase();
+    let alias = name;
+    for (let n = 2; this.tableAliases.has(alias.toLowerCase()) || alias.toLowerCase() === reserved; n++) {
+      alias = `${name}_${n}`;
+    }
+    this.tableAliases.add(alias.toLowerCase());
+    return alias;
   }
 
   /**

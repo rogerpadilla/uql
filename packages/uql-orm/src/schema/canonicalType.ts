@@ -11,7 +11,7 @@ import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
 import type { DialectFeatures, DialectName } from '../type/index.js';
-import { columnFamily } from '../util/field.util.js';
+import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 /** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
@@ -461,9 +461,9 @@ export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
     case 'numeric':
       // BIGINT for every `Number` without a scale, key or not: a 32-bit column is a migration waiting
       // to happen, and the pools decode it back to a JS number at the wire (see `pgNumericTypes`).
-      return type === Number && (options.precision || options.scale)
-        ? { category: 'decimal', precision: options.precision, scale: options.scale }
-        : { category: 'integer', size: 'big' };
+      return isIntegerColumn(options)
+        ? { category: 'integer', size: 'big' }
+        : { category: 'decimal', precision: options.precision, scale: options.scale };
     case 'boolean':
       return { category: 'boolean' };
     case 'date':

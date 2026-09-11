@@ -12,7 +12,6 @@ import type {
   QueryPage,
   QueryProjected,
   QuerySearch,
-  QueryStreamProjected,
   QueryUpdateResult,
 } from './query.js';
 import type { UniversalQuerier } from './universalQuerier.js';
@@ -101,8 +100,8 @@ export interface Querier extends UniversalQuerier {
   ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
 
   /**
-   * Stream records as an async iterable. Supports both patterns.
-   * Does not fill relations or fire lifecycle hooks.
+   * Stream records as an async iterable, in both patterns, each with the relations and counts
+   * `findMany` reads. Fires no lifecycle hooks.
    */
   findManyStream<
     E extends object,
@@ -110,21 +109,23 @@ export interface Querier extends UniversalQuerier {
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
-    q: QueryStreamProjected<E, S, V, X, P> & { $entity: Type<E> },
+    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
   findManyStream<
     E extends object,
     const S extends FieldKey<E> = never,
     const V = true,
     const X extends FieldKey<E> = never,
     const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryStreamProjected<E, S, V, X, P>,
+    q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P>>;
+  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
 
   /**
    * Find many records and count. Supports both patterns.

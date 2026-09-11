@@ -20,6 +20,31 @@ describe('decodeColumn', () => {
     expect(decodeColumn(false, 'boolean')).toBe(false);
   });
 
+  it('reads a timestamp that crossed JSON, cutting a fraction finer than a Date holds', () => {
+    expect(decodeColumn('2026-09-10T12:30:00.123+00:00', 'date')).toEqual(
+      new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123)),
+    );
+    expect(decodeColumn('2026-09-10T12:30:00.123456Z', 'date')).toEqual(
+      new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123)),
+    );
+  });
+
+  it('reads a bare date at local midnight, as pg does', () => {
+    expect(decodeColumn('2026-09-10', 'date')).toEqual(new Date(2026, 8, 10));
+  });
+
+  it('leaves a Date the driver already decoded, and text that is no date', () => {
+    const date = new Date();
+    expect(decodeColumn(date, 'date')).toBe(date);
+    expect(decodeColumn('12:30:00', 'date')).toBe('12:30:00');
+  });
+
+  it('reads bytes that crossed JSON in their hex form, and leaves bytes already decoded', () => {
+    expect(decodeColumn('\\x6869', 'bytes')).toEqual(new Uint8Array([0x68, 0x69]));
+    const bytes = new Uint8Array([1, 2]);
+    expect(decodeColumn(bytes, 'bytes')).toBe(bytes);
+  });
+
   it('reads a wide integer or a decimal returned as text', () => {
     expect(decodeColumn('9', 'number')).toBe(9);
     expect(decodeColumn('12.50', 'number')).toBe(12.5);

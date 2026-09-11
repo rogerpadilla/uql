@@ -91,11 +91,16 @@ describe('Query with $exists and nested relation filtering', () => {
       }),
     );
 
-    // Main query selects from InventoryAdjustment
+    // The children are read inside the statement, so their filter binds before the parent's own.
     expect(sql).toBe(
-      'SELECT "InventoryAdjustment"."id", "InventoryAdjustment"."description" FROM "InventoryAdjustment" WHERE "InventoryAdjustment"."createdAt" >= $1',
+      `SELECT "InventoryAdjustment"."id", "InventoryAdjustment"."description", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "itemAdjustments"."buyPrice"::text "buyPrice", "itemAdjustments"."number"::text "number"' +
+        ' FROM "ItemAdjustment" "itemAdjustments" WHERE "itemAdjustments"."buyPrice" >= $1' +
+        ' AND "itemAdjustments"."inventoryAdjustmentId" = "InventoryAdjustment"."id") "itemAdjustments"' +
+        ' CROSS JOIN LATERAL (SELECT "itemAdjustments"."buyPrice", "itemAdjustments"."number") "_uql_row") "itemAdjustments"' +
+        ' FROM "InventoryAdjustment" WHERE "InventoryAdjustment"."createdAt" >= $2',
     );
-    expect(values).toEqual([1000]);
+    expect(values).toEqual([100, 1000]);
   });
 
   it('should combine $exists with nested relation filtering', () => {
@@ -169,33 +174,9 @@ describe('Query with $exists and nested relation filtering', () => {
 describe('getRawValue alias', () => {
   const dialect = new PostgresDialect();
 
-  it('should use dot separator when autoPrefixAlias is true', () => {
+  it('should write the alias after the expression, whatever the prefix', () => {
     const ctx = dialect.createContext();
-    dialect.getRawValue(ctx, {
-      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
-      prefix: 'relation',
-      autoPrefixAlias: true,
-    });
-    expect(ctx.sql).toBe('SOME_EXPR() "relation.myAlias"');
-  });
-
-  it('should not prefix alias when autoPrefixAlias is false', () => {
-    const ctx = dialect.createContext();
-    dialect.getRawValue(ctx, {
-      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
-      prefix: 'relation',
-      autoPrefixAlias: false,
-    });
-    expect(ctx.sql).toBe('SOME_EXPR() "myAlias"');
-  });
-
-  it('should not prefix alias when prefix is empty', () => {
-    const ctx = dialect.createContext();
-    dialect.getRawValue(ctx, {
-      value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'),
-      prefix: '',
-      autoPrefixAlias: true,
-    });
+    dialect.getRawValue(ctx, { value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'), prefix: 'relation' });
     expect(ctx.sql).toBe('SOME_EXPR() "myAlias"');
   });
 });

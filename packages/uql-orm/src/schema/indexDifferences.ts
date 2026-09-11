@@ -88,16 +88,16 @@ export function describeIndexDifferences(
       entries.map((entry) => entrySignature(entry, facets)).join(', '),
     );
     if (sourceColumns !== targetColumns) {
-      differences.push(`columns: (${targetColumns}) → (${sourceColumns})`);
+      differences.push(`columns: (${targetColumns}) -> (${sourceColumns})`);
     }
   }
 
   if (source.unique !== target.unique) {
-    differences.push(`unique: ${target.unique} → ${source.unique}`);
+    differences.push(`unique: ${target.unique} -> ${source.unique}`);
   }
 
   if (facets.has('accessMethod') && (source.type ?? 'btree') !== (target.type ?? 'btree')) {
-    differences.push(`type: ${target.type ?? 'btree'} → ${source.type ?? 'btree'}`);
+    differences.push(`type: ${target.type ?? 'btree'} -> ${source.type ?? 'btree'}`);
   }
 
   if (facets.has('include')) {
@@ -106,7 +106,7 @@ export function describeIndexDifferences(
       [...columns].sort().join(', '),
     );
     if (sourceInclude !== targetInclude) {
-      differences.push(`include: (${targetInclude}) → (${sourceInclude})`);
+      differences.push(`include: (${targetInclude}) -> (${sourceInclude})`);
     }
   }
 

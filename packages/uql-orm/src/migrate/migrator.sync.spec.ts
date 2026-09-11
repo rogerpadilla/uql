@@ -6,7 +6,7 @@ import type { CanonicalType, ColumnNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerier } from '../test/mockQuerier.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
+import type { MigratorDialect, QuerierPool, SchemaIntrospector, SqlQuerier } from '../type/index.js';
 import { Migrator } from './migrator.js';
 
 const BIG_INT: CanonicalType = { category: 'integer', size: 'big' };
@@ -74,7 +74,7 @@ class SyncProfile {
 
 describe('Migrator autoSync Integration', () => {
   let migrator: Migrator;
-  let pool: QuerierPool;
+  let pool: QuerierPool<SqlQuerier, MigratorDialect>;
 
   beforeEach(() => {
     // Mock pool and querier for testing

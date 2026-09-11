@@ -2,7 +2,7 @@ import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { getMeta } from '../entity/index.js';
-import { Company, ItemTag, VectorItem } from '../test/index.js';
+import { Company, ItemTag, MeasureUnitCategory, VectorItem } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import type { Type } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -119,6 +119,49 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       this.dialect.find(ctx, VectorItem, { $select: { id: true, name: true, vec: true } }),
     );
     expect(sql).toBe('SELECT `id`, `name`, VEC_ToText(`vec`) `vec` FROM `VectorItem`');
+  }
+
+  /**
+   * A derived table reads no column of the statement around it here, so the aggregate reads the related
+   * table itself and orders and pages inside `JSON_ARRAYAGG`, which takes both. `JSON_ARRAYAGG` is cut
+   * at `group_concat_max_len` too, so the statement lifts it for itself alone.
+   */
+  shouldOrderAndPageInsideTheAggregate() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true, createdAt: true }, $sort: { name: 1 }, $limit: 5 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SET STATEMENT group_concat_max_len=18446744073709551615 FOR' +
+        " SELECT `MeasureUnitCategory`.`name`, COALESCE((SELECT JSON_ARRAYAGG(JSON_OBJECT('name', `measureUnits`.`name`," +
+        " 'createdAt', CAST(`measureUnits`.`createdAt` AS CHAR)) ORDER BY `measureUnits`.`name` LIMIT 5)" +
+        ' FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
+        ' AND `measureUnits`.`deletedAt` IS NULL), JSON_ARRAY()) `measureUnits`' +
+        ' FROM `MeasureUnitCategory` WHERE `MeasureUnitCategory`.`deletedAt` IS NULL',
+    );
+  }
+
+  /** A joined row's columns go straight into the object, under their path. */
+  shouldJoinAToOneInsideAToMany() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, MeasureUnitCategory, {
+        $select: { name: true },
+        $populate: { measureUnits: { $select: { name: true }, $populate: { category: { $select: { name: true } } } } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SET STATEMENT group_concat_max_len=18446744073709551615 FOR' +
+        " SELECT `MeasureUnitCategory`.`name`, COALESCE((SELECT JSON_ARRAYAGG(JSON_OBJECT('name', `measureUnits`.`name`," +
+        " 'category.id', `category`.`id`, 'category.name', `category`.`name`))" +
+        ' FROM `MeasureUnit` `measureUnits` LEFT JOIN `MeasureUnitCategory` `category` ON `category`.`id` = `measureUnits`.`categoryId`' +
+        ' AND `category`.`deletedAt` IS NULL WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
+        ' AND `measureUnits`.`deletedAt` IS NULL), JSON_ARRAY()) `measureUnits`' +
+        ' FROM `MeasureUnitCategory` WHERE `MeasureUnitCategory`.`deletedAt` IS NULL',
+    );
   }
 }
 

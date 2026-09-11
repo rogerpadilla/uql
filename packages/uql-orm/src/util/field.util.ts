@@ -81,6 +81,27 @@ export function columnFamily(type: unknown): ColumnFamily | undefined {
   return FAMILY_OF.get(typeof type === 'string' ? type.toLowerCase() : type);
 }
 
+/** The numeric column types that hold whole numbers. */
+const INTEGER_COLUMN_TYPES: ReadonlySet<string> = new Set<NumericColumnType>([
+  'int',
+  'integer',
+  'tinyint',
+  'smallint',
+  'bigint',
+]);
+
+/**
+ * Whether a field's column holds whole numbers: a declared integer type, or a `Number` or `BigInt`
+ * with no scale, which every engine here stores as BIGINT.
+ */
+export function isIntegerColumn(field: Pick<FieldOptions, 'type' | 'columnType' | 'precision' | 'scale'>): boolean {
+  const type = field.columnType ?? field.type;
+  if (typeof type === 'string') {
+    return INTEGER_COLUMN_TYPES.has(type.toLowerCase());
+  }
+  return type === BigInt || (type === Number && !field.precision && !field.scale);
+}
+
 /**
  * Whether the field's expression is spliced into each statement that reads it, rather than stored.
  * Every read site asks this - the DDL skip, the projection, the `$where` and `ORDER BY` operands -

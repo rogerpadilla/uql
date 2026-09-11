@@ -545,7 +545,8 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    */
   readonly autoIncrement?: boolean;
   /**
-   * Index configuration. true for simple index, string for named index.
+   * `true` for an index over the column, a string to name it. A foreign key column is indexed unless
+   * this is `false`.
    */
   readonly index?: boolean | string;
   /**

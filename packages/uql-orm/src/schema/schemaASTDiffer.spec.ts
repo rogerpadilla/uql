@@ -211,7 +211,7 @@ describe('SchemaASTDiffer', () => {
         ]),
       );
       const result = diffSchemas(source, target);
-      expect(result.columnDiffs[0].description).toContain('default: 20 → 30');
+      expect(result.columnDiffs[0].description).toContain('default: 20 -> 30');
     });
 
     it('should detect unique constraint changes', () => {
@@ -230,7 +230,7 @@ describe('SchemaASTDiffer', () => {
         ]),
       );
       const result = diffSchemas(source, target);
-      expect(result.columnDiffs[0].description).toContain('unique: false → true');
+      expect(result.columnDiffs[0].description).toContain('unique: false -> true');
     });
 
     it('should use case-insensitive comparison when configured', () => {
@@ -289,10 +289,10 @@ describe('SchemaASTDiffer', () => {
       const bioDiff = diff.columnDiffs.find((c) => c.column === 'bio');
 
       expect(amountDiff).toBeDefined();
-      expect(amountDiff?.description).toContain('type: decimal(10,2) unsigned → decimal(8,2)');
+      expect(amountDiff?.description).toContain('type: decimal(10,2) unsigned -> decimal(8,2)');
 
       expect(bioDiff).toBeDefined();
-      expect(bioDiff?.description).toContain('type: string(255) → string(100)');
+      expect(bioDiff?.description).toContain('type: string(255) -> string(100)');
     });
   });
 
@@ -731,7 +731,7 @@ describe('SchemaASTDiffer', () => {
       );
 
       expect(diffs.length).toBe(1);
-      expect(diffs[0].description).toBe('unique: false → true');
+      expect(diffs[0].description).toBe('unique: false -> true');
     });
 
     it('accepts a nulls order the entity left to the default the database states', () => {
@@ -772,7 +772,7 @@ describe('SchemaASTDiffer', () => {
       );
 
       expect(diffs.length).toBe(1);
-      expect(diffs[0].description).toContain('type: btree → gin');
+      expect(diffs[0].description).toContain('type: btree -> gin');
     });
 
     it('accepts a covering index whose stored columns were listed in another order', () => {
