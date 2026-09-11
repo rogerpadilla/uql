@@ -2,6 +2,19 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.57.0] - 2026-09-11
+
+- **Breaking: a to-many `$populate` and `$count` are read in the parent's statement**, so a read is one snapshot and adds no id it did not select. MySQL needs 8.0.14+, SQLite 3.44+.
+- **Relations and `$count` work in `findManyStream`, under a to-one and beside `$distinct` or a raw `$select`**, and `@AfterLoad` runs on every populated row, children first.
+- **A populated relation takes a raw `$select` aliased with `.as()`**, and its types refuse `$count` and `$candidates`, as the runtime did.
+- **Five relation bugs are fixed**: an unmatched to-one showing beside a computed field, a relation excluding every field throwing, a renamed column beside a join, a self-relation filter, and MongoDB's `withDeleted()` reaching joined rows.
+- **D1, libSQL and Turso split calls past their function-argument cap**, so wide relation rows and many-key JSON updates run.
+- **Breaking: each table reads under its name, relation key or join path**, which a `raw()` naming a related table must use; `QueryContext.nextAlias` is now `claimAlias(name)`.
+- **Removed: `QuerySelectOptions`, `QueryStreamProjected` (use `QueryProjected`), `selectFields` and `MongoDialect.relationStages`.**
+- **Every foreign key is indexed** unless an index leads with it (`index: false` opts out), so the next migration adds them; `ifNotExists` skips existing indexes too.
+- **Breaking: migrations refuse an index `type` or feature their engine lacks**, instead of SQL it rejects; MySQL/MariaDB `btree`/`hash` and CockroachDB `hnsw` with `m`/`efConstruction` now migrate.
+- **Breaking: the migrator takes a `MigratorDialect`** (`AbstractSqlDialect | MongoDialect`) where it took any `AbstractDialect`: `Migrator`, `Config.pool` and the schema generator factories.
+
 ## [0.56.0] - 2026-09-10
 
 - **`$text` without `$fields` searches the entity's fulltext index.** On SQL, an entity with no such index, or more than one, has to name `$fields`.
@@ -555,7 +568,7 @@ No `experimentalDecorators`, no `emitDecoratorMetadata`, no `reflect-metadata`. 
 ## [0.20.0] - 2026-07-26
 
 - **Breaking: `$merge` is `$set`.** The operator is a shallow key assignment, not an RFC 7396 merge patch, and now matches MongoDB's own vocabulary. `JsonPushFields` is `JsonArrayFields`.
-- **`$pull`** removes every element equal to a value, on every SQL dialect and MongoDB. Operators apply in a fixed order - `$pull` → `$set` → `$push` → `$unset` - so `$pull` and `$push` on one key atomically replace an element.
+- **`$pull`** removes every element equal to a value, on every SQL dialect and MongoDB. Operators apply in a fixed order - `$pull` -> `$set` -> `$push` -> `$unset` - so `$pull` and `$push` on one key atomically replace an element.
 - **Breaking: `$push` onto a missing key creates the array everywhere.** MariaDB's `JSON_ARRAY_APPEND` returned `NULL` for a missing path and **wrote that `NULL` back, destroying the document**; MySQL silently no-opped.
 - **Breaking: MongoDB JSON operators map onto MongoDB's own.** They used to be written into the document as literal data - `{ kind: { $push: { tags: 'x' } } }` stored the operator object itself.
 - **Breaking: vector indexes must declare `distance`.** Omitting it silently changed the DDL: MariaDB defaults to euclidean, so a cosine query full-scanned.
