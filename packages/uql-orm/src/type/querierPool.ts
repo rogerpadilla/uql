@@ -89,12 +89,10 @@ export interface SqlQuerierPool<Q extends SqlQuerier = SqlQuerier, D extends Abs
   extends QuerierPool<Q, D>, Pick<SqlQuerier, 'all' | 'run'> {}
 
 /** Dialect class used by pool `P` (when `P` is a {@link QuerierPool}). */
-// oxlint-disable-next-line typescript/no-explicit-any -- conditional type extraction - `any` is required to match all pool instantiations
-export type QuerierPoolDialect<P> = P extends QuerierPool<any, infer D> ? D : never;
+export type QuerierPoolDialect<P> = P extends QuerierPool<infer _Q, infer D> ? D : never;
 
 /** Querier type produced by pool `P`. */
-// oxlint-disable-next-line typescript/no-explicit-any -- conditional type extraction - `any` is required to match all pool instantiations
-export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, any> ? Q : never;
+export type QuerierPoolQuerier<P> = P extends QuerierPool<infer Q, infer _D> ? Q : never;
 
 /**
  * Represents a high-compatibility SQL pool shim for Node.js integrations (e.g., express-session).

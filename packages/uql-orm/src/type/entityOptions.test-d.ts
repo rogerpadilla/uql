@@ -8,7 +8,7 @@
  * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, and excluded from the build by
  * the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests.
  */
-import { defineEntity, Field, Id } from '../entity/index.js';
+import { defineEntity, defineIndex, Entity, Field, Id } from '../entity/index.js';
 import type {
   FieldKey,
   FieldOptionsFor,
@@ -20,6 +20,7 @@ import type {
   TsTypeOf,
   TypeFor,
 } from '../type/index.js';
+import { raw } from '../util/index.js';
 
 declare function expectType<T>(value: T): void;
 
@@ -127,13 +128,17 @@ expectType<RelationTarget<Company[]>>(new Company());
 
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: 'm1' });
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '11' });
-expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: '1m', mappedBy: 'id' });
-// @ts-expect-error a to-many needs to say how to reach its children
-expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'mm' });
 expectType<RelationOptionsFor<Company[]>>({
   entity: () => Company,
+  cardinality: '1m',
+  mappedBy: (company) => company.id,
+});
+// @ts-expect-error a to-many needs to say how to reach its children
+expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'mm' });
+expectType<RelationOptionsFor<Company[], Employee>>({
+  entity: () => Company,
   cardinality: 'mm',
-  references: [{ local: 'companyId', foreign: 'id' }],
+  references: (employee, company) => [{ local: employee.companyId, foreign: company.id }],
 });
 
 // @ts-expect-error a to-many cardinality needs an array field
@@ -143,7 +148,7 @@ expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 
 // @ts-expect-error `entity` is required
 expectType<RelationOptionsFor<Company>>({ cardinality: 'm1' });
 
-// ─── mappedBy: the key map holds every key, with no optionality to assert away ───
+// ─── mappedBy: one member of the target, read off its key map ───
 class Employee {
   id?: number;
   companyId?: number;
@@ -159,18 +164,19 @@ expectType<RelationOptionsFor<Employee[]>>({
   cardinality: '1m',
   mappedBy: (employee) => employee.company,
 });
-expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'companyId' });
 
 expectType<RelationOptionsFor<Employee[]>>({
   entity: () => Employee,
   cardinality: '1m',
-  // @ts-expect-error a misspelled key is not on the key map
+  // @ts-expect-error a misspelled key is not a member of the target
   mappedBy: (employee) => employee.compnayId,
 });
 // @ts-expect-error nor can the callback conjure a key name from nothing
 expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: () => 'nope' });
-// @ts-expect-error and the string form is checked the same way
-expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'compnayId' });
+// @ts-expect-error an optional member still names itself, so the callback never answers `undefined`
+expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: () => undefined });
+// @ts-expect-error a string names a key a rename cannot follow; only the callback form exists
+expectType<RelationOptionsFor<Employee[]>>({ entity: () => Employee, cardinality: '1m', mappedBy: 'companyId' });
 
 // ─── through: a pivot is its own entity, unrelated to the target's shape ───
 class EmployeeProject {
@@ -204,7 +210,7 @@ expectType<RelationKey<WithJsonArray>>('items');
 // And it is declarable as one, with the `json` column type `TypeFor` already allows for the shape.
 defineEntity(WithJsonArray, {
   fields: { id: { type: Number, isId: true }, items: { type: 'jsonb' } },
-  relations: { employees: { cardinality: '1m', entity: () => Employee, mappedBy: 'companyId' } },
+  relations: { employees: { cardinality: '1m', entity: () => Employee, mappedBy: (employee) => employee.companyId } },
 });
 
 // ─── MethodKey ───
@@ -231,7 +237,14 @@ class Account {
 defineEntity(Account, {
   fields: { id: { type: Number, isId: true }, email: { type: String }, createdAt: { type: 'timestamptz' } },
   relations: { owner: { cardinality: 'm1', entity: () => Company } },
-  hooks: { beforeInsert: ['touch'] },
+  indexes: [
+    { columns: (account) => [account.email], unique: true },
+    {
+      columns: (account) => [{ column: account.createdAt, order: 'desc' }, raw`lower(email)`],
+      include: (account) => [account.id],
+    },
+  ],
+  hooks: { beforeInsert: (account) => [account.touch], afterLoad: (account) => [account.touch] },
 });
 
 defineEntity(Account, {
@@ -249,7 +262,64 @@ defineEntity(Account, {
 defineEntity(Account, {
   fields: { id: { type: Number, isId: true } },
   // @ts-expect-error the hook names a method the entity does not have
-  hooks: { beforeInsert: ['nope'] },
+  hooks: { beforeInsert: (account) => [account.nope] },
+});
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error a field is no method to run
+  hooks: { beforeInsert: (account) => [account.email] },
+});
+/**
+ * The options around each member list are a literal of their own, not a callback's return, because only
+ * a literal is checked for excess properties: `afterLod` and `uniqe` below would otherwise compile, and
+ * the hook never run, or the index not be unique.
+ */
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error each event is checked, not only the first
+  hooks: { beforeInsert: (account) => [account.touch], afterLod: (account) => [account.touch] },
+});
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error an index option the entity index does not have
+  indexes: [{ columns: (account) => [account.email], uniqe: true }],
+});
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error no such column to index
+  indexes: [{ columns: (account) => [account.emial] }],
+});
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error a relation is not a column
+  indexes: [{ columns: (account) => [account.owner] }],
+});
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error no such column to include
+  indexes: [{ columns: (account) => [account.email], include: (account) => [account.idd] }],
+});
+defineIndex(Account, { columns: (account) => [account.email], unique: true });
+// @ts-expect-error no such column to index
+defineIndex(Account, { columns: (account) => [account.emial] });
+
+/** On `@Entity`, the key map is typed by the decorated class, as `@Index`'s is. */
+@Entity({
+  indexes: [{ columns: (tagged) => [tagged.label] }],
+  hooks: { afterLoad: (tagged) => [tagged.touch] },
+})
+export class Tagged {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) label?: string;
+  touch() {}
+}
+defineEntity(Account, {
+  // @ts-expect-error a field is no relation: its value is no entity to point at
+  relations: { email: { cardinality: 'm1', entity: () => Company } },
+});
+defineEntity(Account, {
+  // @ts-expect-error nor is a name the class does not declare
+  relations: { ownr: { cardinality: 'm1', entity: () => Company } },
 });
 /**
  * A relation's `entity` is checked structurally, which is as far as TypeScript can go: a class that

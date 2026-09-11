@@ -38,13 +38,15 @@ export async function rootClauseArrays() {
 }
 
 export async function fullTextSearch() {
-  await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: ['name'], $config: 'english' } } });
+  await querier.findMany(Person, {
+    $where: { $text: { $value: 'john', $fields: { name: true }, $config: 'english' } },
+  });
   await querier.findMany(Person, { $where: { $text: { $value: 'john' } } });
 
   // @ts-expect-error 'naem' is not a field of Person
-  await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: ['naem'] } } });
+  await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: { naem: true } } } });
   // @ts-expect-error $value is required
-  await querier.findMany(Person, { $where: { $text: { $fields: ['name'] } } });
+  await querier.findMany(Person, { $where: { $text: { $fields: { name: true } } } });
 }
 
 export async function existsSubqueries() {

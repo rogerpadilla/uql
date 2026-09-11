@@ -208,8 +208,9 @@ export class MongodbQuerier extends AbstractQuerier {
   ): Promise<QueryAggregateResult<E, G, A>[]> {
     return this.timed('internalAggregate', undefined, async () => {
       const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
-      // oxlint-disable-next-line typescript/no-explicit-any -- aggregate result type matches QueryAggregateResult at runtime but TS can't verify
-      return this.execute((session) => this.collection(entity).aggregate<any>(pipeline, { session }).toArray());
+      return this.execute((session) =>
+        this.collection(entity).aggregate<QueryAggregateResult<E, G, A>>(pipeline, { session }).toArray(),
+      );
     });
   }
 

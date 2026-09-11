@@ -51,9 +51,9 @@ export class Migrator {
   public set logger(value: LoggingOptions) {
     this._logger = new LoggerWrapper(value);
   }
-  private readonly _entities?: Type<unknown>[];
+  private readonly _entities?: Type<object>[];
 
-  public get entities(): Type<unknown>[] {
+  public get entities(): Type<object>[] {
     return this._entities ?? getEntities();
   }
   public readonly dialectName: DialectName;
@@ -373,7 +373,7 @@ export class Migrator {
     return merged;
   }
 
-  public async findEntityForTable(tableName: string): Promise<Type<unknown> | undefined> {
+  public async findEntityForTable(tableName: string): Promise<Type<object> | undefined> {
     await this.ensureSchemaGenerator();
     for (const entity of this.entities) {
       const meta = getMeta(entity);
@@ -421,7 +421,7 @@ export class Migrator {
    * existence check and is created with `IF NOT EXISTS`, so instances racing the same admin save
    * settle instead of colliding; an existing one still pays for introspection, as a diff needs columns.
    */
-  private async planEntity(entity: Type<unknown>, options: SyncOptions): Promise<string[]> {
+  private async planEntity(entity: Type<object>, options: SyncOptions): Promise<string[]> {
     const meta = getMeta(entity);
     // Before anything reads `this.generator`, whose own failure names neither the entity nor the
     // dialect that has no support.
@@ -445,7 +445,7 @@ export class Migrator {
   }
 
   /** The same for one entity against the table it already has, and nothing where the two agree. */
-  private alterFromEntity(entity: Type<unknown>, table: TableNode | undefined, options: SyncOptions): string[] {
+  private alterFromEntity(entity: Type<object>, table: TableNode | undefined, options: SyncOptions): string[] {
     // Spanning the set for the reason `planEntity` spells out: a foreign key needs the table it
     // points at, which a sync of one entity outside the configured list would not otherwise have.
     const diff = this.generator.diffSchema(entity, table, this.generator.buildAST?.(this.entitiesWith(entity)));
@@ -453,7 +453,7 @@ export class Migrator {
   }
 
   /** The configured entities, with `entity` among them however the migrator was built. */
-  private entitiesWith(entity: Type<unknown>): Type<unknown>[] {
+  private entitiesWith(entity: Type<object>): Type<object>[] {
     const entities = this.entities;
     return entities.includes(entity) ? entities : [...entities, entity];
   }
@@ -508,7 +508,7 @@ export class Migrator {
    * caller allows and never asks for the rollback, which on SQLite cannot even be expressed (no
    * `ALTER COLUMN`), so computing it eagerly for everyone would throw there.
    */
-  private async pendingDiffs(): Promise<{ diff: SchemaDiff; entity: Type<unknown> | undefined }[]> {
+  private async pendingDiffs(): Promise<{ diff: SchemaDiff; entity: Type<object> | undefined }[]> {
     const diffs = await this.getDiffs();
     return Promise.all(
       diffs.map(async (diff) => ({

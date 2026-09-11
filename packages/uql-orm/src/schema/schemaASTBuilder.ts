@@ -32,9 +32,9 @@ import {
  */
 export interface BuildSchemaASTOptions {
   /** Custom resolver for a table's own name, unqualified. */
-  resolveTableName?: (meta: EntityMeta<unknown>) => string;
+  resolveTableName?: (meta: EntityMeta<object>) => string;
   /** Custom resolver for the schema a table lives in; `undefined` leaves it unqualified. */
-  resolveSchema?: (meta: EntityMeta<unknown>) => string | undefined;
+  resolveSchema?: (meta: EntityMeta<object>) => string | undefined;
   /** Custom column name resolver */
   resolveColumnName?: (key: string, field: FieldOptions) => string;
   /** Naming strategy to use */
@@ -46,8 +46,8 @@ export interface BuildSchemaASTOptions {
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
 type BuildContext = {
   readonly ast: SchemaAST;
-  readonly resolveTableName: (meta: EntityMeta<unknown>) => string;
-  readonly resolveSchema: (meta: EntityMeta<unknown>) => string | undefined;
+  readonly resolveTableName: (meta: EntityMeta<object>) => string;
+  readonly resolveSchema: (meta: EntityMeta<object>) => string | undefined;
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
   readonly defaultForeignKeyAction: ForeignKeyAction;
 };
@@ -58,7 +58,7 @@ type BuildContext = {
  * Three passes, because each needs the one before it to have finished for *every* entity: a relation
  * resolves against a table another entity declares, and an index against the columns of its own.
  */
-export function buildSchemaAST(entities: readonly Type<unknown>[], options: BuildSchemaASTOptions = {}): SchemaAST {
+export function buildSchemaAST(entities: readonly Type<object>[], options: BuildSchemaASTOptions = {}): SchemaAST {
   const { namingStrategy } = options;
   const ctx: BuildContext = {
     ast: new SchemaAST(),
@@ -116,7 +116,7 @@ export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGet
 /**
  * Add a table from entity metadata.
  */
-function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   const tableName = ctx.resolveTableName(meta);
 
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
@@ -162,14 +162,14 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void 
 }
 
 /** The node an entity maps to, found under the key {@link SchemaAST} stores it by. */
-function tableOf(ctx: BuildContext, meta: EntityMeta<unknown>): TableNode | undefined {
+function tableOf(ctx: BuildContext, meta: EntityMeta<object>): TableNode | undefined {
   return ctx.ast.getTable(qualifyName(ctx.resolveTableName(meta), ctx.resolveSchema(meta)));
 }
 
 /**
  * Add relationships from entity relation decorators.
  */
-function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   const table = tableOf(ctx, meta);
   if (!table) return;
 
@@ -225,10 +225,10 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>
 }
 
 /**
- * Add indexes from field options (`@Field({ index })`), from `@Index([...])`, and for every foreign
+ * Add indexes from field options (`@Field({ index })`), from `@Index`, and for every foreign
  * key none of those already serves.
  */
-function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): void {
+function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   const table = tableOf(ctx, meta);
   if (!table) return;
 
@@ -259,7 +259,7 @@ function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<unknown>): voi
  * of it says `index: false`. A relation looks its rows up by these columns, and MySQL alone indexes
  * them on its own. Last, so it sees every index the entity declared.
  */
-function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<unknown>, table: TableNode): void {
+function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<object>, table: TableNode): void {
   const optedOut = new Set(
     definedEntries(meta.fields).flatMap(([key, field]) =>
       field.index === false ? [ctx.resolveColumnName(key, field)] : [],
@@ -296,20 +296,20 @@ function isIndexedBy(table: TableNode, columns: readonly string[]): boolean {
 }
 
 /** An `include` column is named like any other, so a naming strategy has to reach it too. */
-function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<unknown>, column: string): string {
+function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<object>, column: string): string {
   const field = meta.fields[column as keyof typeof meta.fields];
   return field ? ctx.resolveColumnName(column, field) : column;
 }
 
 /**
- * One `@Index([...])`. Its entries keep the authored form (expression, prefix length, order) with
+ * One `@Index`. Its entries keep the authored form (expression, prefix length, order) with
  * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
  * subset, which is what diffing and introspection compare.
  */
 function addCompositeIndex(
   ctx: BuildContext,
   table: TableNode,
-  meta: EntityMeta<unknown>,
+  meta: EntityMeta<object>,
   idxMeta: EntityIndexMeta,
 ): void {
   // An entry survives if it is an expression (nothing to resolve) or names a column that exists;

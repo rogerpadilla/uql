@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.58.0] - 2026-09-11
+
+- **Renaming a field or relation reaches every query that names it**: `$select`, `$exclude`, `$where`, `$sort`, `$populate`, `$count`, `$group`, writes and result rows, where before only the entity and the insert payload followed.
+- **Breaking: a definition reads members off a key map**: `@Index((post) => [post.title])`, `mappedBy: (post) => post.author`, `references`, and `defineEntity`'s `indexes` and `hooks`; `npx uql-codemod` rewrites them. A `through` relation takes no `references`.
+- **Breaking: a statement names a field by a key, never a string**: an aggregate reads `{ $sum: { amount: true } }` and `$text` `$fields: { title: true }`, so a rename reaches them too.
+- **Breaking: `aggregate()` takes its computed columns in `$select`**, where `$agg` repeated the method's name. `$group` still lists the grouped ones; `npx uql-codemod` rewrites both changes.
+- **Breaking (types): `RelationOptions` takes its target, with no `any` default; `RelationMeta` and `IndexOptions` are no longer generic; `RelationKeyMap` is `KeyMap`; `RelationMappedBy` is gone.** An unknown entity class is `Type<object>`.
+- **`generate:from-db` writes an inverse relation as `mappedBy`**, where it wrote a `references` string that did not compile.
+
 ## [0.57.0] - 2026-09-11
 
 - **Breaking: a to-many `$populate` and `$count` are read in the parent's statement**, so a read is one snapshot and adds no id it did not select. MySQL needs 8.0.14+, SQLite 3.44+.

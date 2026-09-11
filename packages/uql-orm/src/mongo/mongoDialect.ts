@@ -293,7 +293,7 @@ export class MongoDialect extends AbstractDialect {
     const temp = `${REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
     const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_ALIAS }];
-    const where = (sizeVal === undefined ? val : {}) as QueryWhere<unknown>;
+    const where = (sizeVal === undefined ? val : {}) as QueryWhere<object>;
     lookups.temps.push(temp);
     lookups.stages.push(this.relationLookup(meta, meta.relations[relKey]!, where, temp, tail));
     return sizeVal === undefined
@@ -310,7 +310,7 @@ export class MongoDialect extends AbstractDialect {
   private relationLookup<E>(
     meta: EntityMeta<E>,
     relOpts: RelationMeta,
-    where: QueryWhere<unknown>,
+    where: QueryWhere<object>,
     temp: string,
     tail: Record<string, unknown>[],
   ): MongoAggregationPipelineEntry<Document> {
@@ -663,7 +663,7 @@ export class MongoDialect extends AbstractDialect {
   private tallyLookup<E>(
     meta: EntityMeta<E>,
     relOpts: RelationMeta,
-    where: QueryWhere<unknown>,
+    where: QueryWhere<object>,
     temp: string,
   ): MongoAggregationPipelineEntry<Document> {
     return this.relationLookup(meta, relOpts, where, temp, [{ $count: COUNT_ALIAS }]);
@@ -752,7 +752,7 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * Aggregate results are keyed by `$group`/`$agg` alias rather than by column, so an aggregate
+   * Aggregate results are keyed by `$group`/`$select` alias rather than by column, so an aggregate
    * `$sort` addresses those aliases as-is - the same reason the SQL dialects sort by alias there.
    */
   private aliasSort(sort: Record<string, unknown>): Sort {
@@ -1240,7 +1240,7 @@ export class MongoDialect extends AbstractDialect {
     // $group stage
     const { groupId, groupAccumulators, distinctReducers } = this.buildGroupSpec(
       getMeta(entity),
-      parseGroupMap(q.$group, q.$agg),
+      parseGroupMap(q.$group, q.$select),
     );
 
     pipeline.push({ $group: { _id: hasKeys(groupId) ? groupId : null, ...groupAccumulators } });
@@ -1306,7 +1306,7 @@ export class MongoDialect extends AbstractDialect {
     distinctReducers: Map<string, string>;
   } {
     if (!groupEntries.length) {
-      throw new TypeError('aggregate requires at least one $group column or $agg function');
+      throw new TypeError('aggregate requires at least one $group column or $select function');
     }
     const groupId: Record<string, string> = {};
     const groupAccumulators: Record<string, Record<string, unknown>> = {};

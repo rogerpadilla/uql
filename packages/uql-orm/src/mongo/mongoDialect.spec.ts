@@ -185,7 +185,7 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.sort(RenamedDoc, { label: -1, id: 1 })).toEqual({ the_label: -1, _id: 1 });
     expect(this.dialect.where(RenamedDoc, { label: 'x' })).toEqual({ the_label: 'x', deleted_at: null });
     // group by the column, project back under the caller's key
-    expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $agg: { n: { $count: '*' } } })) //
+    expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $select: { n: { $count: '*' } } })) //
       .toEqual([
         { $group: { _id: { label: '$the_label' }, n: { $sum: 1 } } },
         { $project: { _id: 0, label: '$_id.label', n: 1 } },
@@ -865,7 +865,7 @@ class MongoDialectSpec implements Spec {
 
   shouldNotResolveAggregateOperatorViaThePrototypeChain() {
     expect(() =>
-      this.dialect.buildAggregateStages(Item, { $agg: { total: { toString: 'salePrice' } } } as any),
+      this.dialect.buildAggregateStages(Item, { $select: { total: { toString: 'salePrice' } } } as any),
     ).toThrow('unsupported aggregate operator: toString');
   }
 
@@ -877,7 +877,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesBasicCount() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
     });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
   }
@@ -890,14 +890,14 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregate$havingByBareValue() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { n: { $count: '*' } },
+      $select: { n: { $count: '*' } },
       $having: { code: 'abc' } as never,
     });
     expect(stages.at(-1)).toEqual({ $match: { code: 'abc' } });
 
     const byList = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { n: { $count: '*' } },
+      $select: { n: { $count: '*' } },
       $having: { code: ['a', 'b'] } as never,
     });
     expect(byList.at(-1)).toEqual({ $match: { code: { $in: ['a', 'b'] } } });
@@ -905,18 +905,18 @@ class MongoDialectSpec implements Spec {
 
   shouldThrowOnEmptyAggregate() {
     expect(() => this.dialect.buildAggregateStages(Item, {})).toThrow(
-      'aggregate requires at least one $group column or $agg function',
+      'aggregate requires at least one $group column or $select function',
     );
   }
 
   shouldBuildAggregateStagesGroupByWithAccumulators() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: {
-        total: { $sum: 'salePrice' },
-        avg: { $avg: 'salePrice' },
-        min: { $min: 'salePrice' },
-        max: { $max: 'salePrice' },
+      $select: {
+        total: { $sum: { salePrice: true } },
+        avg: { $avg: { salePrice: true } },
+        min: { $min: { salePrice: true } },
+        max: { $max: { salePrice: true } },
       },
     });
     expect(stages).toEqual([
@@ -945,7 +945,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesCountDistinct() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { total: { $count: '*' }, distinctNames: { $countDistinct: 'name' } },
+      $select: { total: { $count: '*' }, distinctNames: { $countDistinct: { name: true } } },
     });
     expect(stages).toEqual([
       {
@@ -969,7 +969,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesCountDistinctWithoutGroupKey() {
     // A grand-total distinct count still needs the $project to reduce the set to its size.
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { distinctNames: { $countDistinct: 'name' } },
+      $select: { distinctNames: { $countDistinct: { name: true } } },
     });
     expect(stages).toEqual([
       { $group: { _id: null, distinctNames: { $addToSet: '$name' } } },
@@ -980,7 +980,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesSumDistinct() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { distinctTotal: { $sumDistinct: 'salePrice' } },
+      $select: { distinctTotal: { $sumDistinct: { salePrice: true } } },
     });
     expect(stages).toEqual([
       { $group: { _id: { code: '$code' }, distinctTotal: { $addToSet: '$salePrice' } } },
@@ -991,7 +991,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesAvgDistinct() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { distinctAverage: { $avgDistinct: 'salePrice' } },
+      $select: { distinctAverage: { $avgDistinct: { salePrice: true } } },
     });
     expect(stages).toEqual([
       { $group: { _id: { code: '$code' }, distinctAverage: { $addToSet: '$salePrice' } } },
@@ -1003,7 +1003,7 @@ class MongoDialectSpec implements Spec {
     // COUNT(field) counts non-null values (matching SQL), unlike COUNT(*) which counts every row.
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { named: { $count: 'name' } },
+      $select: { named: { $count: { name: true } } },
     });
     expect(stages).toEqual([
       { $group: { _id: { code: '$code' }, named: { $sum: { $cond: [{ $ne: ['$name', null] }, 1, 0] } } } },
@@ -1013,7 +1013,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithWhere() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $where: { code: '123' },
     });
     expect(stages).toEqual([{ $match: { code: '123' } }, { $group: { _id: null, count: { $sum: 1 } } }]);
@@ -1022,7 +1022,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesWithHavingNumber() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $having: { count: 5 },
     });
     expect(stages).toEqual([
@@ -1043,7 +1043,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithHavingOperator() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $having: { count: { $gte: 3 } },
     });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $match: { count: { $gte: 3 } } }]);
@@ -1051,7 +1051,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithHavingUndefined() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $having: { count: undefined },
     });
     // undefined conditions are skipped, so no HAVING $match stage
@@ -1060,7 +1060,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithSort() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $sort: { count: -1 },
     });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $sort: { count: -1 } }]);
@@ -1068,14 +1068,14 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithEmptySort() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $sort: {},
     });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
   }
 
   shouldBuildAggregateStagesWithAnEmptyWhere() {
-    const stages = this.dialect.buildAggregateStages(Item, { $agg: { count: { $count: '*' } }, $where: {} });
+    const stages = this.dialect.buildAggregateStages(Item, { $select: { count: { $count: '*' } }, $where: {} });
     expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
   }
 
@@ -1145,16 +1145,16 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldRejectAnAggregateHavingOrSortOnAColumnItDoesNotEmit() {
-    const cause = 'it is neither a $group column nor an $agg alias';
+    const cause = 'it is neither a $group column nor a $select alias';
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
-        $agg: { count: { $count: '*' } },
+        $select: { count: { $count: '*' } },
         $having: { conut: 1 } as never,
       }),
     ).toThrow(`cannot $having by 'conut': ${cause}`);
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
-        $agg: { count: { $count: '*' } },
+        $select: { count: { $count: '*' } },
         $sort: { conut: 1 } as never,
       }),
     ).toThrow(`cannot $sort by 'conut': ${cause}`);
@@ -1162,7 +1162,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesWithSkipAndLimit() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $skip: 10,
       $limit: 5,
     });
@@ -1172,7 +1172,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesFullPipeline() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $where: { code: { $ne: '' } },
       $having: { count: { $gt: 1 } },
       $sort: { count: -1 },
@@ -1197,7 +1197,7 @@ class MongoDialectSpec implements Spec {
 
   shouldBuildAggregateStagesNormalizeStringSortDescToNumeric() {
     const stages = this.dialect.buildAggregateStages(Item, {
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $sort: { count: 'desc' },
     });
     const sortStage = stages.find((s) => '$sort' in s);
@@ -1207,7 +1207,7 @@ class MongoDialectSpec implements Spec {
   shouldBuildAggregateStagesNormalizeStringSortAscToNumeric() {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
-      $agg: { count: { $count: '*' } },
+      $select: { count: { $count: '*' } },
       $sort: { code: 'asc', count: 'desc' },
     });
     const sortStage = stages.find((s) => '$sort' in s);
@@ -1290,7 +1290,9 @@ class MongoDialectSpec implements Spec {
    * failed with "path $text does not exist".
    */
   shouldTranslateTextSearchToMongoTextOperator() {
-    const filter = this.dialect.where(Item, { $text: { $fields: ['name', 'description'], $value: 'some text' } });
+    const filter = this.dialect.where(Item, {
+      $text: { $fields: { name: true, description: true }, $value: 'some text' },
+    });
     expect(filter).toEqual({ $text: { $search: 'some text' } });
   }
 
@@ -1410,7 +1412,7 @@ class MongoDialectSpec implements Spec {
 
   shouldUseCustomIndexName() {
     @Entity({ name: 'VectorCustomIdx' })
-    @Index(['vec'], { type: 'vectorSearch', name: 'my_custom_idx' })
+    @Index((vectorCustomIdx) => [vectorCustomIdx.vec], { type: 'vectorSearch', name: 'my_custom_idx' })
     class VectorCustomIdx {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'vector' }) vec!: number[];

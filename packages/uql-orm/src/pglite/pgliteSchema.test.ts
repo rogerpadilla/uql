@@ -40,7 +40,11 @@ defineEntity(Order, {
     customerId: { type: Number, references: () => Customer },
   },
   relations: {
-    customer: { entity: () => Customer, cardinality: 'm1', references: [{ local: 'customerId', foreign: 'id' }] },
+    customer: {
+      entity: () => Customer,
+      cardinality: 'm1',
+      references: (order, customer) => [{ local: order.customerId, foreign: customer.id }],
+    },
   },
 });
 defineEntity(Ledger, {
@@ -104,7 +108,9 @@ describe('schema against postgres', () => {
   it('counts, updates and aggregates a qualified table', async () => {
     await expect(querier.count(Order, { $where: { total: { $gte: 1 } } })).resolves.toBe(1);
     await expect(querier.updateMany(Order, { $where: { id: 1 } }, { total: 43 })).resolves.toBe(1);
-    await expect(querier.aggregate(Order, { $agg: { total: { $sum: 'total' } } })).resolves.toEqual([{ total: 43 }]);
+    await expect(querier.aggregate(Order, { $select: { total: { $sum: { total: true } } } })).resolves.toEqual([
+      { total: 43 },
+    ]);
   });
 
   // The point of the pool-level default: one entity class, no annotation, and each pool sees only

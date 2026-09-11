@@ -6,7 +6,7 @@ import { Field, Id } from './members.js';
 describe('@Index decorator', () => {
   it('should register a single-column index', () => {
     @Entity()
-    @Index(['email'])
+    @Index((user) => [user.email])
     class User {
       @Id({ type: Number })
       id?: number;
@@ -24,7 +24,7 @@ describe('@Index decorator', () => {
 
   it('should register a unique index', () => {
     @Entity()
-    @Index(['email'], { unique: true })
+    @Index((user) => [user.email], { unique: true })
     class User {
       @Id({ type: Number })
       id?: number;
@@ -40,7 +40,7 @@ describe('@Index decorator', () => {
 
   it('should register a composite index', () => {
     @Entity()
-    @Index(['firstName', 'lastName'])
+    @Index((user) => [user.firstName, user.lastName])
     class User {
       @Id({ type: Number })
       id?: number;
@@ -59,7 +59,7 @@ describe('@Index decorator', () => {
 
   it('should register a named index', () => {
     @Entity()
-    @Index(['email'], { name: 'user_email_idx' })
+    @Index((user) => [user.email], { name: 'user_email_idx' })
     class User {
       @Id({ type: Number })
       id?: number;
@@ -75,8 +75,8 @@ describe('@Index decorator', () => {
 
   it('should register multiple indexes', () => {
     @Entity()
-    @Index(['email'], { unique: true })
-    @Index(['firstName', 'lastName'])
+    @Index((user) => [user.email], { unique: true })
+    @Index((user) => [user.firstName, user.lastName])
     class User {
       @Id({ type: Number })
       id?: number;
@@ -98,7 +98,7 @@ describe('@Index decorator', () => {
 
   it('should support index with where clause', () => {
     @Entity()
-    @Index(['email'], { where: 'deleted_at IS NULL' })
+    @Index((user) => [user.email], { where: 'deleted_at IS NULL' })
     class User {
       @Id({ type: Number })
       id?: number;
@@ -117,7 +117,7 @@ describe('@Index decorator', () => {
 
   it('should default unique to false if not specified', () => {
     @Entity()
-    @Index(['name'])
+    @Index((category) => [category.name])
     class Category {
       @Id({ type: Number })
       id?: number;
@@ -132,7 +132,7 @@ describe('@Index decorator', () => {
 
   it('should generate index name if not provided', () => {
     @Entity()
-    @Index(['status', 'priority'])
+    @Index((task) => [task.status, task.priority])
     class Task {
       @Id({ type: Number })
       id?: number;

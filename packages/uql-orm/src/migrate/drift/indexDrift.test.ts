@@ -17,10 +17,22 @@ const TABLE = 'drift_index_user';
  * Everything an index carries that Postgres reprints in its own words: an expression, a partial
  * predicate, a stored order, `INCLUDE` columns, an operator class.
  */
-@Index([raw`lower("email")`], { unique: true, where: '"deletedAt" IS NULL', name: 'drift_email_live_idx' })
-@Index(['status', { column: 'createdAt', order: 'desc' }], { name: 'drift_status_recent_idx' })
-@Index(['tenantId'], { include: ['status'], name: 'drift_tenant_covering_idx' })
-@Index([{ column: 'data', opsClass: 'jsonb_path_ops' }], { type: 'gin', name: 'drift_data_idx' })
+@Index((driftIndexUser) => [raw`lower("email")`], {
+  unique: true,
+  where: '"deletedAt" IS NULL',
+  name: 'drift_email_live_idx',
+})
+@Index((driftIndexUser) => [driftIndexUser.status, { column: driftIndexUser.createdAt, order: 'desc' }], {
+  name: 'drift_status_recent_idx',
+})
+@Index((driftIndexUser) => [driftIndexUser.tenantId], {
+  include: (driftIndexUser) => [driftIndexUser.status],
+  name: 'drift_tenant_covering_idx',
+})
+@Index((driftIndexUser) => [{ column: driftIndexUser.data, opsClass: 'jsonb_path_ops' }], {
+  type: 'gin',
+  name: 'drift_data_idx',
+})
 @Entity({ name: TABLE })
 class DriftIndexUser {
   @Id({ type: Number }) id?: number;
@@ -33,8 +45,8 @@ class DriftIndexUser {
 }
 
 /** The same table, with one index no longer unique and one covering column dropped. */
-@Index([raw`lower("email")`], { where: '"deletedAt" IS NULL', name: 'drift_email_live_idx' })
-@Index(['tenantId'], { name: 'drift_tenant_covering_idx' })
+@Index((driftIndexUserEdited) => [raw`lower("email")`], { where: '"deletedAt" IS NULL', name: 'drift_email_live_idx' })
+@Index((driftIndexUserEdited) => [driftIndexUserEdited.tenantId], { name: 'drift_tenant_covering_idx' })
 @Entity({ name: TABLE })
 class DriftIndexUserEdited {
   @Id({ type: Number }) id?: number;
@@ -95,9 +107,16 @@ const CRDB_TABLE = 'drift_index_crdb';
  * `CREATE UNIQUE INDEX` too, so a catalogue filter written for Postgres hides it and reports it
  * missing on every run.
  */
-@Index([raw`lower("email")`], { unique: true, where: '"deletedAt" IS NULL', name: 'crdb_email_live_idx' })
-@Index(['status'], { unique: true, name: 'crdb_status_unique_idx' })
-@Index(['tenantId'], { include: ['status'], name: 'crdb_tenant_covering_idx' })
+@Index((crdbIndexUser) => [raw`lower("email")`], {
+  unique: true,
+  where: '"deletedAt" IS NULL',
+  name: 'crdb_email_live_idx',
+})
+@Index((crdbIndexUser) => [crdbIndexUser.status], { unique: true, name: 'crdb_status_unique_idx' })
+@Index((crdbIndexUser) => [crdbIndexUser.tenantId], {
+  include: (crdbIndexUser) => [crdbIndexUser.status],
+  name: 'crdb_tenant_covering_idx',
+})
 @Entity({ name: CRDB_TABLE })
 class CrdbIndexUser {
   @Id({ type: Number }) id?: number;

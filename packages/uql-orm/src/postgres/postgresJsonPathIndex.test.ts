@@ -14,8 +14,12 @@ const TABLE = 'pg_json_path_index';
 /** Enough rows that a scan is the cheaper plan, so the planner's choice means something. */
 const ROWS = 1000;
 
-@Index([{ column: 'kind', jsonPath: { path: 'name', type: String } }], { name: 'ix_json_name' })
-@Index([{ column: 'kind', jsonPath: { path: 'score', type: Number } }], { name: 'ix_json_score' })
+@Index((jsonPathIndexed) => [{ column: jsonPathIndexed.kind, jsonPath: { path: 'name', type: String } }], {
+  name: 'ix_json_name',
+})
+@Index((jsonPathIndexed) => [{ column: jsonPathIndexed.kind, jsonPath: { path: 'score', type: Number } }], {
+  name: 'ix_json_score',
+})
 @Entity({ name: TABLE })
 class JsonPathIndexed {
   @Id({ type: Number }) id?: number;

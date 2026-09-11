@@ -17,7 +17,7 @@ class User {
   @Field({ type: String, nullable: true })
   email?: string;
 
-  @OneToMany({ entity: () => Post, mappedBy: 'author' })
+  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
   posts?: Post[];
 }
 
@@ -154,7 +154,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkParent {
         @Id({ type: Number }) id?: number;
-        @OneToMany({ entity: () => FkChild, mappedBy: 'parent' }) children?: FkChild[];
+        @OneToMany({ entity: () => FkChild, mappedBy: (fkChild) => fkChild.parent }) children?: FkChild[];
       }
       @Entity()
       class FkChild {
@@ -287,7 +287,10 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class User11 {
         @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => Profile11, references: [{ local: 'profileId', foreign: 'id' }] })
+        @OneToOne({
+          entity: () => Profile11,
+          references: (user11, profile11) => [{ local: user11.profileId, foreign: profile11.id }],
+        })
         profile?: Profile11;
         @Field({ type: Number }) profileId?: number;
       }
@@ -298,7 +301,7 @@ describe('SchemaASTBuilder', () => {
     });
 
     it('should resolve include columns through the naming strategy too', () => {
-      @Index(['tenantId'], { include: ['createdAt'], name: 'cov_idx' })
+      @Index((covered) => [covered.tenantId], { include: (covered) => [covered.createdAt], name: 'cov_idx' })
       @Entity()
       class Covered {
         @Id({ type: Number }) id?: number;
@@ -353,7 +356,11 @@ describe('SchemaASTBuilder', () => {
 
     it('should handle composite indexes and full metadata from decorators', () => {
       @Entity()
-      @Index(['firstName', 'lastName'], { name: 'fullname_idx', unique: true, where: 'active = true' })
+      @Index((indexedUser) => [indexedUser.firstName, indexedUser.lastName], {
+        name: 'fullname_idx',
+        unique: true,
+        where: 'active = true',
+      })
       class IndexedUser {
         @Id({ type: Number }) id?: number;
         @Field({ type: String }) firstName?: string;
@@ -376,7 +383,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       // @ts-expect-error the column names are checked against the class, so this is the runtime backstop
       // behind a compile error rather than something a user can reach by writing valid TypeScript.
-      @Index(['unknown'])
+      @Index((badComposite) => [badComposite.unknown])
       class BadComposite {
         @Id({ type: Number }) id?: number;
       }
@@ -430,9 +437,9 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: String }) cityArea?: string;
         @ManyToOne({
           entity: () => FkRegion,
-          references: [
-            { local: 'cityCountry', foreign: 'country' },
-            { local: 'cityArea', foreign: 'area' },
+          references: (fkCity, fkRegion) => [
+            { local: fkCity.cityCountry, foreign: fkRegion.country },
+            { local: fkCity.cityArea, foreign: fkRegion.area },
           ],
         })
         region?: FkRegion;
@@ -443,7 +450,7 @@ describe('SchemaASTBuilder', () => {
 
     it('should not index a foreign key again under an index the entity declares', () => {
       @Entity()
-      @Index(['fkBlogId', 'title'])
+      @Index((fkLeading) => [fkLeading.fkBlogId, fkLeading.title])
       class FkLeading {
         @Id({ type: Number }) id?: number;
         @Field({ type: String }) title?: string;
@@ -498,7 +505,7 @@ describe('SchemaASTBuilder', () => {
     it('should keep an include column that names no field as written', () => {
       @Entity()
       // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
-      @Index(['tenantId'], { include: ['legacy_total'] as never })
+      @Index((covering) => [covering.tenantId], { include: () => ['legacy_total'] as never })
       class Covering {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number }) tenantId?: number;
@@ -525,7 +532,10 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Owner {
         @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => Related, references: [{ local: 'nonExistent', foreign: 'id' }] })
+        @OneToOne({
+          entity: () => Related,
+          references: (owner, related) => [{ local: 'nonExistent' as never, foreign: related.id }],
+        })
         related?: Related;
       }
 
@@ -592,7 +602,10 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Main {
         @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => Other, references: [{ local: 'otherId', foreign: 'nonExistent' }] })
+        @OneToOne({
+          entity: () => Other,
+          references: (main, other) => [{ local: main.otherId, foreign: 'nonExistent' as never }],
+        })
         other?: Other;
         @Field({ type: Number }) otherId?: number;
       }
@@ -610,7 +623,10 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Main2 {
         @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => Other2, references: [{ local: 'otherId', foreign: 'computed' }] })
+        @OneToOne({
+          entity: () => Other2,
+          references: (main2, other2) => [{ local: main2.otherId, foreign: other2.computed }],
+        })
         other?: Other2;
         @Field({ type: Number }) otherId?: number;
       }

@@ -15,7 +15,9 @@ const TABLE = 'mysql_json_array_index';
 const ROWS = 1000;
 
 /** The array is the whole column, which is what `$all` reads and what its `JSON_CONTAINS(col, ?)` names. */
-@Index([{ column: 'tags', jsonArray: { type: String, length: 64 } }], { name: 'ix_json_tags' })
+@Index((jsonArrayIndexed) => [{ column: jsonArrayIndexed.tags, jsonArray: { type: String, length: 64 } }], {
+  name: 'ix_json_tags',
+})
 @Entity({ name: TABLE })
 class JsonArrayIndexed {
   @Id({ type: Number }) id?: number;

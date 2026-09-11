@@ -84,7 +84,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
     const found = await this.querier.findMany(Item, {
       $select: { name: true },
-      $where: { $text: { $fields: ['name'], $value: 'bicycle' } },
+      $where: { $text: { $fields: { name: true }, $value: 'bicycle' } },
     });
 
     expect(found.map(({ name }) => name)).toEqual(['red bicycle']);

@@ -14,8 +14,6 @@ import {
   type OnFieldCallback,
   type Query,
   type QueryAggMap,
-  type QueryAggregateArg,
-  type QueryAggregateDistinctOp,
   type QueryAggregateOp,
   type QueryExclude,
   type QueryGroupMap,
@@ -37,7 +35,16 @@ import {
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { isDatabaseWritten } from './field.util.js';
-import { entityName, getFieldKeys, getKeys, hasKeys, isScalarId, isWhereMap, someKey } from './object.util.js';
+import {
+  entityName,
+  getFieldKeys,
+  getKeys,
+  hasKeys,
+  isScalarId,
+  isRecord,
+  isWhereMap,
+  someKey,
+} from './object.util.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -464,10 +471,10 @@ export function parseSortByCount(val: unknown): unknown {
 }
 
 /**
- * Parse the `$group` (grouped columns) and `$agg` (computed aggregates) maps into structured
+ * Parse the `$group` (grouped columns) and `$select` (computed aggregates) maps into structured
  * entries consumable by any dialect. Grouped columns come first, then computed columns.
  */
-export function parseGroupMap<E>(group?: QueryGroupMap<E>, agg?: QueryAggMap<E>): ParsedGroupEntry[] {
+export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<E>): ParsedGroupEntry[] {
   const entries: ParsedGroupEntry[] = [];
   const groupMap = group ?? {};
   for (const alias of getKeys(groupMap)) {
@@ -475,21 +482,31 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, agg?: QueryAggMap<E>)
       entries.push({ kind: 'key', alias });
     }
   }
-  if (!agg) {
+  if (!select) {
     return entries;
   }
-  for (const alias of getKeys(agg)) {
-    const fnEntry: Partial<Record<QueryAggregateOp | QueryAggregateDistinctOp, QueryAggregateArg<E>>> = agg[alias];
+  for (const alias of getKeys(select)) {
+    const fnEntry: Readonly<Record<string, unknown>> = select[alias];
     const key = getKeys(fnEntry)[0];
     // Flat DISTINCT ops (`$countDistinct`, ...) normalize to their base op + a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
-    const fieldRef = fnEntry[key];
-    if (fieldRef === undefined) {
-      throw TypeError(`empty aggregate function for: ${alias}`);
-    }
-    entries.push({ kind: 'fn', alias, op, fieldRef, distinct });
+    entries.push({ kind: 'fn', alias, op, fieldRef: aggregateFieldRef(alias, fnEntry[key]), distinct });
   }
   return entries;
+}
+
+/** The column an aggregate reads: `'*'`, or the one field its `{ field: true }` names. */
+function aggregateFieldRef(alias: string, arg: unknown): string {
+  const [field, ...rest] = arg === '*' ? [arg] : namedKeys(arg);
+  if (field === undefined || rest.length) {
+    throw new TypeError(`aggregate '${alias}' takes one field as { field: true }, or '*': got ${JSON.stringify(arg)}`);
+  }
+  return field;
+}
+
+/** The keys a `{ key: true }` map switches on; anything that is not such a map switches on none. */
+function namedKeys(map: unknown): string[] {
+  return isRecord(map) ? getKeys(map).filter((key) => map[key]) : [];
 }
 
 /**
@@ -524,11 +541,11 @@ export function assertNonNegativeInteger(value: number, clause: string): number 
 
 /**
  * Rejects a `$having`/`$sort` key naming something an aggregate does not emit. Its rows are its
- * `$group` columns and its `$agg` aliases; anything else is a value that is not there. Shared so
+ * `$group` columns and its `$select` aliases; anything else is a value that is not there. Shared so
  * SQL and MongoDB refuse the same query with the same words.
  */
 export function throwUnknownAggregateColumn(key: string, clause: string): never {
-  throw new TypeError(`cannot ${clause} by '${key}': it is neither a $group column nor an $agg alias`);
+  throw new TypeError(`cannot ${clause} by '${key}': it is neither a $group column nor a $select alias`);
 }
 
 /** {@link throwUnknownAggregateColumn} over every key of a clause, for backends that check up front. */
@@ -546,8 +563,9 @@ export function assertAggregateColumns(clauseMap: object, emitted: ReadonlySet<s
  * where neither says, rather than guessed: every engine answers a guess with an error of its own.
  */
 export function textSearchFields<E>(meta: EntityMeta<E>, search: QueryTextSearchOptions<E>): readonly string[] {
-  if (search.$fields?.length) {
-    return search.$fields;
+  const named = namedKeys(search.$fields);
+  if (named.length) {
+    return named;
   }
   const fulltext = (meta.indexes ?? []).filter((index) => index.type === 'fulltext');
   if (fulltext.length === 1) {

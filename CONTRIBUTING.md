@@ -1,7 +1,5 @@
 # Contributing to UQL
 
-First off, thank you for considering contributing to UQL! It's people like you who make this tool better for everyone.
-
 ## Getting Started
 
 1. **Fork the repository** and create your branch from `main`.
@@ -28,13 +26,7 @@ Open an issue describing the desired behavior and the "why" behind it. We prefer
 - **Small, focused PRs**: Keep changes atomic.
 - **Commit Messages**: Use conventional commits (e.g., `feat: add X`, `fix: resolve Y`).
 - **Testing**: Ensure all tests pass and add new tests for any new functionality.
-- **Linting**: Run `bun run lint` (Oxlint and Oxfmt) to ensure code style consistency.
-
-## Coding Standards
-
-- **TypeScript**: Strict typing is required. Avoid `any` whenever possible.
-- **Formatting**: We use Oxlint for linting and Oxfmt for formatting.
-- **Simplicity**: KISS: Prefer readable, maintainable code over "clever" optimizations unless performance is the primary goal.
+- **Code**: strict TypeScript, no `any`; `bun run lint` (Oxlint and Oxfmt) must pass. Prefer readable code over clever optimizations unless performance is the point.
 
 ## Packaging
 
@@ -44,14 +36,4 @@ Open an issue describing the desired behavior and the "why" behind it. We prefer
 
 ## Releasing
 
-Versioning and publishing are separate on purpose: `lerna publish`'s npm step 404s unreliably against this registry, so `lerna` bumps/tags/pushes and `bun publish` publishes. A failed publish therefore never leaves a half-done release - the tag and CHANGELOG are already right, and re-running costs nothing.
-
-- The changelog entry is written before the bump, headed with the version it will produce; nothing checks that the two agree. `CHANGELOG.md`'s own header states the style.
-- `bun run release.patch` (`.minor`/`.major`) runs `check`, `lerna version`, `git push --follow-tags`, `release.github`. The `lerna version` prompt is kept on purpose - a non-interactive shell needs `bun run release patch --yes`, then push tags separately.
-- `release.github` opens the GitHub Release from the CHANGELOG entry (a tag alone notifies nobody). Idempotent, and it throws when the entry is missing. The codemod is deliberately not released.
-- Then `bun run publish.orm` / `publish.codemod` for whichever package `lerna version` reported as changed. Each package's `prepack` builds first, so `dist` cannot lag the version being published. Re-publishing an existing version exits non-zero, so the exit code can be trusted.
-- npm auth needs no setup: `.npmrc` holds the `${NPM_ACCESS_TOKEN}` placeholder and the token lives in the gitignored `.env` that `bun run` loads. Anything invoking `npm` outside `bun` must export it.
-
-## Questions?
-
-Feel free to open an issue or reach out via the community channels.
+Maintainers follow the [release skill](.claude/skills/release/SKILL.md). Versioning and publishing are separate on purpose: `lerna version` bumps, tags and pushes, then `bun publish` publishes, since `lerna publish`'s npm step 404s unreliably against this registry. A failed publish never leaves a half-done release; rerun the publish alone.

@@ -32,7 +32,7 @@ describe('buildIndexDecoratorSource', () => {
   it('should emit SQL that survives being read back as TypeScript', () => {
     const sql = '(\nCASE\n  WHEN name ~ \'\\d+\' THEN "col"\n END)';
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs);
+    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(sql);
   });
@@ -40,7 +40,7 @@ describe('buildIndexDecoratorSource', () => {
   it('should emit SQL that would otherwise end or interpolate the template', () => {
     const sql = 'name = `a` || ${b}';
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs);
+    const source = buildIndexDecoratorSource(indexNode([{ column: sql, expression: true }]), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(sql);
   });
@@ -48,7 +48,7 @@ describe('buildIndexDecoratorSource', () => {
   it('should emit a predicate the same way', () => {
     const where = "name ~ '\\d+'";
 
-    const source = buildIndexDecoratorSource(indexNode([{ column: 'name' }], { where }), asIs);
+    const source = buildIndexDecoratorSource(indexNode([{ column: 'name' }], { where }), asIs, 't');
 
     expect(evaluateFirstTag(source)).toBe(where);
   });
@@ -56,13 +56,13 @@ describe('buildIndexDecoratorSource', () => {
   it('should give a vector index the distance its operator class carries', () => {
     const index = indexNode([{ column: 'embedding', opsClass: 'vector_cosine_ops' }], { type: 'hnsw' });
 
-    expect(buildIndexDecoratorSource(index, asIs)).toContain("type: 'hnsw', distance: 'cosine'");
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toContain("type: 'hnsw', distance: 'cosine'");
   });
 
   // `@Index` requires a distance beside a vector type, so a type with no recoverable metric would
   // generate an entity that does not compile.
   it('should leave off a vector type whose metric it cannot recover', () => {
-    const source = buildIndexDecoratorSource(indexNode([{ column: 'embedding' }], { type: 'hnsw' }), asIs);
+    const source = buildIndexDecoratorSource(indexNode([{ column: 'embedding' }], { type: 'hnsw' }), asIs, 't');
 
     expect(source).not.toContain('hnsw');
   });

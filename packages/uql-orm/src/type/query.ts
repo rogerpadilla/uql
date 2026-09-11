@@ -28,12 +28,12 @@ export type QueryOptions = {
 };
 
 /**
- * Query field selection - `{ name: true }` whitelists specific fields. Fields only: a relation is a
- * sub-query rather than a projection flag, and a whitelist naming one could not say whether the
- * scalars come with it. Relations go in `$populate`.
+ * Field selection - `{ name: true }` whitelists fields; relations go in `$populate`. Declared over
+ * `F extends keyof E`, like every map keyed by an entity's members, so each key stays linked to its
+ * property and an editor rename reaches it. `F` is also how a projection passes its captured key set.
  */
-export type QuerySelect<E> = {
-  [K in FieldKey<E>]?: BooleanLike;
+export type QuerySelect<E, F extends keyof E = FieldKey<E>, V = BooleanLike> = {
+  [K in F]?: V;
 };
 
 /**
@@ -51,8 +51,8 @@ export type QueryExclude<E> = QuerySelect<E>;
 /**
  * relation population map.
  */
-export type QueryPopulate<E> = {
-  [K in RelationKey<E>]?: BooleanLike | QueryPopulateRelationOptions<E[K]>;
+export type QueryPopulate<E, R extends keyof E = RelationKey<E>> = {
+  [K in R]?: BooleanLike | QueryPopulateRelationOptions<E[K]>;
 };
 
 /**
@@ -66,16 +66,14 @@ export const COUNT_RESULT_KEY = '_count';
  * which ones count: a correlated count in the read's own statement, so no related row is loaded. Comes
  * back under `_count`, which keeps it clear of a relation of the same name `$populate` filled.
  */
-export type QueryCount<E> = {
-  [K in ToManyRelationKey<E>]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
+export type QueryCount<E, R extends keyof E = ToManyRelationKey<E>> = {
+  [K in R]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
 };
 
 /**
  * query conflict paths - subset of field keys used to detect upsert conflicts.
  */
-export type QueryConflictPaths<E> = {
-  [K in FieldKey<E>]?: true;
-};
+export type QueryConflictPaths<E> = QuerySelect<E, FieldKey<E>, true>;
 
 /**
  * Options to populate a relation declared as `V`, by its cardinality.
@@ -165,20 +163,18 @@ export type QuerySortByCount = {
  * against an intersection is repeated per constituent, which made this the single most expensive
  * type in the package to check.
  */
-export type QuerySortMap<E, Vector extends boolean = true> = {
-  [K in FieldKey<E> | JsonFieldPaths<E> | RelationKey<E>]?: K extends RelationKey<E>
+export type QuerySortMap<E, Vector extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
+  [P in K]?: P extends RelationKey<E>
     ? // A to-many has no single value to order by, so what it offers instead is its own size.
-      IsMany<E[K]> extends true
+      IsMany<E[P]> extends true
       ? QuerySortByCount
-      : QuerySortMap<RelationTarget<E[K]>, false>
-    : K extends FieldKey<E>
-      ? Vector extends true
-        ? NonNullable<E[K]> extends readonly number[]
-          ? QuerySortValue
-          : QuerySortDirection
+      : QuerySortMap<RelationTarget<E[P]>, false>
+    : Vector extends true
+      ? NonNullable<E[P]> extends readonly number[]
+        ? QuerySortValue
         : QuerySortDirection
       : QuerySortDirection;
-};
+} & ([JsonFieldPaths<E>] extends [never] ? unknown : { [P in JsonFieldPaths<E>]?: QuerySortDirection });
 
 /**
  * pager options.
@@ -394,14 +390,12 @@ type QueryProjection<
   P extends RelationKey<E>,
   C extends RelationKey<E>,
 > = {
-  $select?: { [K in S]?: V } | readonly QueryRaw[];
-  $exclude?: { [K in X]?: V };
-  $populate?: { [K in P]?: QueryPopulate<E>[K] };
-  // Intersecting the captured names with {@link QueryCount}'s own leaves a to-one relation no key
-  // here at all, so counting one is an excess property rather than a value to check. Narrowing the
-  // key rather than the value also instantiates `QueryCount<E>` once instead of once per counted
-  // relation, worth ~87k instantiations in a consuming project.
-  $count?: { [K in C & keyof QueryCount<E>]?: QueryCount<E>[K] };
+  $select?: QuerySelect<E, S, V> | readonly QueryRaw[];
+  $exclude?: QuerySelect<E, X, V>;
+  $populate?: QueryPopulate<E, P>;
+  // Narrowing the captured names to the to-many ones leaves a to-one relation no key here at all,
+  // so counting one is an excess property rather than a value to check.
+  $count?: QueryCount<E, C & ToManyRelationKey<E>>;
 };
 
 /**

@@ -20,7 +20,7 @@ import {
   type RelationshipType,
   type TableNode,
 } from '../../schema/types.js';
-import { camelCase, pascalCase, singularize } from '../../util/string.util.js';
+import { camelCase, lowerFirst, pascalCase, singularize } from '../../util/string.util.js';
 import { buildFieldOptionsSource, fieldNeedsRaw } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 
@@ -179,8 +179,9 @@ export class EntityCodeGenerator {
     const lines: string[] = [];
 
     if (this.options.includeIndexes) {
+      const param = lowerFirst(this.options.classNameTransformer(table.name));
       for (const index of this.declaredIndexes(table)) {
-        lines.push(buildIndexDecoratorSource(index, this.options.propertyNameTransformer));
+        lines.push(buildIndexDecoratorSource(index, this.options.propertyNameTransformer, param));
       }
     }
 
@@ -347,9 +348,12 @@ export class EntityCodeGenerator {
       lines.push('   */');
     }
 
-    // Decorator - includes references to property name
+    // The inverse side, mapped by the related class's property that points back at this one.
     const inverseProp = this.options.propertyNameTransformer(this.options.singularize(table.name));
-    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName}, references: '${inverseProp}' })`);
+    const param = lowerFirst(relatedClassName);
+    lines.push(
+      `  @${decoratorName}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${param}.${inverseProp} })`,
+    );
 
     // Property
     if (inverseType === 'OneToMany' || inverseType === 'ManyToMany') {

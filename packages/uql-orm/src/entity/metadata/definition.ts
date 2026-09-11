@@ -11,12 +11,12 @@ import type {
   FilterOptions,
   HookEvent,
   IdKey,
-  Key,
+  KeyMap,
   QueryWhere,
   RelationKey,
-  RelationKeyMap,
   RelationMeta,
   RelationOptions,
+  RelationRegistration,
   Type,
   WrittenId,
 } from '../../type/index.js';
@@ -80,20 +80,57 @@ export function defineId<E>(entity: Type<E>, key: string, opts: FieldOptions): E
   return defineField(entity, key, { ...opts, isId: true });
 }
 
-// `RelationOptions` is parameterized by the *target* entity, which is independent of the owner `E`, so it
-// is left at its default here rather than tied to the class being registered.
-export function defineRelation<E>(entity: Type<E>, key: string, opts: RelationOptions): EntityMeta<E> {
-  if (!opts.entity) {
+/** `T` is the relation's target, independent of the owner `E`. */
+export function defineRelation<E, T extends object>(
+  entity: Type<E>,
+  key: string,
+  opts: RelationOptions<T, E>,
+): EntityMeta<E> {
+  return addRelation(entity, key, relationRegistration(opts));
+}
+
+/**
+ * `opts` as the registry takes them: `mappedBy` and `references` read off their key maps down to the
+ * names they give. The callbacks only read properties, so they run here, before any entity has to
+ * exist, and the registry holds data alone.
+ */
+export function relationRegistration<T extends object, O>({
+  mappedBy,
+  references,
+  ...opts
+}: RelationOptions<T, O>): RelationRegistration {
+  return {
+    ...opts,
+    ...(mappedBy ? { mappedBy: mappedBy(keyMap<T>()) } : {}),
+    ...(references ? { references: [...references(keyMap<O>(), keyMap<T>())] } : {}),
+  };
+}
+
+/** Every entity's key map: a callback only reads one property off it, and that property is its own key. */
+function keyMap<E>(): KeyMap<E> {
+  return KEY_MAP as KeyMap<E>;
+}
+
+const KEY_MAP = new Proxy({}, { get: (_, key) => key });
+
+function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegistration): EntityMeta<E> {
+  if (!registration.entity) {
     throw new TypeError(
       `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
     );
   }
+  if (registration.through && registration.references) {
+    throw new TypeError(
+      `'${entity.name}.${key}' joins through a junction, whose columns follow the convention; 'references' ` +
+        "pairs the declaring entity's columns with the target's instead.",
+    );
+  }
   const meta = ensureWritableMeta(entity);
-  // Registration writes the authored shape into a map declared as resolved: `getMeta` runs
-  // `fillRelations`, which settles `entity`, `references` and `mappedBy` or throws. Bridging the two
-  // shapes here is what lets every consumer read `RelationMeta` without asserting.
-  const relations = meta.relations as Record<string, RelationOptions>;
-  relations[key] = { ...relations[key], ...opts };
+  // Registration writes into a map declared as resolved: `getMeta` runs `fillRelations`, which settles
+  // `references` or throws. Bridging the two shapes here is what lets every consumer read `RelationMeta`
+  // without asserting.
+  const relations = meta.relations as Record<string, RelationRegistration>;
+  relations[key] = { ...relations[key], ...registration };
   return meta;
 }
 
@@ -106,17 +143,18 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
 }
 
 /**
- * Declares a composite index. `unique` and the authored column sugar are normalized here, which is what
- * lets the dialects render one shape instead of re-parsing it.
+ * Declares a composite index, its columns read off the key map. `unique` and the authored column sugar
+ * are normalized here, which is what lets the dialects render one shape instead of re-parsing it.
  */
-export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<FieldKey<E>, E>): EntityMeta<E> {
+export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
-  if (!meta.indexes) meta.indexes = [];
-  meta.indexes.push({
+  const keys = keyMap<E>();
+  (meta.indexes ??= []).push({
     ...index,
     unique: index.unique ?? false,
     where: ddlText(index.where, 'a partial-index predicate'),
-    columns: index.columns.map(normalizeIndexColumn),
+    columns: index.columns(keys).map(normalizeIndexColumn),
+    include: index.include?.(keys),
   });
   return meta;
 }
@@ -149,7 +187,7 @@ export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefine
     }
   }
   for (const [key, spec] of definedEntries(specs?.relations ?? {})) {
-    defineRelation(entity, key, spec);
+    addRelation(entity, key, spec);
   }
   for (const [event, methodNames] of definedEntries(specs?.hooks ?? {})) {
     for (const methodName of methodNames) {
@@ -159,10 +197,8 @@ export function applyMembers<E>(entity: Type<E>, specs: EntityMembers | undefine
 }
 
 /**
- * Registers an entity described by data alone, minting the class the registry keys it by. The row
- * type follows from the spec - see {@link SpecRow} - so a definition written out is checked column by
- * column, and one assembled at runtime is the column bag it is. Pass `Row` to name a shape the spec
- * cannot describe, such as the interface `uql-migrate types` generated for it.
+ * Registers a class as an entity from `opts` alone, the decorator-free counterpart of `@Entity()` with
+ * `@Field`/`@ManyToOne`/...
  */
 export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): EntityMeta<E> {
   // Ahead of any registration, so a rejected definition leaves nothing half-written in the registry.
@@ -181,7 +217,14 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   // drains `context.metadata` itself, because TypeScript only attaches `Symbol.metadata` to the class
   // after class decorators return; draining empties the bag, so whichever runs second is a no-op.
   applyMembers(entity, ownRegistrations(entity));
-  applyMembers(entity, opts);
+  const keys = keyMap<E>();
+  applyMembers(entity, {
+    fields: opts.fields,
+    relations: Object.fromEntries(
+      definedEntries(opts.relations ?? {}).map(([key, spec]) => [key, relationRegistration(spec)]),
+    ),
+    hooks: Object.fromEntries(definedEntries(opts.hooks ?? {}).map(([event, methods]) => [event, methods(keys)])),
+  });
   // Unnamed checks are named by the generator, as unnamed indexes are.
   for (const check of opts.checks ?? []) {
     (meta.checks ??= []).push({ name: check.name, expression: ddlText(check.expression, 'a check constraint') });
@@ -276,7 +319,7 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
 }
 
 /** The field `key` names, for a caller that took `key` from the metadata itself. */
-export function fieldOf<E>(meta: EntityMeta<E>, key: FieldKey<E>): FieldMeta {
+export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
   const field = meta.fields[key];
   if (!field) {
     throw new TypeError(`'${meta.entity.name}' has no field '${key}'`);
@@ -331,13 +374,8 @@ export function removeEntity<E>(entity: Type<E>): boolean {
   return metas.delete(entity);
 }
 
-export function getEntities(): Type<unknown>[] {
-  return metas.entries().reduce((acc, [key, val]) => {
-    if (val.ids.length) {
-      acc.push(key);
-    }
-    return acc;
-  }, [] as Type<unknown>[]);
+export function getEntities(): Type<object>[] {
+  return [...metas.values()].filter((meta) => meta.ids.length).map((meta) => meta.entity);
 }
 
 /**
@@ -377,12 +415,12 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const [relKey, relation] of definedEntries(meta.relations)) {
-    // The authored view: `mappedBy` may still be the callback and `references` unset until this settles them.
-    const relOpts: RelationOptions = relation;
+    // The registered view: `references` may be unset until this settles it.
+    const relOpts: RelationRegistration = relation;
     const at = `'${meta.entity.name}.${relKey}'`;
 
     if (relOpts.mappedBy) {
-      fillInverseSide(at, meta, relOpts);
+      fillInverseSide(at, meta, relOpts, relOpts.mappedBy);
     } else if (!relOpts.references) {
       fillOwningSide(at, meta, relKey, relOpts);
     }
@@ -396,8 +434,8 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
       for (const { local } of relOpts.references) {
         if (junction.fields[local]) continue;
         throw new TypeError(
-          `${at} joins through '${junction.entity.name}', which has no '${local}' field. Declare it, or name ` +
-            "the join columns with 'references'.",
+          `${at} joins through '${junction.entity.name}', which has no '${local}' field: a junction's ` +
+            'columns are named after the entities it joins. Declare it.',
         );
       }
     }
@@ -406,7 +444,7 @@ function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   return meta;
 }
 
-function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relOpts: RelationOptions): void {
+function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relOpts: RelationRegistration): void {
   const relMeta = ensureMeta(relOpts.entity());
 
   if (relOpts.through) {
@@ -451,11 +489,9 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
   }
 }
 
-function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationOptions): void {
+function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRegistration, mappedBy: string): void {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
-  const mappedBy = getMappedByKey(relOpts);
-  relOpts.mappedBy = mappedBy;
   if (relOpts.references) return;
 
   if (relMeta.fields[mappedBy]) {
@@ -473,7 +509,7 @@ function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationOp
 
   // Authored view again: with each side mapped by the other, the target is still mid-resolution here and
   // its own `references` are unset, which is what the second throw reports.
-  const owner: RelationOptions | undefined = relMeta.relations[mappedBy];
+  const owner: RelationRegistration | undefined = relMeta.relations[mappedBy];
   if (!owner) {
     throw new TypeError(
       `${at} is mapped by '${mappedBy}', which is neither a field nor a relation of '${relEntity.name}'.`,
@@ -536,15 +572,6 @@ function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
 /** `<entityName><IdColumn>`, not the `<relationKey>Id` an owning to-one derives: a junction row has no relation key to borrow from. */
 function junctionColumn<E>(meta: EntityMeta<E>, idKey: IdKey<E>): string {
   return lowerFirst(entityName(meta)) + upperFirst(fieldOf(meta, idKey).name ?? idKey);
-}
-
-/** A callback only reads one property off the key map, and that property is the key, so one serves every entity. */
-const RELATION_KEY_MAP = new Proxy({}, { get: (_, key) => key });
-
-function getMappedByKey<E>(relOpts: RelationOptions<E>): Key<E> {
-  return typeof relOpts.mappedBy === 'function'
-    ? relOpts.mappedBy(RELATION_KEY_MAP as RelationKeyMap<E>)
-    : relOpts.mappedBy!;
 }
 
 /** Every key the entity marks, in declaration order. More than one is a composite primary key. */

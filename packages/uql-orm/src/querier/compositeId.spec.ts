@@ -81,7 +81,7 @@ class Term {
   [idKey]?: 'year' | 'season';
   @Id({ type: Number }) year?: number;
   @Id({ type: String }) season?: string;
-  @OneToMany({ entity: () => Session, mappedBy: (it) => it.term, cascade: 'delete' })
+  @OneToMany({ entity: () => Session, mappedBy: (session) => session.term, cascade: 'delete' })
   sessions?: Session[];
 }
 

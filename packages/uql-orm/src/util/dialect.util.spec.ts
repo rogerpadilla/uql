@@ -232,7 +232,7 @@ it('parseGroupMap keys and fns', () => {
   const group: QueryGroupMap<Item> = { code: true };
   const agg: QueryAggMap<Item> = {
     count: { $count: '*' },
-    total: { $sum: 'salePrice' },
+    total: { $sum: { salePrice: true } },
   };
   const entries = parseGroupMap(group, agg);
   expect(entries).toEqual([
@@ -243,20 +243,28 @@ it('parseGroupMap keys and fns', () => {
 });
 
 it('parseGroupMap normalizes a flat distinct op to its base op', () => {
-  const agg: QueryAggMap<Item> = { codes: { $countDistinct: 'code' } };
+  const agg: QueryAggMap<Item> = { codes: { $countDistinct: { code: true } } };
   const entries = parseGroupMap(undefined, agg);
   expect(entries).toEqual([{ kind: 'fn', alias: 'codes', op: '$count', fieldRef: 'code', distinct: true }]);
 });
 
-it('parseGroupMap rejects an aggregate function given no field', () => {
-  expect(() => parseGroupMap(undefined, { total: { $sum: undefined } } as never)).toThrow(
-    'empty aggregate function for: total',
+/** Wire input, past the types: an aggregate reads one field named as a key, or `'*'`, and nothing else. */
+it('parseGroupMap rejects an aggregate argument that is not one field', () => {
+  const rejected = "aggregate 'total' takes one field as { field: true }, or '*': got ";
+  expect(() => parseGroupMap(undefined, { total: { $sum: undefined } } as never)).toThrow(`${rejected}undefined`);
+  expect(() => parseGroupMap(undefined, { total: { $sum: {} } } as never)).toThrow(`${rejected}{}`);
+  expect(() => parseGroupMap(undefined, { total: { $sum: { salePrice: false } } } as never)).toThrow(
+    `${rejected}{"salePrice":false}`,
   );
+  expect(() => parseGroupMap(undefined, { total: { $sum: { salePrice: true, code: true } } } as never)).toThrow(
+    `${rejected}{"salePrice":true,"code":true}`,
+  );
+  expect(() => parseGroupMap(undefined, { total: { $sum: 'salePrice' } } as never)).toThrow(`${rejected}"salePrice"`);
 });
 
 describe('textSearchFields', () => {
   @Entity()
-  @Index(['title', 'body'], { type: 'fulltext' })
+  @Index((article) => [article.title, article.body], { type: 'fulltext' })
   class Article {
     @Id({ type: Number }) id?: number;
     @Field({ type: String }) title?: string;
@@ -271,8 +279,8 @@ describe('textSearchFields', () => {
   }
 
   @Entity()
-  @Index(['title'], { type: 'fulltext' })
-  @Index(['body'], { type: 'fulltext' })
+  @Index((twiceIndexed) => [twiceIndexed.title], { type: 'fulltext' })
+  @Index((twiceIndexed) => [twiceIndexed.body], { type: 'fulltext' })
   class TwiceIndexed {
     @Id({ type: Number }) id?: number;
     @Field({ type: String }) title?: string;
@@ -280,13 +288,16 @@ describe('textSearchFields', () => {
   }
 
   it('searches the fields it names, whatever the entity declares', () => {
-    expect(textSearchFields(getMeta(Article), { $fields: ['summary'], $value: 'x' })).toEqual(['summary']);
+    expect(textSearchFields(getMeta(Article), { $fields: { summary: true }, $value: 'x' })).toEqual(['summary']);
+    expect(textSearchFields(getMeta(Article), { $fields: { summary: true, title: false }, $value: 'x' })).toEqual([
+      'summary',
+    ]);
   });
 
   /** The declaration MySQL's `MATCH` has to match exactly, and the one a MongoDB text index is. */
   it('searches the columns of the fulltext index the entity declares where it names none', () => {
     expect(textSearchFields(getMeta(Article), { $value: 'x' })).toEqual(['title', 'body']);
-    expect(textSearchFields(getMeta(Article), { $fields: [], $value: 'x' })).toEqual(['title', 'body']);
+    expect(textSearchFields(getMeta(Article), { $fields: {}, $value: 'x' })).toEqual(['title', 'body']);
   });
 
   it('refuses to guess where the entity declares no fulltext index, or more than one', () => {

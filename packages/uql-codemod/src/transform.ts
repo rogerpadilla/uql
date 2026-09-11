@@ -1,6 +1,18 @@
 import ts from 'typescript';
 import { applyEdits, type Edit, removeFromList } from './edits.js';
 import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
+import {
+  entityGetterTarget,
+  fieldKeysEdit,
+  isCallback,
+  keyListEdit,
+  mappedByEdit,
+  paramFor,
+  propertyKey,
+  propertyValue,
+  referencesEdit,
+  replaced,
+} from './keyMaps.js';
 
 const FIELD_DECORATORS = new Set(['Field', 'Id']);
 const RELATION_DECORATORS = new Set(['OneToOne', 'ManyToOne', 'OneToMany', 'ManyToMany']);
@@ -25,8 +37,10 @@ const REMOVED_EXPORTS = new Map([
   ['setQuerierPool', 'pass the pool where it is used: `createFetchHandler({ pool })`, `querierMiddleware({ pool })`'],
   ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
   ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
-  ['QueryWhereMap', 'it is `QueryWhere` now'],
   ['QueryWhereFieldMap', 'use `QueryWhere`'],
+  ['QueryStreamProjected', 'use `QueryProjected`'],
+  ['RelationMappedBy', "a 'mappedBy' is `(keys: KeyMap<E>) => Key<E>` now"],
+  ['RelationKeyMapper', 'it is `(keys: KeyMap<E>) => Key<E>` now'],
   ['augmentWhere', 'spread the two maps: `{ ...where, ...extra }`'],
   ['buildQueryWhereAsMap', 'a `$where` is a map already; name the key for ids: `{ id: [1, 2] }`'],
   ['PgDialect', 'the pools build `PostgresDialect` (`uql-orm/postgres`); name that where a dialect is typed'],
@@ -39,6 +53,12 @@ const REMOVED_EXPORTS = new Map([
   ['NeonQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`)'],
   ['LibsqlQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
   ['TursoQuerier', 'the libSQL and Turso pools return `HranaQuerier` (`uql-orm/sqlite`)'],
+]);
+
+/** Exports renamed and nothing else, so the import and every use of it in the file follow. */
+const RENAMED_EXPORTS = new Map([
+  ['QueryWhereMap', 'QueryWhere'],
+  ['RelationKeyMap', 'KeyMap'],
 ]);
 
 export type FileResult = {
@@ -114,11 +134,6 @@ function findProperty(options: DecoratorOptions, name: string): NamedProperty | 
     (prop): prop is NamedProperty =>
       (ts.isPropertyAssignment(prop) || ts.isShorthandPropertyAssignment(prop)) && propertyKey(prop.name) === name,
   );
-}
-
-/** A key's name where it is spelled out, which is every form but a computed one (`{ [k]: v }`). */
-function propertyKey(name: ts.PropertyName): string | undefined {
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : undefined;
 }
 
 /**
@@ -237,6 +252,162 @@ function addRelationEntity(decorator: ts.Decorator, node: ts.PropertyDeclaration
       return target && `() => ${target}`;
     },
   });
+}
+
+/**
+ * Writes the edit `rewrite` reads off `value`, which still names members as strings, or reports it
+ * where it could not be read: what it holds is only known at runtime. A callback or an object literal
+ * is already the new form, and kept.
+ */
+function rewriteValue(
+  value: ts.Expression | undefined,
+  rewrite: (value: ts.Expression) => Edit | undefined,
+  node: ts.Node,
+  advice: string,
+  ctx: Context,
+): void {
+  if (!value || isCallback(value) || ts.isObjectLiteralExpression(value)) {
+    return;
+  }
+  const edit = rewrite(value);
+  if (edit) {
+    ctx.edits.push(edit);
+  } else {
+    ctx.unresolved.push(`${ctx.describe(node)}: ${advice}; this one could not be read`);
+  }
+}
+
+function rewriteKeyList(
+  value: ts.Expression | undefined,
+  param: string,
+  node: ts.Node,
+  what: string,
+  ctx: Context,
+): void {
+  rewriteValue(value, (list) => keyListEdit(list, param), node, `write ${what} as a key-map callback`, ctx);
+}
+
+/**
+ * Rewrites what a class decorator names by string - `@Index` columns and `include`, and `@Entity`'s
+ * `indexes`, `hooks` and `relations` - into key-map callbacks named after the class.
+ */
+function rewriteClassDecorators(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context): void {
+  const param = paramFor(node.name?.text);
+  for (const decorator of decoratorsOf(node)) {
+    if (!ts.isCallExpression(decorator.expression)) {
+      continue;
+    }
+    const [first, second] = decorator.expression.arguments;
+    const name = decoratorName(decorator);
+    if (name === 'Index') {
+      rewriteKeyList(first, param, decorator, "'@Index' columns", ctx);
+      if (second && ts.isObjectLiteralExpression(second)) {
+        rewriteKeyList(propertyValue(second, 'include'), param, decorator, "'include'", ctx);
+      }
+    } else if (name === 'Entity' && first && ts.isObjectLiteralExpression(first)) {
+      rewriteEntityOptions(first, param, ctx);
+    }
+  }
+}
+
+/**
+ * Rewrites what the imperative API names by string - `defineEntity(Post, { indexes, hooks, relations })`,
+ * `defineIndex(Post, { columns, include })` and `defineRelation(Post, 'tag', { mappedBy, references })` -
+ * into key-map callbacks. Only uql's shapes, a class and a literal options object, are read.
+ */
+function rewriteDefineCall(call: ts.CallExpression, ctx: Context): void {
+  const name = ts.isIdentifier(call.expression) ? call.expression.text : undefined;
+  const [entity, second, third] = call.arguments;
+  const param = paramFor(entity && ts.isIdentifier(entity) ? entity.text : undefined);
+  if (name === 'defineEntity' && second && ts.isObjectLiteralExpression(second)) {
+    rewriteEntityOptions(second, param, ctx);
+  } else if (name === 'defineIndex' && second && ts.isObjectLiteralExpression(second)) {
+    rewriteIndexOptions(second, param, ctx);
+  } else if (name === 'defineRelation' && third && ts.isObjectLiteralExpression(third)) {
+    rewriteRelationOptions(third, param, ctx);
+  }
+}
+
+function rewriteEntityOptions(options: ts.ObjectLiteralExpression, param: string, ctx: Context): void {
+  const indexes = propertyValue(options, 'indexes');
+  for (const index of indexes && ts.isArrayLiteralExpression(indexes) ? indexes.elements : []) {
+    if (ts.isObjectLiteralExpression(index)) {
+      rewriteIndexOptions(index, param, ctx);
+    }
+  }
+  for (const hook of objectProperties(propertyValue(options, 'hooks'))) {
+    rewriteKeyList(hook.initializer, param, hook, 'a hook list', ctx);
+  }
+  for (const relation of objectProperties(propertyValue(options, 'relations'))) {
+    if (ts.isObjectLiteralExpression(relation.initializer)) {
+      rewriteRelationOptions(relation.initializer, param, ctx);
+    }
+  }
+}
+
+function rewriteIndexOptions(index: ts.ObjectLiteralExpression, param: string, ctx: Context): void {
+  rewriteKeyList(propertyValue(index, 'columns'), param, index, "'columns'", ctx);
+  rewriteKeyList(propertyValue(index, 'include'), param, index, "'include'", ctx);
+}
+
+/**
+ * `owner` is the declaring class's parameter and `target` the related one's, read off the `entity`
+ * getter unless the caller knows it from the property's type.
+ */
+function rewriteRelationOptions(
+  relation: ts.ObjectLiteralExpression,
+  owner: string,
+  ctx: Context,
+  target = paramFor(entityGetterTarget(relation)),
+): void {
+  const advice = (what: string) => `write '${what}' as a key-map callback`;
+  const mappedBy = (value: ts.Expression) => mappedByEdit(value, target);
+  const references = (value: ts.Expression) => referencesEdit(value, owner, target);
+  rewriteValue(propertyValue(relation, 'mappedBy'), mappedBy, relation, advice('mappedBy'), ctx);
+  rewriteValue(propertyValue(relation, 'references'), references, relation, advice('references'), ctx);
+}
+
+/**
+ * Rewrites what a statement names by string into keys: an aggregate's `$agg: { total: { $sum: 'amount' } }`
+ * into `$select: { total: { $sum: { amount: true } } }`, and `$text`'s `$fields: ['title']` into
+ * `{ title: true }`. Both keys are uql's own, so they are read wherever a literal holds them.
+ */
+function rewriteStatementKeys(node: ts.PropertyAssignment, ctx: Context): void {
+  const key = propertyKey(node.name);
+  if (key === '$agg') {
+    rewriteAggregate(node, ctx);
+  } else if (key === '$fields' && isTextSearch(node.parent)) {
+    rewriteValue(node.initializer, fieldKeysEdit, node, "write '$fields' as { field: true }", ctx);
+  }
+}
+
+function isTextSearch(node: ts.Node): boolean {
+  return (
+    ts.isObjectLiteralExpression(node) &&
+    ts.isPropertyAssignment(node.parent) &&
+    propertyKey(node.parent.name) === '$text'
+  );
+}
+
+function rewriteAggregate(agg: ts.PropertyAssignment, ctx: Context): void {
+  if (ts.isObjectLiteralExpression(agg.parent) && propertyValue(agg.parent, '$select')) {
+    ctx.unresolved.push(`${ctx.describe(agg)}: merge '$agg' into the '$select' beside it`);
+    return;
+  }
+  ctx.edits.push(replaced(agg.name, '$select'));
+  for (const fn of objectProperties(agg.initializer)) {
+    for (const op of objectProperties(fn.initializer)) {
+      const isStar = ts.isStringLiteralLike(op.initializer) && op.initializer.text === '*';
+      if (!isStar) {
+        rewriteValue(op.initializer, fieldKeysEdit, op, `write '${op.name.getText()}' as { field: true }`, ctx);
+      }
+    }
+  }
+}
+
+/** The property assignments of an object literal, or none where `node` is not one. */
+function objectProperties(node: ts.Expression | undefined): readonly ts.PropertyAssignment[] {
+  return node && ts.isObjectLiteralExpression(node) ? node.properties.filter(ts.isPropertyAssignment) : [];
 }
 
 /**
@@ -413,8 +584,14 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
       addFieldType(decorator, node, ctx);
       renameVirtualOption(decorator, node, ctx);
     }
+    const options = decoratorOptions(decorator);
     if (RELATION_DECORATORS.has(name)) {
       addRelationEntity(decorator, node, ctx);
+    }
+    if (RELATION_DECORATORS.has(name) && options.kind === 'literal') {
+      const owner = ts.isClassLike(node.parent) ? node.parent.name?.text : undefined;
+      const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
+      rewriteRelationOptions(options.node, paramFor(owner), ctx, paramFor(target));
     }
   }
   if (decorators.length) {
@@ -443,6 +620,45 @@ function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
       ctx.unresolved.push(`${ctx.describe(element)}: '${name}' was removed; ${advice}`);
     }
   }
+}
+
+/**
+ * Renames each import of a {@link RENAMED_EXPORTS} name and every use of it in the file. An aliased
+ * import only changes the name it imports; one whose new name the file already imports is dropped.
+ */
+function renameExports(source: ts.SourceFile, ctx: Context): void {
+  const imported = uqlImports(source);
+  for (const element of imported) {
+    const renamed = RENAMED_EXPORTS.get(importedName(element));
+    if (!renamed) {
+      continue;
+    }
+    if (element.propertyName) {
+      ctx.edits.push(replaced(element.propertyName, renamed));
+      continue;
+    }
+    ctx.edits.push(...usesOf(source, element.name, ctx.checker).map((use) => replaced(use, renamed)));
+    const duplicate = imported.some((other) => other.name.text === renamed);
+    ctx.edits.push(
+      duplicate ? removeFromList(element.parent.elements, element, source) : replaced(element.name, renamed),
+    );
+  }
+}
+
+/** Every identifier in the file bound to the same symbol as `name`, besides `name` itself. */
+function usesOf(source: ts.SourceFile, name: ts.Identifier, checker: ts.TypeChecker): ts.Identifier[] {
+  const symbol = checker.getSymbolAtLocation(name);
+  const uses: ts.Identifier[] = [];
+  const visit = (node: ts.Node): void => {
+    if (ts.isIdentifier(node) && node !== name && node.text === name.text) {
+      if (symbol && checker.getSymbolAtLocation(node) === symbol) {
+        uses.push(node);
+      }
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return uses;
 }
 
 /**
@@ -521,10 +737,18 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     }
     if (ts.isClassDeclaration(node) || ts.isClassExpression(node)) {
       branded = brandIdKey(node, ctx) || branded;
+      rewriteClassDecorators(node, ctx);
+    }
+    if (ts.isCallExpression(node)) {
+      rewriteDefineCall(node, ctx);
+    }
+    if (ts.isPropertyAssignment(node)) {
+      rewriteStatementKeys(node, ctx);
     }
     ts.forEachChild(node, visit);
   };
   visit(source);
+  renameExports(source, ctx);
   reportRemovedExports(source, ctx);
   dropDeadImports(source, ctx);
   if (branded) {

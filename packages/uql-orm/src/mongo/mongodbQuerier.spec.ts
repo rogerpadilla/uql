@@ -7,7 +7,7 @@ import { MongodbQuerier } from './mongodbQuerier.js';
 
 // --- Test entity ---
 @Entity({ name: 'Article' })
-@Index(['embedding'], { type: 'vectorSearch', name: 'embedding_vs' })
+@Index((article) => [article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })
 class Article {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
@@ -39,7 +39,7 @@ class SoftDoc {
 
 /** An entity that is both vector-searchable and has a relation, for the combined case. */
 @Entity({ name: 'Chunk' })
-@Index(['embedding'], { type: 'vectorSearch', name: 'chunk_vs' })
+@Index((chunk) => [chunk.embedding], { type: 'vectorSearch', name: 'chunk_vs' })
 class Chunk {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) text?: string;

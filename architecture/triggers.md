@@ -33,27 +33,27 @@ A generated column cannot hold `now()`, and none can aggregate across a relation
 @Field({ computed: { resources: { $count: '*' } }, stored: true })  // AFTER trigger on the child
 ```
 
-`stored` is one dial across both halves - the roadmap already promises exactly that for generated columns, _"a dial you flip after profiling without touching a call site"_, and this is the same promise over aggregates. `$select`/`$where`/`$sort` behave the same either way and the result type is unchanged, so flipping it edits no call site.
+`stored` is one dial across both halves, the promise generated columns already keep: `$select`/`$where`/`$sort` behave the same either way and the result type is unchanged, so flipping it edits no call site.
 
 `on` is what selects a trigger, so nothing infers immutability: UQL cannot know whether a user's `raw` is immutable, and learning it from a rejected migration is a bad error. Naming _when_ a value is stamped is only meaningful for a trigger, and it is information the author has anyway.
 
-`computed` replaces `virtual`, which is deprecated rather than removed, following the one precedent in the tree - the string form of `raw`, which pairs a `@deprecated` tag naming the replacement with a pointer at the codemod. Both keys live for one release and giving both throws rather than guessing. The rename is what makes `stored: true` stop reading as a contradiction, and renaming a key inside a decorator options object needs none of the type-checker inference `uql-codemod` already does for `type`.
+`computed` replaced `virtual`, gone since 0.54.0: the rename is what lets `stored: true` read as a dial rather than a contradiction.
 
 ## The maintained aggregate
 
 The stored arm over a relation. The aggregate points at a relation that already exists, and the operator says what is maintained:
 
 ```ts
-@OneToMany({ entity: () => Resource, mappedBy: (r) => r.creatorId })
+@OneToMany({ entity: () => Resource, mappedBy: (resource) => resource.creatorId })
 resources?: Resource[];
 
 @Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
-@Field({ computed: { items: { $sum: 'amount' } }, stored: true })         orderTotal?: number;
+@Field({ computed: { items: { $sum: { amount: true } } }, stored: true })         orderTotal?: number;
 @Field({ computed: { resources: { $countInserts: '*' } }, stored: true }) resourceCreatedCount?: number;
 @Field({ computed: { resources: { $count: '*' }, $where: { isArchived: false } }, stored: true }) activeCount?: number;
 ```
 
-`$count` and `$sum` are `QueryAggregateOp` verbatim, and the shape is `$agg`'s inner shape with the relation standing where the alias does.
+`$count` and `$sum` are `QueryAggregateOp` verbatim, and the shape is an aggregate `$select` entry's inner shape with the relation standing where the alias does.
 
 UQL derives from it the trigger, its function, `updatable: false` and `NOT NULL DEFAULT 0` on the column, the backfill in the generated migration, and the resync.
 
@@ -75,7 +75,7 @@ An aggregate is maintainable by a trigger only if a row change becomes a delta.
 
 The same line `pg_ivm` draws. An operator outside the shipping rows is refused at registration, naming the operator and the reason.
 
-`$countInserts` is the one operator `$agg` does not have, because it is not a query aggregate: it tallies INSERT events, so it has no delete branch, no backfill and no resync, and drift on one is permanent. It sits beside `$count` on purpose - the place to make two things impossible to confuse is where the author picks between them. The case study's repair migration overwrote a lifetime tally with a live count.
+`$countInserts` is the one operator an aggregate's `$select` does not have, because it is not a query aggregate: it tallies INSERT events, so it has no delete branch, no backfill and no resync, and drift on one is permanent. It sits beside `$count` on purpose - the place to make two things impossible to confuse is where the author picks between them. The case study's repair migration overwrote a lifetime tally with a live count.
 
 ### How the body is derived
 
@@ -150,17 +150,11 @@ The plpgsql function is generated beside the trigger and dropped with it, becaus
 
 ## Typing
 
-The relation name is checked at compile time. A member decorator gets no reference to its class and `MemberDecorator<V>` pins the context's `This` to `unknown`, but `ClassFieldDecoratorContext<This, Value>` does carry `This`, inferred where the decorator is _applied_. Constraining the options object cannot work, since `Field(opts)` is a call resolved before that, so the check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying a relation `computed` pays for it. Ungated it costs every decorated field about 41 extra instantiations; gated, four. Verified against self-references, inherited fields and forward references, none circular.
+The relation name is checked at compile time. `Field(opts)` resolves before it knows its class, but `ClassFieldDecoratorContext<This, Value>` carries `This`, inferred where the decorator is applied: the relation decorators already read their declaring class that way for `references`. The check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying a relation `computed` pays for it: ungated, about 41 extra instantiations on every decorated field; gated, four. Verified against self-references, inherited fields and forward references, none circular.
 
-## What `computed` costs in the existing code
+## What the trigger arms add to the existing code
 
-The option-compatibility machinery shipped since this design was written, and it already holds the shape this needs. `FIELD_OPTION_FAMILY` in `util/fieldOption.util.ts` is `satisfies Record<keyof FieldOptions, ...>`, so `computed`, `stored` and `on` cannot be added without placing each one - the same discipline `INDEX_FEATURE_LABELS` uses.
-
-The real cost is one shipped rule turning conditional. `VIRTUAL_READS` lists the five options a `virtual` field reaches, and `deadOn` rejects the other nineteen because _"it is skipped in DDL and dropped from every insert and update, so the whole persistence half of the options above is dead on one."_ That is true of an unstored `computed` and false of a stored one, which is a real column with DDL, a default, an index and a comment. So the rule gains a `stored` branch, in `deadOn` and in its type mirror `DeadOptions<O>`.
-
-That branch is not a cost this unification introduces: the roadmap already proposed `virtual + stored: true`, so it arrives with generated columns either way. What this adds is two more arms to it.
-
-`schemaASTBuilder.ts` skips `virtual` fields in DDL; a stored one must not be skipped. The three read sites in `abstractSqlDialect.ts` - projection, `$where` operand, `ORDER BY` - keep inlining the unstored arm and read a plain column for the stored one.
+The generated-column arm already made the option rules conditional: `FIELD_OPTION_FAMILY` (`util/fieldOption.util.ts`) is `satisfies Record<keyof FieldOptions, ...>`, and `deadOn` treats a stored `computed` as the real column it is. `on` has to be placed there too, and a stored aggregate reads and migrates like a stored generated column, so the new work is the trigger itself.
 
 ## Not in this release
 

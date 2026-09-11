@@ -221,10 +221,10 @@ export type EntityData<E> = Pick<E, FieldKey<E> | RelationKey<E>>;
  * accept `QueryRaw` or `JsonUpdateOp` (for JSON fields), which gives IDE autocomplete for
  * `$set`/`$push`/`$pull` keys via `Json<infer T>`.
  */
-export type UpdatePayload<E> = {
-  [K in FieldKey<E>]?: UpdateFieldValue<E[K]>;
+export type UpdatePayload<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
+  [K in F]?: UpdateFieldValue<E[K]>;
 } & {
-  [K in RelationKey<E>]?: E[K];
+  [K in R]?: E[K];
 };
 
 /**
@@ -269,7 +269,7 @@ export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdK
 export type IdValue<E> = E[IdKey<E>];
 
 /** Every column of a key, which is how a composite row is named and what a `$where` reduces to. */
-type IdMap<E> = { [K in IdKey<E>]?: E[K] };
+type IdMap<E> = Partial<Pick<E, IdKey<E>>>;
 
 /**
  * How a row is addressed by its primary key: the value for a single key, an object carrying every
@@ -626,18 +626,28 @@ export type FieldOptionsFor<V> =
  * The entity a relation field points at: `Company` for both `company?: Company` and
  * `companies?: Company[]`.
  */
-export type RelationTarget<V> = NonNullable<Unpacked<NonNullable<V>>>;
+export type RelationTarget<V> = Extract<Unpacked<V>, object>;
 
 /**
  * {@link RelationOptions} for a relation field declared as `V`, with `entity` required and pinned to
  * `V`'s own type, and the cardinality restricted to the ones that field shape can hold. Together those
  * reject `@ManyToOne({ entity: () => Other })` on a `Company` field, and any to-many cardinality on a
- * field that is not an array. An array field additionally needs a {@link RelationJoin}.
+ * field that is not an array. A to-many additionally needs a {@link RelationJoin}.
+ *
+ * The join is required through the `cardinality` written rather than through `IsMany<V>`: a conditional
+ * member of the intersection leaves a `mappedBy` callback without a contextual type inside a generic
+ * call (`defineEntity`), where a union keyed on a property does not.
  */
-export type RelationOptionsFor<V> = Omit<RelationOptions<RelationTarget<V>>, 'entity' | 'cardinality'> & {
+export type RelationOptionsFor<V, O = unknown> = Omit<
+  RelationOptions<RelationTarget<V>, O>,
+  'entity' | 'cardinality'
+> & {
   readonly entity: EntityGetter<RelationTarget<V>>;
   readonly cardinality: IsMany<V> extends true ? '1m' | 'mm' : '11' | 'm1';
-} & (IsMany<V> extends true ? RelationJoin<RelationTarget<V>> : unknown);
+} & (
+    | ({ readonly cardinality: '1m' | 'mm' } & RelationJoin<RelationTarget<V>, O>)
+    | { readonly cardinality: '11' | 'm1' }
+  );
 
 /**
  * The method names of an entity, so hook registrations name a method that exists.
@@ -655,13 +665,15 @@ export type MethodKey<E> = {
  * entity graph almost always has. Nothing about the standard decorator spec changes that; it only removed
  * the reflected `design:type` that used to make `entity` optional.
  */
-// oxlint-disable-next-line typescript/no-explicit-any -- public generic default - changing would break callers
-export type EntityGetter<E = any> = () => Type<E>;
+export type EntityGetter<E = object> = () => Type<E>;
 
 export type CascadeType = 'persist' | 'delete';
 
-// oxlint-disable-next-line typescript/no-explicit-any -- public generic default - changing would break callers
-export type RelationOptions<E = any> = {
+/**
+ * `E` is the relation's target and `O` the entity declaring it, whose fields `references` names on its
+ * `local` side; the relation decorators infer `O` from the class they sit on.
+ */
+export type RelationOptions<E, O = unknown> = {
   entity: EntityGetter<E>;
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
@@ -674,14 +686,23 @@ export type RelationOptions<E = any> = {
    */
   readonly onDelete?: ForeignKeyAction;
   readonly onUpdate?: ForeignKeyAction;
-  mappedBy?: RelationMappedBy<E>;
+  /** The inverse side: the member of the target holding the foreign key or the owning relation, `(post) => post.author`. */
+  mappedBy?: (keys: KeyMap<E>) => Key<E>;
   /**
    * The pivot entity of a many-to-many. Unconstrained by `E`: a pivot holds foreign keys to both
    * sides and is not a relation value of the target, so nothing about it is derivable from `E`.
    */
   through?: EntityGetter;
-  references?: RelationReferences;
+  /**
+   * The join columns where no convention fits: each pairs a field of the declaring entity with one of
+   * the target, `(order, customer) => [{ local: order.customerCode, foreign: customer.code }]`. A
+   * `through` relation takes none: its junction's columns follow the convention.
+   */
+  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
 };
+
+/** One pair of join columns, each a field read off its entity's key map. */
+export type RelationReference<O, E> = { readonly local: FieldKey<O>; readonly foreign: FieldKey<E> };
 
 /**
  * A relation once `getMeta` has resolved it: `references` is filled in and `mappedBy` is the key its
@@ -694,59 +715,60 @@ export type RelationOptions<E = any> = {
  * from "declared, but an inverse side too, so neither owns the foreign key" needs the unresolved shape
  * still there to find. A phase-split metadata map costs more than the call parentheses it saves.
  */
-// oxlint-disable-next-line typescript/no-explicit-any -- mirrors RelationOptions' public generic default
-export type RelationMeta<E = any> = Omit<RelationOptions<E>, 'mappedBy' | 'references'> & {
-  mappedBy?: Key<E>;
-  references: RelationReferences;
+export type RelationMeta = RelationRegistration & { references: RelationReferences };
+
+/**
+ * A relation as the registry takes it, whichever entity it targets: `mappedBy` and `references` read
+ * off their key maps down to the names they give, `references` unset until `getMeta` settles it.
+ */
+export type RelationRegistration = Omit<RelationOptions<object>, 'mappedBy' | 'references'> & {
+  mappedBy?: string;
+  references?: RelationReferences;
 };
 
-/** How a to-many owner reaches its children: a junction entity, or the join columns by name. */
-type RelationOwnerJoin<E> =
-  | Required<Pick<RelationOptions<E>, 'through'>>
-  | Required<Pick<RelationOptions<E>, 'references'>>;
+/** How a to-many owner reaches its children: a junction entity or the join columns, never both. */
+type RelationOwnerJoin<E, O> =
+  | (Required<Pick<RelationOptions<E, O>, 'through'>> & { readonly references?: never })
+  | (Required<Pick<RelationOptions<E, O>, 'references'>> & { readonly through?: never });
 
 /**
  * Every way a to-many can say where its rows are. Required because nothing about the field implies it:
  * without one of the three, resolution has no columns to join on and throws.
  */
-type RelationJoin<E> = RelationOwnerJoin<E> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
+type RelationJoin<E, O> = RelationOwnerJoin<E, O> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
 
 // `onDelete`/`onUpdate` only here: the owning side is the one that holds the foreign key, so the inverse
 // side (`mappedBy`) has no constraint to attach an action to.
-type RelationOptionsOwner<E> = Pick<RelationOptions<E>, 'entity' | 'references' | 'cascade' | 'onDelete' | 'onUpdate'>;
+type RelationOptionsOwner<E, O> = Pick<
+  RelationOptions<E, O>,
+  'entity' | 'references' | 'cascade' | 'onDelete' | 'onUpdate'
+>;
 type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> &
   Required<Pick<RelationOptions<E>, 'mappedBy'>>;
-type RelationOptionsThroughOwner<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> & RelationOwnerJoin<E>;
+type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> & RelationOwnerJoin<E, O>;
 
 /**
- * The key names of `E` as values, so `mappedBy` can be written as `(user) => user.company` instead of
- * a string literal and survive a rename.
- *
- * Mapping over `Key<E>` rather than `keyof E` is what makes the callback usable: a homomorphic
- * `[K in keyof E]` inherits the entity's optional modifiers, so `user.company` is
- * `'company' | undefined` and {@link RelationKeyMapper} rejects it - every callback needed a `!`.
- *
- * At runtime a callback only ever reads one property off the map, so a single `Proxy` returning its
- * own key stands in for every entity's: see `RELATION_KEY_MAP`. A key that names neither a field nor
- * a relation of the target is rejected when the entity resolves.
+ * The key names of `E` as values, so a definition reads a member off it - `(post) => post.author` -
+ * and follows a rename. Homomorphic in `E`, which is what keeps that link, and `-?` so an optional
+ * member still names itself. At runtime one `Proxy` answering its own key serves every entity.
  */
-export type RelationKeyMap<E> = { readonly [K in Key<E>]: K };
-
-export type RelationKeyMapper<E> = (keyMap: RelationKeyMap<E>) => Key<E>;
+export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 
 export type RelationReferences = { readonly local: string; readonly foreign: string }[];
 
-export type RelationMappedBy<E> = Key<E> | RelationKeyMapper<E>;
-
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
-export type RelationOneToOneOptions<E> = RelationOptionsOwner<E> | RelationOptionsInverseSide<E>;
+export type RelationOneToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O> | RelationOptionsInverseSide<E>;
 
-export type RelationOneToManyOptions<E> = RelationOptionsInverseSide<E> | RelationOptionsThroughOwner<E>;
+export type RelationOneToManyOptions<E, O = unknown> =
+  | RelationOptionsInverseSide<E>
+  | RelationOptionsThroughOwner<E, O>;
 
-export type RelationManyToOneOptions<E> = RelationOptionsOwner<E>;
+export type RelationManyToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O>;
 
-export type RelationManyToManyOptions<E> = RelationOptionsThroughOwner<E> | RelationOptionsInverseSide<E>;
+export type RelationManyToManyOptions<E, O = unknown> =
+  | RelationOptionsThroughOwner<E, O>
+  | RelationOptionsInverseSide<E>;
 
 /**
  * Lifecycle hook event names.
@@ -795,10 +817,10 @@ export type IndexTypeOptions =
  *
  * @example
  * ```ts
- * @Index(['tenantId', { column: 'createdAt', order: 'desc' }])   // keyset pagination
- * @Index([raw`lower("email")`], { unique: true })                // case-insensitive uniqueness
- * @Index([{ column: 'body', length: 64 }])                       // MySQL needs a prefix on TEXT
- * @Index(['data'], { type: 'gin' })                              // JSONB containment
+ * @Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }]) // keyset pagination
+ * @Index(() => [raw`lower("email")`], { unique: true })                      // case-insensitive uniqueness
+ * @Index((post) => [{ column: post.body, length: 64 }])                       // MySQL needs a prefix on TEXT
+ * @Index((post) => [post.data], { type: 'gin' })                              // JSONB containment
  * ```
  *
  * `C` is the entity's `FieldKey` on the `@Index`/`defineEntity` paths, where the decorated class says
@@ -893,8 +915,8 @@ export type IndexColumnModifiers = {
  *
  * @example
  * ```ts
- * @Index([{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }]) // 'kind.theme.color': 'red'
- * @Index([{ column: 'kind', jsonPath: { path: 'rating', type: Number } }])      // 'kind.rating': { $gte: 4 }
+ * @Index((user) => [{ column: user.kind, jsonPath: { path: 'theme.color', type: String } }]) // 'kind.theme.color': 'red'
+ * @Index((user) => [{ column: user.kind, jsonPath: { path: 'rating', type: Number } }])      // 'kind.rating': { $gte: 4 }
  * ```
  */
 export type IndexJsonPath = {
@@ -914,8 +936,8 @@ export type IndexJsonPath = {
  *
  * @example
  * ```ts
- * @Index([{ column: 'tags', jsonArray: { type: String, length: 64 } }]) // tags: { $all: [...] }
- * @Index([{ column: 'kind', jsonArray: { path: 'ids', type: Number } }]) // 'kind.ids': { $all: [...] }
+ * @Index((user) => [{ column: user.tags, jsonArray: { type: String, length: 64 } }]) // tags: { $all: [...] }
+ * @Index((user) => [{ column: user.kind, jsonArray: { path: 'ids', type: Number } }]) // 'kind.ids': { $all: [...] }
  * ```
  */
 export type IndexJsonArray = {
@@ -933,6 +955,10 @@ type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'json
 export type IndexColumnOptions<C extends string = string> = IndexColumnPlainModifiers & {
   /** The column to index, or `raw(...)` for an expression. */
   readonly column: C | QueryRaw;
+  // A JSON entry is its own shape, checked against its column's payload; without these a callback's
+  // entry would also satisfy this one, and the path would go unchecked.
+  readonly jsonPath?: never;
+  readonly jsonArray?: never;
 };
 
 /**
@@ -1023,9 +1049,19 @@ export type CheckOptions = {
  */
 export type EntityMembers = {
   readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
-  readonly relations?: Readonly<Record<string, RelationOptions | undefined>>;
+  readonly relations?: Readonly<Record<string, RelationRegistration | undefined>>;
   readonly hooks?: Readonly<Partial<Record<HookEvent, readonly string[]>>>;
 };
+
+/** An entity's fields as `defineEntity` takes them, keyed like every entity map (see `QuerySelect`). */
+type EntityFieldOptions<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]?: FieldOptionsFor<E[K]> };
+
+/**
+ * An entity's relations as `defineEntity` takes them. Keyed over every member rather than `RelationKey<E>`:
+ * inside the generic call, only a map over `keyof E` gives a `mappedBy` callback its contextual type. A
+ * field named here still fails, on its options, since its value is no entity.
+ */
+type EntityRelationOptions<E> = { readonly [K in keyof E]?: RelationOptionsFor<E[K], E> };
 
 /**
  * Configurable options for an entity (`@Entity()` / `defineEntity`).
@@ -1043,23 +1079,23 @@ export type EntityOptions<E = unknown> = {
   /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
   readonly filters?: Record<string, FilterOptions<E>>;
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
-  readonly fields?: { readonly [K in FieldKey<E>]?: FieldOptionsFor<E[K]> };
-  readonly relations?: { readonly [K in RelationKey<E>]?: RelationOptionsFor<E[K]> };
-  readonly indexes?: readonly EntityIndexInput<FieldKey<E>, E>[];
+  readonly fields?: EntityFieldOptions<E>;
+  readonly relations?: EntityRelationOptions<E>;
+  readonly indexes?: readonly EntityIndexInput<E>[];
   /** Table-level `CHECK` constraints. See {@link CheckOptions}. */
   readonly checks?: readonly CheckOptions[];
-  /** Map hook events to method names on the entity class. */
-  readonly hooks?: Partial<Record<HookEvent, readonly MethodKey<E>[]>>;
+  /** Each lifecycle event and the methods it runs, read off the key map: `{ beforeInsert: (post) => [post.stamp] }`. */
+  readonly hooks?: Partial<Record<HookEvent, (keys: KeyMap<E>) => readonly MethodKey<E>[]>>;
 };
 
 /**
- * Everything an index carries beyond its columns, shared by `@Index`, `defineEntity` and the
- * migration builder's `table.index(...)`. `Except` (not plain `Omit`) keeps `type`/`distance` a
- * discriminated pair: omitting `distance` on a vector index type is a compile error.
+ * Everything an index carries beyond its columns, as the migration builder's `table.index(...)` takes it,
+ * and through {@link EntityIndexOptions} `@Index` and `defineEntity`. `Except` (not plain `Omit`) keeps
+ * `type`/`distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions<E = unknown> = Except<EntityIndexMeta, 'columns' | 'include' | 'where'> & {
-  /** Non-key columns stored in the index; a typo builds nothing, the server refusing the statement. */
-  readonly include?: readonly IndexFieldKey<E>[];
+export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'include' | 'where'> & {
+  /** Non-key columns stored in the index, by column name; a typo builds nothing, the server refusing it. */
+  readonly include?: readonly string[];
   /**
    * Partial-index predicate. `raw` with no interpolation, like an index expression: this is DDL, so
    * there is no placeholder for a bound value. A bare string is the older spelling and still works.
@@ -1067,12 +1103,19 @@ export type IndexOptions<E = unknown> = Except<EntityIndexMeta, 'columns' | 'inc
   readonly where?: string | QueryRaw;
 };
 
-/** A field of `E`, or any name where there is no entity to check it against - the migration builder. */
-type IndexFieldKey<E> = unknown extends E ? string : FieldKey<E>;
+/**
+ * {@link IndexOptions} on an entity, whose stored columns are read off its key map, `(post) => [post.slug]`,
+ * so they are checked against it and follow a rename. The migration builder names raw columns instead.
+ */
+export type EntityIndexOptions<E> = Except<IndexOptions, 'include'> & {
+  readonly include?: (keys: KeyMap<E>) => readonly FieldKey<E>[];
+};
 
 /**
- * An index as authored, before `defineIndex` normalizes its columns.
+ * An index as authored on an entity, before `defineIndex` reads its columns off the key map. Only the
+ * member lists are callbacks: TypeScript never checks a callback's returned literal for excess properties,
+ * so the options stay a literal of their own, where `uniqe: true` is a compile error.
  */
-export type EntityIndexInput<C extends string = string, E = unknown> = IndexOptions<E> & {
-  readonly columns: readonly IndexColumnInput<C, E>[];
+export type EntityIndexInput<E> = EntityIndexOptions<E> & {
+  readonly columns: (keys: KeyMap<E>) => readonly IndexColumnInput<FieldKey<E>, E>[];
 };

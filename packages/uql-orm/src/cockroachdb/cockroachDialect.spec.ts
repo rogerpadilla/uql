@@ -93,7 +93,7 @@ class CockroachDialectSpec extends PgFamilySpec {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, Item, {
       $select: { id: true },
-      $where: { $text: { $fields: ['name', 'description'], $value: 'some text' } },
+      $where: { $text: { $fields: { name: true, description: true }, $value: 'some text' } },
     });
     expect(ctx.sql).toBe(
       'SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || \' \' || "description") @@ WEBSEARCH_TO_TSQUERY($1)',

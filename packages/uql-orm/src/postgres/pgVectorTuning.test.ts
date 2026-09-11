@@ -6,7 +6,7 @@ import { PgQuerierPool } from './pgQuerierPool.js';
 
 const TABLE = 'pg_vector_tuning';
 
-@Index(['vec'], { type: 'hnsw', distance: 'cosine', name: 'ix_pg_tuning_vec' })
+@Index((tunedItem) => [tunedItem.vec], { type: 'hnsw', distance: 'cosine', name: 'ix_pg_tuning_vec' })
 @Entity({ name: TABLE })
 class TunedItem {
   @Id({ type: Number }) id?: number;

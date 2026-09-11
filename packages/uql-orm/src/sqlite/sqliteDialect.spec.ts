@@ -160,7 +160,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   /** With no `$fields`, the FTS5 column filter names the columns of the fulltext index the entity declares. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity()
-    @Index(['name', 'description'], { type: 'fulltext' })
+    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
       @Field({ type: String }) name?: string;
@@ -202,7 +202,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, companyId: '1' },
+        $where: { $text: { $fields: { name: true, description: true }, $value: 'some text' }, companyId: '1' },
         $limit: 30,
       }),
     );
@@ -215,7 +215,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.find(ctx, User, {
         $select: { id: 1 },
         $where: {
-          $text: { $fields: ['name'], $value: 'something' },
+          $text: { $fields: { name: true }, $value: 'something' },
           name: { $ne: 'other unwanted' },
           companyId: '1',
         },

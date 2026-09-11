@@ -37,17 +37,23 @@ export class Employee {
   // @ts-expect-error `@ManyToOne` targets `Company`; the property must hold a `Company`, not a string
   @ManyToOne({ entity: () => Company }) badCompany?: string;
 
-  @OneToOne({ entity: () => Company, mappedBy: 'id' }) sameSizedCompany?: Company;
+  @OneToOne({ entity: () => Company, mappedBy: (company) => company.id }) sameSizedCompany?: Company;
   // @ts-expect-error a to-one cardinality cannot land on an array-typed property
-  @OneToOne({ entity: () => Company, mappedBy: 'id' }) badOneToOne?: Company[];
+  @OneToOne({ entity: () => Company, mappedBy: (company) => company.id }) badOneToOne?: Company[];
 
   @OneToMany({ entity: () => Project, mappedBy: (project) => project.owner }) projects?: Project[];
   // @ts-expect-error a to-many cardinality needs an array-typed property
-  @OneToMany({ entity: () => Project, mappedBy: 'owner' }) badProjects?: Project;
+  @OneToMany({ entity: () => Project, mappedBy: (project) => project.owner }) badProjects?: Project;
 
-  @ManyToMany({ entity: () => Project, references: [{ local: 'employeeId', foreign: 'projectId' }] })
+  @ManyToMany({
+    entity: () => Project,
+    references: (employee, project) => [{ local: employee.id, foreign: project.ownerId }],
+  })
   sharedProjects?: Project[];
   // @ts-expect-error `@ManyToMany` targets `Project`; the property cannot hold `Unrelated[]`
-  @ManyToMany({ entity: () => Project, references: [{ local: 'employeeId', foreign: 'projectId' }] })
+  @ManyToMany({
+    entity: () => Project,
+    references: (employee, project) => [{ local: employee.id, foreign: project.ownerId }],
+  })
   badSharedProjects?: Unrelated[];
 }

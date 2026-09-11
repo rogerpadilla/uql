@@ -123,7 +123,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   /** The entity side as an AST, carrying this generator's default referential action. */
-  buildAST(entities: readonly Type<unknown>[]): SchemaAST {
+  buildAST(entities: readonly Type<object>[]): SchemaAST {
     return buildEntityAST(this, entities, this.defaultForeignKeyAction);
   }
 
@@ -136,7 +136,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * then `createForeignKeys()`). SQLite is the exception and keeps them inline: it cannot `ALTER` a
    * foreign key in, but it resolves targets lazily, so a forward reference is fine there.
    */
-  generateCreateSchema(entities: readonly Type<unknown>[], options: CreateSchemaOptions = {}): string[] {
+  generateCreateSchema(entities: readonly Type<object>[], options: CreateSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'create', options.only);
     const withForeignKeys = options.foreignKeys ?? true;
     // Inline only where a constraint cannot be added afterwards, which is what makes the cyclic case
@@ -177,7 +177,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return [...new Set(named)].map((schema) => this.dialect.createSchemaSql(schema));
   }
 
-  generateDropSchema(entities: readonly Type<unknown>[], options: DropSchemaOptions = {}): string[] {
+  generateDropSchema(entities: readonly Type<object>[], options: DropSchemaOptions = {}): string[] {
     return this.orderedTables(entities, 'drop').map((table) =>
       this.generateDropTable(qualifyName(table.name, table.schema), options),
     );
@@ -189,7 +189,7 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * resolves instead of being silently dropped.
    */
   private orderedTables(
-    entities: readonly Type<unknown>[],
+    entities: readonly Type<object>[],
     direction: 'create' | 'drop',
     only?: readonly string[],
   ): TableNode[] {
@@ -500,7 +500,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
    * longer disagree about what has changed. Only two things are this side's own: the entity becomes a
    * table node first, and types are compared as the *engine* would store them - see `normalizeType`.
    */
-  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined {
+  diffSchema(
+    entity: Type<object>,
+    currentTable: TableNode | undefined,
+    desiredAst?: SchemaAST,
+  ): SchemaDiff | undefined {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(meta);
     const schema = this.resolveSchema(meta);
@@ -921,7 +925,7 @@ function foreignKeyOf(relation: RelationshipNode): ForeignKeySchema {
  */
 export function buildEntityAST(
   generator: Pick<SchemaGenerator, 'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName'>,
-  entities: readonly Type<unknown>[],
+  entities: readonly Type<object>[],
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaAST {
   return buildSchemaAST(entities, {

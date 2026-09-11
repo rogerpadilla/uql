@@ -1426,7 +1426,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
   async shouldAggregate() {
     await this.querier.aggregate(User, {
-      $agg: { total: { $count: '*' } },
+      $select: { total: { $count: '*' } },
     });
     expect(this.querier.all).toHaveBeenNthCalledWith(1, 'SELECT COUNT(*) `total` FROM `User`', []);
     expect(this.querier.all).toHaveBeenCalledTimes(1);
@@ -1444,7 +1444,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     await this.querier.aggregate(User, {
       $group: { companyId: true },
-      $agg: { cnt: { $count: '*' } },
+      $select: { cnt: { $count: '*' } },
       $having: { cnt: { $gt: 1 } },
       $sort: { cnt: -1 },
     });

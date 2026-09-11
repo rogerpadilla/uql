@@ -23,7 +23,7 @@ class DelegatedParent {
   @Field({ type: String })
   name?: string;
 
-  @OneToMany({ entity: () => DelegatedChild, mappedBy: (child) => child.parent })
+  @OneToMany({ entity: () => DelegatedChild, mappedBy: (delegatedChild) => delegatedChild.parent })
   children?: DelegatedChild[];
 }
 
@@ -35,7 +35,11 @@ class DelegatedChild {
   @Field({ type: Number })
   parentId?: number;
 
-  @ManyToOne({ entity: () => DelegatedParent, references: [{ local: 'parentId', foreign: 'id' }], onDelete: 'CASCADE' })
+  @ManyToOne({
+    entity: () => DelegatedParent,
+    references: (delegatedChild, delegatedParent) => [{ local: delegatedChild.parentId, foreign: delegatedParent.id }],
+    onDelete: 'CASCADE',
+  })
   parent?: DelegatedParent;
 }
 
@@ -48,7 +52,7 @@ class WalkedParent {
   @Field({ type: String })
   name?: string;
 
-  @OneToMany({ entity: () => WalkedChild, mappedBy: (child) => child.parent, cascade: 'delete' })
+  @OneToMany({ entity: () => WalkedChild, mappedBy: (walkedChild) => walkedChild.parent, cascade: 'delete' })
   children?: WalkedChild[];
 }
 
@@ -60,7 +64,10 @@ class WalkedChild {
   @Field({ type: Number })
   parentId?: number;
 
-  @ManyToOne({ entity: () => WalkedParent, references: [{ local: 'parentId', foreign: 'id' }] })
+  @ManyToOne({
+    entity: () => WalkedParent,
+    references: (walkedChild, walkedParent) => [{ local: walkedChild.parentId, foreign: walkedParent.id }],
+  })
   parent?: WalkedParent;
 }
 

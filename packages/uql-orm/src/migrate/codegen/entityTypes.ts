@@ -9,7 +9,7 @@ import { isToManyRelation, upperFirst } from '../../util/index.js';
  * compiler too. Interfaces, not the entity classes `generate:from-db` writes: those are the source of
  * a schema, these describe one already defined elsewhere.
  */
-export function entityTypesSource(entities: readonly Type<unknown>[]): string {
+export function entityTypesSource(entities: readonly Type<object>[]): string {
   const metas = [...entities]
     .map((entity) => getMeta(entity))
     .sort((a, b) => a.entity.name.localeCompare(b.entity.name));
@@ -34,7 +34,7 @@ export function entityTypesSource(entities: readonly Type<unknown>[]): string {
  * from carrying a dash or colliding with another once the dashes are gone - and either would emit a
  * file that does not compile.
  */
-function interfaceNames(metas: readonly EntityMeta<unknown>[]): Map<Type<unknown>, string> {
+function interfaceNames(metas: readonly EntityMeta<object>[]): Map<Type<object>, string> {
   const taken = new Set<string>();
   return new Map(
     metas.map((meta) => {
@@ -73,7 +73,7 @@ function fieldType(field: FieldMeta | undefined): string {
  * A relation is the related interface, a list where the cardinality says so - and `unknown` where the
  * target is outside the set, since naming an interface the file does not declare would not compile.
  */
-function relationType(relation: RelationMeta | undefined, names: ReadonlyMap<Type<unknown>, string>): string {
+function relationType(relation: RelationMeta | undefined, names: ReadonlyMap<Type<object>, string>): string {
   const target = relation && names.get(relation.entity());
   if (!target) {
     return 'unknown';

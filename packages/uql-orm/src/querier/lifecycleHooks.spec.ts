@@ -229,7 +229,7 @@ class Shelf {
   @Id({ type: Number })
   id?: number;
 
-  @OneToMany({ entity: () => ShelvedBook, mappedBy: (book) => book.shelf, cascade: 'delete' })
+  @OneToMany({ entity: () => ShelvedBook, mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
   books?: ShelvedBook[];
 }
 
@@ -244,7 +244,10 @@ class ShelvedBook {
   @Field({ type: String })
   title?: string;
 
-  @ManyToOne({ entity: () => Shelf, references: [{ local: 'shelfId', foreign: 'id' }] })
+  @ManyToOne({
+    entity: () => Shelf,
+    references: (shelvedBook, shelf) => [{ local: shelvedBook.shelfId, foreign: shelf.id }],
+  })
   shelf?: Shelf;
 
   @BeforeDelete()

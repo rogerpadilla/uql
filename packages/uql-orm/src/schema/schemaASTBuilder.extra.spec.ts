@@ -84,7 +84,10 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       @Field({ type: Number })
       groupIdKey?: number;
 
-      @ManyToOne({ entity: () => Group, references: [{ local: 'groupIdKey', foreign: 'id' }] })
+      @ManyToOne({
+        entity: () => Group,
+        references: (member, group) => [{ local: member.groupIdKey, foreign: group.id }],
+      })
       group?: Group;
     }
 
@@ -105,7 +108,10 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       @Id({ type: Number }) id?: number;
 
       // 'missingId' field does not exist
-      @ManyToOne({ entity: () => RelTarget, references: [{ local: 'missingId', foreign: 'id' }] })
+      @ManyToOne({
+        entity: () => RelTarget,
+        references: (relSource, relTarget) => [{ local: 'missingId' as never, foreign: relTarget.id }],
+      })
       target?: RelTarget;
     }
 
@@ -126,7 +132,10 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       @Field({ type: Number }) targetId?: number;
 
       // 'missingId' field does not exist on target
-      @ManyToOne({ entity: () => RelTarget2, references: [{ local: 'targetId', foreign: 'missingId' }] })
+      @ManyToOne({
+        entity: () => RelTarget2,
+        references: (relSource2, relTarget2) => [{ local: relSource2.targetId, foreign: 'missingId' as never }],
+      })
       target?: RelSource2;
     }
 
@@ -147,7 +156,12 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       @Field({ type: Number, computed: raw`1` })
       targetId?: number;
 
-      @ManyToOne({ entity: () => ComputedTarget, references: [{ local: 'targetId', foreign: 'id' }] })
+      @ManyToOne({
+        entity: () => ComputedTarget,
+        references: (computedSource, computedTarget) => [
+          { local: computedSource.targetId, foreign: computedTarget.id },
+        ],
+      })
       target?: ComputedTarget;
     }
 

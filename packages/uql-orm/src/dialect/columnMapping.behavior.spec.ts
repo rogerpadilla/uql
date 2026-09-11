@@ -46,9 +46,9 @@ it('filters by the stored column', () => {
 });
 
 it('groups by the stored column while returning the caller key', () => {
-  expect(pgSql((d, ctx) => d.aggregate(ctx, Renamed, { $group: { label: true }, $agg: { n: { $count: '*' } } }))) //
+  expect(pgSql((d, ctx) => d.aggregate(ctx, Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } }))) //
     .toContain('"the_label" "label"');
-  expect(mongo.buildAggregateStages(Renamed, { $group: { label: true }, $agg: { n: { $count: '*' } } })).toEqual([
+  expect(mongo.buildAggregateStages(Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } })).toEqual([
     { $group: { _id: { label: '$the_label' }, n: { $sum: 1 } } },
     { $project: { _id: 0, label: '$_id.label', n: 1 } },
   ]);

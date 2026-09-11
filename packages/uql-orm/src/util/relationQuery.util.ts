@@ -166,7 +166,7 @@ export function populatesRelations<E>(meta: EntityMeta<E>, populate?: QueryPopul
 export function countedRelations<E>(
   meta: EntityMeta<E>,
   counts: QueryCount<E> | undefined,
-): { readonly relKey: RelationKey<E>; readonly relation: RelationMeta; readonly where: QueryWhere<unknown> }[] {
+): { readonly relKey: RelationKey<E>; readonly relation: RelationMeta; readonly where: QueryWhere<object> }[] {
   if (!counts) {
     return [];
   }

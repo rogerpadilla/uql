@@ -59,7 +59,7 @@ describe('schema', () => {
   const dialect = new PostgresDialect();
 
   /** The generated statements of one kind, so an assertion names the one it is about. */
-  const ddlOf = (entities: Type<unknown>[], startsWith: string) =>
+  const ddlOf = (entities: Type<object>[], startsWith: string) =>
     new SqlSchemaGenerator(dialect).generateCreateSchema(entities).filter((sql) => sql.startsWith(startsWith));
 
   it('qualifies the table and aliases it, so columns stay single identifiers', () => {

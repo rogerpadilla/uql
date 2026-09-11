@@ -26,7 +26,7 @@ class HydratedParent {
   settings?: Json<{ a?: number }>;
   @Field({ type: String })
   name?: string;
-  @OneToMany({ entity: () => HydratedChild, mappedBy: 'parent' })
+  @OneToMany({ entity: () => HydratedChild, mappedBy: (hydratedChild) => hydratedChild.parent })
   children?: HydratedChild[];
 }
 

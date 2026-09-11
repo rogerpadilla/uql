@@ -17,7 +17,7 @@ it('writes an interface per registered entity, relations included', () => {
   }
   defineEntity(Author, {
     fields: { id: { type: Number, isId: true }, name: { type: String } },
-    relations: { posts: { cardinality: '1m', entity: () => Post, mappedBy: 'author' } },
+    relations: { posts: { cardinality: '1m', entity: () => Post, mappedBy: (post) => post.author } },
   });
   defineEntity(Post, {
     fields: {

@@ -1,4 +1,5 @@
 import type { FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
+import type { QuerySelect } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
@@ -12,9 +13,9 @@ export type QueryTextSearchOptions<E> = {
    */
   $value: string;
   /**
-   * list of fields to search on.
+   * the fields to search, `{ title: true, body: true }`, in the order a MySQL `FULLTEXT` index lists them.
    */
-  $fields?: FieldKey<E>[];
+  $fields?: QuerySelect<E>;
   /**
    * Postgres text-search configuration (e.g. `'english'`), applied to both the document and the
    * query. Defaults to the server's `default_text_search_config`. Ignored by other dialects.
@@ -29,21 +30,21 @@ export type QueryTextSearchOptions<E> = {
  * filtered via nested typed objects; dotted relation paths are not supported (the dialects throw
  * for non-JSON dotted keys).
  *
- * One mapped type over the three key sets rather than three intersected, for the reason
- * {@link QuerySortMap} is: the sets are disjoint, and an assignability check against an
- * intersection is repeated per constituent, which every `$where` in a codebase pays. The root
- * operators stay a separate member - they are a fixed shape, not keyed off the entity.
+ * Fields and relations share one mapped type over `K extends keyof E`, which keeps each key linked to
+ * its property (see {@link QuerySelect}). JSON paths are not keys of `E`, so they are a second member,
+ * and only where the entity has one: an empty member would switch off the weak-type check that
+ * rejects `$where: 1`.
  *
  * An object and nothing else: in a union with ids or lists, TypeScript reports a wrong value against
  * the whole `$where` instead of the key holding it. Ids are `{ id: 1 }`, or the by-id methods.
  */
-export type QueryWhere<E> = QueryWhereRootOperator<E> & {
-  [K in FieldKey<E> | RelationKey<E> | JsonFieldPaths<E>]?: K extends FieldKey<E>
-    ? QueryWhereFieldValue<E[K]>
-    : K extends RelationKey<E>
-      ? QueryWhere<RelationTarget<E[K]>> | QueryRelationSizeFilter
-      : QueryWhereFieldValue<JsonFieldPathValue<E, K & string>>;
-};
+export type QueryWhere<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = QueryWhereRootOperator<E> & {
+  [P in K]?: P extends FieldKey<E>
+    ? QueryWhereFieldValue<E[P]>
+    : QueryWhere<RelationTarget<E[P]>> | QueryRelationSizeFilter;
+} & ([JsonFieldPaths<E>] extends [never]
+    ? unknown
+    : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>> });
 
 /**
  * Filter a to-many relation by its row count.

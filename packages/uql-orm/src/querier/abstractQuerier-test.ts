@@ -2346,7 +2346,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const res = await this.querier.aggregate(User, {
       $where: { createdAt: { $gte: 200 } },
-      $agg: { total: { $sum: 'createdAt' } },
+      $select: { total: { $sum: { createdAt: true } } },
     });
 
     expect(res).toHaveLength(1);

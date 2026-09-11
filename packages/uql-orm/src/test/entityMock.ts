@@ -120,13 +120,10 @@ export class User extends BaseEntity {
   @Field({ type: String, eager: false })
   password?: string;
 
-  /**
-   * `mappedBy` property can be a callback or a string (callback is useful for auto-refactoring).
-   */
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
 
-  @OneToMany({ entity: () => User, mappedBy: 'creator' })
+  @OneToMany({ entity: () => User, mappedBy: (user) => user.creator })
   users?: User[];
 }
 
@@ -356,7 +353,7 @@ export class ItemTag {
 export class InventoryAdjustment extends BaseEntity {
   @OneToMany({
     entity: () => ItemAdjustment,
-    mappedBy: (rel) => rel.inventoryAdjustment,
+    mappedBy: (itemAdjustment) => itemAdjustment.inventoryAdjustment,
     cascade: true,
   })
   itemAdjustments?: ItemAdjustment[];
@@ -411,7 +408,7 @@ export class Invoice {
 
   @OneToMany({
     entity: () => InvoiceLine,
-    mappedBy: (rel) => rel.invoice,
+    mappedBy: (invoiceLine) => invoiceLine.invoice,
     cascade: true,
   })
   lines?: InvoiceLine[];
@@ -476,7 +473,7 @@ export class TypedRow {
 export class TypedGroup {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) name?: string;
-  @OneToMany({ entity: () => TypedRow, mappedBy: (row) => row.group }) rows?: TypedRow[];
+  @OneToMany({ entity: () => TypedRow, mappedBy: (typedRow) => typedRow.group }) rows?: TypedRow[];
 }
 
 @Entity()

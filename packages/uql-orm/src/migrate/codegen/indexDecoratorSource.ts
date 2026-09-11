@@ -40,7 +40,7 @@ function significantModifiers(entry: IndexColumnSchema): string[] {
 /**
  * Whether `@Field({ index })` can carry the whole index. It says only "this column is indexed under
  * this name", so anything else the index declares - an expression, a predicate, uniqueness, an access
- * method, stored columns, a stored order - has to be written out as `@Index([...])` instead.
+ * method, stored columns, a stored order - has to be written out as an `@Index` instead.
  */
 export function isPlainFieldIndex(index: IndexNode): boolean {
   const entries = index.entries;
@@ -59,11 +59,16 @@ export function isPlainFieldIndex(index: IndexNode): boolean {
 }
 
 /**
- * One `@Index([...])` as source, for an index no `@Field` can express. Emits `raw(...)` for an
- * expression entry, so callers import `raw` when {@link indexNeedsRaw} holds.
+ * One `@Index((user) => [...])` as source, for an index no `@Field` can express, its columns read off the
+ * key map `param` names. Emits `raw(...)` for an expression entry, so callers import `raw` when
+ * {@link indexNeedsRaw} holds.
  */
-export function buildIndexDecoratorSource(index: IndexNode, propertyName: (column: string) => string): string {
-  const entries = index.entries.map((entry) => indexEntrySource(entry, propertyName)).join(', ');
+export function buildIndexDecoratorSource(
+  index: IndexNode,
+  propertyName: (column: string) => string,
+  param: string,
+): string {
+  const entries = index.entries.map((entry) => indexEntrySource(entry, propertyName, param)).join(', ');
 
   const isVector = index.type === 'hnsw' || index.type === 'ivfflat';
   const distance = isVector ? vectorDistance(index) : undefined;
@@ -80,10 +85,11 @@ export function buildIndexDecoratorSource(index: IndexNode, propertyName: (colum
   if (distance) options.push(`distance: '${distance}'`);
   if (index.where) options.push(`where: ${rawTag(index.where)}`);
   if (index.include?.length) {
-    options.push(`include: [${index.include.map((column) => `'${propertyName(column)}'`).join(', ')}]`);
+    const included = index.include.map((column) => memberSource(param, propertyName(column)));
+    options.push(`include: (${param}) => [${included.join(', ')}]`);
   }
 
-  return `@Index([${entries}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''})`;
+  return `@Index((${param}) => [${entries}]${options.length > 0 ? `, { ${options.join(', ')} }` : ''})`;
 }
 
 /** Whether emitting this index needs `raw` imported alongside `Index`. */
@@ -91,14 +97,16 @@ export function indexNeedsRaw(index: IndexNode): boolean {
   return Boolean(index.where) || index.entries.some((entry) => entry.expression);
 }
 
-function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: string) => string): string {
+function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: string) => string, param: string): string {
   if (entry.expression) {
     return rawTag(entry.column);
   }
-
+  const column = memberSource(param, propertyName(entry.column));
   const modifiers = significantModifiers(entry);
-  if (modifiers.length === 0) {
-    return `'${propertyName(entry.column)}'`;
-  }
-  return `{ column: '${propertyName(entry.column)}', ${modifiers.join(', ')} }`;
+  return modifiers.length === 0 ? column : `{ column: ${column}, ${modifiers.join(', ')} }`;
+}
+
+/** `user.email`, or `user['first-name']` for a property name that is no identifier. */
+function memberSource(param: string, property: string): string {
+  return /^[A-Za-z_$][\w$]*$/.test(property) ? `${param}.${property}` : `${param}['${property}']`;
 }

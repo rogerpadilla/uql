@@ -154,14 +154,19 @@ it('an inverse side keeps the columns it names itself', () => {
   @Entity()
   class Shelf {
     @Id({ type: Number }) id?: number;
-    @OneToMany({ entity: () => Book, mappedBy: 'shelf', references: [{ local: 'id', foreign: 'shelfRef' }] })
+    @OneToMany({
+      entity: () => Book,
+      mappedBy: (book) => book.shelf,
+      references: (shelf, book) => [{ local: shelf.id, foreign: book.shelfRef }],
+    })
     books?: Book[];
   }
   @Entity()
   class Book {
     @Id({ type: Number }) id?: number;
     @Field({ references: () => Shelf }) shelfRef?: number;
-    @ManyToOne({ entity: () => Shelf, references: [{ local: 'shelfRef', foreign: 'id' }] }) shelf?: Shelf;
+    @ManyToOne({ entity: () => Shelf, references: (book, shelf) => [{ local: book.shelfRef, foreign: shelf.id }] })
+    shelf?: Shelf;
   }
   expect(getMeta(Shelf).relations.books?.references).toEqual([{ local: 'id', foreign: 'shelfRef' }]);
 });
@@ -940,7 +945,7 @@ it('mappedBy naming neither a field nor a relation', () => {
   class Album {
     @Field({ type: Number, isId: true })
     id?: number;
-    @OneToMany({ entity: () => Track, mappedBy: 'undeclared' })
+    @OneToMany({ entity: () => Track, mappedBy: (track) => track.undeclared })
     tracks?: Track[];
   }
 
@@ -973,7 +978,7 @@ it('through entity missing a derived join column', () => {
   }
 
   expect(() => getMeta(Shirt)).toThrow(
-    `'Shirt.colours' joins through 'ShirtColour', which has no 'shirtId' field. Declare it, or name the join columns with 'references'.`,
+    `'Shirt.colours' joins through 'ShirtColour', which has no 'shirtId' field: a junction's columns are named after the entities it joins. Declare it.`,
   );
 });
 
@@ -1102,7 +1107,7 @@ it('a junction pairs every key of both sides, and the inverse side swaps the gro
   @Entity()
   class Badge {
     @Id({ type: Number }) id?: number;
-    @ManyToMany({ entity: () => Enrolment, mappedBy: (it) => it.badges })
+    @ManyToMany({ entity: () => Enrolment, mappedBy: (enrolment) => enrolment.badges })
     enrolments?: Enrolment[];
   }
   @Entity()
@@ -1137,7 +1142,7 @@ it('refuses an inverse relation mapped by a field when the key is composite', ()
     [idKey]?: 'studentId' | 'courseId';
     @Id({ type: Number }) studentId?: number;
     @Id({ type: String }) courseId?: string;
-    @OneToMany({ entity: () => Note, mappedBy: (it) => it.enrolmentStudentId })
+    @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolmentStudentId })
     notes?: Note[];
   }
 
@@ -1156,7 +1161,7 @@ it('pairs an inverse relation mapped by a field from the parent side', () => {
   @Entity()
   class Owner {
     @Id({ type: Number }) id?: number;
-    @OneToMany({ entity: () => Note, mappedBy: (it) => it.ownerId })
+    @OneToMany({ entity: () => Note, mappedBy: (note) => note.ownerId })
     notes?: Note[];
   }
 
@@ -1366,19 +1371,21 @@ it('hand-written references are still checked against the junction', () => {
   class Coach {
     @Field({ type: Number, isId: true })
     id?: number;
-    @ManyToMany({
-      entity: () => Seat,
-      through: () => CoachSeat,
-      references: [
-        { local: 'coachRef', foreign: 'id' },
-        { local: 'seatId', foreign: 'id' },
-      ],
-    })
+    @ManyToMany({ entity: () => Seat, through: () => CoachSeat })
     seats?: Seat[];
   }
 
   expect(() => getMeta(Coach)).toThrow(
-    `'Coach.seats' joins through 'CoachSeat', which has no 'coachRef' field. Declare it, or name the join columns with 'references'.`,
+    `'Coach.seats' joins through 'CoachSeat', which has no 'coachId' field: a junction's columns are named after the entities it joins. Declare it.`,
+  );
+});
+
+/** Types keep the two apart; this is the guard for a caller they cannot see, such as plain JavaScript. */
+it('refuses references on a relation through a junction, whose columns follow the convention', () => {
+  class Shelf {}
+  const options = { cardinality: 'mm', entity: () => Shelf, through: () => Shelf, references: () => [] } as never;
+  expect(() => defineRelation(Shelf, 'shelves', options)).toThrow(
+    "'Shelf.shelves' joins through a junction, whose columns follow the convention; 'references' pairs the declaring entity's columns with the target's instead.",
   );
 });
 
@@ -1415,7 +1422,7 @@ it('a relation with no columns to join on says so', () => {
   }
   defineEntity(Gate, { fields: { id: { type: Number, isId: true } } });
   // Hand-written and empty: nothing filled it in, so nothing says how the two are joined.
-  defineRelation(Gate, 'terminal', { cardinality: 'm1', entity: () => Terminal, references: [] });
+  defineRelation(Gate, 'terminal', { cardinality: 'm1', entity: () => Terminal, references: (gate, terminal) => [] });
 
   expect(() => getMeta(Gate)).toThrow("'Gate.terminal' has no columns to join on.");
 });

@@ -331,7 +331,7 @@ describe('EntityCodeGenerator', () => {
 
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
-      expect(result!.code).toContain("@Index(['email'], { name: 'email_idx', unique: true })");
+      expect(result!.code).toContain("@Index((user) => [user.email], { name: 'email_idx', unique: true })");
       expect(result!.code).not.toContain("index: 'email_idx'");
     });
 
@@ -353,7 +353,7 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
 
-      expect(result!.code).toContain("@Index(['firstName', 'lastName'], { name: 'name_idx' })");
+      expect(result!.code).toContain("@Index((user) => [user.firstName, user.lastName], { name: 'name_idx' })");
       expect(result!.code).toContain('import { Entity, Field, Id, Index }');
     });
 
@@ -669,7 +669,7 @@ describe('EntityCodeGenerator', () => {
 
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
-      expect(result!.code).toContain("@OneToOne({ entity: () => Profile, references: 'user' })");
+      expect(result!.code).toContain('@OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.user })');
       expect(result!.code).toContain('profiles?: Profile;');
     });
 
@@ -689,7 +689,7 @@ describe('EntityCodeGenerator', () => {
 
       const result = new EntityCodeGenerator(ast).generateForTable('users');
 
-      expect(result!.code).toContain("@Index(['firstName', 'lastName'])");
+      expect(result!.code).toContain('@Index((user) => [user.firstName, user.lastName])');
     });
   });
 });

@@ -6,7 +6,13 @@ import { PgQuerierPool } from './pgQuerierPool.js';
 
 const TABLE = 'pg_vector_index';
 
-@Index(['vec'], { type: 'hnsw', distance: 'cosine', m: 8, efConstruction: 32, name: 'ix_pg_vec' })
+@Index((pgVectorIndexed) => [pgVectorIndexed.vec], {
+  type: 'hnsw',
+  distance: 'cosine',
+  m: 8,
+  efConstruction: 32,
+  name: 'ix_pg_vec',
+})
 @Entity({ name: TABLE })
 class PgVectorIndexed {
   @Id({ type: Number }) id?: number;

@@ -44,8 +44,13 @@ const STUBS = `
   declare function Serialized(): PropertyDecorator;
   declare function Transactional(): MethodDecorator;
   declare class Querier {}
-  declare function ManyToOne(opts?: { entity?: EntityGetter }): PropertyDecorator;
-  declare function OneToMany(opts?: { entity?: EntityGetter; mappedBy?: string }): PropertyDecorator;
+  declare function ManyToOne(opts?: { entity?: EntityGetter; references?: unknown }): PropertyDecorator;
+  declare function OneToMany(opts?: { entity?: EntityGetter; mappedBy?: unknown }): PropertyDecorator;
+  declare function Index(columns: unknown, options?: unknown): ClassDecorator;
+  declare function defineEntity(entity: unknown, options: unknown): void;
+  declare function defineIndex(entity: unknown, options: unknown): void;
+  declare function defineRelation(entity: unknown, key: string, options: unknown): void;
+  declare function raw(strings: TemplateStringsArray): unknown;
   type Relation<T> = T;
 `;
 
@@ -388,7 +393,196 @@ class Entity {
     `);
 
     expect(text).toContain('@ManyToOne({ entity: () => Company }) company?: Company;');
-    expect(text).toContain("@OneToMany({ entity: () => Company, mappedBy: 'entity' }) peers?: Company[];");
+    expect(text).toContain(
+      '@OneToMany({ entity: () => Company, mappedBy: (company) => company.entity }) peers?: Company[];',
+    );
+  });
+
+  it('rewrites a string mappedBy into the callback named after the target, leaving a callback alone', () => {
+    const { text } = codemod(`
+      class Company { id?: number; owner?: Entity; 'owner-ref'?: Entity; }
+      class Entity {
+        @OneToMany({ entity: () => Company, mappedBy: 'owner' }) owned?: Company[];
+        @OneToMany({ entity: () => Company, mappedBy: 'owner-ref' }) quoted?: Company[];
+        @OneToMany({ entity: () => Company, mappedBy: (c) => c.owner }) kept?: Company[];
+      }
+    `);
+
+    expect(text).toContain(
+      '@OneToMany({ entity: () => Company, mappedBy: (company) => company.owner }) owned?: Company[];',
+    );
+    expect(text).toContain(
+      "@OneToMany({ entity: () => Company, mappedBy: (company) => company['owner-ref'] }) quoted?: Company[];",
+    );
+    expect(text).toContain('@OneToMany({ entity: () => Company, mappedBy: (c) => c.owner }) kept?: Company[];');
+  });
+
+  it('reports a mappedBy it cannot read', () => {
+    const { text, unresolved } = codemod(`
+      const key = 'owner';
+      class Company { id?: number; owner?: Entity; }
+      class Entity {
+        @OneToMany({ entity: () => Company, mappedBy: key }) owned?: Company[];
+      }
+    `);
+
+    expect(text).toContain('mappedBy: key');
+    expect(unresolved).toContainEqual(expect.stringContaining("write 'mappedBy' as a key-map callback"));
+  });
+
+  it('rewrites @Index columns and include into key-map callbacks named after the class', () => {
+    const { text, unresolved } = codemod(`
+      declare const columns: string[];
+      @Index(['title', { column: 'createdAt', order: 'desc' }, raw\`lower("title")\`], { include: ['slug'], unique: true })
+      @Index(['first-name'])
+      @Index((post) => [post.title])
+      @Index(columns)
+      class Post { id?: number; title?: string; createdAt?: Date; slug?: string; 'first-name'?: string; }
+    `);
+
+    expect(text).toContain(
+      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
+    );
+    expect(text).toContain("@Index((post) => [post['first-name']])");
+    expect(text).toContain('@Index((post) => [post.title])');
+    expect(text).toContain('@Index(columns)');
+    expect(unresolved).toContainEqual(expect.stringContaining("write '@Index' columns as a key-map callback"));
+  });
+
+  it('rewrites references into a callback over both key maps, and a self-relation into (local, foreign)', () => {
+    const { text } = codemod(`
+      class Customer { id?: number; code?: string; }
+      class Order {
+        customerCode?: string;
+        parentId?: number;
+        @ManyToOne({ entity: () => Customer, references: [{ local: 'customerCode', foreign: 'code' }] }) customer?: Customer;
+        @ManyToOne({ entity: () => Order, references: [{ local: 'parentId', foreign: 'id' }] }) parent?: Order;
+      }
+    `);
+
+    expect(text).toContain(
+      'references: (order, customer) => [{ local: order.customerCode, foreign: customer.code }] }) customer?: Customer;',
+    );
+    expect(text).toContain(
+      'references: (local, foreign) => [{ local: local.parentId, foreign: foreign.id }] }) parent?: Order;',
+    );
+  });
+
+  it("rewrites defineEntity's indexes, hooks and relations into key-map callbacks", () => {
+    const { text } = codemod(`
+      class Tag { id?: number; posts?: Post[]; }
+      class Post { id?: number; title?: string; tagId?: number; tags?: Tag[]; tag?: Tag; touch(): void {} }
+      defineEntity(Post, {
+        indexes: [{ columns: ['title'], include: ['tagId'], unique: true }],
+        hooks: { beforeInsert: ['touch'] },
+        relations: {
+          tags: { cardinality: 'mm', entity: () => Tag, mappedBy: 'posts' },
+          tag: { cardinality: 'm1', entity: () => Tag, references: [{ local: 'tagId', foreign: 'id' }] },
+        },
+      });
+    `);
+
+    expect(text).toContain(
+      'indexes: [{ columns: (post) => [post.title], include: (post) => [post.tagId], unique: true }]',
+    );
+    expect(text).toContain('hooks: { beforeInsert: (post) => [post.touch] }');
+    expect(text).toContain("tags: { cardinality: 'mm', entity: () => Tag, mappedBy: (tag) => tag.posts }");
+    expect(text).toContain(
+      "tag: { cardinality: 'm1', entity: () => Tag, references: (post, tag) => [{ local: post.tagId, foreign: tag.id }] }",
+    );
+  });
+
+  it('keeps the formatting of a column list it rewrites', () => {
+    const { text } = codemod(`
+      @Index([
+        'title', // the lookup
+        { column: 'slug',   order: 'desc' },
+      ])
+      class Post { id?: number; title?: string; slug?: string; }
+    `);
+
+    expect(text).toContain(`@Index((post) => [
+        post.title, // the lookup
+        { column: post.slug,   order: 'desc' },
+      ])`);
+  });
+
+  it('rewrites the incremental defineIndex and defineRelation the same way', () => {
+    const { text } = codemod(`
+      class Tag { id?: number; }
+      class Post { id?: number; title?: string; tagId?: number; tag?: Tag; }
+      defineIndex(Post, { columns: ['title'], unique: true });
+      defineRelation(Post, 'tag', { cardinality: 'm1', entity: () => Tag, references: [{ local: 'tagId', foreign: 'id' }] });
+    `);
+
+    expect(text).toContain('defineIndex(Post, { columns: (post) => [post.title], unique: true });');
+    expect(text).toContain(
+      "defineRelation(Post, 'tag', { cardinality: 'm1', entity: () => Tag, references: (post, tag) => [{ local: post.tagId, foreign: tag.id }] });",
+    );
+  });
+
+  it("rewrites @Entity's indexes, hooks and relations like defineEntity's", () => {
+    const { text } = codemod(`
+      declare function Entity(options?: unknown): ClassDecorator;
+      class Tag { id?: number; }
+      @Entity({
+        indexes: [{ columns: ['title'], unique: true }],
+        hooks: { beforeInsert: ['touch'] },
+        relations: { tag: { cardinality: 'm1', entity: () => Tag, references: [{ local: 'tagId', foreign: 'id' }] } },
+      })
+      class Post { id?: number; title?: string; tagId?: number; tag?: Tag; touch(): void {} }
+    `);
+
+    expect(text).toContain('indexes: [{ columns: (post) => [post.title], unique: true }],');
+    expect(text).toContain('hooks: { beforeInsert: (post) => [post.touch] },');
+    expect(text).toContain('references: (post, tag) => [{ local: post.tagId, foreign: tag.id }] } },');
+  });
+
+  it("rewrites an aggregate's $agg into $select, naming each field as a key", () => {
+    const { text, unresolved } = codemod(`
+      declare const querier: { aggregate(entity: unknown, q: unknown): void };
+      class Order { id?: number; amount?: number; 'unit-price'?: number; status?: string; }
+      querier.aggregate(Order, {
+        $group: { status: true },
+        $agg: { n: { $count: '*' }, total: { $sum: 'amount' }, top: { $max: 'unit-price' }, ids: { $countDistinct: 'id' } },
+      });
+    `);
+
+    expect(text).toContain(
+      "$select: { n: { $count: '*' }, total: { $sum: { amount: true } }, top: { $max: { 'unit-price': true } }, ids: { $countDistinct: { id: true } } },",
+    );
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports an $agg entry it cannot read, and an $agg beside a $select', () => {
+    const { text, unresolved } = codemod(`
+      declare const querier: { aggregate(entity: unknown, q: unknown): void };
+      declare const field: 'amount';
+      class Order { id?: number; amount?: number; }
+      querier.aggregate(Order, { $agg: { total: { $sum: field } } });
+      querier.aggregate(Order, { $select: { n: { $count: '*' } }, $agg: { total: { $sum: 'amount' } } });
+    `);
+
+    expect(text).toContain('$select: { total: { $sum: field } }');
+    expect(text).toContain("$select: { n: { $count: '*' } }, $agg: { total: { $sum: 'amount' } }");
+    expect(unresolved).toContainEqual(expect.stringContaining("write '$sum' as { field: true }"));
+    expect(unresolved).toContainEqual(expect.stringContaining("merge '$agg' into the '$select' beside it"));
+  });
+
+  it("rewrites $text's $fields into a key map, reporting a list it cannot read", () => {
+    const { text, unresolved } = codemod(`
+      declare const querier: { findMany(entity: unknown, q: unknown): void };
+      declare const fields: string[];
+      class Post { id?: number; title?: string; 'sub-title'?: string; }
+      querier.findMany(Post, { $where: { $text: { $value: 'noir', $fields: ['title', 'sub-title'] } } });
+      querier.findMany(Post, { $where: { $text: { $value: 'noir', $fields: fields } } });
+      const unrelated = { $fields: ['title'] };
+    `);
+
+    expect(text).toContain("$text: { $value: 'noir', $fields: { title: true, 'sub-title': true } }");
+    expect(text).toContain('$fields: fields');
+    expect(text).toContain("const unrelated = { $fields: ['title'] };");
+    expect(unresolved).toContainEqual(expect.stringContaining("write '$fields' as { field: true }"));
   });
 
   it('unwraps the Relation alias and resolves the entity through it', () => {
@@ -534,14 +728,40 @@ type ParentOf<T> = Relation<T>;
   /** A `$where` is one map now; the compiler points at every call site still passing an id or a list. */
   it('reports the `$where` types and helpers that no longer exist', () => {
     const { changed, unresolved } = codemod(`
-      import { QueryWhereMap, QueryWhereFieldMap, augmentWhere, buildQueryWhereAsMap } from 'uql-orm';
+      import { QueryWhereFieldMap, augmentWhere, buildQueryWhereAsMap } from 'uql-orm';
     `);
 
     expect(changed).toBe(false);
-    expect(unresolved[0]).toContain("'QueryWhereMap' was removed; it is `QueryWhere` now");
-    expect(unresolved[1]).toContain("'QueryWhereFieldMap' was removed; use `QueryWhere`");
-    expect(unresolved[2]).toContain("'augmentWhere' was removed; spread the two maps");
-    expect(unresolved[3]).toContain("'buildQueryWhereAsMap' was removed; a `$where` is a map already");
+    expect(unresolved[0]).toContain("'QueryWhereFieldMap' was removed; use `QueryWhere`");
+    expect(unresolved[1]).toContain("'augmentWhere' was removed; spread the two maps");
+    expect(unresolved[2]).toContain("'buildQueryWhereAsMap' was removed; a `$where` is a map already");
+  });
+
+  it('renames a renamed export, its import and every use of it', () => {
+    const { text, unresolved } = codemodFile(`import { QueryWhereMap, type RelationKeyMap as Keys } from 'uql-orm';
+const where: QueryWhereMap<User> = {};
+function other(QueryWhereMap: number) { return QueryWhereMap; }
+type K = Keys<User>;
+`);
+
+    expect(text).toBe(`import { QueryWhere, type KeyMap as Keys } from 'uql-orm';
+const where: QueryWhere<User> = {};
+function other(QueryWhereMap: number) { return QueryWhereMap; }
+type K = Keys<User>;
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('drops a renamed import whose new name is already imported', () => {
+    const { text } = codemodFile(`import { QueryWhere, QueryWhereMap } from 'uql-orm';
+const a: QueryWhereMap<User> = {};
+const b: QueryWhere<User> = {};
+`);
+
+    expect(text).toBe(`import { QueryWhere } from 'uql-orm';
+const a: QueryWhere<User> = {};
+const b: QueryWhere<User> = {};
+`);
   });
 
   it('reports a removed driver class where it is imported from its own entry', () => {

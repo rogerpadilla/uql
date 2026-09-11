@@ -98,7 +98,7 @@ describe('standard decorators', () => {
     @Entity()
     class Owner {
       @Id({ type: Number }) id?: number;
-      @OneToMany({ entity: () => Owned, mappedBy: 'owner' }) owned?: Owned[];
+      @OneToMany({ entity: () => Owned, mappedBy: (owned) => owned.owner }) owned?: Owned[];
     }
 
     @Entity()
@@ -114,7 +114,7 @@ describe('standard decorators', () => {
   });
 
   it('applies @Index stacked above @Entity', () => {
-    @Index(['title'], { unique: true })
+    @Index((indexed) => [indexed.title], { unique: true })
     @Entity()
     class Indexed {
       @Id({ type: Number }) id?: number;

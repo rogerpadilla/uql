@@ -36,7 +36,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   /** With no `$fields`, the search runs over exactly the columns the `FULLTEXT` index `MATCH` needs covers. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity()
-    @Index(['name', 'description'], { type: 'fulltext' })
+    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
       @Field({ type: String }) name?: string;

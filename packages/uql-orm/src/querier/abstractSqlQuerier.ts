@@ -440,17 +440,17 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   ): Promise<QueryAggregateResult<E, G, A>[]> {
     const ctx = this.dialect.createContext();
     this.dialect.aggregate(ctx, entity, q, opts);
-    // oxlint-disable-next-line typescript/no-explicit-any -- raw DB rows satisfy QueryAggregateResult at runtime but TS can't verify
-    const res = await this.all<any>(ctx.sql, ctx.values);
+    const rows = await this.all<QueryAggregateResult<E, G, A>>(ctx.sql, ctx.values);
     const hydratable = this.dialect.hydratableAggregates(entity, q);
-    for (const row of res) {
+    for (const row of rows) {
+      const cells: Record<string, unknown> = row;
       for (const [alias, kind] of hydratable) {
-        if (row[alias] != null) {
-          row[alias] = decodeColumn(row[alias], kind);
+        if (cells[alias] != null) {
+          cells[alias] = decodeColumn(cells[alias], kind);
         }
       }
     }
-    return res;
+    return rows;
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {

@@ -9,7 +9,7 @@
 
 <h3>The JSON-native TypeScript ORM</h3>
 
-<p align="left">UQL stands for Unified Query Language. With pure (type-safe) JSON queries, complex jobs can be done simply across SQL vendors + MongoDB. It got some inspiration from Mongo's best syntax.
+<p align="left">UQL (Unified Query Language) queries SQL databases and MongoDB with plain, type-safe JSON, in a syntax inspired by MongoDB's.
 </p>
 
 <p>
@@ -42,21 +42,19 @@ That is the whole install ([setup](https://uql-orm.dev/getting-started)). No com
   </picture>
 </a>
 
-Our type-safety automatically prevents the bugs above, without codegen: the entity classes are the schema, pure TypeScript power. That demo editor is [on the home page](https://uql-orm.dev).
-
-The query is just JSON: build it dynamically, store it, diff it, or send it from the browser to the server. The same object runs on every supported database.
+The compiler catches each of those, with no codegen: the entity classes are the schema. Try the editor [on the home page](https://uql-orm.dev).
 
 ## Why UQL?
 
-- **Serializable queries (JSON), not method chains.** Plain JSON in, typed rows out. No DSL to learn.
+- **Queries are JSON, not method chains.** Build one dynamically, store it, or send it from the browser; the same object runs on every database. No DSL to learn.
 - **One API, everywhere it runs.** PostgreSQL, PGlite, CockroachDB, MySQL, MariaDB, MSSQL, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
-- **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. Entities are plain classes on the standard TC39 decorators: no `.prisma` file, no generated client, no `reflect-metadata`, no `experimentalDecorators`.
+- **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. No `.prisma` file, no generated client.
 - **Relations without N+1.** [`$populate`](https://uql-orm.dev/querying/relations) reads a to-many inside the parent's statement, so a read is one round trip. Nothing is lazy, so nothing fires behind your back in a serializer.
 - **Migrations you read before they run.** Edit an entity, run `uql-migrate generate:entities`, review the SQL in the PR like any other file. [`drift:check`](https://uql-orm.dev/migrations) catches a database that no longer matches.
 - **Raw SQL when you want it.** [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere in a query, [computed fields](https://uql-orm.dev/entities/computed-fields) are expressions you can filter on, and a migration can be plain SQL.
-- **Light.** Zero runtime dependencies, under 280 kB on the wire, every dialect included. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
+- **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 27 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
-- **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), by 2.6-3x over the next closest and roughly 10x over the slowest, on Bun, Node and Deno alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by writing ten ordinary mistakes in six ORMs' APIs and compiling them: UQL is the only one that catches all ten.
+- **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), on Bun, Node and Deno alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by compiling ordinary mistakes in each ORM's API: UQL is the only one that catches them all.
 
 ## Get started
 

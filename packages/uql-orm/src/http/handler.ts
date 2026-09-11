@@ -82,10 +82,8 @@ export type ResponseHook<Ctx = unknown> = <E extends object>(
 ) => void | Promise<void>;
 
 export type RequestHandlerOptions<Ctx = unknown> = {
-  // oxlint-disable-next-line typescript/no-explicit-any -- accepts any entity constructor
-  include?: Type<any>[];
-  // oxlint-disable-next-line typescript/no-explicit-any -- accepts any entity constructor
-  exclude?: Type<any>[];
+  include?: Type<object>[];
+  exclude?: Type<object>[];
   /**
    * The URL segment an entity is addressed by, defaulting to its kebab-cased class name.
    *
@@ -135,7 +133,7 @@ export type RequestHandlerOptions<Ctx = unknown> = {
 export type RequestHandler<Ctx = unknown> = (req: HandlerRequest<Ctx>) => Promise<HandlerResponse> | undefined;
 
 /** `Company (crm.Company)`: the class, and the table it maps, which is what tells two apart. */
-function tableOf(entity: Type<unknown>): string {
+function tableOf(entity: Type<object>): string {
   const meta = getMeta(entity);
   return `${entity.name} (${meta.schema ? `${meta.schema}.${meta.name}` : meta.name})`;
 }
@@ -163,8 +161,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
         "pass an 'entityPath', or pass only one of them in 'include'.",
     );
   }
-  // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous entity map
-  const entityByPath = new Map<string, Type<any>>([...byPath].map(([path, [entity]]) => [path, entity]));
+  const entityByPath = new Map<string, Type<object>>([...byPath].map(([path, [entity]]) => [path, entity]));
 
   return (req) => {
     const entity = entityByPath.get(req.entityPath);

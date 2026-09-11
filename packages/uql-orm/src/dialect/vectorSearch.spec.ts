@@ -396,14 +396,14 @@ describe('vector $project', () => {
  * index, or no vector search to rank, there is nothing to widen and nothing is emitted.
  */
 @Entity({ name: 'HnswItem' })
-@Index(['vec'], { type: 'hnsw', distance: 'cosine' })
+@Index((hnswItem) => [hnswItem.vec], { type: 'hnsw', distance: 'cosine' })
 class HnswItem {
   @Id({ type: Number }) id?: number;
   @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
 }
 
 @Entity({ name: 'IvfflatItem' })
-@Index(['vec'], { type: 'ivfflat', distance: 'cosine' })
+@Index((ivfflatItem) => [ivfflatItem.vec], { type: 'ivfflat', distance: 'cosine' })
 class IvfflatItem {
   @Id({ type: Number }) id?: number;
   @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
@@ -445,7 +445,7 @@ describe('vector query-time tuning', () => {
   // used to disagree here - one took the first entry and the other the last.
   it('takes the first vector sort when more than one field is ranked', () => {
     @Entity({ name: 'TwoVectorItem' })
-    @Index(['a'], { type: 'hnsw', distance: 'cosine' })
+    @Index((twoVectorItem) => [twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })
     class TwoVectorItem {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'vector', dimensions: 3 }) a!: number[];
@@ -503,7 +503,7 @@ describe('vector query-time tuning', () => {
   /** MariaDB scopes the variable to the one statement, so it prefixes the SQL instead of preceding it. */
   it('prefixes the statement on MariaDB rather than running a SET of its own', () => {
     @Entity({ name: 'MariaVecItem' })
-    @Index(['vec'], { type: 'vector', distance: 'cosine' })
+    @Index((mariaVecItem) => [mariaVecItem.vec], { type: 'vector', distance: 'cosine' })
     class MariaVecItem {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
@@ -525,11 +525,12 @@ describe('vector query-time tuning', () => {
       @Field({ references: () => MariaVecDoc }) docId?: number;
     }
     @Entity({ name: 'MariaVecDoc' })
-    @Index(['vec'], { type: 'vector', distance: 'cosine' })
+    @Index((mariaVecDoc) => [mariaVecDoc.vec], { type: 'vector', distance: 'cosine' })
     class MariaVecDoc {
       @Id({ type: Number }) id?: number;
       @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
-      @OneToMany({ entity: () => MariaVecChunk, mappedBy: (chunk) => chunk.docId }) chunks?: MariaVecChunk[];
+      @OneToMany({ entity: () => MariaVecChunk, mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
+      chunks?: MariaVecChunk[];
     }
     const maria = new MariaDialect();
     const ctx = maria.createContext();

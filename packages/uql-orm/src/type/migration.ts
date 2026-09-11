@@ -102,7 +102,7 @@ export interface MigratorOptions {
   /**
    * Entities to use for schema generation
    */
-  readonly entities?: Type<unknown>[];
+  readonly entities?: Type<object>[];
 
   /**
    * Default action for foreign key ON DELETE and ON UPDATE clauses.
@@ -176,7 +176,7 @@ export interface IndexSchema extends VectorIndexOptions {
   /**
    * What the index is over, in order. Named `entries` and not `columns` because an entry need not be
    * a column at all: ``raw`lower(email)` `` is one, and so is a column carrying a prefix length or a
-   * stored order. The authored form, `@Index([...])`, still spells this `columns`, since that is what
+   * stored order. The authored form, `@Index`, still spells this `columns`, since that is what
    * it reads like at the call site.
    */
   readonly entries: readonly IndexColumnSchema[];
@@ -259,7 +259,7 @@ export interface SyncOptions {
   readonly drop?: boolean;
   readonly logging?: boolean;
   /** One entity instead of every registered one, for a schema that grows while the process runs. */
-  readonly entity?: Type<unknown>;
+  readonly entity?: Type<object>;
   /** Drop every table and recreate it. Development only: it is the one option that loses data. */
   readonly force?: boolean;
 }
@@ -294,14 +294,14 @@ export interface SchemaGenerator {
    * cross-entity foreign key has nothing to resolve against and is dropped: all three call sites that
    * used to work that way emitted schemas with no referential integrity.
    */
-  generateCreateSchema(entities: readonly Type<unknown>[], options?: CreateSchemaOptions): string[];
+  generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[];
 
   /**
    * Every `DROP TABLE` for `entities`, dependents first. The inverse of {@link generateCreateSchema},
    * and the reason it takes the whole set: dropping in any order that ignores the relation graph is
    * rejected once the foreign keys are really there.
    */
-  generateDropSchema(entities: readonly Type<unknown>[], options?: DropSchemaOptions): string[];
+  generateDropSchema(entities: readonly Type<object>[], options?: DropSchemaOptions): string[];
 
   /** Generate DROP TABLE statement. */
   generateDropTable(tableName: string, options?: DropSchemaOptions): string;
@@ -339,7 +339,7 @@ export interface SchemaGenerator {
    * reads as missing from both sides, which is a match and no statement. Defaults to this entity
    * alone, which is right only where it has no relations.
    */
-  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined;
+  diffSchema(entity: Type<object>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined;
 
   /**
    * The entity side as an AST, to hand to every {@link diffSchema} of one run - building it per
@@ -348,7 +348,7 @@ export interface SchemaGenerator {
    * Optional because not every generator compares one: MongoDB has no foreign keys and diffs only
    * indexes, so it neither implements this nor reads the argument.
    */
-  buildAST?(entities: readonly Type<unknown>[]): SchemaAST;
+  buildAST?(entities: readonly Type<object>[]): SchemaAST;
 
   /**
    * The table's key: {@link resolveTableAlias} behind {@link resolveSchema}, which is how a

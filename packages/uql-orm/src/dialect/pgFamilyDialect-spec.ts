@@ -567,7 +567,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
-        $agg: { count: { $count: '*' } },
+        $select: { count: { $count: '*' } },
         $having: { count: { $in: [1, 5, 10] } },
       }),
     );
@@ -579,7 +579,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
         $group: { name: true },
-        $agg: { count: { $count: '*' } },
+        $select: { count: { $count: '*' } },
         $having: { count: { $nin: [0, 999] } },
       }),
     );
@@ -728,7 +728,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { $text: { $fields: ['name', 'description'], $value: 'some text' }, code: '1' },
+        $where: { $text: { $fields: { name: true, description: true }, $value: 'some text' }, code: '1' },
         $limit: 30,
       }),
     );
@@ -741,7 +741,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.find(ctx, User, {
         $select: { id: true },
         $where: {
-          $text: { $fields: ['name'], $value: 'something' },
+          $text: { $fields: { name: true }, $value: 'something' },
           name: { $ne: 'other unwanted' },
           creatorId: '1',
         },
@@ -1397,7 +1397,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   /** The configuration binds once and both calls reuse its placeholder, so the document and the query agree. */
   shouldSearchTextUnderAConfiguration() {
     const res = this.exec((ctx) =>
-      this.dialect.where(ctx, Item, { $text: { $fields: ['name'], $value: 'lamp', $config: 'english' } }),
+      this.dialect.where(ctx, Item, { $text: { $fields: { name: true }, $value: 'lamp', $config: 'english' } }),
     );
     expect(res.sql).toContain('TO_TSVECTOR($1::regconfig, "name") @@ WEBSEARCH_TO_TSQUERY($1::regconfig, $2)');
     expect(res.values).toEqual(['english', 'lamp']);
@@ -1406,7 +1406,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   /** With no `$fields`, the search runs over the columns of the fulltext index the entity declares. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity()
-    @Index(['name', 'description'], { type: 'fulltext' })
+    @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
       @Field({ type: String }) name?: string;

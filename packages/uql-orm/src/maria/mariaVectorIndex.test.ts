@@ -7,7 +7,12 @@ import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 const TABLE = 'maria_vector_index';
 
 /** The column is declared nullable, which the generator has to override: MariaDB refuses otherwise. */
-@Index(['vec'], { type: 'vector', distance: 'cosine', m: 8, name: 'ix_maria_vec' })
+@Index((mariaVectorIndexed) => [mariaVectorIndexed.vec], {
+  type: 'vector',
+  distance: 'cosine',
+  m: 8,
+  name: 'ix_maria_vec',
+})
 @Entity({ name: TABLE })
 class MariaVectorIndexed {
   @Id({ type: Number }) id?: number;

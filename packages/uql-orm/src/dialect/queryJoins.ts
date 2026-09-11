@@ -166,7 +166,8 @@ function addSortJoins<E>(
       continue;
     }
     const join = addJoin(joins, claimAlias, parent, key, relation, {}, false, false);
-    addSortJoins(joins, claimAlias, join.meta, value, join);
+    // `E` stated: inferred from a `QuerySortMap<object>`, it lands on the nested relation's target.
+    addSortJoins<object>(joins, claimAlias, join.meta, value, join);
   }
 }
 

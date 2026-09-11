@@ -31,7 +31,7 @@ class NoChecks {
   @Id({ type: Number }) id?: number;
 }
 
-const ddl = (dialect: AbstractSqlDialect, entity: Type<unknown>) =>
+const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
 describe('check constraints', () => {

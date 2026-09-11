@@ -110,6 +110,7 @@ it('defineEntity bulk relations allow a related entity shaped differently than t
   class Book {
     id?: number;
     authorId?: string;
+    author?: Author;
   }
   defineEntity(Book, {
     fields: {
@@ -140,12 +141,12 @@ it('defineEntity bulk indexes and hooks', () => {
       status: { type: String },
     },
     indexes: [
-      { columns: ['email', 'status'], name: 'email_status_idx', unique: false },
-      { columns: ['email'], unique: true },
+      { columns: (indexed) => [indexed.email, indexed.status], name: 'email_status_idx', unique: false },
+      { columns: (indexed) => [indexed.email], include: (indexed) => [indexed.status], unique: true },
     ],
     hooks: {
-      beforeInsert: ['stampCreatedAt'],
-      afterLoad: ['hydrate'],
+      beforeInsert: (indexed) => [indexed.stampCreatedAt],
+      afterLoad: (indexed) => [indexed.hydrate],
     },
   });
 
@@ -156,7 +157,7 @@ it('defineEntity bulk indexes and hooks', () => {
     name: 'email_status_idx',
     unique: false,
   });
-  expect(m.indexes![1]).toMatchObject({ columns: [{ column: 'email' }], unique: true });
+  expect(m.indexes![1]).toMatchObject({ columns: [{ column: 'email' }], include: ['status'], unique: true });
   expect(m.hooks!.beforeInsert).toEqual([{ methodName: 'stampCreatedAt' }]);
   expect(m.hooks!.afterLoad).toEqual([{ methodName: 'hydrate' }]);
 });

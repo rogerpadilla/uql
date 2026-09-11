@@ -39,15 +39,15 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
    * defer and no order to respect: this is each collection and nothing more. `foreignKeys` is accepted
    * and ignored for the same reason.
    */
-  generateCreateSchema(entities: readonly Type<unknown>[], options?: CreateSchemaOptions): string[] {
+  generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[] {
     return this.selected(entities, options?.only).flatMap((entity) => this.generateCreateTable(entity, options));
   }
 
-  generateDropSchema(entities: readonly Type<unknown>[]): string[] {
+  generateDropSchema(entities: readonly Type<object>[]): string[] {
     return this.selected(entities).map((entity) => this.generateDropTable(this.resolveTableName(getMeta(entity))));
   }
 
-  private selected(entities: readonly Type<unknown>[], only?: readonly string[]): readonly Type<unknown>[] {
+  private selected(entities: readonly Type<object>[], only?: readonly string[]): readonly Type<object>[] {
     if (!only) {
       return entities;
     }
@@ -177,7 +177,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     return serializeMongoCommand({ action: 'renameCollection', from: oldName, to: newName });
   }
 
-  diffSchema<E>(entity: Type<E>, currentTable: TableNode | undefined): SchemaDiff | undefined {
+  diffSchema(entity: Type<object>, currentTable: TableNode | undefined): SchemaDiff | undefined {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(meta);
 

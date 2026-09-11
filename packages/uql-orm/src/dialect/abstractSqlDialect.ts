@@ -780,7 +780,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         this.compareRelationSize(ctx, entity, key, sizeVal, rel, opts);
         return;
       }
-      this.compareRelation(ctx, entity, key, val as QueryWhere<unknown>, rel, opts);
+      this.compareRelation(ctx, entity, key, val as QueryWhere<object>, rel, opts);
       return;
     }
 
@@ -1344,7 +1344,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /**
    * The `ORDER BY` operand for one key. A key that is not a field of `meta` - a `raw()` projection, a
-   * `$agg` alias - is an output alias, which is never table-qualified and needs no resolving.
+   * `$select` alias - is an output alias, which is never table-qualified and needs no resolving.
    */
   private sortColumn<E>(
     ctx: QueryContext,
@@ -1495,7 +1495,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     // emit for it?".
     const emittedColumns: Record<string, string> = {};
 
-    for (const entry of parseGroupMap(q.$group, q.$agg)) {
+    for (const entry of parseGroupMap(q.$group, q.$select)) {
       if (entry.kind === 'key') {
         const field = meta.fields[entry.alias as FieldKey<E>];
         const columnName = this.resolveColumnName(entry.alias, field);
@@ -1513,7 +1513,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
 
     if (!selectParts.length) {
-      throw new TypeError('aggregate requires at least one $group column or $agg function');
+      throw new TypeError('aggregate requires at least one $group column or $select function');
     }
 
     ctx.append(`SELECT ${selectParts.join(', ')} FROM ${tableName}`);
@@ -1987,7 +1987,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   ): readonly HydratableField[] {
     const { fields } = getMeta(entity);
     const decoded: HydratableField[] = [];
-    for (const entry of parseGroupMap(q.$group, q.$agg)) {
+    for (const entry of parseGroupMap(q.$group, q.$select)) {
       if (entry.kind === 'fn' && entry.op !== '$min' && entry.op !== '$max') {
         decoded.push([entry.alias, 'number']);
         continue;
@@ -2291,7 +2291,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationMeta,
     opts: QueryComparisonOptions,
     projection: '1' | 'COUNT(*)',
-    val: QueryWhere<unknown>,
+    val: QueryWhere<object>,
   ): void {
     const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
@@ -2332,7 +2332,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     rel: RelationMeta,
     parent: string,
     alias: string,
-    joinedMeta: EntityMeta<unknown>,
+    joinedMeta: EntityMeta<object>,
   ): string {
     const escapedParent = this.escapeId(parent, true, true);
     return parentJoins(rel, meta.ids.length)
@@ -2446,7 +2446,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ctx: QueryContext,
     meta: EntityMeta<E>,
     rel: RelationMeta,
-    junction: Type<unknown>,
+    junction: Type<object>,
     parent: string,
   ): { readonly from: string; readonly target: string } {
     const junctionMeta = getMeta(junction);
@@ -2517,7 +2517,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     ctx: QueryContext,
     entity: Type<E>,
     relKey: string,
-    val: QueryWhere<unknown>,
+    val: QueryWhere<object>,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {

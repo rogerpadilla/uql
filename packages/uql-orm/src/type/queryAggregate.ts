@@ -1,10 +1,10 @@
 import type { FieldKey } from './entity.js';
-import type { QueryPager, QuerySortDirection } from './query.js';
+import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
 
 /**
  * Maps the offending keys to `never`, turning an excess key into a compile error; resolves to
- * `unknown` (an inert intersection member) when there are none. Needed because `$group`/`$agg` are
+ * `unknown` (an inert intersection member) when there are none. Needed because `$group`/`$select` are
  * captured as whole maps, and TypeScript skips excess-property checking on a naked type parameter.
  * A find captures key sets instead, where an unknown key fails the capture's own constraint.
  * @internal
@@ -22,7 +22,7 @@ type GroupedKeys<G> = { [K in keyof G]: G[K] extends true ? K : never }[keyof G]
 
 /**
  * The keys `T` declares by name, or `never` when `T` is only an index signature - which is what an
- * uninferred `$agg` is, and what would otherwise make every key look like a declared alias.
+ * uninferred `$select` is, and what would otherwise make every key look like a declared alias.
  * @internal
  */
 type NamedKeys<T> = string extends keyof T ? never : keyof T;
@@ -78,8 +78,22 @@ export function resolveAggregateOp(key: string): { op: QueryAggregateOp; distinc
   throw new TypeError(`unsupported aggregate operator: ${key}`);
 }
 
+/**
+ * Exactly one key of `T` with its value; every other key is forbidden (`never`). `Pick`, not `Record`,
+ * so the chosen key stays linked to `T`'s own property and renames follow it through.
+ */
+type ExactlyOne<T> = {
+  [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
+}[keyof T];
+
+/**
+ * One field named as a key - `{ amount: true }` - the way a statement names every field, so an editor
+ * rename reaches it where a string never would. `F` narrows which fields qualify.
+ */
+export type QueryFieldRef<E, F extends keyof E = FieldKey<E>> = ExactlyOne<Required<QuerySelect<E, F, true>>>;
+
 /** The argument of an aggregate function: a field, or `'*'` (only meaningful for `COUNT(*)`). */
-export type QueryAggregateArg<E> = FieldKey<E> | '*';
+export type QueryAggregateArg<E> = QueryFieldRef<E> | '*';
 
 /**
  * Fields `SUM`/`AVG` can total. Restricted to numeric columns because the result is declared
@@ -108,24 +122,19 @@ type TotallingOp = OpsOf<'$sum' | '$avg' | '$sumDistinct' | '$avgDistinct'>;
  * the totalling ops a numeric field, `$min`/`$max`/`$countDistinct` any field.
  */
 type QueryAggregateArgMap<E> = Record<'$count', QueryAggregateArg<E>> &
-  Record<TotallingOp, NumericFieldKey<E>> &
-  Record<Exclude<AggregateOp, '$count' | TotallingOp>, FieldKey<E>>;
-
-/** Exactly one key of `T`: the chosen op with its value; every other op key is forbidden (`never`). */
-type ExactlyOne<T> = {
-  [K in keyof T]: Readonly<Record<K, T[K]>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
-}[keyof T];
+  Record<TotallingOp, QueryFieldRef<E, NumericFieldKey<E>>> &
+  Record<Exclude<AggregateOp, '$count' | TotallingOp>, QueryFieldRef<E>>;
 
 /**
  * An aggregate function applied to a field. Exactly one operation per entry (a second op is a
  * compile error). Only `$count` accepts `'*'` (i.e. `COUNT(*)`); every other op requires a field.
  * DISTINCT variants are flat ops (`$countDistinct`/`$sumDistinct`/`$avgDistinct`) taking a field.
  *
- * @example { $count: '*' }            -> COUNT(*)
- * @example { $countDistinct: 'id' }   -> COUNT(DISTINCT "id")
- * @example { $sum: 'amount' }         -> SUM("amount")
- * @example { $sumDistinct: 'amount' } -> SUM(DISTINCT "amount")
- * @example { $avg: 'age' }            -> AVG("age")
+ * @example { $count: '*' }                    -> COUNT(*)
+ * @example { $countDistinct: { id: true } }   -> COUNT(DISTINCT "id")
+ * @example { $sum: { amount: true } }         -> SUM("amount")
+ * @example { $sumDistinct: { amount: true } } -> SUM(DISTINCT "amount")
+ * @example { $avg: { age: true } }            -> AVG("age")
  */
 export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>>;
 
@@ -138,16 +147,14 @@ type CountingOp = OpsOf<'$count' | '$countDistinct'>;
 /**
  * Group-by columns: an object mapping entity field keys to `true`, exactly like {@link QuerySelect}.
  * Typed against the entity, so a typo'd column is a compile error. Compute aggregate columns with
- * {@link QueryAggMap} (the `$agg` key), not here.
+ * {@link QueryAggMap} (the `$select` key), not here.
  *
  * @example
  * ```ts
  * { status: true } // -> GROUP BY "status"
  * ```
  */
-export type QueryGroupMap<E> = {
-  readonly [K in FieldKey<E>]?: true;
-};
+export type QueryGroupMap<E> = Readonly<QuerySelect<E, FieldKey<E>, true>>;
 
 /**
  * Computed aggregate columns: an object mapping your chosen output alias to an aggregate function.
@@ -156,7 +163,7 @@ export type QueryGroupMap<E> = {
  *
  * @example
  * ```ts
- * { count: { $count: '*' }, avgAge: { $avg: 'age' } }
+ * { count: { $count: '*' }, avgAge: { $avg: { age: true } } }
  * // -> COUNT(*) AS "count", AVG("age") AS "avgAge"
  * ```
  */
@@ -185,7 +192,7 @@ type QueryAggregateFnResult<E, Fn> =
     : Fn extends FnWithOp<TotallingOp>
       ? number | null
       : Fn extends { readonly $min: infer F } | { readonly $max: infer F }
-        ? FieldValueType<E, F> | null
+        ? FieldValueType<E, keyof F> | null
         : unknown;
 
 /**
@@ -202,7 +209,7 @@ type Simplify<T> = { [K in keyof T]: T[K] } & {};
  * not read contributes none rather than all of them.
  */
 export type QueryAggregateResult<E, G, A> = Simplify<
-  { -readonly [K in GroupedKeys<G> & FieldKey<E>]: E[K] } & {
+  Pick<E, GroupedKeys<G> & FieldKey<E>> & {
     -readonly [K in keyof A]: QueryAggregateFnResult<E, A[K]>;
   }
 >;
@@ -227,7 +234,7 @@ export type QueryHavingMap = {
  * querier.aggregate(User, {
  *   $where: { deletedAt: { $isNull: true } },
  *   $group: { status: true },
- *   $agg: { count: { $count: '*' }, avgAge: { $avg: 'age' } },
+ *   $select: { count: { $count: '*' }, avgAge: { $avg: { age: true } } },
  *   $having: { count: { $gt: 5 } },
  *   $sort: { count: -1 },
  * });
@@ -248,18 +255,21 @@ export type QueryAggregate<
 
   /**
    * Columns to group by - `{ status: true }`, typed against the entity like `$select`. A computed
-   * aggregate wrongly placed here (it belongs in `$agg`) is rejected via {@link Reject}, since
-   * `$group` is captured as a generic and a bare generic skips excess-property checking.
+   * aggregate wrongly placed here (it belongs in `$select`) is rejected via {@link Reject}, since
+   * `$group` is captured as a generic and a bare generic skips excess-property checking. The captured
+   * map meets its schema, {@link QueryGroupMap}, so each key keeps its link to the entity property.
    */
-  readonly $group?: G & Reject<Exclude<keyof G, FieldKey<E>>>;
+  readonly $group?: G & QueryGroupMap<E> & Reject<Exclude<keyof G, FieldKey<E>>>;
 
   /**
-   * Computed aggregate columns - `{ count: { $count: '*' }, avgAge: { $avg: 'age' } }`.
+   * Computed aggregate columns - `{ count: { $count: '*' }, avgAge: { $avg: { age: true } } }`. The
+   * captured map meets its schema over the same aliases, as `$group` does, so field keys stay linked
+   * (a `Record<keyof A, ...>` spelling of the same type breaks the inference of `A`).
    *
    * An alias repeating a `$group` column is rejected: both would be emitted under that one name,
    * leaving the driver to keep whichever it read last.
    */
-  readonly $agg?: A & Reject<NamedKeys<A> & GroupedKeys<G>>;
+  readonly $select?: A & { readonly [K in keyof A]: QueryAggregateFn<E> } & Reject<NamedKeys<A> & GroupedKeys<G>>;
 
   /**
    * Post-aggregation filtering, applied after grouping (SQL `HAVING`, MongoDB post-group `$match`).

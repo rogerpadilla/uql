@@ -13,6 +13,7 @@ import type {
   TsTypeOf,
 } from '../../type/index.js';
 import type { RejectIncompatible } from '../../util/index.js';
+import { relationRegistration } from '../metadata/definition.js';
 import { memberRegistrations } from './bag.js';
 
 // The member decorators share one mechanism, which is why they share a file: the standard spec gives a
@@ -21,8 +22,8 @@ import { memberRegistrations } from './bag.js';
 // type: the `type`, `entity` or referenced key a decorator declares is compared against the property it is
 // written on.
 
-/** A member decorator that also constrains the property it may be applied to. */
-type MemberDecorator<V> = (value: undefined, context: ClassFieldDecoratorContext<unknown, V>) => void;
+/** A member decorator that also constrains the property it may be applied to, on a class `O`. */
+type MemberDecorator<V, O = unknown> = (value: undefined, context: ClassFieldDecoratorContext<O, V>) => void;
 
 /**
  * Maps any option the type does not declare to `never`, turning a typo into a compile error.
@@ -111,33 +112,38 @@ export function Id<
  * `E` comes from the mandatory `entity` getter, so the context can insist the property really holds that
  * entity: `@ManyToOne({ entity: () => Other })` on a `Company` field stops compiling, and a to-many
  * cardinality on a non-array property does too. `entity` is required because nothing reflects it now.
+ * `O` is inferred from the class the decorator sits on, which types `references`' own side.
  */
 type WithEntity<E, O> = O & { readonly entity: EntityGetter<E> };
 
-function relation<V>(opts: RelationOptions): MemberDecorator<V> {
+function relation<E extends object, O, V>(opts: RelationOptions<E, O>): MemberDecorator<V, O> {
   return (_value, context) => {
-    memberRegistrations(context.metadata).relations[String(context.name)] = opts;
+    memberRegistrations(context.metadata).relations[String(context.name)] = relationRegistration(opts);
   };
 }
 
-export function OneToOne<E>(opts: WithEntity<E, RelationOneToOneOptions<E>>): MemberDecorator<E | undefined> {
-  return relation<E | undefined>({ cardinality: '11', ...opts });
+export function OneToOne<E extends object, O>(
+  opts: WithEntity<E, RelationOneToOneOptions<E, O>>,
+): MemberDecorator<E | undefined, O> {
+  return relation<E, O, E | undefined>({ cardinality: '11', ...opts });
 }
 
-export function ManyToOne<E>(opts: WithEntity<E, RelationManyToOneOptions<E>>): MemberDecorator<E | undefined> {
-  return relation<E | undefined>({ cardinality: 'm1', ...opts });
+export function ManyToOne<E extends object, O>(
+  opts: WithEntity<E, RelationManyToOneOptions<E, O>>,
+): MemberDecorator<E | undefined, O> {
+  return relation<E, O, E | undefined>({ cardinality: 'm1', ...opts });
 }
 
-export function OneToMany<E>(
-  opts: WithEntity<E, RelationOneToManyOptions<E>>,
-): MemberDecorator<readonly E[] | undefined> {
-  return relation<readonly E[] | undefined>({ cardinality: '1m', ...opts });
+export function OneToMany<E extends object, O>(
+  opts: WithEntity<E, RelationOneToManyOptions<E, O>>,
+): MemberDecorator<readonly E[] | undefined, O> {
+  return relation<E, O, readonly E[] | undefined>({ cardinality: '1m', ...opts });
 }
 
-export function ManyToMany<E>(
-  opts: WithEntity<E, RelationManyToManyOptions<E>>,
-): MemberDecorator<readonly E[] | undefined> {
-  return relation<readonly E[] | undefined>({ cardinality: 'mm', ...opts });
+export function ManyToMany<E extends object, O>(
+  opts: WithEntity<E, RelationManyToManyOptions<E, O>>,
+): MemberDecorator<readonly E[] | undefined, O> {
+  return relation<E, O, readonly E[] | undefined>({ cardinality: 'mm', ...opts });
 }
 
 function hook(event: HookEvent) {

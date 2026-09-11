@@ -1,4 +1,4 @@
-import type { FieldOptions, HookEvent, RelationOptions, Type } from '../../type/index.js';
+import type { FieldOptions, HookEvent, RelationRegistration, Type } from '../../type/index.js';
 
 /**
  * Polyfill `Symbol.metadata`, which no runtime we support defines yet (checked on Node 24 and Bun
@@ -27,7 +27,7 @@ const registrations = Symbol.for('uql-orm/entity/decoratorMembers');
  */
 export type MemberRegistrations = {
   readonly fields: Record<string, FieldOptions>;
-  readonly relations: Record<string, RelationOptions>;
+  readonly relations: Record<string, RelationRegistration>;
   readonly hooks: Partial<Record<HookEvent, string[]>>;
 };
 

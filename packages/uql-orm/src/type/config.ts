@@ -19,7 +19,7 @@ export interface Config {
    * List of entity classes to be managed by the ORM.
    * If omitted, classes that completed `defineEntity` (including via `@Entity()`) are discovered via `getEntities()`.
    */
-  entities?: Type<unknown>[];
+  entities?: Type<object>[];
 
   /**
    * The directory where migration files are stored.

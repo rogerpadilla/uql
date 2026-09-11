@@ -145,7 +145,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   // used to inherit MySQL's `MATCH ... AGAINST` no matter which engine it was talking to.
   it('rejects $text on a dialect that declares no full-text search', () => {
     const ctx = dialect.createContext();
-    expect(() => dialect.where(ctx, User, { $text: { $fields: ['name'], $value: 'x' } })).toThrow(
+    expect(() => dialect.where(ctx, User, { $text: { $fields: { name: true }, $value: 'x' } })).toThrow(
       'does not support $text full-text search',
     );
   });
@@ -198,7 +198,11 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
   it('emits no HAVING when every condition is undefined', () => {
     const ctx = dialect.createContext();
-    dialect.aggregate(ctx, User, { $group: { name: true }, $agg: { n: { $count: '*' } }, $having: { n: undefined } });
+    dialect.aggregate(ctx, User, {
+      $group: { name: true },
+      $select: { n: { $count: '*' } },
+      $having: { n: undefined },
+    });
     expect(ctx.sql).toBe('SELECT `name`, COUNT(*) `n` FROM `User` GROUP BY `name`');
   });
 
@@ -206,7 +210,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     expect(
       dialect.hydratableAggregates(User, {
         $group: { name: true },
-        $agg: { first: { $min: 'createdAt' }, n: { $count: '*' } },
+        $select: { first: { $min: { createdAt: true } }, n: { $count: '*' } },
       }),
     ).toEqual([
       ['first', 'number'],
@@ -710,7 +714,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $agg: { total: { $sum: 'id' } },
+          $select: { total: { $sum: { id: true } } },
           $having: { total: { toString: 5 } },
         } as any),
       ).toThrow('unsupported HAVING operator: toString');
@@ -727,7 +731,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $agg: { total: { $sum: 'id' } },
+          $select: { total: { $sum: { id: true } } },
           $sort: { total: 'toString' },
         } as any),
       ).toThrow('unknown sort direction: toString');
@@ -735,7 +739,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
 
     it('aggregate rejects a $group operator key that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.aggregate(ctx, User, { $agg: { total: { toString: 'id' } } } as any)).toThrow(
+      expect(() => dialect.aggregate(ctx, User, { $select: { total: { toString: 'id' } } } as any)).toThrow(
         'unsupported aggregate operator: toString',
       );
     });
@@ -744,7 +748,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $agg: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
+          $select: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
         } as any),
       ).toThrow('unsupported aggregate operator');
       expect(ctx.sql).not.toContain('DROP TABLE');
