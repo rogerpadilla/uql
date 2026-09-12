@@ -32,7 +32,7 @@ const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
 { $group: { status: true }, $select: { total: { $sum: { amount: true } } } } // an aggregate: total from a third
 ```
 
-**R7: schema objects as a dependency-ordered graph.** Ordering is already generic: `createOrder` in `schema/dependencyGraph.ts` takes any node and a function returning its dependencies. What is not is the diff - `SchemaDiffResult` has a field per kind (`tablesToCreate`, `tablesToDrop`, `columnDiffs`, `indexDiffs`), so a view, a trigger or a policy each add three more and every consumer grows a branch. A `SchemaObject` vocabulary flattens it. _Unlocks views, triggers, RLS policies._
+**R7: schema objects as a dependency-ordered graph.** Ordering is already generic: `createOrder` in `schema/dependencyGraph.ts` takes any node and a function returning its dependencies. What is not is the diff - `SchemaDiffResult` has a field per kind (`tablesToCreate`, `tablesToDrop`, `columnDiffs`, `indexDiffs`), so a view or a trigger each add three more and every consumer grows a branch. A `SchemaObject` vocabulary flattens it. _Unlocks views, triggers._
 
 ```ts
 // now                          // after
@@ -84,12 +84,6 @@ Two things to get right when it lands. DDL carries no placeholders, so literals 
 
 The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and the predicate path above, and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md), whose last section is what is left to build - trigger introspection and a `RETURNING` list of ordinary columns among it.
 
-## Row-level security
-
-Postgres and PGlite only, and no longer unclaimed: MikroORM 7.2 shipped both halves, a `PolicyDef` per entity and a per-context role and session variables. Two halves, and the first needs no R7: session context: `set_config`/`set local role` before each statement, transaction-scoped, exactly the shape `applyVectorTuning` already has. That alone makes hand-written policies (Supabase) usable from UQL. Declared `policies` are schema objects and wait for R7.
-
-Skip a connection-scoped strategy: a pooled connection carrying the previous tenant's context is a cross-tenant leak.
-
 ## Batching
 
 ```ts
@@ -100,16 +94,10 @@ R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N rou
 
 **The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and the inserts are reliably one statement: `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
 
-## Query cancellation
-
-MikroORM 7.1 shipped `AbortSignal` support; UQL has none server-side, though the browser `ClientQuerier` already carries a per-call `signal`. Not scheduled, and the mapping is worse than it looks: only pg, CockroachDB, MySQL and MariaDB can truly cancel, each needing a _second_ connection (`pg_cancel_backend`, `CANCEL QUERY`, `KILL QUERY`) that the querier cannot reach - it holds a `connect` thunk, not the pool. MongoDB is partial: the driver's `Abortable` covers `find`/`aggregate`/`countDocuments` but not `insertMany`/`updateMany`/`bulkWrite`. Every HTTP driver is a dead end rather than a freebie - libsql, Turso Cloud and D1 expose no per-request signal at all - and the synchronous ones (better-sqlite3, `node:sqlite`, PGlite) surface no `interrupt`. Nine write methods also take no options today. The idiom to follow when it happens is `supportsRowLocks` + `assertLockSupported` + `DriverCapabilities`.
-
 ## Smaller items
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
 - **Oracle.** SQL Server shipped; Oracle is the half still designed, and a differentiator only Prisma and Drizzle also lack. It needs no R5 - its generated ids ride in the values array - and inherits `MergeSqlDialect`'s paging and upsert. [The design](oracle-mssql.md).
-- **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM's 7.1 routines are still flagged experimental.
-
 ## Where a composite key still refuses
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
