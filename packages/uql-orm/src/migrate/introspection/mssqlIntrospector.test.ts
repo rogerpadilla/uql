@@ -1,19 +1,12 @@
 import { MsSqlQuerierPool } from '../../mssql/mssqlQuerierPool.js';
 import type { ForeignKeyAction } from '../../schema/types.js';
-import { createSpec } from '../../test/index.js';
+import { createSpec, mssqlConnection } from '../../test/index.js';
 import { AbstractIntrospectorIt } from './abstractIntrospector-test.js';
 import { MsSqlSchemaIntrospector } from './mssqlIntrospector.js';
 
 class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   constructor() {
-    const pool = new MsSqlQuerierPool({
-      server: 'localhost',
-      port: 1434,
-      user: 'sa',
-      password: 'test!Test',
-      database: 'test',
-      options: { trustServerCertificate: true, encrypt: false },
-    });
+    const pool = new MsSqlQuerierPool(mssqlConnection('test_introspector'));
     super(pool, new MsSqlSchemaIntrospector(pool));
   }
 

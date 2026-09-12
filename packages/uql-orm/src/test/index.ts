@@ -1,3 +1,4 @@
+export * from './connections.js';
 export * from './entityMock.js';
 export * from './it.util.js';
 export * from './loadTsDefaultExport.js';

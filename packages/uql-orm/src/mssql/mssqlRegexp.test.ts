@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
-import { provisioningTimeout } from '../test/index.js';
+import { mssqlConnection, provisioningTimeout } from '../test/index.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 
 @Entity({ name: 'mssql_regexp' })
@@ -16,14 +16,7 @@ class RegexpRow {
  * not exist - so only a server can say whether it is real. The container's database is at 170.
  */
 describe('mssql $regex', () => {
-  const pool = new MsSqlQuerierPool({
-    server: 'localhost',
-    port: 1434,
-    user: 'sa',
-    password: 'test!Test',
-    database: 'test',
-    options: { trustServerCertificate: true, encrypt: false },
-  });
+  const pool = new MsSqlQuerierPool(mssqlConnection('test_regexp'));
 
   beforeAll(async () => {
     await new Migrator(pool, { entities: [RegexpRow] }).sync({ drop: true });

@@ -111,20 +111,22 @@ services:
       MSSQL_PID: 'Developer'
     ports:
       - 1434:1433
-    # The database is created here because the image runs nothing from a volume on startup and has no
+    # The databases are created here because the image runs nothing from a volume on startup and has no
     # `docker-entrypoint-initdb.d`. A one-shot init container is not enough: `docker compose up --wait`
-    # returns while such a container is still running, so CI would start testing before the database
-    # existed. Creating it in the check means healthy implies ready, and the statement is idempotent -
-    # after the first pass it is `IF <false>` and a `SELECT 1`.
+    # returns while such a container is still running, so CI would start testing before they existed.
+    # Creating them in the check means healthy implies ready (`-b` fails it on an error), and the script
+    # is idempotent.
     #
     # Snapshot isolation because SQL Server's default READ COMMITTED takes shared read locks where
     # every other engine here uses MVCC, so a concurrent ORM workload deadlocks on patterns that
     # deadlock nowhere else. It is the advice users need, and this way the suite runs on it.
+    volumes:
+      - ./docker/init-mssql.sql:/init-mssql.sql:ro
     healthcheck:
       test:
         [
           'CMD-SHELL',
-          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -Q "IF DB_ID(''test'') IS NULL BEGIN CREATE DATABASE test; ALTER DATABASE test SET READ_COMMITTED_SNAPSHOT ON; END SELECT 1"',
+          '/opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P "$$MSSQL_SA_PASSWORD" -C -b -i /init-mssql.sql',
         ]
       interval: 5s
       timeout: 10s

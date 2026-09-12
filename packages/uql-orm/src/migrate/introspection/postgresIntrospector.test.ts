@@ -1,19 +1,13 @@
 import { expect } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
-import { createSpec } from '../../test/index.js';
+import { createSpec, postgresConnection } from '../../test/index.js';
 import type { SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
 class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   constructor() {
-    const pool = new PgQuerierPool({
-      host: '0.0.0.0',
-      port: 5442,
-      user: 'test',
-      password: 'test',
-      database: 'test',
-    });
+    const pool = new PgQuerierPool(postgresConnection());
     super(pool, new PostgresSchemaIntrospector(pool));
   }
 

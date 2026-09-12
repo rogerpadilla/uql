@@ -16,7 +16,7 @@ function generatorFor(querier: AbstractSqlQuerier) {
  * Runs `fn` with referential integrity relaxed.
  *
  * The mock graph is cyclic, as most real ones are: `User` points at `Company` and `Company` points back
- * at `User` through the inherited `creator`. No delete or drop order satisfies both directions, so the
+ * at `User` through the inherited `creator`. No drop order satisfies both directions, so the
  * only way through is to stop the constraints being checked for the duration.
  *
  * Each engine relaxes it differently, and Postgres-wire cannot at all (its constraints are not
@@ -146,22 +146,20 @@ export async function clearTables(querier: AbstractSqlQuerier) {
   const tables = ast.getDropOrder().map((table) => querier.dialect.escapeId(table.name));
 
   await querier.transaction(async () => {
-    if (querier.dialect.dialectName === 'postgres' || querier.dialect.dialectName === 'cockroachdb') {
+    if (querier.dialect.dialectName === 'postgres') {
       // One statement for every table: `TRUNCATE` takes a list and resolves the cycle itself, which
       // per-table `DELETE` cannot, and it is markedly faster than 20 sequential deletes.
       await querier.run(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`);
       return;
     }
 
-    await withRelaxedForeignKeys(querier, async () => {
-      for (const table of tables) {
-        await querier.run(`DELETE FROM ${table}`);
-      }
-      // `INTEGER PRIMARY KEY AUTOINCREMENT` keeps its high-water mark in `sqlite_sequence` across a
-      // DELETE, so without this the ids a suite sees depend on which tests ran before it.
-      if (querier.dialect.dialectName === 'sqlite') {
-        await querier.run('DELETE FROM sqlite_sequence');
-      }
-    });
+    for (const table of tables) {
+      await querier.run(`DELETE FROM ${table}`);
+    }
+    // `INTEGER PRIMARY KEY AUTOINCREMENT` keeps its high-water mark in `sqlite_sequence` across a
+    // DELETE, so without this the ids a suite sees depend on which tests ran before it.
+    if (querier.dialect.dialectName === 'sqlite') {
+      await querier.run('DELETE FROM sqlite_sequence');
+    }
   });
 }

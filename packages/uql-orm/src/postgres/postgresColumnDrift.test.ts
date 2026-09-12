@@ -3,7 +3,7 @@ import { defineEntity } from '../entity/index.js';
 import { detectDrift } from '../migrate/drift/index.js';
 import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import { provisioningTimeout } from '../test/index.js';
+import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 import { PostgresDialect } from './postgresDialect.js';
 
@@ -18,7 +18,7 @@ const SCHEMA = 'drift_probe';
  * say which, so the entity here is compared against a column this test wrote in SQL itself.
  */
 describe('PostgreSQL column type drift', () => {
-  const pool = new PgQuerierPool({ host: '0.0.0.0', port: 5442, user: 'test', password: 'test', database: 'test' });
+  const pool = new PgQuerierPool(postgresConnection());
   const dialect = new PostgresDialect({});
 
   const driftFor = async (length?: number) => {

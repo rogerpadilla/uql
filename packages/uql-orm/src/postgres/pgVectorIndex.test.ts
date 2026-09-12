@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
-import { provisioningTimeout } from '../test/index.js';
+import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
 const TABLE = 'pg_vector_index';
@@ -33,13 +33,7 @@ class PgVectorUnindexed {
  * has had this cover since it shipped; Postgres, the dialect most people use it on, had none.
  */
 describe('pgvector index', () => {
-  const pool = new PgQuerierPool({
-    host: '0.0.0.0',
-    port: 5442,
-    user: 'test',
-    password: 'test',
-    database: 'test_pg',
-  });
+  const pool = new PgQuerierPool(postgresConnection('test_pg'));
 
   const indexesOf = () =>
     pool.withQuerier((querier) =>

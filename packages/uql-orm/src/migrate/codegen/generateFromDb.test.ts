@@ -1,7 +1,7 @@
 import { transform } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
-import { provisioningTimeout } from '../../test/index.js';
+import { postgresConnection, provisioningTimeout } from '../../test/index.js';
 import { PostgresSchemaIntrospector } from '../introspection/postgresIntrospector.js';
 import { EntityCodeGenerator } from './entityCodeGenerator.js';
 
@@ -15,7 +15,7 @@ const TABLE = 'codegen_from_db';
  * method reported on every index, which stopped any of them being written on the field.
  */
 describe('generate:from-db (PostgreSQL)', () => {
-  const pool = new PgQuerierPool({ host: '0.0.0.0', port: 5442, user: 'test', password: 'test', database: 'test' });
+  const pool = new PgQuerierPool(postgresConnection());
   let code: string;
 
   beforeAll(async () => {

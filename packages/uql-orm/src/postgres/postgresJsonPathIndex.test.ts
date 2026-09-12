@@ -4,7 +4,7 @@ import { detectDrift } from '../migrate/drift/index.js';
 import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
 import { Migrator } from '../migrate/migrator.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import { provisioningTimeout } from '../test/index.js';
+import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import type { Json } from '../type/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 import { PostgresDialect } from './postgresDialect.js';
@@ -33,7 +33,7 @@ class JsonPathIndexed {
  * is the one for the statement `find` builds, never a hand-written lookalike of it.
  */
 describe('PostgreSQL JSON path index', () => {
-  const pool = new PgQuerierPool({ host: '0.0.0.0', port: 5442, user: 'test', password: 'test', database: 'test' });
+  const pool = new PgQuerierPool(postgresConnection());
   const dialect = new PostgresDialect({});
 
   const planFor = (where: object) =>

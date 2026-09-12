@@ -5,7 +5,7 @@ import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
-import { provisioningTimeout } from '../../test/index.js';
+import { cockroachConnection, postgresConnection, provisioningTimeout } from '../../test/index.js';
 import { raw } from '../../util/index.js';
 import { CockroachSchemaIntrospector, PostgresSchemaIntrospector } from '../introspection/postgresIntrospector.js';
 import { Migrator } from '../migrator.js';
@@ -65,7 +65,7 @@ class DriftIndexUserEdited {
  * here as drift that no migration could ever settle.
  */
 describe('index drift (PostgreSQL)', () => {
-  const pool = new PgQuerierPool({ host: '0.0.0.0', port: 5442, user: 'test', password: 'test', database: 'test' });
+  const pool = new PgQuerierPool(postgresConnection());
   const dialect = new PostgresDialect();
   const introspector = new PostgresSchemaIntrospector(pool);
 
@@ -127,7 +127,7 @@ class CrdbIndexUser {
 }
 
 describe('index drift (CockroachDB)', () => {
-  const pool = new CrdbQuerierPool({ host: '0.0.0.0', port: 26257, user: 'root', database: 'defaultdb' });
+  const pool = new CrdbQuerierPool(cockroachConnection());
   const dialect = new CockroachDialect();
   const introspector = new CockroachSchemaIntrospector(pool);
 

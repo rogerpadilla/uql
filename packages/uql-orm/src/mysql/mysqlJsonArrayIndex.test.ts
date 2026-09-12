@@ -4,7 +4,7 @@ import { detectDrift } from '../migrate/drift/index.js';
 import { MysqlSchemaIntrospector } from '../migrate/introspection/mysqlIntrospector.js';
 import { Migrator } from '../migrate/migrator.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import { provisioningTimeout } from '../test/index.js';
+import { mysqlConnection, provisioningTimeout } from '../test/index.js';
 import type { Json } from '../type/index.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 import { MySqlDialect } from './mysqlDialect.js';
@@ -31,13 +31,7 @@ class JsonArrayIndexed {
  * `find` builds, not for a hand-written lookalike of it.
  */
 describe('MySQL JSON array index', () => {
-  const pool = new MySql2QuerierPool({
-    host: '0.0.0.0',
-    port: 3316,
-    user: 'test',
-    password: 'test',
-    database: 'test',
-  });
+  const pool = new MySql2QuerierPool(mysqlConnection());
   const dialect = new MySqlDialect();
 
   beforeAll(async () => {

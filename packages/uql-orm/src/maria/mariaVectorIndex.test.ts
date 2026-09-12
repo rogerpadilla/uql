@@ -1,7 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
-import { provisioningTimeout } from '../test/index.js';
+import { mariadbConnection, provisioningTimeout } from '../test/index.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
 const TABLE = 'maria_vector_index';
@@ -33,14 +33,7 @@ class MariaVectorUnindexed {
  * here executed one before: the vector suite queries distances, which need no index at all.
  */
 describe('MariaDB vector index', () => {
-  const pool = new MariadbQuerierPool({
-    host: '0.0.0.0',
-    port: 3326,
-    user: 'test',
-    password: 'test',
-    database: 'test',
-    connectionLimit: 5,
-  });
+  const pool = new MariadbQuerierPool(mariadbConnection());
 
   const indexesOf = () =>
     pool.withQuerier((querier) =>

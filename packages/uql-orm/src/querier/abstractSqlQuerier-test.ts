@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import {
+  clearTables,
   Coupon,
   createTables,
   dropTables,
@@ -322,6 +323,10 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   override dropTables() {
     return dropTables(this.querier);
+  }
+
+  override clearTables() {
+    return clearTables(this.querier);
   }
 
   /**

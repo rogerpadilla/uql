@@ -76,9 +76,10 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 
 ## SQL Server: what the live suite settled
 
-The shared integration suite runs against SQL Server 2025 in `bun run test`, beside every other engine. The image (`mcr.microsoft.com/mssql/server:2025-latest`) has no arm64 build, so it runs emulated on Apple Silicon and is healthy in under 20 seconds; its healthcheck creates the database, since the image runs nothing from a volume and `docker compose up --wait` does not wait for a one-shot init container.
+The shared integration suite runs against SQL Server 2025 in `bun run test`, beside every other engine. The image (`mcr.microsoft.com/mssql/server:2025-latest`) has no arm64 build, so it runs emulated on Apple Silicon and is healthy in under 20 seconds; its healthcheck runs `docker/init-mssql.sql` to create the databases, since the image runs nothing from a volume and `docker compose up --wait` does not wait for a one-shot init container.
 
 - **`READ_COMMITTED_SNAPSHOT ON`** is set there too. The default `READ COMMITTED` takes shared read locks where Postgres and Oracle use MVCC, so an ORM workload deadlocks on patterns that never deadlock elsewhere; the docs give users the same advice.
+- **One database per test file that runs DDL.** Catalog locks ignore snapshot isolation: a `sys.foreign_keys` read blocks on another session's uncommitted `DROP TABLE` even when it filters by `object_id`, so two files changing one database's schema in parallel deadlock on `sys.sysschobjs`. The catalog is per database, which is the boundary that holds.
 - **A JSON scalar is read through `OPENJSON`**, on every version: `JSON_VALUE` returns NULL past 4,000 characters in lax mode, and `JSON_QUERY` answers NULL for a scalar. The native `json` type changes neither, so it buys validation on write and nothing else.
 - **JSON reads and writes bind differently.** A write binds the type to store (a `BIT` becomes a JSON boolean), a read binds the text `JSON_VALUE` yields (`'true'`, `'12'`).
 - **`JSON_MODIFY` creates a path it does not find**, so `$pull` is guarded on `JSON_QUERY(col, path) IS NULL`.

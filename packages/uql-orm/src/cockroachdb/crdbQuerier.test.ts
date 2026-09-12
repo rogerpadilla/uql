@@ -1,5 +1,5 @@
 import { PgLikeQuerierIt } from '../querier/pgLikeQuerier-test.js';
-import { createSpec } from '../test/index.js';
+import { cockroachConnection, createSpec } from '../test/index.js';
 import { CrdbQuerierPool } from './crdbQuerierPool.js';
 
 /**
@@ -13,14 +13,7 @@ import { CrdbQuerierPool } from './crdbQuerierPool.js';
  */
 export class CockroachQuerierIt extends PgLikeQuerierIt {
   constructor() {
-    super(
-      new CrdbQuerierPool({
-        host: '0.0.0.0',
-        port: 26257,
-        user: 'root',
-        database: 'defaultdb',
-      }),
-    );
+    super(new CrdbQuerierPool(cockroachConnection()));
   }
 }
 
