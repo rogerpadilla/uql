@@ -1072,6 +1072,13 @@ type EntityRelationOptions<E> = { readonly [K in keyof E]?: RelationOptionsFor<E
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
   /**
+   * The base to inherit fields, relations, hooks and filters from, for a class that cannot extend one
+   * (minted at runtime, or its base chosen from data): the merge `class Child extends Base` does, with
+   * the class's real base nearer, so it wins. Checked against whatever properties the entity declares,
+   * which a class behind an index signature has none of. See the Inheritance guide.
+   */
+  readonly extends?: string extends keyof E ? Type<object> : Type<Partial<E>>;
+  /**
    * The schema (in MySQL terms, database) this table lives in, pinning it whichever pool reads it;
    * unset follows the pool's own. Not in `name`: a dotted `name` is rejected.
    */

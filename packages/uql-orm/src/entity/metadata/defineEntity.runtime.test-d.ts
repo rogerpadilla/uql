@@ -102,3 +102,15 @@ export function registration() {
     fields: { id: { type: Number, isId: true }, titel: { type: String } },
   });
 }
+
+/**
+ * The audit columns a minted class has no base to extend: `extends` names one. Nothing declares that
+ * class's columns, so nothing checks the base against them - where the class does declare its own,
+ * `entityOptions.test-d.ts` pins that a base disagreeing about one is a compile error.
+ */
+export function sharedBase() {
+  class Audited {
+    createdBy?: string;
+  }
+  defineEntity(Dynamic, { extends: Audited, fields: { id: { type: 'uuid', isId: true } } });
+}

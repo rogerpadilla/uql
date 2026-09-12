@@ -4,6 +4,7 @@ import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import type { ColumnType, Json, Scalar, Type } from '../../type/index.js';
+import { getKeys } from '../../util/index.js';
 import {
   defineEntity,
   defineField,
@@ -28,7 +29,7 @@ type ContentType = { name: string; fields: { name: string; type: ColumnType }[] 
 type ContentRow = { [column: string]: Scalar | Json<Record<string, unknown>> };
 
 /** Named after the content type, so its DDL and its errors read like a hand-written entity's. */
-function register({ name, fields }: ContentType): Type<ContentRow> {
+function register({ name, fields }: ContentType, base?: Type<object>): Type<ContentRow> {
   const entity = {
     [name]: class {
       id!: number;
@@ -36,6 +37,7 @@ function register({ name, fields }: ContentType): Type<ContentRow> {
     },
   }[name];
   defineEntity(entity, {
+    extends: base,
     name,
     fields: {
       id: { type: 'bigint', isId: true },
@@ -210,6 +212,32 @@ it('adds a field the admin added, and leaves one they retyped', async () => {
   await querier.release();
 
   expect(found).toEqual({ id: 1, label: 'news', colour: 'red', weight: 2 });
+});
+
+/**
+ * The audit columns every content type carries. A minted class has no base to extend, so `extends`
+ * names one: the same merge, and the base is a bag of columns rather than an entity of its own.
+ */
+it('gives every content type a base its class cannot extend', async () => {
+  class Audited {
+    createdBy?: string;
+  }
+  defineField(Audited, 'createdBy', { type: String });
+
+  const Faq = register({ name: 'faq', fields: [{ name: 'question', type: 'text' }] }, Audited);
+  const Guide = register({ name: 'guide', fields: [{ name: 'body', type: 'text' }] }, Audited);
+  await sync([Faq, Guide]);
+
+  expect(getKeys(getMeta(Faq).fields).sort()).toEqual(['createdBy', 'id', 'question']);
+  expect(getEntities()).not.toContain(Audited);
+
+  const querier = await pool.getQuerier();
+  await querier.insertOne(Faq, { question: 'why', createdBy: 'ada' });
+  await querier.insertOne(Guide, { body: 'how', createdBy: 'ada' });
+  const [faq] = await querier.findMany(Faq, {});
+  await querier.release();
+
+  expect(faq).toEqual({ id: 1, question: 'why', createdBy: 'ada' });
 });
 
 it('forgets a content type the admin deleted', () => {

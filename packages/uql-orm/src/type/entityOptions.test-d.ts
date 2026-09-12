@@ -335,6 +335,20 @@ defineEntity(Account, {
   relations: { owner: { cardinality: 'm1', entity: () => Unrelated } },
 });
 
+// ─── EntityOptions.extends: the base's properties are checked against the entity's own ───
+class Stamped {
+  createdAt?: Date;
+}
+class Mistyped {
+  createdAt?: string;
+}
+defineEntity(Account, { extends: Stamped, fields: { id: { type: Number, isId: true } } });
+defineEntity(Account, {
+  // @ts-expect-error the base declares `createdAt` as something the entity does not
+  extends: Mistyped,
+  fields: { id: { type: Number, isId: true } },
+});
+
 // ─── TsTypeOf agrees with TypeFor ───
 // The two mappings are written independently (neither is inferable from the other), so these assert
 // they stay consistent: whatever TypeScript type a declared `type` implies must accept that `type` back.

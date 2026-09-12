@@ -253,18 +253,10 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     meta.derivedName = true;
   }
   meta.schema = opts.schema ?? meta.schema;
-  let proto: FunctionConstructor = Object.getPrototypeOf(entity.prototype);
-
-  while (proto.constructor !== Object) {
-    const parent = proto.constructor as Type<E>;
-    // An `abstract class BaseEntity` carrying `@Field`s but no `@Entity()` has nobody to drain its
-    // registrations, so do it here. Walking the *class* prototype chain rather than reading through the
-    // metadata object's is what makes this work on every transformer: tsc and esbuild chain metadata
-    // across `extends`, SWC does not.
-    applyMembers(parent, ownRegistrations(parent));
-    extendMeta(meta, ensureMeta(parent));
-    proto = Object.getPrototypeOf(proto);
-  }
+  // The class's real chain first: where a class both extends a base and names one, the one it extends
+  // is the nearer, and nearer wins every merge.
+  inheritFrom(meta, parentOf(entity));
+  inheritFrom(meta, opts.extends);
 
   // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
   // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
@@ -577,6 +569,26 @@ function junctionColumn<E>(meta: EntityMeta<E>, idKey: IdKey<E>): string {
 /** Every key the entity marks, in declaration order. More than one is a composite primary key. */
 function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
   return getKeys(meta.fields).filter((key) => meta.fields[key]?.isId) as IdKey<E>[];
+}
+
+/**
+ * Merges `ancestor` and its own ancestors into `meta`, nearest first, so a further one never overwrites
+ * a nearer. An `abstract class BaseEntity` carrying `@Field`s but no `@Entity()` has nobody to drain
+ * its registrations, so do it here. Walking the *class* prototype chain rather than the metadata
+ * object's is what makes this work on every transformer: tsc and esbuild chain metadata across
+ * `extends`, SWC does not.
+ */
+function inheritFrom<E>(meta: EntityMeta<E>, ancestor: Type<object> | undefined): void {
+  for (let parent = ancestor; parent && parent !== Object; parent = parentOf(parent)) {
+    const base = parent as Type<E>;
+    applyMembers(base, ownRegistrations(base));
+    extendMeta(meta, ensureMeta(base));
+  }
+}
+
+/** The class `entity` extends, `Object` where it extends nothing. */
+function parentOf(entity: Type<unknown>): Type<object> | undefined {
+  return Object.getPrototypeOf(entity.prototype)?.constructor;
 }
 
 function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {

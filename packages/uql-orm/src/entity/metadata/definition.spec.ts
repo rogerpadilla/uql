@@ -23,6 +23,8 @@ import {
   assertSoleId,
   defineEntity,
   defineField,
+  defineFilter,
+  defineHook,
   defineId,
   defineRelation,
   fieldOf,
@@ -1257,6 +1259,101 @@ it('subclass inherits parent softDelete field key and filters', () => {
   expect(meta.softDelete).toBe('deletedAt');
   expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
   expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
+});
+
+/**
+ * `extends` is what a minted class cannot say by extending: the base is named in the options, and the
+ * merge is the prototype chain's, ancestors included.
+ */
+it('extends inherits the fields, relations, hooks and filters of a base and its own base', () => {
+  class Timestamped {
+    createdAt?: Date;
+    stamp(): void {}
+  }
+  defineField(Timestamped, 'createdAt', { type: Date });
+  defineHook(Timestamped, 'stamp', 'beforeInsert');
+
+  class Owned extends Timestamped {
+    ownerId?: number;
+    owner?: User;
+  }
+  defineField(Owned, 'ownerId', { type: Number });
+  defineRelation(Owned, 'owner', { cardinality: 'm1', entity: () => User });
+  defineFilter(Owned, 'mine', { condition: { ownerId: 1 }, default: false });
+
+  class Ticket {
+    id?: number;
+    title?: string;
+    createdAt?: Date;
+    ownerId?: number;
+    owner?: User;
+    stamp(): void {}
+  }
+  defineEntity(Ticket, {
+    extends: Owned,
+    fields: { id: { type: Number, isId: true }, title: { type: String } },
+  });
+
+  const meta = getMeta(Ticket);
+  expect(getKeys(meta.fields).sort()).toEqual(['createdAt', 'id', 'ownerId', 'title']);
+  expect(meta.relations['owner']?.references).toEqual([{ local: 'ownerId', foreign: 'id' }]);
+  expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'stamp' }]);
+  expect(meta.filters?.['mine']).toEqual({ condition: { ownerId: 1 }, default: false });
+  expect(meta.ids).toEqual(['id']);
+});
+
+it('a base named by extends keeps its own table, and the child what it declares itself', () => {
+  class Auditable {
+    id?: number;
+    label?: string;
+    archived?: boolean;
+  }
+  defineEntity(Auditable, {
+    name: 'auditable',
+    fields: { id: { type: Number, isId: true }, label: { type: String }, archived: { type: Boolean } },
+  });
+
+  class Invoice {
+    [idKey]?: 'ref';
+    ref?: string;
+    label?: string;
+    archived?: boolean;
+  }
+  defineEntity(Invoice, {
+    extends: Auditable,
+    fields: { ref: { type: String, isId: true }, label: { type: String, nullable: false } },
+  });
+
+  const meta = getMeta(Invoice);
+  expect(meta.name).toBe('Invoice');
+  expect(meta.ids).toEqual(['ref']);
+  expect(getKeys(meta.fields).sort()).toEqual(['archived', 'label', 'ref']);
+  expect(meta.fields['label']).toMatchObject({ type: String, nullable: false });
+  expect(getMeta(Auditable).name).toBe('auditable');
+});
+
+it('a class that both extends and names a base takes the nearer one', () => {
+  class Named {
+    label?: string;
+  }
+  defineField(Named, 'label', { type: String, length: 10 });
+
+  class Described {
+    label?: string;
+    note?: string;
+  }
+  defineField(Described, 'label', { type: String, length: 500 });
+  defineField(Described, 'note', { type: String });
+
+  class Asset extends Named {
+    id?: number;
+    note?: string;
+  }
+  defineEntity(Asset, { extends: Described, fields: { id: { type: Number, isId: true } } });
+
+  const meta = getMeta(Asset);
+  expect(meta.fields['label']).toMatchObject({ type: String, length: 10 });
+  expect(meta.fields['note']).toMatchObject({ type: String });
 });
 
 it('foreign-key column gets its relation without anyone declaring one', () => {
