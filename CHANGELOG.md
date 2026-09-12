@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.59.0] - 2026-09-12
+
+- **`defineEntity` takes an `extends` base**, inheriting its fields, relations, hooks and filters where the class cannot extend one: minted at runtime, or its base chosen from data.
+
 ## [0.58.0] - 2026-09-11
 
 - **Renaming a field or relation reaches every query that names it**: `$select`, `$exclude`, `$where`, `$sort`, `$populate`, `$count`, `$group`, writes and result rows, where before only the entity and the insert payload followed.
