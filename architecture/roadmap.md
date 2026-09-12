@@ -92,7 +92,7 @@ const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 })
 
 R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips elsewhere: correct, not faster.
 
-**The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and the inserts are reliably one statement: `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
+**The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and an insert carrying no relation are reliably one statement: saving a relation needs the ids the insert generated, and `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
 
 ## Smaller items
 
