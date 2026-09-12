@@ -109,6 +109,38 @@ export async function probeForeignKeys(querier: AbstractSqlQuerier) {
   return { dangling, orphans: orphans.map((row) => row.id) };
 }
 
+/**
+ * Breaks a foreign key, a NOT NULL and a CHECK on a constrained pair of its own, since the shared
+ * fixtures carry no constraints, and hands back each rejection (`undefined` where one was accepted).
+ */
+export async function violateConstraints(querier: AbstractSqlQuerier) {
+  const dropPair = async () => {
+    await querier.run('DROP TABLE IF EXISTS uqlConstrainedChild');
+    await querier.run('DROP TABLE IF EXISTS uqlConstrainedParent');
+  };
+  const rejection = (sql: string) =>
+    querier.run(sql).then(
+      () => undefined,
+      (err: unknown) => err,
+    );
+
+  await dropPair();
+  try {
+    await querier.run('CREATE TABLE uqlConstrainedParent (id INTEGER PRIMARY KEY)');
+    await querier.run(
+      'CREATE TABLE uqlConstrainedChild (id INTEGER PRIMARY KEY, parentId INTEGER, price INTEGER NOT NULL CHECK (price > 0),' +
+        ' FOREIGN KEY (parentId) REFERENCES uqlConstrainedParent (id))',
+    );
+    return {
+      foreignKey: await rejection('INSERT INTO uqlConstrainedChild (id, parentId, price) VALUES (1, 999, 1)'),
+      notNull: await rejection('INSERT INTO uqlConstrainedChild (id, price) VALUES (2, NULL)'),
+      check: await rejection('INSERT INTO uqlConstrainedChild (id, price) VALUES (3, 0)'),
+    };
+  } finally {
+    await dropPair();
+  }
+}
+
 export async function clearTables(querier: AbstractSqlQuerier) {
   const ast = buildSchemaAST(getEntities(), { namingStrategy: querier.dialect.namingStrategy });
   const tables = ast.getDropOrder().map((table) => querier.dialect.escapeId(table.name));

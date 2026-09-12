@@ -1,3 +1,4 @@
+import { type QueryErrorKind, queryErrorKind } from '../querier/queryError.js';
 import type { Type, UniversalQuerier } from '../type/index.js';
 // the specific util modules, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
@@ -100,12 +101,25 @@ export type RequestErrorResponse = {
   };
 };
 
+/** Generic on purpose: a driver's constraint message names tables and constraints, and Postgres echoes the value. */
+const CONSTRAINT_ERRORS: ReadonlyMap<QueryErrorKind | undefined, RequestErrorResponse['error']> = new Map([
+  ['uniqueViolation', { message: 'Conflict', code: 409 }],
+  ['foreignKeyViolation', { message: 'Conflict', code: 409 }],
+  ['notNullViolation', { message: 'Bad Request', code: 400 }],
+  ['checkViolation', { message: 'Bad Request', code: 400 }],
+]);
+
 /**
  * Map a thrown error to the wire error envelope. Honors a numeric `status` on the error
- * (e.g. hooks throwing 403), defaults to 500; `code` mirrors the HTTP status.
+ * (e.g. hooks throwing 403), then a constraint violation (409/400), defaults to 500; `code` mirrors the HTTP status.
  */
 export function toErrorResponse(err: unknown): { status: number; body: RequestErrorResponse } {
-  const status = err instanceof Error && 'status' in err && typeof err.status === 'number' ? err.status : 500;
-  const message = err instanceof Error ? err.message : 'Internal Server Error';
-  return { status, body: { error: { message, code: status } } };
+  const error =
+    err instanceof Error && 'status' in err && typeof err.status === 'number'
+      ? { message: err.message, code: err.status }
+      : (CONSTRAINT_ERRORS.get(queryErrorKind(err)) ?? {
+          message: err instanceof Error ? err.message : 'Internal Server Error',
+          code: 500,
+        });
+  return { status: error.code, body: { error } };
 }

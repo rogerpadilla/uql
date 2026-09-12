@@ -17,6 +17,7 @@ import {
 } from '../test/index.js';
 import type { Querier, QuerierPool, QuerySearch, QueryWhere, Type } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
+import { queryErrorKind } from './queryError.js';
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier!: Q;
@@ -197,6 +198,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldInsertManyEmpty() {
     const ids = await this.querier.insertMany(User, []);
     expect(ids).toEqual([]);
+  }
+
+  /** The driver's own error, read as it reaches the caller, on every backend MongoDB included. */
+  async shouldNameAUniqueViolation() {
+    const id = await this.querier.insertOne(User, { name: 'first' });
+    const err = await this.querier.insertOne(User, { id, name: 'second' }).catch((thrown: unknown) => thrown);
+    expect(queryErrorKind(err)).toBe('uniqueViolation');
   }
 
   async shouldInsertOne() {

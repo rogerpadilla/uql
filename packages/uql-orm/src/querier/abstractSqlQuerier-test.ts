@@ -10,11 +10,13 @@ import {
   TaxCategory,
   TypedGroup,
   TypedRow,
+  violateConstraints,
 } from '../test/index.js';
 import { col, raw } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
+import { queryErrorKind } from './queryError.js';
 
 /**
  * Wider than 2^53, so any engine or driver that routes it through a float is caught by the digits. Its
@@ -69,14 +71,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * The case the feature exists for: two workers draw from one queue and must not get the same row.
-   * Needs two real connections, since a lock is only visible to a different transaction, which is
-   * also why no generated-SQL assertion can stand in for it. Skipped on a shared-handle pool, which has
-   * one connection under every querier and so cannot produce a second transaction for a lock to be
-   * visible to, however correct the SQL the dialect emits: see {@link AbstractSharedHandleQuerierPool}
-   * for what each engine does instead.
+   * The case the feature exists for: two workers draw from one queue and must not get the same row,
+   * and one that will not wait for a held row is refused as `retryable`. Needs two real connections,
+   * since a lock is only visible to a different transaction: skipped on a shared-handle pool, see
+   * {@link AbstractSharedHandleQuerierPool} for what each engine does instead.
    */
-  async shouldSkipLockedRowsForAQueue() {
+  async shouldSkipOrRefuseLockedRows() {
     if (!this.querier.dialect.supportsRowLocks || this.pool instanceof AbstractSharedHandleQuerierPool) {
       return;
     }
@@ -101,6 +101,11 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       const mineIds = mine.map((it) => it.id);
       const theirsIds = theirs.map((it) => it.id);
       expect(mineIds.filter((id) => theirsIds.includes(id))).toEqual([]);
+
+      const refused = await other
+        .findMany(LedgerAccount, { $select: { id: true }, $where: { id: mineIds[0] }, $lock: { wait: 'nowait' } })
+        .catch((thrown: unknown) => thrown);
+      expect(queryErrorKind(refused)).toBe('retryable');
 
       await other.rollbackTransaction();
       await this.querier.rollbackTransaction();
@@ -228,6 +233,17 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    */
   async shouldReadAWideIntegerExactly() {
     await this.assertWideInteger(this.querier.all<WideRow>(this.wideIntegerSql()));
+  }
+
+  /** Each engine's own constraint errors, which the unit table can only imitate: MSSQL's two 547s among them. */
+  async shouldNameConstraintViolations() {
+    const { foreignKey, notNull, check } = await violateConstraints(this.querier);
+
+    expect([queryErrorKind(foreignKey), queryErrorKind(notNull), queryErrorKind(check)]).toEqual([
+      'foreignKeyViolation',
+      'notNullViolation',
+      'checkViolation',
+    ]);
   }
 
   /** A BIGINT past 2^53 crosses JSON as text, so a populated row keeps every digit JSON would round. */

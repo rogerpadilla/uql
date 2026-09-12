@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.61.0] - 2026-09-12
+
+- **`queryErrorKind(err)` names a failed query the same way on every engine** (`uniqueViolation`, `foreignKeyViolation`, `notNullViolation`, `checkViolation`, `retryable`), so a 409 or a retry needs no driver codes.
+- **The HTTP handlers answer constraint violations with `409 Conflict` or `400 Bad Request`**, where every database failure was a `500`.
+
 ## [0.60.0] - 2026-09-12
 
 - **`defineBuilderMigration` hands `up`/`down` the builder**, where it passed the querier and `m.createTable` failed; the querier comes second, for a backfill in the same transaction.

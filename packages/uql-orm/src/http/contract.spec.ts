@@ -73,6 +73,35 @@ describe('toErrorResponse', () => {
     });
   });
 
+  it.each<[string, Error, number, string]>([
+    [
+      'a unique violation',
+      Object.assign(new Error('Key (email)=(a@b.com) exists'), { code: '23505' }),
+      409,
+      'Conflict',
+    ],
+    ['a foreign key violation', new Error('FOREIGN KEY constraint failed'), 409, 'Conflict'],
+    [
+      'a not-null violation',
+      Object.assign(new Error("Column 'name' cannot be null"), { errno: 1048 }),
+      400,
+      'Bad Request',
+    ],
+    ['a check violation', Object.assign(new Error('violates check constraint'), { code: '23514' }), 400, 'Bad Request'],
+    ['a retryable failure', Object.assign(new Error('deadlock detected'), { code: '40P01' }), 500, 'deadlock detected'],
+    [
+      'an explicit status over the constraint kind',
+      Object.assign(new Error('taken'), { code: '23505', status: 422 }),
+      422,
+      'taken',
+    ],
+  ])('maps %s', (_, err, status, message) => {
+    expect(toErrorResponse(err)).toEqual({
+      status,
+      body: { error: { message, code: status } },
+    });
+  });
+
   it('ignores a non-numeric status', () => {
     const err = Object.assign(new Error('odd'), { status: 'nope' });
     expect(toErrorResponse(err)).toEqual({
