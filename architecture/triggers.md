@@ -73,7 +73,7 @@ An aggregate is maintainable by a trigger only if a row change becomes a delta.
 
 The same line `pg_ivm` draws. An operator outside the shipping rows is refused at registration, naming the operator and the reason.
 
-`$countInserts` is the one operator an aggregate's `$select` does not have, because it is not a query aggregate: it tallies INSERT events, so it has no delete branch, no backfill and no resync, and drift on one is permanent. It sits beside `$count` on purpose - the place to make two things impossible to confuse is where the author picks between them. The case study's repair migration overwrote a lifetime tally with a live count.
+`$countInserts` is the one operator an aggregate's `$select` does not have, because it is not a query aggregate: it tallies INSERT events, so it has no delete branch, no backfill and no resync - added to a populated table it starts every existing row at zero, and drift on one is permanent. It sits beside `$count` on purpose - the place to make two things impossible to confuse is where the author picks between them. The case study's repair migration overwrote a lifetime tally with a live count.
 
 ### How the body is derived
 
@@ -87,7 +87,7 @@ This is the only thing the declarative layer does that authoring cannot, and it 
 - the entity's default-on filters are **included**, soft delete among them, or the aggregate disagrees with the `_count` under its own name;
 - a per-request `security` filter is **refused**; it cannot be in a trigger.
 
-**Many-to-many is a trigger on the junction, unfiltered only.** The counted rows are the junction's, so the edge is its local foreign key and the framing applies unchanged. A filtered many-to-many is refused: the predicate lives on the far table, so a junction insert could not evaluate it without a join, and flipping a flag on one `Tag` would fan out to every `User` linked to it.
+**Many-to-many is a trigger on the junction, unfiltered only.** A junction here is the declared `through` entity, so it already has a table and metadata to hang one on; the counted rows are its own, so the edge is its local foreign key and the framing applies unchanged. A filtered many-to-many is refused: the predicate lives on the far table, so a junction insert could not evaluate it without a join, and flipping a flag on one `Tag` would fan out to every `User` linked to it.
 
 **One trigger per counted entity and deferral mode.** Aggregates reading the same entity share one generated body, which keeps write amplification flat. Two that disagree about deferral cannot share one, because the mode belongs to the trigger, not the body.
 
@@ -140,9 +140,9 @@ The plpgsql function is generated beside the trigger and dropped with it, becaus
 
 ## Ownership, diff and resync
 
-- **The diff only touches objects it owns, and never by text.** Generated triggers and functions take the `_uql` name prefix; drift compares only those, so the first drift check does not offer to drop every hand-written trigger in the database. The generated body is hashed into `COMMENT ON FUNCTION` and compared by hash, because a database reprints a body from its parse tree. Nothing in UQL emits `COMMENT ON` today, so that is new emission. Putting the hash in the function's _name_ was rejected: it makes every body change a rename.
+- **The diff only touches objects it owns, and never by text.** Generated triggers and functions take the `_uql` name prefix; drift compares only those, so the first drift check does not offer to drop every hand-written trigger in the database. The generated body is hashed into `COMMENT ON FUNCTION` and compared by hash, because a database reprints a body from its parse tree. UQL already emits `COMMENT ON` - `commentSyntax` carries a table's and a column's comment, and the Postgres and MySQL introspectors read one back - so what is new is the object it hangs on. Putting the hash in the function's _name_ was rejected: it makes every body change a rename.
 - **An authored body is created and never compared**, exactly like a check constraint. Its timing, events and `forEach` still are, so a dropped or reshaped one is reported.
-- **Resync is a data command, not a schema one.** `drift:check` reports schema drift; this reports data drift. The verification query is the backfill with a comparison, so it is the same generator exposed - `appendRelationSubquery(..., 'COUNT(*)')` already derives it from the relation alone and applies the target's own filters. Recomputing under concurrent writes can lose an insert whose deferred trigger commits after the subquery's snapshot, so resync reports by default and repairs under a lock.
+- **Resync is a data command, not a schema one.** `aggregate:check` and `aggregate:repair` sit beside `drift:check`: that one reports schema drift, these report data drift. The verification query is the backfill with a comparison, so it is the same generator exposed - `appendRelationSubquery(..., 'COUNT(*)')` already derives it from the relation alone and applies the target's own filters. Recomputing under concurrent writes can lose an insert whose deferred trigger commits after the subquery's snapshot, so resync reports by default and repairs under a lock.
 - **TRUNCATE bypasses every aggregate.** A constraint trigger cannot carry a TRUNCATE event. Resync is the answer.
 - **Support is per arm, not per feature.** Inlining an unstored `computed` works everywhere. `GENERATED ALWAYS AS` is Postgres 12+, MySQL 5.7+, MariaDB 5.2+ and SQLite 3.31+, with Mongo refusing. Everything trigger-backed - both `on` arms and every stored aggregate - is Postgres only, because deferred constraint triggers and plpgsql do not port. Refuse elsewhere rather than downgrading silently, following `estimatedCount`'s base-throws/subclass-overrides pattern or the `indexFeatures` capability set.
 
@@ -150,9 +150,18 @@ The plpgsql function is generated beside the trigger and dropped with it, becaus
 
 The relation name is checked at compile time. `Field(opts)` resolves before it knows its class, but `ClassFieldDecoratorContext<This, Value>` carries `This`, inferred where the decorator is applied: the relation decorators already read their declaring class that way for `references`. The check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying a relation `computed` pays for it: ungated, about 41 extra instantiations on every decorated field; gated, four. Verified against self-references, inherited fields and forward references, none circular.
 
-## What the trigger arms add to the existing code
+## What is still missing
 
-The generated-column arm already made the option rules conditional: `FIELD_OPTION_FAMILY` (`util/fieldOption.util.ts`) is `satisfies Record<keyof FieldOptions, ...>`, and `deadOn` treats a stored `computed` as the real column it is. `on` has to be placed there too, and a stored aggregate reads and migrates like a stored generated column, so the new work is the trigger itself.
+The generated-column arm already made the option rules conditional: `FIELD_OPTION_FAMILY` (`util/fieldOption.util.ts`) is `satisfies Record<keyof FieldOptions, ...>`, and `deadOn` treats a stored `computed` as the real column it is. A stored aggregate reads and migrates like a stored generated column, so most of the read path is there. What is not:
+
+- **R7.** `SchemaDiffResult` (`schema/types.ts`) still has a field per kind, so a trigger and its function add two more create lists, two drop lists and a diff list, and every consumer grows a branch.
+- **A DDL render for an interpolated `raw`**, which `ddlText` (`util/ddlExpression.util.ts`) refuses by name. [Typed DDL predicates](roadmap.md) build both it and the DDL-time `QueryWhere` compiler the authored `when` and an aggregate's `$where` are written in, so that item lands _before_ this one. Triggers need one thing a partial index does not: the operand prefix is `NEW`/`OLD` rather than a table alias.
+- **Trigger introspection.** No introspector reads `pg_trigger` or `pg_proc`, so nothing can yet report a trigger dropped or reshaped in the database. Timing, events, `tgattr` (the `UPDATE OF` columns), `tgdeferrable`/`tginitdeferred` and the function's comment are exactly what the diff above compares.
+- **A `RETURNING` list of ordinary columns.** The dialects compose one for generated ids and, on an upsert, one extra expression (`returningIdExpression`); the stamp arm needs a declared column in it.
+- **The write half of a trigger-backed column.** `GENERATED_WRITES` kills `defaultValue`, `updatable` and the `on*` callbacks on anything `computed` - right for `GENERATED ALWAYS AS`, wrong for an aggregate, which derives `NOT NULL DEFAULT 0` and `updatable: false` and is written by a trigger rather than by the engine. The two arms take different rows of that table, and `on` has to be placed there too.
+- **The backfill.** It is a data statement inside a generated schema migration, and R7's vocabulary is DDL; the aggregate's schema object emits it beside its own `CREATE`, the way a resync emits the same query with a comparison.
+
+Where a refusal lives follows from what its layer knows. An operator outside the shipping rows, a `$where` traversing a relation, a filtered many-to-many are all shapes, refused at registration. Postgres-only is not a shape and registration has no dialect, so it is refused where `buildEntityAST` has one - the same place a typed DDL predicate compiles.
 
 ## Not in this release
 
@@ -177,20 +186,16 @@ Independent evidence, since one application is not evidence. A census of every t
 
 Across ecosystems, the two halves are always split and the second half is always missing.
 
-|                                | Authors triggers                                                                           | Diffs them                          | Maintained aggregate |
-| :----------------------------- | :----------------------------------------------------------------------------------------- | :---------------------------------- | :------------------- |
-| **hair_trigger** (Rails)       | yes - declared on the model, `.of(:name)` is `UPDATE OF`, a rake task writes the migration | via migrations                      | no                   |
-| **django-pgtrigger**           | yes - fourteen cookbook recipes                                                            | yes                                 | no                   |
-| **alembic_utils** (SQLAlchemy) | yes - triggers, functions, views, policies as first-class objects                          | yes - real autogenerate             | no                   |
-| **Atlas**                      | yes - `trigger` block with `update_of`, ROW/STATEMENT                                      | yes - the best diff engine here     | no                   |
-| **MikroORM 7**                 | yes - `TriggerDef` with a column map                                                       | yes                                 | no                   |
-| SQLAlchemy 2.0 core            | no construct; DDL event listeners and raw SQL                                              | no - Alembic does not see DDL hooks | no                   |
-| Hibernate 6                    | no - but `@Generated` cooperates with a column the database writes                         | no                                  | no                   |
-| EF Core 7+                     | no - `HasTrigger()` only declares that one exists, so writes drop the `OUTPUT` clause      | no                                  | no                   |
-| Doctrine, ent, GORM, TypeORM   | no - application-level lifecycle hooks only                                                | no                                  | no                   |
-| Prisma, Drizzle                | no construct at all                                                                        | no                                  | no                   |
-| Sequelize                      | imperative `queryInterface.createTrigger`                                                  | no                                  | no                   |
+|                                | Authors triggers                                                                           | Diffs them                                                           | Maintained aggregate |
+| :----------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------------------- | :------------------- |
+| **hair_trigger** (Rails)       | yes - declared on the model, `.of(:name)` is `UPDATE OF`, a rake task writes the migration | via migrations                                                       | no                   |
+| **django-pgtrigger**           | yes - fourteen cookbook recipes                                                            | yes                                                                  | no                   |
+| **alembic_utils** (SQLAlchemy) | yes - triggers, functions, views, policies as first-class objects                          | yes - real autogenerate                                              | no                   |
+| **Atlas**                      | yes - `trigger` block with `update_of`, ROW/STATEMENT                                      | yes - the best diff engine here                                      | no                   |
+| **MikroORM 7.2**               | yes - `@Trigger`/`triggers`, a body callback over the column map, on five engines          | yes - by body text, with `ignoreTriggers` to spare hand-written ones | no                   |
 
-`hair_trigger` is the closest prior art for the authored layer and got there in 2011; Atlas has the strongest diff engine, though triggers are a paid feature there and it carries no `when` or deferrable; `alembic_utils` is the best autogenerate story. Against that, two things stay unclaimed: a `when` that is a typed condition rather than a SQL string, and a **maintained aggregate**, which nothing in the table has. Rails has the aggregate and puts it in the application, which is why `counter_culture` ships `fix_counts`; the trigger libraries have the mechanism and no aggregate built on it.
+Everything else has no construct: Prisma and Drizzle offer none; TypeORM, Doctrine, ent and GORM stop at application-level lifecycle hooks; Sequelize has an imperative `queryInterface.createTrigger` and no diff; SQLAlchemy core has DDL event listeners Alembic cannot see; Hibernate 6 has no trigger but `@Generated` cooperates with a column the database writes; EF Core's `HasTrigger()` only declares that one exists, so writes drop the `OUTPUT` clause.
+
+`hair_trigger` is the closest prior art for the authored layer and got there in 2011; Atlas has the strongest diff engine, though triggers are a paid feature there and it carries no `when` or deferrable; `alembic_utils` is the best autogenerate story. MikroORM moved fastest: triggers in 7.0, then stored routines and native row-level security, which takes most of what was unclaimed around this - and its `ignoreTriggers` flag is the argument for owning objects by prefix rather than diffing every trigger in the database. What no one has is a `when` that is a typed condition rather than a SQL string, `UPDATE OF` columns and a deferral mode on a declared trigger, and a **maintained aggregate**. Rails has the aggregate and puts it in the application, which is why `counter_culture` ships `fix_counts`; the trigger libraries have the mechanism and no aggregate built on it.
 
 The standard objection is that triggers hide logic outside source control, cannot be stepped through in a debugger, and _"often exist only in the production environment and not in development installations."_ Every one of those describes a trigger that was never **declared** - and the third is the case study's second bug exactly. A declared trigger is in source control, in every environment, and reported when it drifts. The debugger point stays true and is a real cost.

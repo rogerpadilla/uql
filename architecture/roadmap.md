@@ -25,7 +25,7 @@ await pool.insertOne(WorkspaceUsage, { total: 1 });
 const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
 ```
 
-**R6: one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, an aggregate's `$select` through `QueryAggregateResult`. Cursor pagination adds a fourth for its metadata, and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination._
+**R6: one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, an aggregate's `$select` through `QueryAggregateResult`. Cursor pagination adds a fourth - the sort keys it carries out of a row to mint a cursor from, whether or not `$select` asked for them - and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination._
 
 ```ts
 { $select: { id: true }, $count: { posts: true } } // a read: id from one rule, _count from another
@@ -62,15 +62,9 @@ R2, R7. A view is an entity, just read-only, which dissolves the "relation with 
 await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after: cursor });
 ```
 
-R6. Row-value comparison where available, an OR-chain elsewhere, compound `$lt` on Mongo. **Throw when the sort is not total**: a keyset page that silently skips or repeats rows is worse than an error.
+R6. A lexicographic OR-chain over `$or`/`$gt`/`$lt`, which every dialect already compiles, so v1 needs no dialect code; row-value comparison is a later optimization, and only where every key sorts one way and none is nullable. **Throw when the sort is not total**: a keyset page that silently skips or repeats rows is worse than an error, and `meta.ids` plus the unique indexes prove it for free.
 
-## Triggers
-
-```ts
-@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
-```
-
-The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md).
+What gates it is nulls. A UQL column is nullable unless declared otherwise, the engines disagree about where nulls sort, and `col > x` never matches one - so `$sort` grows a placement and `EngineFeatures` a `nullsOrdering` knob before any of this pages correctly. MikroORM shipped cursor pagination in v6 and reworked exactly this in 7.2. [The design](cursor-pagination.md).
 
 ## Typed DDL predicates
 
@@ -82,9 +76,17 @@ A partial index's `where` is `string | QueryRaw` today. Widening it to a `QueryW
 
 Two things to get right when it lands. DDL carries no placeholders, so literals inline: every binding site funnels through `QueryDialect.addValue`, so one override returning `escape(value)` covers nearly all of it, but `PgLikeSqlDialect.formatIn` (binds the array for `= ANY($1)`), `jsonScalarParam` (hard-codes `'?'`) and `appendVectorValue` bypass it and need their own arms - assert `ctx.values.length === 0` afterwards so a missed site fails loudly instead of emitting `$1` into a `CREATE INDEX`. And refuse what a predicate cannot carry there: relation operators, `$size`, `$text`, `$near`, and `security` filters, which `{ filters: false }` deliberately does not disable.
 
+## Triggers
+
+```ts
+@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
+```
+
+The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and the predicate path above, and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md), whose last section is what is left to build - trigger introspection and a `RETURNING` list of ordinary columns among it.
+
 ## Row-level security
 
-Postgres and PGlite only. Two halves, and the first needs no R7: session context: `set_config`/`set local role` before each statement, transaction-scoped, exactly the shape `applyVectorTuning` already has. That alone makes hand-written policies (Supabase) usable from UQL. Declared `policies` are schema objects and wait for R7.
+Postgres and PGlite only, and no longer unclaimed: MikroORM 7.2 shipped both halves, a `PolicyDef` per entity and a per-context role and session variables. Two halves, and the first needs no R7: session context: `set_config`/`set local role` before each statement, transaction-scoped, exactly the shape `applyVectorTuning` already has. That alone makes hand-written policies (Supabase) usable from UQL. Declared `policies` are schema objects and wait for R7.
 
 Skip a connection-scoped strategy: a pooled connection carrying the previous tenant's context is a cross-tenant leak.
 
@@ -105,9 +107,8 @@ MikroORM 7.1 shipped `AbortSignal` support; UQL has none server-side, though the
 ## Smaller items
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
-- **`defineEntity` with `extends`.** Decorated classes already inherit fields and hooks from a base; the functional form has no way to say the same. Small, and only matters for the runtime-schema path 0.44.0 opened.
 - **Oracle.** SQL Server shipped; Oracle is the half still designed, and a differentiator only Prisma and Drizzle also lack. It needs no R5 - its generated ids ride in the values array - and inherits `MergeSqlDialect`'s paging and upsert. [The design](oracle-mssql.md).
-- **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM ships it experimental.
+- **Stored procedures and functions.** Not scheduled. A procedure is a schema object like a view, so it would ride on R7, but nothing here asks for one and MikroORM's 7.1 routines are still flagged experimental.
 
 ## Where a composite key still refuses
 
@@ -121,13 +122,13 @@ TypeScript cannot accumulate `@Id` across properties, so the key is named in the
 
 ## Shipped, and not worth re-litigating
 
-One id shape for every write in 0.50.0, upserts included in 0.51.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns in 0.46.0; foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
+`defineEntity({ extends })`, the functional form of the base a class cannot extend, in 0.59.0; one id shape for every write in 0.50.0, upserts included in 0.51.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns in 0.46.0; foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
 
 - **An id is accepted as either spelling and reported as one.** `EntityId` is the union a by-id method takes, because a caller holding one column's value has to reach the same parameter as one holding a map. `WrittenId` picks a branch, because a write knows which it produced. Merging the two was measured and is worse: it refuses `findOneById(X, 'abc')` on any entity whose key the type level cannot name. `WrittenId` falls back to the union there for the same reason. A `$where` takes neither spelling: it is a map, and `whereIds` is where an id becomes one.
 - **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
 - **Keys and indexes are compared by their columns, never by name.** Matching on names would rewrite every table the first time a naming convention changed.
 - **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
-- **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix; nearly free once the trigger design's `COMMENT ON` emission lands.
+- **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix: the accepted values would have to ride in the column's comment for the differ to see them, and SQLite and SQL Server carry no comment at all (`commentSyntax: 'none'`).
 - **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
 - **A relation's `$limit` is each parent's share, not a slice of one page.** [The design](relations-in-one-statement.md).
 - **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
