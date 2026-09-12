@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { type MongoCommand, type MongoCommandTarget, runMongoCommand, serializeMongoCommand } from './mongoCommand.js';
+import {
+  type MongoCommand,
+  type MongoCommandTarget,
+  mongoCommandSource,
+  runMongoCommand,
+  serializeMongoCommand,
+} from './mongoCommand.js';
 
 type Call = readonly [string, ...unknown[]];
 
@@ -28,6 +34,38 @@ async function run(command: MongoCommand): Promise<Call[]> {
   await runMongoCommand(db, serializeMongoCommand(command));
   return calls;
 }
+
+describe('mongoCommandSource', () => {
+  it('spells each command as the driver call runMongoCommand makes', () => {
+    const commands: MongoCommand[] = [
+      { action: 'createCollection', name: 'users' },
+      { action: 'dropCollection', name: 'users' },
+      { action: 'renameCollection', from: 'users', to: 'members' },
+      {
+        action: 'createIndex',
+        collection: 'users',
+        name: 'users__email_idx',
+        key: { email: 1 },
+        options: { unique: true, name: 'users__email_idx' },
+      },
+      { action: 'dropIndex', collection: 'users', name: 'users__email_idx' },
+    ];
+
+    expect(commands.map((command) => mongoCommandSource(serializeMongoCommand(command), 'db'))).toEqual([
+      'db.createCollection("users")',
+      'db.collection("users").drop()',
+      'db.renameCollection("users", "members")',
+      'db.collection("users").createIndex({"email":1}, {"unique":true,"name":"users__email_idx"})',
+      'db.collection("users").dropIndex("users__email_idx")',
+    ]);
+  });
+
+  it('refuses a command it has no spelling for', () => {
+    expect(() => mongoCommandSource('{"action":"compact","name":"users"}', 'db')).toThrow(
+      'unsupported MongoDB migration command',
+    );
+  });
+});
 
 describe('runMongoCommand', () => {
   it('should create a collection', async () => {

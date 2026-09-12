@@ -1,12 +1,61 @@
 import vm from 'node:vm';
 import { describe, expect, it } from 'vitest';
-import { buildSqlQuerierMigrationModule, emitSqlRunCall, emitSqlRunCalls } from './migrationFile.js';
+import { buildMigrationModule, emitMongoCommandCalls, emitSqlRunCall, emitSqlRunCalls } from './migrationFile.js';
 
 function assertEmittedRunCallParses(sql: string): void {
   const line = emitSqlRunCall(sql);
   const src = `async function _migrationUp(querier) {\n${line}\n}`;
   expect(() => new vm.Script(src)).not.toThrow();
 }
+
+describe('emitMongoCommandCalls', () => {
+  it('awaits one driver call on the querier per command, as a parseable body', () => {
+    const block = emitMongoCommandCalls([
+      '{"action":"createCollection","name":"users"}',
+      '{"action":"dropIndex","collection":"users","name":"users__email_idx"}',
+    ]);
+
+    expect(block).toBe(
+      [
+        '    await querier.db.createCollection("users");',
+        '    await querier.db.collection("users").dropIndex("users__email_idx");',
+      ].join('\n'),
+    );
+    expect(() => new vm.Script(`async function _up(querier) {\n${block}\n}`)).not.toThrow();
+  });
+});
+
+describe('buildMigrationModule', () => {
+  it('types the migration on the querier it is written against', () => {
+    const source = buildMigrationModule({
+      migrationName: 'seed',
+      createdAt: new Date('2026-09-12T00:00:00.000Z'),
+      querier: 'MongoQuerier',
+      upInner: '',
+      downInner: '',
+    });
+
+    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/migrate';`);
+    expect(source).toContain('async up(querier: MongoQuerier): Promise<void> {');
+    expect(source).toContain('async down(querier: MongoQuerier): Promise<void> {');
+  });
+
+  it('defaults to the SQL querier, with doc extras and emitted run calls', () => {
+    const src = buildMigrationModule({
+      migrationName: 'add_foo',
+      createdAt: new Date('2026-01-01T00:00:00.000Z'),
+      docExtraLines: ['Generated from entity definitions'],
+      upInner: emitSqlRunCall('SELECT 1;'),
+      downInner: emitSqlRunCall('SELECT 2;'),
+    });
+    expect(src).toContain(`import type { SqlQuerier } from 'uql-orm/migrate';`);
+    expect(src).toContain('* Generated from entity definitions');
+    expect(src).toContain('await querier.run("SELECT 1;");');
+    expect(src).toContain('await querier.run("SELECT 2;");');
+    expect(src).toContain('Migration: add_foo');
+    expect(src).toContain('Created: 2026-01-01T00:00:00.000Z');
+  });
+});
 
 describe('emitSqlRunCall', () => {
   it('LibSQL/SQLite backtick identifiers (invalid if embedded in unescaped template literal)', () => {
@@ -49,22 +98,5 @@ describe('emitSqlRunCall', () => {
     // Two backslashes inside the JSON string literal -> four `\` in this template source.
     expect(emitSqlRunCall(sql)).toBe(`    await querier.run("SELECT '\\\\\\\\' AS x, \\"'\\" AS y;");`);
     assertEmittedRunCallParses(sql);
-  });
-});
-
-describe('buildSqlQuerierMigrationModule', () => {
-  it('includes doc extras and emitted run calls', () => {
-    const src = buildSqlQuerierMigrationModule({
-      migrationName: 'add_foo',
-      createdAt: new Date('2026-01-01T00:00:00.000Z'),
-      docExtraLines: ['Generated from entity definitions'],
-      upInner: emitSqlRunCall('SELECT 1;'),
-      downInner: emitSqlRunCall('SELECT 2;'),
-    });
-    expect(src).toContain('* Generated from entity definitions');
-    expect(src).toContain('await querier.run("SELECT 1;");');
-    expect(src).toContain('await querier.run("SELECT 2;");');
-    expect(src).toContain('Migration: add_foo');
-    expect(src).toContain('Created: 2026-01-01T00:00:00.000Z');
   });
 });

@@ -1,5 +1,5 @@
 import * as fs from 'node:fs/promises';
-import type { MigrationStorage, SqlQuerier } from '../../type/index.js';
+import type { MigrationStorage, Querier } from '../../type/index.js';
 
 /**
  * Stores migration state in a JSON file.
@@ -30,7 +30,7 @@ export class JsonMigrationStorage implements MigrationStorage {
     return this.executedMigrations;
   }
 
-  async logWithQuerier(_querier: SqlQuerier, migrationName: string): Promise<void> {
+  async logWithQuerier(_querier: Querier, migrationName: string): Promise<void> {
     await this.ensureStorage();
     if (!this.executedMigrations.includes(migrationName)) {
       this.executedMigrations.push(migrationName);
@@ -38,7 +38,7 @@ export class JsonMigrationStorage implements MigrationStorage {
     }
   }
 
-  async unlogWithQuerier(_querier: SqlQuerier, migrationName: string): Promise<void> {
+  async unlogWithQuerier(_querier: Querier, migrationName: string): Promise<void> {
     await this.ensureStorage();
     this.executedMigrations = this.executedMigrations.filter((m) => m !== migrationName);
     await this.save();

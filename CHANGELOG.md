@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.60.0] - 2026-09-12
+
+- **`defineBuilderMigration` hands `up`/`down` the builder**, where it passed the querier and `m.createTable` failed; the querier comes second, for a backfill in the same transaction.
+- **Migrations run on MongoDB**: `defineMigration<MongoQuerier>` is typed, history lives in a `uql_migrations` collection, and `generate`/`generate:entities` write driver calls instead of `querier.run`.
+
 ## [0.59.0] - 2026-09-12
 
 - **`defineEntity` takes an `extends` base**, inheriting its fields, relations, hooks and filters where the class cannot extend one: minted at runtime, or its base chosen from data.

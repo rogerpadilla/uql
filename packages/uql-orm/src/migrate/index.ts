@@ -45,5 +45,6 @@ export { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 // Storage implementations
 export { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 export { JsonMigrationStorage } from './storage/jsonStorage.js';
+export { MongoMigrationStorage } from './storage/mongoStorage.js';
 
 // Schema sync

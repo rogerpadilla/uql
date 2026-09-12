@@ -19,23 +19,26 @@ import type {
   SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,
+  SqlQuerier,
   SyncOptions,
   Type,
 } from '../type/index.js';
-import { isKnownMigratorDialect, isSqlQuerier } from '../type/index.js';
+import { isKnownMigratorDialect, isMongoQuerier, isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
-import { withQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
+import { withMongoQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
+import { MigrationBuilder } from './builder/migrationBuilder.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import {
-  buildSqlQuerierMigrationModule,
-  EMPTY_MANUAL_MIGRATION_DOWN_INNER,
-  EMPTY_MANUAL_MIGRATION_UP_INNER,
-  emitSqlRunCalls,
+  buildMigrationModule,
+  type MigrationModuleOptions,
+  type MigrationQuerierType,
+  migrationSource,
 } from './codegen/migrationFile.js';
 import { runMongoCommand } from './generator/mongoCommand.js';
 import { introspectorFor } from './introspection/registry.js';
 import { createSchemaGenerator } from './schemaGenerator.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
+import { MongoMigrationStorage } from './storage/mongoStorage.js';
 
 /**
  * Main class for managing database migrations
@@ -70,9 +73,9 @@ export class Migrator {
     this._defaultForeignKeyAction = options.defaultForeignKeyAction;
     this.storage =
       options.storage ??
-      new DatabaseMigrationStorage(pool, {
-        tableName: options.tableName,
-      });
+      (this.dialectName === 'mongodb'
+        ? new MongoMigrationStorage(pool, { tableName: options.tableName })
+        : new DatabaseMigrationStorage(pool, { tableName: options.tableName }));
     this.migrationsPath = options.migrationsPath ?? './migrations';
     this._logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
@@ -117,9 +120,9 @@ export class Migrator {
   /**
    * Get all discovered migrations from the migrations directory
    */
-  async getMigrations(): Promise<Migration[]> {
+  async getMigrations(): Promise<Migration<Querier>[]> {
     const files = await this.getMigrationFiles();
-    const migrations: Migration[] = [];
+    const migrations: Migration<Querier>[] = [];
 
     for (const file of files) {
       const migration = await this.loadMigration(file);
@@ -135,7 +138,7 @@ export class Migrator {
   /**
    * Get list of pending migrations (not yet executed)
    */
-  async pending(): Promise<Migration[]> {
+  async pending(): Promise<Migration<Querier>[]> {
     const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
 
     const executedSet = new Set(executed);
@@ -176,7 +179,7 @@ export class Migrator {
    * makes `--to` and `--step` mean the same thing whichever way you are going.
    */
   private async runInOrder(
-    migrations: Migration[],
+    migrations: Migration<Querier>[],
     direction: 'up' | 'down',
     options: { to?: string; step?: number },
   ): Promise<MigrationResult[]> {
@@ -206,23 +209,21 @@ export class Migrator {
   }
 
   /**
-   * Run a single migration within a transaction
+   * Run a single migration, within a transaction where the dialect has one for it
    */
-  public async runMigration(migration: Migration, direction: 'up' | 'down'): Promise<MigrationResult> {
+  public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
 
-    return withSqlQuerierForMigrations(this.pool, 'Migrator', async (querier) => {
+    return this.withMigrationQuerier(async (querier, inTransaction) => {
       try {
         this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
-        await querier.transaction(async () => {
+        await inTransaction(async () => {
           if (direction === 'up') {
             await migration.up(querier);
-            // Log within the same transaction
             await this.storage.logWithQuerier(querier, migration.name);
           } else {
             await migration.down(querier);
-            // Unlog within the same transaction
             await this.storage.unlogWithQuerier(querier, migration.name);
           }
         });
@@ -254,24 +255,49 @@ export class Migrator {
   }
 
   /**
+   * A migration querier, and how to run work in one transaction on it. MongoDB gets none: it creates
+   * collections and indexes outside any transaction. SQL asserts its querier before opening one, so a
+   * wrong querier reports which one the dialect needs rather than a missing `transaction`.
+   */
+  private withMigrationQuerier<T>(
+    task: (querier: Querier, inTransaction: (work: () => Promise<void>) => Promise<void>) => Promise<T>,
+  ): Promise<T> {
+    return this.dialectName === 'mongodb'
+      ? withMongoQuerierForMigrations(this.pool, 'Migrator', (querier) => task(querier, (work) => work()))
+      : withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
+          task(querier, (work) => querier.transaction(work)),
+        );
+  }
+
+  /** What this dialect's migration files are written against. */
+  private get migrationQuerier(): MigrationQuerierType {
+    return this.dialectName === 'mongodb' ? 'MongoQuerier' : 'SqlQuerier';
+  }
+
+  /**
    * Generate a new migration file
    */
   async generate(name: string): Promise<string> {
-    const timestamp = this.getTimestamp();
-    const fileName = `${timestamp}_${this.slugify(name)}.ts`;
-    const filePath = join(this.migrationsPath, fileName);
+    const { emptyUp, emptyDown } = migrationSource[this.migrationQuerier];
+    const filePath = await this.writeMigration(name, { upInner: emptyUp, downInner: emptyDown });
+    this.logger.logInfo(`Created migration: ${filePath}`);
+    return filePath;
+  }
 
-    const content = buildSqlQuerierMigrationModule({
+  /** Writes a migration module on this dialect's querier to a new timestamped file, and returns its path. */
+  private async writeMigration(
+    name: string,
+    body: Pick<MigrationModuleOptions, 'upInner' | 'downInner' | 'docExtraLines'>,
+  ): Promise<string> {
+    const filePath = join(this.migrationsPath, `${this.getTimestamp()}_${this.slugify(name)}.ts`);
+    const content = buildMigrationModule({
       migrationName: name,
       createdAt: new Date(),
-      upInner: EMPTY_MANUAL_MIGRATION_UP_INNER,
-      downInner: EMPTY_MANUAL_MIGRATION_DOWN_INNER,
+      querier: this.migrationQuerier,
+      ...body,
     });
-
     await mkdir(this.migrationsPath, { recursive: true });
     await writeFile(filePath, content, 'utf-8');
-
-    this.logger.logInfo(`Created migration: ${filePath}`);
     return filePath;
   }
 
@@ -302,22 +328,12 @@ export class Migrator {
       return '';
     }
 
-    const timestamp = this.getTimestamp();
-    const fileName = `${timestamp}_${this.slugify(name)}.ts`;
-    const filePath = join(this.migrationsPath, fileName);
-
-    const down = [...downStatements].reverse();
-    const content = buildSqlQuerierMigrationModule({
-      migrationName: name,
-      createdAt: new Date(),
+    const { emit } = migrationSource[this.migrationQuerier];
+    const filePath = await this.writeMigration(name, {
       docExtraLines: ['Generated from entity definitions'],
-      upInner: emitSqlRunCalls(upStatements),
-      downInner: emitSqlRunCalls(down),
+      upInner: emit(upStatements),
+      downInner: emit([...downStatements].reverse()),
     });
-
-    await mkdir(this.migrationsPath, { recursive: true });
-    await writeFile(filePath, content, 'utf-8');
-
     this.logger.logInfo(`Created migration from entities: ${filePath}`);
     return filePath;
   }
@@ -582,18 +598,13 @@ export class Migrator {
   }
 
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    // Mongo creates collections and indexes outside any transaction, so only the SQL path opens one -
-    // and asks for a SQL querier before it opens it, since `transaction` is what a Mongo one lacks and
-    // reaching for it first reports that instead of which querier the dialect needs.
-    if (this.dialectName === 'mongodb') {
-      await withQuerierForMigrations(this.pool, (querier) =>
-        this.executeMongoSyncStatements(statements, options, querier as MongoQuerier),
-      );
-    } else {
-      await withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
-        querier.transaction(() => this.executeSqlSyncStatements(statements, options, querier)),
-      );
-    }
+    await this.withMigrationQuerier((querier, inTransaction) =>
+      inTransaction(() =>
+        isMongoQuerier(querier)
+          ? this.executeMongoSyncStatements(statements, options, querier)
+          : this.executeSqlSyncStatements(statements, options, querier),
+      ),
+    );
     if (options.logging) this.logger.logSchema('Schema synchronization completed');
   }
 
@@ -652,7 +663,7 @@ export class Migrator {
   /**
    * Load a migration from a file
    */
-  public async loadMigration(fileName: string): Promise<Migration | undefined> {
+  public async loadMigration(fileName: string): Promise<Migration<Querier> | undefined> {
     const filePath = join(this.migrationsPath, fileName);
     const fileUrl = pathToFileURL(filePath).href;
 
@@ -679,7 +690,7 @@ export class Migrator {
   /**
    * Check if an object is a valid migration
    */
-  public isMigration(obj: unknown): obj is MigrationDefinition {
+  public isMigration(obj: unknown): obj is MigrationDefinition<Querier> {
     return (
       typeof obj === 'object' &&
       obj !== undefined &&
@@ -725,17 +736,20 @@ export class Migrator {
 /**
  * Helper function to define a migration with proper typing
  */
-export function defineMigration(migration: MigrationDefinition): MigrationDefinition {
+export function defineMigration<Q extends Querier = SqlQuerier>(
+  migration: MigrationDefinition<Q>,
+): MigrationDefinition<Q> {
   return migration;
 }
 
 /**
- * Migration definition that uses the type-safe builder API.
+ * Migration definition that uses the type-safe builder API. The querier is the builder's own, so a
+ * data backfill it runs lands in the same transaction as the schema change.
  */
 export interface BuilderMigrationDefinition {
   readonly name?: string;
-  readonly up: (builder: IMigrationBuilder) => Promise<void>;
-  readonly down: (builder: IMigrationBuilder) => Promise<void>;
+  up(builder: IMigrationBuilder, querier: SqlQuerier): Promise<void>;
+  down(builder: IMigrationBuilder, querier: SqlQuerier): Promise<void>;
 }
 
 /**
@@ -757,6 +771,10 @@ export interface BuilderMigrationDefinition {
  * });
  * ```
  */
-export function defineBuilderMigration(migration: BuilderMigrationDefinition): BuilderMigrationDefinition {
-  return migration;
+export function defineBuilderMigration(migration: BuilderMigrationDefinition): MigrationDefinition {
+  return {
+    ...migration,
+    up: (querier) => migration.up(new MigrationBuilder(querier), querier),
+    down: (querier) => migration.down(new MigrationBuilder(querier), querier),
+  };
 }

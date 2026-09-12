@@ -13,10 +13,14 @@ export {
 } from './entityCodeGenerator.js';
 export { entityTypesSource } from './entityTypes.js';
 export {
+  buildMigrationModule,
   buildSqlQuerierMigrationModule,
   EMPTY_MANUAL_MIGRATION_DOWN_INNER,
   EMPTY_MANUAL_MIGRATION_UP_INNER,
+  emitMongoCommandCalls,
   emitSqlRunCall,
   emitSqlRunCalls,
+  type MigrationModuleOptions,
+  type MigrationQuerierType,
   type SqlMigrationModuleOptions,
 } from './migrationFile.js';

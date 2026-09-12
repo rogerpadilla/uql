@@ -255,6 +255,14 @@ export interface MongoQuerier extends Querier {
 }
 
 /**
+ * Type guard for a querier over a MongoDB database. A handle alone does not tell: the SQLite, D1 and
+ * Turso queriers carry a `db` of their own.
+ */
+export function isMongoQuerier(querier: Querier): querier is MongoQuerier {
+  return 'db' in querier && !isSqlQuerier(querier);
+}
+
+/**
  * Context passed to global querier listeners.
  */
 export type ListenerContext<E extends object = object> = {

@@ -42,11 +42,20 @@ export type MongoCommandTarget = {
 };
 
 /**
- * Execute one emitted command. The single cast lives here, where the union it casts to is defined
+ * Read one emitted command back. The single cast lives here, where the union it casts to is defined
  * alongside the only code that writes these strings.
  */
+function parseMongoCommand(statement: string): MongoCommand {
+  return JSON.parse(statement) as MongoCommand;
+}
+
+function unsupportedMongoCommand(statement: string): TypeError {
+  return new TypeError(`unsupported MongoDB migration command: ${statement}`);
+}
+
+/** Execute one emitted command. */
 export function runMongoCommand(db: MongoCommandTarget, statement: string): Promise<unknown> {
-  const command = JSON.parse(statement) as MongoCommand;
+  const command = parseMongoCommand(statement);
   switch (command.action) {
     case 'createCollection':
       return db.createCollection(command.name);
@@ -61,6 +70,26 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
     default:
       // Unreachable for a command this module produced; a hand-written statement lands here rather
       // than being silently skipped, which is how `renameCollection` went unnoticed.
-      throw new TypeError(`unsupported MongoDB migration command: ${statement}`);
+      throw unsupportedMongoCommand(statement);
+  }
+}
+
+/** The driver call {@link runMongoCommand} makes, as source on the handle `db` names, for a generated migration. */
+export function mongoCommandSource(statement: string, db: string): string {
+  const command = parseMongoCommand(statement);
+  const literal = JSON.stringify;
+  switch (command.action) {
+    case 'createCollection':
+      return `${db}.createCollection(${literal(command.name)})`;
+    case 'dropCollection':
+      return `${db}.collection(${literal(command.name)}).drop()`;
+    case 'renameCollection':
+      return `${db}.renameCollection(${literal(command.from)}, ${literal(command.to)})`;
+    case 'createIndex':
+      return `${db}.collection(${literal(command.collection)}).createIndex(${literal(command.key)}, ${literal(command.options)})`;
+    case 'dropIndex':
+      return `${db}.collection(${literal(command.collection)}).dropIndex(${literal(command.name)})`;
+    default:
+      throw unsupportedMongoCommand(statement);
   }
 }

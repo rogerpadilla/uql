@@ -2,38 +2,31 @@ import type { VectorCast } from '../dialect/vectorCast.js';
 import type { FullColumnDefinition, TableDefinition } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type {
-  CanonicalType,
-  ColumnNode,
-  EnumValues,
-  ForeignKeyAction,
-  IndexNode,
-  IndexType,
-  TableNode,
-} from '../schema/types.js';
+import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
   FieldOptions,
   IndexColumnSchema,
   LoggingOptions,
+  Querier,
   SqlQuerier,
   Type,
   VectorIndexOptions,
 } from './index.js';
 
 /**
- * Defines a migration using a simple object literal
+ * Defines a migration using a simple object literal. `Q` is `MongoQuerier` for a MongoDB migration.
  */
-export interface MigrationDefinition {
+export interface MigrationDefinition<Q extends Querier = SqlQuerier> {
   readonly name?: string;
-  readonly up: (querier: SqlQuerier) => Promise<void>;
-  readonly down: (querier: SqlQuerier) => Promise<void>;
+  up(querier: Q): Promise<void>;
+  down(querier: Q): Promise<void>;
 }
 
 /**
  * Represents a single database migration
  */
-export interface Migration extends MigrationDefinition {
+export interface Migration<Q extends Querier = SqlQuerier> extends MigrationDefinition<Q> {
   /**
    * Unique name/identifier for this migration (typically timestamp + description)
    */
@@ -50,14 +43,14 @@ export interface MigrationStorage {
   executed(): Promise<string[]>;
 
   /**
-   * Mark a migration as executed (called within migration transaction)
+   * Mark a migration as executed, on the querier that ran it (inside its transaction, where there is one)
    */
-  logWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void>;
+  logWithQuerier(querier: Querier, migrationName: string): Promise<void>;
 
   /**
-   * Remove a migration from the executed list (called within migration transaction)
+   * Remove a migration from the executed list, on the querier that reverted it
    */
-  unlogWithQuerier(querier: SqlQuerier, migrationName: string): Promise<void>;
+  unlogWithQuerier(querier: Querier, migrationName: string): Promise<void>;
 
   /**
    * Ensure the storage is initialized (e.g., create migrations table)
@@ -75,12 +68,12 @@ export interface MigratorOptions {
   readonly migrationsPath?: string;
 
   /**
-   * Custom storage implementation. Defaults to DatabaseMigrationStorage.
+   * Custom storage implementation. Defaults to DatabaseMigrationStorage, or MongoMigrationStorage on MongoDB.
    */
   readonly storage?: MigrationStorage;
 
   /**
-   * Table name for storing migration state. Defaults to 'uql_migrations'.
+   * Table, or MongoDB collection, name for storing migration state. Defaults to 'uql_migrations'.
    */
   readonly tableName?: string;
 

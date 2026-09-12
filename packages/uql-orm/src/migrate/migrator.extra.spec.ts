@@ -12,7 +12,7 @@ import type {
   QuerierPool,
   SqlQuerier,
 } from '../type/index.js';
-import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
+import { defineMigration, Migrator } from './migrator.js';
 
 vi.mock('node:fs/promises', () => ({
   readdir: vi.fn(),
@@ -188,11 +188,6 @@ describe('Migrator (extra coverage)', () => {
 
     expect(createCollection).toHaveBeenCalledWith('notes');
     expect(logger).not.toHaveBeenCalled();
-  });
-
-  it('defineBuilderMigration returns the migration it is given, for its type alone', () => {
-    const migration = { async up() {}, async down() {} };
-    expect(defineBuilderMigration(migration)).toBe(migration);
   });
 
   it('loadMigration should return undefined on invalid migration', async () => {

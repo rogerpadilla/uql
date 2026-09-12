@@ -489,8 +489,4 @@ export interface IMigrationBuilder {
   // === Raw SQL (escape hatch) ===
   /** Execute raw SQL */
   raw(sql: string): Promise<void>;
-
-  // === Operation Access ===
-  /** Get all recorded operations */
-  getOperations(): AnyMigrationOperation[];
 }

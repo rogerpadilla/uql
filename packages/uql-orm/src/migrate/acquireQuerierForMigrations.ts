@@ -1,7 +1,14 @@
-import { isSqlQuerier, type Querier, type QuerierPool, type SqlQuerier } from '../type/index.js';
+import {
+  isMongoQuerier,
+  isSqlQuerier,
+  type MongoQuerier,
+  type Querier,
+  type QuerierPool,
+  type SqlQuerier,
+} from '../type/index.js';
 
 /**
- * Querier used for schema migrations and the migration journal (`DatabaseMigrationStorage`).
+ * Querier used for schema migrations and the migration journal.
  *
  * Pools may override {@link QuerierPool.getMigrationQuerier} so DDL runs on a different target than
  * app traffic (e.g. LibSQL embedded replica: local `file:` + remote `syncUrl`).
@@ -25,18 +32,33 @@ export async function withQuerierForMigrations<T>(pool: QuerierPool, task: (quer
   }
 }
 
-/**
- * Same, for the paths that only work against SQL. `requiredBy` names the caller in the error, which is
- * the only thing the five copies of this acquire-assert-release dance used to differ by.
- */
+/** Same, for the paths that only work against SQL. `requiredBy` names the caller in the error. */
 export function withSqlQuerierForMigrations<T>(
   pool: QuerierPool,
   requiredBy: string,
   task: (querier: SqlQuerier) => Promise<T>,
 ): Promise<T> {
+  return withQuerierOfKind(pool, isSqlQuerier, `${requiredBy} requires a SQL-based querier`, task);
+}
+
+/** Same, for the paths that only work against MongoDB. */
+export function withMongoQuerierForMigrations<T>(
+  pool: QuerierPool,
+  requiredBy: string,
+  task: (querier: MongoQuerier) => Promise<T>,
+): Promise<T> {
+  return withQuerierOfKind(pool, isMongoQuerier, `${requiredBy} requires a MongoDB querier`, task);
+}
+
+function withQuerierOfKind<Q extends Querier, T>(
+  pool: QuerierPool,
+  isKind: (querier: Querier) => querier is Q,
+  error: string,
+  task: (querier: Q) => Promise<T>,
+): Promise<T> {
   return withQuerierForMigrations(pool, (querier) => {
-    if (!isSqlQuerier(querier)) {
-      throw new TypeError(`${requiredBy} requires a SQL-based querier`);
+    if (!isKind(querier)) {
+      throw new TypeError(error);
     }
     return task(querier);
   });

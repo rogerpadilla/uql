@@ -3,7 +3,7 @@ import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
 import { isSqlQuerier, type MigrationDefinition, type QuerierPool, type SqlQuerier } from '../../type/index.js';
-import { buildSqlQuerierMigrationModule, emitSqlRunCalls } from './migrationFile.js';
+import { buildMigrationModule, emitSqlRunCalls } from './migrationFile.js';
 
 /**
  * Integration checks for GitHub #86 (generated TS must tolerate SQLite/LibSQL backticks and `${` in SQL)
@@ -57,7 +57,7 @@ describe('generated SQL migration module (integration)', () => {
         'DROP TABLE IF EXISTS `Article`;',
       ]);
 
-      const source = buildSqlQuerierMigrationModule({
+      const source = buildMigrationModule({
         migrationName: 'integration_article',
         createdAt: new Date('2026-04-04T00:00:00.000Z'),
         docExtraLines: ['integration: backtick SQL + one run() per statement'],
