@@ -25,7 +25,7 @@ await pool.insertOne(WorkspaceUsage, { total: 1 });
 const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
 ```
 
-**R6: one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, an aggregate's `$select` through `QueryAggregateResult`. Cursor pagination adds a fourth - the sort keys it carries out of a row to mint a cursor from, whether or not `$select` asked for them - and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination._
+**R6: one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, an aggregate's `$select` through `QueryAggregateResult`. Cursor pagination adds a fourth - the sort keys it carries out of a row to mint a cursor from, whether or not `$select` asked for them - and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination, relation aggregates._
 
 ```ts
 { $select: { id: true }, $count: { posts: true } } // a read: id from one rule, _count from another
@@ -42,6 +42,28 @@ indexDiffs: IndexDiff[]         drop: SchemaObject[]
 ```
 
 The second kind that R7 waited for has arrived - generated columns in 0.46.0 - so the shape can be derived now rather than guessed.
+
+## Correctness gaps
+
+Small, independent of everything above, and each a way to damage data today.
+
+**An unfiltered bulk write is refused.** `assertIdValue` guards the by-id methods only: `updateMany` and `deleteMany` take `{}`, or a `$where` untyped JSON left empty, and address the whole table. Check the caller's `$where` before filters add theirs (soft delete's would otherwise count as one), and make the whole table something asked for by name. Prisma 8 ships the same guard as its `deleteWithoutWhere`/`updateWithoutWhere` lints.
+
+```ts
+await pool.deleteMany(Session, {}); // throws: no $where
+await pool.deleteMany(Session, {}, { unfiltered: true }); // the whole table, on purpose
+```
+
+**A migration can run outside a transaction.** `Migrator.runMigration` wraps every one, and Postgres refuses `CREATE INDEX CONCURRENTLY` inside one - the index a busy table needs is the one a migration cannot build. A per-migration flag, as Kysely 0.30's `transactionMode` has. The cost is the one it names: a failure part-way leaves the statements before it applied and the migration unlogged.
+
+```ts
+export default {
+  transaction: false,
+  async up(querier: SqlQuerier) {
+    await querier.run('CREATE INDEX CONCURRENTLY idx_order_created ON "Order" ("createdAt")');
+  },
+};
+```
 
 ## Views and materialized views
 
@@ -94,10 +116,40 @@ R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N rou
 
 **The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and an insert carrying no relation are reliably one statement: saving a relation needs the ids the insert generated, and `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
 
+## Read-only queriers
+
+```ts
+export const replica: ReadonlyQuerierPool<PgQuerier> = new PgQuerierPool({ ... });
+await replica.insertOne(User, { name: 'a' });
+//            ~~~~~~~~~ does not exist
+```
+
+R2 at the pool: [pool.md](https://uql-orm.dev/pool) recommends a second pool for a replica, and nothing stops a write reaching it. Types only - a `Pick` of the reads (`findOne`, `findMany`, `findManyStream`, `findManyAndCount`, `count`, `exists`, `all`) - as Kysely 0.29's `ReadonlyKysely`.
+
+## Optimistic locking
+
+```ts
+@Field({ version: true }) version?: number;
+
+await pool.updateOneById(Post, id, { title, version: 3 }); // WHERE version = 3, SET version = 4
+```
+
+No row matched throws a stale-version error rather than returning `0`, which a caller reads as "nothing to update"; no driver raises it, so it is not a `QueryErrorKind`. UQL tracks no entity state, so the version the caller read rides in the payload; a payload without one is refused on a versioned entity. A number increments; a timestamp is `onUpdate`'s `now()`. Lands beside `fillOnFields(..., 'onUpdate')`, and Mongo filters on the field the same way.
+
+## Relation aggregates
+
+```ts
+await pool.findMany(User, { $select: { id: true }, $count: { posts: true }, $max: { posts: { createdAt: true } } });
+// { id, _count: { posts }, _max: { posts: { createdAt } } }
+```
+
+R6. `$count` over a relation is the one aggregate a read carries; `$sum`/`$avg`/`$min`/`$max` are the same correlated subquery with another function, and each lands under its own `_`-key. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
+
 ## Smaller items
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
 - **Oracle.** SQL Server shipped; Oracle is the half still designed, and a differentiator only Prisma and Drizzle also lack. It needs no R5 - its generated ids ride in the values array - and inherits `MergeSqlDialect`'s paging and upsert. [The design](oracle-mssql.md).
+- **An agent skill in the tarball.** `skills/uql/` shipped inside `uql-orm`, stamped with its version so it never describes another release, as Prisma 8 and Drizzle v1 do. Mostly docs; the upgrade guide's per-version notes are its upgrading branch.
 ## Where a composite key still refuses
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
