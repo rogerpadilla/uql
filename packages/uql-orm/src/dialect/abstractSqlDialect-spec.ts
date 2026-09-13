@@ -10,12 +10,13 @@ import {
   MeasureUnit,
   Profile,
   type Spec,
+  Tag,
   Tax,
   TaxCategory,
   User,
 } from '../test/index.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
-import { col, raw } from '../util/index.js';
+import { raw, refs } from '../util/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 /** Each field of a tag, which a relation excluding every one reads all the same. */
@@ -38,6 +39,19 @@ class SoftDeleteRaw {
   deletedAt?: Date;
 }
 
+/** A column of each literal kind an inline context writes. */
+@Entity()
+class InlineRow {
+  @Id({ type: Number })
+  id?: number;
+  @Field({ type: String })
+  name?: string;
+  @Field({ type: Boolean })
+  active?: boolean;
+  @Field({ type: Number })
+  rank?: number;
+}
+
 declare module '../type/index.js' {
   interface UqlContext {
     secureTenantId?: number;
@@ -46,7 +60,7 @@ declare module '../type/index.js' {
 
 /** The joined (m1) side of a `security: true` filter - the regression case for the JOIN/populate gap. */
 @Filter('tenant', {
-  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
   security: true,
 })
 @Entity()
@@ -71,7 +85,7 @@ class SecureParent {
 
 /** The relation-subquery target: a `security: true` filter and a soft-delete field must both scope it. */
 @Filter('tenant', {
-  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
   security: true,
 })
 @Entity()
@@ -218,6 +232,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return this.dialect.placeholder(n);
   }
 
+  /** `it's` and `true` as this engine writes them inline: ANSI quoting and a native boolean by default. */
+  protected inlineLiterals(): { readonly quoted: string; readonly truth: string } {
+    return { quoted: "'it''s'", truth: 'true' };
+  }
+
   /**
    * The pager clause this dialect emits, asked of the dialect rather than written out: `LIMIT`/
    * `OFFSET` on most, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` on SQL Server and Oracle. `sorted`
@@ -309,21 +328,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldFindWithLockSkipLocked() {
-    this.expectLock(User, { $select: { id: true }, $lock: { wait: 'skip' } }, this.lockClause('skip'));
+    this.expectLock(User, { $select: { id: true }, $lock: { $wait: 'skip' } }, this.lockClause('skip'));
   }
 
   shouldFindWithLockNoWait() {
-    this.expectLock(User, { $select: { id: true }, $lock: { wait: 'nowait' } }, this.lockClause('nowait'));
-  }
-
-  /** `true` and the defaulted object form are the same lock, so they must emit the same SQL. */
-  shouldAcceptBooleanAndObjectAlike() {
-    if (!this.hasRowLocks) {
-      return;
-    }
-    const boolForm = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: true }));
-    const objForm = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: {} }));
-    expect(boolForm.sql).toBe(objForm.sql);
+    this.expectLock(User, { $select: { id: true }, $lock: { $wait: 'nowait' } }, this.lockClause('nowait'));
   }
 
   /** `false` is for queries built conditionally: it must emit nothing at all. */
@@ -374,7 +383,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldRejectUnknownLockWait() {
     expect(() =>
-      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: { wait: 'soon' as never } })),
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: { $wait: 'soon' as never } })),
     ).toThrow('unknown $lock wait policy: soon');
   }
 
@@ -1470,9 +1479,10 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   /** A raw projection reaches a populated relation qualified by its alias, as it reaches a read of its own. */
   shouldPopulateARawSelect() {
     const e = this.dialect.escapeIdChar;
-    const $select = [raw`UPPER(${col('name')})`.as('label')];
+    const tax = { $select: [raw`UPPER(${refs(Tax).name})`.as('label')] };
+    const tags = { $select: [raw`UPPER(${refs(Tag).name})`.as('label')] };
     const { sql } = this.exec((ctx) =>
-      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $select }, tags: { $select } } }),
+      this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax, tags } }),
     );
 
     expect(sql).toContain(`UPPER(${e}tax${e}.${e}name${e}) ${e}tax.label${e}`);
@@ -2228,7 +2238,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: [raw(() => 'createdAt', 'hotness')],
+        $select: [raw(() => 'createdAt').as('hotness')],
         $where: { name: 'something' },
       }),
     );
@@ -2628,14 +2638,41 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldHandleRawFalsyValues() {
     const ctx = this.dialect.createContext();
 
-    expect(this.dialect.selectTerms(ctx, User, [raw(() => 0, 'zero')])).toEqual([{ sql: '0', key: 'zero' }]);
-    expect(this.dialect.selectTerms(ctx, User, [raw(() => '', 'empty')])).toEqual([{ sql: '', key: 'empty' }]);
+    expect(this.dialect.selectTerms(ctx, User, [raw(() => 0).as('zero')])).toEqual([{ sql: '0', key: 'zero' }]);
+    expect(this.dialect.selectTerms(ctx, User, [raw(() => '').as('empty')])).toEqual([{ sql: '', key: 'empty' }]);
   }
 
   shouldHandleEmptyAppend() {
     const ctx = this.dialect.createContext();
     ctx.append('SELECT ').append('').append('*');
     expect(ctx.sql).toBe('SELECT *');
+  }
+
+  /**
+   * A context that inlines writes each value as the literal its engine reads and binds nothing, which
+   * is what DDL needs: a `CREATE` statement has no placeholder to bind into.
+   */
+  shouldWriteEachValueAsALiteralInAnInlineContext() {
+    const e = this.dialect.escapeIdChar;
+    const { quoted, truth } = this.inlineLiterals();
+    const ctx = this.dialect.createContext({ inlineValues: true });
+    this.dialect.where(ctx, InlineRow, { name: "it's", active: true, rank: { $gte: 1 }, id: [2, 3] });
+    expect(ctx.sql).toBe(
+      ` WHERE ${e}name${e} = ${quoted} AND ${e}active${e} = ${truth} AND ${e}rank${e} >= 1 AND ${e}id${e} IN (2, 3)`,
+    );
+    expect(ctx.values).toEqual([]);
+  }
+
+  /** Every binding site routes through `addValue`, so across the operator families nothing binds inline. */
+  shouldBindNothingInAnInlineContext() {
+    const ctx = this.dialect.createContext({ inlineValues: true });
+    this.dialect.where(ctx, Company, {
+      name: { $nin: ['a'], $startsWith: 'b', $ne: 'c', $between: ['d', 'm'] },
+      description: { $lt: 'z' },
+      'kind.tags': { $all: ['f'] },
+      'kind.items': { $elemMatch: { name: 'g', count: { $gt: 4 } } },
+    });
+    expect(ctx.values).toEqual([]);
   }
 
   // Aggregate tests - shared across all SQL dialects
@@ -2676,6 +2713,22 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.aggregate(ctx, User, { $select: { n: { $count: '*' } }, $having: { n: [1, 2] } }),
     );
     expect(byList.sql).toContain('HAVING COUNT(*) ');
+  }
+
+  /** A raw `$having` operand is SQL rendered in place: bound, the driver received the object itself. */
+  shouldAggregate$havingByARawOperand() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, User, {
+        $group: { name: true },
+        $select: { count: { $count: '*' } },
+        $having: { count: raw`1 + 1` },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}name${e}, COUNT(*) ${e}count${e} FROM ${e}User${e} GROUP BY ${e}name${e} HAVING COUNT(*) = 1 + 1`,
+    );
+    expect(values).toEqual([]);
   }
 
   /**

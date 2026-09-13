@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { idKey } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
@@ -359,7 +360,7 @@ describe('SchemaASTBuilder', () => {
       @Index((indexedUser) => [indexedUser.firstName, indexedUser.lastName], {
         name: 'fullname_idx',
         unique: true,
-        where: 'active = true',
+        where: { active: true },
       })
       class IndexedUser {
         @Id({ type: Number }) id?: number;
@@ -368,15 +369,25 @@ describe('SchemaASTBuilder', () => {
         @Field({ type: Boolean }) active?: boolean;
       }
 
-      const ast = buildSchemaAST([IndexedUser]);
+      const ast = buildSchemaAST([IndexedUser], {
+        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
+      });
       const table = ast.getTable('IndexedUser');
 
       const compositeIdx = table?.indexes.find((idx) => idx.entries.length > 1);
       expect(compositeIdx).toBeDefined();
       expect(compositeIdx?.name).toBe('fullname_idx');
       expect(compositeIdx?.unique).toBe(true);
-      expect(compositeIdx?.where).toBe('active = true');
+      expect(compositeIdx?.where).toBe('"active" = true');
       expect(compositeIdx?.entries.map((entry) => entry.column)).toEqual(['firstName', 'lastName']);
+    });
+
+    it('should refuse SQL an entity declares when given nothing to render it with', () => {
+      @Entity({ checks: [{ where: raw`1 = 1` }] })
+      class Checked {
+        @Id({ type: Number }) id?: number;
+      }
+      expect(() => buildSchemaAST([Checked])).toThrow(/needs a dialect/);
     });
 
     it('should ignore composite index if columns do not exist', () => {

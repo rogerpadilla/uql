@@ -66,13 +66,15 @@ type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enum
  *
  * @example `@Field({ type: String }) name?: string;`
  * @example `@Field({ references: () => User }) userId?: string;` (where `User.id` is a `uuid`)
+ * @example `@Field({ type: Number, computed: (line) => raw`${line.qty} * ${line.price}` }) total?: number;`
  */
 export function Field<
-  O extends FieldOptions<DeclaredValue<O>> &
+  This,
+  O extends FieldOptions<DeclaredValue<O>, This> &
     ({ type: FieldType } | { references: EntityGetter }) &
     RejectUnknown<O, FieldOptions> &
     RejectIncompatible<O>,
->(opts: O): MemberDecorator<DeclaredValue<O> | undefined> {
+>(opts: O): MemberDecorator<DeclaredValue<O> | undefined, This> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = opts;
   };

@@ -37,6 +37,8 @@ class IncompatibleRejected {
   @Field({ type: String, precision: 10 }) d?: string;
   // @ts-expect-error - an inlined computed field is never in the DDL, so its index would never be created
   @Field({ type: Number, computed: raw`1`, index: true }) e?: number;
+  // @ts-expect-error - the refs a computed callback reads are the entity's fields
+  @Field({ type: Number, computed: (row) => raw`${row.nope} + 1` }) e3?: number;
   // @ts-expect-error - not an option: an expression the database computes is 'computed'
   @Field({ type: Number, virtual: raw`1` }) e2?: number;
   // @ts-expect-error - an update never carries the field, so the callback could not fire
@@ -61,6 +63,7 @@ class CompatibleStillCompiles {
   // A JSON column defaults with the SQL literal it stores.
   @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }>;
   @Field({ type: Number, computed: raw`1`, eager: false }) computed?: number;
+  @Field({ type: Number, computed: (row) => raw`${row.computed} + 1`, stored: true }) next?: number;
   @Field({ type: Date, softDelete: true, index: true }) deletedAt?: Date;
 }
 

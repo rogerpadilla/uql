@@ -229,7 +229,7 @@ it('defineEntity bulk filters match incremental defineFilter', () => {
   }
   defineId(Incremental, 'id', { type: Number });
   defineField(Incremental, 'status', { type: String });
-  defineFilter(Incremental, 'active', { condition: { status: 'active' }, default: false });
+  defineFilter(Incremental, 'active', { where: { status: 'active' }, default: false });
   defineEntity(Incremental, { name: 'TaskIncr' });
 
   class Bulk {
@@ -243,7 +243,7 @@ it('defineEntity bulk filters match incremental defineFilter', () => {
       status: { type: String },
     },
     filters: {
-      active: { condition: { status: 'active' }, default: false },
+      active: { where: { status: 'active' }, default: false },
     },
   });
 

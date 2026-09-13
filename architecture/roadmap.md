@@ -88,23 +88,13 @@ R6. A lexicographic OR-chain over `$or`/`$gt`/`$lt`, which every dialect already
 
 What gates it is nulls. A UQL column is nullable unless declared otherwise, the engines disagree about where nulls sort, and `col > x` never matches one - so `$sort` grows a placement and `EngineFeatures` a `nullsOrdering` knob before any of this pages correctly. MikroORM shipped cursor pagination in v6 and reworked exactly this in 7.2. [The design](cursor-pagination.md).
 
-## Typed DDL predicates
-
-```ts
-@Index((user) => [user.email], { where: { deletedAt: null } })
-```
-
-A partial index's `where` is `string | QueryRaw` today. Widening it to a `QueryWhere<E>` compiled at DDL time makes a typo a compile error instead of SQL that parses and never matches, and MikroORM 7.1 reached the same conclusion for its partial indexes. `checks` can take one on the same terms, and MongoDB's `partialFilterExpression` is the shape `MongoDialect.where` already returns. Compile in `buildEntityAST`, which has a dialect, rather than at registration, which does not - so `IndexSchema.where` stays a string and nothing downstream changes. Shares the interpolated-`raw` DDL render path that [triggers](triggers.md) needs.
-
-Two things to get right when it lands. DDL carries no placeholders, so literals inline: every binding site funnels through `QueryDialect.addValue`, so one override returning `escape(value)` covers nearly all of it, but `PgLikeSqlDialect.formatIn` (binds the array for `= ANY($1)`), `jsonScalarParam` (hard-codes `'?'`) and `appendVectorValue` bypass it and need their own arms - assert `ctx.values.length === 0` afterwards so a missed site fails loudly instead of emitting `$1` into a `CREATE INDEX`. And refuse what a predicate cannot carry there: relation operators, `$size`, `$text`, `$near`, and `security` filters, which `{ filters: false }` deliberately does not disable.
-
 ## Triggers
 
 ```ts
 @Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
 ```
 
-The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and the predicate path above, and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md), whose last section is what is left to build - trigger introspection and a `RETURNING` list of ordinary columns among it.
+The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md), whose last section is what is left to build - trigger introspection and a `RETURNING` list of ordinary columns among it.
 
 ## Batching
 
@@ -150,6 +140,7 @@ R6. `$count` over a relation is the one aggregate a read carries; `$sum`/`$avg`/
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
 - **Oracle.** SQL Server shipped; Oracle is the half still designed, and a differentiator only Prisma and Drizzle also lack. It needs no R5 - its generated ids ride in the values array - and inherits `MergeSqlDialect`'s paging and upsert. [The design](oracle-mssql.md).
 - **An agent skill in the tarball.** `skills/uql/` shipped inside `uql-orm`, stamped with its version so it never describes another release, as Prisma 8 and Drizzle v1 do. Mostly docs; the upgrade guide's per-version notes are its upgrading branch.
+
 ## Where a composite key still refuses
 
 Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).

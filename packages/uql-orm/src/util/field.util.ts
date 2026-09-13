@@ -107,7 +107,7 @@ export function isIntegerColumn(field: Pick<FieldOptions, 'type' | 'columnType' 
  * Every read site asks this - the DDL skip, the projection, the `$where` and `ORDER BY` operands -
  * because an inlined field has no column to name, while a stored one is read like any other.
  */
-export function isInlinedExpression(field: FieldOptions): boolean {
+export function isInlinedExpression<F extends FieldOptions>(field: F): field is F & Required<Pick<F, 'computed'>> {
   return field.computed !== undefined && field.stored !== true;
 }
 

@@ -24,9 +24,10 @@ import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import { isInlinedExpression } from '../../util/field.util.js';
 import {
   entityName,
+  entitySql,
+  entityWhere,
   fieldOptionConflict,
   getKeys,
-  ddlText,
   hasKeys,
   isToManyRelation,
   lowerFirst,
@@ -71,8 +72,14 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
   // column from the referenced primary key (picking up its `columnType`, length and chained keys)
   // instead of treating whatever ends up in `type` as deliberate.
-  const resolved = opts.type ? opts : { ...opts, typeFromReference: true as const };
-  meta.fields[fieldKey] = { ...meta.fields[fieldKey], name: key, ...resolved };
+  const { computed, ...rest } = opts;
+  const resolved = rest.type ? rest : { ...rest, typeFromReference: true as const };
+  meta.fields[fieldKey] = {
+    ...meta.fields[fieldKey],
+    name: key,
+    ...resolved,
+    ...(computed && { computed: entitySql(computed) }),
+  };
   return meta;
 }
 
@@ -152,7 +159,7 @@ export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): Ent
   (meta.indexes ??= []).push({
     ...index,
     unique: index.unique ?? false,
-    where: ddlText(index.where, 'a partial-index predicate'),
+    where: index.where && entityWhere(index.where),
     columns: index.columns(keys).map(normalizeIndexColumn),
     include: index.include?.(keys),
   });
@@ -227,7 +234,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   });
   // Unnamed checks are named by the generator, as unnamed indexes are.
   for (const check of opts.checks ?? []) {
-    (meta.checks ??= []).push({ name: check.name, expression: ddlText(check.expression, 'a check constraint') });
+    (meta.checks ??= []).push({ name: check.name, where: entityWhere(check.where) });
   }
   for (const index of opts.indexes ?? []) {
     defineIndex(entity, index);
@@ -271,7 +278,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   if (softDeleteKeys.length) {
     meta.softDelete = softDeleteKeys[0];
     if (!meta.filters) meta.filters = {};
-    meta.filters[SOFT_DELETE_FILTER] = { condition: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
+    meta.filters[SOFT_DELETE_FILTER] = { where: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
   const ids = getIdKeys(meta);

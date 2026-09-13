@@ -1,15 +1,15 @@
 /**
  * Type-level regression tests for `QueryWhereRootOperator`: `$and`/`$or`/`$not`/`$nor` (clause
- * arrays), `$text` (full-text search), `$exists`/`$nexists` (raw subqueries), and a bare `raw()` as a
- * field's value. Complements `queryWhereOperator.test-d.ts`, which covers per-field operator
- * gating rather than these root-level clauses.
+ * arrays), `$text` (full-text search), `$exists`/`$nexists` (raw subqueries), a bare `raw()` as a
+ * field's value, and `refs()` naming fields inside one. Complements `queryWhereOperator.test-d.ts`,
+ * which covers per-field operator gating rather than these root-level clauses.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
  * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
  * error it guards ever stops happening, keeping the negatives locked in.
  */
 import type { Querier } from '../index.js';
-import { raw } from '../util/index.js';
+import { raw, refs } from '../util/index.js';
 
 class Person {
   id!: number;
@@ -90,4 +90,25 @@ export async function rawFieldValue() {
   // A field may compare against a raw SQL expression instead of a literal value.
   await querier.findMany(Person, { $where: { age: raw`EXTRACT(YEAR FROM birth_date)` } });
   await querier.updateOneById(Person, 1, { age: raw`age + 1` });
+}
+
+export async function columnRefs() {
+  // A field named inside raw SQL, linked to its property the way a statement's keys are.
+  const person = refs(Person);
+  await querier.findMany(Person, { $where: { $and: [raw`${person.age} > ${person.id}`] } });
+  await querier.findMany(Person, { $where: { age: raw`${person.age} + 1` } });
+  await querier.updateOneById(Person, 1, { age: raw`${person.age} + 1` });
+
+  class Membership {
+    id?: number;
+    person?: Person;
+    renew(): void {}
+  }
+  const membership = refs(Membership);
+  // @ts-expect-error 'naem' is not a field of Person
+  await querier.findMany(Person, { $where: { $and: [raw`${person.naem} IS NULL`] } });
+  // @ts-expect-error a relation has no column of its own
+  await querier.findMany(Person, { $where: { $and: [raw`${membership.person} IS NULL`] } });
+  // @ts-expect-error a method has no column
+  await querier.findMany(Person, { $where: { $and: [raw`${membership.renew} IS NULL`] } });
 }

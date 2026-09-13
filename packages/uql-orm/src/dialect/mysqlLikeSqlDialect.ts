@@ -342,7 +342,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    return `JSON_CONTAINS(${jsonField}, ${this.addValue(ctx.values, JSON.stringify(value))})`;
+    return `JSON_CONTAINS(${jsonField}, ${this.addValue(ctx, JSON.stringify(value))})`;
   }
 
   protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {

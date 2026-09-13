@@ -592,7 +592,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
     it('should enforce a table check and report no difference for it', async () => {
       // Unquoted, so every engine reads two identifiers: `"spent"` is a string literal on MySQL and
       // MariaDB, which makes the constraint compare two constants and reject every row.
-      @Entity({ checks: [{ expression: raw`spent <= balance` }] })
+      @Entity({ checks: [{ where: raw`spent <= balance` }] })
       class SyncChecked {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number }) spent?: number;

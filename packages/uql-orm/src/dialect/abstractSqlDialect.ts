@@ -3,7 +3,9 @@ import {
   COUNT_RESULT_KEY,
   type EntityData,
   type EntityMeta,
+  type EntityWhereMeta,
   type FieldKey,
+  type FieldMeta,
   type FieldOptions,
   type IsolationLevel,
   type JsonColumnType,
@@ -19,6 +21,7 @@ import {
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
+  type QueryContextOptions,
   type QueryCount,
   type QueryDialect,
   type QueryExclude,
@@ -303,8 +306,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
   }
 
-  createContext(): QueryContext {
-    return new SqlQueryContext(this);
+  createContext(options: QueryContextOptions = {}): QueryContext {
+    return new SqlQueryContext(this, [], undefined, options.inlineValues);
   }
 
   /**
@@ -322,9 +325,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     return fragmentCtx.sql;
   }
 
-  /** A `raw()` operand, rendered in place: bound, it would reach the driver as the object itself. */
-  protected rawFragment(ctx: QueryContext, value: QueryRaw): string {
-    return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value }));
+  /** A `raw()` rendered in place, an operand or a projected term: bound, the driver would get the object. */
+  protected rawFragment(ctx: QueryContext, value: QueryRaw, prefix?: string, entity?: Type<unknown>): string {
+    return this.buildFragment(ctx, (fragmentCtx) => this.getRawValue(fragmentCtx, { value, prefix, entity }));
   }
 
   /**
@@ -345,9 +348,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       .filter((part) => part !== '');
   }
 
-  addValue(values: unknown[], value: unknown): string {
-    values.push(this.normalizeValue(value));
-    return this.placeholder(values.length);
+  addValue(ctx: QueryContext, value: unknown): string {
+    if (value instanceof QueryRaw) {
+      return this.rawFragment(ctx, value);
+    }
+    if (ctx.inlineValues) {
+      return this.escape(this.normalizeValue(value));
+    }
+    ctx.values.push(this.normalizeValue(value));
+    return this.placeholder(ctx.values.length);
   }
 
   /**
@@ -446,7 +455,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
     return keys.map((key) =>
       key instanceof QueryRaw
-        ? { sql: this.rawSql(ctx, key, opts.prefix), key: key[RAW_ALIAS] }
+        ? { sql: this.rawFragment(ctx, key, opts.prefix), key: key[RAW_ALIAS] }
         : this.fieldTerm(ctx, meta, key, opts),
     );
   }
@@ -458,25 +467,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       // Qualified even when nothing else in this statement is: the expression is spliced in, and one
       // that opens a correlated subquery has the inner table's columns in scope, so a bare `"id"`
       // would bind to *that* table instead of this one.
-      const sql = this.rawSql(ctx, field.computed!, opts.prefix ?? this.resolveTableAlias(meta));
+      const sql = this.rawFragment(ctx, field.computed, opts.prefix ?? this.resolveTableAlias(meta), meta.entity);
       return { sql: opts.json ? this.carried(`(${sql})`, field) : sql, key };
     }
     const columnName = this.resolveColumnName(key, field);
     const column = this.escapeId(opts.prefix, true, true) + this.escapeId(columnName);
     const sql = opts.json ? this.carried(column, field) : this.selectFieldExpr(column, field);
     return { sql, key, bare: sql === column && columnName === key };
-  }
-
-  /** A `raw()` rendered where it stands, without the alias a projection writes for it. */
-  private rawSql(ctx: QueryContext, value: QueryRaw, prefix: string | undefined): string {
-    return this.buildFragment(ctx, (fragmentCtx) =>
-      value.render({
-        ctx: fragmentCtx,
-        dialect: this,
-        prefix: prefix ?? '',
-        escapedPrefix: this.escapeId(prefix, true, true),
-      }),
-    );
   }
 
   /**
@@ -748,7 +745,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       }
       this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
       ctx.append(' = ');
-      this.getRawValue(ctx, { value: val });
+      this.getRawValue(ctx, { value: val, prefix: opts.prefix });
       return;
     }
 
@@ -826,7 +823,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
     const parts = this.renderOperands(ctx, items, (fragmentCtx, entry) => {
       if (entry instanceof QueryRaw) {
-        this.getRawValue(fragmentCtx, { value: entry });
+        this.getRawValue(fragmentCtx, { value: entry, prefix: opts.prefix });
       } else {
         this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
       }
@@ -910,7 +907,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     }
     const fold = like.insensitive && this.caseInsensitiveMatch === 'fold';
     const value = String(val);
-    const ph = this.addValue(ctx.values, like.pattern(fold ? value.toLowerCase() : value));
+    const ph = this.addValue(ctx, like.pattern(fold ? value.toLowerCase() : value));
     const matchOp = like.insensitive && this.caseInsensitiveMatch === 'ilike' ? 'ILIKE' : this.likeFn;
     return `${fold ? `LOWER(${operand})` : operand} ${matchOp} ${ph}`;
   }
@@ -929,7 +926,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const meta = getMeta(entity);
     const field = meta.fields[key];
     return (
-      this.inlinedOperand(ctx, field, opts.prefix ?? this.resolveTableAlias(meta)) ??
+      this.inlinedOperand(ctx, field, opts.prefix ?? this.resolveTableAlias(meta), entity) ??
       this.columnWithPrefix(key, field, opts.prefix)
     );
   }
@@ -940,17 +937,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    * Every clause that names such a field needs the expression itself, never the output alias: an
    * alias exists only when the field was also selected, which `$where` and `$sort` cannot assume.
    */
-  private inlinedOperand(ctx: QueryContext, field: FieldOptions | undefined, prefix: string | undefined) {
+  private inlinedOperand(
+    ctx: QueryContext,
+    field: FieldMeta | undefined,
+    prefix: string | undefined,
+    entity: Type<unknown>,
+  ) {
     const inlined = field && isInlinedExpression(field) ? field.computed : undefined;
-    return inlined
-      ? this.buildFragment(ctx, (fragmentCtx) =>
-          this.getRawValue(fragmentCtx, {
-            value: inlined,
-            prefix,
-            escapedPrefix: this.escapeId(prefix, true, true),
-          }),
-        )
-      : undefined;
+    return inlined ? this.rawFragment(ctx, inlined, prefix, entity) : undefined;
   }
 
   compareFieldOperator<E, K extends keyof QueryWhereFieldOperatorMap<E>>(
@@ -1006,7 +1000,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   protected operatorCondition(ctx: QueryContext, operand: string, op: string, val: unknown): string | undefined {
     const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
     if (compareOp) {
-      return `${operand}${compareOp}${this.addValue(ctx.values, val)}`;
+      return `${operand}${compareOp}${this.addValue(ctx, val)}`;
     }
 
     const like = this.likeCondition(ctx, operand, op, val);
@@ -1016,17 +1010,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
     switch (op) {
       case '$eq':
-        return val === null ? `${operand} IS NULL` : `${operand} = ${this.addValue(ctx.values, val)}`;
+        return val === null ? `${operand} IS NULL` : `${operand} = ${this.addValue(ctx, val)}`;
       case '$ne':
-        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, this.addValue(ctx.values, val));
+        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, this.addValue(ctx, val));
       case '$regex':
-        return this.regexCondition(operand, this.addValue(ctx.values, val));
+        return this.regexCondition(operand, this.addValue(ctx, val));
       case '$in':
       case '$nin':
         return operand + this.formatIn(ctx, inOperands(op, val), op === '$nin');
       case '$between': {
         const [min, max] = val as [unknown, unknown];
-        return `${operand} BETWEEN ${this.addValue(ctx.values, min)} AND ${this.addValue(ctx.values, max)}`;
+        return `${operand} BETWEEN ${this.addValue(ctx, min)} AND ${this.addValue(ctx, max)}`;
       }
       case '$isNull':
         return operand + (val ? ' IS NULL' : ' IS NOT NULL');
@@ -1073,7 +1067,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     // operator out of the same table a comparison against a column does.
     const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
     if (compareOp) {
-      return `${fieldAccessor(jsonPath, 'numeric')}${compareOp}${this.addValue(ctx.values, value)}`;
+      return `${fieldAccessor(jsonPath, 'numeric')}${compareOp}${this.addValue(ctx, value)}`;
     }
     switch (op) {
       case '$eq':
@@ -1083,7 +1077,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         if (value === null) return `${jsonField} IS NOT NULL`;
         return this.neExpr(comparand(value), this.jsonOperand(ctx, value, asJson));
       case '$regex':
-        return this.regexCondition(jsonField, this.addValue(ctx.values, value));
+        return this.regexCondition(jsonField, this.addValue(ctx, value));
       case '$in':
       case '$nin':
         return this.jsonInNin(ctx, jsonField, comparand, op, value, asJson);
@@ -1118,7 +1112,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
 
   /** The bound operand of a JSON comparison: JSON-encoded when comparing against the JSON value. */
   protected jsonOperand(ctx: QueryContext, value: unknown, asJson: boolean): string {
-    return asJson ? this.jsonScalarParam(ctx, value) : this.addValue(ctx.values, value);
+    return asJson ? this.jsonScalarParam(ctx, value) : this.addValue(ctx, value);
   }
 
   /** `$all`: the JSON array at `jsonField` contains every value (also serves element containment). */
@@ -1223,9 +1217,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     if (value instanceof QueryRaw) {
       return this.rawFragment(ctx, value);
     }
-    ctx.pushValue(JSON.stringify(value));
-    // The placeholder for the value just pushed, so a named or numbered one is spelled correctly.
-    return this.jsonCast(this.placeholder(ctx.values.length));
+    return this.jsonCast(this.addValue(ctx, JSON.stringify(value)));
   }
 
   /** {@link resolveOperandField}, appended. */
@@ -1355,7 +1347,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     const field = meta.fields[key as FieldKey<E>];
     if (field) {
       const expr =
-        this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta)) ??
+        this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta), meta.entity) ??
         this.columnWithPrefix(key, field, prefix);
       return { expr, output: false };
     }
@@ -1739,7 +1731,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
         const value = record[keys[i]];
         if (value === undefined) {
           this.appendDefaultInsertValue(ctx, fields[i]);
-        } else if (kinds[i] === 'plain' && !(value instanceof QueryRaw)) {
+        } else if (kinds[i] === 'plain') {
           // The overwhelmingly common case in a bulk insert, so it binds without a dispatch.
           ctx.addValue(value);
         } else {
@@ -2138,6 +2130,28 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
   /** Remove object keys. */
   protected abstract jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string;
 
+  /**
+   * The text of SQL a schema declares, as DDL carries it: values written as literals, and none left bound,
+   * since a `CREATE` statement has no placeholder to bind one into. An entity's SQL reads its fields, a
+   * predicate with no entity filter applied; a migration's is `raw` reading none.
+   */
+  compileDdl(sql: QueryRaw): string;
+  compileDdl<E>(sql: EntityWhereMeta<E>, entity: Type<E>): string;
+  compileDdl<E>(sql: EntityWhereMeta<E>, entity?: Type<E>): string {
+    const ctx = this.createContext({ inlineValues: true });
+    if (sql instanceof QueryRaw) {
+      sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: '', entity });
+    } else if (entity) {
+      this.renderWhere(ctx, entity, sql, { clause: false });
+    } else {
+      throw new TypeError('a predicate compiles against the entity it is written for, and none was given');
+    }
+    if (ctx.values.length) {
+      throw new TypeError(`DDL has no placeholder to bind a value into, and this SQL left one bound: ${ctx.sql}`);
+    }
+    return ctx.sql;
+  }
+
   getRawValue(ctx: QueryContext, opts: QueryRawFnOptions & { value: QueryRaw }) {
     const { value, prefix = '', escapedPrefix } = opts;
     value.render({
@@ -2147,10 +2161,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
       prefix,
       escapedPrefix: escapedPrefix ?? this.escapeId(prefix, true, true),
     });
-    const alias = value[RAW_ALIAS];
-    if (alias) {
-      ctx.append(' ' + this.escapeId(alias, true));
-    }
   }
 
   /**
@@ -2654,7 +2664,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
     // A COUNT is never NULL, so equality stays plain here instead of taking the shared renderer's
     // null-safe `$ne` (`IS DISTINCT FROM` on Postgres, `IS NOT` on SQLite). Same rows, shorter SQL.
     if (op === '$eq' || op === '$ne') {
-      ctx.append(` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx.values, val)}`);
+      ctx.append(` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx, val)}`);
       return;
     }
     this.appendOperatorCondition(ctx, '', op, val);
@@ -2701,7 +2711,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Que
    */
   protected formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
     if (values.length === 0) return negate ? ' NOT IN (NULL)' : ' IN (NULL)';
-    const phs = values.map((v) => this.addValue(ctx.values, v)).join(', ');
+    const phs = values.map((v) => this.addValue(ctx, v)).join(', ');
     return ` ${negate ? 'NOT IN' : 'IN'} (${phs})`;
   }
 

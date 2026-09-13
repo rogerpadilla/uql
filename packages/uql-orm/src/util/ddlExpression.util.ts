@@ -1,38 +1,28 @@
-import { type IndexColumnInput, type IndexColumnSchema, QueryRaw, RAW_VALUE } from '../type/index.js';
+import { type EntityIndexColumn, type IndexColumnInput, type IndexColumnSchema, QueryRaw } from '../type/index.js';
+import { entitySql } from './raw.js';
 
 /**
- * SQL bound for DDL, as the text a generator renders. `raw` with no interpolation, or a bare string
- * where one is still accepted: DDL is evaluated once at creation time, so there is no query context
- * for the callback form and no placeholder a `CREATE` statement could bind a value into.
- *
- * `what` names the thing being declared, so the error says which one the caller got wrong.
+ * Reduces an authored index entry to the form metadata keeps, so the shapes users write - a column
+ * name, an expression's callback, an options object - reach the schema as one, each callback resolved.
  */
-export function ddlText(value: string | QueryRaw, what: string): string;
-export function ddlText(value: string | QueryRaw | undefined, what: string): string | undefined;
-export function ddlText(value: string | QueryRaw | undefined, what: string): string | undefined {
-  if (!(value instanceof QueryRaw)) {
-    return value;
-  }
-  const sql = value[RAW_VALUE];
-  if (typeof sql !== 'string') {
-    throw new TypeError(`${what} needs raw() with no interpolation, not a function or a bound value`);
-  }
-  return sql;
-}
-
-/**
- * Reduces an authored index entry to its normalized form, so the three shapes users write - a column
- * name, an expression, or an options object - reach the dialects as one.
- */
-export function normalizeIndexColumn(entry: IndexColumnInput): IndexColumnSchema {
+export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn {
   if (typeof entry === 'string') {
     return { column: entry };
   }
-  if (entry instanceof QueryRaw) {
-    return { column: ddlText(entry, 'an index expression'), expression: true };
+  if (typeof entry === 'function') {
+    return { column: entitySql(entry) };
   }
-  const { column, ...rest } = entry;
-  return column instanceof QueryRaw
-    ? { ...rest, column: ddlText(column, 'an index expression'), expression: true }
-    : { ...rest, column };
+  const { column } = entry;
+  return { ...entry, column: typeof column === 'function' ? entitySql(column) : column };
+}
+
+/** An index entry as the schema holds it, its expression rendered to text by `render`. */
+export function renderIndexColumn(entry: EntityIndexColumn, render: (sql: QueryRaw) => string): IndexColumnSchema {
+  const { column } = entry;
+  return column instanceof QueryRaw ? { ...entry, column: render(column), expression: true } : { ...entry, column };
+}
+
+/** What an unnamed index's name is built from: each entry's column, or `expr<n>` for an expression, which has none. */
+export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] {
+  return entries.map((entry, at) => (typeof entry.column === 'string' ? entry.column : `expr${at}`));
 }

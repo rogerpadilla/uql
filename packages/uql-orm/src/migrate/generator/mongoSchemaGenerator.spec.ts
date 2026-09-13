@@ -3,6 +3,7 @@ import { Entity, Field, Id } from '../../entity/index.js';
 import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
 import type { IndexNode, TableNode } from '../../schema/types.js';
 import type { IndexSchema } from '../../type/index.js';
+import { raw } from '../../util/index.js';
 import type { TableDefinition } from '../builder/types.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
@@ -271,6 +272,16 @@ describe('MongoSchemaGenerator', () => {
         key: { slug: 1 },
         options: { unique: true, name: 'posts_slug_idx' },
       });
+    });
+
+    it('should refuse the SQL a definition declares, having none to render it into', () => {
+      const def: TableDefinition = {
+        name: 'posts',
+        columns: [],
+        foreignKeys: [],
+        indexes: [{ name: 'posts_title_idx', entries: [{ column: raw`lower(title)` }], unique: false }],
+      };
+      expect(() => generator.generateCreateTableFromDefinition(def)).toThrow('mongodb has no SQL to render');
     });
 
     it('should generate the table-level commands by name', () => {

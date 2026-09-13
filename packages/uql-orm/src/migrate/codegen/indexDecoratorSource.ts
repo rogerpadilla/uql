@@ -99,7 +99,9 @@ export function indexNeedsRaw(index: IndexNode): boolean {
 
 function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: string) => string, param: string): string {
   if (entry.expression) {
-    return rawTag(entry.column);
+    const expression = `() => ${rawTag(entry.column)}`;
+    const modifiers = significantModifiers(entry);
+    return modifiers.length === 0 ? expression : `{ column: ${expression}, ${modifiers.join(', ')} }`;
   }
   const column = memberSource(param, propertyName(entry.column));
   const modifiers = significantModifiers(entry);

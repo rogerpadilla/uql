@@ -170,13 +170,3 @@ describe('Query with $exists and nested relation filtering', () => {
     expect(values).toEqual([10, 50]);
   });
 });
-
-describe('getRawValue alias', () => {
-  const dialect = new PostgresDialect();
-
-  it('should write the alias after the expression, whatever the prefix', () => {
-    const ctx = dialect.createContext();
-    dialect.getRawValue(ctx, { value: raw(() => ctx.append('SOME_EXPR()'), 'myAlias'), prefix: 'relation' });
-    expect(ctx.sql).toBe('SOME_EXPR() "myAlias"');
-  });
-});

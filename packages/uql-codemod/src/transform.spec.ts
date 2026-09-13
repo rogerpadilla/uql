@@ -50,7 +50,10 @@ const STUBS = `
   declare function defineEntity(entity: unknown, options: unknown): void;
   declare function defineIndex(entity: unknown, options: unknown): void;
   declare function defineRelation(entity: unknown, key: string, options: unknown): void;
-  declare function raw(strings: TemplateStringsArray): unknown;
+  declare function Entity(options?: unknown): ClassDecorator;
+  declare function Filter(name: string, options: unknown): ClassDecorator;
+  declare function defineFilter(entity: unknown, name: string, options: unknown): void;
+  declare function raw(strings: TemplateStringsArray, ...values: unknown[]): unknown;
   type Relation<T> = T;
 `;
 
@@ -270,6 +273,17 @@ class Entity {
     expect(unresolved.join('\n')).toContain("gives both 'virtual' and 'computed'");
   });
 
+  /** Both edits start at the key, and the type written before it has to stay before it once renamed. */
+  it('renames a virtual that comes first while writing the type before it', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Field({ virtual: raw\`1 + 1\` }) score?: number;
+      }
+    `);
+
+    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number;');
+  });
+
   /** An empty literal has no first property to insert before, so the whole object is rewritten instead. */
   it('fills in an empty options object', () => {
     const { text } = codemod(`
@@ -445,7 +459,7 @@ class Entity {
     `);
 
     expect(text).toContain(
-      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
+      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, () => raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
     );
     expect(text).toContain("@Index((post) => [post['first-name']])");
     expect(text).toContain('@Index((post) => [post.title])');
@@ -470,6 +484,37 @@ class Entity {
     expect(text).toContain(
       'references: (local, foreign) => [{ local: local.parentId, foreign: foreign.id }] }) parent?: Order;',
     );
+  });
+
+  it('reports a references pair it cannot read', () => {
+    const { unresolved } = codemod(`
+      class Customer { id?: number; code?: string; }
+      declare const pair: { local: 'customerCode'; foreign: 'code' };
+      class Order {
+        customerCode?: string;
+        @ManyToOne({ entity: () => Customer, references: [pair] }) customer?: Customer;
+      }
+    `);
+
+    expect(unresolved).toEqual([
+      expect.stringContaining("write 'references' as a key-map callback; this one could not be read"),
+    ]);
+  });
+
+  it("renames $lock's wait to $wait, writing a lock that waits as true", () => {
+    const { text, unresolved } = codemod(`
+      declare const querier: { findMany(entity: unknown, q: unknown): void };
+      declare const wait: 'skip';
+      querier.findMany(Object, { $lock: { wait: 'nowait' } });
+      querier.findMany(Object, { $lock: { wait } });
+      querier.findMany(Object, { $lock: { wait: 'block' } });
+      querier.findMany(Object, { $lock: {} });
+    `);
+
+    expect(text).toContain("querier.findMany(Object, { $lock: { $wait: 'nowait' } });");
+    expect(text).toContain('querier.findMany(Object, { $lock: { $wait: wait } });');
+    expect(text.match(/\$lock: true/g)).toHaveLength(2);
+    expect(unresolved).toEqual([]);
   });
 
   it("rewrites defineEntity's indexes, hooks and relations into key-map callbacks", () => {
@@ -527,7 +572,6 @@ class Entity {
 
   it("rewrites @Entity's indexes, hooks and relations like defineEntity's", () => {
     const { text } = codemod(`
-      declare function Entity(options?: unknown): ClassDecorator;
       class Tag { id?: number; }
       @Entity({
         indexes: [{ columns: ['title'], unique: true }],
@@ -741,6 +785,16 @@ type ParentOf<T> = Relation<T>;
     expect(unresolved[2]).toContain("'buildQueryWhereAsMap' was removed; a `$where` is a map already");
   });
 
+  /** Nothing to rewrite and nothing to report: the name is only gone from the package. */
+  it('drops a col import nothing uses', () => {
+    const { text, unresolved } = codemodFile(`import { col, raw } from 'uql-orm';
+export const one = raw\`1\`;
+`);
+
+    expect(text).toContain("import { raw } from 'uql-orm';");
+    expect(unresolved).toEqual([]);
+  });
+
   it('renames a renamed export, its import and every use of it', () => {
     const { text, unresolved } = codemodFile(`import { QueryWhereMap, type RelationKeyMap as Keys } from 'uql-orm';
 const where: QueryWhereMap<User> = {};
@@ -765,6 +819,33 @@ const b: QueryWhere<User> = {};
     expect(text).toBe(`import { QueryWhere } from 'uql-orm';
 const a: QueryWhere<User> = {};
 const b: QueryWhere<User> = {};
+`);
+  });
+
+  it('renames FilterCondition to FilterWhere', () => {
+    const { text } = codemodFile(`import { type FilterCondition } from 'uql-orm';
+const where: FilterCondition<Post> = {};
+`);
+
+    expect(text).toBe(`import { type FilterWhere } from 'uql-orm';
+const where: FilterWhere<Post> = {};
+`);
+  });
+
+  /** Both rewrite the one import, so the rename has to leave out the name the other drops. */
+  it('drops Relation from an import that also renames a name', () => {
+    const { text } = codemodFile(`import { ManyToOne, QueryWhereMap, type Relation } from 'uql-orm';
+class Item {
+  @ManyToOne({ entity: () => Item }) parent?: Relation<Item>;
+}
+const where: QueryWhereMap<Item> = {};
+`);
+
+    expect(text).toBe(`import { ManyToOne, QueryWhere } from 'uql-orm';
+class Item {
+  @ManyToOne({ entity: () => Item }) parent?: Item;
+}
+const where: QueryWhere<Item> = {};
 `);
   });
 
@@ -860,6 +941,216 @@ let a: PostgresDialect; let b: PgQuerier; let c: PostgresDialect;
   });
 });
 
+describe('SQL in definitions', () => {
+  it('writes an index expression as the callback an index takes, as an entry or as a column', () => {
+    const { text } = codemod(`
+      @Index((post) => [post.title, raw\`lower("slug")\`, { column: raw\`upper("slug")\`, order: 'desc' }])
+      @Index(['title', { column: raw\`lower("title")\` }])
+      class Post { id?: number; title?: string; slug?: string; }
+    `);
+
+    expect(text).toContain(
+      '@Index((post) => [post.title, () => raw`lower("slug")`, { column: () => raw`upper("slug")`, order: \'desc\' }])',
+    );
+    expect(text).toContain('@Index((post) => [post.title, { column: () => raw`lower("title")` }])');
+  });
+
+  /** It bound the string `'email'`; the refs its callback takes now render the column it meant. */
+  it('hands an interpolating expression the refs its SQL was reading', () => {
+    const { text } = codemod(`
+      @Index((user) => [raw\`lower(\${user.email})\`])
+      class User { id?: number; email?: string; }
+    `);
+
+    expect(text).toContain('@Index((user) => [(user) => raw`lower(${user.email})`])');
+  });
+
+  it("rewrites defineIndex's and an entity's index expressions alike", () => {
+    const { text } = codemod(`
+      class Post { id?: number; title?: string; }
+      defineIndex(Post, { columns: ['title', raw\`lower("title")\`] });
+      defineEntity(Post, { indexes: [{ columns: (post) => [{ column: raw\`lower("title")\` }] }] });
+    `);
+
+    expect(text).toContain('defineIndex(Post, { columns: (post) => [post.title, () => raw`lower("title")`] });');
+    expect(text).toContain('indexes: [{ columns: (post) => [{ column: () => raw`lower("title")` }] }]');
+  });
+
+  it('rewrites a raw() call in a column list together with the list', () => {
+    const { text } = codemodFile(`import { Index, raw } from 'uql-orm';
+@Index(['title', raw('lower("title")')])
+class Post { id?: number; title?: string; }
+`);
+
+    expect(text).toContain('@Index((post) => [post.title, () => raw`lower("title")`])');
+  });
+
+  it('writes a partial-index where given as a string as raw, importing raw', () => {
+    const { text, unresolved } = codemodFile(`import { Entity, Index, defineIndex } from 'uql-orm';
+@Index((post) => [post.slug], { where: '"deletedAt" IS NULL' })
+@Entity({ indexes: [{ columns: (post) => [post.title], where: \`"deletedAt" IS NULL\` }] })
+class Post { id?: number; title?: string; slug?: string; deletedAt?: Date; }
+defineIndex(Post, { columns: (post) => [post.title], where: "status = 'live'" });
+`);
+
+    expect(text).toContain("import { raw, Entity, Index, defineIndex } from 'uql-orm';");
+    expect(text).toContain('@Index((post) => [post.slug], { where: raw`"deletedAt" IS NULL` })');
+    expect(text).toContain('where: raw`"deletedAt" IS NULL` }] })');
+    expect(text).toContain("defineIndex(Post, { columns: (post) => [post.title], where: raw`status = 'live'` });");
+    expect(unresolved).toEqual([]);
+  });
+
+  /** A template that interpolates spliced its value in as SQL, which `raw` would bind instead. */
+  it('reports a partial-index where it cannot write as raw', () => {
+    const { text, unresolved } = codemodFile(`import { Index, raw } from 'uql-orm';
+declare const minimum: number;
+declare const predicate: string;
+@Index((post) => [post.slug], { where: \`"stock" > \${minimum}\` })
+@Index((post) => [post.title], { where: predicate })
+@Index((post) => [post.id], { where: raw\`"stock" > 0\` })
+class Post { id?: number; title?: string; slug?: string; stock?: number; }
+`);
+
+    expect(text).toContain('{ where: `"stock" > ${minimum}` }');
+    expect(text).toContain('{ where: predicate }');
+    expect(unresolved).toEqual([
+      "/entities.ts:4: write the partial-index 'where' as raw`...` or a predicate; this one could not be read",
+      "/entities.ts:5: write the partial-index 'where' as raw`...` or a predicate; this one could not be read",
+    ]);
+  });
+
+  it('reports the raw import it cannot add', () => {
+    const { unresolved } = codemod(`
+      @Index((post) => [post.slug], { where: '"deletedAt" IS NULL' })
+      class Post { id?: number; slug?: string; deletedAt?: Date; }
+    `);
+
+    expect(unresolved).toEqual(["/entities.ts: import 'raw' from 'uql-orm' for the raw`...` written here"]);
+  });
+
+  it("rewrites the migration builder's index expressions and string where alike", () => {
+    const { text } = codemodFile(`import { raw } from 'uql-orm';
+import { defineBuilderMigration } from 'uql-orm/migrate';
+
+export default defineBuilderMigration({
+  async up(m) {
+    await m.createTable('notes', (t) => {
+      t.unique([raw\`lower("email")\`], { where: '"deleted_at" IS NULL' });
+      t.index([{ column: raw\`lower("body")\`, length: 64 }, 'title']);
+    });
+    await m.alterTable('notes', (t) => t.addIndex([raw\`lower("title")\`]));
+    await m.createIndex('notes', [raw\`lower("slug")\`], { where: raw\`"deleted_at" IS NULL\` });
+  },
+});
+`);
+
+    expect(text).toContain('t.unique([() => raw`lower("email")`], { where: raw`"deleted_at" IS NULL` });');
+    expect(text).toContain('t.index([{ column: () => raw`lower("body")`, length: 64 }, \'title\']);');
+    expect(text).toContain('t.addIndex([() => raw`lower("title")`])');
+    expect(text).toContain(
+      'm.createIndex(\'notes\', [() => raw`lower("slug")`], { where: raw`"deleted_at" IS NULL` });',
+    );
+  });
+
+  it('leaves a method of the same name alone in a file that does not import uql-orm', () => {
+    const body = `declare const t: { index(columns: unknown[], options?: unknown): void };
+declare function raw(strings: TemplateStringsArray): unknown;
+t.index([raw\`lower("email")\`], { where: 'active' });
+`;
+
+    expect(codemodFile(body).text).toBe(body);
+  });
+
+  it("renames a check's expression and a filter's condition to where", () => {
+    const { text, unresolved } = codemod(`
+      const condition = { status: 'live' };
+      @Filter('live', { condition: { status: 'live' }, default: false })
+      @Filter('shorthand', { condition })
+      @Entity({
+        checks: [{ name: 'positive', expression: raw\`1 = 1\` }],
+        filters: { mine: { condition: () => ({ status: 'mine' }) } },
+      })
+      class Post { id?: number; status?: string; }
+      defineFilter(Post, 'draft', { condition: { status: 'draft' } });
+      defineEntity(Post, { checks: [{ expression: raw\`2 = 2\` }], filters: { all: { condition: {} } } });
+    `);
+
+    expect(text).toContain("@Filter('live', { where: { status: 'live' }, default: false })");
+    expect(text).toContain("@Filter('shorthand', { where: condition })");
+    expect(text).toContain("checks: [{ name: 'positive', where: raw`1 = 1` }],");
+    expect(text).toContain("filters: { mine: { where: () => ({ status: 'mine' }) } },");
+    expect(text).toContain("defineFilter(Post, 'draft', { where: { status: 'draft' } });");
+    expect(text).toContain('defineEntity(Post, { checks: [{ where: raw`2 = 2` }], filters: { all: { where: {} } } });');
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports a check giving both names rather than choosing one', () => {
+    const { unresolved } = codemod(`
+      class Post { id?: number; }
+      defineEntity(Post, { checks: [{ expression: raw\`1 = 1\`, where: raw\`2 = 2\` }] });
+    `);
+
+    expect(unresolved).toEqual([expect.stringContaining("gives both 'expression' and 'where'; keep 'where'")]);
+  });
+
+  it("renames virtual to computed in defineEntity's fields, as on @Field", () => {
+    const { text } = codemod(`
+      class Line { id?: number; total?: number; }
+      defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`1 + 1\` } } });
+    `);
+
+    expect(text).toContain('fields: { total: { type: Number, computed: raw`1 + 1` } }');
+  });
+
+  /** A string literal and a word called as a function are left out: `'gone'` is a value, `count(*)` a call. */
+  it('notes SQL in a definition that names a column by hand, which a rename does not reach', () => {
+    const { notes } = codemod(`
+      @Index(() => [raw\`lower("email")\`], { where: raw\`status <> 'gone'\` })
+      @Entity({ checks: [{ expression: raw\`length(code) = 3 AND "code" <> 'status'\` }] })
+      class User {
+        id?: number; email?: string; status?: string; code?: string; count?: number;
+        @Field({ type: Number, computed: raw\`count(*) + 1\` }) total?: number;
+        @Field({ type: Number, computed: (user) => raw\`\${user.count} + 1\` }) next?: number;
+      }
+    `);
+
+    expect(notes).toEqual([
+      expect.stringMatching(/^\/entities\.ts:\d+: SQL names 'email' by hand, which a rename does not reach; /),
+      expect.stringMatching(/^\/entities\.ts:\d+: SQL names 'status' by hand/),
+      expect.stringMatching(/^\/entities\.ts:\d+: SQL names 'code' by hand/),
+    ]);
+    expect(notes[0]).toMatch(
+      /; read each off a callback's refs instead: \(user\) => raw`\.\.\.\$\{user\.<member>\}\.\.\.`$/,
+    );
+  });
+
+  it('reports a list of names holding an entry it cannot read', () => {
+    const { text, unresolved } = codemod(`
+      declare const slug: 'slug';
+      @Index(['title', slug])
+      class Post { id?: number; title?: string; slug?: string; }
+    `);
+
+    expect(text).toContain("@Index(['title', slug])");
+    expect(unresolved).toEqual([
+      expect.stringContaining("write '@Index' columns as a key-map callback; this one could not be read"),
+    ]);
+  });
+
+  it('leaves a raw() call it cannot read alone, noting nothing', () => {
+    const { text, notes } = codemodFile(`import { Field, raw } from 'uql-orm';
+class Entity {
+  @Field({ type: Number, computed: raw() }) score?: number;
+  @Field({ type: Number, computed: raw('a', 'b', 'c') }) total?: number;
+}
+`);
+
+    expect(text).toContain('computed: raw() })');
+    expect(text).toContain("computed: raw('a', 'b', 'c') })");
+    expect(notes).toEqual([]);
+  });
+});
+
 describe('raw()', () => {
   const codemodRaw = (body: string) => codemodFile(`import { raw } from 'uql-orm';\n${body}`).text;
 
@@ -872,6 +1163,12 @@ describe('raw()', () => {
   it('moves a second alias argument onto as()', () => {
     expect(codemodRaw(`const a = raw('LOG10(points)', 'score');`)).toContain(
       "const a = raw`LOG10(points)`.as('score');",
+    );
+  });
+
+  it('moves the alias of a callback onto as()', () => {
+    expect(codemodRaw(`const a = raw(({ ctx }) => ctx.append('x'), 'score');`)).toContain(
+      "const a = raw(({ ctx }) => ctx.append('x')).as('score');",
     );
   });
 
@@ -896,5 +1193,74 @@ describe('raw()', () => {
   it('leaves a computed string alone, having no literal to inline', () => {
     const body = 'declare const sql: string;\nconst a = raw(sql);';
     expect(codemodRaw(body)).toContain('const a = raw(sql);');
+  });
+});
+
+describe('col()', () => {
+  it("rewrites a computed field's col() into the refs its callback takes, and drops the import", () => {
+    const { text, unresolved } = codemodFile(`import { col, Entity, Field, Id, raw } from 'uql-orm';
+@Entity()
+class Product {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number }) salePrice?: number;
+  @Field({ type: Number }) cost?: number;
+  @Field({ type: Number, computed: raw\`\${col('salePrice')} - \${col('cost')}\` }) profit?: number;
+}
+class Line { id?: number; unitPrice?: number; total?: number; }
+defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`\${col('unitPrice')} * 2\` } } });
+`);
+
+    expect(text).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
+    expect(text).toContain(
+      '@Field({ type: Number, computed: (product) => raw`${product.salePrice} - ${product.cost}` }) profit?: number;',
+    );
+    expect(text).toContain('fields: { total: { type: Number, computed: (line) => raw`${line.unitPrice} * 2` } }');
+    expect(unresolved).toEqual([]);
+  });
+
+  it("rewrites a statement's col() into refs(Entity), and a populated relation's into its target's", () => {
+    const { text, unresolved } = codemodFile(`import { col, raw } from 'uql-orm';
+declare const pool: { findMany(entity: unknown, q: unknown): void; updateMany(entity: unknown, q: unknown, p: unknown): void };
+class Tax { id?: number; name?: string; }
+class Item { id?: number; stock?: number; tax?: Tax; }
+pool.updateMany(Item, { $where: { id: 1 } }, { stock: raw\`\${col('stock')} - 1\` });
+pool.findMany(Item, { $populate: { tax: { $select: [raw\`UPPER(\${col('name')})\`.as('label')] } } });
+`);
+
+    expect(text).toContain("import { refs, raw } from 'uql-orm';");
+    expect(text).toContain('{ stock: raw`${refs(Item).stock} - 1` }');
+    expect(text).toContain("$select: [raw`UPPER(${refs(Tax).name})`.as('label')]");
+    expect(unresolved).toEqual([]);
+  });
+
+  /** A raw built apart from its query, a column no field maps, a relation filter's own table: none has one entity. */
+  it('reports a col() whose entity or member it cannot tell, keeping the import', () => {
+    const { text, unresolved } = codemodFile(`import { col, raw } from 'uql-orm';
+declare const pool: { findMany(entity: unknown, q: unknown): void };
+class Tax { id?: number; name?: string; }
+class Item { id?: number; stock?: number; tax?: Tax; }
+const shared = raw\`\${col('stock')} > 0\`;
+pool.findMany(Item, { $where: { $and: [raw\`\${col('legacy_stock')} > 0\`] } });
+pool.findMany(Item, { $where: { tax: { $and: [raw\`\${col('name')} <> ''\`] } } });
+`);
+
+    const report = "'col' was removed; read the column off refs(Entity), which the codemod could not tell here";
+    expect(text).toContain("import { col, raw } from 'uql-orm';");
+    expect(unresolved).toEqual([`/entities.ts:5: ${report}`, `/entities.ts:6: ${report}`, `/entities.ts:7: ${report}`]);
+  });
+
+  it('reports a computed col() whose callback parameter would shadow a binding its SQL reads', () => {
+    const { text, unresolved } = codemodFile(`import { col, Field, raw } from 'uql-orm';
+declare const product: number;
+class Product {
+  cost?: number;
+  @Field({ type: Number, computed: raw\`\${col('cost')} * \${product}\` }) margin?: number;
+}
+`);
+
+    expect(text).toContain("computed: raw`${col('cost')} * ${product}`");
+    expect(unresolved).toEqual([
+      "/entities.ts:5: 'col' was removed; read the column off refs(Entity), which the codemod could not tell here",
+    ]);
   });
 });

@@ -17,9 +17,9 @@ import { raw } from '../util/index.js';
 @Index((article) => [article.embedding], { type: 'vector', distance: 'cosine', name: 'crdb_native' })
 @Index((article) => [article.title], { unique: true })
 @Index((article) => [article.title], { type: 'gin' })
-@Index((article) => [article.title], { where: "title <> ''" })
-// Column entry sugar: a raw expression, and the object form's length/order/nulls/opsClass modifiers.
-@Index((article) => [raw`lower(title)`], { unique: true })
+@Index((article) => [article.title], { where: { title: { $ne: '' } } })
+// Column entry sugar: an expression, and the object form's length/order/nulls/opsClass modifiers.
+@Index(() => [(article) => raw`lower(${article.title})`], { unique: true })
 @Index((article) => [{ column: article.title, length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
 @Entity()
 export class Article {
@@ -80,6 +80,36 @@ export class Post {
 export class Covering {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
+}
+
+/**
+ * A partial index's predicate is a `QueryWhere` over the entity's own fields, or SQL reading them off
+ * refs, as an expression entry's callback reads them. A typo, a relation, or what DDL cannot carry fails.
+ */
+@Index((softDeleted) => [softDeleted.title], { where: { deletedAt: null } })
+@Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => raw`${softDeleted.deletedAt} IS NULL` })
+@Index(() => [{ column: () => raw`lower(title)`, order: 'desc' }])
+// @ts-expect-error no such field in the predicate
+@Index((softDeleted) => [softDeleted.title], { where: { deletdAt: null } })
+// @ts-expect-error a relation has no column to test
+@Index((softDeleted) => [softDeleted.title], { where: { author: { id: 1 } } })
+// @ts-expect-error DDL has no full-text search
+@Index((softDeleted) => [softDeleted.title], { where: { $text: { $value: 'x' } } })
+// @ts-expect-error a predicate is a QueryWhere or raw, never a string
+@Index((softDeleted) => [softDeleted.title], { where: 'title IS NOT NULL' })
+// @ts-expect-error the refs are the entity's fields
+@Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => raw`${softDeleted.deletdAt} IS NULL` })
+// @ts-expect-error an expression is a callback reading refs, never a bare raw
+@Index(() => [raw`lower(title)`])
+// @ts-expect-error an expression's refs are the entity's fields
+@Index(() => [(softDeleted) => raw`lower(${softDeleted.titel})`])
+@Entity()
+export class SoftDeleted {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) title?: string;
+  @Field({ type: Date }) deletedAt?: Date;
+  @Field({ references: () => Article }) articleId?: number;
+  @ManyToOne({ entity: () => Article }) author?: Article;
 }
 
 /**

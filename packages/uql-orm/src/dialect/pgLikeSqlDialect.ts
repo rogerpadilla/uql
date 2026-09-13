@@ -156,7 +156,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
       .map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])))
       .join(` || ' ' || `);
     // The config is bound once and its numbered placeholder reused by both calls.
-    const config = search.$config ? `${this.addValue(ctx.values, search.$config)}::regconfig, ` : '';
+    const config = search.$config ? `${this.addValue(ctx, search.$config)}::regconfig, ` : '';
     ctx.append(`TO_TSVECTOR(${config}${fields}) @@ WEBSEARCH_TO_TSQUERY(${config}`);
     ctx.addValue(search.$value);
     ctx.append(')');
@@ -198,9 +198,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return 'IS DISTINCT FROM';
   }
 
+  /** One array parameter, which a context that inlines values has none of: it lists them instead. */
   protected override formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
-    if (values.length === 0) return negate ? ' NOT IN (NULL)' : ' IN (NULL)';
-    const ph = this.addValue(ctx.values, values);
+    if (values.length === 0 || ctx.inlineValues) return super.formatIn(ctx, values, negate);
+    const ph = this.addValue(ctx, values);
     return negate ? ` <> ALL(${ph})` : ` = ANY(${ph})`;
   }
 
@@ -269,7 +270,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return `(${expr}) - ${this.addValue(ctx.values, [...unset])}::text[]`;
+    return `(${expr}) - ${this.addValue(ctx, [...unset])}::text[]`;
   }
 
   /** Postgres binds JSON with a numbered placeholder and an explicit cast, per driver capability. */
@@ -282,10 +283,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    */
   private jsonVal(ctx: QueryContext, value: unknown, type: JsonColumnType = 'jsonb'): string {
     if (value instanceof QueryRaw) return this.rawFragment(ctx, value);
-    if (value == null) return `${this.addValue(ctx.values, null)}::${type}`;
+    if (value == null) return `${this.addValue(ctx, null)}::${type}`;
 
     const json = JSON.stringify(value);
-    const ph = this.addValue(ctx.values, json);
+    const ph = this.addValue(ctx, json);
     return this.features.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
   }
 }

@@ -83,19 +83,17 @@ it('relationOf names the relation it reads, and refuses one the entity does not 
   expect(() => relationOf(meta, 'name' as never)).toThrow("'User' has no relation 'name'");
 });
 
-it('defineEntity reduces a check constraint to the text of its expression', () => {
+it('defineEntity keeps a check constraint as authored, for the schema build to render', () => {
   class Stocked {
     id?: number;
     quantity?: number;
   }
+  const checks = [{ name: 'quantity_positive', where: raw`quantity > 0` }, { where: raw`quantity < 1000` }];
   const meta = defineEntity(Stocked, {
     fields: { id: { type: Number, isId: true }, quantity: { type: Number } },
-    checks: [{ name: 'quantity_positive', expression: raw`quantity > 0` }, { expression: raw`quantity < 1000` }],
+    checks,
   });
-  expect(meta.checks).toEqual([
-    { name: 'quantity_positive', expression: 'quantity > 0' },
-    { name: undefined, expression: 'quantity < 1000' },
-  ]);
+  expect(meta.checks).toEqual(checks);
 });
 
 it('defineField refuses an option the column type does not take', () => {
@@ -1024,12 +1022,12 @@ it('auto-generates the FK column from a relation-only declaration', () => {
 
 it('auto-registers the built-in softDelete filter from @Field({ softDelete })', () => {
   const meta = getMeta(MeasureUnit);
-  expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
+  expect(meta.filters?.['softDelete']).toEqual({ where: { deletedAt: null }, default: true });
 });
 
 it('registers @Filter and bulk filters', () => {
-  @Filter('active', { condition: { status: 'active' }, default: false })
-  @Entity({ filters: { recent: { condition: { status: 'new' } } } })
+  @Filter('active', { where: { status: 'active' }, default: false })
+  @Entity({ filters: { recent: { where: { status: 'new' } } } })
   class FilteredEntity {
     @Id({ type: Number })
     id?: number;
@@ -1037,13 +1035,13 @@ it('registers @Filter and bulk filters', () => {
     status?: string;
   }
   const meta = getMeta(FilteredEntity);
-  expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
-  expect(meta.filters?.['recent']).toEqual({ condition: { status: 'new' } });
+  expect(meta.filters?.['active']).toEqual({ where: { status: 'active' }, default: false });
+  expect(meta.filters?.['recent']).toEqual({ where: { status: 'new' } });
 });
 
 it('softDelete is a reserved filter name', () => {
   expect(() => {
-    @Filter('softDelete', { condition: { status: 'bogus' } })
+    @Filter('softDelete', { where: { status: 'bogus' } })
     @Entity()
     class ReservedFilter {
       @Id({ type: Number })
@@ -1062,7 +1060,7 @@ it('softDelete is a reserved filter name', () => {
  */
 it('a security filter cannot opt into skipping when its condition is unresolved', () => {
   expect(() => {
-    @Filter('tenant', { condition: () => undefined, security: true, onMissing: 'skip' })
+    @Filter('tenant', { where: () => undefined, security: true, onMissing: 'skip' })
     @Entity()
     class SkippableSecurityFilter {
       @Id({ type: Number })
@@ -1238,7 +1236,7 @@ it('subclass declaring the only @Id inherits the parent fields', () => {
 });
 
 it('subclass inherits parent softDelete field key and filters', () => {
-  @Filter('active', { condition: { status: 'active' }, default: false })
+  @Filter('active', { where: { status: 'active' }, default: false })
   @Entity()
   class SoftBase {
     @Id({ type: Number })
@@ -1257,8 +1255,8 @@ it('subclass inherits parent softDelete field key and filters', () => {
 
   const meta = getMeta(SoftChild);
   expect(meta.softDelete).toBe('deletedAt');
-  expect(meta.filters?.['softDelete']).toEqual({ condition: { deletedAt: null }, default: true });
-  expect(meta.filters?.['active']).toEqual({ condition: { status: 'active' }, default: false });
+  expect(meta.filters?.['softDelete']).toEqual({ where: { deletedAt: null }, default: true });
+  expect(meta.filters?.['active']).toEqual({ where: { status: 'active' }, default: false });
 });
 
 /**
@@ -1279,7 +1277,7 @@ it('extends inherits the fields, relations, hooks and filters of a base and its 
   }
   defineField(Owned, 'ownerId', { type: Number });
   defineRelation(Owned, 'owner', { cardinality: 'm1', entity: () => User });
-  defineFilter(Owned, 'mine', { condition: { ownerId: 1 }, default: false });
+  defineFilter(Owned, 'mine', { where: { ownerId: 1 }, default: false });
 
   class Ticket {
     id?: number;
@@ -1298,7 +1296,7 @@ it('extends inherits the fields, relations, hooks and filters of a base and its 
   expect(getKeys(meta.fields).sort()).toEqual(['createdAt', 'id', 'ownerId', 'title']);
   expect(meta.relations['owner']?.references).toEqual([{ local: 'ownerId', foreign: 'id' }]);
   expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'stamp' }]);
-  expect(meta.filters?.['mine']).toEqual({ condition: { ownerId: 1 }, default: false });
+  expect(meta.filters?.['mine']).toEqual({ where: { ownerId: 1 }, default: false });
   expect(meta.ids).toEqual(['id']);
 });
 

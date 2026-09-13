@@ -240,11 +240,18 @@ defineEntity(Account, {
   indexes: [
     { columns: (account) => [account.email], unique: true },
     {
-      columns: (account) => [{ column: account.createdAt, order: 'desc' }, raw`lower(email)`],
+      columns: (account) => [{ column: account.createdAt, order: 'desc' }, (row) => raw`lower(${row.email})`],
       include: (account) => [account.id],
     },
   ],
+  checks: [{ where: { email: { $ne: '' } } }, { where: (account) => raw`${account.createdAt} IS NOT NULL` }],
   hooks: { beforeInsert: (account) => [account.touch], afterLoad: (account) => [account.touch] },
+});
+
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error a check reads the entity's own fields
+  checks: [{ where: { emial: { $ne: '' } } }],
 });
 
 defineEntity(Account, {

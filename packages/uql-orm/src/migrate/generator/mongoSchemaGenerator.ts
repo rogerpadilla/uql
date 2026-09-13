@@ -17,6 +17,7 @@ import type {
 import { getKeys } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import type { TableDefinition } from '../builder/types.js';
+import { renderIndexDefinition } from './definitionToNode.js';
 import { indexNodeToSchema } from './indexNodeToSchema.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
 
@@ -32,6 +33,11 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     protected readonly defaultForeignKeyAction?: ForeignKeyAction,
   ) {
     super({ namingStrategy });
+  }
+
+  /** A collection has no SQL to render a check, a computed column or an index expression into. */
+  compileDdl(): string {
+    throw new TypeError('mongodb has no SQL to render a check, a computed column or an index expression into');
   }
 
   /**
@@ -169,7 +175,12 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   generateCreateTableFromDefinition(table: TableDefinition, _options?: { ifNotExists?: boolean }): string[] {
     return [
       serializeMongoCommand({ action: 'createCollection', name: table.name }),
-      ...table.indexes.map((index) => this.generateCreateIndex(table.name, index)),
+      ...table.indexes.map((index) =>
+        this.generateCreateIndex(
+          table.name,
+          renderIndexDefinition(index, () => this.compileDdl()),
+        ),
+      ),
     ];
   }
 

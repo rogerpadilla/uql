@@ -1,4 +1,16 @@
-import { QueryRaw, type QueryRawFn } from '../type/index.js';
+import { getMeta } from '../entity/metadata/definition.js';
+import {
+  type EntityMeta,
+  type EntitySql,
+  type EntityWhere,
+  type EntityWhereMeta,
+  QueryRaw,
+  type QueryRawFn,
+  type QueryRawRenderOptions,
+  type RefMap,
+  type Type,
+} from '../type/index.js';
+import { isInlinedExpression } from './field.util.js';
 
 /**
  * Create a raw SQL expression.
@@ -6,34 +18,30 @@ import { QueryRaw, type QueryRawFn } from '../type/index.js';
  * As a tagged template the literal text is emitted as written and every interpolation is resolved by
  * what it is, so a value cannot become SQL whatever it holds:
  *
- * | Interpolated       | Becomes                 |
- * | :----------------- | :---------------------- |
- * | any value          | a bound parameter       |
- * | a {@link QueryRaw} | that fragment, in place |
+ * | Interpolated        | Becomes                                |
+ * | :------------------ | :------------------------------------- |
+ * | any value           | a bound parameter; in DDL, its literal |
+ * | a {@link ColumnRef} | its column, escaped and qualified      |
+ * | a {@link QueryRaw}  | that fragment, in place                |
  *
  * ```ts
- * raw`GREATEST(0, "creditsAllowance" - ${amount})`
- * raw`CONCAT(${col('firstName')}, ' ', ${col('lastName')})`
+ * const user = refs(User);
+ * raw`GREATEST(0, ${user.creditsAllowance} - ${amount})`
+ * raw`CONCAT(${user.firstName}, ' ', ${user.lastName})`
  * raw`LOG10(${points})`.as('score')
  * ```
  *
  * The callback form remains for SQL a template cannot express, such as a sub-query generated through
- * `dialect.find(...)`. See {@link col} for a context-aware column reference.
+ * `dialect.find(...)`.
  *
  * **⚠️ Security:** the tag is safe because it binds; a callback is not, since it emits whatever it
  * writes, so never build one from user input. Inside a callback, bind with `ctx.addValue()`.
  */
 export function raw(strings: TemplateStringsArray, ...values: readonly unknown[]): QueryRaw;
-export function raw(value: QueryRawFn, alias?: string): QueryRaw;
+export function raw(value: QueryRawFn): QueryRaw;
 export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly unknown[]): QueryRaw {
-  const [alias] = rest;
   if (!isTemplateStrings(value)) {
-    return new QueryRaw(value, typeof alias === 'string' ? alias : undefined);
-  }
-  if (!rest.length) {
-    // Nothing to bind, so this is the string form: keep it one, for the DDL paths that need to read
-    // the expression back as text (an index expression cannot carry a parameter).
-    return new QueryRaw(value[0]);
+    return new QueryRaw(value);
   }
   return new QueryRaw((opts) => {
     const { ctx } = opts;
@@ -50,16 +58,51 @@ export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly 
 }
 
 /**
- * A column of the entity being queried, alias-qualified and escaped for the dialect. This is what a
- * template cannot know on its own: the alias is decided while the statement is built, not where the
- * expression is written.
- *
- * Takes the column name as it exists in the database, not the entity's field name: no entity metadata
- * is in scope here, so a naming strategy is not applied for you. `escapedPrefix` already carries its
- * trailing dot, which is the detail this exists to stop you getting wrong.
+ * The fields of `entity` as {@link ColumnRef}s, each rendering inside `raw` as its column: named the way
+ * the dialect names it, so the naming strategy and `@Field({ name })` apply, and qualified by the alias
+ * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.
  */
-export function col(column: string): QueryRaw {
-  return new QueryRaw(({ escapedPrefix, dialect }) => escapedPrefix + dialect.escapeId(column, true));
+export function refs<E>(entity: Type<E>): RefMap<E> {
+  return new Proxy({}, { get: (_, key) => columnRef(entity, String(key)) }) as RefMap<E>;
+}
+
+/**
+ * The refs a definition's callback reads. A member decorator sees no class, so these name no entity and
+ * resolve against the one rendering them: a computed field's own, or the one whose schema is built.
+ */
+const MEMBER_REFS = new Proxy({}, { get: (_, key) => columnRef(undefined, String(key)) });
+
+/** SQL a definition writes, a callback's refs read off {@link MEMBER_REFS}. */
+export function entitySql<E>(sql: EntitySql<E>): QueryRaw {
+  return sql instanceof QueryRaw ? sql : sql(MEMBER_REFS as RefMap<E>);
+}
+
+/** A definition's predicate, its callback resolved the way {@link entitySql} resolves one. */
+export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
+  return typeof where === 'function' ? where(MEMBER_REFS as RefMap<E>) : where;
+}
+
+/** One field as SQL, against its own entity or, read off a definition, the entity rendering it. */
+function columnRef(entity: Type<unknown> | undefined, key: string): QueryRaw {
+  return new QueryRaw((opts) => {
+    const owner = entity ?? opts.entity;
+    if (!owner) {
+      throw new TypeError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
+    }
+    renderColumn(getMeta(owner), key, { ...opts, entity: owner });
+  });
+}
+
+/** A field's column, or the expression an inlined computed one stands for, as a `$where` on it reads it. */
+function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderOptions): void {
+  const field = meta.fields[key];
+  if (field && isInlinedExpression(field)) {
+    opts.ctx.append('(');
+    field.computed.render(opts);
+    opts.ctx.append(')');
+    return;
+  }
+  opts.ctx.append(opts.escapedPrefix + opts.dialect.escapeId(opts.dialect.columnOf(meta, key), true));
 }
 
 /** A tag call passes the frozen strings array, which carries its own `raw` counterpart. */

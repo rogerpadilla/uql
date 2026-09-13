@@ -20,6 +20,7 @@ import type {
   DialectFeatures,
   DropSchemaOptions,
   EntityMeta,
+  EntityWhereMeta,
   FieldMeta,
   FieldOptions,
   ForeignKeySchema,
@@ -34,13 +35,14 @@ import type {
 import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
-import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
+import type { FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
 import { sizedType } from './ddl/tableDdl.js';
 import {
   columnForeignKey,
   columnIndex,
   fullColumnDefinitionToNode,
+  renderIndexDefinition,
   tableDefinitionToNode,
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
@@ -86,6 +88,10 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   resolveColumnName(key: string, field: FieldOptions): string {
     return this.dialect.resolveColumnName(key, field);
+  }
+
+  compileDdl(sql: EntityWhereMeta<object>, entity: Type<object>): string {
+    return this.dialect.compileDdl(sql, entity);
   }
 
   /** Escape an identifier (table name, column name, etc.) */
@@ -745,8 +751,15 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
   }
 
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
-    const tableNode = tableDefinitionToNode(table);
+    const tableNode = tableDefinitionToNode(table, (sql) => this.dialect.compileDdl(sql));
     return this.generateCreateTableFromNode(tableNode, options);
+  }
+
+  generateCreateIndexFromDefinition(tableName: string, index: IndexDefinition): string {
+    return this.generateCreateIndex(
+      tableName,
+      renderIndexDefinition(index, (sql) => this.dialect.compileDdl(sql)),
+    );
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
@@ -924,7 +937,7 @@ function foreignKeyOf(relation: RelationshipNode): ForeignKeySchema {
  * table of a project using a naming strategy as both missing and unexpected.
  */
 export function buildEntityAST(
-  generator: Pick<SchemaGenerator, 'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName'>,
+  generator: Pick<SchemaGenerator, 'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName' | 'compileDdl'>,
   entities: readonly Type<object>[],
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaAST {
@@ -934,6 +947,7 @@ export function buildEntityAST(
     resolveTableName: (meta) => generator.resolveTableAlias(meta),
     resolveSchema: (meta) => generator.resolveSchema(meta),
     resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
+    compileDdl: (sql, entity) => generator.compileDdl(sql, entity),
     defaultForeignKeyAction,
   });
 }

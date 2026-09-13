@@ -10,6 +10,7 @@ import {
   assertWhere,
   fillOnFields,
   filterFieldKeys,
+  findVectorIndex,
   getFieldCallbackValue,
   getSoftDeleteValue,
   insertShapeOf,
@@ -22,8 +23,8 @@ import {
 } from './dialect.util.js';
 import { raw } from './raw.js';
 
-@Filter('active', { condition: { status: 'active' }, default: false })
-@Filter('recent', { condition: () => ({ status: 'new' }), default: false })
+@Filter('active', { where: { status: 'active' }, default: false })
+@Filter('recent', { where: () => ({ status: 'new' }), default: false })
 @Entity()
 class Filtered {
   @Field({ type: Number, isId: true })
@@ -56,7 +57,7 @@ it('applyFilters resolves thunk conditions', () => {
 });
 
 it('applyFilters skips a convenience filter whose condition does not resolve', () => {
-  @Filter('mine', { condition: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) })
+  @Filter('mine', { where: (ctx) => (ctx?.['userId'] ? { ownerId: ctx['userId'] as number } : undefined) })
   @Entity()
   class Owned {
     @Id({ type: Number }) id?: number;
@@ -77,7 +78,7 @@ it('applyFilters escape hatch: does not overwrite a key already in $where', () =
 });
 
 @Filter('tenant', {
-  condition: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
+  where: (ctx) => (ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined),
   security: true,
 })
 @Entity()
@@ -116,7 +117,7 @@ it('security filter fails closed when context is missing', () => {
 
 it('a condition resolving to {} means "no restriction" and merges nothing (trusted system context)', () => {
   @Filter('workspace', {
-    condition: (ctx) =>
+    where: (ctx) =>
       ctx?.['system'] ? {} : ctx?.['tenantId'] != null ? { companyId: ctx['tenantId'] as number } : undefined,
     security: true,
   })
@@ -370,5 +371,27 @@ describe('assertWhere', () => {
     ['null', null],
   ])('refuses %s', (_, where) => {
     expect(() => assertWhere(getMeta(User), where)).toThrow("$where on 'User' must be a map of conditions");
+  });
+});
+
+describe('findVectorIndex', () => {
+  it('finds the vector index over a column', () => {
+    @Index((indexed) => [indexed.embedding], { type: 'hnsw', distance: 'cosine' })
+    @Entity()
+    class Indexed {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+    }
+    expect(findVectorIndex(getMeta(Indexed), 'embedding')?.type).toBe('hnsw');
+  });
+
+  it('ignores an expression index, whose text names no column however it reads', () => {
+    @Index(() => [() => raw`embedding`], { type: 'hnsw', distance: 'cosine' })
+    @Entity()
+    class Expressed {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+    }
+    expect(findVectorIndex(getMeta(Expressed), 'embedding')).toBeUndefined();
   });
 });

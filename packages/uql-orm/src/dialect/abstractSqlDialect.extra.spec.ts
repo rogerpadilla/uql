@@ -1,8 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
-import { Company, Item, ItemAdjustment, MeasureUnitCategory, User, VectorItem } from '../test/index.js';
+import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
+import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { DialectFeatures, QueryContext, SqlDialectName } from '../type/index.js';
-import { col, raw } from '../util/index.js';
+import { entitySql, raw, refs } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
@@ -115,6 +116,19 @@ class Shelf {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => VectorItem }) vectorItemId?: number;
   @ManyToOne({ entity: () => VectorItem }) vectorItem?: VectorItem;
+}
+
+/** A field the strategy names, one named outright, and an inlined computed one, for `refs()` to render. */
+@Entity()
+class RefLedger {
+  @Id({ type: Number })
+  id?: number;
+  @Field({ type: Number })
+  creditLimit?: number;
+  @Field({ type: String, name: 'display_label' })
+  label?: string;
+  @Field({ type: Number, computed: (ledger) => raw`${ledger.creditLimit} * 2` })
+  double?: number;
 }
 
 describe('AbstractSqlDialect (extra coverage)', () => {
@@ -321,6 +335,19 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(' WHERE `name` = ? AND kind IS NOT NULL');
       expect(ctx.values).toEqual(['Acme']);
     });
+
+    /** An alias names a `$select` projection; anywhere else it would land mid-expression. */
+    it('writes no alias for a raw outside $select', () => {
+      const ctx = dialect.createContext();
+      dialect.where(ctx, Company, { $and: [raw`kind IS NOT NULL`.as('ignored')] });
+      expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
+    });
+
+    it('emits the text of a raw with no interpolation as written, whatever the prefix', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`COUNT(*)`, prefix: 'c' });
+      expect(ctx.sql).toBe('COUNT(*)');
+    });
   });
 
   describe('raw() as a tagged template', () => {
@@ -387,20 +414,6 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['public']);
     });
 
-    it('qualifies and escapes a col() reference against the statement prefix', () => {
-      const ctx = dialect.createContext();
-      dialect.getRawValue(ctx, { value: raw`${col('kind')} = ${'public'}`, prefix: 'c' });
-      expect(ctx.sql).toBe('`c`.`kind` = ?');
-      expect(ctx.values).toEqual(['public']);
-    });
-
-    it('leaves a col() reference unqualified where no prefix is in scope', () => {
-      const ctx = dialect.createContext();
-      dialect.where(ctx, Company, { $and: [raw`${col('kind')} = ${'public'}`] });
-      expect(ctx.sql).toBe(' WHERE `kind` = ?');
-      expect(ctx.values).toEqual(['public']);
-    });
-
     it("drops an interpolated fragment's alias, which belongs to a projection not an expression", () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { $and: [raw`kind = ${raw`'x'`.as('ignored')}`] });
@@ -414,6 +427,55 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       });
       expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
       expect(ctx.values).toEqual([]);
+    });
+  });
+
+  describe('refs()', () => {
+    it('renders a field as its column', () => {
+      const ledger = refs(RefLedger);
+      const ctx = dialect.createContext();
+      dialect.where(ctx, RefLedger, { $and: [raw`${ledger.creditLimit} > ${0}`] });
+      expect(ctx.sql).toBe(' WHERE `creditLimit` > ?');
+      expect(ctx.values).toEqual([0]);
+    });
+
+    it('names the column the way the dialect does', () => {
+      const ledger = refs(RefLedger);
+      const snake = new TestSqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+      const ctx = snake.createContext();
+      snake.where(ctx, RefLedger, { $and: [raw`${ledger.creditLimit} > 0 AND ${ledger.label} <> ''`] });
+      expect(ctx.sql).toBe(" WHERE `credit_limit` > 0 AND `display_label` <> ''");
+    });
+
+    it('qualifies the column by the alias in scope', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).creditLimit}`, prefix: 'l' });
+      expect(ctx.sql).toBe('`l`.`creditLimit`');
+    });
+
+    it('renders an inlined computed field as its expression', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).double} + 1` });
+      expect(ctx.sql).toBe('(`creditLimit` * 2) + 1');
+    });
+
+    it("refuses a definition's ref rendered outside its entity's SQL", () => {
+      const sql = entitySql<RefLedger>((ledger) => raw`${ledger.creditLimit}`);
+      expect(() => dialect.getRawValue(dialect.createContext(), { value: sql })).toThrow(
+        "'creditLimit' was read off a definition's refs, so it renders only inside its entity's SQL",
+      );
+    });
+
+    it("qualifies refs in a joined relation's $where by the join's alias", () => {
+      const tax = refs(Tax);
+      const ctx = dialect.createContext();
+      dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: {
+          tax: { $select: { id: true }, $where: { name: raw`${tax.name}`, $and: [raw`${tax.name} <> ''`] } },
+        },
+      });
+      expect(ctx.sql).toContain("`tax`.`name` = `tax`.`name` AND `tax`.`name` <> ''");
     });
   });
 

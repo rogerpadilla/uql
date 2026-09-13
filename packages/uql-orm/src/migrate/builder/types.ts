@@ -6,7 +6,14 @@
  */
 
 import type { ColumnNode, EnumValues, ForeignKeyAction } from '../../schema/types.js';
-import type { IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
+import type {
+  EntityIndexColumn,
+  Except,
+  IndexColumnInput,
+  IndexOptions,
+  IndexSchema,
+  QueryRaw,
+} from '../../type/index.js';
 import type { ForeignKeySchema } from '../../type/migration.js';
 
 /**
@@ -102,6 +109,15 @@ export interface FullColumnDefinition extends ColumnDefinition {
 }
 
 /**
+ * An index as the builder records it, with the entries and options `@Index` takes: its SQL kept as `raw`
+ * until a generator renders it for the engine the migration runs on.
+ */
+export type IndexDefinition = Except<IndexSchema, 'entries' | 'where'> & {
+  readonly entries: readonly EntityIndexColumn[];
+  readonly where?: QueryRaw;
+};
+
+/**
  * Complete table definition.
  */
 export interface TableDefinition {
@@ -112,7 +128,7 @@ export interface TableDefinition {
   /** Primary key columns (for composite keys) */
   primaryKey?: string[];
   /** Index definitions */
-  indexes: IndexSchema[];
+  indexes: IndexDefinition[];
   /** Foreign key definitions at table level */
   foreignKeys: ForeignKeySchema[];
   /** Table comment */
@@ -216,7 +232,7 @@ export interface RenameColumnOperation extends MigrationOperation {
 export interface CreateIndexOperation extends MigrationOperation {
   type: 'createIndex';
   tableName: string;
-  index: IndexSchema;
+  index: IndexDefinition;
   ifNotExists?: boolean;
 }
 

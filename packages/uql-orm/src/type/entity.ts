@@ -1,6 +1,7 @@
-import type { CheckSchema, EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
+import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
+import type { QueryWhere } from './queryWhere.js';
 import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
@@ -418,7 +419,9 @@ export type TypeFor<V, T = NonNullable<V>> =
  * live there behind an `@internal` tag and a "do not set this" note, which is a comment standing in
  * for a type boundary.
  */
-export type FieldMeta<V = TsTypeOf<FieldType>> = FieldOptions<V> & {
+export type FieldMeta<V = TsTypeOf<FieldType>> = Except<FieldOptions<V>, 'computed'> & {
+  /** {@link FieldOptions.computed}, a callback resolved to the SQL it returns. */
+  readonly computed?: QueryRaw;
   /**
    * Set by `defineField` when the field gave `references` but no `type`, so schema generation resolves
    * the column from the referenced primary key rather than from whatever ended up in `type`. That is
@@ -437,7 +440,7 @@ export type FieldMeta<V = TsTypeOf<FieldType>> = FieldOptions<V> & {
  * and what a default is has to be that value, checked the same way the declared `type` is. `Scalar` by
  * default, for the places that handle a field without knowing which one it is.
  */
-export type FieldOptions<V = TsTypeOf<FieldType>> = {
+export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
@@ -485,9 +488,9 @@ export type FieldOptions<V = TsTypeOf<FieldType>> = {
    * expression will do. With `stored`, it becomes a real column - `GENERATED ALWAYS AS (...) STORED` -
    * which the engine keeps up to date, so it can be indexed and read like any other.
    *
-   * @example `@Field({ type: String, computed: raw`"first" || ' ' || "last"`, stored: true })`
+   * @example `@Field({ type: String, computed: (user) => raw`${user.first} || ' ' || ${user.last}`, stored: true })`
    */
-  readonly computed?: QueryRaw;
+  readonly computed?: EntitySql<E>;
   /**
    * Whether {@link FieldOptions.computed} is a column the database keeps, rather than an expression
    * spliced into each statement. The dial to flip after profiling: `$select`, `$where` and `$sort`
@@ -618,9 +621,9 @@ export type TsTypeOf<T> = T extends StringConstructor
  * `@Field({ references: () => Company })` would silently downgrade a `uuid` key to TEXT on every
  * column pointing at it.
  */
-export type FieldOptionsFor<V> =
-  | (FieldOptions<NonNullable<V>> & { readonly type: TypeFor<V> })
-  | (FieldOptions<NonNullable<V>> & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
+export type FieldOptionsFor<V, E = unknown> =
+  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> })
+  | (FieldOptions<NonNullable<V>, E> & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
 
 /**
  * The entity a relation field points at: `Company` for both `company?: Company` and
@@ -754,6 +757,48 @@ type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 
  */
 export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 
+declare const COLUMN_KEY: unique symbol;
+
+/**
+ * A field of an entity as SQL, read off a {@link RefMap}: interpolated into `raw`, it renders as that
+ * field's column. A `QueryRaw` like any other fragment, branded with the field `K` it names.
+ */
+export type ColumnRef<K extends string = string> = QueryRaw & { readonly [COLUMN_KEY]?: K };
+
+/**
+ * The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)` in a statement, the
+ * callback's parameter in a definition. Keyed over a type parameter constrained to `keyof E`, as
+ * {@link KeyMap} is over `keyof E`, which keeps each ref linked to its field for rename.
+ */
+export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string> };
+
+/**
+ * A callback reading an entity's fields off a {@link RefMap} for the SQL it returns. Declared as a
+ * method, bivariant in its refs, so one typed for its entity still fits where the entity is erased: the
+ * registry, which resolves it.
+ */
+export type SqlCallback<E> = { sql(row: RefMap<E>): QueryRaw }['sql'];
+
+/** SQL a definition writes: `raw`, or a {@link SqlCallback} for SQL that names the entity's fields. */
+export type EntitySql<E> = QueryRaw | SqlCallback<E>;
+
+/**
+ * A predicate DDL carries, over the entity's own fields: a relation, full-text search and a sub-query
+ * have nothing a `CHECK` or a partial index can hold. An intersection rather than `Except`, which would
+ * remap the keys and lose each one's link to its field.
+ */
+export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>]?: never } & {
+  readonly $text?: never;
+  readonly $exists?: never;
+  readonly $nexists?: never;
+};
+
+/** A definition's predicate: an {@link EntityPredicate}, or {@link EntitySql} for what one cannot say. */
+export type EntityWhere<E> = EntityPredicate<E> | EntitySql<E>;
+
+/** A definition's predicate as metadata keeps it, a callback resolved to its SQL, for the schema build to compile. */
+export type EntityWhereMeta<E> = EntityPredicate<E> | QueryRaw;
+
 export type RelationReferences = { readonly local: string; readonly foreign: string }[];
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
@@ -812,13 +857,13 @@ export type IndexTypeOptions =
   | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
 
 /**
- * One entry of an index: a column name by default, `raw(...)` to index an expression, or an object
- * when the entry needs more than a name.
+ * One entry of an index: a column by default, a {@link SqlCallback} to index an expression, or an object
+ * when the entry needs more than that.
  *
  * @example
  * ```ts
  * @Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }]) // keyset pagination
- * @Index(() => [raw`lower("email")`], { unique: true })                      // case-insensitive uniqueness
+ * @Index(() => [(post) => raw`lower(${post.email})`], { unique: true })       // case-insensitive uniqueness
  * @Index((post) => [{ column: post.body, length: 64 }])                       // MySQL needs a prefix on TEXT
  * @Index((post) => [post.data], { type: 'gin' })                              // JSONB containment
  * ```
@@ -830,8 +875,8 @@ export type IndexTypeOptions =
  */
 export type IndexColumnInput<C extends string = string, E = unknown> =
   | C
-  | QueryRaw
-  | IndexColumnOptions<C>
+  | SqlCallback<E>
+  | IndexColumnOptions<C, E>
   | IndexJsonColumnOptions<C, E>;
 
 /**
@@ -848,7 +893,7 @@ export type IndexColumnInput<C extends string = string, E = unknown> =
  * builder. An entity with no JSON field at all offers no arm, which is also the truth.
  */
 type IndexJsonColumnOptions<C extends string, E> = unknown extends E
-  ? IndexColumnModifiers & { readonly column: C | QueryRaw }
+  ? IndexColumnModifiers & { readonly column: C }
   : {
       [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: K } & (
           | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
@@ -952,9 +997,9 @@ export type IndexJsonArray = {
 /** The modifiers that do not name a JSON path, and so need no entity to be checked against. */
 type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'jsonArray'>;
 
-export type IndexColumnOptions<C extends string = string> = IndexColumnPlainModifiers & {
-  /** The column to index, or `raw(...)` for an expression. */
-  readonly column: C | QueryRaw;
+export type IndexColumnOptions<C extends string = string, E = unknown> = IndexColumnPlainModifiers & {
+  /** The column to index, or a {@link SqlCallback} for an expression. */
+  readonly column: C | SqlCallback<E>;
   // A JSON entry is its own shape, checked against its column's payload; without these a callback's
   // entry would also satisfy this one, and the path would go unchecked.
   readonly jsonPath?: never;
@@ -973,17 +1018,24 @@ export type IndexColumnSchema = IndexColumnModifiers & {
 };
 
 /**
+ * One index entry as entity metadata keeps it: a member, or an expression left unrendered until the
+ * schema is built, where the dialect and the naming strategy resolve what it references. Rendered, it
+ * is an {@link IndexColumnSchema}.
+ */
+export type EntityIndexColumn = IndexColumnModifiers & { readonly column: string | QueryRaw };
+
+/**
  * An index as stored in entity metadata: authored options with the columns normalized.
  */
-export type EntityIndexMeta = {
+export type EntityIndexMeta<E = object> = {
   /** The indexed columns, in order. */
-  columns: readonly IndexColumnSchema[];
+  columns: readonly EntityIndexColumn[];
   /** Custom index name */
   name?: string;
   /** Whether index is unique; omit or `false` for a non-unique index (default). */
   unique?: boolean;
-  /** Partial index condition (WHERE clause) */
-  where?: string;
+  /** Partial index predicate, compiled when the schema is built. */
+  where?: EntityWhereMeta<E>;
   /**
    * Extra columns stored in the index but not part of its key, so a query reading only these is
    * answered from the index alone. Postgres-wire only (`INCLUDE`).
@@ -1018,9 +1070,9 @@ export type EntityMeta<E> = {
     [K in RelationKey<E>]?: RelationMeta;
   } & { [key: string]: RelationMeta | undefined };
   /** Composite indexes defined via @Index decorator */
-  indexes?: EntityIndexMeta[];
-  /** `CHECK` constraints, their expressions already reduced to text. */
-  checks?: CheckSchema[];
+  indexes?: EntityIndexMeta<E>[];
+  /** `CHECK` constraints, compiled when the schema is built. */
+  checks?: EntityCheckMeta<E>[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
   /**
@@ -1033,13 +1085,22 @@ export type EntityMeta<E> = {
 };
 
 /**
- * A table-level `CHECK`. The expression is `raw` with no interpolation, like an index expression:
- * this is DDL, so there is no placeholder a bound value could go into.
+ * A table-level `CHECK`: a predicate over the entity's fields, or SQL reading them off refs. A value in
+ * either is written as its literal, since DDL has no placeholder to bind one into.
+ *
+ * @example `{ where: { balance: { $gte: 0 } } }`
+ * @example `{ where: (wallet) => raw`${wallet.spent} <= ${wallet.balance}` }`
  */
-export type CheckOptions = {
+export type CheckOptions<E = unknown> = {
   /** Derived from the table and the constraint's position when absent. */
   readonly name?: string;
-  readonly expression: QueryRaw;
+  readonly where: EntityWhere<E>;
+};
+
+/** A `CHECK` as entity metadata keeps it, its callback resolved. */
+export type EntityCheckMeta<E = object> = {
+  readonly name?: string;
+  readonly where: EntityWhereMeta<E>;
 };
 
 /**
@@ -1054,7 +1115,7 @@ export type EntityMembers = {
 };
 
 /** An entity's fields as `defineEntity` takes them, keyed like every entity map (see `QuerySelect`). */
-type EntityFieldOptions<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]?: FieldOptionsFor<E[K]> };
+type EntityFieldOptions<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]?: FieldOptionsFor<E[K], E> };
 
 /**
  * An entity's relations as `defineEntity` takes them. Keyed over every member rather than `RelationKey<E>`:
@@ -1090,7 +1151,7 @@ export type EntityOptions<E = unknown> = {
   readonly relations?: EntityRelationOptions<E>;
   readonly indexes?: readonly EntityIndexInput<E>[];
   /** Table-level `CHECK` constraints. See {@link CheckOptions}. */
-  readonly checks?: readonly CheckOptions[];
+  readonly checks?: readonly CheckOptions<E>[];
   /** Each lifecycle event and the methods it runs, read off the key map: `{ beforeInsert: (post) => [post.stamp] }`. */
   readonly hooks?: Partial<Record<HookEvent, (keys: KeyMap<E>) => readonly MethodKey<E>[]>>;
 };
@@ -1103,19 +1164,18 @@ export type EntityOptions<E = unknown> = {
 export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'include' | 'where'> & {
   /** Non-key columns stored in the index, by column name; a typo builds nothing, the server refusing it. */
   readonly include?: readonly string[];
-  /**
-   * Partial-index predicate. `raw` with no interpolation, like an index expression: this is DDL, so
-   * there is no placeholder for a bound value. A bare string is the older spelling and still works.
-   */
-  readonly where?: string | QueryRaw;
+  /** Partial-index predicate, as `raw` with no interpolation: the migration builder has no entity to compile one against. */
+  readonly where?: QueryRaw;
 };
 
 /**
  * {@link IndexOptions} on an entity, whose stored columns are read off its key map, `(post) => [post.slug]`,
  * so they are checked against it and follow a rename. The migration builder names raw columns instead.
  */
-export type EntityIndexOptions<E> = Except<IndexOptions, 'include'> & {
+export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & {
   readonly include?: (keys: KeyMap<E>) => readonly FieldKey<E>[];
+  /** Partial-index predicate. See {@link EntityWhere}. */
+  readonly where?: EntityWhere<E>;
 };
 
 /**

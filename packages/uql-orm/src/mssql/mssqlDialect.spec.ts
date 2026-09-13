@@ -12,6 +12,11 @@ import { MsSqlDialect } from './mssqlDialect.js';
  * same shape `PgFamilySpec` has for the Postgres family.
  */
 class MsSqlDialectSpec extends AbstractSqlDialectSpec {
+  /** `N'...'` quoting, and a `BIT` written as an integer. */
+  protected override inlineLiterals() {
+    return { quoted: "N'it''s'", truth: '1' };
+  }
+
   constructor() {
     super(new MsSqlDialect({}));
   }

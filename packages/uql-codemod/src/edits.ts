@@ -4,17 +4,24 @@ import type ts from 'typescript';
 export type Edit = { readonly start: number; readonly end: number; readonly text: string };
 
 /**
- * Applies edits back to front, so an earlier edit cannot shift the offsets of a later one.
- *
- * Replacing text rather than reprinting the file is what keeps the rest of it byte-for-byte: a codemod
- * that reformats everything it touches buries its own change in the diff.
+ * Applies edits back to front, so none shifts the offsets of another, and at a shared offset the replacement
+ * first, so an insertion there lands before it. Splicing rather than reprinting keeps the rest of the file
+ * byte for byte: a codemod that reformats everything it touches buries its own change in the diff.
  */
 export function applyEdits(text: string, edits: readonly Edit[]): string {
   let result = text;
-  for (const edit of [...edits].sort((a, b) => b.start - a.start)) {
+  for (const edit of [...edits].sort((a, b) => b.start - a.start || b.end - a.end)) {
     result = result.slice(0, edit.start) + edit.text + result.slice(edit.end);
   }
   return result;
+}
+
+export function replaced(node: ts.Node, text: string): Edit {
+  return { start: node.getStart(), end: node.getEnd(), text };
+}
+
+export function inserted(node: ts.Node, text: string): Edit {
+  return { start: node.getStart(), end: node.getStart(), text };
 }
 
 /**

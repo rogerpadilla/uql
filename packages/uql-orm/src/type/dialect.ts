@@ -1,4 +1,4 @@
-import type { UpdatePayload } from './entity.js';
+import type { EntityMeta, UpdatePayload } from './entity.js';
 import type { Query, QueryConflictPaths, QueryFilter, QueryOptions, QuerySearch } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
@@ -50,7 +50,14 @@ export interface QueryContext {
   createFragment(): QueryContext;
   readonly sql: string;
   readonly values: unknown[];
+  /** Whether a value is written as its literal rather than bound: DDL has no placeholder to bind into. */
+  readonly inlineValues: boolean;
 }
+
+export type QueryContextOptions = {
+  /** See {@link QueryContext.inlineValues}. */
+  readonly inlineValues?: boolean;
+};
 
 /**
  * Capabilities of the database driver (transport layer).
@@ -242,11 +249,10 @@ export interface QueryDialect {
   escape(val: unknown): string;
 
   /**
-   * add a value to the query.
-   * @param values the values array
-   * @param value the value to add
+   * The SQL `value` takes in `ctx`: a raw expression rendered in place, the literal where `ctx` inlines
+   * values, and otherwise a placeholder for the value bound.
    */
-  addValue(values: unknown[], value: unknown): string;
+  addValue(ctx: QueryContext, value: unknown): string;
 
   /**
    * normalizes a value according to the dialect.
@@ -257,7 +263,12 @@ export interface QueryDialect {
   /**
    * create a new query context.
    */
-  createContext(): QueryContext;
+  createContext(options?: QueryContextOptions): QueryContext;
+
+  /**
+   * The column a field of `meta` is stored in, named the way this dialect names columns.
+   */
+  columnOf<E>(meta: EntityMeta<E>, key: string): string;
 }
 
 /**

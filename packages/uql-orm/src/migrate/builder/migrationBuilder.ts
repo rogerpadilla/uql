@@ -10,7 +10,7 @@ import type { ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
 import type { SqlDdlGenerator } from '../../type/migration.js';
 import type { SqlQuerier } from '../../type/querier.js';
-import { ddlText, normalizeIndexColumn } from '../../util/index.js';
+import { indexNameParts, normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { createSchemaGenerator } from '../schemaGenerator.js';
 import { splitSqlStatements } from './splitSqlStatements.js';
@@ -43,13 +43,7 @@ function createIndexOperation(
     tableName,
     index: {
       ...index,
-      name:
-        name ??
-        derivedIndexName(
-          tableName,
-          entries.map((entry) => entry.column),
-        ),
-      where: ddlText(index.where, 'a partial-index predicate'),
+      name: name ?? derivedIndexName(tableName, indexNameParts(entries)),
       entries,
       unique: unique ?? false,
     },
@@ -382,7 +376,7 @@ export class MigrationBuilder extends OperationRecorder {
       case 'alterColumn':
         return this.sqlGenerator.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
       case 'createIndex':
-        return this.sqlGenerator.generateCreateIndex(operation.tableName, operation.index);
+        return this.sqlGenerator.generateCreateIndexFromDefinition(operation.tableName, operation.index);
       case 'dropIndex':
         return this.sqlGenerator.generateDropIndex(operation.tableName, operation.indexName);
       case 'addForeignKey':

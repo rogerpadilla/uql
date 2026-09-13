@@ -9,10 +9,7 @@ import { raw } from '../util/index.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
-  checks: [
-    { name: 'wallet_non_negative_ck', expression: raw`"balance" >= 0` },
-    { expression: raw`"spent" <= "balance"` },
-  ],
+  checks: [{ name: 'wallet_non_negative_ck', where: raw`"balance" >= 0` }, { where: raw`"spent" <= "balance"` }],
 })
 class Wallet {
   @Id({ type: Number }) id?: number;
@@ -20,7 +17,7 @@ class Wallet {
   @Field({ type: Number }) spent?: number;
 }
 
-@Entity({ name: 'purse', checks: [{ expression: raw`"balance" >= 0` }] })
+@Entity({ name: 'purse', checks: [{ where: raw`"balance" >= 0` }] })
 class RenamedWallet {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) balance?: number;
@@ -58,14 +55,20 @@ describe('check constraints', () => {
 });
 
 describe('check expressions', () => {
-  it('refuses one carrying a bound value, which CREATE TABLE cannot hold', () => {
-    expect(() => {
-      @Entity({ checks: [{ expression: raw`"balance" >= ${0}` }] })
-      class Bad {
-        @Id({ type: Number }) id?: number;
-      }
-      return Bad;
-    }).toThrow(/a check constraint needs raw\(\) with no interpolation/);
+  it('writes a value as its literal, which CREATE TABLE carries inline', () => {
+    @Entity({ checks: [{ where: raw`"balance" >= ${0}` }] })
+    class Floor {
+      @Id({ type: Number }) id?: number;
+    }
+    expect(ddl(new PostgresDialect(), Floor)).toContain('CHECK ("balance" >= 0)');
+  });
+
+  it('refuses a value left bound, which CREATE TABLE has no placeholder for', () => {
+    @Entity({ checks: [{ where: raw(({ ctx }) => ctx.append('"balance" >= ').pushValue(0).append('$1')) }] })
+    class Bound {
+      @Id({ type: Number }) id?: number;
+    }
+    expect(() => ddl(new PostgresDialect(), Bound)).toThrow(/no placeholder/);
   });
 });
 

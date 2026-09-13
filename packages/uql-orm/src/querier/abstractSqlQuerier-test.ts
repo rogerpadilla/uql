@@ -13,7 +13,7 @@ import {
   TypedRow,
   violateConstraints,
 } from '../test/index.js';
-import { col, raw } from '../util/index.js';
+import { raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -93,7 +93,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       await this.querier.beginTransaction();
       await other.beginTransaction();
 
-      const lock = { wait: 'skip' } as const;
+      const lock = { $wait: 'skip' } as const;
       const mine = await this.querier.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
       const theirs = await other.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
 
@@ -104,7 +104,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       expect(mineIds.filter((id) => theirsIds.includes(id))).toEqual([]);
 
       const refused = await other
-        .findMany(LedgerAccount, { $select: { id: true }, $where: { id: mineIds[0] }, $lock: { wait: 'nowait' } })
+        .findMany(LedgerAccount, { $select: { id: true }, $where: { id: mineIds[0] }, $lock: { $wait: 'nowait' } })
         .catch((thrown: unknown) => thrown);
       expect(queryErrorKind(refused)).toBe('retryable');
 
@@ -279,17 +279,15 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldPopulateARawSelect() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'raw group' });
     await this.querier.insertOne(TypedRow, { groupId, name: 'raw row' });
-    const $select = [raw`UPPER(${col('name')})`.as('label')];
-
     const [group] = await this.querier.findMany(TypedGroup, {
       $select: { name: true },
       $where: { id: groupId },
-      $populate: { rows: { $select } },
+      $populate: { rows: { $select: [raw`UPPER(${refs(TypedRow).name})`.as('label')] } },
     });
     const [row] = await this.querier.findMany(TypedRow, {
       $select: { name: true },
       $where: { groupId },
-      $populate: { group: { $select } },
+      $populate: { group: { $select: [raw`UPPER(${refs(TypedGroup).name})`.as('label')] } },
     });
 
     expect(group.rows).toEqual([{ label: 'RAW ROW' }]);

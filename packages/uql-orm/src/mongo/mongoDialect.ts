@@ -405,7 +405,7 @@ export class MongoDialect extends AbstractDialect {
    * lock silently removes the mutual exclusion the caller asked for.
    */
   assertNoLock<E>(q: Query<E>): void {
-    if (q.$lock !== undefined) {
+    if (q.$lock) {
       throw new TypeError('$lock (row-level locking) is not supported on MongoDB');
     }
   }

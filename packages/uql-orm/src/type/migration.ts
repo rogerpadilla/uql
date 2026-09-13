@@ -1,10 +1,11 @@
 import type { VectorCast } from '../dialect/vectorCast.js';
-import type { FullColumnDefinition, TableDefinition } from '../migrate/builder/types.js';
+import type { FullColumnDefinition, IndexDefinition, TableDefinition } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
+  EntityWhereMeta,
   FieldOptions,
   IndexColumnSchema,
   LoggingOptions,
@@ -325,6 +326,12 @@ export interface SchemaGenerator {
   getSqlType(fieldOptions: FieldOptions): string;
 
   /**
+   * The text of SQL an entity declares - a check, a stored computed column, an index expression or
+   * predicate - rendered for this engine, which is what building an entity's schema needs from it.
+   */
+  compileDdl(sql: EntityWhereMeta<object>, entity: Type<object>): string;
+
+  /**
    * Compare an entity with a database table node and return the differences.
    *
    * `desiredAst` is the entity side, from {@link buildAST}, and must span every entity a foreign key
@@ -394,6 +401,8 @@ export interface SqlDdlGenerator extends SchemaGenerator {
   generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string;
   /** Generate DROP FOREIGN KEY statement */
   generateDropForeignKeySql(tableName: string, constraintName: string): string;
+  /** CREATE INDEX from a builder's {@link IndexDefinition}, its SQL rendered for this engine. */
+  generateCreateIndexFromDefinition(tableName: string, index: IndexDefinition): string;
 }
 
 /**

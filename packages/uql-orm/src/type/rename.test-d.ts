@@ -5,6 +5,7 @@
  * like any `.test-d.ts`.
  */
 import { defineEntity, Entity, Field, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
+import { raw, refs } from '../util/index.js';
 import type { Querier } from './index.js';
 
 @Entity()
@@ -14,7 +15,9 @@ class Studio {
 }
 
 @Index((movie) => [movie.title, { column: movie.rating, order: 'desc' }], { include: (movie) => [movie.studioId] })
-@Entity()
+@Index(() => [(movie) => raw`lower(${movie.title})`], { where: (movie) => raw`${movie.rating} > 0` })
+@Index((movie) => [movie.studioId], { where: { rating: { $gt: 0 } } })
+@Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => raw`${movie.rating} <= ${10}` }] })
 class Movie {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
@@ -23,29 +26,45 @@ class Movie {
   @ManyToOne({ entity: () => Studio, references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
   studio?: Studio;
   @Field({ type: Number, references: () => Cinema }) cinemaId?: number;
+  @Field({ type: Number, computed: (movie) => raw`${movie.rating} * 2` }) score?: number;
 }
 
 class Cinema {
   id?: number;
   city?: string;
+  label?: string;
   films?: Movie[];
   touch(): void {}
 }
 
 defineEntity(Cinema, {
-  fields: { id: { type: Number, isId: true }, city: { type: String } },
+  fields: {
+    id: { type: Number, isId: true },
+    city: { type: String },
+    label: { type: String, computed: (cinema) => raw`upper(${cinema.city})` },
+  },
   relations: { films: { cardinality: '1m', entity: () => Movie, mappedBy: (movie) => movie.cinemaId } },
-  indexes: [{ columns: (cinema) => [cinema.city], include: (cinema) => [cinema.id] }],
+  indexes: [
+    { columns: (cinema) => [cinema.city], include: (cinema) => [cinema.id] },
+    { columns: () => [(cinema) => raw`lower(${cinema.city})`], where: { city: { $ne: '' } } },
+  ],
+  checks: [{ where: (cinema) => raw`${cinema.city} <> ''` }],
   hooks: { beforeInsert: (cinema) => [cinema.touch] },
 });
 
 declare const querier: Querier;
 
 export async function find() {
+  const movie = refs(Movie);
   const found = await querier.findMany(Movie, {
     $select: { title: true, rating: true, studioId: true },
     $populate: { studio: { $select: { id: true } } },
-    $where: { rating: { $gte: 7 }, studio: { id: 1 }, $text: { $value: 'noir', $fields: { title: true } } },
+    $where: {
+      rating: { $gte: 7 },
+      studio: { id: 1 },
+      $text: { $value: 'noir', $fields: { title: true } },
+      $and: [raw`${movie.rating} > ${5}`],
+    },
     $sort: { rating: -1, studio: { id: 1 } },
   });
   const studios = await querier.findMany(Studio, {

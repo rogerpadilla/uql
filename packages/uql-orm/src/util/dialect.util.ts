@@ -30,7 +30,6 @@ import {
   type RelationKey,
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
-  type UqlContext,
   type UpdatePayload,
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
@@ -290,7 +289,7 @@ const VECTOR_INDEX_MATCH: ReadonlySet<IndexType> = new Set<IndexType>([...VECTOR
  * The vector index declared on `key`, if any. Answers both "is there an ANN index to tune here" and
  * "which kind", which decide the name Atlas is queried by and the setting Postgres is tuned with.
  */
-export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityIndexMeta | undefined {
+export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityIndexMeta<E> | undefined {
   return meta.indexes?.find(
     (index) => index.type !== undefined && VECTOR_INDEX_MATCH.has(index.type) && indexCoversColumn(index, key),
   );
@@ -310,8 +309,8 @@ export function hasVectorNear(where: unknown): boolean {
   return Object.entries(where).some(([key, value]) => key === '$near' || hasVectorNear(value));
 }
 
-function indexCoversColumn(index: EntityIndexMeta, key: string): boolean {
-  return index.columns.some((entry) => !(entry instanceof QueryRaw) && entry.column === key);
+function indexCoversColumn<E>(index: EntityIndexMeta<E>, key: string): boolean {
+  return index.columns.some((entry) => entry.column === key);
 }
 
 /** `satisfies` ties this to {@link JsonUpdateOp}, so renaming an operator breaks it at compile time. */
@@ -389,9 +388,7 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
       continue;
     }
 
-    const raw = filter.condition;
-    const condition =
-      typeof raw === 'function' ? (raw as (c: UqlContext | undefined) => QueryWhere<E> | undefined)(context) : raw;
+    const condition = typeof filter.where === 'function' ? filter.where(context) : filter.where;
     if (condition === undefined) {
       const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
       if (onMissing === 'throw') {
@@ -569,7 +566,7 @@ export function textSearchFields<E>(meta: EntityMeta<E>, search: QueryTextSearch
   }
   const fulltext = (meta.indexes ?? []).filter((index) => index.type === 'fulltext');
   if (fulltext.length === 1) {
-    return fulltext[0].columns.map((entry) => entry.column);
+    return fulltext[0].columns.flatMap((entry) => (typeof entry.column === 'string' ? [entry.column] : []));
   }
   const name = entityName(meta);
   const declared = fulltext.length

@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.62.0] - 2026-09-13
+
+- **Breaking: SQL an entity declares reads members off refs, so a rename reaches it**: `computed`, index expressions ``(user) => raw`lower(${user.email})` ``, and a check or partial-index `where`, which also takes a predicate: `{ deletedAt: null }`.
+- **`refs(Entity)` names a column in any `raw`**, through the naming strategy and `@Field({ name })`, escaped and alias-qualified. It replaces `col()`; `npx uql-codemod` rewrites it where it can tell the entity.
+- **Breaking: one spelling each**: a check's `expression` and a filter's `condition` are `where`, a partial-index `where` string is `raw`, `raw(fn, alias)` is `.as(alias)`, `$lock: { wait }` is `{ $wait }` (waiting is `true`). The codemod rewrites them.
+- **DDL is rendered per engine, values written as literals**: checks, partial indexes, stored computed columns and the migration builder. An unnamed expression index is named by position, `expr0`.
+- **Fixed**: a raw `$having` operand bound as an object, raws in `$and`/`$or` losing the join alias, `.as()` leaking outside `$select`, an expression index hiding a foreign key's, and MongoDB refusing `$lock: false`.
+- **Breaking (dialects): `addValue(ctx, value)` takes the context, `compileDdl(sql, entity)` renders a schema's SQL, `QueryRaw` holds only a callback**; `ddlText` is gone.
+
 ## [0.61.0] - 2026-09-12
 
 - **`queryErrorKind(err)` names a failed query the same way on every engine** (`uniqueViolation`, `foreignKeyViolation`, `notNullViolation`, `checkViolation`, `retryable`), so a 409 or a retry needs no driver codes.

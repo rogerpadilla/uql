@@ -28,13 +28,11 @@ class Project {
 }
 
 export async function lockShapes(querier: Querier) {
-  // the boolean and the object form are both accepted
+  // `true` waits for a held row, `$wait` says what to do instead, and `false` takes no lock
   await querier.findMany(Employee, { $lock: true });
   await querier.findMany(Employee, { $lock: false });
-  await querier.findMany(Employee, { $lock: {} });
-  await querier.findMany(Employee, { $lock: { wait: 'skip' } });
-  await querier.findMany(Employee, { $lock: { wait: 'nowait' } });
-  await querier.findMany(Employee, { $lock: { wait: 'block' } });
+  await querier.findMany(Employee, { $lock: { $wait: 'skip' } });
+  await querier.findMany(Employee, { $lock: { $wait: 'nowait' } });
 
   // a lock is meaningful on the single-row reads too
   await querier.findOne(Employee, { $where: { id: 1 }, $lock: true });
@@ -43,9 +41,17 @@ export async function lockShapes(querier: Querier) {
 
 export async function lockVocabularyIsClosed(querier: Querier) {
   // @ts-expect-error 'soon' is not a wait policy
-  await querier.findMany(Employee, { $lock: { wait: 'soon' } });
+  await querier.findMany(Employee, { $lock: { $wait: 'soon' } });
+  // @ts-expect-error `true` already waits, so there is no second spelling for it
+  await querier.findMany(Employee, { $lock: { $wait: 'block' } });
+  // @ts-expect-error nor an empty object, which says nothing `true` does not
+  await querier.findMany(Employee, { $lock: {} });
+  // @ts-expect-error the policy is `$wait`, spelled like every other statement parameter
+  await querier.findMany(Employee, { $lock: { wait: 'skip' } });
+  // @ts-expect-error a policy is written under `$wait`, not in place of the lock
+  await querier.findMany(Employee, { $lock: 'skip' });
   // @ts-expect-error the lock has no target list: it always covers the queried entity only
-  await querier.findMany(Employee, { $lock: { of: ['company'] } });
+  await querier.findMany(Employee, { $lock: { $wait: 'skip', of: ['company'] } });
   // @ts-expect-error there is one lock strength, so there is no mode to pick
   await querier.findMany(Employee, { $lock: 'update' });
 }

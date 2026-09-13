@@ -32,7 +32,7 @@ export function Entity<E>(opts?: EntityOptions<E>) {
 /**
  * Registers a named `$where` filter, applied to every query unless bypassed via `QueryOptions.filters`.
  *
- * @example `@Filter('active', { condition: { status: 'active' }, default: false })`
+ * @example `@Filter('active', { where: { status: 'active' }, default: false })`
  */
 export function Filter<E>(name: string, opts: FilterOptions<E>) {
   return (entity: Type<E>): void => {
@@ -47,11 +47,11 @@ export function Filter<E>(name: string, opts: FilterOptions<E>) {
  *
  * @example `@Index((user) => [user.lastName, user.firstName], { name: 'users_fullname_idx' })`
  * @example `@Index((user) => [user.email], { unique: true })`
- * @example `@Index((user) => [user.status], { where: "status = 'active'" })`
+ * @example `@Index((user) => [user.email], { unique: true, where: { deletedAt: null } })`
  */
 export function Index<E>(
-  columns: (keys: KeyMap<E>) => readonly IndexColumnInput<FieldKey<NoInfer<E>>, NoInfer<E>>[],
-  options: EntityIndexOptions<NoInfer<E>> = {},
+  columns: (keys: KeyMap<E>) => readonly IndexColumnInput<FieldKey<E>, E>[],
+  options: EntityIndexOptions<E> = {},
 ) {
   return (entity: Type<E>): void => {
     defineIndex(entity, { ...options, columns });

@@ -11,6 +11,11 @@ import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   protected abstract jsonCastText(operand: string): string;
 
+  /** Backslash quoting, and a boolean stored as an integer. */
+  protected override inlineLiterals() {
+    return { quoted: "'it\\'s'", truth: '1' };
+  }
+
   /** InnoDB's own estimate, off the connection's database where the entity names no schema. */
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
@@ -53,10 +58,10 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   }
 
   shouldHandleDate() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, new Date())).toBe('?');
-    expect(values).toHaveLength(1);
-    expect(values[0]).toBeInstanceOf(Date);
+    const ctx = this.dialect.createContext();
+    expect(this.dialect.addValue(ctx, new Date())).toBe('?');
+    expect(ctx.values).toHaveLength(1);
+    expect(ctx.values[0]).toBeInstanceOf(Date);
   }
 
   shouldEscape() {
@@ -64,9 +69,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   }
 
   shouldHandleOtherValues() {
-    const values: unknown[] = [];
-    expect(this.dialect.addValue(values, 123)).toBe('?');
-    expect(values[0]).toBe(123);
+    const ctx = this.dialect.createContext();
+    expect(this.dialect.addValue(ctx, 123)).toBe('?');
+    expect(ctx.values[0]).toBe(123);
   }
 
   shouldFind$elemMatch() {

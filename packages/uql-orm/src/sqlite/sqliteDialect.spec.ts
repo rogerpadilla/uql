@@ -19,6 +19,11 @@ import { raw } from '../util/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
+  /** A boolean stored as an integer. */
+  protected override inlineLiterals() {
+    return { quoted: "'it''s'", truth: '1' };
+  }
+
   constructor() {
     super(new SqliteDialect({}));
   }

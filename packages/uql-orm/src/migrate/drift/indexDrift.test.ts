@@ -17,9 +17,9 @@ const TABLE = 'drift_index_user';
  * Everything an index carries that Postgres reprints in its own words: an expression, a partial
  * predicate, a stored order, `INCLUDE` columns, an operator class.
  */
-@Index((driftIndexUser) => [raw`lower("email")`], {
+@Index((driftIndexUser) => [() => raw`lower("email")`], {
   unique: true,
-  where: '"deletedAt" IS NULL',
+  where: raw`"deletedAt" IS NULL`,
   name: 'drift_email_live_idx',
 })
 @Index((driftIndexUser) => [driftIndexUser.status, { column: driftIndexUser.createdAt, order: 'desc' }], {
@@ -45,7 +45,10 @@ class DriftIndexUser {
 }
 
 /** The same table, with one index no longer unique and one covering column dropped. */
-@Index((driftIndexUserEdited) => [raw`lower("email")`], { where: '"deletedAt" IS NULL', name: 'drift_email_live_idx' })
+@Index((driftIndexUserEdited) => [() => raw`lower("email")`], {
+  where: raw`"deletedAt" IS NULL`,
+  name: 'drift_email_live_idx',
+})
 @Index((driftIndexUserEdited) => [driftIndexUserEdited.tenantId], { name: 'drift_tenant_covering_idx' })
 @Entity({ name: TABLE })
 class DriftIndexUserEdited {
@@ -71,7 +74,10 @@ describe('index drift (PostgreSQL)', () => {
 
   const driftOf = async (entity: typeof DriftIndexUser) => {
     const actual = await introspector.introspect();
-    const expected = buildSchemaAST([entity], { namingStrategy: dialect.namingStrategy });
+    const expected = buildSchemaAST([entity], {
+      namingStrategy: dialect.namingStrategy,
+      compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
+    });
     const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
     return report.drifts.filter((drift) => drift.table === TABLE);
   };
@@ -107,9 +113,9 @@ const CRDB_TABLE = 'drift_index_crdb';
  * `CREATE UNIQUE INDEX` too, so a catalogue filter written for Postgres hides it and reports it
  * missing on every run.
  */
-@Index((crdbIndexUser) => [raw`lower("email")`], {
+@Index((crdbIndexUser) => [() => raw`lower("email")`], {
   unique: true,
-  where: '"deletedAt" IS NULL',
+  where: raw`"deletedAt" IS NULL`,
   name: 'crdb_email_live_idx',
 })
 @Index((crdbIndexUser) => [crdbIndexUser.status], { unique: true, name: 'crdb_status_unique_idx' })
@@ -150,7 +156,10 @@ describe('index drift (CockroachDB)', () => {
         .sort(),
     ).toEqual(['crdb_email_live_idx', 'crdb_status_unique_idx', 'crdb_tenant_covering_idx']);
 
-    const expected = buildSchemaAST([CrdbIndexUser], { namingStrategy: dialect.namingStrategy });
+    const expected = buildSchemaAST([CrdbIndexUser], {
+      namingStrategy: dialect.namingStrategy,
+      compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
+    });
     const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
     expect(report.drifts.filter((drift) => drift.table === CRDB_TABLE)).toEqual([]);
   });

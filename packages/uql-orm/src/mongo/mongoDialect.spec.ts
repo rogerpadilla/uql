@@ -28,7 +28,7 @@ declare module '../type/index.js' {
 
 /** The joined (m1) side of a `security: true` filter - the regression case for the $lookup/populate gap. */
 @Filter('tenant', {
-  condition: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
+  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
   security: true,
 })
 @Entity()
@@ -1102,6 +1102,11 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.assertNoLock({ $lock: true })).toThrow(
       '$lock (row-level locking) is not supported on MongoDB',
     );
+  }
+
+  /** `false` takes no lock, so a query built conditionally runs here as it does on SQLite. */
+  shouldAcceptALockOfFalse() {
+    expect(() => this.dialect.assertNoLock({ $lock: false })).not.toThrow();
   }
 
   shouldReadAnUndefinedGroupOperatorAsConstrainingNoRelation() {

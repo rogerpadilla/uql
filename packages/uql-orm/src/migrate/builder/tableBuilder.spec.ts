@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { raw } from '../../util/index.js';
+import { renderIndexDefinition } from '../generator/definitionToNode.js';
 import { TableBuilder } from './tableBuilder.js';
 
 describe('TableBuilder', () => {
@@ -273,15 +275,13 @@ describe('TableBuilder', () => {
 
     it('should take the same entries and options as the @Index decorator', () => {
       const table = new TableBuilder('notes');
-      table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
+      table.index([() => raw`lower("email")`, { column: 'body', length: 64 }], {
         name: 'notes_lookup_idx',
         type: 'gin',
-        where: '"deletedAt" IS NULL',
+        where: raw`"deletedAt" IS NULL`,
         include: ['title'],
       });
-      const def = table.build();
-
-      expect(def.indexes[0]).toEqual({
+      expect(renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql))).toEqual({
         name: 'notes_lookup_idx',
         entries: [
           { column: 'lower("email")', expression: true },
@@ -299,6 +299,13 @@ describe('TableBuilder', () => {
       table.index([{ column: 'tenantId' }, { column: 'createdAt', order: 'desc' }]);
 
       expect(table.build().indexes[0].name).toBe('notes__tenantId_createdAt_idx');
+    });
+
+    it('should name an expression after its position, as an entity names one', () => {
+      const table = new TableBuilder('notes');
+      table.unique(['tenantId', () => raw`lower("email")`]);
+
+      expect(table.build().indexes[0].name).toBe('notes__tenantId_expr1_uk');
     });
 
     it('should add table-level foreign key with options', () => {
@@ -400,20 +407,10 @@ describe('TableBuilder', () => {
 });
 
 describe('partial-index predicate', () => {
-  it('takes raw with no interpolation and normalizes it to text', () => {
+  it('is rendered for the engine the migration runs on, a value written as its literal', () => {
     const table = new TableBuilder('Item');
-    table.index(['name'], { where: raw`"isActive" IS TRUE` });
-    expect(table.build().indexes[0]?.where).toBe('"isActive" IS TRUE');
-  });
-
-  it('still takes the older bare string', () => {
-    const table = new TableBuilder('Item');
-    table.index(['name'], { where: '"isActive" IS TRUE' });
-    expect(table.build().indexes[0]?.where).toBe('"isActive" IS TRUE');
-  });
-
-  it('refuses a predicate that would need a bound value, which DDL cannot carry', () => {
-    const table = new TableBuilder('Item');
-    expect(() => table.index(['name'], { where: raw`"stock" > ${0}` })).toThrow(/needs raw\(\) with no interpolation/);
+    table.index(['name'], { where: raw`"stock" > ${0}` });
+    const index = renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql));
+    expect(index.where).toBe('"stock" > 0');
   });
 });

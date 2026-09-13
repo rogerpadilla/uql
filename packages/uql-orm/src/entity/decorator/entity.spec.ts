@@ -98,7 +98,7 @@ describe('@Index decorator', () => {
 
   it('should support index with where clause', () => {
     @Entity()
-    @Index((user) => [user.email], { where: 'deleted_at IS NULL' })
+    @Index((user) => [user.email], { where: { deletedAt: null } })
     class User {
       @Id({ type: Number })
       id?: number;
@@ -112,7 +112,7 @@ describe('@Index decorator', () => {
 
     const meta = getMeta(User);
     expect(meta.indexes).toBeDefined();
-    expect(meta.indexes?.[0].where).toBe('deleted_at IS NULL');
+    expect(meta.indexes?.[0].where).toEqual({ deletedAt: null });
   });
 
   it('should default unique to false if not specified', () => {

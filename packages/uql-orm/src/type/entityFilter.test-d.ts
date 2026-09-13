@@ -1,6 +1,6 @@
 /**
  * Type-level regression tests for named `$where` filters (`@Filter` / `defineFilter` /
- * `EntityOptions.filters`). A filter's `condition` is either a plain `QueryWhere<E>` fragment or a
+ * `EntityOptions.filters`). A filter's `where` is either a plain `QueryWhere<E>` fragment or a
  * function of the ambient {@link UqlContext}, and both are checked against the entity the filter is
  * declared on.
  *
@@ -18,37 +18,37 @@ class Invoice {
   status?: string;
 }
 
-// ─── condition as a plain fragment ───
+// ─── where as a plain fragment ───
 export const staticFilter: FilterOptions<Invoice> = {
-  condition: { status: 'active' },
+  where: { status: 'active' },
 };
 export const staticFilterTypo: FilterOptions<Invoice> = {
   // @ts-expect-error 'statuz' is not a field of Invoice
-  condition: { statuz: 'active' },
+  where: { statuz: 'active' },
 };
 
-// ─── condition as a function of the ambient context ───
+// ─── where as a function of the ambient context ───
 export const contextFilter: FilterOptions<Invoice> = {
-  condition: (context) => {
+  where: (context) => {
     const tenantId = context?.['tenantId'];
     return tenantId ? { tenantId: tenantId as number } : undefined;
   },
   security: true,
   onMissing: 'throw',
 };
-// Note: a typo'd fragment *returned* from a condition callback is not rejected at compile time -
+// Note: a typo'd fragment *returned* from a where callback is not rejected at compile time -
 // its object literal is checked once the callback's own return type has already been inferred and
-// widened, so the excess-property check that catches `condition: { statuz: 'active' }` above never
+// widened, so the excess-property check that catches `where: { statuz: 'active' }` above never
 // sees it fresh. Annotating the callback's return type (`(): QueryWhere<Invoice> | undefined => ...`)
 // restores the check; the plain-fragment form above is the one that matters in practice.
 export const contextFilterReturningFragment: FilterOptions<Invoice> = {
-  condition: () => ({ status: 'active' }),
+  where: () => ({ status: 'active' }),
 };
 
 // ─── @Filter decorator: `E` is inferred from the class it decorates ───
-@Filter('active', { condition: { status: 'active' }, default: false })
+@Filter('active', { where: { status: 'active' }, default: false })
 // @ts-expect-error 'statuz' is not a field of the decorated entity
-@Filter('broken', { condition: { statuz: 'active' } })
+@Filter('broken', { where: { statuz: 'active' } })
 class DecoratedInvoice {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) status?: string;
@@ -62,12 +62,12 @@ class Bill {
 }
 defineEntity(Bill, {
   fields: { id: { type: Number, isId: true }, status: { type: String } },
-  filters: { active: { condition: { status: 'active' } } },
+  filters: { active: { where: { status: 'active' } } },
 });
 defineEntity(Bill, {
   fields: { id: { type: Number, isId: true } },
   filters: {
     // @ts-expect-error 'statuz' is not a field of Bill
-    active: { condition: { statuz: 'active' } },
+    active: { where: { statuz: 'active' } },
   },
 });

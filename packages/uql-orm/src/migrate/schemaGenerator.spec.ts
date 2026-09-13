@@ -8,6 +8,7 @@ import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { mockTableNode } from '../test/index.js';
 import type { ColumnSchema, VectorDistance } from '../type/index.js';
+import { raw } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -694,18 +695,28 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     expect(statements[2]).toBe('CREATE UNIQUE INDEX "memberships_pair_uk" ON "memberships" ("userId", "groupId");');
   });
 
+  it('should render the SQL of a builder index for its engine', () => {
+    expect(
+      generator.generateCreateIndexFromDefinition('memberships', {
+        name: 'memberships_email_uk',
+        entries: [{ column: raw`lower("email")` }],
+        unique: true,
+        where: raw`"deletedAt" IS NULL`,
+      }),
+    ).toBe(
+      'CREATE UNIQUE INDEX IF NOT EXISTS "memberships_email_uk" ON "memberships" ((lower("email"))) WHERE "deletedAt" IS NULL;',
+    );
+  });
+
   it('should keep the index options a definition declares, not just its columns', () => {
     const statements = generator.generateCreateTableFromDefinition(
       tableDefinition({
         indexes: [
           {
             name: 'memberships_active_idx',
-            entries: [
-              { column: 'userId', order: 'desc' },
-              { column: 'lower("groupId")', expression: true },
-            ],
+            entries: [{ column: 'userId', order: 'desc' }, { column: raw`lower("groupId")` }],
             unique: true,
-            where: '"deletedAt" IS NULL',
+            where: raw`"deletedAt" IS NULL`,
             include: ['groupId'],
           },
         ],

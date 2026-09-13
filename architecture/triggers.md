@@ -136,7 +136,7 @@ class Post {}
 
 The plpgsql function is generated beside the trigger and dropped with it, because Postgres has no inline body.
 
-**Prerequisite: a DDL render path for an interpolated `raw`.** A `raw` carrying any interpolation compiles to a callback, and `ddlText` refuses exactly that (_"needs raw() with no interpolation, not a function or a bound value"_); `col()` is no help, reading an alias prefix and dialect from a query context absent at DDL time. Authoring needs a render emitting text with an empty prefix and an `addValue` that throws, with the column map resolving through the dialect's naming strategy. `@Entity({ checks })` and a partial index's `where` become interpolatable in the same change.
+**Prerequisite, shipped: a DDL render path for an interpolated `raw`.** `compileDdl` renders one with an empty prefix, values written as literals and refs resolved through the dialect's naming strategy; `@Entity({ checks })` and a partial index's `where` use it.
 
 ## Ownership, diff and resync
 
@@ -155,13 +155,13 @@ The relation name is checked at compile time. `Field(opts)` resolves before it k
 The generated-column arm already made the option rules conditional: `FIELD_OPTION_FAMILY` (`util/fieldOption.util.ts`) is `satisfies Record<keyof FieldOptions, ...>`, and `deadOn` treats a stored `computed` as the real column it is. A stored aggregate reads and migrates like a stored generated column, so most of the read path is there. What is not:
 
 - **R7.** `SchemaDiffResult` (`schema/types.ts`) still has a field per kind, so a trigger and its function add two more create lists, two drop lists and a diff list, and every consumer grows a branch.
-- **A DDL render for an interpolated `raw`**, which `ddlText` (`util/ddlExpression.util.ts`) refuses by name. [Typed DDL predicates](roadmap.md) build both it and the DDL-time `QueryWhere` compiler the authored `when` and an aggregate's `$where` are written in, so that item lands _before_ this one. Triggers need one thing a partial index does not: the operand prefix is `NEW`/`OLD` rather than a table alias.
+- **The `NEW`/`OLD` operand prefix.** `compileDdl` already renders the DDL-time `QueryWhere` and interpolated `raw` the authored `when` and an aggregate's `$where` are written in, as a partial index and a check use it; a trigger needs its operands qualified by `NEW`/`OLD`, where those take none.
 - **Trigger introspection.** No introspector reads `pg_trigger` or `pg_proc`, so nothing can yet report a trigger dropped or reshaped in the database. Timing, events, `tgattr` (the `UPDATE OF` columns), `tgdeferrable`/`tginitdeferred` and the function's comment are exactly what the diff above compares.
 - **A `RETURNING` list of ordinary columns.** The dialects compose one for generated ids and, on an upsert, one extra expression (`returningIdExpression`); the stamp arm needs a declared column in it.
 - **The write half of a trigger-backed column.** `GENERATED_WRITES` kills `defaultValue`, `updatable` and the `on*` callbacks on anything `computed` - right for `GENERATED ALWAYS AS`, wrong for an aggregate, which derives `NOT NULL DEFAULT 0` and `updatable: false` and is written by a trigger rather than by the engine. The two arms take different rows of that table, and `on` has to be placed there too.
 - **The backfill.** It is a data statement inside a generated schema migration, and R7's vocabulary is DDL; the aggregate's schema object emits it beside its own `CREATE`, the way a resync emits the same query with a comparison.
 
-Where a refusal lives follows from what its layer knows. An operator outside the shipping rows, a `$where` traversing a relation, a filtered many-to-many are all shapes, refused at registration. Postgres-only is not a shape and registration has no dialect, so it is refused where `buildEntityAST` has one - the same place a typed DDL predicate compiles.
+Where a refusal lives follows from what its layer knows. An operator outside the shipping rows, a `$where` traversing a relation, a filtered many-to-many are all shapes, refused at registration. Postgres-only is not a shape and registration has no dialect, so it is refused where `buildEntityAST` has one - the same place a partial-index predicate compiles.
 
 ## Not in this release
 

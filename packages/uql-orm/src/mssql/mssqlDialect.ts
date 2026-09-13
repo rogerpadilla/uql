@@ -330,8 +330,7 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   protected override jsonScalarParam(ctx: QueryContext, value: unknown): string {
     return (
-      this.#jsonCompound(ctx, value) ??
-      this.addValue(ctx.values, typeof value === 'boolean' ? JSON.stringify(value) : value)
+      this.#jsonCompound(ctx, value) ?? this.addValue(ctx, typeof value === 'boolean' ? JSON.stringify(value) : value)
     );
   }
 
@@ -345,7 +344,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     if (compound) {
       return compound;
     }
-    const placeholder = this.addValue(ctx.values, value);
+    const placeholder = this.addValue(ctx, value);
     return typeof value === 'boolean' ? `CAST(${placeholder} AS BIT)` : placeholder;
   }
 
@@ -360,8 +359,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     if (value === null || typeof value !== 'object') {
       return undefined;
     }
-    ctx.pushValue(JSON.stringify(value));
-    return `JSON_QUERY(${this.placeholder(ctx.values.length)})`;
+    return `JSON_QUERY(${this.addValue(ctx, JSON.stringify(value))})`;
   }
 
   /** An exploded element compares as text here, so `$elemMatch` always expands per field. */

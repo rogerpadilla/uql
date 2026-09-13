@@ -100,7 +100,7 @@ export interface UqlContext {
  * A filter's `$where` fragment: a plain fragment, or a function of the ambient {@link UqlContext}.
  * Return `undefined` when the condition can't resolve (see {@link FilterOptions.onMissing}).
  */
-export type FilterCondition<E> = QueryWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
+export type FilterWhere<E> = QueryWhere<E> | ((context: UqlContext | undefined) => QueryWhere<E> | undefined);
 
 /**
  * What to do when a filter's condition returns `undefined`. `skip` omits it (convenience filters);
@@ -112,7 +112,7 @@ export type FilterOnMissing = 'skip' | 'throw';
  * Authoring shape for `@Entity({ filters })` / `@Filter` / `defineFilter`.
  */
 export type FilterOptions<E = unknown> = {
-  readonly condition: FilterCondition<E>;
+  readonly where: FilterWhere<E>;
   /** Applied to every query unless bypassed via `QueryOptions.filters`. Defaults to `true`. */
   readonly default?: boolean;
   /**
@@ -120,7 +120,7 @@ export type FilterOptions<E = unknown> = {
    * AND-merged so a client `$where` on the same field can't override it.
    */
   readonly security?: boolean;
-  /** What to do when the condition returns `undefined`. Defaults to `skip`, or `throw` for `security`. */
+  /** What to do when {@link where} returns `undefined`. Defaults to `skip`, or `throw` for `security`. */
   readonly onMissing?: FilterOnMissing;
 };
 

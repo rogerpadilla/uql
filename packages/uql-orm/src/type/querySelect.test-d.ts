@@ -45,6 +45,8 @@ export async function selectShapes() {
   await querier.findMany(Story, { $select: [1] });
   // @ts-expect-error plain strings are not accepted in the array form
   await querier.findMany(Story, { $select: ['id'] });
+  // @ts-expect-error an alias is `.as()`, the one spelling a template takes too
+  raw(() => 'points', 'hotness');
   // A `readonly` scalar array is a field, not a relation: `FieldKey` testing for a mutable `Scalar[]`
   // left both of these out of every field-keyed clause and into `RelationKey` instead.
   await querier.findMany(Story, { $select: { tags: true, embedding: true } });

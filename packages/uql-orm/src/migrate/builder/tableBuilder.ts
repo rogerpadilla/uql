@@ -5,8 +5,8 @@
  */
 
 import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexColumnInput, IndexOptions, IndexSchema } from '../../type/index.js';
-import { ddlText, normalizeIndexColumn } from '../../util/index.js';
+import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
+import { indexNameParts, normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
 import { columnForeignKey, columnIndex } from '../generator/definitionToNode.js';
 import { ColumnBuilder } from './columnBuilder.js';
@@ -17,6 +17,7 @@ import type {
   IColumnBuilder,
   ITableBuilder,
   ITableForeignKeyBuilder,
+  IndexDefinition,
   StringColumnOptions,
   TableDefinition,
   VectorColumnOptions,
@@ -81,7 +82,7 @@ export class TableBuilder implements ITableBuilder {
   private _name: string;
   private _columnBuilders: ColumnBuilder[] = [];
   private _primaryKey?: string[];
-  private _indexes: IndexSchema[] = [];
+  private _indexes: IndexDefinition[] = [];
   private _foreignKeyBuilders: TableForeignKeyBuilder[] = [];
   private _comment?: string;
 
@@ -226,14 +227,7 @@ export class TableBuilder implements ITableBuilder {
     const entries = columns.map(normalizeIndexColumn);
     this._indexes.push({
       ...rest,
-      name:
-        name ??
-        derivedIndexName(
-          this._name,
-          entries.map((entry) => entry.column),
-          unique,
-        ),
-      where: ddlText(rest.where, 'a partial-index predicate'),
+      name: name ?? derivedIndexName(this._name, indexNameParts(entries), unique),
       entries,
       unique,
     });

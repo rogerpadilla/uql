@@ -1,7 +1,9 @@
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
+import type { QueryRaw } from '../../type/queryRaw.js';
+import { renderIndexColumn } from '../../util/ddlExpression.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../../util/sql.util.js';
-import type { FullColumnDefinition, TableDefinition } from '../builder/types.js';
+import type { FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
 /**
  * A table the builder names but has not seen.
@@ -17,10 +19,10 @@ function unresolvedTable(name: string): TableNode {
 
 /**
  * A migration builder's table definition as the AST nodes the generators render from, so a hand-written
- * `createTable` and an entity reach `generateCreateTableFromNode` in the same shape. Free functions and
- * not generator methods: nothing here consults the dialect.
+ * `createTable` and an entity reach `generateCreateTableFromNode` in the same shape, its SQL rendered by
+ * `render`. Free functions and not generator methods: the dialect reaches them only through `render`.
  */
-export function tableDefinitionToNode(def: TableDefinition): TableNode {
+export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryRaw) => string): TableNode {
   const columns = new Map<string, ColumnNode>();
   const pkNodes: ColumnNode[] = [];
 
@@ -50,7 +52,7 @@ export function tableDefinitionToNode(def: TableDefinition): TableNode {
   (table as { primaryKey: ColumnNode[] }).primaryKey = finalPrimaryKey;
 
   for (const idxDef of def.indexes) {
-    table.indexes.push({ ...idxDef, table });
+    table.indexes.push({ ...renderIndexDefinition(idxDef, render), table });
   }
 
   for (const fkDef of def.foreignKeys) {
@@ -96,7 +98,10 @@ export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName:
  * Shared with `TableBuilder.build`, which lifts these into the table it is creating: written twice,
  * `addColumn` had no lift at all and silently emitted a column with no index.
  */
-export function columnIndex(tableName: string, col: FullColumnDefinition): IndexSchema | undefined {
+export function columnIndex(
+  tableName: string,
+  col: FullColumnDefinition,
+): Pick<IndexSchema, 'name' | 'entries' | 'unique'> | undefined {
   if (!col.index) {
     return undefined;
   }
@@ -104,6 +109,15 @@ export function columnIndex(tableName: string, col: FullColumnDefinition): Index
     name: typeof col.index === 'string' ? col.index : derivedIndexName(tableName, [col.name]),
     entries: [{ column: col.name }],
     unique: col.isUnique,
+  };
+}
+
+/** An index the builder recorded, its SQL rendered by `render` into the text the schema holds. */
+export function renderIndexDefinition(index: IndexDefinition, render: (sql: QueryRaw) => string): IndexSchema {
+  return {
+    ...index,
+    entries: index.entries.map((entry) => renderIndexColumn(entry, render)),
+    where: index.where && render(index.where),
   };
 }
 

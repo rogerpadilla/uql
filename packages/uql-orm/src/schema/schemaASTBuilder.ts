@@ -8,9 +8,9 @@
 
 import { getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
-import type { EntityIndexMeta, EntityMeta, FieldMeta, FieldOptions, IndexColumnSchema, Type } from '../type/index.js';
+import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
-import { ddlText } from '../util/ddlExpression.util.js';
+import { indexNameParts, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
@@ -41,6 +41,11 @@ export interface BuildSchemaASTOptions {
   namingStrategy?: NamingStrategy;
   /** Default action for foreign key ON DELETE and ON UPDATE clauses */
   defaultForeignKeyAction?: ForeignKeyAction;
+  /**
+   * The text of SQL an entity declares - a check, a stored computed column, an index expression or
+   * predicate - which only a dialect can render. `buildEntityAST` supplies it from the generator.
+   */
+  compileDdl?: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
 }
 
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
@@ -50,6 +55,7 @@ type BuildContext = {
   readonly resolveSchema: (meta: EntityMeta<object>) => string | undefined;
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
   readonly defaultForeignKeyAction: ForeignKeyAction;
+  readonly compileDdl: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
 };
 
 /**
@@ -68,6 +74,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     resolveSchema: options.resolveSchema ?? ((m) => m.schema),
     resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
+    compileDdl: options.compileDdl ?? refuseDdl,
   };
 
   for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
@@ -77,6 +84,13 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
   }
 
   return ctx.ast;
+}
+
+/** The `compileDdl` of a build given no dialect, which has nothing to render an entity's SQL with. */
+function refuseDdl(): string {
+  throw new TypeError(
+    'building the schema of an entity that declares SQL (a check, a stored computed column, an index expression or predicate) needs a dialect to render it: pass `compileDdl`, as `buildEntityAST` does',
+  );
 }
 
 /**
@@ -121,7 +135,9 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
 
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
   const { columns, primaryKey } = table;
-  table.checks?.push(...(meta.checks ?? []));
+  table.checks?.push(
+    ...(meta.checks ?? []).map(({ name, where }) => ({ name, expression: ctx.compileDdl(where, meta.entity) })),
+  );
 
   // Add columns from fields
   for (const [key, field] of definedEntries(meta.fields)) {
@@ -143,7 +159,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
-      generatedAs: ddlText(field.computed, `the computed column '${columnName}'`),
+      generatedAs: field.computed && ctx.compileDdl(field.computed, meta.entity),
       comment: field.comment,
       enum: field.enum,
       table,
@@ -314,27 +330,22 @@ function addCompositeIndex(
 ): void {
   // An entry survives if it is an expression (nothing to resolve) or names a column that exists;
   // an index left with none is dropped, the same as one naming only unknown columns always was.
-  const entries = idxMeta.columns
-    .map((entry) => {
-      if (entry.expression) return entry;
-      const field = meta.fields[entry.column as keyof typeof meta.fields];
-      const column = field && ctx.resolveColumnName(entry.column, field);
-      return column && table.columns.has(column) ? { ...entry, column } : undefined;
-    })
-    .filter((entry): entry is IndexColumnSchema => entry !== undefined);
-  if (!entries.length) return;
-
-  // An index over expressions alone has no column names to build a default name from.
-  const named = entries.map((entry, at) => (entry.expression ? `expr${at}` : entry.column));
+  const resolved = idxMeta.columns.flatMap((entry) => {
+    if (typeof entry.column !== 'string') return [entry];
+    const field = meta.fields[entry.column as keyof typeof meta.fields];
+    const column = field && ctx.resolveColumnName(entry.column, field);
+    return column && table.columns.has(column) ? [{ ...entry, column }] : [];
+  });
+  if (!resolved.length) return;
 
   ctx.ast.addIndex({
-    name: idxMeta.name ?? derivedIndexName(table.name, named),
+    name: idxMeta.name ?? derivedIndexName(table.name, indexNameParts(resolved)),
     table,
-    entries,
+    entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
     include: idxMeta.include?.map((column) => resolveIncludeColumn(ctx, meta, column)),
     unique: idxMeta.unique ?? false,
     type: idxMeta.type,
-    where: idxMeta.where,
+    where: idxMeta.where && ctx.compileDdl(idxMeta.where, meta.entity),
     distance: idxMeta.distance,
     m: idxMeta.m,
     efConstruction: idxMeta.efConstruction,

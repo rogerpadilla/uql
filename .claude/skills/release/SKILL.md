@@ -9,7 +9,7 @@ description: Cut and publish a uql release - review the diff, changelog entry, v
 
 ## 1. Review the whole diff
 
-Staged and unstaged alike (and related files). Make sure to understand everything first, then correct what is wrong, simplify what is duplicated or overcomplicated, and delete comments the change made stale.
+Staged and unstaged alike (and related files). Make sure to understand everything first, then correct what is wrong, unify, simplify what is redundanto or overcomplicated, and delete comments the change made stale.
 
 ## 2. Settle the changelog entry
 
@@ -25,7 +25,7 @@ Compress `[Unreleased]` - the CHANGELOG.md header says how - then rename its hea
 
 `~/projects/uql-site`. A fix that makes the code match what the docs already claimed needs no change; a new or changed behaviour does. Its `build` type-checks every example against the **published** package, so a doc naming something unreleased has to wait for step 6.
 
-## 5. Bump, tag, push, release
+## 5. Bump, commit, tag, push, release
 
 Versioning and publishing are two steps on purpose: `lerna publish`'s npm step 404s unreliably against this registry. **Never run `lerna publish`.** A failed publish leaves the tag and CHANGELOG already right - rerun the publish alone, never re-bump.
 

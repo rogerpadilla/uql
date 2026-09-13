@@ -20,17 +20,19 @@ export class SqlQueryContext implements QueryContext {
    * than needing to be reconciled after the fact.
    * @param statement The context this one renders a fragment of, which owns the claimed aliases: a
    * fragment is part of one statement, so its aliases have to be unique across the whole of it.
+   * @param inlineValues See {@link QueryContext.inlineValues}; a fragment takes its statement's.
    */
   constructor(
     readonly dialect: QueryDialect,
     params: unknown[] = [],
     private readonly statement?: SqlQueryContext,
+    readonly inlineValues = false,
   ) {
     this.params = params;
   }
 
   createFragment(): QueryContext {
-    return new SqlQueryContext(this.dialect, this.params, this.statement ?? this);
+    return new SqlQueryContext(this.dialect, this.params, this.statement ?? this, this.inlineValues);
   }
 
   /**
@@ -47,14 +49,11 @@ export class SqlQueryContext implements QueryContext {
   }
 
   /**
-   * Adds a value to the query parameters and appends its corresponding placeholder to the SQL.
-   * The placeholder format is determined by the dialect (e.g., '?' or '$1').
-   *
-   * @param value The value to be parameterized.
-   * @returns The current context instance for method chaining.
+   * Appends the SQL the dialect writes for `value`: a placeholder for the value bound, or its literal
+   * where this context inlines values.
    */
   addValue(value: unknown): this {
-    this.sqlChunks.push(this.dialect.addValue(this.params, value));
+    this.sqlChunks.push(this.dialect.addValue(this, value));
     return this;
   }
 
