@@ -8,7 +8,6 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 - **Breaking: Turso Cloud runs on `@tursodatabase/serverless` 1.3+'s sessions, one per querier**: queriers never wait on each other, `BEGIN`/`COMMIT` just work, streams read the server's cursor, and every `Config` option applies.
 - **Breaking: `LibsqlQuerierPool` takes a client you built, and `TursoQuerierPool` no longer does**: `@libsql/client/web` or `-wasm`, shared by every querier and left open on `end()`.
 - **Every SQLite driver reads an integer past 2^53 as its exact text**: better-sqlite3, `bun:sqlite`, `node:sqlite`, libSQL and both Turso pools, which rounded it or threw. D1 still answers a number.
-- **`Sqlite3QuerierPool` opens a serialized `Buffer` under Bun**, through `Database.deserialize`, and **`TursoLocalQuerierPool` takes every engine option**, `encryption` and `experimental` included.
 - **Breaking: SQLite through `uql-orm/bunSql` is gone**, deprecated since 0.55.0: the pool refuses it, pointing at `Sqlite3QuerierPool`, which runs on `bun:sqlite` under Bun.
 
 ## [0.62.0] - 2026-09-13
