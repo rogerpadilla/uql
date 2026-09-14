@@ -1,6 +1,5 @@
 import { describe, expect, it } from 'vitest';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
-import { splitSqlStatements } from '../builder/splitSqlStatements.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MsSqlSchemaGenerator Specifics', () => {
@@ -49,9 +48,8 @@ describe('MsSqlSchemaGenerator Specifics', () => {
     expect(drop).toBe('ALTER TABLE "users" DROP COLUMN "age";');
   });
 
-  /** A builder splits what it runs on `;`, which must not part the lookup from the `EXEC` it feeds. */
-  it('should keep the lookup whole through the split a migration runs it through', () => {
-    expect(splitSqlStatements(generator.generateDropColumnSql('users', 'age'))).toHaveLength(2);
+  it('should drop a column as two statements a migration runs apart: the lookup whole, then the column', () => {
+    expect(generator.generateDropColumnSql('users', 'age')).toHaveLength(2);
   });
 
   it('should alter a column around its default, which ALTER COLUMN cannot restate', () => {

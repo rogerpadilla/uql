@@ -1,13 +1,20 @@
 /** The direction, or `'text'`, of one field in a MongoDB index key spec. */
 export type MongoIndexKey = Record<string, 1 | -1 | 'text'>;
 
+/** What a `createIndex` command hands the driver beside its key spec. */
+export type MongoIndexOptions = {
+  readonly unique: boolean;
+  readonly name: string;
+  readonly partialFilterExpression?: Readonly<Record<string, unknown>>;
+};
+
 /**
  * `SchemaGenerator` yields one string per statement, so {@link MongoSchemaGenerator} emits its
  * commands as JSON and this is their schema.
  *
  * Declared next to the generator that writes them because the migrator used to restate the shape
  * inline from `JSON.parse`, with `cmd.name!` assertions and a bare `action: string` - where a command
- * it had no branch for (`renameCollection`) was silently a no-op.
+ * it had no branch for was silently a no-op.
  */
 export type MongoCommand =
   | { readonly action: 'createCollection'; readonly name: string }
@@ -18,7 +25,7 @@ export type MongoCommand =
       readonly collection: string;
       readonly name: string;
       readonly key: MongoIndexKey;
-      readonly options: { readonly unique: boolean; readonly name: string };
+      readonly options: MongoIndexOptions;
     }
   | { readonly action: 'dropIndex'; readonly collection: string; readonly name: string };
 
@@ -36,7 +43,7 @@ export type MongoCommandTarget = {
   renameCollection(from: string, to: string): Promise<unknown>;
   collection(name: string): {
     drop(): Promise<unknown>;
-    createIndex(key: MongoIndexKey, options: { unique: boolean; name: string }): Promise<unknown>;
+    createIndex(key: MongoIndexKey, options: MongoIndexOptions): Promise<unknown>;
     dropIndex(name: string): Promise<unknown>;
   };
 };
@@ -69,7 +76,7 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
       return db.collection(command.collection).dropIndex(command.name);
     default:
       // Unreachable for a command this module produced; a hand-written statement lands here rather
-      // than being silently skipped, which is how `renameCollection` went unnoticed.
+      // than being silently skipped.
       throw unsupportedMongoCommand(statement);
   }
 }

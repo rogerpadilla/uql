@@ -69,7 +69,7 @@ describe('Migrator Core Methods', () => {
       ensureStorage: vi.fn().mockResolvedValue(undefined),
     } as unknown as MigrationStorage;
 
-    migrator = new Migrator(pool, { storage });
+    migrator = new Migrator(pool, { storage, schemaGenerator: new SqlSchemaGenerator(postgresDialect) });
 
     // Mock getMigrations to return some dummy migrations
     const mockMigrations: Migration[] = [
@@ -170,7 +170,7 @@ describe('Migrator Core Methods', () => {
       generateAlterTable: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;']),
       generateAlterTableDown: vi.fn().mockReturnValue(['ALTER TABLE "DiffUser" DROP COLUMN "age";']),
     };
-    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+    migrator.schemaGenerator = generator as unknown as SchemaGenerator;
 
     const introspector = {
       introspect: vi.fn().mockResolvedValue(new SchemaAST()),
@@ -211,7 +211,7 @@ describe('Migrator Core Methods', () => {
       generateAlterTable: vi.fn(),
       generateAlterTableDown: vi.fn(),
     };
-    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+    migrator.schemaGenerator = generator as unknown as SchemaGenerator;
 
     const introspector = {
       introspect: vi.fn().mockResolvedValue(new SchemaAST()),
@@ -221,7 +221,6 @@ describe('Migrator Core Methods', () => {
     migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
     vi.spyOn(migrator, 'getDiffs').mockResolvedValue([{ type: 'create', tableName: 'Article' }]);
-    vi.spyOn(migrator, 'findEntityForTable').mockResolvedValue(Article);
 
     const { writeFile } = await import('node:fs/promises');
 
@@ -263,7 +262,7 @@ describe('Migrator Core Methods', () => {
       generateAlterTableDown: vi.fn(),
       diffSchema: vi.fn(),
     };
-    migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+    migrator.schemaGenerator = generator as unknown as SchemaGenerator;
 
     await migrator.sync({ force: true, logging: true });
 
@@ -276,46 +275,36 @@ describe('Migrator Core Methods', () => {
   });
 
   describe('Dialect Auto-Inference', () => {
-    it('should infer Postgres generator and introspector', () => {
+    it('should infer Postgres generator and introspector', async () => {
       const m = new Migrator(pool);
-      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
+      expect(await m.getSchemaGenerator()).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(PostgresSchemaIntrospector);
     });
 
-    it('should infer MySQL generator and introspector', () => {
-      const mysqlPool = { ...pool, dialect: new MySqlDialect() };
-      const m = new Migrator(mysqlPool);
+    it('should infer MySQL generator and introspector', async () => {
+      const m = new Migrator({ ...pool, dialect: new MySqlDialect() });
       expect(m.dialectName).toBe('mysql');
-      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
+      expect(await m.getSchemaGenerator()).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
     });
 
-    it('should infer SQLite generator and introspector', () => {
-      const sqlitePool = { ...pool, dialect: new SqliteDialect() };
-      const m = new Migrator(sqlitePool);
-      expect(m.schemaGenerator).toBeInstanceOf(SqlSchemaGenerator);
+    it('should infer SQLite generator and introspector', async () => {
+      const m = new Migrator({ ...pool, dialect: new SqliteDialect() });
+      expect(await m.getSchemaGenerator()).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(SqliteSchemaIntrospector);
     });
 
-    it('should defer MongoDB schema generator until async use', () => {
-      const mongoPool = { ...pool, dialect: new MongoDialect() };
-      const m = new Migrator(mongoPool);
+    it('should load the MongoDB schema generator only once it is used', async () => {
+      const m = new Migrator({ ...pool, dialect: new MongoDialect() });
       expect(m.schemaGenerator).toBeUndefined();
+      expect(await m.getSchemaGenerator()).toBeInstanceOf(MongoSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MongoSchemaIntrospector);
     });
 
-    it('should load MongoDB schema generator on getDiffs', async () => {
-      const mongoPool = { ...pool, dialect: new MongoDialect() };
-      const m = new Migrator(mongoPool, { storage, entities: [] });
-      vi.spyOn(MongoSchemaIntrospector.prototype, 'introspect').mockResolvedValue(new SchemaAST());
-      await m.getDiffs();
-      expect(m.schemaGenerator).toBeInstanceOf(MongoSchemaGenerator);
-    });
-
-    it('should allow overriding generator in options', () => {
+    it('should allow overriding generator in options', async () => {
       const customGenerator = {} as unknown as SchemaGenerator;
       const m = new Migrator(pool, { schemaGenerator: customGenerator });
-      expect(m.schemaGenerator).toBe(customGenerator);
+      expect(await m.getSchemaGenerator()).toBe(customGenerator);
     });
   });
 
@@ -474,7 +463,7 @@ describe('Migrator Core Methods', () => {
         resolveTableName: vi.fn().mockReturnValue('Table'),
         diffSchema: vi.fn().mockReturnValue(undefined),
       };
-      migrator.setSchemaGenerator(generator as unknown as SchemaGenerator);
+      migrator.schemaGenerator = generator as unknown as SchemaGenerator;
       const introspector = { introspect: vi.fn().mockResolvedValue(new SchemaAST()) };
       migrator.schemaIntrospector = introspector as unknown as SchemaIntrospector;
 
@@ -482,9 +471,12 @@ describe('Migrator Core Methods', () => {
       expect(filePath).toBe('');
     });
 
-    it('getDiffs should throw if generator/introspector missing', async () => {
-      (migrator as any).schemaGenerator = undefined;
-      await expect(migrator.getDiffs()).rejects.toThrow('Schema generator and introspector must be set');
+    it('getDiffs should throw for a dialect with no schema generator', async () => {
+      const m = new Migrator(
+        { ...pool, dialect: { dialectName: 'unknown' } as unknown as MigratorDialect },
+        { storage },
+      );
+      await expect(m.getDiffs()).rejects.toThrow("No schema generator for dialect 'unknown'");
     });
 
     it('a forced sync throws if the querier is not a SQL one', async () => {
@@ -665,7 +657,7 @@ describe('Migrator Core Methods', () => {
         ...pool,
         dialect: { dialectName: 'unknown', resolveSchema: () => undefined } as unknown as MigratorDialect,
       };
-      const m = new Migrator(unknownPool, { storage });
+      const m = new Migrator(unknownPool, { storage, schemaGenerator: new SqlSchemaGenerator(new PostgresDialect()) });
       await expect(m.sync({ entity: NoIntrospectorRow })).rejects.toThrow(
         "No introspector for 'NoIntrospectorRow' on 'unknown'",
       );
@@ -705,12 +697,7 @@ describe('Migrator Core Methods', () => {
         dialect: { dialectName: 'unknown' } as unknown as MigratorDialect,
       };
       const m = new Migrator(unknownPool, { storage });
-      await expect(m.sync({ force: true, logging: true })).rejects.toThrow('Schema generator not set');
-    });
-
-    it('findEntityForTable should return undefined if not found', async () => {
-      const m = new Migrator(pool, { entities: [] });
-      expect(await m.findEntityForTable('Unknown')).toBeUndefined();
+      await expect(m.sync({ force: true, logging: true })).rejects.toThrow("No schema generator for dialect 'unknown'");
     });
 
     it('getMigrations should load and sort migrations', async () => {
@@ -736,13 +723,12 @@ describe('Migrator Core Methods', () => {
     });
 
     it('generateFromEntities should handle create and alter diffs', async () => {
-      const m = new Migrator(pool, { storage });
+      const m = new Migrator(pool, { storage, schemaGenerator: new SqlSchemaGenerator(new PostgresDialect()) });
       const diffs: SchemaDiff[] = [
         { type: 'create', tableName: 'User' },
         { type: 'alter', tableName: 'Profile' },
       ];
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce(diffs);
-      vi.spyOn(m, 'findEntityForTable').mockResolvedValue(User);
       vi.spyOn(m.schemaGenerator!, 'generateCreateSchema').mockReturnValue(['CREATE']);
       vi.spyOn(m.schemaGenerator!, 'generateDropTable').mockReturnValue('DROP');
       vi.spyOn(m.schemaGenerator!, 'generateAlterTable').mockReturnValue(['ALTER UP']);
@@ -755,7 +741,6 @@ describe('Migrator Core Methods', () => {
     it('generateFromEntities and sync skip a table with no entity', async () => {
       const m = new Migrator(pool, { storage });
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([{ type: 'create', tableName: 'Unknown' }]);
-      vi.spyOn(m, 'findEntityForTable').mockResolvedValue(undefined);
 
       const result = await m.generateFromEntities('test-skip');
       expect(result).toBe('');
@@ -774,13 +759,6 @@ describe('Migrator Core Methods', () => {
       expect(querier.run).toHaveBeenCalledTimes(2);
       expect(querier.commitTransaction).toHaveBeenCalledOnce();
       expect(querier.release).toHaveBeenCalledOnce();
-    });
-
-    it('executeSqlSyncStatements should throw if not SQL querier', async () => {
-      const mockQuerier = {} as any;
-      await expect(migrator.executeSqlSyncStatements([], {}, mockQuerier)).rejects.toThrow(
-        'Migrator requires a SQL-based querier',
-      );
     });
   });
 });

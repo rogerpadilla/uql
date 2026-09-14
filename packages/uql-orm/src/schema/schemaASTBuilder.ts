@@ -10,7 +10,7 @@ import { getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
-import { indexNameParts, renderIndexColumn } from '../util/ddlExpression.util.js';
+import { declaredIndexes, indexNameParts, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
@@ -46,6 +46,8 @@ export interface BuildSchemaASTOptions {
    * predicate - which only a dialect can render. `buildEntityAST` supplies it from the generator.
    */
   compileDdl?: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
+  /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. `buildEntityAST` supplies it. */
+  compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
 }
 
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
@@ -56,6 +58,7 @@ type BuildContext = {
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
   readonly defaultForeignKeyAction: ForeignKeyAction;
   readonly compileDdl: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
+  readonly compileIndexPredicate: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
 };
 
 /**
@@ -66,6 +69,7 @@ type BuildContext = {
  */
 export function buildSchemaAST(entities: readonly Type<object>[], options: BuildSchemaASTOptions = {}): SchemaAST {
   const { namingStrategy } = options;
+  const compileDdl = options.compileDdl ?? refuseDdl;
   const ctx: BuildContext = {
     ast: new SchemaAST(),
     resolveTableName:
@@ -74,7 +78,8 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     resolveSchema: options.resolveSchema ?? ((m) => m.schema),
     resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
-    compileDdl: options.compileDdl ?? refuseDdl,
+    compileDdl,
+    compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
   };
 
   for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
@@ -248,22 +253,7 @@ function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void
   const table = tableOf(ctx, meta);
   if (!table) return;
 
-  for (const key of Object.keys(meta.fields)) {
-    const field = meta.fields[key];
-    if (!field?.index) continue;
-    const column = table.columns.get(ctx.resolveColumnName(key, field));
-    if (!column) continue;
-    ctx.ast.addIndex({
-      name: typeof field.index === 'string' ? field.index : derivedIndexName(table.name, [column.name]),
-      table,
-      entries: [{ column: column.name }],
-      unique: field.unique ?? false,
-      source: 'entity',
-      syncStatus: 'entity_only',
-    });
-  }
-
-  for (const idxMeta of meta.indexes ?? []) {
+  for (const idxMeta of declaredIndexes(meta)) {
     addCompositeIndex(ctx, table, meta, idxMeta);
   }
 
@@ -318,7 +308,7 @@ function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<object>, colum
 }
 
 /**
- * One `@Index`. Its entries keep the authored form (expression, prefix length, order) with
+ * One index the entity declares. Its entries keep the authored form (expression, prefix length, order) with
  * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
  * subset, which is what diffing and introspection compare.
  */
@@ -338,14 +328,15 @@ function addCompositeIndex(
   });
   if (!resolved.length) return;
 
+  const name = idxMeta.name ?? derivedIndexName(table.name, indexNameParts(resolved));
   ctx.ast.addIndex({
-    name: idxMeta.name ?? derivedIndexName(table.name, indexNameParts(resolved)),
+    name,
     table,
     entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
     include: idxMeta.include?.map((column) => resolveIncludeColumn(ctx, meta, column)),
     unique: idxMeta.unique ?? false,
     type: idxMeta.type,
-    where: idxMeta.where && ctx.compileDdl(idxMeta.where, meta.entity),
+    where: idxMeta.where && ctx.compileIndexPredicate(idxMeta.where, meta.entity, name),
     distance: idxMeta.distance,
     m: idxMeta.m,
     efConstruction: idxMeta.efConstruction,

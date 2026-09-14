@@ -37,10 +37,10 @@ export * from './drift/index.js';
 // Schema introspection
 export * from './introspection/index.js';
 // Main migrator
+export { migrationBuilderFor } from './migrationTarget.js';
 export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 // Schema generators
 export { createSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
-export { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
 
 // Storage implementations
 export { DatabaseMigrationStorage } from './storage/databaseStorage.js';

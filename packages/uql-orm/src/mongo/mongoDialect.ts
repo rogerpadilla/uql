@@ -200,7 +200,7 @@ export class MongoDialect extends AbstractDialect {
    * recursion). Relation keys need `$lookup` stages, so they are only accepted when `lookups` is
    * given - a plain `find`/`updateMany` filter has nowhere to put them.
    */
-  private renderFilter<E extends Document>(
+  protected renderFilter<E extends Document>(
     entity: Type<E>,
     where: QueryWhere<E> = {},
     lookups?: RelationLookups,

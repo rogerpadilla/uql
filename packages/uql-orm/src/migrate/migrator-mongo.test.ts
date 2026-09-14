@@ -1,12 +1,14 @@
 import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
+import { Entity, Field, Id, Index } from '../entity/index.js';
 import { MongodbQuerierPool } from '../mongo/mongodbQuerierPool.js';
 import { loadTsDefaultExport } from '../test/loadTsDefaultExport.js';
 import { provisioningTimeout } from '../test/spec.util.js';
 import type { MigrationDefinition, MongoQuerier } from '../type/index.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
-import { serializeMongoCommand } from './generator/mongoCommand.js';
-import { defineMigration, Migrator } from './migrator.js';
+import { runMongoCommand, serializeMongoCommand } from './generator/mongoCommand.js';
+import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
+import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 
 describe('Migrator on MongoDB (integration)', () => {
   let replSet: MongoMemoryReplSet;
@@ -79,6 +81,66 @@ describe('Migrator on MongoDB (integration)', () => {
 
       await migration.down(querier);
       expect(await querier.db.listCollections({ name: 'ticket' }).toArray()).toEqual([]);
+    });
+  });
+
+  it('runs a builder migration: a collection created, renamed and indexed, then dropped', async () => {
+    const migration = defineBuilderMigration<MongoQuerier>({
+      async up(m) {
+        await m.createTable('draft', (table) => table.index(['title'], 'draft_title_idx'));
+        await m.renameTable('draft', 'article');
+        await m.createIndex('article', ['slug'], { unique: true });
+      },
+      async down(m) {
+        await m.dropTable('article');
+      },
+    });
+
+    await pool.withQuerier(async (querier) => {
+      await migration.up(querier);
+      expect((await querier.db.collection('article').indexes()).map((it) => it.name)).toEqual([
+        '_id_',
+        'draft_title_idx',
+        'article__slug_idx',
+      ]);
+
+      await migration.down(querier);
+      expect(await querier.db.listCollections({ name: 'article' }).toArray()).toEqual([]);
+    });
+  });
+
+  it('creates the partial index an entity declares, unique only among the documents its filter covers', async () => {
+    const partialFilterExpression = { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] };
+    @Index((ticket) => [ticket.assignee], {
+      name: 'urgent_assignee_idx',
+      unique: true,
+      where: partialFilterExpression,
+    })
+    @Entity()
+    class UrgentTicket {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String }) assignee?: string;
+      @Field({ type: String }) status?: string;
+      @Field({ type: Number }) priority?: number;
+    }
+
+    await pool.withQuerier(async (querier) => {
+      for (const statement of new MongoSchemaGenerator().generateCreateTable(UrgentTicket)) {
+        await runMongoCommand(querier.db, statement);
+      }
+      const tickets = querier.db.collection('UrgentTicket');
+      expect(await tickets.indexes()).toContainEqual(
+        expect.objectContaining({ name: 'urgent_assignee_idx', unique: true, partialFilterExpression }),
+      );
+
+      await tickets.insertMany([
+        { assignee: 'ada', priority: 1, status: 'open' },
+        { assignee: 'ada', priority: 1, status: 'open' },
+        { assignee: 'ada', priority: 3, status: 'open' },
+      ]);
+      await expect(tickets.insertOne({ assignee: 'ada', priority: 2, status: 'held' })).rejects.toThrow(
+        /duplicate key/,
+      );
     });
   });
 });

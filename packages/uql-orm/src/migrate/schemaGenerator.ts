@@ -29,13 +29,13 @@ import type {
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
-  SqlDdlGenerator,
   Type,
 } from '../type/index.js';
 import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
-import type { FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
+import { splitSqlStatements } from './builder/splitSqlStatements.js';
+import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
 import { sizedType } from './ddl/tableDdl.js';
 import {
@@ -46,12 +46,13 @@ import {
   tableDefinitionToNode,
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
+import { assertIndexPredicate } from './indexPredicate.js';
 
 /**
  * Unified SQL schema generator.
  * Parameterized by dialect to handle Postgres, MySQL, MariaDB, and SQLite.
  */
-export class SqlSchemaGenerator implements SqlDdlGenerator {
+export class SqlSchemaGenerator implements SchemaGenerator {
   /** `CREATE INDEX` for this dialect: the migrator's, so a runtime import carries none of it. */
   protected readonly indexDdl: IndexDdl;
 
@@ -92,6 +93,11 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
 
   compileDdl(sql: EntityWhereMeta<object>, entity: Type<object>): string {
     return this.dialect.compileDdl(sql, entity);
+  }
+
+  compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
+    assertIndexPredicate(where, this.dialect.dialectName, indexName);
+    return this.dialect.compileDdl(where, entity);
   }
 
   /** Escape an identifier (table name, column name, etc.) */
@@ -766,15 +772,46 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
     return this.tableDdl.renameTable(oldName, newName);
   }
 
+  /** `raw` is split, being the one SQL no generator wrote. */
+  generateOperation(operation: AnyMigrationOperation): string[] {
+    switch (operation.type) {
+      case 'createTable':
+        return this.generateCreateTableFromDefinition(operation.table);
+      case 'dropTable':
+        return [
+          this.generateDropTable(operation.tableName, { ifExists: operation.ifExists, cascade: operation.cascade }),
+        ];
+      case 'renameTable':
+        return [this.generateRenameTableSql(operation.oldName, operation.newName)];
+      case 'addColumn':
+        return this.generateAddColumnSql(operation.tableName, operation.column);
+      case 'dropColumn':
+        return this.generateDropColumnSql(operation.tableName, operation.columnName);
+      case 'renameColumn':
+        return [this.generateRenameColumnSql(operation.tableName, operation.oldName, operation.newName)];
+      case 'alterColumn':
+        return this.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
+      case 'createIndex':
+        return [this.generateCreateIndexFromDefinition(operation.tableName, operation.index)];
+      case 'dropIndex':
+        return [this.generateDropIndex(operation.tableName, operation.indexName)];
+      case 'addForeignKey':
+        return [this.generateAddForeignKeySql(operation.tableName, operation.foreignKey)];
+      case 'dropForeignKey':
+        return [this.generateDropForeignKeySql(operation.tableName, operation.constraintName)];
+      case 'raw':
+        return splitSqlStatements(operation.sql);
+    }
+  }
+
   /**
    * `ADD COLUMN`, plus the constraint and index the column declares.
    *
    * `CREATE TABLE` lifts a column's `references` and `index` onto the table it is building; this had
    * no lift, so a hand-written `addColumn(...).references(...).index()` emitted the column alone and
-   * dropped both without a word. Several statements in one string is what `generateAlterColumnSql`
-   * already returns, and `execute` splits them.
+   * dropped both without a word.
    */
-  generateAddColumnSql(tableName: string, column: FullColumnDefinition): string {
+  generateAddColumnSql(tableName: string, column: FullColumnDefinition): string[] {
     this.assertColumnAddable(tableName, column);
     const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
     const statements = [this.tableDdl.addColumn(tableName, colSql)];
@@ -788,20 +825,20 @@ export class SqlSchemaGenerator implements SqlDdlGenerator {
       statements.push(this.generateCreateIndex(tableName, index));
     }
     statements.push(...this.generateColumnCommentStatement(tableName, column));
-    return statements.join('\n');
+    return statements;
   }
 
-  generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string {
+  generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string[] {
     const node = fullColumnDefinitionToNode(column, tableName);
     return this.generateAlterColumnStatements(
       tableName,
       { ...this.columnNodeToSchema(node), name: columnName },
       this.generateColumnFromNode(node),
-    ).join('\n');
+    );
   }
 
-  generateDropColumnSql(tableName: string, columnName: string): string {
-    return this.tableDdl.dropColumn(tableName, columnName).join('\n');
+  generateDropColumnSql(tableName: string, columnName: string): string[] {
+    return this.tableDdl.dropColumn(tableName, columnName);
   }
 
   generateRenameColumnSql(tableName: string, oldName: string, newName: string): string {
@@ -937,7 +974,10 @@ function foreignKeyOf(relation: RelationshipNode): ForeignKeySchema {
  * table of a project using a naming strategy as both missing and unexpected.
  */
 export function buildEntityAST(
-  generator: Pick<SchemaGenerator, 'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName' | 'compileDdl'>,
+  generator: Pick<
+    SchemaGenerator,
+    'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName' | 'compileDdl' | 'compileIndexPredicate'
+  >,
   entities: readonly Type<object>[],
   defaultForeignKeyAction?: ForeignKeyAction,
 ): SchemaAST {
@@ -948,14 +988,12 @@ export function buildEntityAST(
     resolveSchema: (meta) => generator.resolveSchema(meta),
     resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
     compileDdl: (sql, entity) => generator.compileDdl(sql, entity),
+    compileIndexPredicate: (where, entity, indexName) => generator.compileIndexPredicate(where, entity, indexName),
     defaultForeignKeyAction,
   });
 }
 
-/**
- * Synchronous factory for SQL schema generators only.
- * For MongoDB, use `createSchemaGeneratorAsync` from `./schemaGeneratorAsync.js` so the optional `mongodb` peer is not loaded at import time.
- */
+/** The SQL schema generator for `dialect`, `undefined` on MongoDB, whose generator needs its optional peer. */
 export function createSchemaGenerator(
   dialect: MigratorDialect,
   defaultForeignKeyAction?: ForeignKeyAction,

@@ -4,14 +4,7 @@ import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type {
-  MigrationStorage,
-  MigratorDialect,
-  MongoQuerier,
-  Querier,
-  QuerierPool,
-  SqlQuerier,
-} from '../type/index.js';
+import type { MigrationStorage, MigratorDialect, MongoQuerier, QuerierPool, SqlQuerier } from '../type/index.js';
 import { defineMigration, Migrator } from './migrator.js';
 
 vi.mock('node:fs/promises', () => ({
@@ -99,9 +92,7 @@ describe('Migrator (extra coverage)', () => {
       dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
     };
     const migrator = new Migrator(invalidPool);
-    await expect(migrator.generateFromEntities('test')).rejects.toThrow(
-      'Schema generator and introspector must be set',
-    );
+    await expect(migrator.generateFromEntities('test')).rejects.toThrow("No schema generator for dialect 'invalid'");
   });
 
   it('generateFromEntities should return empty if no changes', async () => {
@@ -127,7 +118,7 @@ describe('Migrator (extra coverage)', () => {
       dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
     };
     const migrator = new Migrator(invalidPool);
-    await expect(migrator.sync()).rejects.toThrow('Schema generator and introspector must be set');
+    await expect(migrator.sync()).rejects.toThrow("No schema generator for dialect 'invalid'");
   });
 
   it('sync should return if no statements and logging is enabled', async () => {
@@ -153,7 +144,7 @@ describe('Migrator (extra coverage)', () => {
     });
 
     expect(createCollection).toHaveBeenCalledWith('users');
-    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Executing MongoDB:'));
+    expect(logger).toHaveBeenCalledWith(expect.stringContaining('Executing:'));
     expect(release).toHaveBeenCalled();
   });
 
@@ -175,21 +166,6 @@ describe('Migrator (extra coverage)', () => {
     expect(await migrator.generateFromEntities('noop')).toBe('');
   });
 
-  it('executeMongoSyncStatements runs a command without logging it unless asked', async () => {
-    const logger = vi.fn();
-    const createCollection = vi.fn();
-    const mongoMigrator = new Migrator(createMockQuerierPool(new MongoDialect(), vi.fn()), {
-      storage: mockStorage,
-      logger,
-    });
-    const querier = { db: { createCollection } } as unknown as MongoQuerier;
-
-    await mongoMigrator.executeMongoSyncStatements(['{"action":"createCollection","name":"notes"}'], {}, querier);
-
-    expect(createCollection).toHaveBeenCalledWith('notes');
-    expect(logger).not.toHaveBeenCalled();
-  });
-
   it('loadMigration should return undefined on invalid migration', async () => {
     const logger = vi.fn();
     migrator.logger = logger;
@@ -204,12 +180,5 @@ describe('Migrator (extra coverage)', () => {
     expect(migrator.isMigration(null)).toBe(false);
     expect(migrator.isMigration({ up: () => {} })).toBe(false);
     expect(migrator.isMigration({ up: () => {}, down: () => {} })).toBe(true);
-  });
-
-  it('executeSqlSyncStatements should throw if not a SQL querier', async () => {
-    const mongoQuerier = { release: vi.fn() } as unknown as MongoQuerier;
-    await expect(migrator.executeSqlSyncStatements(['sql'], {}, mongoQuerier as unknown as Querier)).rejects.toThrow(
-      'Migrator requires a SQL-based querier for this dialect',
-    );
   });
 });

@@ -3,24 +3,15 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Drift, DriftReport } from '../schema/index.js';
-import type { ForeignKeyAction } from '../schema/types.js';
-import type { Config, MigratorDialect, MigratorOptions } from '../type/index.js';
+import type { Config, MigratorOptions } from '../type/index.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { entityTypesSource } from './codegen/entityTypes.js';
 import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
-import { buildEntityAST, createSchemaGenerator } from './schemaGenerator.js';
-import { createSchemaGeneratorAsync } from './schemaGeneratorAsync.js';
+import { buildEntityAST } from './schemaGenerator.js';
 import { DEFAULT_MIGRATIONS_TABLE } from './storage/databaseStorage.js';
-
-/** Sync helper for SQL dialects only; returns `undefined` for MongoDB - use {@link createSchemaGeneratorAsync}. */
-export function getSchemaGenerator(dialect: MigratorDialect, defaultForeignKeyAction?: ForeignKeyAction) {
-  return createSchemaGenerator(dialect, defaultForeignKeyAction);
-}
-
-export { createSchemaGeneratorAsync };
 
 export async function main(args = process.argv.slice(2)) {
   let customPath: string | undefined;
@@ -54,7 +45,6 @@ export async function main(args = process.argv.slice(2)) {
     };
 
     const migrator = new Migrator(config.pool, options);
-    await migrator.ensureSchemaGenerator();
 
     switch (command) {
       case 'up':
@@ -306,13 +296,13 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
   if (!config.entities || config.entities.length === 0) {
     console.error('No entities configured. Add entities to your uql config.');
     process.exit(1);
-  } else if (!migrator.schemaIntrospector || !migrator.schemaGenerator) {
+  } else if (!migrator.schemaIntrospector) {
     console.error('No introspector available. Check your pool configuration.');
     process.exit(1);
   } else {
     console.log('\nChecking for schema drift...');
 
-    const expectedAST = buildEntityAST(migrator.schemaGenerator, config.entities);
+    const expectedAST = buildEntityAST(await migrator.getSchemaGenerator(), config.entities);
 
     // Build actual schema from database
     const actualAST = await migrator.schemaIntrospector.introspect();

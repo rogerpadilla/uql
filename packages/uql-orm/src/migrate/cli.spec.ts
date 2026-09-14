@@ -3,10 +3,6 @@ import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
-import { MongoDialect } from '../mongo/mongoDialect.js';
-import { MySqlDialect } from '../mysql/mysqlDialect.js';
-import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
@@ -14,7 +10,7 @@ import type { Config } from '../type/index.js';
 import * as cliConfig from './cli-config.js';
 import * as cli from './cli.js';
 import type { Migrator } from './migrator.js';
-import { createSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
+import { createSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class TestEntity {
@@ -43,8 +39,7 @@ class DriftedEntity {
 
 const mockMigrator = {
   // A real generator, because `runDriftCheck` names the expected schema through it.
-  schemaGenerator: createSchemaGenerator(new SqliteDialect()),
-  ensureSchemaGenerator: vi.fn(),
+  getSchemaGenerator: vi.fn().mockResolvedValue(createSchemaGenerator(new SqliteDialect())),
   up: vi.fn().mockResolvedValue([]),
   down: vi.fn().mockResolvedValue([]),
   status: vi.fn().mockResolvedValue({ executed: [], pending: [] }),
@@ -223,18 +218,6 @@ describe('CLI', () => {
     expect(mockMigrator.sync).toHaveBeenCalledWith({ force: true, safe: true, drop: false, logging: true });
   });
 
-  it('getSchemaGenerator', () => {
-    expect(cli.getSchemaGenerator(new PostgresDialect())).toBeDefined();
-    expect(cli.getSchemaGenerator(new MySqlDialect())).toBeDefined();
-    expect(cli.getSchemaGenerator(new SqliteDialect())).toBeDefined();
-    expect(cli.getSchemaGenerator(new MongoDialect())).toBeUndefined();
-  });
-
-  it('createSchemaGeneratorAsync loads MongoDB generator', async () => {
-    expect(await cli.createSchemaGeneratorAsync(new MongoDialect())).toBeDefined();
-    expect(await cli.createSchemaGeneratorAsync(new SqliteDialect())).toBeInstanceOf(SqlSchemaGenerator);
-  });
-
   it('main should throw if pool is missing', async () => {
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: undefined as any });
     await cli.main(['up']);
@@ -272,10 +255,6 @@ describe('CLI', () => {
   it('main with no command shows help', async () => {
     await cli.main([]);
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-  });
-
-  it('getSchemaGenerator mariadb', () => {
-    expect(cli.getSchemaGenerator(new MariaDialect())).toBeDefined();
   });
 
   it('runSync with --unsafe should allow destructive changes', async () => {
@@ -413,12 +392,6 @@ describe('CLI', () => {
 
     await cli.main(['up']);
     expect(mockMigrator.up).toHaveBeenCalled();
-  });
-
-  /** MongoDB's generator loads lazily; every command may need it, so it is loaded before any runs. */
-  it('main loads the schema generator before running the command', async () => {
-    await cli.main(['status']);
-    expect(mockMigrator.ensureSchemaGenerator).toHaveBeenCalled();
   });
 
   it('main generate:from-db and its hyphenated alias pull entities from the database', async () => {

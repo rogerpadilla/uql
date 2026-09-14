@@ -50,14 +50,23 @@ export const EMPTY_MANUAL_MIGRATION_DOWN_INNER = `    // Add your rollback logic
     // await querier.run("DROP TABLE IF EXISTS \\"users\\";");
 `;
 
-/** How a migration on each querier is scaffolded empty, and how a generated statement is spelled in it. */
+/** How a migration on one querier is scaffolded empty, and how a generated statement is spelled in it. */
+export type MigrationSource = {
+  readonly querier: MigrationQuerierType;
+  readonly emptyUp: string;
+  readonly emptyDown: string;
+  emit(statements: string[]): string;
+};
+
 export const migrationSource = {
   SqlQuerier: {
+    querier: 'SqlQuerier',
     emptyUp: EMPTY_MANUAL_MIGRATION_UP_INNER,
     emptyDown: EMPTY_MANUAL_MIGRATION_DOWN_INNER,
     emit: emitSqlRunCalls,
   },
   MongoQuerier: {
+    querier: 'MongoQuerier',
     emptyUp: `    // Add your migration logic here, through the database handle.
     // await querier.db.collection('users').updateMany({}, { $set: { active: true } });
 `,
@@ -66,10 +75,7 @@ export const migrationSource = {
 `,
     emit: emitMongoCommandCalls,
   },
-} satisfies Record<
-  MigrationQuerierType,
-  { emptyUp: string; emptyDown: string; emit: (statements: string[]) => string }
->;
+} satisfies Record<MigrationQuerierType, MigrationSource>;
 
 /**
  * Full contents of a `export default { async up/down(querier) { ... } }` migration module.

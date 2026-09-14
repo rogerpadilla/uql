@@ -136,34 +136,9 @@ export interface TableDefinition {
 }
 
 /**
- * Type of migration operation.
- */
-export type MigrationOperationType =
-  | 'createTable'
-  | 'dropTable'
-  | 'renameTable'
-  | 'alterTable'
-  | 'addColumn'
-  | 'dropColumn'
-  | 'alterColumn'
-  | 'renameColumn'
-  | 'createIndex'
-  | 'dropIndex'
-  | 'addForeignKey'
-  | 'dropForeignKey'
-  | 'raw';
-
-/**
- * Base migration operation.
- */
-export interface MigrationOperation {
-  type: MigrationOperationType;
-}
-
-/**
  * Create table operation.
  */
-export interface CreateTableOperation extends MigrationOperation {
+export interface CreateTableOperation {
   type: 'createTable';
   table: TableDefinition;
   ifNotExists?: boolean;
@@ -172,7 +147,7 @@ export interface CreateTableOperation extends MigrationOperation {
 /**
  * Drop table operation.
  */
-export interface DropTableOperation extends MigrationOperation {
+export interface DropTableOperation {
   type: 'dropTable';
   tableName: string;
   ifExists?: boolean;
@@ -182,7 +157,7 @@ export interface DropTableOperation extends MigrationOperation {
 /**
  * Rename table operation.
  */
-export interface RenameTableOperation extends MigrationOperation {
+export interface RenameTableOperation {
   type: 'renameTable';
   oldName: string;
   newName: string;
@@ -191,7 +166,7 @@ export interface RenameTableOperation extends MigrationOperation {
 /**
  * Add column operation.
  */
-export interface AddColumnOperation extends MigrationOperation {
+export interface AddColumnOperation {
   type: 'addColumn';
   tableName: string;
   column: FullColumnDefinition;
@@ -200,7 +175,7 @@ export interface AddColumnOperation extends MigrationOperation {
 /**
  * Drop column operation.
  */
-export interface DropColumnOperation extends MigrationOperation {
+export interface DropColumnOperation {
   type: 'dropColumn';
   tableName: string;
   columnName: string;
@@ -209,7 +184,7 @@ export interface DropColumnOperation extends MigrationOperation {
 /**
  * Alter column operation.
  */
-export interface AlterColumnOperation extends MigrationOperation {
+export interface AlterColumnOperation {
   type: 'alterColumn';
   tableName: string;
   columnName: string;
@@ -219,7 +194,7 @@ export interface AlterColumnOperation extends MigrationOperation {
 /**
  * Rename column operation.
  */
-export interface RenameColumnOperation extends MigrationOperation {
+export interface RenameColumnOperation {
   type: 'renameColumn';
   tableName: string;
   oldName: string;
@@ -229,7 +204,7 @@ export interface RenameColumnOperation extends MigrationOperation {
 /**
  * Create index operation.
  */
-export interface CreateIndexOperation extends MigrationOperation {
+export interface CreateIndexOperation {
   type: 'createIndex';
   tableName: string;
   index: IndexDefinition;
@@ -239,7 +214,7 @@ export interface CreateIndexOperation extends MigrationOperation {
 /**
  * Drop index operation.
  */
-export interface DropIndexOperation extends MigrationOperation {
+export interface DropIndexOperation {
   type: 'dropIndex';
   tableName: string;
   indexName: string;
@@ -249,7 +224,7 @@ export interface DropIndexOperation extends MigrationOperation {
 /**
  * Add foreign key operation.
  */
-export interface AddForeignKeyOperation extends MigrationOperation {
+export interface AddForeignKeyOperation {
   type: 'addForeignKey';
   tableName: string;
   foreignKey: ForeignKeySchema;
@@ -258,7 +233,7 @@ export interface AddForeignKeyOperation extends MigrationOperation {
 /**
  * Drop foreign key operation.
  */
-export interface DropForeignKeyOperation extends MigrationOperation {
+export interface DropForeignKeyOperation {
   type: 'dropForeignKey';
   tableName: string;
   constraintName: string;
@@ -267,7 +242,7 @@ export interface DropForeignKeyOperation extends MigrationOperation {
 /**
  * Raw SQL operation (escape hatch).
  */
-export interface RawSqlOperation extends MigrationOperation {
+export interface RawSqlOperation {
   type: 'raw';
   sql: string;
 }
@@ -465,8 +440,7 @@ export interface IAlterTableBuilder {
  * Interface for the main migration builder.
  */
 export interface IMigrationBuilder {
-  // === Table Operations ===
-  /** Create a new table */
+  /** Create a table as `callback` declares it; on MongoDB a collection, whose callback declares only indexes. */
   createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void>;
   /** Drop a table */
   dropTable(name: string, options?: { ifExists?: boolean; cascade?: boolean }): Promise<void>;
@@ -474,8 +448,6 @@ export interface IMigrationBuilder {
   renameTable(oldName: string, newName: string): Promise<void>;
   /** Alter an existing table */
   alterTable(name: string, callback: (table: IAlterTableBuilder) => void): Promise<void>;
-
-  // === Column Operations ===
   /** Add a column, declared exactly as in `createTable`: `addColumn('t', (c) => c.timestamp('at'))`. */
   addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
   /** Drop a column from a table */
@@ -484,14 +456,10 @@ export interface IMigrationBuilder {
   alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
   /** Rename a column */
   renameColumn(tableName: string, oldName: string, newName: string): Promise<void>;
-
-  // === Index Operations ===
   /** Create an index; takes the same options as `@Index`, so a generated migration can restate them. */
   createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void>;
   /** Drop an index */
   dropIndex(tableName: string, indexName: string): Promise<void>;
-
-  // === Foreign Key Operations ===
   /** Add a foreign key */
   addForeignKey(
     tableName: string,
@@ -501,8 +469,6 @@ export interface IMigrationBuilder {
   ): Promise<void>;
   /** Drop a foreign key */
   dropForeignKey(tableName: string, constraintName: string): Promise<void>;
-
-  // === Raw SQL (escape hatch) ===
-  /** Execute raw SQL */
+  /** Execute raw SQL, the escape hatch for anything the builder does not model. */
   raw(sql: string): Promise<void>;
 }

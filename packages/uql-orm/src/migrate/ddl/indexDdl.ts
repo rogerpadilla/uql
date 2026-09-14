@@ -26,6 +26,33 @@ const INDEX_FEATURE_PROBES: Record<IndexFeature, (index: IndexSchema) => boolean
   include: (index) => Boolean(index.include?.length),
 };
 
+/** Refuses an index of a type `types` lacks, `hints` naming what to declare instead. */
+export function assertIndexType(
+  index: IndexSchema,
+  types: ReadonlySet<IndexType>,
+  dialectName: string,
+  hints: ReadonlyMap<IndexType, string> = new Map(),
+): void {
+  if (index.type && !types.has(index.type)) {
+    throw new TypeError(
+      `${dialectName} has no ${index.type} index (index "${index.name}")` + (hints.get(index.type) ?? ''),
+    );
+  }
+}
+
+/** Refuses an index asking for a feature `features` lacks. */
+export function assertIndexFeatures(
+  index: IndexSchema,
+  features: ReadonlySet<IndexFeature>,
+  dialectName: string,
+): void {
+  for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
+    if (INDEX_FEATURE_PROBES[feature](index) && !features.has(feature)) {
+      throw new TypeError(`${dialectName} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`);
+    }
+  }
+}
+
 /**
  * `CREATE INDEX` for SQL dialects: the statement and the fragments each engine spells differently.
  * The migrator's rather than the dialect's, since {@link SqlSchemaGenerator} is the only thing that
@@ -37,8 +64,8 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
   constructor(protected readonly dialect: D) {}
 
   getCreateIndexStatement(tableName: string, index: IndexSchema, opts: { ifNotExists?: boolean } = {}): string {
-    this.assertIndexType(index);
-    this.assertIndexFeatures(index);
+    assertIndexType(index, this.indexTypes, this.dialect.dialectName, this.indexTypeHints);
+    assertIndexFeatures(index, this.indexFeatures, this.dialect.dialectName);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
     const columns = index.entries.map((entry) => this.indexColumn(entry, index)).join(', ');
@@ -69,25 +96,6 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
 
   /** What to declare instead of a type this dialect lacks, appended to its refusal. */
   protected readonly indexTypeHints: ReadonlyMap<IndexType, string> = new Map();
-
-  private assertIndexType(index: IndexSchema): void {
-    if (index.type && !this.indexTypes.has(index.type)) {
-      throw new TypeError(
-        `${this.dialect.dialectName} has no ${index.type} index (index "${index.name}")` +
-          (this.indexTypeHints.get(index.type) ?? ''),
-      );
-    }
-  }
-
-  private assertIndexFeatures(index: IndexSchema): void {
-    for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
-      if (INDEX_FEATURE_PROBES[feature](index) && !this.indexFeatures.has(feature)) {
-        throw new TypeError(
-          `${this.dialect.dialectName} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`,
-        );
-      }
-    }
-  }
 
   /**
    * Index types this dialect spells as a keyword of their own (`FULLTEXT INDEX`, `VECTOR INDEX`)

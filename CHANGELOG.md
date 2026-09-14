@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.64.0] - 2026-09-14
+
+- **A partial index throws at generation where its engine cannot hold the predicate**: SQL Server refuses `$or`, `$not`, `$nin`, `$between`, string matching and JSON paths, naming the operator.
+- **MongoDB creates the indexes `@Index` declares**, which it skipped, a partial one's `where` as its `partialFilterExpression`; `null`, `$ne` and the SQL-only index options throw.
+- **The migration builder runs on MongoDB**: `defineBuilderMigration<MongoQuerier>` creates, drops and renames collections and their indexes, where a column, a foreign key or `raw` throws.
+- **Breaking: `Dialect.escape` writes a `Date` in UTC**, so DDL comparing dates is the same on every machine that generates it.
+
 ## [0.63.0] - 2026-09-13
 
 - **Breaking: an index reads its entity's refs**, so an expression is `raw` in its list, ``@Index((user) => [raw`lower(${user.email})`])``, and the migration builder takes `raw` too.

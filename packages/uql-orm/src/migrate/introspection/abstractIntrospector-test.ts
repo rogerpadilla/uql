@@ -11,7 +11,7 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { expr } from '../builder/expressions.js';
-import { MigrationBuilder } from '../builder/migrationBuilder.js';
+import { migrationBuilderFor } from '../migrationTarget.js';
 
 /** Test table names shared across every dialect's introspection suite. */
 export const INTROSPECT_TABLES = {
@@ -59,7 +59,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
   /** Create all test tables using MigrationBuilder. */
   async createTables(querier: SqlQuerier): Promise<void> {
-    const builder = new MigrationBuilder(querier);
+    const builder = await migrationBuilderFor(querier);
 
     // Table A: Base table with various column types
     await builder.createTable(INTROSPECT_TABLES.A, (t) => {
@@ -142,7 +142,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     // Hook for dialect-specific pre-drop (e.g., MySQL disable FK checks)
     await this.beforeDropTables(querier);
 
-    const builder = new MigrationBuilder(querier);
+    const builder = await migrationBuilderFor(querier);
 
     // Drop in reverse dependency order
     await builder.dropTable(INTROSPECT_TABLES.NO_FK, { ifExists: true, cascade: true });
@@ -313,7 +313,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldAddColumnWithTheDeclaredType() {
     const querier = await this.pool.getQuerier();
     try {
-      const builder = new MigrationBuilder(querier);
+      const builder = await migrationBuilderFor(querier);
       await builder.addColumn(INTROSPECT_TABLES.A, (column) => column.timestamp('added_at', { nullable: true }));
 
       const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
@@ -335,7 +335,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const querier = await this.pool.getQuerier();
     const table = 'introspect_defaults';
     try {
-      const builder = new MigrationBuilder(querier);
+      const builder = await migrationBuilderFor(querier);
       await builder.createTable(table, (t) => {
         t.id();
         t.text('note').defaultValue('none');

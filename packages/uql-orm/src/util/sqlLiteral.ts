@@ -41,8 +41,6 @@ const MYSQL_ESCAPES: Record<string, string> = {
 const mysqlStringLiteral: StringLiteralEscaper = (val) =>
   `'${val.replace(MYSQL_SPECIALS, (char) => MYSQL_ESCAPES[char])}'`;
 
-const pad = (value: number, len: number): string => String(value).padStart(len, '0');
-
 const HEX_BYTES = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, '0'));
 
 /** Native hex encoder where available (~130x faster on 4 KB); lookup table for browsers. */
@@ -60,11 +58,11 @@ function bytesToHexLiteral(bytes: Uint8Array): string {
  * measured 1.1-1.5x slower. Rejects unsupported types rather than stringifying them into SQL.
  */
 function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => string {
-  /** `YYYY-MM-DD HH:mm:ss.mmm` in local time, wrapped as a quoted literal. */
-  const dateLiteral = (date: Date): string =>
-    escapeString(
-      `${pad(date.getFullYear(), 4)}-${pad(date.getMonth() + 1, 2)}-${pad(date.getDate(), 2)} ${pad(date.getHours(), 2)}:${pad(date.getMinutes(), 2)}:${pad(date.getSeconds(), 2)}.${pad(date.getMilliseconds(), 3)}`,
-    );
+  /**
+   * `YYYY-MM-DD HH:mm:ss.SSS` in UTC, so the SQL is the same whichever machine wrote it. Not `toISOString`
+   * as it is, whose `T` and `Z` MySQL rejects outright ("Invalid default value").
+   */
+  const dateLiteral = (date: Date): string => escapeString(date.toISOString().replace('T', ' ').replace('Z', ''));
 
   const sqlList = (arr: unknown[]): string => {
     let sql = '';

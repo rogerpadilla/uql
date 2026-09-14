@@ -1,5 +1,8 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import type { MongoQuerier } from '../../type/index.js';
+import { migrationBuilderFor } from '../migrationTarget.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 import { MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
 import type {
   AddColumnOperation,
@@ -350,10 +353,13 @@ describe('MigrationBuilder', () => {
     dialect: new PostgresDialect(),
   });
 
+  const builderOn = (querier: ReturnType<typeof createMockQuerier>) =>
+    new MigrationBuilder(new SqlSchemaGenerator(querier.dialect), (sql) => querier.run(sql));
+
   describe('execution', () => {
     it('should generate SQL and run it', async () => {
       const mockQuerier = createMockQuerier();
-      const builder = new MigrationBuilder(mockQuerier as any);
+      const builder = builderOn(mockQuerier);
 
       await builder.createTable('users', (table) => {
         table.id();
@@ -370,7 +376,7 @@ describe('MigrationBuilder', () => {
     /** Every nested change has run by the time `alterTable` resolves, in the order it was declared. */
     it('should record and run each nested column change', async () => {
       const mockQuerier = createMockQuerier();
-      const builder = new MigrationBuilder(mockQuerier as any);
+      const builder = builderOn(mockQuerier);
 
       await builder.alterTable('users', (table) => {
         table.addColumn((c) => c.string('nickname', { nullable: true }));
@@ -380,14 +386,48 @@ describe('MigrationBuilder', () => {
       expect(builder.getOperations().map((op) => op.type)).toEqual(['addColumn', 'dropColumn']);
       expect(mockQuerier.run).toHaveBeenCalledTimes(2);
       expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
-        'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255)',
-        'ALTER TABLE "users" DROP COLUMN "legacy"',
+        'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255);',
+        'ALTER TABLE "users" DROP COLUMN "legacy";',
       ]);
     });
+  });
 
-    it('should reject a dialect with no schema generator', () => {
-      expect(() => new MigrationBuilder({ dialect: { dialectName: 'mongodb' } } as any)).toThrow(
-        'Could not find a schema generator for dialect: mongodb',
+  describe('on MongoDB', () => {
+    it('should run a collection and its indexes as driver calls, and refuse a column', async () => {
+      const calls: unknown[][] = [];
+      const record = (...call: unknown[]) => {
+        calls.push(call);
+        return Promise.resolve();
+      };
+      const querier = {
+        db: {
+          createCollection: (name: string) => record('createCollection', name),
+          renameCollection: (from: string, to: string) => record('renameCollection', from, to),
+          collection: (name: string) => ({
+            drop: () => record('drop', name),
+            createIndex: (key: unknown, options: unknown) => record('createIndex', name, key, options),
+            dropIndex: (index: string) => record('dropIndex', name, index),
+          }),
+        },
+      } as unknown as MongoQuerier;
+      const builder = await migrationBuilderFor(querier);
+
+      await builder.createTable('users', (table) => table.index(['email'], 'users_email_idx'));
+      await builder.createIndex('users', ['name'], { unique: true });
+      await builder.renameTable('users', 'members');
+      await builder.dropIndex('members', 'users__name_idx');
+      await builder.dropTable('members');
+
+      expect(calls).toEqual([
+        ['createCollection', 'users'],
+        ['createIndex', 'users', { email: 1 }, { unique: false, name: 'users_email_idx' }],
+        ['createIndex', 'users', { name: 1 }, { unique: true, name: 'users__name_idx' }],
+        ['renameCollection', 'users', 'members'],
+        ['dropIndex', 'members', 'users__name_idx'],
+        ['drop', 'members'],
+      ]);
+      await expect(builder.addColumn('members', (c) => c.string('nickname'))).rejects.toThrow(
+        'mongodb does not support addColumn in a migration',
       );
     });
   });
@@ -395,7 +435,7 @@ describe('MigrationBuilder', () => {
   describe('raw execution', () => {
     it('should run raw SQL', async () => {
       const mockQuerier = createMockQuerier();
-      const builder = new MigrationBuilder(mockQuerier as any);
+      const builder = builderOn(mockQuerier);
 
       await builder.raw('SELECT 1');
 
@@ -406,7 +446,7 @@ describe('MigrationBuilder', () => {
   describe('all operations with execution', () => {
     it('should generate SQL for all operations', async () => {
       const mockQuerier = createMockQuerier();
-      const builder = new MigrationBuilder(mockQuerier as any);
+      const builder = builderOn(mockQuerier);
 
       await builder.createTable('t', (t) => t.id());
       await builder.dropTable('t');

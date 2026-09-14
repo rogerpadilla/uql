@@ -22,8 +22,8 @@ describe('escapeAnsiSqlLiteral', () => {
     expect(escapeAnsiSqlLiteral(42n)).toBe('42');
   });
 
-  it('dates (local timestamp literal)', () => {
-    const d = new Date(2024, 0, 15, 12, 30, 45, 123);
+  it('dates (UTC timestamp literal)', () => {
+    const d = new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123));
     expect(escapeAnsiSqlLiteral(d)).toBe("'2024-01-15 12:30:45.123'");
   });
 
@@ -96,7 +96,7 @@ describe('escapeMysqlSqlLiteral', () => {
   });
 
   it('dates, arrays and byte buffers match the ANSI shapes', () => {
-    expect(escapeMysqlSqlLiteral(new Date(2024, 0, 15, 12, 30, 45, 123))).toBe("'2024-01-15 12:30:45.123'");
+    expect(escapeMysqlSqlLiteral(new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123)))).toBe("'2024-01-15 12:30:45.123'");
     expect(escapeMysqlSqlLiteral(new Date('invalid'))).toBe('NULL');
     expect(escapeMysqlSqlLiteral([1, "o'reilly"])).toBe(String.raw`1, 'o\'reilly'`);
     expect(

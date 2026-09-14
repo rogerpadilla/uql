@@ -1,8 +1,8 @@
 import type { VectorCast } from '../dialect/vectorCast.js';
-import type { FullColumnDefinition, IndexDefinition, TableDefinition } from '../migrate/builder/types.js';
+import type { AnyMigrationOperation } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexNode, IndexType, TableNode } from '../schema/types.js';
+import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
   EntityWhereMeta,
@@ -177,7 +177,7 @@ export interface IndexSchema extends VectorIndexOptions {
   readonly unique: boolean;
   /** Index type (btree, hnsw, ivfflat, etc.) */
   readonly type?: IndexType;
-  /** Partial index condition (WHERE clause) */
+  /** Partial index predicate as its engine writes it: SQL, or on MongoDB the JSON of its filter document. */
   readonly where?: string;
   /** Non-key columns stored in the index (Postgres-wire `INCLUDE`). */
   readonly include?: readonly string[];
@@ -321,15 +321,22 @@ export interface SchemaGenerator {
   generateDropIndex(tableName: string, indexName: string): string;
 
   /**
-   * Get the SQL type for a field based on its options
+   * The statements one migration builder operation runs as, one string each. An operation the engine
+   * has no form for throws: MongoDB has no columns, constraints or SQL.
    */
-  getSqlType(fieldOptions: FieldOptions): string;
+  generateOperation(operation: AnyMigrationOperation): string[];
 
   /**
    * The text of SQL an entity declares - a check, a stored computed column, an index expression or
    * predicate - rendered for this engine, which is what building an entity's schema needs from it.
    */
   compileDdl(sql: EntityWhereMeta<object>, entity: Type<object>): string;
+
+  /**
+   * A partial index's `$where` as this engine writes it into {@link IndexSchema.where}, refused where its
+   * index takes less of a predicate than a query does: SQL Server's filter has no `OR`.
+   */
+  compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string;
 
   /**
    * Compare an entity with a database table node and return the differences.
@@ -369,40 +376,6 @@ export interface SchemaGenerator {
    * Resolve column name using field options and naming strategy
    */
   resolveColumnName(key: string, field: FieldOptions): string;
-
-  // === SchemaAST / TableNode Support ===
-  /** DDL from a `TableNode`, one string per `querier.run`. */
-  generateCreateTableFromNode(table: TableNode, options?: { ifNotExists?: boolean }): string[];
-  /** Generate CREATE INDEX statement from an IndexNode */
-  generateCreateIndexFromNode(index: IndexNode, options?: { ifNotExists?: boolean }): string;
-
-  // === Migration Builder Support ===
-  /** DDL from a `TableDefinition`, one string per `querier.run`. */
-  generateCreateTableFromDefinition(table: TableDefinition, options?: { ifNotExists?: boolean }): string[];
-  /** Generate RENAME TABLE statement */
-  generateRenameTableSql(oldName: string, newName: string): string;
-}
-
-/**
- * The column and constraint DDL a migration builder emits, which only a SQL engine has. Split from
- * {@link SchemaGenerator} because MongoDB used to satisfy these six by returning `''`: a document store
- * has no `ADD COLUMN`, and an empty statement silently did nothing rather than saying so.
- */
-export interface SqlDdlGenerator extends SchemaGenerator {
-  /** Generate ADD COLUMN statement */
-  generateAddColumnSql(tableName: string, column: FullColumnDefinition): string;
-  /** Generate ALTER COLUMN statement */
-  generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string;
-  /** Generate DROP COLUMN statement */
-  generateDropColumnSql(tableName: string, columnName: string): string;
-  /** Generate RENAME COLUMN statement */
-  generateRenameColumnSql(tableName: string, oldName: string, newName: string): string;
-  /** Generate ADD FOREIGN KEY statement */
-  generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string;
-  /** Generate DROP FOREIGN KEY statement */
-  generateDropForeignKeySql(tableName: string, constraintName: string): string;
-  /** CREATE INDEX from a builder's {@link IndexDefinition}, its SQL rendered for this engine. */
-  generateCreateIndexFromDefinition(tableName: string, index: IndexDefinition): string;
 }
 
 /**

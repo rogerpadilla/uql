@@ -1,19 +1,8 @@
-/**
- * Migration Builder
- *
- * Provides type-safe migration operations with two modes:
- * - OperationRecorder: Record operations only (for code generation)
- * - MigrationBuilder: Execute DDL operations (for integration tests/runtime)
- */
-
 import type { ForeignKeyAction } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
-import type { SqlDdlGenerator } from '../../type/migration.js';
-import type { SqlQuerier } from '../../type/querier.js';
+import type { SchemaGenerator } from '../../type/migration.js';
 import { indexNameParts, normalizeIndexColumn } from '../../util/index.js';
 import { derivedIndexName } from '../../util/sql.util.js';
-import { createSchemaGenerator } from '../schemaGenerator.js';
-import { splitSqlStatements } from './splitSqlStatements.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
@@ -303,90 +292,21 @@ export class OperationRecorder implements IMigrationBuilder {
 }
 
 /**
- * Executes DDL operations via a SQL querier.
- * Use for integration tests and runtime schema management.
- *
- * @example
- * ```typescript
- * const builder = new MigrationBuilder(querier);
- *
- * await builder.createTable('users', (t) => {
- *   t.id();
- *   t.string('name');
- *   t.timestamps();
- * });
- * ```
+ * Records each operation, then runs the statements `generator` writes for it through `run`. Build one
+ * for a querier with `migrationBuilderFor`.
  */
 export class MigrationBuilder extends OperationRecorder {
-  private readonly sqlGenerator: SqlDdlGenerator;
-
-  constructor(private readonly querier: SqlQuerier) {
+  constructor(
+    private readonly generator: SchemaGenerator,
+    private readonly run: (statement: string) => Promise<unknown>,
+  ) {
     super();
-    const generator = createSchemaGenerator(querier.dialect);
-    if (!generator) {
-      throw new TypeError(`Could not find a schema generator for dialect: ${querier.dialect.dialectName}`);
-    }
-    this.sqlGenerator = generator;
   }
 
-  /** The recorder's sink, plus the statements the operation turns into. */
   protected override async record(operation: AnyMigrationOperation): Promise<void> {
     await super.record(operation);
-    await this.execute(operation);
-  }
-
-  private getCreateTableStatements(operation: Extract<AnyMigrationOperation, { type: 'createTable' }>): string[] {
-    return this.sqlGenerator.generateCreateTableFromDefinition(operation.table);
-  }
-
-  private async execute(operation: AnyMigrationOperation): Promise<void> {
-    if (operation.type === 'createTable') {
-      for (const statement of this.getCreateTableStatements(operation)) {
-        await this.querier.run(statement);
-      }
-      return;
-    }
-
-    const sql = this.operationToSql(operation);
-    if (sql) {
-      for (const statement of splitSqlStatements(sql)) {
-        await this.querier.run(statement);
-      }
-    }
-  }
-
-  private operationToSql(operation: AnyMigrationOperation): string | undefined {
-    switch (operation.type) {
-      case 'createTable':
-        // One line per statement in preview; execute() runs each separately (#87).
-        return this.getCreateTableStatements(operation).join('\n');
-      case 'dropTable':
-        return this.sqlGenerator.generateDropTable(operation.tableName, {
-          ifExists: operation.ifExists,
-          cascade: operation.cascade,
-        });
-      case 'renameTable':
-        return this.sqlGenerator.generateRenameTableSql(operation.oldName, operation.newName);
-      case 'addColumn':
-        return this.sqlGenerator.generateAddColumnSql(operation.tableName, operation.column);
-      case 'dropColumn':
-        return this.sqlGenerator.generateDropColumnSql(operation.tableName, operation.columnName);
-      case 'renameColumn':
-        return this.sqlGenerator.generateRenameColumnSql(operation.tableName, operation.oldName, operation.newName);
-      case 'alterColumn':
-        return this.sqlGenerator.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
-      case 'createIndex':
-        return this.sqlGenerator.generateCreateIndexFromDefinition(operation.tableName, operation.index);
-      case 'dropIndex':
-        return this.sqlGenerator.generateDropIndex(operation.tableName, operation.indexName);
-      case 'addForeignKey':
-        return this.sqlGenerator.generateAddForeignKeySql(operation.tableName, operation.foreignKey);
-      case 'dropForeignKey':
-        return this.sqlGenerator.generateDropForeignKeySql(operation.tableName, operation.constraintName);
-      case 'raw':
-        return operation.sql;
-      default:
-        return undefined;
+    for (const statement of this.generator.generateOperation(operation)) {
+      await this.run(statement);
     }
   }
 }

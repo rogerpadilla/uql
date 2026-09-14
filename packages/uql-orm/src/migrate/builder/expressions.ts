@@ -132,22 +132,7 @@ function defaultLiteral(value: unknown, dialect: AbstractSqlDialect): string {
   if (typeof value === 'boolean') {
     return dialect.booleanLiteral === 'native' ? (value ? 'TRUE' : 'FALSE') : value ? '1' : '0';
   }
-  if (value instanceof Date) {
-    return dialect.escape(ddlTimestamp(value));
-  }
-  if (typeof value === 'object') {
-    return dialect.escape(JSON.stringify(value));
-  }
-  return dialect.escape(value);
-}
-
-/**
- * `YYYY-MM-DD HH:mm:ss.SSS` in UTC. Not `toISOString`, whose `T` and `Z` MySQL rejects outright
- * ("Invalid default value"), and not `escape`'s local-time form, which would make the DDL depend on
- * the machine that generated it.
- */
-function ddlTimestamp(date: Date): string {
-  return date.toISOString().replace('T', ' ').replace('Z', '');
+  return dialect.escape(typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value);
 }
 
 function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect): string {

@@ -13,7 +13,6 @@ import type {
   MigrationStorage,
   MigratorDialect,
   MigratorOptions,
-  MongoQuerier,
   Querier,
   QuerierPool,
   SchemaDiff,
@@ -23,22 +22,11 @@ import type {
   SyncOptions,
   Type,
 } from '../type/index.js';
-import { isKnownMigratorDialect, isMongoQuerier, isSqlQuerier } from '../type/index.js';
 import { LoggerWrapper } from '../util/index.js';
-import { withMongoQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
-import { MigrationBuilder } from './builder/migrationBuilder.js';
 import type { IMigrationBuilder } from './builder/types.js';
-import {
-  buildMigrationModule,
-  type MigrationModuleOptions,
-  type MigrationQuerierType,
-  migrationSource,
-} from './codegen/migrationFile.js';
-import { runMongoCommand } from './generator/mongoCommand.js';
+import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
-import { createSchemaGenerator } from './schemaGenerator.js';
-import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
-import { MongoMigrationStorage } from './storage/mongoStorage.js';
+import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
 
 /**
  * Main class for managing database migrations
@@ -60,61 +48,39 @@ export class Migrator {
     return this._entities ?? getEntities();
   }
   public readonly dialectName: DialectName;
+  /** The generator given, or this dialect's once {@link getSchemaGenerator} has loaded it. */
   public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector?: SchemaIntrospector;
-  private readonly _defaultForeignKeyAction?: ForeignKeyAction;
-  private _mongoSchemaLoadPromise?: Promise<void>;
+  private readonly defaultForeignKeyAction?: ForeignKeyAction;
+  private readonly target: MigrationTarget;
 
   constructor(
     private readonly pool: QuerierPool<Querier, MigratorDialect>,
     options: MigratorOptions = {},
   ) {
     this.dialectName = pool.dialect.dialectName;
-    this._defaultForeignKeyAction = options.defaultForeignKeyAction;
-    this.storage =
-      options.storage ??
-      (this.dialectName === 'mongodb'
-        ? new MongoMigrationStorage(pool, { tableName: options.tableName })
-        : new DatabaseMigrationStorage(pool, { tableName: options.tableName }));
+    this.target = migrationTargetFor(pool.dialect);
+    this.defaultForeignKeyAction = options.defaultForeignKeyAction;
+    this.storage = options.storage ?? this.target.storage(pool, options.tableName);
     this.migrationsPath = options.migrationsPath ?? './migrations';
     this._logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
     this.schemaIntrospector = this.createIntrospector();
-    this.schemaGenerator =
-      options.schemaGenerator ?? (this.dialectName === 'mongodb' ? undefined : this.createGenerator());
+    this.schemaGenerator = options.schemaGenerator;
   }
 
-  /**
-   * Loads MongoDB's schema generator on first use, so the optional `mongodb` peer loads only then. SQL
-   * generators are set in the constructor (or via {@link setSchemaGenerator}).
-   */
-  async ensureSchemaGenerator(): Promise<void> {
-    if (this.schemaGenerator || this.dialectName !== 'mongodb') {
-      return;
+  /** The schema generator, loaded on first use: MongoDB's needs its optional peer. */
+  async getSchemaGenerator(): Promise<SchemaGenerator> {
+    this.schemaGenerator ??= await this.target.generator(this.pool.dialect, this.defaultForeignKeyAction);
+    if (!this.schemaGenerator) {
+      throw new TypeError(`No schema generator for dialect '${this.dialectName}'`);
     }
-    this._mongoSchemaLoadPromise ??= import('./generator/mongoSchemaGenerator.js').then(({ MongoSchemaGenerator }) => {
-      this.schemaGenerator = new MongoSchemaGenerator(this.pool.dialect.namingStrategy, this._defaultForeignKeyAction);
-    });
-    await this._mongoSchemaLoadPromise;
-  }
-
-  /**
-   * Set the schema generator for DDL operations
-   */
-  setSchemaGenerator(generator: SchemaGenerator): void {
-    this.schemaGenerator = generator;
+    return this.schemaGenerator;
   }
 
   /** `schema` reads one namespace instead of the connection's own; see {@link BaseSqlIntrospector.schema}. */
   protected createIntrospector(schema?: string): SchemaIntrospector | undefined {
     return introspectorFor(this.dialectName, this.pool, schema);
-  }
-
-  protected createGenerator(): SchemaGenerator | undefined {
-    if (!isKnownMigratorDialect(this.dialectName)) {
-      return undefined;
-    }
-    return createSchemaGenerator(this.pool.dialect, this._defaultForeignKeyAction);
   }
 
   /**
@@ -214,11 +180,11 @@ export class Migrator {
   public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
 
-    return this.withMigrationQuerier(async (querier, inTransaction) => {
+    return this.target.withSession(this.pool, async ({ querier, transaction }) => {
       try {
         this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
-        await inTransaction(async () => {
+        await transaction(async () => {
           if (direction === 'up') {
             await migration.up(querier);
             await this.storage.logWithQuerier(querier, migration.name);
@@ -255,30 +221,10 @@ export class Migrator {
   }
 
   /**
-   * A migration querier, and how to run work in one transaction on it. MongoDB gets none: it creates
-   * collections and indexes outside any transaction. SQL asserts its querier before opening one, so a
-   * wrong querier reports which one the dialect needs rather than a missing `transaction`.
-   */
-  private withMigrationQuerier<T>(
-    task: (querier: Querier, inTransaction: (work: () => Promise<void>) => Promise<void>) => Promise<T>,
-  ): Promise<T> {
-    return this.dialectName === 'mongodb'
-      ? withMongoQuerierForMigrations(this.pool, 'Migrator', (querier) => task(querier, (work) => work()))
-      : withSqlQuerierForMigrations(this.pool, 'Migrator', (querier) =>
-          task(querier, (work) => querier.transaction(work)),
-        );
-  }
-
-  /** What this dialect's migration files are written against. */
-  private get migrationQuerier(): MigrationQuerierType {
-    return this.dialectName === 'mongodb' ? 'MongoQuerier' : 'SqlQuerier';
-  }
-
-  /**
    * Generate a new migration file
    */
   async generate(name: string): Promise<string> {
-    const { emptyUp, emptyDown } = migrationSource[this.migrationQuerier];
+    const { emptyUp, emptyDown } = this.target.source;
     const filePath = await this.writeMigration(name, { upInner: emptyUp, downInner: emptyDown });
     this.logger.logInfo(`Created migration: ${filePath}`);
     return filePath;
@@ -293,7 +239,7 @@ export class Migrator {
     const content = buildMigrationModule({
       migrationName: name,
       createdAt: new Date(),
-      querier: this.migrationQuerier,
+      querier: this.target.source.querier,
       ...body,
     });
     await mkdir(this.migrationsPath, { recursive: true });
@@ -305,34 +251,27 @@ export class Migrator {
    * Generate a migration based on entity schema differences
    */
   async generateFromEntities(name: string): Promise<string> {
-    const creating: string[] = [];
-    const altering: string[] = [];
-    const downStatements: string[] = [];
+    const generator = await this.getSchemaGenerator();
+    const { created, altered } = await this.pendingChanges();
+    const up = [
+      ...this.createSchema(generator, created),
+      ...altered.flatMap((diff) => generator.generateAlterTable(diff)),
+    ];
 
-    for (const { diff, entity } of await this.pendingDiffs()) {
-      if (diff.type === 'create') {
-        if (entity) {
-          creating.push(diff.tableName);
-          downStatements.push(this.generator.generateDropTable(diff.tableName, { ifExists: true }));
-        }
-      } else if (diff.type === 'alter') {
-        altering.push(...this.generator.generateAlterTable(diff));
-        downStatements.push(...this.generator.generateAlterTableDown(diff));
-      }
-    }
-
-    const upStatements = [...this.createSchema(creating), ...altering];
-
-    if (upStatements.length === 0) {
+    if (up.length === 0) {
       this.logger.logInfo('No schema changes detected.');
       return '';
     }
 
-    const { emit } = migrationSource[this.migrationQuerier];
+    const down = [
+      ...created.map((tableName) => generator.generateDropTable(tableName, { ifExists: true })),
+      ...altered.flatMap((diff) => generator.generateAlterTableDown(diff)),
+    ];
+    const { emit } = this.target.source;
     const filePath = await this.writeMigration(name, {
       docExtraLines: ['Generated from entity definitions'],
-      upInner: emit(upStatements),
-      downInner: emit([...downStatements].reverse()),
+      upInner: emit(up),
+      downInner: emit(down.reverse()),
     });
     this.logger.logInfo(`Created migration from entities: ${filePath}`);
     return filePath;
@@ -342,29 +281,21 @@ export class Migrator {
    * Get all schema differences between entities and database
    */
   async getDiffs(): Promise<SchemaDiff[]> {
-    await this.ensureSchemaGenerator();
-    if (!this.schemaGenerator || !this.schemaIntrospector) {
-      throw new TypeError('Schema generator and introspector must be set');
+    const generator = await this.getSchemaGenerator();
+    if (!this.schemaIntrospector) {
+      throw new TypeError(`No introspector for dialect '${this.dialectName}'`);
     }
 
     const ast = await this.introspectClaimedSchemas();
     // Both sides built once: the database's above, the entities' here. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
     // generator that compares no schema of its own - MongoDB, which reads only indexes.
-    const desiredAst = this.schemaGenerator.buildAST?.(this.entities);
-    const diffs: SchemaDiff[] = [];
-
-    for (const entity of this.entities) {
-      const meta = getMeta(entity);
-      const tableName = this.schemaGenerator.resolveTableName(meta);
-      const currentTable = ast.getTable(tableName);
-      const diff = this.schemaGenerator.diffSchema(entity, currentTable, desiredAst);
-      if (diff) {
-        diffs.push(diff);
-      }
-    }
-
-    return diffs;
+    const desiredAst = generator.buildAST?.(this.entities);
+    return this.entities.flatMap((entity) => {
+      const table = ast.getTable(generator.resolveTableName(getMeta(entity)));
+      const diff = generator.diffSchema(entity, table, desiredAst);
+      return diff ? [diff] : [];
+    });
   }
 
   /**
@@ -387,18 +318,6 @@ export class Migrator {
       }
     }
     return merged;
-  }
-
-  public async findEntityForTable(tableName: string): Promise<Type<object> | undefined> {
-    await this.ensureSchemaGenerator();
-    for (const entity of this.entities) {
-      const meta = getMeta(entity);
-      const name = this.generator.resolveTableName(meta);
-      if (name === tableName) {
-        return entity;
-      }
-    }
-    return undefined;
   }
 
   /**
@@ -425,10 +344,10 @@ export class Migrator {
    * with no referential integrity; and the old drop loop went in reverse *declaration* order, which
    * says nothing about the relation graph and is rejected as soon as the constraints are really there.
    */
-  private forceStatements(): string[] {
+  private forceStatements(generator: SchemaGenerator): string[] {
     return [
-      ...this.generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
-      ...this.generator.generateCreateSchema(this.entities),
+      ...generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
+      ...generator.generateCreateSchema(this.entities),
     ];
   }
 
@@ -437,35 +356,33 @@ export class Migrator {
    * existence check and is created with `IF NOT EXISTS`, so instances racing the same admin save
    * settle instead of colliding; an existing one still pays for introspection, as a diff needs columns.
    */
-  private async planEntity(entity: Type<object>, options: SyncOptions): Promise<string[]> {
+  private async planEntity(generator: SchemaGenerator, entity: Type<object>, options: SyncOptions): Promise<string[]> {
     const meta = getMeta(entity);
-    // Before anything reads `this.generator`, whose own failure names neither the entity nor the
-    // dialect that has no support.
     const introspector = this.introspectorFor(this.pool.dialect.resolveSchema(meta));
     if (!introspector) {
       throw new TypeError(`No introspector for '${meta.entity.name}' on '${this.dialectName}'`);
     }
-    const tableName = this.generator.resolveTableName(meta);
+    const tableName = generator.resolveTableName(meta);
 
     return (await introspector.tableExists(tableName))
-      ? this.alterFromEntity(entity, (await introspectSchema(introspector)).getTable(tableName), options)
+      ? this.alterFromEntity(generator, entity, (await introspectSchema(introspector)).getTable(tableName), options)
       : // Spanning the whole set, so a foreign key resolves against the tables it points at, and
         // always including this entity: pinned to an explicit `entities` list, a sync of one outside
         // it emitted nothing at all. `only` is what keeps the statements to this table.
-        this.generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
-  }
-
-  /** An alter diff as statements, narrowed to what the caller allows. */
-  private alterFromDiff(diff: SchemaDiff, options: SyncOptions): string[] {
-    return this.generator.generateAlterTable(this.filterDiff(diff, options));
+        generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
   }
 
   /** The same for one entity against the table it already has, and nothing where the two agree. */
-  private alterFromEntity(entity: Type<object>, table: TableNode | undefined, options: SyncOptions): string[] {
+  private alterFromEntity(
+    generator: SchemaGenerator,
+    entity: Type<object>,
+    table: TableNode | undefined,
+    options: SyncOptions,
+  ): string[] {
     // Spanning the set for the reason `planEntity` spells out: a foreign key needs the table it
     // points at, which a sync of one entity outside the configured list would not otherwise have.
-    const diff = this.generator.diffSchema(entity, table, this.generator.buildAST?.(this.entitiesWith(entity)));
-    return diff?.type === 'alter' ? this.alterFromDiff(diff, options) : [];
+    const diff = generator.diffSchema(entity, table, generator.buildAST?.(this.entitiesWith(entity)));
+    return diff?.type === 'alter' ? generator.generateAlterTable(this.filterDiff(diff, options)) : [];
   }
 
   /** The configured entities, with `entity` among them however the migrator was built. */
@@ -484,26 +401,18 @@ export class Migrator {
    * statements rather than a summary of a second, differently-computed diff.
    */
   async planSync(options: SyncOptions = {}): Promise<string[]> {
-    await this.ensureSchemaGenerator();
+    const generator = await this.getSchemaGenerator();
     if (options.force) {
-      return this.forceStatements();
+      return this.forceStatements(generator);
     }
     if (options.entity) {
-      return this.planEntity(options.entity, options);
+      return this.planEntity(generator, options.entity, options);
     }
-
-    const creating: string[] = [];
-    const altering: string[] = [];
-
-    for (const { diff, entity } of await this.pendingDiffs()) {
-      if (diff.type === 'create') {
-        if (entity) creating.push(diff.tableName);
-      } else if (diff.type === 'alter') {
-        altering.push(...this.alterFromDiff(diff, options));
-      }
-    }
-
-    return [...this.createSchema(creating), ...altering];
+    const { created, altered } = await this.pendingChanges();
+    return [
+      ...this.createSchema(generator, created),
+      ...altered.flatMap((diff) => generator.generateAlterTable(this.filterDiff(diff, options))),
+    ];
   }
 
   /**
@@ -514,35 +423,21 @@ export class Migrator {
    *
    * Empty in, empty out, so a diff with no new tables does not build an AST for the whole graph.
    */
-  private createSchema(tableNames: readonly string[]): string[] {
-    return tableNames.length ? this.generator.generateCreateSchema(this.entities, { only: tableNames }) : [];
+  private createSchema(generator: SchemaGenerator, tableNames: readonly string[]): string[] {
+    return tableNames.length ? generator.generateCreateSchema(this.entities, { only: tableNames }) : [];
   }
 
   /**
-   * Each pending diff with the entity it came from, since resolving that is async and every caller
-   * needs it. What to emit stays with the caller: a sync narrows the forward direction to what the
-   * caller allows and never asks for the rollback, which on SQLite cannot even be expressed (no
-   * `ALTER COLUMN`), so computing it eagerly for everyone would throw there.
+   * The pending diffs a sync or a generated migration acts on: the tables to create and the tables to
+   * alter. What to emit for each stays with the caller: a sync narrows an alter to what it allows and
+   * never asks for the rollback, which on SQLite cannot even be expressed (no `ALTER COLUMN`).
    */
-  private async pendingDiffs(): Promise<{ diff: SchemaDiff; entity: Type<object> | undefined }[]> {
+  private async pendingChanges(): Promise<{ created: string[]; altered: SchemaDiff[] }> {
     const diffs = await this.getDiffs();
-    return Promise.all(
-      diffs.map(async (diff) => ({
-        diff,
-        entity: diff.type === 'create' ? await this.findEntityForTable(diff.tableName) : undefined,
-      })),
-    );
-  }
-
-  /**
-   * The schema generator. A getter because MongoDB's loads lazily (see {@link ensureSchemaGenerator}),
-   * so every caller had to repeat the same assertion after awaiting it.
-   */
-  private get generator(): SchemaGenerator {
-    if (!this.schemaGenerator) {
-      throw new TypeError('Schema generator not set. Call setSchemaGenerator() first.');
-    }
-    return this.schemaGenerator;
+    return {
+      created: diffs.filter((diff) => diff.type === 'create').map((diff) => diff.tableName),
+      altered: diffs.filter((diff) => diff.type === 'alter'),
+    };
   }
 
   protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
@@ -597,40 +492,17 @@ export class Migrator {
     return filteredDiff;
   }
 
+  /** Runs the statements a generator wrote, in one transaction where the engine takes DDL in one. */
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    await this.withMigrationQuerier((querier, inTransaction) =>
-      inTransaction(() =>
-        isMongoQuerier(querier)
-          ? this.executeMongoSyncStatements(statements, options, querier)
-          : this.executeSqlSyncStatements(statements, options, querier),
-      ),
+    await this.target.withSession(this.pool, ({ run, transaction }) =>
+      transaction(async () => {
+        for (const statement of statements) {
+          if (options.logging) this.logger.logSchema(`Executing: ${statement}`);
+          await run(statement);
+        }
+      }),
     );
     if (options.logging) this.logger.logSchema('Schema synchronization completed');
-  }
-
-  public async executeMongoSyncStatements(
-    statements: string[],
-    options: { logging?: boolean },
-    querier: MongoQuerier,
-  ): Promise<void> {
-    for (const statement of statements) {
-      if (options.logging) this.logger.logSchema(`Executing MongoDB: ${statement}`);
-      await runMongoCommand(querier.db, statement);
-    }
-  }
-
-  public async executeSqlSyncStatements(
-    statements: string[],
-    options: { logging?: boolean },
-    querier: Querier,
-  ): Promise<void> {
-    if (!isSqlQuerier(querier)) {
-      throw new TypeError('Migrator requires a SQL-based querier for this dialect');
-    }
-    for (const sql of statements) {
-      if (options.logging) this.logger.logSchema(`Executing: ${sql}`);
-      await querier.run(sql);
-    }
   }
 
   /**
@@ -744,12 +616,13 @@ export function defineMigration<Q extends Querier = SqlQuerier>(
 
 /**
  * Migration definition that uses the type-safe builder API. The querier is the builder's own, so a
- * data backfill it runs lands in the same transaction as the schema change.
+ * data backfill it runs lands in the same transaction as the schema change. On MongoDB, `Q` is
+ * `MongoQuerier` and the builder takes collections and their indexes.
  */
-export interface BuilderMigrationDefinition {
+export interface BuilderMigrationDefinition<Q extends Querier = SqlQuerier> {
   readonly name?: string;
-  up(builder: IMigrationBuilder, querier: SqlQuerier): Promise<void>;
-  down(builder: IMigrationBuilder, querier: SqlQuerier): Promise<void>;
+  up(builder: IMigrationBuilder, querier: Q): Promise<void>;
+  down(builder: IMigrationBuilder, querier: Q): Promise<void>;
 }
 
 /**
@@ -771,10 +644,12 @@ export interface BuilderMigrationDefinition {
  * });
  * ```
  */
-export function defineBuilderMigration(migration: BuilderMigrationDefinition): MigrationDefinition {
+export function defineBuilderMigration<Q extends Querier = SqlQuerier>(
+  migration: BuilderMigrationDefinition<Q>,
+): MigrationDefinition<Q> {
   return {
     ...migration,
-    up: (querier) => migration.up(new MigrationBuilder(querier), querier),
-    down: (querier) => migration.down(new MigrationBuilder(querier), querier),
+    up: async (querier) => migration.up(await migrationBuilderFor(querier), querier),
+    down: async (querier) => migration.down(await migrationBuilderFor(querier), querier),
   };
 }

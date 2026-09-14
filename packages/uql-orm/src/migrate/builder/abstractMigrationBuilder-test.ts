@@ -2,7 +2,8 @@ import { expect } from 'vitest';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
 import type { Spec } from '../../test/index.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier, TableSchema } from '../../type/index.js';
-import { MigrationBuilder } from './migrationBuilder.js';
+import { migrationBuilderFor } from '../migrationTarget.js';
+import type { MigrationBuilder } from './migrationBuilder.js';
 
 /**
  * Tables this suite owns. Distinct from every other suite's, because vitest runs test files in
@@ -56,7 +57,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   protected async withBuilder<T>(fn: (builder: MigrationBuilder) => Promise<T>): Promise<T> {
     const querier = await this.pool.getQuerier();
     try {
-      return await fn(new MigrationBuilder(querier));
+      return await fn(await migrationBuilderFor(querier));
     } finally {
       await querier.release();
     }

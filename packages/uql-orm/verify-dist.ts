@@ -121,7 +121,7 @@ function checkBrowserGraph(): number {
 const BUDGETS: Record<string, number> = {
   '.': 31_600,
   './postgres': 27_100,
-  './migrate': 40_100,
+  './migrate': 47_800,
   './browser': 2_000,
 };
 

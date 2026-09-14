@@ -1,10 +1,13 @@
 import {
   ColumnRef,
   type EntityIndexColumn,
+  type EntityIndexMeta,
+  type EntityMeta,
   type IndexColumnInput,
   type IndexColumnSchema,
   QueryRaw,
 } from '../type/index.js';
+import { definedEntries } from './object.util.js';
 
 /**
  * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
@@ -13,6 +16,22 @@ import {
 export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn {
   const { column, ...modifiers } = typeof entry === 'string' || entry instanceof QueryRaw ? { column: entry } : entry;
   return { ...modifiers, column: column instanceof ColumnRef ? column.key : column };
+}
+
+/** Every index an entity declares: each `@Field({ index })` as the one-column `@Index` it is, then its `@Index`es. */
+export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
+  const fieldIndexes = definedEntries(meta.fields).flatMap(([key, field]) =>
+    field.index
+      ? [
+          {
+            columns: [{ column: key }],
+            name: typeof field.index === 'string' ? field.index : undefined,
+            unique: field.unique,
+          },
+        ]
+      : [],
+  );
+  return [...fieldIndexes, ...(meta.indexes ?? [])];
 }
 
 /** An index entry as the schema holds it, its expression rendered to text by `render`. */

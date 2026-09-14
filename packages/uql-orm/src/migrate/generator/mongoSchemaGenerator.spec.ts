@@ -1,10 +1,8 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../../entity/index.js';
-import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
-import type { IndexNode, TableNode } from '../../schema/types.js';
-import type { IndexSchema } from '../../type/index.js';
+import { Entity, Field, Id, Index } from '../../entity/index.js';
+import type { TableNode } from '../../schema/types.js';
+import type { EntityWhere, Type } from '../../type/index.js';
 import { raw } from '../../util/index.js';
-import type { TableDefinition } from '../builder/types.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
@@ -13,6 +11,41 @@ class MongoUser {
   @Field({ type: String, index: true }) username?: string;
   @Field({ type: String, index: 'email_idx', unique: true }) email?: string;
 }
+
+@Index((ticket) => [ticket.status, { column: ticket.createdAt, order: 'desc' }], { unique: true })
+@Index((ticket) => [ticket.assignee], {
+  name: 'urgent_assignee_idx',
+  where: { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] },
+})
+@Entity()
+class MongoTicket {
+  @Id({ type: String }) id?: string;
+  @Field({ type: String }) status?: string;
+  @Field({ type: String }) assignee?: string;
+  @Field({ type: Number }) priority?: number;
+  @Field({ type: Date }) createdAt?: Date;
+}
+
+const urgentAssigneeOptions = {
+  name: 'urgent_assignee_idx',
+  unique: false,
+  partialFilterExpression: { priority: { $gte: 2 }, $or: [{ status: 'open' }, { status: 'held' }] },
+};
+
+const statusCreatedAtOptions = { name: 'MongoTicket__status_createdAt_idx', unique: true };
+
+type TicketShape = { id?: string; status?: string; createdAt?: Date };
+
+const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
+  @Index((ticket) => [ticket.status], { name: 'ticket_idx', where })
+  @Entity()
+  class Ticket implements TicketShape {
+    @Id({ type: String }) id?: string;
+    @Field({ type: String }) status?: string;
+    @Field({ type: Date }) createdAt?: Date;
+  }
+  return Ticket;
+};
 
 describe('MongoSchemaGenerator', () => {
   const generator = new MongoSchemaGenerator();
@@ -27,12 +60,6 @@ describe('MongoSchemaGenerator', () => {
     const diff = { tableName: 'MongoUser', type: 'alter' as const };
     expect(generator.generateAlterTable(diff)).toEqual([]);
     expect(generator.generateAlterTableDown(diff)).toEqual([]);
-  });
-
-  it('should create a collection from its node, with an index command per index it holds', () => {
-    const table = buildSchemaAST([MongoUser]).getTable('MongoUser')!;
-    const statements = generator.generateCreateTableFromNode(table).map((json) => JSON.parse(json));
-    expect(statements.map((statement) => statement.action)).toEqual(['createCollection', 'createIndex', 'createIndex']);
   });
 
   /**
@@ -90,37 +117,102 @@ describe('MongoSchemaGenerator', () => {
         entries: [{ column: 'lower(username)', expression: true }],
         unique: false,
       }),
-    ).toThrow('mongodb does not support that index column option');
+    ).toThrow('mongodb does not support expression indexes (index "expr_idx")');
 
     expect(() =>
       generator.generateCreateIndex('MongoUser', {
-        name: 'partial_idx',
+        name: 'path_idx',
+        entries: [{ column: 'profile', jsonPath: { path: 'theme', type: 'text' } }],
+        unique: false,
+      }),
+    ).toThrow('mongodb does not support indexes over a path inside a JSON column (index "path_idx")');
+
+    expect(() =>
+      generator.generateCreateIndex('MongoUser', {
+        name: 'covering_idx',
         entries: [{ column: 'username' }],
         unique: false,
-        where: 'deletedAt IS NULL',
+        include: ['email'],
       }),
-    ).toThrow('mongodb does not support partial indexes from a SQL predicate');
+    ).toThrow('mongodb does not support covering indexes (INCLUDE) (index "covering_idx")');
+
+    expect(() =>
+      generator.generateCreateIndex('MongoUser', {
+        name: 'hash_idx',
+        entries: [{ column: 'username' }],
+        unique: false,
+        type: 'hash',
+      }),
+    ).toThrow('mongodb has no hash index (index "hash_idx")');
   });
 
-  it('should generate dropCollection statement', () => {
-    const json = generator.generateDropTable('MongoUser');
-    const cmd = JSON.parse(json);
+  it('should create the indexes @Index declares, a partial one with its filter', () => {
+    const statements = generator.generateCreateTable(MongoTicket).map((json) => JSON.parse(json));
 
-    expect(cmd).toMatchObject({
-      action: 'dropCollection',
-      name: 'MongoUser',
-    });
+    expect(statements.slice(1)).toEqual([
+      {
+        action: 'createIndex',
+        collection: 'MongoTicket',
+        name: 'urgent_assignee_idx',
+        key: { assignee: 1 },
+        options: urgentAssigneeOptions,
+      },
+      {
+        action: 'createIndex',
+        collection: 'MongoTicket',
+        name: 'MongoTicket__status_createdAt_idx',
+        key: { status: 1, createdAt: -1 },
+        options: statusCreatedAtOptions,
+      },
+    ]);
+  });
+
+  it('should add each @Index a collection lacks, its filter included', () => {
+    const collection: TableNode = {
+      name: 'MongoTicket',
+      columns: new Map(),
+      indexes: [],
+      primaryKey: [],
+      incomingRelations: [],
+      outgoingRelations: [],
+    };
+    const statements = generator
+      .generateAlterTable(generator.diffSchema(MongoTicket, collection)!)
+      .map((json) => JSON.parse(json));
+
+    expect(statements.map((statement) => statement.options)).toEqual([urgentAssigneeOptions, statusCreatedAtOptions]);
+  });
+
+  const refused: [string, EntityWhere<TicketShape>][] = [
+    ['$ne', { status: { $ne: 'closed' } }],
+    ['$nin', { status: { $nin: ['closed'] } }],
+    ['$not', { $not: [{ status: 'closed' }] }],
+    ['$startsWith', { status: { $startsWith: 'op' } }],
+    ['$isNull', { createdAt: { $isNull: true } }],
+    ['null', { createdAt: null }],
+    ['a Date', { createdAt: { $gt: new Date(0) } }],
+    ['an ObjectId', { id: '507f1f77bcf86cd799439011' }],
+  ];
+
+  it.each(refused)('should refuse %s in a partial index, which MongoDB has no room for', (part, where) => {
+    expect(() => generator.generateCreateTable(ticketIndexedWhere(where))).toThrow(
+      `mongodb does not support ${part} in a partial index predicate (index "ticket_idx")`,
+    );
+  });
+
+  it('should refuse SQL as a partial index predicate', () => {
+    const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.status} = 'open'`;
+    expect(() => generator.generateCreateTable(ticketIndexedWhere(where))).toThrow(
+      'mongodb does not support partial indexes from a SQL predicate (index "ticket_idx")',
+    );
   });
 
   it('should generate createIndex statement', () => {
-    const json = generator.generateCreateIndex('MongoUser', {
-      name: 'test_idx',
-      entries: [{ column: 'test' }],
-      unique: true,
-    });
-    const cmd = JSON.parse(json);
+    const cmd = JSON.parse(
+      generator.generateCreateIndex('MongoUser', { name: 'test_idx', entries: [{ column: 'test' }], unique: true }),
+    );
 
-    expect(cmd).toMatchObject({
+    expect(cmd).toEqual({
       action: 'createIndex',
       collection: 'MongoUser',
       name: 'test_idx',
@@ -130,10 +222,7 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should generate dropIndex statement', () => {
-    const json = generator.generateDropIndex('MongoUser', 'test_idx');
-    const cmd = JSON.parse(json);
-
-    expect(cmd).toMatchObject({
+    expect(JSON.parse(generator.generateDropIndex('MongoUser', 'test_idx'))).toEqual({
       action: 'dropIndex',
       collection: 'MongoUser',
       name: 'test_idx',
@@ -207,102 +296,5 @@ describe('MongoSchemaGenerator', () => {
     const statements = generator.generateAlterTableDown(diff);
     expect(statements).toHaveLength(1);
     expect(statements[0]).toContain('"action":"dropIndex"');
-  });
-
-  it('should return empty string for getSqlType', () => {
-    expect(generator.getSqlType({})).toBe('');
-  });
-
-  describe('Node-based generation', () => {
-    const tableNode: TableNode = {
-      name: 'users',
-      columns: new Map(),
-      indexes: [],
-      primaryKey: [],
-      incomingRelations: [],
-      outgoingRelations: [],
-      schema: {} as any,
-    };
-
-    it('should generate createTable from node', () => {
-      expect(JSON.parse(generator.generateCreateTableFromNode(tableNode)[0])).toMatchObject({
-        action: 'createCollection',
-        name: 'users',
-      });
-    });
-
-    it('should generate dropTable from node', () => {
-      expect(JSON.parse(generator.generateDropTable(tableNode.name))).toMatchObject({
-        action: 'dropCollection',
-        name: 'users',
-      });
-    });
-
-    it('should generate createIndex from node', () => {
-      const indexNode: IndexNode = {
-        name: 'test_idx',
-        table: tableNode,
-        entries: [{ column: 'col1' }],
-        unique: true,
-      };
-      expect(JSON.parse(generator.generateCreateIndexFromNode(indexNode))).toMatchObject({
-        action: 'createIndex',
-        collection: 'users',
-        name: 'test_idx',
-        key: { col1: 1 },
-        options: { unique: true, name: 'test_idx' },
-      });
-    });
-  });
-
-  describe('Definition-based generation', () => {
-    it('should generate createTable from definition, with its indexes', () => {
-      const def: TableDefinition = {
-        name: 'posts',
-        columns: [],
-        foreignKeys: [],
-        indexes: [{ name: 'posts_slug_idx', entries: [{ column: 'slug' }], unique: true }],
-      };
-      const statements = generator.generateCreateTableFromDefinition(def).map((sql) => JSON.parse(sql));
-
-      expect(statements[0]).toMatchObject({ action: 'createCollection', name: 'posts' });
-      expect(statements[1]).toMatchObject({
-        action: 'createIndex',
-        collection: 'posts',
-        key: { slug: 1 },
-        options: { unique: true, name: 'posts_slug_idx' },
-      });
-    });
-
-    it('should refuse the SQL a definition declares, having none to render it into', () => {
-      const def: TableDefinition = {
-        name: 'posts',
-        columns: [],
-        foreignKeys: [],
-        indexes: [{ name: 'posts_title_idx', entries: [{ column: raw`lower(title)` }], unique: false }],
-      };
-      expect(() => generator.generateCreateTableFromDefinition(def)).toThrow('mongodb has no SQL to render');
-    });
-
-    it('should generate the table-level commands by name', () => {
-      expect(JSON.parse(generator.generateRenameTableSql('old', 'new'))).toMatchObject({
-        action: 'renameCollection',
-        from: 'old',
-        to: 'new',
-      });
-
-      const idx: IndexSchema = { name: 'idx', entries: [{ column: 'c' }], unique: true };
-      expect(JSON.parse(generator.generateCreateIndex('users', idx))).toMatchObject({
-        action: 'createIndex',
-        collection: 'users',
-        name: 'idx',
-      });
-
-      expect(JSON.parse(generator.generateDropIndex('users', 'idx'))).toMatchObject({
-        action: 'dropIndex',
-        collection: 'users',
-        name: 'idx',
-      });
-    });
   });
 });

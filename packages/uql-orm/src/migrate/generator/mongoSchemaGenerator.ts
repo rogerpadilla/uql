@@ -1,33 +1,34 @@
-import { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { getMeta } from '../../entity/index.js';
-import { mongoDialectFeatures } from '../../mongo/mongoDialect.js';
-import type { ForeignKeyAction, IndexNode, TableNode } from '../../schema/types.js';
-import type {
-  CreateSchemaOptions,
-  DialectName,
-  EntityMeta,
-  FieldOptions,
-  IndexSchema,
-  InsertIdSource,
-  NamingStrategy,
-  SchemaDiff,
-  SchemaGenerator,
-  Type,
+import { MongoDialect } from '../../mongo/mongoDialect.js';
+import type { ForeignKeyAction, IndexType, TableNode } from '../../schema/types.js';
+import {
+  type CreateSchemaOptions,
+  type EntityIndexMeta,
+  type EntityMeta,
+  type EntityWhereMeta,
+  type IndexFeature,
+  type IndexSchema,
+  type NamingStrategy,
+  QueryRaw,
+  type SchemaDiff,
+  type SchemaGenerator,
+  type Type,
 } from '../../type/index.js';
-import { getKeys } from '../../util/index.js';
+import { declaredIndexes, indexNameParts, renderIndexColumn } from '../../util/ddlExpression.util.js';
 import { derivedIndexName } from '../../util/sql.util.js';
-import type { TableDefinition } from '../builder/types.js';
+import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
+import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
+import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
 import { renderIndexDefinition } from './definitionToNode.js';
-import { indexNodeToSchema } from './indexNodeToSchema.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
 
-export class MongoSchemaGenerator extends AbstractDialect implements SchemaGenerator {
-  readonly dialectName = 'mongodb' satisfies DialectName;
+/** The index types a key spec can say: a plain key, or `'text'`. */
+const MONGO_INDEX_TYPES: ReadonlySet<IndexType> = new Set(['btree', 'fulltext']);
 
-  protected override readonly featureDefaults = mongoDialectFeatures;
+/** A key spec's one feature beyond its keys: a partial filter. */
+const MONGO_INDEX_FEATURES: ReadonlySet<IndexFeature> = new Set(['partial']);
 
-  override readonly insertIdSource: InsertIdSource = 'returning';
-
+export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerator {
   constructor(
     namingStrategy?: NamingStrategy,
     protected readonly defaultForeignKeyAction?: ForeignKeyAction,
@@ -62,38 +63,58 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   }
 
   /**
-   * The indexes `@Field({ index })` declares, as the collection would hold them.
-   *
-   * One owner because two paths need it: creating a collection, and working out which of its indexes
-   * are missing. Derived twice, they drifted the moment either changed how a name is settled.
+   * The indexes an entity declares, as the collection would hold them. One owner because two paths need
+   * it: creating a collection, and working out which of its indexes are missing.
    */
-  private fieldIndexes<E>(meta: EntityMeta<E>, collectionName: string): IndexSchema[] {
-    return getKeys(meta.fields).flatMap((key) => {
-      const field = meta.fields[key];
-      if (!field?.index) {
-        return [];
-      }
-      const columnName = this.resolveColumnName(key, field);
-      return [
-        {
-          name: typeof field.index === 'string' ? field.index : derivedIndexName(collectionName, [columnName]),
-          entries: [{ column: columnName }],
-          unique: !!field.unique,
-        },
-      ];
-    });
+  private indexesOf<E extends object>(meta: EntityMeta<E>, collectionName: string): IndexSchema[] {
+    return declaredIndexes(meta).map((index) => this.indexSchema(meta, collectionName, index));
   }
 
-  generateCreateTable<E>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
+  /** One declared index, its members resolved to document paths and its `where` to a filter document. */
+  private indexSchema<E extends object>(
+    meta: EntityMeta<E>,
+    collectionName: string,
+    index: EntityIndexMeta<E>,
+  ): IndexSchema {
+    const entries = index.columns
+      .map((entry) => renderIndexColumn(entry, () => this.compileDdl()))
+      .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
+    const name = index.name ?? derivedIndexName(collectionName, indexNameParts(entries));
+    return {
+      name,
+      entries,
+      unique: index.unique ?? false,
+      type: index.type,
+      include: index.include,
+      where: index.where && this.compileIndexPredicate(index.where, meta.entity, name),
+    };
+  }
+
+  /**
+   * The JSON of the document `partialFilterExpression` takes, refused where the predicate reaches past
+   * what that holds or what a migration carries as JSON.
+   */
+  compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
+    if (where instanceof QueryRaw) {
+      throw new TypeError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
+    }
+    assertIndexPredicate(where, this.dialectName, indexName);
+    const filter = this.renderFilter(entity, where);
+    const refused = refusedFilterValue(filter);
+    if (refused) {
+      throw refusedIndexPredicate(this.dialectName, refused, indexName);
+    }
+    return JSON.stringify(filter);
+  }
+
+  generateCreateTable<E extends object>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
     const meta = getMeta(entity);
     const collectionName = this.resolveTableName(meta);
-    const indexes = this.fieldIndexes(meta, collectionName);
-
     // One `createIndex` command each, mirroring the SQL generator's `[CREATE TABLE, ...CREATE INDEX]`,
     // so the key spec is built here and the migrator only executes it.
     return [
       serializeMongoCommand({ action: 'createCollection', name: collectionName }),
-      ...indexes.map((index) => this.generateCreateIndex(collectionName, index)),
+      ...this.indexesOf(meta, collectionName).map((index) => this.generateCreateIndex(collectionName, index)),
     ];
   }
 
@@ -102,90 +123,70 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
   }
 
   generateAlterTable(diff: SchemaDiff): string[] {
-    const statements: string[] = [];
-    if (diff.indexesToAdd?.length) {
-      for (const index of diff.indexesToAdd) {
-        statements.push(this.generateCreateIndex(diff.tableName, index));
-      }
-    }
-    return statements;
+    return (diff.indexesToAdd ?? []).map((index) => this.generateCreateIndex(diff.tableName, index));
   }
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
-    const statements: string[] = [];
-    if (diff.indexesToAdd?.length) {
-      for (const index of diff.indexesToAdd) {
-        statements.push(this.generateDropIndex(diff.tableName, index.name));
-      }
-    }
-    return statements;
+    return (diff.indexesToAdd ?? []).map((index) => this.generateDropIndex(diff.tableName, index.name));
   }
 
   /**
    * MongoDB's key spec is where its index options live: `-1` for a descending entry and `'text'` for a
    * full-text index, which is what `$text` needs since a text index declares its own fields.
    *
-   * @remarks The SQL-only modifiers are refused rather than dropped, for the same reason the SQL
-   * dialects refuse each other's - a silently weaker index is worse than a clear failure. `where`
-   * included: MongoDB's partial indexes take a filter document, not a SQL predicate.
+   * @remarks The SQL-only options are refused by the checks the SQL dialects refuse each other's with - a
+   * silently weaker index is worse than a clear failure. `where` is the filter's JSON, as
+   * {@link compileIndexPredicate} writes it.
    */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
+    assertIndexType(index, MONGO_INDEX_TYPES, this.dialectName);
+    assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.dialectName);
     const key: MongoIndexKey = {};
     for (const entry of index.entries) {
-      if (entry.expression || entry.jsonArray || entry.length !== undefined || entry.nulls || entry.opsClass) {
-        throw new TypeError(`mongodb does not support that index column option (index "${index.name}")`);
-      }
       key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
-    }
-    if (index.where) {
-      throw new TypeError(`mongodb does not support partial indexes from a SQL predicate (index "${index.name}")`);
     }
     return serializeMongoCommand({
       action: 'createIndex',
       collection: tableName,
       name: index.name,
       key,
-      options: { unique: index.unique, name: index.name },
+      options: {
+        unique: index.unique,
+        name: index.name,
+        partialFilterExpression: index.where && JSON.parse(index.where),
+      },
     });
   }
 
   generateDropIndex(tableName: string, indexName: string): string {
-    return serializeMongoCommand({
-      action: 'dropIndex',
-      collection: tableName,
-      name: indexName,
-    });
+    return serializeMongoCommand({ action: 'dropIndex', collection: tableName, name: indexName });
   }
 
-  getSqlType(fieldOptions: FieldOptions): string {
-    return '';
-  }
-
-  generateCreateTableFromNode(table: TableNode, _options?: { ifNotExists?: boolean }): string[] {
-    return [
-      serializeMongoCommand({ action: 'createCollection', name: table.name }),
-      ...table.indexes.map((index) => this.generateCreateIndexFromNode(index)),
-    ];
-  }
-
-  generateCreateIndexFromNode(index: IndexNode): string {
-    return this.generateCreateIndex(index.table.name, indexNodeToSchema(index));
-  }
-
-  generateCreateTableFromDefinition(table: TableDefinition, _options?: { ifNotExists?: boolean }): string[] {
-    return [
-      serializeMongoCommand({ action: 'createCollection', name: table.name }),
-      ...table.indexes.map((index) =>
-        this.generateCreateIndex(
-          table.name,
-          renderIndexDefinition(index, () => this.compileDdl()),
-        ),
-      ),
-    ];
-  }
-
-  generateRenameTableSql(oldName: string, newName: string): string {
-    return serializeMongoCommand({ action: 'renameCollection', from: oldName, to: newName });
+  /** A collection and its indexes, which is all a document store has: a column, a constraint or SQL throws. */
+  generateOperation(operation: AnyMigrationOperation): string[] {
+    const render = (index: IndexDefinition) => renderIndexDefinition(index, () => this.compileDdl());
+    switch (operation.type) {
+      case 'createTable': {
+        const { name, columns, indexes } = operation.table;
+        if (columns.length) {
+          throw new TypeError(`mongodb does not support columns in a migration (collection "${name}")`);
+        }
+        return [
+          serializeMongoCommand({ action: 'createCollection', name }),
+          ...indexes.map((index) => this.generateCreateIndex(name, render(index))),
+        ];
+      }
+      case 'dropTable':
+        return [this.generateDropTable(operation.tableName)];
+      case 'renameTable':
+        return [serializeMongoCommand({ action: 'renameCollection', from: operation.oldName, to: operation.newName })];
+      case 'createIndex':
+        return [this.generateCreateIndex(operation.tableName, render(operation.index))];
+      case 'dropIndex':
+        return [this.generateDropIndex(operation.tableName, operation.indexName)];
+      default:
+        throw new TypeError(`mongodb does not support ${operation.type} in a migration`);
+    }
   }
 
   diffSchema(entity: Type<object>, currentTable: TableNode | undefined): SchemaDiff | undefined {
@@ -197,7 +198,7 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
     }
 
     const existingIndexes = new Set(currentTable.indexes.map((i) => i.name));
-    const indexesToAdd = this.fieldIndexes(meta, collectionName).filter((index) => !existingIndexes.has(index.name));
+    const indexesToAdd = this.indexesOf(meta, collectionName).filter((index) => !existingIndexes.has(index.name));
 
     if (indexesToAdd.length === 0) {
       return undefined;
@@ -209,4 +210,22 @@ export class MongoSchemaGenerator extends AbstractDialect implements SchemaGener
       indexesToAdd,
     };
   }
+}
+
+/** The first value `partialFilterExpression` refuses, `null`, or a migration cannot carry as JSON, such as a `Date`. */
+function refusedFilterValue(value: unknown): string | undefined {
+  if (value === null) {
+    return 'null';
+  }
+  if (Array.isArray(value)) {
+    return value.map(refusedFilterValue).find(Boolean);
+  }
+  if (typeof value !== 'object') {
+    return typeof value === 'bigint' ? 'a bigint' : undefined;
+  }
+  if (Object.getPrototypeOf(value) === Object.prototype) {
+    return Object.values(value).map(refusedFilterValue).find(Boolean);
+  }
+  const typeName = value.constructor.name;
+  return `${/^[aeiou]/i.test(typeName) ? 'an' : 'a'} ${typeName}`;
 }
