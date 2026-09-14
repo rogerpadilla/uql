@@ -28,7 +28,6 @@ describe('HranaQuerier', () => {
       columns: ['id'],
       columnTypes: ['INTEGER'],
       rowsAffected: 0,
-      lastInsertRowid: undefined,
     });
 
     const res = await querier.internalAll('SELECT 1');
@@ -45,7 +44,6 @@ describe('HranaQuerier', () => {
       columns: ['id'],
       columnTypes: ['INTEGER'],
       rowsAffected: 0,
-      lastInsertRowid: undefined,
     });
 
     const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
@@ -55,6 +53,22 @@ describe('HranaQuerier', () => {
       ids: [100],
       firstId: 100,
     });
+  });
+
+  it('should decode integers the client reads as bigints, exact past 2^53', async () => {
+    mockClient.execute.mockResolvedValue({ rows: [{ id: 1n, big: 9007199254740993n }], rowsAffected: 0 });
+
+    const res = await querier.internalAll('SELECT id, big FROM t');
+
+    expect(res).toEqual([{ id: 1, big: '9007199254740993' }]);
+  });
+
+  it('should decode the ids a RETURNING statement reads as bigints', async () => {
+    mockClient.execute.mockResolvedValue({ rows: [{ id: 100n }], rowsAffected: 0 });
+
+    const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
+
+    expect(res).toEqual({ changes: 1, ids: [100], firstId: 100 });
   });
 
   it('should handle transactions', async () => {

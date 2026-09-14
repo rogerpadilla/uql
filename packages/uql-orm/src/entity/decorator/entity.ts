@@ -1,10 +1,9 @@
 import type {
+  EntityIndexColumnInput,
   EntityIndexOptions,
   EntityOptions,
-  FieldKey,
   FilterOptions,
-  IndexColumnInput,
-  KeyMap,
+  RefMap,
   Type,
 } from '../../type/index.js';
 import { applyMembers, defineEntity, defineFilter, defineIndex } from '../metadata/definition.js';
@@ -41,16 +40,12 @@ export function Filter<E>(name: string, opts: FilterOptions<E>) {
 }
 
 /**
- * Declares a composite index, its columns read off the key map. Stacks, so several may sit above one
- * class. `E` is inferred from the class the returned decorator is applied to, which is what types the
- * key map: `@Index((user) => [user.nope])` does not compile, and a rename reaches every column.
- *
- * @example `@Index((user) => [user.lastName, user.firstName], { name: 'users_fullname_idx' })`
- * @example `@Index((user) => [user.email], { unique: true })`
- * @example `@Index((user) => [user.email], { unique: true, where: { deletedAt: null } })`
+ * Declares a composite index, its columns read off the entity's refs, so `@Index((user) => [user.nope])`
+ * does not compile and a rename reaches every column. Stacks, so several may sit above one class.
+ * @example `@Index((user) => [user.lastName, raw`lower(${user.email})`], { unique: true })`
  */
 export function Index<E>(
-  columns: (keys: KeyMap<E>) => readonly IndexColumnInput<FieldKey<E>, E>[],
+  columns: (refs: RefMap<E>) => readonly EntityIndexColumnInput<E>[],
   options: EntityIndexOptions<E> = {},
 ) {
   return (entity: Type<E>): void => {

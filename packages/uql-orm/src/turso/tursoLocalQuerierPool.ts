@@ -1,18 +1,13 @@
+import type { connect } from '@tursodatabase/database';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import { applySqlitePragmas } from '../sqlite/sqlitePragmas.js';
+import { type SqliteDatabase, SqliteQuerier } from '../sqlite/sqliteQuerier.js';
 import type { ExtraOptions } from '../type/index.js';
-import { TursoDialect } from './tursoDialect.js';
-import { type TursoDatabase, TursoLocalQuerier } from './tursoLocalQuerier.js';
+import { TursoLocalDialect } from './tursoLocalDialect.js';
 
-/** Subset of `DatabaseOpts` from `@tursodatabase/database`, declared locally to avoid the coupling. */
-export type TursoLocalOptions = {
-  readonly?: boolean;
-  fileMustExist?: boolean;
-  timeout?: number;
-  defaultQueryTimeout?: number;
-  tracing?: 'info' | 'debug' | 'trace';
-};
+/** The engine's own options: `readonly`, `timeout`, `encryption`, `experimental` and the rest. */
+export type TursoLocalOptions = NonNullable<Parameters<typeof connect>[1]>;
 
 /**
  * Pool for the embedded Turso engine (`@tursodatabase/database`), the Rust rewrite of SQLite.
@@ -22,27 +17,28 @@ export type TursoLocalOptions = {
  * bundle targeting Workers never reaches the native import.
  */
 export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
-  TursoDatabase,
-  TursoLocalQuerier,
-  TursoDialect
+  SqliteDatabase,
+  SqliteQuerier,
+  TursoLocalDialect
 > {
   constructor(
     readonly filename = ':memory:',
     readonly opts?: TursoLocalOptions,
     extra?: ExtraOptions,
   ) {
-    super(new TursoDialect(dialectOptionsFrom(extra)), extra);
+    super(new TursoLocalDialect(dialectOptionsFrom(extra)), extra);
   }
 
-  protected override async openDb(): Promise<TursoDatabase> {
+  protected override async openDb(): Promise<SqliteDatabase> {
     const { connect } = await import('@tursodatabase/database');
-    // Annotated rather than cast, so the structural contract is checked against the real driver.
-    const db: TursoDatabase = await connect(this.filename, this.opts);
+    const db = await connect(this.filename, this.opts);
+    // Integers as `bigint`, which the querier decodes exactly past 2^53.
+    db.defaultSafeIntegers(true);
     await applySqlitePragmas(db);
     return db;
   }
 
-  protected override buildQuerier(db: TursoDatabase) {
-    return new TursoLocalQuerier(db, this.dialect, this.extra);
+  protected override buildQuerier(db: SqliteDatabase) {
+    return new SqliteQuerier(db, this.dialect, this.extra);
   }
 }

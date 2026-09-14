@@ -14,7 +14,6 @@ export {
 export { entityTypesSource } from './entityTypes.js';
 export {
   buildMigrationModule,
-  buildSqlQuerierMigrationModule,
   EMPTY_MANUAL_MIGRATION_DOWN_INNER,
   EMPTY_MANUAL_MIGRATION_UP_INNER,
   emitMongoCommandCalls,
@@ -22,5 +21,4 @@ export {
   emitSqlRunCalls,
   type MigrationModuleOptions,
   type MigrationQuerierType,
-  type SqlMigrationModuleOptions,
 } from './migrationFile.js';

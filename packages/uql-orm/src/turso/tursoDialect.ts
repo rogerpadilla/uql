@@ -1,23 +1,13 @@
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
-import type { VectorDistance, VectorMetric } from '../type/index.js';
 
 /**
- * SQLite Dialect specialization for Turso Database.
+ * SQLite Dialect specialization for Turso Cloud: what every Turso Cloud database accepts, since one runs
+ * libSQL unless it was created as `tursodb`, which runs the Rust engine. libSQL's vector functions and
+ * argument cap hold on both, and so does the Rust engine's missing `ORDER BY` inside an aggregate.
  *
- * @remarks Shared by `TursoQuerierPool` (remote, `@tursodatabase/serverless`) and
- * `TursoLocalQuerierPool` (embedded, `@tursodatabase/database`). Built on `LibsqlDialect` because
- * Turso is that engine's successor and keeps its SQL surface, vector functions included. Imports
- * nothing vendor-specific, so the embedded entry point cannot pull native code into an edge bundle
- * through it.
+ * @remarks Imports nothing vendor-specific, so no entry point can pull a driver in through it.
  */
 export class TursoDialect extends LibsqlDialect {
-  /** The Rust engine adds a dot-product distance to libSQL's cosine and L2. */
-  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
-    ['cosine', { fn: 'vector_distance_cos' }],
-    ['l2', { fn: 'vector_distance_l2' }],
-    ['inner', { fn: 'vector_distance_dot' }],
-  ]);
-
   /** The Rust engine takes no `ORDER BY` inside an aggregate. */
   protected override readonly orderedAggregates = false;
 }

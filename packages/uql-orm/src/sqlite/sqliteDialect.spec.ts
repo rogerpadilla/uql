@@ -8,6 +8,7 @@ import {
   InventoryAdjustment,
   Item,
   ItemTag,
+  JsonRecord,
   MeasureUnitCategory,
   Profile,
   TaxCategory,
@@ -253,97 +254,97 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
 
-  // JSON operator tests
+  // JSON array operator tests
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
+        $where: { entries: { $elemMatch: { city: 'NYC', zip: '10001' } } },
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem.value, '$.zip') = ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem.value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
 
   shouldFind$all() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $all: ['admin', 'user'] } } as any,
+        $where: { entries: { $all: ['admin', 'user'] } },
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `User` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE `name` -> _uql_elem.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE `name` -> _uql_elem.fullkey = JSON(?)))',
+      'SELECT `id` FROM `JsonRecord` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)))',
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
 
   shouldFind$size() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $size: 3 } } as any,
+        $where: { entries: { $size: 3 } },
       }),
     );
-    expect(sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) = ?');
+    expect(sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) = ?');
     expect(values).toEqual([3]);
   }
 
   shouldFind$sizeWithComparison() {
     // Single comparison operator
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $size: { $gte: 2 } } } as any,
+        $where: { entries: { $size: { $gte: 2 } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) >= ?');
+    expect(res.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) >= ?');
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $size: { $gt: 0, $lte: 5 } } } as any,
+        $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE (JSON_ARRAY_LENGTH(`name`) > ? AND JSON_ARRAY_LENGTH(`name`) <= ?)',
+      'SELECT `id` FROM `JsonRecord` WHERE (JSON_ARRAY_LENGTH(`entries`) > ? AND JSON_ARRAY_LENGTH(`entries`) <= ?)',
     );
     expect(res.values).toEqual([0, 5]);
 
     // $between
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $size: { $between: [1, 10] } } } as any,
+        $where: { entries: { $size: { $between: [1, 10] } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE JSON_ARRAY_LENGTH(`name`) BETWEEN ? AND ?');
+    expect(res.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) BETWEEN ? AND ?');
     expect(res.values).toEqual([1, 10]);
   }
 
   // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
+        $where: { entries: { $elemMatch: { city: { $ilike: 'new%' } } } },
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `User` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`name`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
 
   shouldFind$elemMatchWithMultipleOperators() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $elemMatch: { price: { $lt: 100 }, active: { $eq: true } } } } as any,
+        $where: { entries: { $elemMatch: { price: { $lt: 100 }, active: { $eq: true } } } },
       }),
     );
     expect(sql).toContain('EXISTS (SELECT 1 FROM JSON_EACH');
@@ -356,10 +357,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithAllOperators() {
     // Test $ne, $gt, $gte, $lte
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
         $where: {
-          name: {
+          entries: {
             $elemMatch: {
               a: { $ne: 'x' },
               b: { $gt: 5 },
@@ -367,7 +368,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
               active: { $eq: true },
             },
           },
-        } as any,
+        },
       }),
     );
     expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') IS NOT ?");
@@ -378,10 +379,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
     // Test $like, $startsWith, $endsWith
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
         $where: {
-          name: {
+          entries: {
             $elemMatch: {
               a: { $like: '%x%' },
               b: { $startsWith: 'hi' },
@@ -392,7 +393,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
               g: { $iincludes: 'MID' },
             },
           },
-        } as any,
+        },
       }),
     );
     expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') LIKE ?");
@@ -402,9 +403,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
     // Test $regex
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: { $elemMatch: { code: { $regex: '^A' } } } } as any,
+        $where: { entries: { $elemMatch: { code: { $regex: '^A' } } } },
       }),
     );
     expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.code') REGEXP ?");
@@ -415,7 +416,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': 1 } as any,
+        $where: { 'kind.public': 1 },
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) = ?");
@@ -426,7 +427,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': { $ne: 0 } } as any,
+        $where: { 'kind.public': { $ne: 0 } },
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) IS NOT ?");
@@ -437,7 +438,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': { $gt: 0 } } as any,
+        $where: { 'kind.public': { $gt: 0 } },
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) > ?");
@@ -448,23 +449,23 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.theme.color': 'red' } as any,
+        $where: { 'kind.theme.color': 'red' },
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.theme.color') = ?");
     expect(values).toEqual(['red']);
   }
 
+  /** SQLite's `LIKE` already ignores ASCII case, so `$ilike` is a plain `LIKE`. */
   shouldFindByJsonDotNotationWithIlike() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': { $ilike: '%active%' } } as any,
+        $where: { 'kind.country': { $ilike: '%land%' } },
       }),
     );
-    // SQLite uses LOWER(...) LIKE for ILIKE
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.public') LIKE ?");
-    expect(values).toEqual(['%active%']);
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.country') LIKE ?");
+    expect(values).toEqual(['%land%']);
   }
 
   // ─── Relation filtering (SQLite-specific) ──────────────────────────
@@ -472,20 +473,20 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { tags: { id: 5 } } as any,
+        $where: { tags: { id: '5' } },
       }),
     );
     expect(sql).toBe(
       'SELECT `id` FROM `Item` WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`id` = ?))',
     );
-    expect(values).toEqual([5]);
+    expect(values).toEqual(['5']);
   }
 
   shouldFindByOneToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnitCategory, {
         $select: { id: true },
-        $where: { measureUnits: { name: 'kg' } } as any,
+        $where: { measureUnits: { name: 'kg' } },
       }),
     );
     // MeasureUnitCategory has softDelete -> parent query adds AND `deletedAt` IS NULL
@@ -552,7 +553,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $sort: { 'kind.theme.color': -1 } as any,
+        $sort: { 'kind.theme.color': -1 },
       }),
     );
     expect(sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_EXTRACT(`kind`, '$.theme.color') DESC");

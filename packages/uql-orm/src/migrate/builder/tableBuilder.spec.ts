@@ -275,7 +275,7 @@ describe('TableBuilder', () => {
 
     it('should take the same entries and options as the @Index decorator', () => {
       const table = new TableBuilder('notes');
-      table.index([() => raw`lower("email")`, { column: 'body', length: 64 }], {
+      table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
         name: 'notes_lookup_idx',
         type: 'gin',
         where: raw`"deletedAt" IS NULL`,
@@ -303,7 +303,7 @@ describe('TableBuilder', () => {
 
     it('should name an expression after its position, as an entity names one', () => {
       const table = new TableBuilder('notes');
-      table.unique(['tenantId', () => raw`lower("email")`]);
+      table.unique(['tenantId', raw`lower("email")`]);
 
       expect(table.build().indexes[0].name).toBe('notes__tenantId_expr1_uk');
     });

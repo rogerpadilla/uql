@@ -445,10 +445,10 @@ class Entity {
     `);
 
     expect(text).toContain('mappedBy: key');
-    expect(unresolved).toContainEqual(expect.stringContaining("write 'mappedBy' as a key-map callback"));
+    expect(unresolved).toContainEqual(expect.stringContaining("write 'mappedBy' as a callback"));
   });
 
-  it('rewrites @Index columns and include into key-map callbacks named after the class', () => {
+  it('rewrites @Index columns and include into callbacks named after the class', () => {
     const { text, unresolved } = codemod(`
       declare const columns: string[];
       @Index(['title', { column: 'createdAt', order: 'desc' }, raw\`lower("title")\`], { include: ['slug'], unique: true })
@@ -459,12 +459,25 @@ class Entity {
     `);
 
     expect(text).toContain(
-      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, () => raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
+      '@Index((post) => [post.title, { column: post.createdAt, order: \'desc\' }, raw`lower("title")`], { include: (post) => [post.slug], unique: true })',
     );
     expect(text).toContain("@Index((post) => [post['first-name']])");
     expect(text).toContain('@Index((post) => [post.title])');
     expect(text).toContain('@Index(columns)');
-    expect(unresolved).toContainEqual(expect.stringContaining("write '@Index' columns as a key-map callback"));
+    expect(unresolved).toContainEqual(expect.stringContaining("write '@Index' columns as a callback"));
+  });
+
+  it('writes a key no identifier can name as a quoted string, escaping its quotes', () => {
+    const { text } = codemod(`
+      declare const querier: { findMany(entity: unknown, q: unknown): void };
+      @Index(["o'clock"])
+      class Post { @Id({ type: String }) "o'clock"?: string; }
+      querier.findMany(Post, { $where: { $text: { $value: 'noon', $fields: ["o'clock"] } } });
+    `);
+
+    expect(text).toContain("@Index((post) => [post['o\\'clock']])");
+    expect(text).toContain("[idKey]?: 'o\\'clock';");
+    expect(text).toContain("$fields: { 'o\\'clock': true }");
   });
 
   it('rewrites references into a callback over both key maps, and a self-relation into (local, foreign)', () => {
@@ -497,7 +510,7 @@ class Entity {
     `);
 
     expect(unresolved).toEqual([
-      expect.stringContaining("write 'references' as a key-map callback; this one could not be read"),
+      expect.stringContaining("write 'references' as a callback; this one could not be read"),
     ]);
   });
 
@@ -517,7 +530,7 @@ class Entity {
     expect(unresolved).toEqual([]);
   });
 
-  it("rewrites defineEntity's indexes, hooks and relations into key-map callbacks", () => {
+  it("rewrites defineEntity's indexes, hooks and relations into callbacks", () => {
     const { text } = codemod(`
       class Tag { id?: number; posts?: Post[]; }
       class Post { id?: number; title?: string; tagId?: number; tags?: Tag[]; tag?: Tag; touch(): void {} }
@@ -881,6 +894,62 @@ let a: PostgresDialect; let b: PgQuerier; let c: PostgresDialect;
     expect(unresolved[0]).toContain("'AbstractPgQuerier' was removed; every pg-compatible pool returns `PgQuerier`");
   });
 
+  it('moves the embedded Turso querier to SqliteQuerier, which serves every driver that prepares', () => {
+    const { text, unresolved } =
+      codemodFile(`import { TursoDatabase, TursoLocalQuerier, TursoLocalQuerierPool } from 'uql-orm/turso/local';
+let q: TursoLocalQuerier; let db: TursoDatabase;
+`);
+
+    expect(text).toBe(`import { TursoLocalQuerierPool } from 'uql-orm/turso/local';
+import { SqliteDatabase, SqliteQuerier } from 'uql-orm/sqlite';
+let q: SqliteQuerier; let db: SqliteDatabase;
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports the SQLite bases folded into their drivers', () => {
+    const { changed, unresolved } = codemod(`
+      import { AbstractHranaQuerierPool, PreparedSqliteQuerier, toSqliteBindValues } from 'uql-orm/sqlite';
+      import { libsqlUseRemoteForMigrations } from 'uql-orm/libsql';
+    `);
+
+    expect(changed).toBe(false);
+    expect(unresolved).toEqual([
+      expect.stringContaining("'AbstractHranaQuerierPool' was removed"),
+      expect.stringContaining("'PreparedSqliteQuerier' was removed"),
+      expect.stringContaining("'toSqliteBindValues' was removed"),
+      expect.stringContaining("'libsqlUseRemoteForMigrations' was removed"),
+    ]);
+  });
+
+  it('renames the migration module builders to their querier-neutral names', () => {
+    const { text, unresolved } =
+      codemodFile(`import { buildSqlQuerierMigrationModule, SqlMigrationModuleOptions } from 'uql-orm/migrate';
+declare const options: SqlMigrationModuleOptions;
+buildSqlQuerierMigrationModule(options);
+`);
+
+    expect(text).toBe(`import { buildMigrationModule, MigrationModuleOptions } from 'uql-orm/migrate';
+declare const options: MigrationModuleOptions;
+buildMigrationModule(options);
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports the index types an index reading its refs no longer has', () => {
+    const { changed, unresolved } = codemod(`
+      import { IndexColumnOptions, SqlCallback } from 'uql-orm';
+    `);
+
+    expect(changed).toBe(false);
+    expect(unresolved).toEqual([
+      expect.stringContaining(
+        "'IndexColumnOptions' was removed; an entity's index entry is `EntityIndexColumnInput<E>`",
+      ),
+      expect.stringContaining("'SqlCallback' was removed; use `EntitySql<E>`"),
+    ]);
+  });
+
   it('reports a decorator that no longer exists rather than removing it', () => {
     const { text, changed, unresolved } = codemod(`
       class Service {
@@ -942,47 +1011,13 @@ let a: PostgresDialect; let b: PgQuerier; let c: PostgresDialect;
 });
 
 describe('SQL in definitions', () => {
-  it('writes an index expression as the callback an index takes, as an entry or as a column', () => {
-    const { text } = codemod(`
-      @Index((post) => [post.title, raw\`lower("slug")\`, { column: raw\`upper("slug")\`, order: 'desc' }])
-      @Index(['title', { column: raw\`lower("title")\` }])
-      class Post { id?: number; title?: string; slug?: string; }
-    `);
-
-    expect(text).toContain(
-      '@Index((post) => [post.title, () => raw`lower("slug")`, { column: () => raw`upper("slug")`, order: \'desc\' }])',
-    );
-    expect(text).toContain('@Index((post) => [post.title, { column: () => raw`lower("title")` }])');
-  });
-
-  /** It bound the string `'email'`; the refs its callback takes now render the column it meant. */
-  it('hands an interpolating expression the refs its SQL was reading', () => {
-    const { text } = codemod(`
-      @Index((user) => [raw\`lower(\${user.email})\`])
-      class User { id?: number; email?: string; }
-    `);
-
-    expect(text).toContain('@Index((user) => [(user) => raw`lower(${user.email})`])');
-  });
-
-  it("rewrites defineIndex's and an entity's index expressions alike", () => {
-    const { text } = codemod(`
-      class Post { id?: number; title?: string; }
-      defineIndex(Post, { columns: ['title', raw\`lower("title")\`] });
-      defineEntity(Post, { indexes: [{ columns: (post) => [{ column: raw\`lower("title")\` }] }] });
-    `);
-
-    expect(text).toContain('defineIndex(Post, { columns: (post) => [post.title, () => raw`lower("title")`] });');
-    expect(text).toContain('indexes: [{ columns: (post) => [{ column: () => raw`lower("title")` }] }]');
-  });
-
   it('rewrites a raw() call in a column list together with the list', () => {
     const { text } = codemodFile(`import { Index, raw } from 'uql-orm';
-@Index(['title', raw('lower("title")')])
+@Index(['title', raw('lower("title")'), { column: raw\`upper("title")\` }])
 class Post { id?: number; title?: string; }
 `);
 
-    expect(text).toContain('@Index((post) => [post.title, () => raw`lower("title")`])');
+    expect(text).toContain('@Index((post) => [post.title, raw`lower("title")`, { column: raw`upper("title")` }])');
   });
 
   it('writes a partial-index where given as a string as raw, importing raw', () => {
@@ -1028,7 +1063,7 @@ class Post { id?: number; title?: string; slug?: string; stock?: number; }
     expect(unresolved).toEqual(["/entities.ts: import 'raw' from 'uql-orm' for the raw`...` written here"]);
   });
 
-  it("rewrites the migration builder's index expressions and string where alike", () => {
+  it("rewrites the migration builder's partial-index where string as raw", () => {
     const { text } = codemodFile(`import { raw } from 'uql-orm';
 import { defineBuilderMigration } from 'uql-orm/migrate';
 
@@ -1036,20 +1071,14 @@ export default defineBuilderMigration({
   async up(m) {
     await m.createTable('notes', (t) => {
       t.unique([raw\`lower("email")\`], { where: '"deleted_at" IS NULL' });
-      t.index([{ column: raw\`lower("body")\`, length: 64 }, 'title']);
     });
-    await m.alterTable('notes', (t) => t.addIndex([raw\`lower("title")\`]));
-    await m.createIndex('notes', [raw\`lower("slug")\`], { where: raw\`"deleted_at" IS NULL\` });
+    await m.createIndex('notes', ['slug'], { where: '"deleted_at" IS NULL' });
   },
 });
 `);
 
-    expect(text).toContain('t.unique([() => raw`lower("email")`], { where: raw`"deleted_at" IS NULL` });');
-    expect(text).toContain('t.index([{ column: () => raw`lower("body")`, length: 64 }, \'title\']);');
-    expect(text).toContain('t.addIndex([() => raw`lower("title")`])');
-    expect(text).toContain(
-      'm.createIndex(\'notes\', [() => raw`lower("slug")`], { where: raw`"deleted_at" IS NULL` });',
-    );
+    expect(text).toContain('t.unique([raw`lower("email")`], { where: raw`"deleted_at" IS NULL` });');
+    expect(text).toContain("m.createIndex('notes', ['slug'], { where: raw`\"deleted_at\" IS NULL` });");
   });
 
   it('leaves a method of the same name alone in a file that does not import uql-orm', () => {
@@ -1133,7 +1162,7 @@ t.index([raw\`lower("email")\`], { where: 'active' });
 
     expect(text).toContain("@Index(['title', slug])");
     expect(unresolved).toEqual([
-      expect.stringContaining("write '@Index' columns as a key-map callback; this one could not be read"),
+      expect.stringContaining("write '@Index' columns as a callback; this one could not be read"),
     ]);
   });
 

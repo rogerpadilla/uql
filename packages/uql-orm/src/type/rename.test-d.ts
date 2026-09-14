@@ -15,7 +15,7 @@ class Studio {
 }
 
 @Index((movie) => [movie.title, { column: movie.rating, order: 'desc' }], { include: (movie) => [movie.studioId] })
-@Index(() => [(movie) => raw`lower(${movie.title})`], { where: (movie) => raw`${movie.rating} > 0` })
+@Index((movie) => [raw`lower(${movie.title})`], { where: (movie) => raw`${movie.rating} > 0` })
 @Index((movie) => [movie.studioId], { where: { rating: { $gt: 0 } } })
 @Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => raw`${movie.rating} <= ${10}` }] })
 class Movie {
@@ -46,7 +46,7 @@ defineEntity(Cinema, {
   relations: { films: { cardinality: '1m', entity: () => Movie, mappedBy: (movie) => movie.cinemaId } },
   indexes: [
     { columns: (cinema) => [cinema.city], include: (cinema) => [cinema.id] },
-    { columns: () => [(cinema) => raw`lower(${cinema.city})`], where: { city: { $ne: '' } } },
+    { columns: (cinema) => [raw`lower(${cinema.city})`], where: { city: { $ne: '' } } },
   ],
   checks: [{ where: (cinema) => raw`${cinema.city} <> ''` }],
   hooks: { beforeInsert: (cinema) => [cinema.touch] },

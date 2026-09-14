@@ -1,7 +1,10 @@
 import type { ExtraOptions } from '../type/index.js';
-import { AbstractLocalSqliteQuerierPool, type LocalSqlitePoolOptions } from './localSqliteQuerierPool.js';
+import {
+  AbstractLocalSqliteQuerierPool,
+  type LocalSqliteDatabase,
+  type LocalSqlitePoolOptions,
+} from './localSqliteQuerierPool.js';
 import { adaptNodeSqlite } from './nodeSqliteAdapter.js';
-import type { SqliteDatabase } from './sqliteQuerier.js';
 
 /**
  * The `DatabaseSync` options worth surfacing, plus the loadable extensions to install. Declared here
@@ -33,11 +36,13 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSq
     super(opts, extra);
   }
 
-  protected override async createDb(): Promise<SqliteDatabase> {
+  protected override async createDb(): Promise<LocalSqliteDatabase> {
     const { DatabaseSync } = await import('node:sqlite');
     const { extensions, ...driverOpts } = this.opts ?? {};
     const nodeDb = new DatabaseSync(this.filename, {
       ...driverOpts,
+      // Integers as `bigint`, which the querier decodes exactly past 2^53.
+      readBigInts: true,
       // `node:sqlite` refuses `loadExtension` unless the database was opened with this on.
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });

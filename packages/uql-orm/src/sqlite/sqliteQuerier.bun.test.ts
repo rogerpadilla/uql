@@ -58,4 +58,29 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     expect(rows).toEqual([{ id: 1, s: 'bound' }]);
     await pool.end();
   });
+
+  it('reads an integer past 2^53 exactly', async () => {
+    const { pool, querier } = await seed();
+
+    const rows = await querier.all<{ big: unknown }>('SELECT 9007199254740993 AS big');
+
+    expect(rows).toEqual([{ big: '9007199254740993' }]);
+    await pool.end();
+  });
+
+  /** `bun:sqlite` opens only a path, so a serialized database has to go through `Database.deserialize`. */
+  it('opens a serialized database from a Buffer', async () => {
+    const { Database } = await import('bun:sqlite');
+    const source = new Database(':memory:');
+    source.run('CREATE TABLE t (s TEXT)');
+    source.run("INSERT INTO t (s) VALUES ('kept')");
+    const pool = new Sqlite3QuerierPool(Buffer.from(source.serialize()));
+    const querier = await pool.getQuerier();
+
+    const rows = await querier.all('SELECT s FROM t');
+
+    expect(rows).toEqual([{ s: 'kept' }]);
+    await pool.end();
+    source.close();
+  });
 });

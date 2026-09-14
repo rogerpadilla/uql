@@ -32,12 +32,6 @@ const EXACT_DECIMAL = '12345678901234500000.99';
  */
 export const FLOATED_DECIMAL = 12345678901234500000;
 
-/** The row {@link AbstractSqlQuerierIt.wideIntegerSql} reads. */
-export type WideRow = { big: unknown };
-
-/** What a driver that reads every integer as a plain float makes of 9007199254740993. */
-export const ROUNDED_WIDE_INTEGER = 9007199254740992;
-
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
   /**
    * Locking outside a transaction is accepted by every engine and then released as the statement
@@ -144,8 +138,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /**
    * A populated row reads back exactly as a read of its own does, every declared type included. It
    * crosses JSON inside its parent's statement, which has no 64-bit integer, exact decimal or date, so
-   * this pins the decode that puts each one back. A `bigint` within 2^53, since some SQLite drivers
-   * refuse to read a wider one at all.
+   * this pins the decode that puts each one back.
    */
   async shouldPopulateRowsTypedAsTheirOwnRead() {
     const [own, populated] = await this.readTypedRowsBothWays();
@@ -165,7 +158,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
         amount: 12.5,
         enabled: true,
         exact: EXACT_DECIMAL,
-        wide: 42n,
+        wide: 9007199254740993n,
         at,
       },
       { groupId, name: 'second', count: -3, amount: 0.25, enabled: false },
@@ -217,8 +210,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /**
    * A `bigint` past 2^53 is written exactly: the database finds the row by its own value, and not by the
-   * neighbour a rounded bind would have stored in its place. Compared there rather than read back, so
-   * it holds on the SQLite drivers too, whose reads of a value that wide are the one exception.
+   * neighbour a rounded bind would have stored in its place. Compared there rather than read back, so a
+   * broken write cannot hide behind a broken read.
    */
   async shouldWriteAWideBigIntExactly() {
     await this.querier.insertOne(TypedRow, { name: 'wide', wide: 9007199254740993n });
@@ -229,11 +222,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /**
    * Past 2^53 a JS number rounds silently, so a BIGINT that wide reads back as its exact text: the one
-   * rule every driver's decode shares (`decodeWideNumber`). The SQLite family is the exception - no
-   * driver there hands uql the digits - so each of its suites pins what its own driver does instead.
+   * rule every driver's decode shares (`decodeWideNumber`).
    */
   async shouldReadAWideIntegerExactly() {
-    await this.assertWideInteger(this.querier.all<WideRow>(this.wideIntegerSql()));
+    const [row] = await this.querier.all<{ big: unknown }>(this.wideIntegerSql());
+
+    expect(row?.big).toBe('9007199254740993');
   }
 
   /** Each engine's own constraint errors, which the unit table can only imitate: MSSQL's two 547s among them. */
@@ -309,10 +303,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   protected wideIntegerSql(): string {
     return 'SELECT 9007199254740993 AS big';
-  }
-
-  protected async assertWideInteger(read: Promise<WideRow[]>): Promise<void> {
-    expect((await read)[0]?.big).toBe('9007199254740993');
   }
 
   override createTables() {

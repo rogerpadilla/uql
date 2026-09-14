@@ -53,7 +53,15 @@ describe('buildIndexDecoratorSource', () => {
     expect(evaluateFirstTag(source)).toBe(where);
   });
 
-  it('should read a column off the key map by name, bracketed only where no identifier can name it', () => {
+  it('should write an expression as raw in the list, its modifiers wrapped the way a column has them', () => {
+    const index = indexNode([{ column: 'lower(email)', expression: true, order: 'desc' }, { column: 'email' }]);
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
+      "@Index((t) => [{ column: raw`lower(email)`, order: 'desc' }, t.email], { name: 'idx' })",
+    );
+  });
+
+  it('should read a column off the refs by name, bracketed only where no identifier can name it', () => {
     const index = indexNode([{ column: 'dueño' }, { column: 'first-name' }, { column: "o'clock" }], {
       include: ['größe'],
     });

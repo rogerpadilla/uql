@@ -10,6 +10,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { VectorItem } from '../test/index.js';
 import { TursoDialect } from '../turso/tursoDialect.js';
+import { TursoLocalDialect } from '../turso/tursoLocalDialect.js';
 import type { VectorDistance } from '../type/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
@@ -94,7 +95,15 @@ const engines: Engine[] = [
     name: 'TursoDialect',
     dialect: new TursoDialect(),
     distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
-    // The Rust engine adds a dot-product distance libSQL never had.
+    // A Turso Cloud database runs libSQL unless it was created as `tursodb`, and libSQL has no dot product.
+    supported: ['cosine', 'l2'],
+    unsupported: ['inner', 'l1'],
+  },
+  {
+    name: 'TursoLocalDialect',
+    dialect: new TursoLocalDialect(),
+    distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
+    // The embedded Rust engine adds a dot-product distance libSQL never had.
     supported: ['cosine', 'l2', 'inner'],
     unsupported: ['l1'],
   },

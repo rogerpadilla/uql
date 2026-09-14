@@ -21,7 +21,7 @@ class Ledger {
 }
 
 @Index((account) => [account.emailAddress], { unique: true, where: { deletedAt: null } })
-@Index(() => [(account) => raw`lower(${account.emailAddress})`], {
+@Index((account) => [raw`lower(${account.emailAddress})`], {
   where: (account) => raw`${account.deletedAt} IS NULL`,
 })
 @Entity()

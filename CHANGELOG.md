@@ -2,6 +2,21 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.63.0] - 2026-09-13
+
+- **Breaking: an index reads its entity's refs**, so an expression is `raw` in its list, ``@Index((user) => [raw`lower(${user.email})`])``, and the migration builder takes `raw` too.
+- **Breaking (types): `IndexColumnInput` takes no type parameters, an entity's entry is `EntityIndexColumnInput<E>`, and `ColumnRef` is a class carrying its `key`**; the codemod reports the removed `SqlCallback` and `IndexColumnOptions`.
+- **Breaking: Turso Cloud runs on `@tursodatabase/serverless` 1.3+'s sessions, one per querier**: queriers never wait on each other, `BEGIN`/`COMMIT` just work, streams read the server's cursor, and every `Config` option applies.
+- **Breaking: `LibsqlQuerierPool` takes a client you built, and `TursoQuerierPool` no longer does**: `@libsql/client/web` or `-wasm`, shared by every querier and left open on `end()`.
+- **Breaking: a dot-product `$distance` needs `uql-orm/turso/local`**: a Turso Cloud database runs libSQL, which has none, unless created as `tursodb`. The embedded engine caps no function call either.
+- **Every SQLite driver reads an integer past 2^53 as its exact text**: better-sqlite3, `bun:sqlite`, `node:sqlite`, libSQL and both Turso pools, which rounded it or threw. D1 still answers a number.
+- **`Sqlite3QuerierPool` opens a serialized `Buffer` under Bun**, through `Database.deserialize`, and **`TursoLocalQuerierPool` takes every engine option**, `encryption` and `experimental` included.
+- **Breaking: SQLite through `uql-orm/bunSql` is gone**, deprecated since 0.55.0: the pool refuses it, pointing at `Sqlite3QuerierPool`, which runs on `bun:sqlite` under Bun.
+- **Breaking (drivers): a SQLite querier implements one `execute` hook**; `TursoLocalQuerier` is `SqliteQuerier`, `TursoDatabase` is `SqliteDatabase`, and `PreparedSqliteQuerier`, `AbstractHranaQuerierPool`, `toSqliteBindValues` and `libsqlUseRemoteForMigrations` are gone. The codemod renames and reports them.
+- **`D1QuerierPool` takes a session from `env.DB.withSession()`**, which a read-replicated database reads through, and **refuses a transaction before sending one**, which D1 answered with `not authorized`.
+- **Breaking: `SqlMigrationModuleOptions` and `buildSqlQuerierMigrationModule` are gone**, deprecated in 0.60.0; `npx uql-codemod` renames them to `MigrationModuleOptions` and `buildMigrationModule`.
+- **Fixed**: `LibsqlQuerierPool` opening a second client when two queriers were acquired at once, `querier.all()` throwing on better-sqlite3 for a statement that reads nothing, and the codemod writing a quoted key unescaped.
+
 ## [0.62.0] - 2026-09-13
 
 - **Breaking: SQL an entity declares reads members off refs, so a rename reaches it**: `computed`, index expressions ``(user) => raw`lower(${user.email})` ``, and a check or partial-index `where`, which also takes a predicate: `{ deletedAt: null }`.

@@ -1,140 +1,130 @@
-import type { SQL } from 'bun';
 import { describe, expect, test } from 'vitest';
-import { getAffectedRows, getInsertId, inferDialectName, normalizeBunOpts } from './bunSql.util.js';
+import type { RawRow } from '../type/index.js';
+import { type BunSqlHeader, getAffectedRows, getInsertId, inferDialectName, normalizeBunOpts } from './bunSql.util.js';
+
+/** A `bun:sql` result: the rows, carrying the header fields its adapter filled. */
+function result(header: BunSqlHeader, rows: RawRow[] = []) {
+  return Object.assign(rows, header);
+}
 
 describe('bunSql.util', () => {
   describe('inferDialectName', () => {
-    test('should infer sqlite from filename', () => {
-      expect(inferDialectName({ filename: 'test.db' } as SQL.Options)).toBe('sqlite');
-    });
-
-    test('should infer sqlite from :memory: url', () => {
-      expect(inferDialectName({ url: ':memory:' } as SQL.Options)).toBe('sqlite');
-    });
-
-    test('should infer sqlite from sqlite:// url', () => {
-      expect(inferDialectName({ url: 'sqlite://test.db' } as SQL.Options)).toBe('sqlite');
-    });
-
-    test('should infer sqlite from sqlite3:// url', () => {
-      expect(inferDialectName({ url: 'sqlite3://test.db' } as SQL.Options)).toBe('sqlite');
-    });
-
     test('should infer mysql from mysql:// url', () => {
-      expect(inferDialectName({ url: 'mysql://localhost' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ url: 'mysql://localhost' })).toBe('mysql');
     });
 
     test('should infer mysql from mysql2:// url', () => {
-      expect(inferDialectName({ url: 'mysql2://localhost' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ url: 'mysql2://localhost' })).toBe('mysql');
     });
 
     test('should infer postgres from postgres:// url', () => {
-      expect(inferDialectName({ url: 'postgres://localhost' } as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({ url: 'postgres://localhost' })).toBe('postgres');
     });
 
     test('should infer postgres from postgresql:// url', () => {
-      expect(inferDialectName({ url: 'postgresql://localhost' } as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({ url: 'postgresql://localhost' })).toBe('postgres');
     });
 
     test('should infer mariadb from mariadb:// url', () => {
-      expect(inferDialectName({ url: 'mariadb://localhost' } as SQL.Options)).toBe('mariadb');
+      expect(inferDialectName({ url: 'mariadb://localhost' })).toBe('mariadb');
     });
 
     test('should return adapter if provided', () => {
-      expect(inferDialectName({ adapter: 'mysql' } as SQL.Options)).toBe('mysql');
+      expect(inferDialectName({ adapter: 'mysql' })).toBe('mysql');
     });
 
     test('should default to postgres', () => {
-      expect(inferDialectName({} as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({})).toBe('postgres');
     });
 
     test('should not take an inherited object key for a scheme', () => {
-      expect(inferDialectName({ url: 'constructor://localhost' } as SQL.Options)).toBe('postgres');
+      expect(inferDialectName({ url: 'constructor://localhost' })).toBe('postgres');
     });
 
-    test('should refuse an engine bun cannot dial rather than reading it as postgres', () => {
-      expect(() => inferDialectName({ url: 'mssql://localhost' } as SQL.Options)).toThrow(
-        'Bun SQL has no mssql driver; use the dedicated uql-orm/mssql pool',
+    test('should refuse an engine it does not drive rather than reading it as postgres', () => {
+      expect(() => inferDialectName({ url: 'mssql://localhost' })).toThrow(
+        'uql-orm/bunSql does not drive mssql; use the dedicated uql-orm/mssql pool',
       );
-      expect(() => inferDialectName({ url: 'sqlserver://localhost' } as SQL.Options)).toThrow('uql-orm/mssql pool');
+      expect(() => inferDialectName({ url: 'sqlserver://localhost' })).toThrow('uql-orm/mssql pool');
+    });
+
+    /** `Sqlite3QuerierPool` runs on `bun:sqlite` under Bun, and streams, prepares and loads extensions. */
+    test('should refuse SQLite, pointing at its own pool', () => {
+      const refusal = 'uql-orm/bunSql does not drive sqlite; use the dedicated uql-orm/sqlite pool';
+      expect(() => inferDialectName({ filename: 'app.db' })).toThrow(refusal);
+      expect(() => inferDialectName({ url: ':memory:' })).toThrow(refusal);
+      expect(() => inferDialectName({ url: 'sqlite://app.db' })).toThrow(refusal);
+      expect(() => inferDialectName({ url: 'sqlite3://app.db' })).toThrow(refusal);
+      expect(() => inferDialectName({ url: 'data/app.sqlite' })).toThrow(refusal);
     });
   });
 
   describe('normalizeBunOpts', () => {
-    test('should handle sqlite with url as filename', () => {
-      const opts = normalizeBunOpts({ url: 'test.db' } as SQL.Options, 'sqlite');
-      expect((opts as any).filename).toBe('test.db');
-      expect((opts as any).adapter).toBe('sqlite');
+    test('should map cockroachdb to the postgres adapter', () => {
+      expect(normalizeBunOpts({ hostname: 'h' }, 'cockroachdb').adapter).toBe('postgres');
     });
 
-    test('should handle sqlite with :memory: default', () => {
-      const opts = normalizeBunOpts({} as SQL.Options, 'sqlite');
-      expect((opts as any).filename).toBe(':memory:');
-      expect((opts as any).adapter).toBe('sqlite');
+    test('should leave the url absent when none was given', () => {
+      expect(normalizeBunOpts({ adapter: 'postgres', hostname: 'h' }, 'postgres').url).toBeUndefined();
     });
 
-    test('should map cockroachdb to postgres adapter', () => {
-      const opts = normalizeBunOpts({ hostname: 'h' } as SQL.Options, 'cockroachdb');
-      expect((opts as any).adapter).toBe('postgres');
-    });
-
-    test('should return opts unchanged when url is absent', () => {
-      const opts = normalizeBunOpts({ adapter: 'postgres', hostname: 'h' } as SQL.Options, 'postgres');
-      expect((opts as any).url).toBeUndefined();
-    });
-
-    test('should strip sslmode=no-verify from string url and set tls', () => {
+    test('should strip sslmode=no-verify from a string url and set tls', () => {
       const opts = normalizeBunOpts({ url: 'postgres://localhost/?sslmode=no-verify' }, 'postgres');
-      expect(String((opts as SQL.PostgresOrMySQLOptions).url)).not.toContain('sslmode=no-verify');
-      expect((opts as any).tls).toMatchObject({ rejectUnauthorized: false });
+      expect(String(opts.url)).not.toContain('sslmode=no-verify');
+      expect(opts.tls).toMatchObject({ rejectUnauthorized: false });
     });
 
-    test('should strip sslmode=no-verify from URL instance and merge tls', () => {
+    test('should strip sslmode=no-verify from a URL instance and merge tls', () => {
       const url = new URL('postgres://localhost/');
       url.searchParams.set('sslmode', 'no-verify');
-      const opts = normalizeBunOpts({ url, tls: { ca: 'x' } } as SQL.Options, 'postgres');
-      expect(String((opts as SQL.PostgresOrMySQLOptions).url)).not.toContain('sslmode=no-verify');
-      expect((opts as any).tls).toEqual({ rejectUnauthorized: false, ca: 'x' });
+      const opts = normalizeBunOpts({ url, tls: { ca: 'x' } }, 'postgres');
+      expect(String(opts.url)).not.toContain('sslmode=no-verify');
+      expect(opts.tls).toEqual({ rejectUnauthorized: false, ca: 'x' });
     });
 
-    test('should ignore invalid url when normalizing', () => {
-      const opts = normalizeBunOpts({ url: '::not-a-url' } as SQL.Options, 'postgres');
-      expect(opts).toBeDefined();
+    test('should keep an invalid url as it was given', () => {
+      expect(normalizeBunOpts({ url: '::not-a-url' }, 'postgres').url).toBe('::not-a-url');
+    });
+
+    test('should read a BIGINT as a bigint whatever the config asks, for the querier to decode exactly', () => {
+      expect(normalizeBunOpts({ hostname: 'h', bigint: false }, 'postgres').bigint).toBe(true);
     });
   });
 
   describe('getAffectedRows', () => {
     test('prefers affectedRows over count', () => {
-      expect(getAffectedRows(Object.assign([], { affectedRows: 2, count: 1 }) as any)).toBe(2);
+      expect(getAffectedRows(result({ affectedRows: 2, count: 1 }))).toBe(2);
     });
 
-    test('uses count when the adapter leaves affectedRows null (postgres, sqlite)', () => {
-      expect(getAffectedRows(Object.assign([], { count: 3, affectedRows: null }) as any)).toBe(3);
+    test('uses count when the adapter leaves affectedRows null (postgres, cockroachdb)', () => {
+      expect(getAffectedRows(result({ count: 3, affectedRows: null }))).toBe(3);
     });
 
     test('uses count when a mysql read reports affectedRows 0', () => {
-      expect(getAffectedRows(Object.assign([{}, {}], { count: 2, affectedRows: 0 }) as any)).toBe(2);
+      expect(getAffectedRows(result({ count: 2, affectedRows: 0 }, [{}, {}]))).toBe(2);
     });
 
     test('counts the rows a returning insert wrote, not the rows it returned', () => {
-      expect(getAffectedRows(Object.assign([{}], { count: 1, affectedRows: null }) as any)).toBe(1);
+      expect(getAffectedRows(result({ count: 1, affectedRows: null }, [{}]))).toBe(1);
     });
 
     test('reports nothing when the header carries neither, leaving the rows to answer', () => {
-      expect(getAffectedRows([] as any)).toBeUndefined();
-      expect(getAffectedRows(Object.assign([{}], {}) as any)).toBeUndefined();
+      expect(getAffectedRows(result({}))).toBeUndefined();
+      expect(getAffectedRows(result({}, [{}]))).toBeUndefined();
     });
   });
 
   describe('getInsertId', () => {
     test('coerces bigint to number', () => {
-      expect(getInsertId(Object.assign([], { lastInsertRowid: 99n }) as any)).toBe(99);
+      expect(getInsertId(result({ lastInsertRowid: 99n }))).toBe(99);
     });
+
     test('answers the exact text for an id past 2^53', () => {
-      expect(getInsertId(Object.assign([], { lastInsertRowid: 9007199254740993n }) as any)).toBe('9007199254740993');
+      expect(getInsertId(result({ lastInsertRowid: 9007199254740993n }))).toBe('9007199254740993');
     });
+
     test('returns numeric id as-is', () => {
-      expect(getInsertId(Object.assign([], { lastInsertRowid: 7 }) as any)).toBe(7);
+      expect(getInsertId(result({ lastInsertRowid: 7 }))).toBe(7);
     });
   });
 });

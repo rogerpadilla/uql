@@ -61,3 +61,16 @@ export class QueryRaw {
     }
   }
 }
+
+/**
+ * A field of an entity as SQL, read off `refs(Entity)` or a definition's refs: interpolated into `raw`, it
+ * renders as the field's column. Its `key` is how an index tells a column from an expression.
+ */
+export class ColumnRef<K extends string = string> extends QueryRaw {
+  constructor(
+    readonly key: K,
+    value: QueryRawFn,
+  ) {
+    super(value);
+  }
+}

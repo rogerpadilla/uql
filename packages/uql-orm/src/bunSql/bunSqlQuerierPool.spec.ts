@@ -1,6 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/index.js';
-import { SqliteDialect } from '../sqlite/index.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
@@ -12,24 +11,13 @@ describe('BunSqlQuerierPool', () => {
     expect(pool.dialect.features.nativeArrays).toBe(false);
   });
 
-  it('should initialize with sqlite dialect', () => {
-    const pool = new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
-    expect(pool.dialect).toBeInstanceOf(SqliteDialect);
-  });
-
-  it('should support passing config with url', () => {
-    const pool = new BunSqlQuerierPool({ url: 'sqlite://test.db' });
-    expect(pool.sql).toBeDefined();
-    expect(pool.dialect).toBeInstanceOf(SqliteDialect);
-  });
-
   it('should support config object with adapter', () => {
     const pool = new BunSqlQuerierPool({ adapter: 'postgres', hostname: 'localhost' });
     expect(pool.sql).toBeDefined();
   });
 
-  it('should handle cockroachdb alias', () => {
-    const pool = new BunSqlQuerierPool({ adapter: 'cockroachdb', hostname: 'localhost' } as any);
+  it('should handle cockroachdb', () => {
+    const pool = new BunSqlQuerierPool({ url: 'cockroachdb://localhost' });
     expect(pool.dialect.dialectName).toBe('cockroachdb');
     // bun:sql routes CockroachDB through its own Postgres wire-protocol implementation, so it
     // needs the identical wire-driver-capability fix as postgres (verified live: without it,
@@ -38,13 +26,15 @@ describe('BunSqlQuerierPool', () => {
     expect(pool.dialect.features.nativeArrays).toBe(false);
   });
 
+  /** `Sqlite3QuerierPool` runs on `bun:sqlite` under Bun, so SQLite is refused here rather than half-served. */
+  it('should refuse SQLite, pointing at its own pool', () => {
+    expect(() => new BunSqlQuerierPool({ url: 'sqlite://:memory:' })).toThrow('uql-orm/sqlite pool');
+  });
+
   describe('pool shim', () => {
     it('should provide pg-compatible query method', async () => {
       const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
-      const mockResult = [{ id: 1 }];
-      (mockResult as any).affectedRows = 1;
-
-      vi.spyOn(pool.sql, 'unsafe').mockResolvedValue(mockResult as any);
+      vi.spyOn(pool.sql, 'unsafe').mockResolvedValue(Object.assign([{ id: 1 }], { affectedRows: 1 }));
 
       const res = await pool.pool.query('SELECT 1', [123]);
       expect(res.rows).toEqual([{ id: 1 }]);
@@ -61,43 +51,6 @@ describe('BunSqlQuerierPool', () => {
   it('should return a BunSqlQuerier', async () => {
     const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
     expect(await pool.getQuerier()).toBeInstanceOf(BunSqlQuerier);
-  });
-
-  it('should wire sqlite querier to sql without reserve', async () => {
-    const pool = new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
-    const reserve = vi.spyOn(pool.sql, 'reserve');
-    const mockRows = Object.assign([{ n: 1 }], {});
-    vi.spyOn(pool.sql, 'unsafe').mockResolvedValue(mockRows as any);
-
-    const querier = await pool.getQuerier();
-    expect(reserve).not.toHaveBeenCalled();
-
-    expect(await querier.all('SELECT 1')).toEqual([{ n: 1 }]);
-    expect(pool.sql.unsafe).toHaveBeenCalledWith('PRAGMA foreign_keys = ON');
-    // Releasing an unpooled handle must leave it usable: it is the pool's, not this querier's.
-    await querier.release();
-    expect(await pool.all('SELECT 1')).toEqual([{ n: 1 }]);
-  });
-
-  it('should warn that SQLite through bun:sql is deprecated', () => {
-    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => {});
-
-    new BunSqlQuerierPool({ url: 'sqlite://:memory:' });
-
-    expect(warn).toHaveBeenCalledWith(
-      expect.stringContaining('Sqlite3QuerierPool'),
-      expect.objectContaining({ type: 'DeprecationWarning' }),
-    );
-    warn.mockRestore();
-  });
-
-  it('should not warn for an engine it drives in full', () => {
-    const warn = vi.spyOn(process, 'emitWarning').mockImplementation(() => {});
-
-    new BunSqlQuerierPool({ url: 'postgres://localhost' });
-
-    expect(warn).not.toHaveBeenCalled();
-    warn.mockRestore();
   });
 
   it('should close the sql client on end', async () => {

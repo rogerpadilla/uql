@@ -29,8 +29,7 @@ export interface D1ExecResult {
 export interface D1PreparedStatement {
   bind(...values: unknown[]): D1PreparedStatement;
   first<T = unknown>(colName?: string): Promise<T | null>;
-  // `run()` and `all()` share the same `D1Result` shape (both carry `results`), which matters
-  // for statements with a RETURNING clause.
+  /** Documented by D1 as an alias of {@link all}: both answer the rows and `meta.changes`. */
   run<T = unknown>(): Promise<D1Result<T>>;
   all<T = unknown>(): Promise<D1Result<T>>;
   raw<T = unknown>(): Promise<T[]>;
@@ -43,7 +42,10 @@ export interface D1Database {
   exec(query: string): Promise<D1ExecResult>;
 }
 
-/** The only part of a D1 binding the querier uses; a full {@link D1Database} satisfies it. */
+/**
+ * The only part of a D1 binding the querier uses: what a {@link D1Database} and a session from
+ * `withSession()`, which a read-replicated database is read through, both have.
+ */
 export type D1Preparer = Pick<D1Database, 'prepare'>;
 
 export class D1Querier extends AbstractSqliteQuerier {
@@ -55,19 +57,14 @@ export class D1Querier extends AbstractSqliteQuerier {
     super(dialect, extra);
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
+  protected override async execute(query: string, values?: unknown[]) {
     const stmt = this.db.prepare(query);
-    const bound = values?.length ? stmt.bind(...values) : stmt;
-    const res = await bound.all<T>();
-    return res.results;
+    const { results, meta } = await (values?.length ? stmt.bind(...values) : stmt).all<RawRow>();
+    return { rows: results, changes: meta.changes ?? 0 };
   }
 
-  override async internalRun(query: string, values?: unknown[]) {
-    const stmt = this.db.prepare(query);
-    const bound = values?.length ? stmt.bind(...values) : stmt;
-    const res = await bound.run<RawRow>();
-    const rows = res.results;
-    const changes = rows.length || res.meta?.changes || 0;
-    return this.buildUpdateResult({ rows, changes, id: res.meta?.last_row_id });
+  /** D1 answers `BEGIN` with `D1_ERROR: not authorized`: a single statement is its only atomic unit. */
+  protected override async internalBegin(): Promise<void> {
+    throw new TypeError('Cloudflare D1 has no transactions: write the changes as one statement, or idempotently');
   }
 }

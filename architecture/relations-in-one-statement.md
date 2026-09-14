@@ -39,7 +39,7 @@ LIMIT 20
 - **MySQL** has no ordered `JSON_ARRAYAGG`, so it uses `GROUP_CONCAT`, whose 1 KB cap a `SET_VAR` hint lifts per statement.
 - **MariaDB** cannot correlate a derived table, so it aggregates the related table directly and lifts the same cap with `SET STATEMENT`.
 - **Postgres** reads each row whole: 5 to 25% faster than `JSON_BUILD_OBJECT`, with no argument limit.
-- **Wide objects** split across nested calls where arguments are capped: 127 on SQLite before 3.48 (libSQL, Turso), 32 on D1.
+- **Wide objects** split across nested calls where arguments are capped: 127 on SQLite before 3.48 (libSQL, so Turso Cloud, and `bun:sqlite`'s build), 32 on D1, none on the embedded Turso engine.
 - **A many-to-many** reads its targets through `IN (SELECT <target fk> FROM <junction> ...)`.
 - **Under a join**, a to-many correlates to the join's alias; on MongoDB its lookup runs inside the join's.
 - **Keys**: a joined row keeps its id, which alone tells a match from none. Nothing else is forced into a projection.

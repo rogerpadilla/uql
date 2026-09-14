@@ -240,7 +240,7 @@ defineEntity(Account, {
   indexes: [
     { columns: (account) => [account.email], unique: true },
     {
-      columns: (account) => [{ column: account.createdAt, order: 'desc' }, (row) => raw`lower(${row.email})`],
+      columns: (account) => [{ column: account.createdAt, order: 'desc' }, raw`lower(${account.email})`],
       include: (account) => [account.id],
     },
   ],
@@ -310,7 +310,7 @@ defineIndex(Account, { columns: (account) => [account.email], unique: true });
 // @ts-expect-error no such column to index
 defineIndex(Account, { columns: (account) => [account.emial] });
 
-/** On `@Entity`, the key map is typed by the decorated class, as `@Index`'s is. */
+/** On `@Entity`, an index's refs and a hook's key map are typed by the decorated class, as `@Index`'s refs are. */
 @Entity({
   indexes: [{ columns: (tagged) => [tagged.label] }],
   hooks: { afterLoad: (tagged) => [tagged.touch] },

@@ -3,7 +3,7 @@ import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandle
 import type { ExtraOptions } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { applySqlitePragmas } from './sqlitePragmas.js';
-import { type SqliteDatabase, SqliteQuerier } from './sqliteQuerier.js';
+import { type SqlitePreparedStatement, SqliteQuerier } from './sqliteQuerier.js';
 
 /** What every local SQLite pool accepts on top of its driver's own options. */
 export type LocalSqlitePoolOptions = {
@@ -16,6 +16,16 @@ export type LocalSqlitePoolOptions = {
 };
 
 /**
+ * A database opened in this process by a driver that answers at once, and installs loadable extensions
+ * (`sqlite-vec`, ...) into its connection.
+ */
+export type LocalSqliteDatabase = {
+  prepare(sql: string): SqlitePreparedStatement;
+  loadExtension(path: string): void;
+  close(): unknown;
+};
+
+/**
  * Pool for a SQLite database opened in this process, whichever driver provides it. SQLite gives one
  * connection per file, so the shared-handle lifecycle is {@link AbstractSharedHandleQuerierPool}'s.
  *
@@ -24,7 +34,7 @@ export type LocalSqlitePoolOptions = {
  */
 export abstract class AbstractLocalSqliteQuerierPool<
   O extends LocalSqlitePoolOptions,
-> extends AbstractSharedHandleQuerierPool<SqliteDatabase, SqliteQuerier, SqliteDialect> {
+> extends AbstractSharedHandleQuerierPool<LocalSqliteDatabase, SqliteQuerier, SqliteDialect> {
   constructor(
     readonly opts?: O,
     extra?: ExtraOptions,
@@ -33,9 +43,9 @@ export abstract class AbstractLocalSqliteQuerierPool<
   }
 
   /** Opens the driver's database, and nothing more: the caller configures it. */
-  protected abstract createDb(): Promise<SqliteDatabase>;
+  protected abstract createDb(): Promise<LocalSqliteDatabase>;
 
-  protected override async openDb(): Promise<SqliteDatabase> {
+  protected override async openDb(): Promise<LocalSqliteDatabase> {
     const db = await this.createDb();
     await applySqlitePragmas(db);
     for (const extension of this.opts?.extensions ?? []) {
@@ -44,7 +54,7 @@ export abstract class AbstractLocalSqliteQuerierPool<
     return db;
   }
 
-  protected override buildQuerier(db: SqliteDatabase) {
+  protected override buildQuerier(db: LocalSqliteDatabase) {
     return new SqliteQuerier(db, this.dialect, this.extra);
   }
 }

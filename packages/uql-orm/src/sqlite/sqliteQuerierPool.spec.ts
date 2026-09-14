@@ -1,11 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
-// Mock the dependencies
 vi.mock('./sqliteQuerier.js', () => ({
-  SqliteQuerier: vi.fn().mockImplementation(function (this: any, db: any, extra: any) {
+  SqliteQuerier: vi.fn().mockImplementation(function (this: { db?: unknown }, db: unknown) {
     this.db = db;
-    this.extra = extra;
   }),
 }));
 
@@ -19,18 +17,31 @@ const mocks = {
   betterDatabasePrepare: vi.fn(() => statement),
   betterDatabaseClose: vi.fn(),
   betterLoadExtension: vi.fn(),
+  betterDefaultSafeIntegers: vi.fn(function (this: unknown) {
+    return this;
+  }),
 };
 
-const bunDatabaseCtor = vi.fn().mockImplementation(function (this: any) {
-  this.prepare = mocks.bunDatabasePrepare;
-  this.close = mocks.bunDatabaseClose;
-  this.loadExtension = mocks.bunLoadExtension;
-});
+const bunHandle = {
+  prepare: mocks.bunDatabasePrepare,
+  close: mocks.bunDatabaseClose,
+  loadExtension: mocks.bunLoadExtension,
+};
 
-const betterDatabaseCtor = vi.fn().mockImplementation(function (this: any) {
-  this.prepare = mocks.betterDatabasePrepare;
-  this.close = mocks.betterDatabaseClose;
-  this.loadExtension = mocks.betterLoadExtension;
+const bunDatabaseCtor = Object.assign(
+  vi.fn().mockImplementation(function (this: object) {
+    Object.assign(this, bunHandle);
+  }),
+  { deserialize: vi.fn(() => bunHandle) },
+);
+
+const betterDatabaseCtor = vi.fn().mockImplementation(function (this: object) {
+  Object.assign(this, {
+    prepare: mocks.betterDatabasePrepare,
+    close: mocks.betterDatabaseClose,
+    loadExtension: mocks.betterLoadExtension,
+    defaultSafeIntegers: mocks.betterDefaultSafeIntegers,
+  });
 });
 
 vi.mock('bun:sqlite', () => ({ Database: bunDatabaseCtor }));
@@ -68,6 +79,25 @@ describe('Sqlite3QuerierPool', () => {
     expect(mocks.betterDatabasePrepare).toHaveBeenCalledWith('PRAGMA foreign_keys = ON');
   });
 
+  it('should read integers as bigints on better-sqlite3', async () => {
+    vi.stubGlobal('Bun', undefined);
+
+    await new Sqlite3QuerierPool(':memory:').getQuerier();
+
+    expect(mocks.betterDefaultSafeIntegers).toHaveBeenCalledWith(true);
+  });
+
+  /** `bun:sqlite` opens only a path; better-sqlite3 takes the serialized bytes as its filename. */
+  it('should deserialize a Buffer on bun:sqlite, reading integers as bigints', async () => {
+    vi.stubGlobal('Bun', {});
+    const serialized = Buffer.from('serialized');
+
+    await new Sqlite3QuerierPool(serialized).getQuerier();
+
+    expect(bunDatabaseCtor.deserialize).toHaveBeenCalledWith(serialized, { safeIntegers: true });
+    expect(bunDatabaseCtor).not.toHaveBeenCalled();
+  });
+
   it('should share one database but hand out a distinct querier per acquisition', async () => {
     vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
@@ -97,19 +127,18 @@ describe('Sqlite3QuerierPool', () => {
     expect(betterDatabaseCtor).toHaveBeenCalledWith(':memory:', { readonly: false });
   });
 
-  it('should load the requested extensions on bun:sqlite, without passing them to the driver', async () => {
+  it('should load the requested extensions on bun:sqlite, reading integers as bigints', async () => {
     vi.stubGlobal('Bun', {});
     const pool = new Sqlite3QuerierPool(':memory:', { extensions: ['/vec0.dylib'] });
     await pool.getQuerier();
     expect(mocks.bunLoadExtension).toHaveBeenCalledWith('/vec0.dylib');
-    // `bun:sqlite` rejects an options object with no open flags, so nothing is left to pass.
-    expect(bunDatabaseCtor).toHaveBeenCalledWith(':memory:', undefined);
+    expect(bunDatabaseCtor).toHaveBeenCalledWith(':memory:', { safeIntegers: true });
   });
 
   it('should close the database on end', async () => {
     vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
-    const querier = await pool.getQuerier();
+    await pool.getQuerier();
     await pool.end();
     expect(mocks.betterDatabaseClose).toHaveBeenCalled();
   });

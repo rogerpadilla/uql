@@ -19,7 +19,7 @@ import { raw } from '../util/index.js';
 @Index((article) => [article.title], { type: 'gin' })
 @Index((article) => [article.title], { where: { title: { $ne: '' } } })
 // Column entry sugar: an expression, and the object form's length/order/nulls/opsClass modifiers.
-@Index(() => [(article) => raw`lower(${article.title})`], { unique: true })
+@Index((article) => [raw`lower(${article.title})`], { unique: true })
 @Index((article) => [{ column: article.title, length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
 @Entity()
 export class Article {
@@ -64,6 +64,8 @@ export class MissingMetric {
 @Index((post) => [{ column: post.titel }])
 // @ts-expect-error a relation is not a column; index its foreign key instead
 @Index((post) => [post.author])
+// @ts-expect-error a column is read off the refs, never named by a string
+@Index(() => ['title'])
 @Entity()
 export class Post {
   @Id({ type: Number }) id?: number;
@@ -76,6 +78,10 @@ export class Post {
 @Index((covering) => [covering.title], { include: (covering) => [covering.id] })
 // @ts-expect-error no such column to include
 @Index((covering) => [covering.title], { include: (covering) => [covering.idd] })
+// @ts-expect-error `include` stores columns, never an expression
+@Index((covering) => [covering.title], { include: () => [raw`lower(title)`] })
+// @ts-expect-error `include` reads its columns off the refs, never names them by a string
+@Index((covering) => [covering.title], { include: () => ['id'] })
 @Entity()
 export class Covering {
   @Id({ type: Number }) id?: number;
@@ -84,11 +90,11 @@ export class Covering {
 
 /**
  * A partial index's predicate is a `QueryWhere` over the entity's own fields, or SQL reading them off
- * refs, as an expression entry's callback reads them. A typo, a relation, or what DDL cannot carry fails.
+ * refs, as an expression entry does. A typo, a relation, or what DDL cannot carry fails.
  */
 @Index((softDeleted) => [softDeleted.title], { where: { deletedAt: null } })
 @Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => raw`${softDeleted.deletedAt} IS NULL` })
-@Index(() => [{ column: () => raw`lower(title)`, order: 'desc' }])
+@Index(() => [{ column: raw`lower(title)`, order: 'desc' }])
 // @ts-expect-error no such field in the predicate
 @Index((softDeleted) => [softDeleted.title], { where: { deletdAt: null } })
 // @ts-expect-error a relation has no column to test
@@ -99,10 +105,10 @@ export class Covering {
 @Index((softDeleted) => [softDeleted.title], { where: 'title IS NOT NULL' })
 // @ts-expect-error the refs are the entity's fields
 @Index((softDeleted) => [softDeleted.title], { where: (softDeleted) => raw`${softDeleted.deletdAt} IS NULL` })
-// @ts-expect-error an expression is a callback reading refs, never a bare raw
-@Index(() => [raw`lower(title)`])
+// @ts-expect-error an expression is raw read off the list's refs, never a callback
+@Index(() => [() => raw`lower(title)`])
 // @ts-expect-error an expression's refs are the entity's fields
-@Index(() => [(softDeleted) => raw`lower(${softDeleted.titel})`])
+@Index((softDeleted) => [raw`lower(${softDeleted.titel})`])
 @Entity()
 export class SoftDeleted {
   @Id({ type: Number }) id?: number;
@@ -145,6 +151,8 @@ export class SoftDeleted {
 ])
 // @ts-expect-error no such column
 @Index((jsonIndexed) => [{ column: jsonIndexed.knid, jsonPath: { path: 'rating', type: Number } }])
+// @ts-expect-error a JSON entry names its column, never an expression
+@Index(() => [{ column: raw`kind`, jsonPath: { path: 'rating', type: Number } }])
 @Entity()
 export class JsonIndexed {
   @Id({ type: Number }) id?: number;

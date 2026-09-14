@@ -1,16 +1,29 @@
 import { describe, expect, it } from 'vitest';
 import { indexNameParts, normalizeIndexColumn, renderIndexColumn } from './ddlExpression.util.js';
-import { raw } from './raw.js';
+import { raw, refs } from './raw.js';
+
+class Note {
+  email?: string;
+}
 
 describe('normalizeIndexColumn', () => {
-  it('resolves an expression entry to the SQL its callback returns', () => {
-    const sql = raw`lower(email)`;
-    expect(normalizeIndexColumn(() => sql)).toEqual({ column: sql });
+  it('keeps a column, named or read off the refs, as its key', () => {
+    expect(normalizeIndexColumn('email')).toEqual({ column: 'email' });
+    expect(normalizeIndexColumn(refs(Note).email)).toEqual({ column: 'email' });
   });
 
-  it("resolves an options entry's expression, keeping its options", () => {
+  it('keeps any other raw as the expression it is', () => {
     const sql = raw`lower(email)`;
-    expect(normalizeIndexColumn({ column: () => sql, order: 'desc' })).toEqual({ column: sql, order: 'desc' });
+    expect(normalizeIndexColumn(sql)).toEqual({ column: sql });
+  });
+
+  it("resolves an options entry's column the same way, keeping its options", () => {
+    const sql = raw`lower(email)`;
+    expect(normalizeIndexColumn({ column: refs(Note).email, order: 'desc' })).toEqual({
+      column: 'email',
+      order: 'desc',
+    });
+    expect(normalizeIndexColumn({ column: sql, length: 64 })).toEqual({ column: sql, length: 64 });
   });
 });
 

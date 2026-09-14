@@ -79,7 +79,7 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  /** A function call takes 127 arguments before SQLite 3.48, as libSQL and Turso embed. */
+  /** SQLite's own cap on a function call before 3.48, which libSQL and `bun:sqlite`'s build still have. */
   override readonly maxFunctionArgs: number = 127;
 
   // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.

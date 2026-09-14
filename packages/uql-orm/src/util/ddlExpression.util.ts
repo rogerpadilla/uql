@@ -1,19 +1,18 @@
-import { type EntityIndexColumn, type IndexColumnInput, type IndexColumnSchema, QueryRaw } from '../type/index.js';
-import { entitySql } from './raw.js';
+import {
+  ColumnRef,
+  type EntityIndexColumn,
+  type IndexColumnInput,
+  type IndexColumnSchema,
+  QueryRaw,
+} from '../type/index.js';
 
 /**
- * Reduces an authored index entry to the form metadata keeps, so the shapes users write - a column
- * name, an expression's callback, an options object - reach the schema as one, each callback resolved.
+ * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
+ * object reach the schema as one: a column read off the refs as its key, any other `raw` as it is.
  */
 export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn {
-  if (typeof entry === 'string') {
-    return { column: entry };
-  }
-  if (typeof entry === 'function') {
-    return { column: entitySql(entry) };
-  }
-  const { column } = entry;
-  return { ...entry, column: typeof column === 'function' ? entitySql(column) : column };
+  const { column, ...modifiers } = typeof entry === 'string' || entry instanceof QueryRaw ? { column: entry } : entry;
+  return { ...modifiers, column: column instanceof ColumnRef ? column.key : column };
 }
 
 /** An index entry as the schema holds it, its expression rendered to text by `render`. */

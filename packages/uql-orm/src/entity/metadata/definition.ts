@@ -31,6 +31,7 @@ import {
   hasKeys,
   isToManyRelation,
   lowerFirst,
+  memberRefs,
   normalizeIndexColumn,
   upperFirst,
   definedEntries,
@@ -108,8 +109,8 @@ export function relationRegistration<T extends object, O>({
 }: RelationOptions<T, O>): RelationRegistration {
   return {
     ...opts,
-    ...(mappedBy ? { mappedBy: mappedBy(keyMap<T>()) } : {}),
-    ...(references ? { references: [...references(keyMap<O>(), keyMap<T>())] } : {}),
+    ...(mappedBy && { mappedBy: mappedBy(keyMap<T>()) }),
+    ...(references && { references: [...references(keyMap<O>(), keyMap<T>())] }),
   };
 }
 
@@ -143,25 +144,23 @@ function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegi
 
 export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEvent): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
-  if (!meta.hooks) meta.hooks = {};
-  if (!meta.hooks[event]) meta.hooks[event] = [];
-  meta.hooks[event].push({ methodName });
+  ((meta.hooks ??= {})[event] ??= []).push({ methodName });
   return meta;
 }
 
 /**
- * Declares a composite index, its columns read off the key map. `unique` and the authored column sugar
- * are normalized here, which is what lets the dialects render one shape instead of re-parsing it.
+ * Declares a composite index, its columns read off the entity's refs. `unique` and the authored column
+ * sugar are normalized here, which is what lets the dialects render one shape instead of re-parsing it.
  */
 export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
-  const keys = keyMap<E>();
+  const refs = memberRefs<E>();
   (meta.indexes ??= []).push({
     ...index,
     unique: index.unique ?? false,
     where: index.where && entityWhere(index.where),
-    columns: index.columns(keys).map(normalizeIndexColumn),
-    include: index.include?.(keys),
+    columns: index.columns(refs).map(normalizeIndexColumn),
+    include: index.include?.(refs).map((ref) => ref.key),
   });
   return meta;
 }
@@ -176,8 +175,7 @@ export function defineFilter<E>(entity: Type<E>, name: string, opts: FilterOptio
   if (opts.security && opts.onMissing === 'skip') {
     throw TypeError(`'${entity.name}' security filter '${name}' cannot use onMissing: 'skip' (it must fail closed)`);
   }
-  if (!meta.filters) meta.filters = {};
-  meta.filters[name] = opts;
+  (meta.filters ??= {})[name] = opts;
   return meta;
 }
 
@@ -277,8 +275,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   }
   if (softDeleteKeys.length) {
     meta.softDelete = softDeleteKeys[0];
-    if (!meta.filters) meta.filters = {};
-    meta.filters[SOFT_DELETE_FILTER] = { where: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
+    (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
   const ids = getIdKeys(meta);
@@ -618,9 +615,9 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
 
   // Merge hooks from parent entity (parent hooks execute first)
   if (source.hooks) {
-    if (!target.hooks) target.hooks = {};
+    const hooks = (target.hooks ??= {});
     for (const [event, sourceList] of definedEntries(source.hooks)) {
-      target.hooks[event] = [...sourceList, ...(target.hooks[event] ?? [])];
+      hooks[event] = [...sourceList, ...(hooks[event] ?? [])];
     }
   }
 }

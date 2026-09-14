@@ -1,20 +1,37 @@
-import type { ExtraOptions } from '../type/index.js';
-import { PreparedSqliteQuerier, type SqlitePreparedStatement } from './abstractSqliteQuerier.js';
+import type { ExtraOptions, RawRow } from '../type/index.js';
+import { decodeBigInts } from '../util/wideNumber.js';
+import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
+/** What uql reads of a driver's `run()`: the row count. An inserted id comes back through `RETURNING`. */
+export type SqliteRunResult = {
+  changes: number;
+};
+
+/** A prepared statement with better-sqlite3 semantics, answering at once or with a promise. */
+export type SqlitePreparedStatement = {
+  /** True for any statement returning rows, including one with a `RETURNING` clause. */
+  readonly reader: boolean;
+  all(...values: SqliteBindValue[]): unknown[] | Promise<unknown[]>;
+  run(...values: SqliteBindValue[]): SqliteRunResult | Promise<SqliteRunResult>;
+  iterate(...values: SqliteBindValue[]): Iterable<unknown> | AsyncIterable<unknown>;
+};
+
 /**
- * Structural subset of a synchronous better-sqlite3-compatible driver, declared locally so this
- * querier carries no vendor type. A real `better-sqlite3` `Database` satisfies it directly;
- * `bun:sqlite` is adapted to it by {@link Sqlite3QuerierPool}.
+ * A SQLite driver that prepares statements. `better-sqlite3` and the embedded Turso engine satisfy it
+ * as they are, `bun:sqlite` and `node:sqlite` through their adapters.
  */
 export type SqliteDatabase = {
-  prepare(sql: string): SqlitePreparedStatement;
-  /** Installs a loadable extension (`sqlite-vec`, ...) into this connection. */
-  loadExtension(path: string): void;
+  prepare(sql: string): SqlitePreparedStatement | Promise<SqlitePreparedStatement>;
   close(): unknown;
 };
 
-export class SqliteQuerier extends PreparedSqliteQuerier {
+/**
+ * Querier for the SQLite drivers that prepare statements: `better-sqlite3`, `bun:sqlite`, `node:sqlite`
+ * and the embedded Turso engine. They differ only in whether preparing and stepping answer at once or
+ * with a promise, which `await` and `for await` absorb.
+ */
+export class SqliteQuerier extends AbstractSqliteQuerier {
   constructor(
     readonly db: SqliteDatabase,
     dialect: SqliteDialect,
@@ -23,7 +40,25 @@ export class SqliteQuerier extends PreparedSqliteQuerier {
     super(dialect, extra);
   }
 
-  protected override prepare(query: string) {
-    return this.db.prepare(query);
+  /** `reader` picks the call: `run()` would discard the rows of a statement that reads, RETURNING included. */
+  protected override async execute(query: string, values?: unknown[]) {
+    const stmt = await this.db.prepare(query);
+    const bound = toBindValues(values);
+    if (stmt.reader) {
+      return { rows: (await stmt.all(...bound)) as RawRow[], changes: 0 };
+    }
+    return { rows: [], changes: (await stmt.run(...bound)).changes };
   }
+
+  override async *internalStream<T>(query: string, values?: unknown[]) {
+    const stmt = await this.db.prepare(query);
+    for await (const row of stmt.iterate(...toBindValues(values))) {
+      yield decodeBigInts(row as RawRow) as T;
+    }
+  }
+}
+
+/** Bound parameters reach a driver as `unknown[]` from the compiler; every driver types them narrowly. */
+function toBindValues(values?: unknown[]): SqliteBindValue[] {
+  return (values ?? []) as SqliteBindValue[];
 }

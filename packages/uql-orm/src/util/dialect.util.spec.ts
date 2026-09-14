@@ -386,7 +386,7 @@ describe('findVectorIndex', () => {
   });
 
   it('ignores an expression index, whose text names no column however it reads', () => {
-    @Index(() => [() => raw`embedding`], { type: 'hnsw', distance: 'cosine' })
+    @Index(() => [raw`embedding`], { type: 'hnsw', distance: 'cosine' })
     @Entity()
     class Expressed {
       @Id({ type: Number }) id?: number;

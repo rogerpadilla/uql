@@ -1,6 +1,6 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { FilterOptions } from './query.js';
-import type { QueryRaw } from './queryRaw.js';
+import type { ColumnRef, QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
@@ -757,14 +757,6 @@ type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 
  */
 export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 
-declare const COLUMN_KEY: unique symbol;
-
-/**
- * A field of an entity as SQL, read off a {@link RefMap}: interpolated into `raw`, it renders as that
- * field's column. A `QueryRaw` like any other fragment, branded with the field `K` it names.
- */
-export type ColumnRef<K extends string = string> = QueryRaw & { readonly [COLUMN_KEY]?: K };
-
 /**
  * The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)` in a statement, the
  * callback's parameter in a definition. Keyed over a type parameter constrained to `keyof E`, as
@@ -773,14 +765,11 @@ export type ColumnRef<K extends string = string> = QueryRaw & { readonly [COLUMN
 export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string> };
 
 /**
- * A callback reading an entity's fields off a {@link RefMap} for the SQL it returns. Declared as a
- * method, bivariant in its refs, so one typed for its entity still fits where the entity is erased: the
- * registry, which resolves it.
+ * SQL a definition writes: `raw`, or a callback reading the entity's fields off its refs. The callback is
+ * declared as a method, bivariant in its refs, so one typed for its entity still fits where the entity is
+ * erased: the registry, which resolves it.
  */
-export type SqlCallback<E> = { sql(row: RefMap<E>): QueryRaw }['sql'];
-
-/** SQL a definition writes: `raw`, or a {@link SqlCallback} for SQL that names the entity's fields. */
-export type EntitySql<E> = QueryRaw | SqlCallback<E>;
+export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
 
 /**
  * A predicate DDL carries, over the entity's own fields: a relation, full-text search and a sub-query
@@ -857,49 +846,29 @@ export type IndexTypeOptions =
   | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
 
 /**
- * One entry of an index: a column by default, a {@link SqlCallback} to index an expression, or an object
- * when the entry needs more than that.
- *
- * @example
- * ```ts
- * @Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }]) // keyset pagination
- * @Index(() => [(post) => raw`lower(${post.email})`], { unique: true })       // case-insensitive uniqueness
- * @Index((post) => [{ column: post.body, length: 64 }])                       // MySQL needs a prefix on TEXT
- * @Index((post) => [post.data], { type: 'gin' })                              // JSONB containment
- * ```
- *
- * `C` is the entity's `FieldKey` on the `@Index`/`defineEntity` paths, where the decorated class says
- * which columns exist, and `E` the entity itself, which is what checks a JSON entry's path. Both
- * default to the unchecked form for the migration builder's `table.index(...)`, which names raw
- * table columns with no entity in scope.
+ * One index entry as the migration builder takes it: a column name, `raw` for an expression, or an object
+ * when the entry needs more. An entity's entries are this too, which is what `normalizeIndexColumn` reads.
  */
-export type IndexColumnInput<C extends string = string, E = unknown> =
-  | C
-  | SqlCallback<E>
-  | IndexColumnOptions<C, E>
-  | IndexJsonColumnOptions<C, E>;
+export type IndexColumnInput = string | QueryRaw | EntityIndexColumn;
 
 /**
- * The JSON entries, whose `path` is checked against the payload of the column the same entry names -
- * a mapped union, one arm per JSON field, so `{ column: 'kind', jsonPath: { path: 'thema.color' } }`
- * cannot compile. It matters more here than anywhere else in the index API: a path that is merely
- * *misspelled* still builds a perfectly valid index, one no query will ever match, and nothing at
- * runtime can tell that from the index you meant.
- *
- * `jsonArray`'s path is the array's own, so on a column that *is* the array (`Json<string[]>`) it
- * resolves to `never` and the property can only be omitted, which is exactly the truth.
- *
- * Falls back to the unchecked shape only where there is no entity to check against - the migration
- * builder. An entity with no JSON field at all offers no arm, which is also the truth.
+ * One entry of an entity's index, read off its refs: a column, `raw` for an expression, or an object when
+ * the entry needs more, a JSON entry's path checked against its column.
+ * @example `@Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, raw`lower(${post.email})`])`
  */
-type IndexJsonColumnOptions<C extends string, E> = unknown extends E
-  ? IndexColumnModifiers & { readonly column: C }
-  : {
-      [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: K } & (
-          | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
-          | { readonly jsonArray: WithCheckedPath<IndexJsonArray, E, K>; readonly jsonPath?: never }
-        );
-    }[JsonColumnKey<E>];
+export type EntityIndexColumnInput<E> = QueryRaw | IndexColumnOptions | IndexJsonColumnOptions<E>;
+
+/**
+ * The JSON entries, one arm per JSON field, each `path` checked against the payload of the column its own
+ * entry names: a misspelled path still builds a valid index that no query matches. On a column that is
+ * the array (`Json<string[]>`), `jsonArray`'s path resolves to `never`, so it can only be omitted.
+ */
+type IndexJsonColumnOptions<E> = {
+  [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: ColumnRef<K & string> } & (
+      | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
+      | { readonly jsonArray: WithCheckedPath<IndexJsonArray, E, K>; readonly jsonPath?: never }
+    );
+}[JsonColumnKey<E>];
 
 /**
  * The JSON columns an index can address, which is a wider set than {@link JsonFieldKey}: that one
@@ -908,11 +877,7 @@ type IndexJsonColumnOptions<C extends string, E> = unknown extends E
  * subject is that column.
  */
 type JsonColumnKey<E> = {
-  readonly [K in keyof E]-?: IsJson<NonNullable<E[K]>> extends true
-    ? K
-    : IsJson<JsonElement<E[K]>> extends true
-      ? K
-      : never;
+  readonly [K in keyof E]-?: IsJsonColumn<NonNullable<E[K]>> extends true ? K : never;
 }[Key<E>];
 
 /** The payload a path is checked against: the column's own brand, or that of the documents it holds. */
@@ -997,18 +962,20 @@ export type IndexJsonArray = {
 /** The modifiers that do not name a JSON path, and so need no entity to be checked against. */
 type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'jsonArray'>;
 
-export type IndexColumnOptions<C extends string = string, E = unknown> = IndexColumnPlainModifiers & {
-  /** The column to index, or a {@link SqlCallback} for an expression. */
-  readonly column: C | SqlCallback<E>;
-  // A JSON entry is its own shape, checked against its column's payload; without these a callback's
-  // entry would also satisfy this one, and the path would go unchecked.
+/**
+ * An entity's entry with plain modifiers. `jsonPath` and `jsonArray` are `never` here, since a JSON entry
+ * would otherwise match this shape too, its path unchecked.
+ */
+type IndexColumnOptions = IndexColumnPlainModifiers & {
+  /** A column read off the refs, or `raw` for an expression. */
+  readonly column: QueryRaw;
   readonly jsonPath?: never;
   readonly jsonArray?: never;
 };
 
 /**
- * One index entry, normalized: {@link IndexColumnInput}'s three authored shapes all reduce to this
- * before any dialect or generator sees them, so rendering never re-parses the sugar.
+ * One index entry, normalized: every authored shape reduces to this before any dialect or generator sees
+ * it, so rendering never re-parses the sugar.
  */
 export type IndexColumnSchema = IndexColumnModifiers & {
   /** A column name, or raw SQL when {@link expression} is set. */
@@ -1161,28 +1128,26 @@ export type EntityOptions<E = unknown> = {
  * and through {@link EntityIndexOptions} `@Index` and `defineEntity`. `Except` (not plain `Omit`) keeps
  * `type`/`distance` a discriminated pair: omitting `distance` on a vector index type is a compile error.
  */
-export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'include' | 'where'> & {
-  /** Non-key columns stored in the index, by column name; a typo builds nothing, the server refusing it. */
-  readonly include?: readonly string[];
+export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'where'> & {
   /** Partial-index predicate, as `raw` with no interpolation: the migration builder has no entity to compile one against. */
   readonly where?: QueryRaw;
 };
 
 /**
- * {@link IndexOptions} on an entity, whose stored columns are read off its key map, `(post) => [post.slug]`,
+ * {@link IndexOptions} on an entity, whose stored columns are read off its refs, `(post) => [post.slug]`,
  * so they are checked against it and follow a rename. The migration builder names raw columns instead.
  */
 export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & {
-  readonly include?: (keys: KeyMap<E>) => readonly FieldKey<E>[];
+  readonly include?: (refs: RefMap<E>) => readonly ColumnRef<FieldKey<E>>[];
   /** Partial-index predicate. See {@link EntityWhere}. */
   readonly where?: EntityWhere<E>;
 };
 
 /**
- * An index as authored on an entity, before `defineIndex` reads its columns off the key map. Only the
+ * An index as authored on an entity, before `defineIndex` reads its columns off the refs. Only the
  * member lists are callbacks: TypeScript never checks a callback's returned literal for excess properties,
  * so the options stay a literal of their own, where `uniqe: true` is a compile error.
  */
 export type EntityIndexInput<E> = EntityIndexOptions<E> & {
-  readonly columns: (keys: KeyMap<E>) => readonly IndexColumnInput<FieldKey<E>, E>[];
+  readonly columns: (refs: RefMap<E>) => readonly EntityIndexColumnInput<E>[];
 };

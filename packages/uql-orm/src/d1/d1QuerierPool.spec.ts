@@ -1,20 +1,22 @@
-import { describe, expect, it } from 'vitest';
-import type { D1Database } from './d1Querier.js';
-import { D1Querier } from './d1Querier.js';
+import { describe, expect, it, vi } from 'vitest';
+import { D1Querier, type D1Preparer } from './d1Querier.js';
 import { D1QuerierPool } from './d1QuerierPool.js';
 
 describe('D1QuerierPool', () => {
-  it('getQuerier', async () => {
-    const db = {} as D1Database;
-    const pool = new D1QuerierPool(db);
-    const querier = await pool.getQuerier();
+  /** What only prepares, as `env.DB.withSession()` does, which a read-replicated database needs. */
+  it('should hand every querier the binding or session it was given', async () => {
+    const session = { prepare: vi.fn() } satisfies D1Preparer;
+
+    const querier = await new D1QuerierPool(session).getQuerier();
+
     expect(querier).toBeInstanceOf(D1Querier);
-    expect(querier.db).toBe(db);
+    expect(querier.db).toBe(session);
   });
 
-  it('end', async () => {
-    const db = {} as D1Database;
-    const pool = new D1QuerierPool(db);
-    await expect(pool.end()).resolves.toBeUndefined();
+  it('should end without touching the binding', async () => {
+    const session = { prepare: vi.fn() } satisfies D1Preparer;
+
+    await expect(new D1QuerierPool(session).end()).resolves.toBeUndefined();
+    expect(session.prepare).not.toHaveBeenCalled();
   });
 });

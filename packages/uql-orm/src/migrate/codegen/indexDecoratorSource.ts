@@ -1,5 +1,5 @@
 import type { IndexNode } from '../../schema/types.js';
-import type { IndexColumnSchema, VectorDistance } from '../../type/index.js';
+import { type IndexColumnSchema, isVectorIndexType, type VectorDistance } from '../../type/index.js';
 import { isIdentifierName, quoted, rawTag } from './sourceLiteral.js';
 
 /**
@@ -60,7 +60,7 @@ export function isPlainFieldIndex(index: IndexNode): boolean {
 
 /**
  * One `@Index((user) => [...])` as source, for an index no `@Field` can express, its columns read off the
- * key map `param` names. Emits `raw(...)` for an expression entry, so callers import `raw` when
+ * refs `param` names. Emits `raw` for an expression entry, so callers import `raw` when
  * {@link indexNeedsRaw} holds.
  */
 export function buildIndexDecoratorSource(
@@ -70,7 +70,7 @@ export function buildIndexDecoratorSource(
 ): string {
   const entries = index.entries.map((entry) => indexEntrySource(entry, propertyName, param)).join(', ');
 
-  const isVector = index.type === 'hnsw' || index.type === 'ivfflat';
+  const isVector = isVectorIndexType(index.type);
   const distance = isVector ? vectorDistance(index) : undefined;
   const options: string[] = [];
   if (index.name) options.push(`name: '${index.name}'`);
@@ -98,12 +98,7 @@ export function indexNeedsRaw(index: IndexNode): boolean {
 }
 
 function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: string) => string, param: string): string {
-  if (entry.expression) {
-    const expression = `() => ${rawTag(entry.column)}`;
-    const modifiers = significantModifiers(entry);
-    return modifiers.length === 0 ? expression : `{ column: ${expression}, ${modifiers.join(', ')} }`;
-  }
-  const column = memberSource(param, propertyName(entry.column));
+  const column = entry.expression ? rawTag(entry.column) : memberSource(param, propertyName(entry.column));
   const modifiers = significantModifiers(entry);
   return modifiers.length === 0 ? column : `{ column: ${column}, ${modifiers.join(', ')} }`;
 }

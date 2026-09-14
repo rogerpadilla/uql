@@ -13,7 +13,7 @@ export class LibsqlDialect extends SqliteDialect {
    * functions this dialect would otherwise inherit are never present.
    *
    * @remarks `inner` and `l1` are left out: `vector_distance_dot` only exists in the newer Rust
-   * engine (see `TursoDialect`) and no libSQL build has an L1 metric. Both raise the same
+   * engine (see `TursoLocalDialect`) and no libSQL build has an L1 metric. Both raise the same
    * "does not support vector distance metric" error as any other unsupported metric.
    */
   override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([

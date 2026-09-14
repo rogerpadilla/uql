@@ -1,7 +1,7 @@
-import { type Config, createClient } from '@libsql/client';
+import { createClient } from '@libsql/client';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { HranaQuerier } from '../sqlite/hranaQuerier.js';
-import { LibsqlQuerierPool, libsqlUseRemoteForMigrations } from './libsqlQuerierPool.js';
+import { type HranaClient, HranaQuerier } from '../sqlite/hranaQuerier.js';
+import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
 vi.mock('@libsql/client', () => ({
   createClient: vi.fn(() => ({
@@ -9,17 +9,14 @@ vi.mock('@libsql/client', () => ({
   })),
 }));
 
-describe('libsqlUseRemoteForMigrations', () => {
-  it('is true for file: url with syncUrl', () => {
-    expect(libsqlUseRemoteForMigrations({ url: 'file:./app.db', syncUrl: 'libsql://x' })).toBe(true);
-  });
-
-  it('is false without syncUrl, non-file url, or :memory:', () => {
-    expect(libsqlUseRemoteForMigrations({ url: 'file:./a.db' })).toBe(false);
-    expect(libsqlUseRemoteForMigrations({ url: 'libsql://only', syncUrl: 'libsql://x' })).toBe(false);
-    expect(libsqlUseRemoteForMigrations({ url: ':memory:', syncUrl: 'libsql://x' })).toBe(false);
-  });
-});
+/** A client the caller built, as `@libsql/client/web` or `@libsql/client-wasm` does. */
+function buildClient() {
+  return {
+    execute: vi.fn(),
+    transaction: vi.fn(),
+    close: vi.fn(),
+  } satisfies HranaClient;
+}
 
 describe('LibsqlQuerierPool', () => {
   beforeEach(() => {
@@ -34,33 +31,59 @@ describe('LibsqlQuerierPool', () => {
     const querier = await pool.getQuerier();
 
     expect(querier).toBeInstanceOf(HranaQuerier);
-    expect(createClient).toHaveBeenCalledWith(config);
+    expect(createClient).toHaveBeenCalledWith({ ...config, intMode: 'bigint' });
   });
 
-  it('shares one client across queriers when not an embedded replica', async () => {
+  it('reads integers as bigints even when the config asks for numbers', async () => {
+    const pool = new LibsqlQuerierPool({ url: ':memory:', intMode: 'number' });
+
+    await pool.getQuerier();
+
+    expect(createClient).toHaveBeenCalledWith({ url: ':memory:', intMode: 'bigint' });
+  });
+
+  it('opens one client when acquisitions race', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:' });
-    const q1 = await pool.getQuerier();
-    const q2 = await pool.getMigrationQuerier();
-    expect(q1.client).toBe(q2.client);
+
+    const [first, second] = await Promise.all([pool.getQuerier(), pool.getQuerier()]);
+
+    expect(createClient).toHaveBeenCalledTimes(1);
+    expect(first.client).toBe(second.client);
+  });
+
+  it('shares a client it was given with every querier, and leaves it open on end', async () => {
+    const client = buildClient();
+    const pool = new LibsqlQuerierPool(client);
+
+    const querier = await pool.getQuerier();
+    const migration = await pool.getMigrationQuerier();
+    await pool.end();
+
+    expect(querier.client).toBe(client);
+    expect(migration.client).toBe(client);
+    expect(createClient).not.toHaveBeenCalled();
+    expect(client.close).not.toHaveBeenCalled();
+  });
+
+  it('migrates through the shared client when the database is no embedded replica', async () => {
+    const pool = new LibsqlQuerierPool({ url: 'libsql://only.test', syncUrl: 'libsql://remote.test' });
+
+    const querier = await pool.getQuerier();
+    const migration = await pool.getMigrationQuerier();
+
+    expect(migration.client).toBe(querier.client);
     expect(createClient).toHaveBeenCalledTimes(1);
   });
 
-  it('getMigrationQuerier uses remote config for file: + syncUrl', async () => {
-    const config = { url: 'file:./local.db', syncUrl: 'libsql://remote.test', authToken: 't' };
-    const pool = new LibsqlQuerierPool(config);
+  it('migrates an embedded replica on its sync url, closing that client with its querier', async () => {
+    const pool = new LibsqlQuerierPool({ url: 'file:./local.db', syncUrl: 'libsql://remote.test', authToken: 't' });
 
-    const q = await pool.getMigrationQuerier();
-    expect(q).toBeInstanceOf(HranaQuerier);
-    expect(createClient).toHaveBeenCalledTimes(1);
+    const migration = await pool.getMigrationQuerier();
 
-    const remoteArg = vi.mocked(createClient).mock.calls[0][0] as Config;
-    expect(remoteArg.url).toBe('libsql://remote.test');
-    expect(remoteArg.authToken).toBe('t');
-    expect('syncUrl' in remoteArg ? remoteArg.syncUrl : undefined).toBeUndefined();
-
-    // A one-shot migration client is closed by the querier that owns it.
-    await q.release();
-    expect(q.client.close).toHaveBeenCalled();
+    expect(migration).toBeInstanceOf(HranaQuerier);
+    expect(createClient).toHaveBeenCalledWith({ url: 'libsql://remote.test', authToken: 't', intMode: 'bigint' });
+    await migration.release();
+    expect(migration.client.close).toHaveBeenCalled();
   });
 
   it('closes the client on end', async () => {

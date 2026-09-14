@@ -17,7 +17,7 @@ const TABLE = 'drift_index_user';
  * Everything an index carries that Postgres reprints in its own words: an expression, a partial
  * predicate, a stored order, `INCLUDE` columns, an operator class.
  */
-@Index((driftIndexUser) => [() => raw`lower("email")`], {
+@Index(() => [raw`lower("email")`], {
   unique: true,
   where: raw`"deletedAt" IS NULL`,
   name: 'drift_email_live_idx',
@@ -45,7 +45,7 @@ class DriftIndexUser {
 }
 
 /** The same table, with one index no longer unique and one covering column dropped. */
-@Index((driftIndexUserEdited) => [() => raw`lower("email")`], {
+@Index(() => [raw`lower("email")`], {
   where: raw`"deletedAt" IS NULL`,
   name: 'drift_email_live_idx',
 })
@@ -113,7 +113,7 @@ const CRDB_TABLE = 'drift_index_crdb';
  * `CREATE UNIQUE INDEX` too, so a catalogue filter written for Postgres hides it and reports it
  * missing on every run.
  */
-@Index((crdbIndexUser) => [() => raw`lower("email")`], {
+@Index(() => [raw`lower("email")`], {
   unique: true,
   where: raw`"deletedAt" IS NULL`,
   name: 'crdb_email_live_idx',

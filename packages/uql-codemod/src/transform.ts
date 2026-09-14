@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { applyEdits, type Edit, inserted, removeFromList, replaced } from './edits.js';
-import { columnExpressions, expressionEntryEdits, handNamedColumns, isRaw, rawTag, rawWhereEdit } from './entitySql.js';
+import { columnExpressions, handNamedColumns, isRaw, rawTag, rawWhereEdit } from './entitySql.js';
 import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
 import {
   type Edits,
@@ -13,6 +13,7 @@ import {
   paramFor,
   propertyKey,
   propertyValue,
+  quoted,
   referencesEdits,
 } from './keyMaps.js';
 
@@ -46,6 +47,18 @@ const REMOVED_EXPORTS = new Map([
   ['augmentWhere', 'spread the two maps: `{ ...where, ...extra }`'],
   ['buildQueryWhereAsMap', 'a `$where` is a map already; name the key for ids: `{ id: [1, 2] }`'],
   ['AbstractPgQuerier', 'every pg-compatible pool returns `PgQuerier` (`uql-orm/postgres`), which is concrete'],
+  ['AbstractHranaQuerierPool', 'extend `AbstractSqlQuerierPool` and hand every querier a `HranaQuerier`'],
+  [
+    'PreparedSqliteQuerier',
+    'use `SqliteQuerier`, which takes any driver that prepares, or extend `AbstractSqliteQuerier`',
+  ],
+  ['toSqliteBindValues', 'pass the values as they are: every SQLite driver binds a `SqliteBindValue[]`'],
+  ['libsqlUseRemoteForMigrations', '`LibsqlQuerierPool.getMigrationQuerier()` decides it'],
+  ['SqlCallback', 'use `EntitySql<E>`, which holds the callback form'],
+  [
+    'IndexColumnOptions',
+    "an entity's index entry is `EntityIndexColumnInput<E>`, the migration builder's `IndexColumnInput`",
+  ],
 ]);
 
 /**
@@ -65,6 +78,10 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['MongodbNativeDialect', { to: 'MongoDialect', from: 'uql-orm/mongo' }],
   ['LibsqlQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
   ['TursoQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
+  ['TursoLocalQuerier', { to: 'SqliteQuerier', from: 'uql-orm/sqlite' }],
+  ['TursoDatabase', { to: 'SqliteDatabase', from: 'uql-orm/sqlite' }],
+  ['SqlMigrationModuleOptions', { to: 'MigrationModuleOptions' }],
+  ['buildSqlQuerierMigrationModule', { to: 'buildMigrationModule' }],
 ]);
 
 export type FileResult = {
@@ -318,12 +335,12 @@ function rewriteKeyList(
   what: string,
   ctx: Context,
 ): void {
-  rewriteValue(value, (list) => keyListEdits(list, param), node, `write ${what} as a key-map callback`, ctx);
+  rewriteValue(value, (list) => keyListEdits(list, param), node, `write ${what} as a callback`, ctx);
 }
 
 /**
  * Rewrites a class's decorators - `@Index`, `@Filter` and `@Entity`'s options - for what they define now:
- * members named by string read off key maps named after the class, and SQL written as it is taken.
+ * members named by string read off a callback's parameter named after the class, and SQL written as it is taken.
  */
 function rewriteClassDecorators(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context): void {
   const owner: Owner = { param: paramFor(node.name?.text), entity: node };
@@ -394,7 +411,7 @@ function rewriteIndexOptions(index: ts.ObjectLiteralExpression, owner: Owner, ct
 
 /**
  * An index, as `@Index(columns, options)` or a `defineIndex`/`indexes` entry holding both: its columns and
- * `include` read off the key map, its SQL written as {@link rewriteIndexSql} writes it, and noted.
+ * `include` read off the entity's refs, its `where` written as {@link rewriteIndexWhere} writes it, its SQL noted.
  */
 function rewriteIndex(
   columns: ts.Expression | undefined,
@@ -407,22 +424,17 @@ function rewriteIndex(
   const literal = options && ts.isObjectLiteralExpression(options) ? options : undefined;
   rewriteKeyList(columns, owner.param, node, what, ctx);
   rewriteKeyList(literal && propertyValue(literal, 'include'), owner.param, node, "'include'", ctx);
-  rewriteIndexSql(columns, literal, ctx);
+  rewriteIndexWhere(literal, ctx);
   for (const sql of [...columnExpressions(columns), literal && propertyValue(literal, 'where')]) {
     noteHandNamedColumns(sql, owner, ctx);
   }
 }
 
 /**
- * An index's SQL as an index takes it now, on an entity and in the migration builder alike: each expression
- * a callback, and a `where` string `raw`. A string it cannot write as `raw` is reported.
+ * A partial-index `where` string as `raw`, on an entity and in the migration builder alike. A string it
+ * cannot write as `raw` is reported.
  */
-function rewriteIndexSql(
-  columns: ts.Expression | undefined,
-  options: ts.ObjectLiteralExpression | undefined,
-  ctx: Context,
-): void {
-  ctx.edits.push(...expressionEntryEdits(columns));
+function rewriteIndexWhere(options: ts.ObjectLiteralExpression | undefined, ctx: Context): void {
   const where = options && propertyValue(options, 'where');
   if (!where || !isStringTyped(ctx.checker.getTypeAtLocation(where))) {
     return;
@@ -443,15 +455,15 @@ function isStringTyped(type: ts.Type): boolean {
   return type.isUnion() ? type.types.every(isStringTyped) : Boolean(type.flags & ts.TypeFlags.StringLike);
 }
 
-/** The migration builder's index methods, each with the position of the columns it takes. */
+/** The migration builder's index methods, each with the position of the options it takes. */
 const BUILDER_INDEX_METHODS: ReadonlyMap<string, number> = new Map([
-  ['index', 0],
-  ['unique', 0],
-  ['addIndex', 0],
-  ['createIndex', 1],
+  ['index', 1],
+  ['unique', 1],
+  ['addIndex', 1],
+  ['createIndex', 2],
 ]);
 
-/** Rewrites the SQL of the migration builder's `t.index()`, `t.unique()`, `t.addIndex()` and `m.createIndex()`. */
+/** Rewrites the `where` of the migration builder's `t.index()`, `t.unique()`, `t.addIndex()` and `m.createIndex()`. */
 function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
   const at = ts.isPropertyAccessExpression(call.expression)
     ? BUILDER_INDEX_METHODS.get(call.expression.name.text)
@@ -459,8 +471,8 @@ function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
   if (at === undefined) {
     return;
   }
-  const options = call.arguments[at + 1];
-  rewriteIndexSql(call.arguments[at], options && ts.isObjectLiteralExpression(options) ? options : undefined, ctx);
+  const options = call.arguments[at];
+  rewriteIndexWhere(options && ts.isObjectLiteralExpression(options) ? options : undefined, ctx);
 }
 
 /**
@@ -473,7 +485,7 @@ function rewriteRelationOptions(
   ctx: Context,
   target = paramFor(entityGetterTarget(relation)),
 ): void {
-  const advice = (what: string) => `write '${what}' as a key-map callback`;
+  const advice = (what: string) => `write '${what}' as a callback`;
   const mappedBy = (value: ts.Expression) => mappedByEdits(value, target);
   const references = (value: ts.Expression) => referencesEdits(value, owner, target);
   rewriteValue(propertyValue(relation, 'mappedBy'), mappedBy, relation, advice('mappedBy'), ctx);
@@ -683,7 +695,7 @@ function brandIdKey(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context
     return;
   }
   const indent = ' '.repeat(node.getSourceFile().getLineAndCharacterOfPosition(ids[0].getStart()).character);
-  const brand = names.map((name) => `'${name}'`).join(' | ');
+  const brand = names.map(quoted).join(' | ');
   const start = node.members.pos;
   ctx.edits.push({ start, end: start, text: `\n${indent}[idKey]?: ${brand};` });
   ctx.imports.set('idKey', 'the brand(s)');

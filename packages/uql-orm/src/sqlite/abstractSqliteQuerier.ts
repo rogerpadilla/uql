@@ -1,5 +1,6 @@
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { RawRow } from '../type/index.js';
+import { decodeBigInts } from '../util/wideNumber.js';
 
 /**
  * Values every SQLite driver accepts as a bound parameter.
@@ -11,68 +12,34 @@ import type { RawRow } from '../type/index.js';
  */
 export type SqliteBindValue = null | string | number | bigint | Uint8Array;
 
-/** Header a SQLite driver returns for a statement without a `RETURNING` clause. */
-export type SqliteRunResult = {
-  changes: number;
-  lastInsertRowid: number | bigint;
+/** What a statement came back with on a SQLite driver: the rows it read, and how many rows it changed. */
+export type SqliteExecution = {
+  readonly rows: RawRow[];
+  readonly changes: number;
 };
-
-/** Bound parameters reach a driver as `unknown[]` from the compiler; every driver types them narrowly. */
-export function toSqliteBindValues(values?: unknown[]): SqliteBindValue[] {
-  return (values || []) as SqliteBindValue[];
-}
 
 /**
- * A prepared statement from a driver with better-sqlite3 semantics. `better-sqlite3` and `bun:sqlite`
- * answer synchronously, `@tursodatabase/database` with promises, and {@link PreparedSqliteQuerier}
- * awaits either.
+ * Querier for every SQLite driver. Each supplies one hook, {@link execute}; what they share - the
+ * wide-integer decode, and a RETURNING statement counted by its rows - is written once here.
  */
-export type SqlitePreparedStatement = {
-  /** True for any statement returning rows, including one with a `RETURNING` clause. */
-  readonly reader: boolean;
-  all(...values: SqliteBindValue[]): unknown[] | Promise<unknown[]>;
-  run(...values: SqliteBindValue[]): SqliteRunResult | Promise<SqliteRunResult>;
-  iterate(...values: SqliteBindValue[]): Iterable<unknown> | AsyncIterable<unknown>;
-};
-
 export abstract class AbstractSqliteQuerier extends AbstractSqlQuerier {
+  /** Runs one statement, answering its rows as the driver read them. */
+  protected abstract execute(query: string, values?: unknown[]): Promise<SqliteExecution>;
+
+  override async internalAll<T>(query: string, values?: unknown[]) {
+    const { rows } = await this.execute(query, values);
+    return rows.map(decodeBigInts) as T[];
+  }
+
+  override async internalRun(query: string, values?: unknown[]) {
+    const { rows, changes } = await this.execute(query, values);
+    // A driver's own count is unreliable for a RETURNING statement (Hrana answers 0), so its rows answer.
+    return this.buildUpdateResult({ rows: rows.map(decodeBigInts), changes: rows.length || changes });
+  }
+
   /**
    * SQLite drivers hold a single shared handle rather than a connection from a pool, so releasing
    * a querier returns nothing at all. Drivers owning a closable per-querier connection override this.
    */
   override async internalRelease() {}
-}
-
-/**
- * Querier for the SQLite drivers that expose prepared statements: `better-sqlite3`, `bun:sqlite`
- * (through `adaptBunSqlite`) and the embedded Turso engine. They differ only in whether preparing and
- * stepping are synchronous, which `await` and `for await` absorb, so the read/write/stream logic -
- * including the `reader` rule below, whose loss silently drops inserted ids - is written once.
- */
-export abstract class PreparedSqliteQuerier extends AbstractSqliteQuerier {
-  protected abstract prepare(query: string): SqlitePreparedStatement | Promise<SqlitePreparedStatement>;
-
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const stmt = await this.prepare(query);
-    return (await stmt.all(...toSqliteBindValues(values))) as T[];
-  }
-
-  override async *internalStream<T>(query: string, values?: unknown[]) {
-    const stmt = await this.prepare(query);
-    for await (const row of stmt.iterate(...toSqliteBindValues(values))) {
-      yield row as T;
-    }
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const stmt = await this.prepare(query);
-    // `reader` is true for any statement with a RETURNING clause; `.run()` silently discards
-    // returned rows, so those statements must go through `.all()` instead.
-    if (stmt.reader) {
-      const rows = (await stmt.all(...toSqliteBindValues(values))) as RawRow[];
-      return this.buildUpdateResult({ rows });
-    }
-    const { changes, lastInsertRowid } = await stmt.run(...toSqliteBindValues(values));
-    return this.buildUpdateResult({ changes, id: lastInsertRowid });
-  }
 }

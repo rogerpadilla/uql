@@ -59,7 +59,7 @@ describe('generate:from-db (PostgreSQL)', () => {
 
   it('should write the expression whole, however long the catalogue prints it', () => {
     expect(code).toContain(
-      "=> [() => raw`to_tsvector('english'::regconfig, (name || ' '::text) || status)`], { name: 'cfd_expr' })",
+      "=> [raw`to_tsvector('english'::regconfig, (name || ' '::text) || status)`], { name: 'cfd_expr' })",
     );
   });
 

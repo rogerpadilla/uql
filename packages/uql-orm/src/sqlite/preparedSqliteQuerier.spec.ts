@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { TursoLocalQuerier } from '../turso/local.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
@@ -14,41 +13,36 @@ function buildStmt(reader: boolean) {
 type Stmt = ReturnType<typeof buildStmt>;
 
 /**
- * `PreparedSqliteQuerier` serves both a synchronous driver (`better-sqlite3`, `bun:sqlite`) and an
+ * `SqliteQuerier` serves a synchronous driver (`better-sqlite3`, `bun:sqlite`, `node:sqlite`) and an
  * asynchronous one (the embedded Turso engine) from one implementation, so each case below runs
  * against both: `wrap` decides whether the driver answers with a value or a promise.
  */
 const drivers = [
   {
-    name: 'SqliteQuerier (synchronous driver)',
+    name: 'synchronous driver',
     wrap: <T>(value: T): T | Promise<T> => value,
     iterable: <T>(rows: T[]): Iterable<T> | AsyncIterable<T> => rows,
-    build(stmt: Stmt) {
-      const db = { prepare: vi.fn().mockReturnValue(stmt), loadExtension: vi.fn(), close: vi.fn() };
-      return { db, querier: new SqliteQuerier(db, new SqliteDialect()) };
-    },
+    buildDb: (stmt: Stmt) => ({ prepare: vi.fn().mockReturnValue(stmt), close: vi.fn() }),
   },
   {
-    name: 'TursoLocalQuerier (asynchronous driver)',
+    name: 'asynchronous driver',
     wrap: <T>(value: T): T | Promise<T> => Promise.resolve(value),
     iterable: <T>(rows: T[]): Iterable<T> | AsyncIterable<T> => toAsync(rows),
-    build(stmt: Stmt) {
-      const db = { prepare: vi.fn().mockResolvedValue(stmt), close: vi.fn() };
-      return { db, querier: new TursoLocalQuerier(db, new SqliteDialect()) };
-    },
+    buildDb: (stmt: Stmt) => ({ prepare: vi.fn().mockResolvedValue(stmt), close: vi.fn() }),
   },
 ] as const;
 
-describe.each(drivers)('$name', (driver) => {
+describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   let stmt: Stmt;
-  let db: { prepare: ReturnType<typeof vi.fn> };
-  let querier: SqliteQuerier | TursoLocalQuerier;
+  let db: ReturnType<typeof driver.buildDb>;
+  let querier: SqliteQuerier;
 
   const use = (reader: boolean) => {
     stmt = buildStmt(reader);
     stmt.all.mockReturnValue(driver.wrap([]));
-    stmt.run.mockReturnValue(driver.wrap({ changes: 0, lastInsertRowid: 0 }));
-    ({ db, querier } = driver.build(stmt));
+    stmt.run.mockReturnValue(driver.wrap({ changes: 0 }));
+    db = driver.buildDb(stmt);
+    querier = new SqliteQuerier(db, new SqliteDialect());
   };
 
   beforeEach(() => {
@@ -83,14 +77,24 @@ describe.each(drivers)('$name', (driver) => {
 
   it('should run a non-returning statement and report changes', async () => {
     use(false);
-    stmt.run.mockReturnValue(driver.wrap({ changes: 3, lastInsertRowid: 42 }));
+    stmt.run.mockReturnValue(driver.wrap({ changes: 3 }));
 
     const res = await querier.run('UPDATE t SET a = ?', [1]);
 
     expect(stmt.run).toHaveBeenCalledWith(1);
     expect(stmt.all).not.toHaveBeenCalled();
-    // SQLite reports ids via RETURNING, so the header `lastInsertRowid` is deliberately ignored.
     expect(res).toEqual({ changes: 3, ids: [], firstId: undefined, created: undefined });
+  });
+
+  /** A statement that reads nothing has no rows to give, so asking for them runs it rather than failing. */
+  it('should run a statement that reads nothing when asked for its rows', async () => {
+    use(false);
+
+    const rows = await querier.all('PRAGMA foreign_keys = ON');
+
+    expect(stmt.run).toHaveBeenCalledWith();
+    expect(stmt.all).not.toHaveBeenCalled();
+    expect(rows).toEqual([]);
   });
 
   it('should stream rows', async () => {
@@ -103,6 +107,33 @@ describe.each(drivers)('$name', (driver) => {
 
     expect(stmt.iterate).toHaveBeenCalledWith();
     expect(rows).toEqual([{ id: 1 }, { id: 2 }]);
+  });
+
+  it('should decode an integer read as a bigint, exact past 2^53', async () => {
+    stmt.all.mockReturnValue(driver.wrap([{ id: 1n, big: 9007199254740993n }]));
+
+    const rows = await querier.all('SELECT id, big FROM t');
+
+    expect(rows).toEqual([{ id: 1, big: '9007199254740993' }]);
+  });
+
+  it('should decode the ids a RETURNING statement reads as bigints', async () => {
+    stmt.all.mockReturnValue(driver.wrap([{ id: 100n }]));
+
+    const res = await querier.run('INSERT INTO t ... RETURNING `id` `id`', ['x']);
+
+    expect(res).toEqual({ changes: 1, ids: [100], firstId: 100 });
+  });
+
+  it('should decode streamed rows read as bigints', async () => {
+    stmt.iterate.mockReturnValue(driver.iterable([{ id: 1n }]));
+
+    const rows = [];
+    for await (const row of querier.internalStream('SELECT * FROM t')) {
+      rows.push(row);
+    }
+
+    expect(rows).toEqual([{ id: 1 }]);
   });
 
   it('should roll back an open transaction on release', async () => {

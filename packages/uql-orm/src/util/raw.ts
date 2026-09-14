@@ -1,5 +1,6 @@
 import { getMeta } from '../entity/metadata/definition.js';
 import {
+  ColumnRef,
   type EntityMeta,
   type EntitySql,
   type EntityWhere,
@@ -66,25 +67,29 @@ export function refs<E>(entity: Type<E>): RefMap<E> {
   return new Proxy({}, { get: (_, key) => columnRef(entity, String(key)) }) as RefMap<E>;
 }
 
-/**
- * The refs a definition's callback reads. A member decorator sees no class, so these name no entity and
- * resolve against the one rendering them: a computed field's own, or the one whose schema is built.
- */
 const MEMBER_REFS = new Proxy({}, { get: (_, key) => columnRef(undefined, String(key)) });
 
-/** SQL a definition writes, a callback's refs read off {@link MEMBER_REFS}. */
+/**
+ * The refs a definition's callbacks read: an index's, a check's, a computed field's. A member decorator
+ * sees no class, so these name no entity and resolve against the one rendering them.
+ */
+export function memberRefs<E>(): RefMap<E> {
+  return MEMBER_REFS as RefMap<E>;
+}
+
+/** SQL a definition writes, a callback's refs read off {@link memberRefs}. */
 export function entitySql<E>(sql: EntitySql<E>): QueryRaw {
-  return sql instanceof QueryRaw ? sql : sql(MEMBER_REFS as RefMap<E>);
+  return sql instanceof QueryRaw ? sql : sql(memberRefs<E>());
 }
 
 /** A definition's predicate, its callback resolved the way {@link entitySql} resolves one. */
 export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
-  return typeof where === 'function' ? where(MEMBER_REFS as RefMap<E>) : where;
+  return typeof where === 'function' ? where(memberRefs<E>()) : where;
 }
 
 /** One field as SQL, against its own entity or, read off a definition, the entity rendering it. */
-function columnRef(entity: Type<unknown> | undefined, key: string): QueryRaw {
-  return new QueryRaw((opts) => {
+function columnRef(entity: Type<unknown> | undefined, key: string): ColumnRef {
+  return new ColumnRef(key, (opts) => {
     const owner = entity ?? opts.entity;
     if (!owner) {
       throw new TypeError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);

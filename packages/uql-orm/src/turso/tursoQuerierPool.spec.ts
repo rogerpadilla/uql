@@ -1,91 +1,47 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { HranaClient } from '../sqlite/hranaQuerier.js';
-import { HranaQuerier } from '../sqlite/hranaQuerier.js';
-import { TursoDialect, TursoQuerierPool } from './index.js';
+import { TursoDialect, TursoQuerierPool, TursoSessionQuerier } from './index.js';
 
-const { createClient } = vi.hoisted(() => ({ createClient: vi.fn() }));
+const { Session } = vi.hoisted(() => ({ Session: vi.fn(function () {}) }));
 
-vi.mock('@tursodatabase/serverless/compat', () => ({ createClient }));
-
-function buildClient() {
-  return {
-    execute: vi.fn(),
-    transaction: vi.fn(),
-    close: vi.fn(),
-  } satisfies HranaClient;
-}
+vi.mock('@tursodatabase/serverless', () => ({ Session }));
 
 describe('TursoQuerierPool', () => {
-  const config = { url: 'libsql://db.turso.io', authToken: 't' };
-  let client: ReturnType<typeof buildClient>;
+  const config = {
+    url: 'libsql://db.turso.io',
+    authToken: 't',
+    requestHeaders: { 'x-gateway': 'edge' },
+    defaultQueryTimeout: 5000,
+  };
 
   beforeEach(() => {
-    client = buildClient();
-    createClient.mockReset();
-    createClient.mockReturnValue(client);
+    Session.mockClear();
   });
 
-  it('defers building the client until a querier is acquired', async () => {
+  it('should open no session until a querier is acquired, then open it with every setting', async () => {
     const pool = new TursoQuerierPool(config);
-    expect(createClient).not.toHaveBeenCalled();
+    expect(Session).not.toHaveBeenCalled();
 
     const querier = await pool.getQuerier();
 
-    expect(createClient).toHaveBeenCalledWith(config);
-    expect(querier).toBeInstanceOf(HranaQuerier);
-    expect(querier.client).toBe(client);
+    expect(Session).toHaveBeenCalledWith(config);
+    expect(querier).toBeInstanceOf(TursoSessionQuerier);
   });
 
-  it('reuses the same client across acquisitions', async () => {
+  /** A session is one server stream, so queriers never wait on each other and a transaction spans one. */
+  it('should give every querier a session of its own', async () => {
     const pool = new TursoQuerierPool(config);
-    const q1 = await pool.getQuerier();
-    const q2 = await pool.getQuerier();
 
-    expect(createClient).toHaveBeenCalledTimes(1);
-    expect(q1.client).toBe(q2.client);
+    const first = await pool.getQuerier();
+    const second = await pool.getQuerier();
+
+    expect(Session).toHaveBeenCalledTimes(2);
+    expect(first).not.toBe(second);
   });
 
-  it('uses an injected client instead of building one', async () => {
-    const injected = buildClient();
-    const pool = new TursoQuerierPool(injected);
-
-    const querier = await pool.getQuerier();
-
-    expect(createClient).not.toHaveBeenCalled();
-    expect(querier.client).toBe(injected);
-  });
-
-  it('uses the sqlite dialect, so schema and migrations are shared', async () => {
+  /** A Turso Cloud database runs libSQL unless it was created as `tursodb`, so the dialect accepts what both do. */
+  it('should use the dialect every Turso Cloud database accepts', () => {
     const pool = new TursoQuerierPool(config);
     expect(pool.dialect).toBeInstanceOf(TursoDialect);
     expect(pool.dialect.dialectName).toBe('sqlite');
-  });
-
-  it('end closes a client it built, and reopens on next use', async () => {
-    const pool = new TursoQuerierPool(config);
-    await pool.getQuerier();
-
-    await pool.end();
-
-    expect(client.close).toHaveBeenCalled();
-
-    await pool.getQuerier();
-    expect(createClient).toHaveBeenCalledTimes(2);
-  });
-
-  it('end leaves an injected client open, since the caller owns it', async () => {
-    const injected = buildClient();
-    const pool = new TursoQuerierPool(injected);
-    await pool.getQuerier();
-
-    await pool.end();
-
-    expect(injected.close).not.toHaveBeenCalled();
-  });
-
-  it('end before any acquisition is a no-op', async () => {
-    const pool = new TursoQuerierPool(config);
-    await pool.end();
-    expect(client.close).not.toHaveBeenCalled();
   });
 });

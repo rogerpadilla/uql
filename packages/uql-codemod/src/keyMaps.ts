@@ -1,10 +1,10 @@
 import ts from 'typescript';
 import { type Edit, inserted, replaced } from './edits.js';
 
-// What replaced member names written as strings: a key-map callback where a definition names them
-// (`@Index` columns and `include`, `mappedBy`, `references`, `hooks`), a `{ field: true }` key where a
-// statement does. Each builder edits only the parts that change, so a rewrite nested in one keeps its own,
-// and returns nothing where the value is not a literal it can read, which its caller reports.
+// What replaced member names written as strings: a callback where a definition names them, reading refs
+// (`@Index` columns and `include`) or the key map (`mappedBy`, `references`, `hooks`), and a `{ field: true }`
+// key where a statement does. Each builder edits only the parts that change, so a rewrite nested in one keeps
+// its own, and returns nothing where the value is not a literal it can read, which its caller reports.
 
 /** The edits of one rewrite, or `undefined` where the value it reads could not be read. */
 export type Edits = readonly Edit[] | undefined;
@@ -18,9 +18,14 @@ function isIdentifierName(key: string): boolean {
   return /^[\p{ID_Start}$_][\p{ID_Continue}$\u200C\u200D]*$/u.test(key);
 }
 
+/** `text` as a single-quoted string literal, escaping what would end it. */
+export function quoted(text: string): string {
+  return `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
+}
+
 /** `post.title`, or `post['first-name']` for a key that is no identifier. */
 export function memberAccess(param: string, key: string): string {
-  return isIdentifierName(key) ? `${param}.${key}` : `${param}['${key}']`;
+  return isIdentifierName(key) ? `${param}.${key}` : `${param}[${quoted(key)}]`;
 }
 
 /** A key's name where it is spelled out, which is every form but a computed one (`{ [k]: v }`). */
@@ -42,7 +47,7 @@ export function fieldKeysEdits(value: ts.Expression): Edits {
   if (!names.every((name): name is ts.StringLiteralLike => ts.isStringLiteralLike(name))) {
     return undefined;
   }
-  const keys = names.map(({ text }) => `${isIdentifierName(text) ? text : `'${text}'`}: true`);
+  const keys = names.map(({ text }) => `${isIdentifierName(text) ? text : quoted(text)}: true`);
   return [replaced(value, `{ ${keys.join(', ')} }`)];
 }
 
@@ -91,7 +96,7 @@ export function entityGetterTarget(relation: ts.ObjectLiteralExpression): string
   return getter && ts.isArrowFunction(getter) && ts.isIdentifier(getter.body) ? getter.body.text : undefined;
 }
 
-/** A column-list entry, its name read off the key map: an expression, or a `column` given otherwise, has none. */
+/** A column-list entry, its name read off the refs: an expression, or a `column` given otherwise, has none. */
 function keyListEntryEdits(entry: ts.Expression, param: string): Edits {
   if (ts.isStringLiteralLike(entry)) {
     return [replaced(entry, memberAccess(param, entry.text))];

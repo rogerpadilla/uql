@@ -13,8 +13,8 @@ export function decodeWideNumber(value: string | bigint): number | string {
 
 /**
  * {@link decodeWideNumber} over every `bigint` cell of a row, for the drivers that hand a BIGINT back
- * as one (`bun:sql` with `bigint: true`, `mariadb`). In place: the row is the driver's fresh object, and
- * a copy per row cost more than the decode it carried.
+ * as one (`bun:sql`, `mariadb`, and every SQLite driver but D1). In place: the row is the driver's fresh
+ * object, and a copy per row cost more than the decode it carried.
  */
 export function decodeBigInts(row: RawRow): RawRow {
   for (const key in row) {

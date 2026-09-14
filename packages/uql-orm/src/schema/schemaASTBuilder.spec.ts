@@ -516,7 +516,7 @@ describe('SchemaASTBuilder', () => {
     it('should keep an include column that names no field as written', () => {
       @Entity()
       // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
-      @Index((covering) => [covering.tenantId], { include: () => ['legacy_total'] as never })
+      @Index((covering) => [covering.tenantId], { include: (covering) => [covering['legacy_total' as never]] })
       class Covering {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number }) tenantId?: number;

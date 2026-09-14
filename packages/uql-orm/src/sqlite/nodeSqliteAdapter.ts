@@ -1,5 +1,5 @@
 import type { SqliteBindValue } from './abstractSqliteQuerier.js';
-import type { SqliteDatabase } from './sqliteQuerier.js';
+import type { LocalSqliteDatabase } from './localSqliteQuerierPool.js';
 
 /**
  * A `node:sqlite` statement: better-sqlite3-shaped, except it describes columns instead of reporting
@@ -8,7 +8,7 @@ import type { SqliteDatabase } from './sqliteQuerier.js';
 type NodeSqliteStatement = {
   columns(): readonly unknown[];
   all(...values: SqliteBindValue[]): unknown[];
-  run(...values: SqliteBindValue[]): { changes: number | bigint; lastInsertRowid: number | bigint };
+  run(...values: SqliteBindValue[]): { changes: number | bigint };
   iterate(...values: SqliteBindValue[]): Iterable<unknown>;
 };
 
@@ -23,14 +23,14 @@ export type NodeSqliteDatabase = {
 };
 
 /**
- * Presents a `node:sqlite` handle as a {@link SqliteDatabase}.
+ * Presents a `node:sqlite` handle as a {@link LocalSqliteDatabase}.
  *
  * @remarks Its statements expose no `reader`, so without deriving one every `RETURNING` statement
  * would take the `run()` path, which discards returned rows, and inserts would report no ids.
  * `columns()` is non-empty for exactly the statements better-sqlite3 marks as readers, including
  * `INSERT ... RETURNING` and `DELETE ... RETURNING`.
  */
-export function adaptNodeSqlite(db: NodeSqliteDatabase): SqliteDatabase {
+export function adaptNodeSqlite(db: NodeSqliteDatabase): LocalSqliteDatabase {
   return {
     prepare: (sql: string) => {
       const stmt = db.prepare(sql);
@@ -38,11 +38,8 @@ export function adaptNodeSqlite(db: NodeSqliteDatabase): SqliteDatabase {
         reader: stmt.columns().length > 0,
         all: (...values) => stmt.all(...values),
         // `changes` is narrowed to `number` to match every other driver; a row count cannot exceed
-        // the safe-integer range, so nothing is lost. `lastInsertRowid` keeps its `bigint` arm.
-        run: (...values) => {
-          const { changes, lastInsertRowid } = stmt.run(...values);
-          return { changes: Number(changes), lastInsertRowid };
-        },
+        // the safe-integer range, so nothing is lost.
+        run: (...values) => ({ changes: Number(stmt.run(...values).changes) }),
         iterate: (...values) => stmt.iterate(...values),
       };
     },

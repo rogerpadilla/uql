@@ -20,9 +20,6 @@ export type MigrationModuleOptions = {
   downInner: string;
 };
 
-/** @deprecated Use {@link MigrationModuleOptions}. */
-export type SqlMigrationModuleOptions = MigrationModuleOptions;
-
 /**
  * Emit one `await querier.run(...)` line for entity-generated migrations.
  * Uses `JSON.stringify` so SQL with backticks (SQLite/LibSQL), quotes, `${`, etc. stays valid TS source.
@@ -99,6 +96,3 @@ ${options.downInner}
 };
 `;
 }
-
-/** @deprecated Use {@link buildMigrationModule}. */
-export const buildSqlQuerierMigrationModule = buildMigrationModule;

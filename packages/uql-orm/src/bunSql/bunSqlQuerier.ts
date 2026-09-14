@@ -5,7 +5,7 @@ import { decodeBigInts } from '../util/wideNumber.js';
 import { type BunSqlConn, type BunSqlResult, getAffectedRows, getInsertId } from './bunSql.util.js';
 
 /**
- * Querier for `bun:sql`, Bun's built-in driver for Postgres, MySQL, MariaDB, CockroachDB and SQLite.
+ * Querier for `bun:sql`, Bun's built-in driver for Postgres, MySQL, MariaDB and CockroachDB.
  *
  * @remarks Exposes no `SQL` of its own: the pool's would run a statement on any connection, outside
  * the transaction this one's reserved connection holds. Raw access is `pool.sql`.
@@ -21,7 +21,7 @@ export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
       rows: Array.from(res, decodeBigInts),
       changes: getAffectedRows(res),
       id: getInsertId(res),
-      upsertStatus: res.affectedRows,
+      upsertStatus: res.affectedRows ?? undefined,
     });
   }
 
@@ -30,7 +30,7 @@ export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
    *
    * Bun's `SQL.Query` is a `Promise` with no cursor or async-iterator API
    * ([oven-sh/bun#17181](https://github.com/oven-sh/bun/issues/17181)), so the rows have to be paged
-   * in SQL instead - which the Postgres wire family can do and MySQL and SQLite cannot.
+   * in SQL instead - which the Postgres wire family can do and MySQL cannot.
    */
   protected override async *internalStream<T>(query: string, values?: unknown[]) {
     if (!this.dialect.features.serverSideCursors) {

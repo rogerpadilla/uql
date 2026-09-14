@@ -13,7 +13,6 @@ export type HranaInValue = SqliteBindValue | ArrayBuffer | Date;
 export type HranaResultSet = {
   rows: unknown[];
   rowsAffected: number;
-  lastInsertRowid?: bigint;
 };
 
 export type HranaExecutor = {
@@ -56,19 +55,10 @@ export class HranaQuerier extends AbstractSqliteQuerier {
     this.closeClientOnRelease = connection?.closeClientOnRelease ?? false;
   }
 
-  override async internalAll<T>(query: string, values?: unknown[]) {
-    const target = this.tx || this.client;
-    const res = await target.execute({ sql: query, args: values as HranaInValue[] });
-    return res.rows as T[];
-  }
-
-  override async internalRun(query: string, values?: unknown[]) {
-    const target = this.tx || this.client;
-    const res = await target.execute({ sql: query, args: values as HranaInValue[] });
-    const rows = res.rows as RawRow[];
-    // `rowsAffected` is unreliably 0 whenever the statement has a RETURNING clause, so prefer
-    // the actual row count when rows were returned.
-    return this.buildUpdateResult({ rows, changes: rows.length || res.rowsAffected, id: res.lastInsertRowid });
+  /** Runs on the open transaction's handle when there is one. */
+  protected override async execute(query: string, values?: unknown[]) {
+    const res = await (this.tx ?? this.client).execute({ sql: query, args: values as HranaInValue[] });
+    return { rows: res.rows as RawRow[], changes: res.rowsAffected };
   }
 
   protected override async internalBegin() {
@@ -92,7 +82,6 @@ export class HranaQuerier extends AbstractSqliteQuerier {
   }
 
   override async internalRelease() {
-    await super.internalRelease();
     if (this.closeClientOnRelease) {
       this.client.close();
     }
