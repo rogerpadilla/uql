@@ -4,43 +4,44 @@ Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 wo
 
 ## [0.65.1] - 2026-09-14
 
-- **Fixed: relations resolve whichever entity is read first**, where reading a junction or an inverse side before its other end crashed or claimed neither side owns the foreign key.
+- **Fixed: relations resolve whichever entity is read first**; reading a junction or an inverse side before its other end threw.
 
 ## [0.65.0] - 2026-09-14
 
-- **Breaking: a to-one names the foreign key it declares, `references: (post) => post.authorId`**, rather than joining `authorId` by name; the codemod adds it. With the shared cursor stream, `uql-orm/postgres` grows 0.5 KB gzipped.
-- **Breaking: a `@Field({ references })` column adds no relation of its own**: `postId` gives nothing to `$populate` until one is declared; its foreign key still reaches generated DDL.
-- **Breaking: `through` joins by the junction's column referencing each side**, whatever it is called, not `<entity><Key>`: that column needs `references`, or a `@ManyToOne` for a composite side.
-- **Breaking (types): `defineEntity` takes the relation options each decorator does**: `mappedBy` on a many-to-one, `through` on a to-one and `onDelete`/`onUpdate` on a to-many stop compiling.
-- **`generate:from-db` names the foreign key each relation joins on**, so a column not called `<relation>Id` no longer gets a second one beside it.
-- **Fixed**: every entity extending a base that declares a relation gets its foreign key column, not only the first, and an unresolvable relation throws on every read.
-- **A SQL querier with no stream of its own pages through a server-side cursor** where the engine has one, as `bun:sql` and PGlite did, instead of reading every row.
-- **Breaking: `Migrator.dialectName`, `BunSqlQuerierPool.sqlDialectName` and the protected `Migrator.createIntrospector` are gone**: read `pool.dialect.dialectName`; `schemaIntrospector` stays assignable.
-- **Breaking (drivers): `driverCapabilities` belongs to the Postgres-wire dialects**, read as `dialect.driverCapabilities`, and `supportsJsonb` and the `'lastId'` insert-id source are gone.
+- **Breaking: a to-one names the foreign key column it declares**, `references: (post) => post.authorId`, instead of matching it by name; the codemod adds it. `uql-orm/postgres` grows 0.5 KB gzipped.
+- **Breaking: a `@Field({ references })` column no longer adds a relation**: declare one to `$populate` it. Its foreign key constraint stays.
+- **Breaking: `through` finds each junction column by its `references`**, not by the `<entity><Key>` name.
+- **Breaking (types): `defineEntity` relation options match the decorators'**, so what a decorator refuses no longer compiles.
+- **`generate:from-db` writes each relation's `references`**, so a foreign key not named `<relation>Id` is no longer duplicated.
+- **Fixed**: every entity extending a base gets its relations' foreign key columns, and a relation that cannot resolve throws on every read.
+- **A SQL querier without a stream of its own reads through a server-side cursor** where the engine has one, instead of loading every row.
+- **Breaking: `Migrator.dialectName`, `Migrator.createIntrospector` and `BunSqlQuerierPool.sqlDialectName` are gone**: read `pool.dialect.dialectName`.
+- **Breaking (drivers): `driverCapabilities` is a Postgres-wire dialect option**, read from `dialect.driverCapabilities`; `supportsJsonb` and the `'lastId'` insert-id source are gone.
 
 ## [0.64.0] - 2026-09-14
 
-- **A partial index throws at generation where its engine cannot hold the predicate**: SQL Server refuses `$or`, `$not`, `$nin`, `$between`, string matching and JSON paths, naming the operator.
-- **MongoDB creates the indexes `@Index` declares**, which it skipped, a partial one's `where` as its `partialFilterExpression`; `null`, `$ne` and the SQL-only index options throw.
-- **The migration builder runs on MongoDB**: `defineBuilderMigration<MongoQuerier>` creates, drops and renames collections and their indexes, where a column, a foreign key or `raw` throws.
-- **Breaking: `Dialect.escape` writes a `Date` in UTC**, so DDL comparing dates is the same on every machine that generates it.
+- **Breaking: `migrationBuilderFor(querier)` and `await migrator.getSchemaGenerator()`** replace `new MigrationBuilder(querier)` and `ensureSchemaGenerator()`; the migrator's other generator helpers are gone.
+- **The migration builder runs on MongoDB**, managing collections and their indexes through `defineBuilderMigration<MongoQuerier>`.
+- **MongoDB creates the indexes `@Index` declares**, a partial one's `where` as its `partialFilterExpression`; options it lacks throw.
+- **A partial index predicate an engine cannot hold throws at generation**, naming the operator, such as `$or` on SQL Server.
+- **Breaking: `Dialect.escape` writes a `Date` in UTC**, so generated DDL is the same on every machine.
 
 ## [0.63.0] - 2026-09-13
 
-- **Breaking: an index reads its entity's refs**, so an expression is `raw` in its list, ``@Index((user) => [raw`lower(${user.email})`])``, and the migration builder takes `raw` too.
-- **Breaking: Turso Cloud runs on `@tursodatabase/serverless` 1.3+'s sessions, one per querier**: queriers never wait on each other, `BEGIN`/`COMMIT` just work, streams read the server's cursor, and every `Config` option applies.
-- **Breaking: `LibsqlQuerierPool` takes a client you built, and `TursoQuerierPool` no longer does**: `@libsql/client/web` or `-wasm`, shared by every querier and left open on `end()`.
-- **Every SQLite driver reads an integer past 2^53 as its exact text**: better-sqlite3, `bun:sqlite`, `node:sqlite`, libSQL and both Turso pools, which rounded it or threw. D1 still answers a number.
-- **Breaking: SQLite through `uql-orm/bunSql` is gone**, deprecated since 0.55.0: the pool refuses it, pointing at `Sqlite3QuerierPool`, which runs on `bun:sqlite` under Bun.
+- **Breaking: an index expression is `raw` in the list itself**, ``@Index((user) => [raw`lower(${user.email})`])``; the migration builder takes `raw` too.
+- **Breaking: SQLite through `uql-orm/bunSql` is gone**: use `Sqlite3QuerierPool`, which runs on `bun:sqlite` under Bun.
+- **Breaking: Turso Cloud needs `@tursodatabase/serverless` 1.3+**, with a session per querier, so transactions, streams and every `Config` option work.
+- **Breaking: a libSQL client you built goes to `LibsqlQuerierPool`**, no longer `TursoQuerierPool`, and `end()` leaves it open.
+- **SQLite drivers read an integer past 2^53 as its exact text**, where they rounded it or threw; D1 still returns a number.
 
 ## [0.62.0] - 2026-09-13
 
-- **Breaking: SQL an entity declares reads members off refs, so a rename reaches it**: `computed`, index expressions ``(user) => raw`lower(${user.email})` ``, and a check or partial-index `where`, which also takes a predicate: `{ deletedAt: null }`.
-- **`refs(Entity)` names a column in any `raw`**, through the naming strategy and `@Field({ name })`, escaped and alias-qualified. It replaces `col()`; `npx uql-codemod` rewrites it where it can tell the entity.
-- **Breaking: one spelling each**: a check's `expression` and a filter's `condition` are `where`, a partial-index `where` string is `raw`, `raw(fn, alias)` is `.as(alias)`, `$lock: { wait }` is `{ $wait }` (waiting is `true`). The codemod rewrites them.
-- **DDL is rendered per engine, values written as literals**: checks, partial indexes, stored computed columns and the migration builder. An unnamed expression index is named by position, `expr0`.
-- **Fixed**: a raw `$having` operand bound as an object, raws in `$and`/`$or` losing the join alias, `.as()` leaking outside `$select`, an expression index hiding a foreign key's, and MongoDB refusing `$lock: false`.
-- **Breaking (dialects): `addValue(ctx, value)` takes the context, `compileDdl(sql, entity)` renders a schema's SQL, `QueryRaw` holds only a callback**; `ddlText` is gone.
+- **Breaking: SQL an entity declares reads columns off refs**, ``(user) => raw`lower(${user.email})` ``; a check or partial-index `where` also takes `{ deletedAt: null }`.
+- **`refs(Entity)` names a column in any `raw`**, escaped and alias-qualified, replacing `col()`.
+- **Breaking: one spelling each**: a check's `expression` and a filter's `condition` are `where`, a partial-index string is `raw`, `raw(fn, alias)` is `.as(alias)`, `$lock: { wait }` is `{ $wait }`.
+- **DDL renders per engine with values as literals**: checks, partial indexes, stored computed columns and the migration builder; an unnamed expression index is named `expr0`.
+- **Fixed**: raw `$having` operands, raws in `$and`/`$or` losing the join alias, `.as()` outside `$select`, an expression index hiding a foreign key's, and MongoDB refusing `$lock: false`.
+- **Breaking (dialects): `addValue` takes the context, `compileDdl` renders a schema's SQL and `QueryRaw` holds only a callback**; `ddlText` is gone.
 
 ## [0.61.0] - 2026-09-12
 
