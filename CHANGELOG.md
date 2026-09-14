@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.65.1] - 2026-09-14
+
+- **Fixed: relations resolve whichever entity is read first**, where reading a junction or an inverse side before its other end crashed or claimed neither side owns the foreign key.
+
 ## [0.65.0] - 2026-09-14
 
 - **Breaking: a to-one names the foreign key it declares, `references: (post) => post.authorId`**, rather than joining `authorId` by name; the codemod adds it. With the shared cursor stream, `uql-orm/postgres` grows 0.5 KB gzipped.

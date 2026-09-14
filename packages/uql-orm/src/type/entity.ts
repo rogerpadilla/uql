@@ -710,10 +710,9 @@ type RelationReferencePairs<E, O> = (local: KeyMap<O>, foreign: KeyMap<E>) => re
  * assertions - `fillRelations` establishes the invariant once, and throws where it cannot.
  *
  * `entity` and `through` stay {@link EntityGetter}s. Resolution could call them once and store the class,
- * but only by keeping the authored relations in a second map: it reads them *across* entities, and a
- * circular import can leave the entity being read mid-resolution, where telling "no such relation" apart
- * from "declared, but an inverse side too, so neither owns the foreign key" needs the unresolved shape
- * still there to find. A phase-split metadata map costs more than the call parentheses it saves.
+ * but only by keeping the authored relations in a second map: it settles them in place, reading them across
+ * entities not resolved yet, so the authored and the settled shape have to be one object. A phase-split
+ * metadata map costs more than the call parentheses it saves.
  */
 export type RelationMeta = Omit<RelationRegistration, 'references'> & { references: RelationReferences };
 

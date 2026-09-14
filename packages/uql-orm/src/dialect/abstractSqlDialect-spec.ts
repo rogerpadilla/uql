@@ -113,7 +113,7 @@ class PlainChild {
   collection?: SecureCollection;
 }
 
-/** Junction FK names follow the derived `lowerFirst(entity) + Id` convention for mm relations. */
+/** A many-to-many's junction: each side joins by the one column referencing it. */
 @Entity()
 class SecureCollectionChild {
   @Id({ type: Number })

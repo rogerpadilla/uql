@@ -984,6 +984,61 @@ it('refuses a junction where two columns reference the same key', () => {
   );
 });
 
+it('a junction resolves when read first, even with an inverse side leading back through it', () => {
+  @Entity()
+  class Film {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Screening {
+    @Id({ type: Number }) id?: number;
+    // Ahead of the junction's own foreign key, and leading back through the junction.
+    @OneToMany({ entity: () => Review, mappedBy: (review) => review.screening }) reviews?: Review[];
+    @ManyToOne({ entity: () => Film }) film?: Film;
+    @Field({ references: () => Review }) reviewId?: number;
+  }
+  @Entity()
+  class Review {
+    @Id({ type: Number }) id?: number;
+    @ManyToOne({ entity: () => Screening }) screening?: Screening;
+    @ManyToMany({ entity: () => Film, through: () => Screening }) films?: Film[];
+  }
+
+  expect(getMeta(Screening).relations.reviews?.references).toEqual([{ local: 'id', foreign: 'screeningId' }]);
+  expect(getMeta(Review).relations.films?.references).toEqual([
+    { local: 'reviewId', foreign: 'id' },
+    { local: 'filmId', foreign: 'id' },
+  ]);
+});
+
+it('an inverse side of a relation through a junction resolves whichever side is read first', () => {
+  @Entity()
+  class Genre {
+    @Id({ type: Number }) id?: number;
+    @ManyToMany({ entity: () => Album, mappedBy: (album) => album.genres }) albums?: Album[];
+    @ManyToOne({ entity: () => Album }) featured?: Album;
+  }
+  @Entity()
+  class Album {
+    @Id({ type: Number }) id?: number;
+    // Ahead of the relation `Genre.albums` is the inverse of, and leading to `Genre` first.
+    @OneToMany({ entity: () => Genre, mappedBy: (genre) => genre.featured }) featuredBy?: Genre[];
+    @ManyToMany({ entity: () => Genre, through: () => AlbumGenre }) genres?: Genre[];
+  }
+  @Entity()
+  class AlbumGenre {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Album }) albumId?: number;
+    @Field({ references: () => Genre }) genreId?: number;
+  }
+
+  expect(getMeta(Album).relations.featuredBy?.references).toEqual([{ local: 'id', foreign: 'featuredId' }]);
+  expect(getMeta(Genre).relations.albums?.references).toEqual([
+    { local: 'genreId', foreign: 'id' },
+    { local: 'albumId', foreign: 'id' },
+  ]);
+});
+
 it('at most one softDelete field', () => {
   expect(() => {
     @Entity()
@@ -1549,9 +1604,8 @@ it('mappedBy naming an inverse side, so neither side owns the foreign key', () =
     passports?: Passport[];
   }
 
-  // Resolving either side resolves the other first, so the pair is reported from the inner one.
   expect(() => getMeta(Traveller)).toThrow(
-    `'Passport.travellers' is mapped by 'Traveller.passports', an inverse side too, so neither owns the foreign key.`,
+    `'Traveller.passports' is mapped by 'Passport.travellers', an inverse side too, so neither owns the foreign key.`,
   );
 });
 
