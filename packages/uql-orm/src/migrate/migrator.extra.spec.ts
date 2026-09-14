@@ -1,6 +1,5 @@
 import { readdir } from 'node:fs/promises';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
@@ -49,22 +48,6 @@ describe('Migrator (extra coverage)', () => {
     expect(defineMigration(migration)).toBe(migration);
   });
 
-  it('createIntrospector and createGenerator for mariadb', () => {
-    const mariaPool = { ...pool, dialect: new MariaDialect() };
-    const migrator = new Migrator(mariaPool);
-    expect(migrator.dialectName).toBe('mariadb');
-    expect(migrator.schemaIntrospector).toBeDefined();
-  });
-
-  it('createIntrospector and createGenerator default case', () => {
-    const invalidPool = {
-      ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
-    };
-    const migrator = new Migrator(invalidPool);
-    expect(migrator.schemaIntrospector).toBeUndefined();
-  });
-
   it('up should throw if migration to is not found', async () => {
     const migrator = new Migrator(pool, { storage: mockStorage });
     vi.spyOn(migrator, 'getMigrations').mockResolvedValue([]);
@@ -86,15 +69,6 @@ describe('Migrator (extra coverage)', () => {
     expect(mongoQuerier.release).toHaveBeenCalled();
   });
 
-  it('generateFromEntities should throw if no schema generator', async () => {
-    const invalidPool = {
-      ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
-    };
-    const migrator = new Migrator(invalidPool);
-    await expect(migrator.generateFromEntities('test')).rejects.toThrow("No schema generator for dialect 'invalid'");
-  });
-
   it('generateFromEntities should return empty if no changes', async () => {
     const migrator = new Migrator(pool);
     vi.spyOn(migrator, 'getDiffs').mockResolvedValue([]);
@@ -110,15 +84,6 @@ describe('Migrator (extra coverage)', () => {
     await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow(
       'Migrator requires a SQL-based querier',
     );
-  });
-
-  it('sync should throw if no generator/introspector', async () => {
-    const invalidPool = {
-      ...pool,
-      dialect: { dialectName: 'invalid' } as unknown as MigratorDialect,
-    };
-    const migrator = new Migrator(invalidPool);
-    await expect(migrator.sync()).rejects.toThrow("No schema generator for dialect 'invalid'");
   });
 
   it('sync should return if no statements and logging is enabled', async () => {

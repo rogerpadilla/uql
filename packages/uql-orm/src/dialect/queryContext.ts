@@ -1,4 +1,4 @@
-import type { QueryContext, QueryDialect } from '../type/index.js';
+import type { QueryContext, SqlQueryDialect } from '../type/index.js';
 
 /**
  * SqlQueryContext is an implementation of the QueryContext interface specifically for SQL-based dialects.
@@ -23,7 +23,7 @@ export class SqlQueryContext implements QueryContext {
    * @param inlineValues See {@link QueryContext.inlineValues}; a fragment takes its statement's.
    */
   constructor(
-    readonly dialect: QueryDialect,
+    readonly dialect: SqlQueryDialect,
     params: unknown[] = [],
     private readonly statement?: SqlQueryContext,
     readonly inlineValues = false,

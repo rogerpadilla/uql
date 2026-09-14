@@ -1,6 +1,7 @@
 import type { IndexType } from '../schema/types.js';
 import {
   type DialectFeatures,
+  type DriverCapabilities,
   type EntityMeta,
   type FieldOptions,
   type JsonColumnType,
@@ -13,12 +14,18 @@ import {
 } from '../type/index.js';
 import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
+import type { DialectOptions } from './abstractDialect.js';
 import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonSetTarget } from './jsonSql.js';
 import { PG_VECTOR_METRICS } from './pgVectorMetrics.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
+
+/** A Postgres-wire dialect's options: the base's, and how its driver binds a parameter. */
+export type PgLikeDialectOptions = DialectOptions & {
+  readonly driverCapabilities?: Partial<DriverCapabilities>;
+};
 
 /**
  * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
@@ -30,14 +37,19 @@ import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
  * syntax; CockroachDB's vector type and `CREATE VECTOR INDEX` syntax are both native).
  */
 export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
+  /** How the driver binds a parameter: node-`pg`'s, unless the pool states its own. */
+  readonly driverCapabilities: DriverCapabilities;
+
+  constructor(options: PgLikeDialectOptions = {}) {
+    super(options);
+    this.driverCapabilities = { nativeArrays: true, explicitJsonCast: false, ...options.driverCapabilities };
+  }
+
   /** `FOR UPDATE` and a window function cannot share a statement here. See the base declaration. */
   override readonly supportsWindowWithRowLock = false;
 
   /** Default {@link DialectFeatures} for Postgres-wire dialects. */
   protected override readonly featureDefaults: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: true,
-    supportsJsonb: true,
     ifNotExists: true,
     indexIfNotExists: true,
     schemas: true,
@@ -132,7 +144,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   override normalizeValue(value: unknown): unknown {
     if (value != null && typeof value === 'object' && Array.isArray(value)) {
-      return this.features.nativeArrays ? value : toPgArray(value);
+      return this.driverCapabilities.nativeArrays ? value : toPgArray(value);
     }
     return super.normalizeValue(value);
   }
@@ -287,7 +299,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
     const json = JSON.stringify(value);
     const ph = this.addValue(ctx, json);
-    return this.features.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
+    return this.driverCapabilities.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
   }
 }
 

@@ -1,7 +1,7 @@
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { type D1Preparer, D1Querier } from './d1Querier.js';
+import { type D1Database, D1Querier } from './d1Querier.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
 
 /**
@@ -10,7 +10,7 @@ import { D1SqliteDialect } from './d1SqliteDialect.js';
  */
 export class D1QuerierPool extends AbstractSqlQuerierPool<D1Querier, D1SqliteDialect> {
   constructor(
-    readonly db: D1Preparer,
+    readonly db: D1Database,
     extra?: ExtraOptions,
   ) {
     super(new D1SqliteDialect(dialectOptionsFrom(extra)), extra);

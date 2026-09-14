@@ -1,11 +1,13 @@
 import type { ExtraOptions, RawRow } from '../type/index.js';
-import { decodeBigInts } from '../util/wideNumber.js';
 import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
-/** What uql reads of a driver's `run()`: the row count. An inserted id comes back through `RETURNING`. */
+/**
+ * What uql reads of a driver's `run()`: the row count, which `node:sqlite` answers as a `bigint` once it
+ * reads integers as ones. An inserted id comes back through `RETURNING`.
+ */
 export type SqliteRunResult = {
-  changes: number;
+  changes: number | bigint;
 };
 
 /** A prepared statement with better-sqlite3 semantics, answering at once or with a promise. */
@@ -19,7 +21,7 @@ export type SqlitePreparedStatement = {
 
 /**
  * A SQLite driver that prepares statements. `better-sqlite3` and the embedded Turso engine satisfy it
- * as they are, `bun:sqlite` and `node:sqlite` through their adapters.
+ * as they are, `bun:sqlite` and `node:sqlite` through `adaptSqlite`.
  */
 export type SqliteDatabase = {
   prepare(sql: string): SqlitePreparedStatement | Promise<SqlitePreparedStatement>;
@@ -41,24 +43,15 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
   }
 
   /** `reader` picks the call: `run()` would discard the rows of a statement that reads, RETURNING included. */
-  protected override async execute(query: string, values?: unknown[]) {
+  protected override async execute(query: string, values: SqliteBindValue[]) {
     const stmt = await this.db.prepare(query);
-    const bound = toBindValues(values);
     if (stmt.reader) {
-      return { rows: (await stmt.all(...bound)) as RawRow[], changes: 0 };
+      return { rows: (await stmt.all(...values)) as RawRow[], changes: 0 };
     }
-    return { rows: [], changes: (await stmt.run(...bound)).changes };
+    return { rows: [], changes: Number((await stmt.run(...values)).changes) };
   }
 
-  override async *internalStream<T>(query: string, values?: unknown[]) {
-    const stmt = await this.db.prepare(query);
-    for await (const row of stmt.iterate(...toBindValues(values))) {
-      yield decodeBigInts(row as RawRow) as T;
-    }
+  protected override async iterate(query: string, values: SqliteBindValue[]) {
+    return (await this.db.prepare(query)).iterate(...values) as Iterable<RawRow> | AsyncIterable<RawRow>;
   }
-}
-
-/** Bound parameters reach a driver as `unknown[]` from the compiler; every driver types them narrowly. */
-function toBindValues(values?: unknown[]): SqliteBindValue[] {
-  return (values ?? []) as SqliteBindValue[];
 }

@@ -45,6 +45,7 @@ const STUBS = `
   declare function Transactional(): MethodDecorator;
   declare class Querier {}
   declare function ManyToOne(opts?: { entity?: EntityGetter; references?: unknown }): PropertyDecorator;
+  declare function OneToOne(opts?: { entity?: EntityGetter; mappedBy?: unknown; references?: unknown }): PropertyDecorator;
   declare function OneToMany(opts?: { entity?: EntityGetter; mappedBy?: unknown }): PropertyDecorator;
   declare function Index(columns: unknown, options?: unknown): ClassDecorator;
   declare function defineEntity(entity: unknown, options: unknown): void;
@@ -446,6 +447,59 @@ class Entity {
 
     expect(text).toContain('mappedBy: key');
     expect(unresolved).toContainEqual(expect.stringContaining("write 'mappedBy' as a callback"));
+  });
+
+  it('names the foreign key a to-one found by name, where its class declares or inherits it', () => {
+    const { text } = codemod(`
+      class Company { id?: number; }
+      class Owned { companyId?: number; }
+      class Employee extends Owned {
+        managerId?: number;
+        @ManyToOne({ entity: () => Company }) company?: Company;
+        @OneToOne({
+          entity: () => Employee,
+        })
+        manager?: Employee;
+        @ManyToOne({ entity: () => Company }) employer?: Company;
+      }
+    `);
+
+    expect(text).toContain(
+      '@ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;',
+    );
+    expect(text).toContain('entity: () => Employee, references: (employee) => employee.managerId,');
+    expect(text).toContain('@ManyToOne({ entity: () => Company }) employer?: Company;');
+  });
+
+  it('leaves a to-one that already says how it joins, and names the key in defineEntity and defineRelation', () => {
+    const { text } = codemod(`
+      class Company { id?: number; contractor?: Contractor; }
+      class Contractor {
+        companyId?: number;
+        ownerId?: number;
+        @ManyToOne({ entity: () => Company, references: (contractor) => contractor.companyId }) company?: Company;
+        @OneToOne({ entity: () => Company, mappedBy: (company) => company.contractor }) owner?: Company;
+      }
+      class Supplier { id?: number; companyId?: number; company?: Company; managerId?: number; manager?: Supplier; }
+      defineEntity(Supplier, { relations: { company: { cardinality: 'm1', entity: () => Company } } });
+      defineRelation(Supplier, 'manager', { cardinality: '11', entity: () => Supplier });
+      declare const relation: string;
+      defineRelation(Supplier, relation, { cardinality: 'm1', entity: () => Company });
+    `);
+
+    expect(text).toContain(
+      '@ManyToOne({ entity: () => Company, references: (contractor) => contractor.companyId }) company?: Company;',
+    );
+    expect(text).toContain(
+      '@OneToOne({ entity: () => Company, mappedBy: (company) => company.contractor }) owner?: Company;',
+    );
+    expect(text).toContain(
+      "{ company: { cardinality: 'm1', entity: () => Company, references: (supplier) => supplier.companyId } }",
+    );
+    expect(text).toContain(
+      "{ cardinality: '11', entity: () => Supplier, references: (supplier) => supplier.managerId }",
+    );
+    expect(text).toContain("defineRelation(Supplier, relation, { cardinality: 'm1', entity: () => Company });");
   });
 
   it('rewrites @Index columns and include into callbacks named after the class', () => {
@@ -919,6 +973,41 @@ let q: SqliteQuerier; let db: SqliteDatabase;
       expect.stringContaining("'PreparedSqliteQuerier' was removed"),
       expect.stringContaining("'toSqliteBindValues' was removed"),
       expect.stringContaining("'libsqlUseRemoteForMigrations' was removed"),
+    ]);
+  });
+
+  it('renames the dialect and D1 types to the one each duplicated', () => {
+    const { text, unresolved } =
+      codemodFile(`import type { EngineFeatures, KnownMigratorDialect, QueryDialect } from 'uql-orm';
+import { type D1Preparer, D1QuerierPool } from 'uql-orm/d1';
+let a: QueryDialect; let b: KnownMigratorDialect; let c: D1Preparer; let d: EngineFeatures;
+`);
+
+    expect(text).toBe(`import type { DialectFeatures, DialectName, SqlQueryDialect } from 'uql-orm';
+import { type D1Database, D1QuerierPool } from 'uql-orm/d1';
+let a: SqlQueryDialect; let b: DialectName; let c: D1Database; let d: DialectFeatures;
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports the dialect, pool, migrator and D1 exports that repeated another or always held', () => {
+    const { changed, unresolved } = codemod(`
+      import { isKnownMigratorDialect, MysqlLikeSqlDialect, QuerierPoolDialect, QuerierPoolQuerier } from 'uql-orm';
+      import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from 'uql-orm/postgres';
+      import type { D1ExecResult, D1Meta } from 'uql-orm/d1';
+      import { createSchemaGenerator } from 'uql-orm/migrate';
+    `);
+
+    expect(changed).toBe(false);
+    expect(unresolved).toEqual([
+      expect.stringContaining("'isKnownMigratorDialect' was removed"),
+      expect.stringContaining("'MysqlLikeSqlDialect' was removed"),
+      expect.stringContaining("'QuerierPoolDialect' was removed"),
+      expect.stringContaining("'QuerierPoolQuerier' was removed"),
+      expect.stringContaining("'POSTGRES_WIRE_DRIVER_CAPABILITIES' was removed"),
+      expect.stringContaining("'D1ExecResult' was removed"),
+      expect.stringContaining("'D1Meta' was removed"),
+      expect.stringContaining("'createSchemaGenerator' was removed"),
     ]);
   });
 

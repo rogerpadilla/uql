@@ -86,7 +86,7 @@ await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $
 
 R6. A lexicographic OR-chain over `$or`/`$gt`/`$lt`, which every dialect already compiles, so v1 needs no dialect code; row-value comparison is a later optimization, and only where every key sorts one way and none is nullable. **Throw when the sort is not total**: a keyset page that silently skips or repeats rows is worse than an error, and `meta.ids` plus the unique indexes prove it for free.
 
-What gates it is nulls. A UQL column is nullable unless declared otherwise, the engines disagree about where nulls sort, and `col > x` never matches one - so `$sort` grows a placement and `EngineFeatures` a `nullsOrdering` knob before any of this pages correctly. MikroORM shipped cursor pagination in v6 and reworked exactly this in 7.2. [The design](cursor-pagination.md).
+What gates it is nulls. A UQL column is nullable unless declared otherwise, the engines disagree about where nulls sort, and `col > x` never matches one - so `$sort` grows a placement and `DialectFeatures` a `nullsOrdering` knob before any of this pages correctly. MikroORM shipped cursor pagination in v6 and reworked exactly this in 7.2. [The design](cursor-pagination.md).
 
 ## Triggers
 

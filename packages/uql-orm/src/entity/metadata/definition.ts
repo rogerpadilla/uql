@@ -16,6 +16,7 @@ import type {
   RelationKey,
   RelationMeta,
   RelationOptions,
+  RelationReferences,
   RelationRegistration,
   Type,
   WrittenId,
@@ -23,7 +24,6 @@ import type {
 import { SOFT_DELETE_FILTER } from '../../type/index.js';
 import { isInlinedExpression } from '../../util/field.util.js';
 import {
-  entityName,
   entitySql,
   entityWhere,
   fieldOptionConflict,
@@ -107,10 +107,11 @@ export function relationRegistration<T extends object, O>({
   references,
   ...opts
 }: RelationOptions<T, O>): RelationRegistration {
+  const joined = references?.(keyMap<O>(), keyMap<T>());
   return {
     ...opts,
     ...(mappedBy && { mappedBy: mappedBy(keyMap<T>()) }),
-    ...(references && { references: [...references(keyMap<O>(), keyMap<T>())] }),
+    ...(joined && { references: typeof joined === 'string' ? joined : [...joined] }),
   };
 }
 
@@ -129,8 +130,8 @@ function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegi
   }
   if (registration.through && registration.references) {
     throw new TypeError(
-      `'${entity.name}.${key}' joins through a junction, whose columns follow the convention; 'references' ` +
-        "pairs the declaring entity's columns with the target's instead.",
+      `'${entity.name}.${key}' joins through a junction, whose column referencing each side is the join; ` +
+        "'references' pairs the declaring entity's columns with the target's instead.",
     );
   }
   const meta = ensureWritableMeta(entity);
@@ -402,56 +403,73 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
   if (meta.processedAt === meta.revision) {
     return meta;
   }
-  // Stamped before finalizing, not after: `fillInverseSide` reads the other side through `getMeta`,
-  // and with each side mapped by the other that recursion has to find this half-filled meta rather
-  // than run again. Finalizing twice is harmless anyway - every step of it skips what it settled.
+  // Stamped before finalizing: `fillInverseSide` reads the other side through `getMeta`, and with each
+  // side mapped by the other that recursion has to find this half-filled meta rather than run again.
+  // Unstamped when finalizing throws, so the next read reports the same mistake; running it again is
+  // harmless, since every step skips what it settled.
   meta.processedAt = meta.revision;
-  return fillRelations(meta);
+  try {
+    return fillRelations(meta);
+  } catch (error) {
+    meta.processedAt = undefined;
+    throw error;
+  }
 }
 
 function fillRelations<E>(meta: EntityMeta<E>): EntityMeta<E> {
   for (const [relKey, relation] of definedEntries(meta.relations)) {
-    // The registered view: `references` may be unset until this settles it.
+    // The registered view: `references` may be unset, or the one column a to-one names, until this settles it.
     const relOpts: RelationRegistration = relation;
     const at = `'${meta.entity.name}.${relKey}'`;
 
-    if (relOpts.mappedBy) {
-      fillInverseSide(at, meta, relOpts, relOpts.mappedBy);
-    } else if (!relOpts.references) {
-      fillOwningSide(at, meta, relKey, relOpts);
-    }
-    if (!relOpts.references?.length) {
+    const references = relOpts.mappedBy
+      ? fillInverseSide(at, meta, relOpts, relOpts.mappedBy)
+      : (pairedReferences(at, relOpts) ?? fillOwningSide(at, meta, relKey, relOpts));
+    if (!references.length) {
       throw new TypeError(`${at} has no columns to join on.`);
     }
-
-    // Hand-written `references` land here too: naming the columns says which they are, not that they exist.
-    if (relOpts.through) {
-      const junction = getMeta(relOpts.through());
-      for (const { local } of relOpts.references) {
-        if (junction.fields[local]) continue;
-        throw new TypeError(
-          `${at} joins through '${junction.entity.name}', which has no '${local}' field: a junction's ` +
-            'columns are named after the entities it joins. Declare it.',
-        );
-      }
-    }
   }
-  fillForeignKeyRelations(meta);
+  // A column `references` names is a foreign key with or without a relation over it, and one cannot point
+  // at a composite key: refused on first read, as a relation that cannot join is, not at the schema build.
+  foreignKeysOf(meta);
   return meta;
 }
 
-function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relOpts: RelationRegistration): void {
+/**
+ * The pairs a relation joins on, with the one column a to-one names paired with the target's primary key:
+ * on first read rather than at registration, which can run before the target has a key to pair with.
+ */
+function pairedReferences(at: string, relOpts: RelationRegistration): RelationReferences | undefined {
+  const { references } = relOpts;
+  if (typeof references !== 'string') {
+    return references;
+  }
+  const target = ensureMeta(relOpts.entity());
+  if (relOpts.mappedBy || isToManyRelation(relOpts) || target.ids.length > 1) {
+    throw new TypeError(
+      `${at} names one column, '${references}', which only a to-one holding a foreign key to a one-column key ` +
+        'can: pair the columns, [{ local, foreign }].',
+    );
+  }
+  relOpts.references = [{ local: references, foreign: soleIdOf(target, 'a foreign key') }];
+  return relOpts.references;
+}
+
+function fillOwningSide<E>(
+  at: string,
+  meta: EntityMeta<E>,
+  relKey: string,
+  relOpts: RelationRegistration,
+): RelationReferences {
   const relMeta = ensureMeta(relOpts.entity());
 
   if (relOpts.through) {
     // Both columns live on the junction, whatever the cardinality: `deleteRelations` and every dialect
     // read them as junction columns. A composite key contributes one pair per column of it, which is
     // what makes the join address a whole key rather than part.
-    relOpts.references = [
-      ...meta.ids.map((key) => ({ local: junctionColumn(meta, key), foreign: key })),
-      ...relMeta.ids.map((key) => ({ local: junctionColumn(relMeta, key), foreign: key })),
-    ];
-    return;
+    const junction = getMeta(relOpts.through());
+    relOpts.references = [...junctionReferences(at, junction, meta), ...junctionReferences(at, junction, relMeta)];
+    return relOpts.references;
   }
 
   if (isToManyRelation(relOpts)) {
@@ -465,17 +483,27 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
   // property, so both are spelled from the referenced *property* - a column name is what the naming
   // strategy makes of this afterwards.
   const sole = relMeta.ids.length === 1;
-  relOpts.references = relMeta.ids.map((key) => ({
+  const references = relMeta.ids.map((key) => ({
     local: sole ? `${relKey}Id` : `${relKey}${upperFirst(key)}`,
     foreign: key,
   }));
 
+  // A column the entity declares would be joined by its name alone, so renaming either one would leave
+  // the other behind, still compiling.
+  const fields: Record<string, FieldMeta | undefined> = meta.fields;
+  if (references.some(({ local }) => fields[local])) {
+    const own = lowerFirst(meta.entity.name);
+    throw new TypeError(
+      `${at} joins ${references.map(({ local }) => `'${local}'`).join(', ')} by name, which a rename does not ` +
+        `follow: link them with ${sole ? `'references: (${own}) => ${own}.${references[0].local}'` : "'references' pairs"}.`,
+    );
+  }
+
   // `typeFromReference` so schema generation resolves the referenced primary key's exact type
   // (columnType, length, chained keys) rather than trusting the fallback, as it does for an
   // explicit `@Field({ references })`.
-  const fields: Record<string, FieldMeta | undefined> = meta.fields;
-  for (const { local, foreign } of relOpts.references) {
-    fields[local] ??= {
+  for (const { local, foreign } of references) {
+    fields[local] = {
       name: local,
       type: fieldOf(relMeta, foreign).type ?? Number,
       references: relOpts.entity,
@@ -483,12 +511,20 @@ function fillOwningSide<E>(at: string, meta: EntityMeta<E>, relKey: string, relO
       typeFromReference: true,
     };
   }
+  relOpts.references = references;
+  return references;
 }
 
-function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRegistration, mappedBy: string): void {
+function fillInverseSide<E>(
+  at: string,
+  meta: EntityMeta<E>,
+  relOpts: RelationRegistration,
+  mappedBy: string,
+): RelationReferences {
   const relEntity = relOpts.entity();
   const relMeta = getMeta(relEntity);
-  if (relOpts.references) return;
+  const own = pairedReferences(at, relOpts);
+  if (own) return own;
 
   if (relMeta.fields[mappedBy]) {
     if (meta.ids.length > 1) {
@@ -500,7 +536,7 @@ function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRe
     }
     // `local` is this entity's own key, as in every other pair.
     relOpts.references = [{ local: meta.ids[0], foreign: mappedBy }];
-    return;
+    return relOpts.references;
   }
 
   // Authored view again: with each side mapped by the other, the target is still mid-resolution here and
@@ -511,7 +547,8 @@ function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRe
       `${at} is mapped by '${mappedBy}', which is neither a field nor a relation of '${relEntity.name}'.`,
     );
   }
-  if (!owner.references?.length) {
+  const ownerReferences = pairedReferences(`'${relEntity.name}.${mappedBy}'`, owner);
+  if (!ownerReferences?.length) {
     throw new TypeError(
       `${at} is mapped by '${relEntity.name}.${mappedBy}', an inverse side too, so neither owns the foreign key.`,
     );
@@ -522,52 +559,64 @@ function fillInverseSide<E>(at: string, meta: EntityMeta<E>, relOpts: RelationRe
   // plain foreign key is one pair per key whose ends swap.
   relOpts.references =
     relOpts.cardinality === 'm1' || relOpts.cardinality === 'mm'
-      ? [...owner.references.slice(relMeta.ids.length), ...owner.references.slice(0, relMeta.ids.length)]
-      : owner.references.map(({ local, foreign }) => ({ local: foreign, foreign: local }));
+      ? [...ownerReferences.slice(relMeta.ids.length), ...ownerReferences.slice(0, relMeta.ids.length)]
+      : ownerReferences.map(({ local, foreign }) => ({ local: foreign, foreign: local }));
   relOpts.through = owner.through;
+  return relOpts.references;
 }
 
 /**
- * A field carrying `references` is a foreign key, and a foreign key is a many-to-one whether or not
- * anyone declared the relation. Deriving it everywhere is what lets a junction be written as two plain
- * columns: it needs the relations for `$populate` and for its DDL constraints, and it used to get them
- * only because some *other* entity pointed `through` at it. Gaps only, so a declared relation keeps its
- * own cardinality and `cascade`.
+ * The foreign keys an entity holds: each owning to-one's columns, and each `@Field({ references })` no
+ * relation joins on, as the many-to-one it describes, once its target has registered a key. What the
+ * schema build constrains and a junction joins by.
  */
-function fillForeignKeyRelations<E>(meta: EntityMeta<E>): void {
-  const joined = new Set(
-    definedEntries(meta.relations).flatMap(([, relation]) => relation.references.map(({ local }) => local)),
-  );
-  for (const [fieldKey, { references }] of definedEntries(meta.fields)) {
-    if (!references || joined.has(fieldKey)) continue;
-    const target = ensureMeta(references());
-    // Nothing to derive from an entity that has not registered its own fields yet.
-    if (!target.ids.length) continue;
+export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
+  const owning = definedEntries(meta.relations)
+    .map(([, relation]) => relation)
+    .filter(({ cardinality, mappedBy }) => cardinality === 'm1' || (cardinality === '11' && !mappedBy));
+  const joined = new Set(owning.flatMap(({ references }) => references.map(({ local }) => local)));
+  const columns = definedEntries(meta.fields).flatMap(([key, field]): RelationMeta[] => {
+    if (!field.references || joined.has(key)) return [];
+    const target = ensureMeta(field.references());
+    if (!target.ids.length) return [];
     if (target.ids.length > 1) {
       throw new TypeError(
-        `'${meta.entity.name}.${fieldKey}' cannot reference '${target.entity.name}', whose primary key is composite ` +
+        `'${meta.entity.name}.${key}' cannot reference '${target.entity.name}', whose primary key is composite ` +
           `(${target.ids.join(', ')}): a column points at one. Use ` +
           `'@ManyToOne({ entity: () => ${target.entity.name} })', which declares one column per key.`,
       );
     }
-    const [foreign] = target.ids;
-    // The relation takes the column's name minus the key it points at (`itemId` -> `item`); a column
-    // named anything else has no name to take, so it stays a plain foreign key.
-    const suffix = upperFirst(foreign);
-    if (!fieldKey.endsWith(suffix)) continue;
-    const relKey = fieldKey.slice(0, -suffix.length);
-    if (!relKey || meta.fields[relKey] || meta.relations[relKey]) continue;
-    (meta.relations as Record<string, RelationMeta>)[relKey] = {
-      entity: references,
-      cardinality: 'm1',
-      references: [{ local: fieldKey, foreign }],
-    };
-  }
+    return [{ entity: field.references, cardinality: 'm1', references: [{ local: key, foreign: target.ids[0] }] }];
+  });
+  return [...owning, ...columns];
 }
 
-/** `<entityName><IdColumn>`, not the `<relationKey>Id` an owning to-one derives: a junction row has no relation key to borrow from. */
-function junctionColumn<E>(meta: EntityMeta<E>, idKey: IdKey<E>): string {
-  return lowerFirst(entityName(meta)) + upperFirst(fieldOf(meta, idKey).name ?? idKey);
+/** Each key of `side`, paired with the one column of `junction` referencing it: a rename of either follows. */
+function junctionReferences<S>(at: string, junction: EntityMeta<object>, side: EntityMeta<S>): RelationReferences {
+  const pairs = foreignKeysOf(junction).flatMap(({ entity, references }) =>
+    entity() === side.entity ? references : [],
+  );
+  return side.ids.map((key) => {
+    const [pair, ...others] = pairs.filter(({ foreign }) => foreign === key);
+    const referenced = `'${side.entity.name}.${key}'`;
+    if (!pair) {
+      const declare =
+        side.ids.length > 1
+          ? `@ManyToOne({ entity: () => ${side.entity.name} })`
+          : `@Field({ references: () => ${side.entity.name} })`;
+      throw new TypeError(
+        `${at} joins through '${junction.entity.name}', which has no column referencing ${referenced}: declare one, '${declare}'.`,
+      );
+    }
+    if (others.length) {
+      const columns = [pair, ...others].map(({ local }) => `'${local}'`).join(' and ');
+      throw new TypeError(
+        `${at} joins through '${junction.entity.name}', where ${columns} each reference ${referenced}: a junction ` +
+          'needs exactly one column per key of each side.',
+      );
+    }
+    return { local: pair.local, foreign: key };
+  });
 }
 
 /** Every key the entity marks, in declaration order. More than one is a composite primary key. */
@@ -605,7 +654,12 @@ function extendMeta<E>(target: EntityMeta<E>, source: EntityMeta<E>): void {
     }
   }
   target.fields = { ...sourceFields, ...target.fields };
-  target.relations = { ...source.relations, ...target.relations };
+  // A copy of each relation per entity: resolving one writes the columns it joins on into it, and those
+  // columns are the resolving entity's, so one shared object left every later entity without them.
+  target.relations = {
+    ...Object.fromEntries(definedEntries(source.relations).map(([key, relation]) => [key, { ...relation }])),
+    ...target.relations,
+  };
 
   // Inherit user-defined filters from the parent (child overrides by name). The built-in soft-delete
   // filter + `meta.softDelete` are (re)derived from the merged fields in `defineEntity`.

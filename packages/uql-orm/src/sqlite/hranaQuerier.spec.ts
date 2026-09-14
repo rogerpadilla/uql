@@ -32,7 +32,7 @@ describe('HranaQuerier', () => {
 
     const res = await querier.internalAll('SELECT 1');
 
-    expect(mockClient.execute).toHaveBeenCalledWith({ sql: 'SELECT 1', args: undefined });
+    expect(mockClient.execute).toHaveBeenCalledWith({ sql: 'SELECT 1', args: [] });
     expect(res).toEqual([{ id: 1 }]);
   });
 

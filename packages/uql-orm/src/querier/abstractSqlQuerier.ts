@@ -46,7 +46,7 @@ import {
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
-
+import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
 
 /**
@@ -336,12 +336,20 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Internal streaming query - returns an async iterable of raw rows.
-   * Default implementation falls back to `internalAll()` then yields each row.
-   * Drivers with native cursor/streaming APIs (SQLite, Pg) should override this.
+   * A read's rows one at a time: paged through a server-side cursor where the engine has one, read whole
+   * where it has none. A driver that streams on its own overrides this.
    */
   protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
-    yield* await this.internalAll<T>(query, values);
+    if (!this.dialect.features.serverSideCursors) {
+      yield* await this.internalAll<T>(query, values);
+      return;
+    }
+    yield* streamViaCursor<T>(
+      (sql, params) => this.internalAll<T>(sql, params),
+      query,
+      values,
+      this.hasOpenTransaction,
+    );
   }
 
   /**

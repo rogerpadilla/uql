@@ -9,20 +9,15 @@ import { introspectorFor } from './registry.js';
 describe('introspectorFor', () => {
   const poolOf = (dialect: unknown) => ({ dialect }) as QuerierPool;
 
-  it('should build the introspector each engine names', () => {
-    expect(introspectorFor('mssql', poolOf(new MsSqlDialect({})))).toBeInstanceOf(MsSqlSchemaIntrospector);
-    expect(introspectorFor('postgres', poolOf(new PostgresDialect({})))).toBeInstanceOf(PostgresSchemaIntrospector);
+  it('should build the introspector of the engine a pool runs on', () => {
+    expect(introspectorFor(poolOf(new MsSqlDialect({})))).toBeInstanceOf(MsSqlSchemaIntrospector);
+    expect(introspectorFor(poolOf(new PostgresDialect({})))).toBeInstanceOf(PostgresSchemaIntrospector);
   });
 
   it('should carry a named schema through to the introspector', () => {
-    const introspector = introspectorFor('mssql', poolOf(new MsSqlDialect({})), 'crm');
+    const introspector = introspectorFor(poolOf(new MsSqlDialect({})), 'crm');
 
     expect(introspector).toBeInstanceOf(MsSqlSchemaIntrospector);
     expect((introspector as MsSqlSchemaIntrospector).schema).toBe('crm');
-  });
-
-  /** An engine the migrator has no catalogue queries for gets no introspector rather than a wrong one. */
-  it('should answer nothing for an engine it does not know', () => {
-    expect(introspectorFor('duckdb', poolOf(new MsSqlDialect({})))).toBeUndefined();
   });
 });

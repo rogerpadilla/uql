@@ -23,7 +23,6 @@ import {
   type QueryContext,
   type QueryContextOptions,
   type QueryCount,
-  type QueryDialect,
   type QueryExclude,
   type QueryFilter,
   type QueryGroupMap,
@@ -230,7 +229,7 @@ function inOperands(op: string, value: unknown): unknown[] {
   return value;
 }
 
-export abstract class AbstractSqlDialect extends VectorSqlDialect implements QueryDialect, SqlQueryDialect {
+export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 

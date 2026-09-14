@@ -2,6 +2,18 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.65.0] - 2026-09-14
+
+- **Breaking: a to-one names the foreign key it declares, `references: (post) => post.authorId`**, rather than joining `authorId` by name; the codemod adds it. With the shared cursor stream, `uql-orm/postgres` grows 0.5 KB gzipped.
+- **Breaking: a `@Field({ references })` column adds no relation of its own**: `postId` gives nothing to `$populate` until one is declared; its foreign key still reaches generated DDL.
+- **Breaking: `through` joins by the junction's column referencing each side**, whatever it is called, not `<entity><Key>`: that column needs `references`, or a `@ManyToOne` for a composite side.
+- **Breaking (types): `defineEntity` takes the relation options each decorator does**: `mappedBy` on a many-to-one, `through` on a to-one and `onDelete`/`onUpdate` on a to-many stop compiling.
+- **`generate:from-db` names the foreign key each relation joins on**, so a column not called `<relation>Id` no longer gets a second one beside it.
+- **Fixed**: every entity extending a base that declares a relation gets its foreign key column, not only the first, and an unresolvable relation throws on every read.
+- **A SQL querier with no stream of its own pages through a server-side cursor** where the engine has one, as `bun:sql` and PGlite did, instead of reading every row.
+- **Breaking: `Migrator.dialectName`, `BunSqlQuerierPool.sqlDialectName` and the protected `Migrator.createIntrospector` are gone**: read `pool.dialect.dialectName`; `schemaIntrospector` stays assignable.
+- **Breaking (drivers): `driverCapabilities` belongs to the Postgres-wire dialects**, read as `dialect.driverCapabilities`, and `supportsJsonb` and the `'lastId'` insert-id source are gone.
+
 ## [0.64.0] - 2026-09-14
 
 - **A partial index throws at generation where its engine cannot hold the predicate**: SQL Server refuses `$or`, `$not`, `$nin`, `$between`, string matching and JSON paths, naming the operator.

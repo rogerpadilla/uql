@@ -1,5 +1,5 @@
 import ts from 'typescript';
-import { applyEdits, type Edit, inserted, removeFromList, replaced } from './edits.js';
+import { appended, applyEdits, type Edit, inserted, removeFromList, replaced } from './edits.js';
 import { columnExpressions, handNamedColumns, isRaw, rawTag, rawWhereEdit } from './entitySql.js';
 import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
 import {
@@ -19,6 +19,8 @@ import {
 
 const FIELD_DECORATORS = new Set(['Field', 'Id']);
 const RELATION_DECORATORS = new Set(['OneToOne', 'ManyToOne', 'OneToMany', 'ManyToMany']);
+const TO_ONE_DECORATORS = new Set(['OneToOne', 'ManyToOne']);
+const TO_ONE_CARDINALITIES = new Set(['11', 'm1']);
 
 /**
  * Decorators that no longer exist, mapped to what to do instead. None is removed for you: what to put
@@ -59,6 +61,17 @@ const REMOVED_EXPORTS = new Map([
     'IndexColumnOptions',
     "an entity's index entry is `EntityIndexColumnInput<E>`, the migration builder's `IndexColumnInput`",
   ],
+  ['isKnownMigratorDialect', 'every dialect has a migrator, so it always held: drop the check'],
+  ['QuerierPoolDialect', "read the pool's own: `P['dialect']`"],
+  ['QuerierPoolQuerier', "read the pool's own: `Awaited<ReturnType<P['getQuerier']>>`"],
+  [
+    'POSTGRES_WIRE_DRIVER_CAPABILITIES',
+    'pass `driverCapabilities: { nativeArrays: false, explicitJsonCast: true }` to the dialect',
+  ],
+  ['MysqlLikeSqlDialect', 'extend `MySqlDialect` (`uql-orm/mysql`) or `MariaDialect` (`uql-orm/maria`)'],
+  ['D1Meta', "uql reads `D1Result['meta']`; the rest of a binding is typed by `@cloudflare/workers-types`"],
+  ['D1ExecResult', 'the rest of a binding is typed by `@cloudflare/workers-types`'],
+  ['createSchemaGenerator', 'use `new SqlSchemaGenerator(dialect)`, or `migrator.getSchemaGenerator()`'],
 ]);
 
 /**
@@ -82,6 +95,10 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['TursoDatabase', { to: 'SqliteDatabase', from: 'uql-orm/sqlite' }],
   ['SqlMigrationModuleOptions', { to: 'MigrationModuleOptions' }],
   ['buildSqlQuerierMigrationModule', { to: 'buildMigrationModule' }],
+  ['QueryDialect', { to: 'SqlQueryDialect' }],
+  ['EngineFeatures', { to: 'DialectFeatures' }],
+  ['KnownMigratorDialect', { to: 'DialectName', from: 'uql-orm' }],
+  ['D1Preparer', { to: 'D1Database' }],
 ]);
 
 export type FileResult = {
@@ -306,6 +323,28 @@ function addRelationEntity(decorator: ts.Decorator, node: ts.PropertyDeclaration
 }
 
 /**
+ * Names the foreign key a to-one found by name alone, `references: (post) => post.authorId` beside `author`,
+ * where its entity declares or inherits that key: a declared key is no longer joined by its name.
+ */
+function addForeignKeyReference(
+  relation: ts.ObjectLiteralExpression,
+  key: string | undefined,
+  owner: Owner,
+  ctx: Context,
+): void {
+  const options: Options = { kind: 'literal', node: relation };
+  const cardinality = propertyValue(relation, 'cardinality');
+  const toOne = !cardinality || (ts.isStringLiteralLike(cardinality) && TO_ONE_CARDINALITIES.has(cardinality.text));
+  const joined = ['mappedBy', 'through', 'references'].some((option) => findProperty(options, option));
+  const last = relation.properties.at(-1);
+  const column = `${key}Id`;
+  if (!key || !last || !toOne || joined || !memberNames(owner.entity, ctx.checker).has(column)) {
+    return;
+  }
+  ctx.edits.push(appended(last, `, references: (${owner.param}) => ${memberAccess(owner.param, column)}`));
+}
+
+/**
  * Writes the edits `rewrite` reads off `value`, which still names members as strings, or reports it
  * where it could not be read: what it holds is only known at runtime. A callback or an object literal
  * is already the new form, and kept.
@@ -375,6 +414,7 @@ function rewriteDefineCall(call: ts.CallExpression, ctx: Context): void {
     rewriteIndexOptions(second, owner, ctx);
   } else if (name === 'defineRelation' && third && ts.isObjectLiteralExpression(third)) {
     rewriteRelationOptions(third, owner.param, ctx);
+    addForeignKeyReference(third, second && ts.isStringLiteralLike(second) ? second.text : undefined, owner, ctx);
   } else if (name === 'defineFilter' && third) {
     renameOption(optionsOf(third), 'condition', 'where', call, ctx);
   }
@@ -401,6 +441,7 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
   for (const relation of objectProperties(propertyValue(options, 'relations'))) {
     if (ts.isObjectLiteralExpression(relation.initializer)) {
       rewriteRelationOptions(relation.initializer, owner.param, ctx);
+      addForeignKeyReference(relation.initializer, propertyKey(relation.name), owner, ctx);
     }
   }
 }
@@ -745,6 +786,9 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     if (RELATION_DECORATORS.has(name) && options.kind === 'literal') {
       const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
       rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
+    }
+    if (TO_ONE_DECORATORS.has(name) && options.kind === 'literal') {
+      addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx);
     }
   }
   if (decorators.length) {

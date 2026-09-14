@@ -25,7 +25,6 @@ import type {
   FieldOptions,
   ForeignKeySchema,
   IndexSchema,
-  MigratorDialect,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -991,12 +990,4 @@ export function buildEntityAST(
     compileIndexPredicate: (where, entity, indexName) => generator.compileIndexPredicate(where, entity, indexName),
     defaultForeignKeyAction,
   });
-}
-
-/** The SQL schema generator for `dialect`, `undefined` on MongoDB, whose generator needs its optional peer. */
-export function createSchemaGenerator(
-  dialect: MigratorDialect,
-  defaultForeignKeyAction?: ForeignKeyAction,
-): SqlSchemaGenerator | undefined {
-  return dialect.dialectName === 'mongodb' ? undefined : new SqlSchemaGenerator(dialect, defaultForeignKeyAction);
 }

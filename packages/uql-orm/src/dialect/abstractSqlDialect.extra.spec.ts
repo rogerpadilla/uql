@@ -12,9 +12,6 @@ class TestSqlDialect extends AbstractSqlDialect {
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
   protected override readonly featureDefaults: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: false,
-    supportsJsonb: false,
     schemas: true,
     ifNotExists: true,
     indexIfNotExists: false,
@@ -115,7 +112,7 @@ class TestSqlDialect extends AbstractSqlDialect {
 class Shelf {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => VectorItem }) vectorItemId?: number;
-  @ManyToOne({ entity: () => VectorItem }) vectorItem?: VectorItem;
+  @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
 }
 
 /** A field the strategy names, one named outright, and an inlined computed one, for `refs()` to render. */

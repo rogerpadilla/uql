@@ -79,7 +79,7 @@ class SecureParent {
   id?: number;
   @Field({ references: () => SecureRelated })
   relatedId?: number;
-  @ManyToOne({ entity: () => SecureRelated })
+  @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
 
@@ -98,7 +98,7 @@ class SecureChild {
   collectionId?: number;
   @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
-  @ManyToOne({ entity: () => SecureCollection })
+  @ManyToOne({ entity: () => SecureCollection, references: (secureChild) => secureChild.collectionId })
   collection?: SecureCollection;
 }
 
@@ -109,7 +109,7 @@ class PlainChild {
   id?: number;
   @Field({ references: () => SecureCollection })
   collectionId?: number;
-  @ManyToOne({ entity: () => SecureCollection })
+  @ManyToOne({ entity: () => SecureCollection, references: (plainChild) => plainChild.collectionId })
   collection?: SecureCollection;
 }
 

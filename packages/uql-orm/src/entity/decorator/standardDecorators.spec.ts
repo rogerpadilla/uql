@@ -105,7 +105,7 @@ describe('standard decorators', () => {
     class Owned {
       @Id({ type: Number }) id?: number;
       @Field({ references: () => Owner }) ownerId?: number;
-      @ManyToOne({ entity: () => Owner }) owner?: Owner;
+      @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
     }
 
     expect(getMeta(Owned).relations['owner']!.entity!()).toBe(Owner);

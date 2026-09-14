@@ -90,11 +90,8 @@ type RelationLookups = {
   readonly temps: string[];
 };
 
-/** Default {@link DialectFeatures} for MongoDB; shared by {@link MongoDialect} and its schema generator. */
+/** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {
-  explicitJsonCast: false,
-  nativeArrays: false,
-  supportsJsonb: false,
   ifNotExists: false,
   indexIfNotExists: false,
   schemas: false, // the connection picks the database, and a collection name takes no dot

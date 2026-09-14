@@ -56,8 +56,8 @@ export class HranaQuerier extends AbstractSqliteQuerier {
   }
 
   /** Runs on the open transaction's handle when there is one. */
-  protected override async execute(query: string, values?: unknown[]) {
-    const res = await (this.tx ?? this.client).execute({ sql: query, args: values as HranaInValue[] });
+  protected override async execute(query: string, values: SqliteBindValue[]) {
+    const res = await (this.tx ?? this.client).execute({ sql: query, args: values });
     return { rows: res.rows as RawRow[], changes: res.rowsAffected };
   }
 

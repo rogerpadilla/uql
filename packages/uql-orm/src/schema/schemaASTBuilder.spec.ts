@@ -33,7 +33,7 @@ class Post {
   @Field({ type: 'text' })
   content?: string;
 
-  @ManyToOne({ entity: () => User })
+  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
   author?: User;
 
   @Field({ type: Number, name: 'author_id' })
@@ -162,14 +162,19 @@ describe('SchemaASTBuilder', () => {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number, references: () => FkParent }) parentId?: number;
         // The action lives on the owning side, which is the side that holds the key.
-        @ManyToOne({ entity: () => FkParent, onDelete: 'CASCADE', onUpdate: 'RESTRICT' })
+        @ManyToOne({
+          entity: () => FkParent,
+          references: (fkChild) => fkChild.parentId,
+          onDelete: 'CASCADE',
+          onUpdate: 'RESTRICT',
+        })
         parent?: FkParent;
       }
       @Entity()
       class PlainChild {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number, references: () => FkParent }) parentId?: number;
-        @ManyToOne({ entity: () => FkParent }) parent?: FkParent;
+        @ManyToOne({ entity: () => FkParent, references: (plainChild) => plainChild.parentId }) parent?: FkParent;
       }
 
       const ast = buildSchemaAST([FkParent, FkChild, PlainChild]);
@@ -190,7 +195,7 @@ describe('SchemaASTBuilder', () => {
       class FkOnFieldParent {
         @Id({ type: Number }) id?: number;
       }
-      // No @ManyToOne at all: the relation UQL synthesizes for a bare FK field still needs the cascade.
+      // No @ManyToOne at all: a bare FK field is a foreign key of its own, and still takes its cascade.
       @Entity()
       class FkOnFieldOnlyChild {
         @Id({ type: Number }) id?: number;
@@ -201,14 +206,15 @@ describe('SchemaASTBuilder', () => {
       class FkOnFieldWithRelationChild {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
-        @ManyToOne({ entity: () => FkOnFieldParent }) parent?: FkOnFieldParent;
+        @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId }) parent?: FkOnFieldParent;
       }
       // The relation's own onDelete still wins over a disagreeing field.
       @Entity()
       class FkOnFieldOverriddenChild {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
-        @ManyToOne({ entity: () => FkOnFieldParent, onDelete: 'SET NULL' }) parent?: FkOnFieldParent;
+        @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId, onDelete: 'SET NULL' })
+        parent?: FkOnFieldParent;
       }
 
       const ast = buildSchemaAST([
@@ -595,7 +601,6 @@ describe('SchemaASTBuilder', () => {
         @Id({ type: Number }) id?: number;
         @OneToOne({ entity: () => ProfileDef })
         profile?: ProfileDef;
-        @Field({ type: Number }) profileId?: number;
       }
 
       const ast = buildSchemaAST([ProfileDef, UserDef]);

@@ -19,7 +19,7 @@ class Company {
 class Project {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => Company }) ownerId?: number;
-  @ManyToOne({ entity: () => Company }) owner?: Company;
+  @ManyToOne({ entity: () => Company, references: (project) => project.ownerId }) owner?: Company;
 }
 
 // Shares no property name with `Project`: TypeScript only flags a mismatch between two all-optional
@@ -33,9 +33,13 @@ export class Employee {
   @Id({ type: Number }) id?: number;
 
   @Field({ references: () => Company }) companyId?: number;
-  @ManyToOne({ entity: () => Company }) company?: Company;
+  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
   // @ts-expect-error `@ManyToOne` targets `Company`; the property must hold a `Company`, not a string
   @ManyToOne({ entity: () => Company }) badCompany?: string;
+  // @ts-expect-error `references` names a column of the declaring entity, never a relation
+  @ManyToOne({ entity: () => Company, references: (employee) => employee.company }) employer?: Company;
+  // @ts-expect-error a to-many pairs its columns; naming one is for the side of a to-one holding the key
+  @OneToMany({ entity: () => Project, references: (employee) => employee.id }) ownedProjects?: Project[];
 
   @OneToOne({ entity: () => Company, mappedBy: (company) => company.id }) sameSizedCompany?: Company;
   // @ts-expect-error a to-one cardinality cannot land on an array-typed property

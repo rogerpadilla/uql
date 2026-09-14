@@ -70,7 +70,7 @@ Two consequences, and the second is why this is the item that gates the feature 
 What lands with the feature, then:
 
 - **`$sort` grows a placement**, as four more string literals on `QuerySortDirection` rather than an object: `'ascNullsLast' | 'ascNullsFirst' | 'descNullsFirst' | 'descNullsLast'`, camelCase per the convention for new union values, and free at the type level next to a second object shape.
-- **One `EngineFeatures` knob, three-way like `commentSyntax`**: `nullsOrdering: 'clause' | 'expression' | 'none'` - the `NULLS` clause where it exists, a leading `col IS NULL` / `CASE WHEN col IS NULL` term on MySQL, MariaDB and SQL Server, nothing on MongoDB, which sorts nulls lowest and cannot be told otherwise. Plus `sortsNullsLowest`, so an unqualified direction is left alone instead of rewritten and `findManyPage` returns the order `findMany` returns.
+- **One `DialectFeatures` knob, three-way like `commentSyntax`**: `nullsOrdering: 'clause' | 'expression' | 'none'` - the `NULLS` clause where it exists, a leading `col IS NULL` / `CASE WHEN col IS NULL` term on MySQL, MariaDB and SQL Server, nothing on MongoDB, which sorts nulls lowest and cannot be told otherwise. Plus `sortsNullsLowest`, so an unqualified direction is left alone instead of rewritten and `findManyPage` returns the order `findMany` returns.
 - One parser reads the placement for both the `ORDER BY` and the condition. MikroORM shipped cursor pagination in v6 and reworked it in 7.2 for exactly this: the rewritten order dropped the qualifier, `desc nulls first` read as ascending, and a non-null offset never entered the null block - three ways for the two sides to disagree, all from resolving the direction twice.
 
 ## Totality

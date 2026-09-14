@@ -140,6 +140,17 @@ expectType<RelationOptionsFor<Company[], Employee>>({
   cardinality: 'mm',
   references: (employee, company) => [{ local: employee.companyId, foreign: company.id }],
 });
+expectType<RelationOptionsFor<Company, Employee>>({
+  entity: () => Company,
+  cardinality: 'm1',
+  references: (employee) => employee.companyId,
+});
+// @ts-expect-error a to-many pairs its columns rather than naming one
+expectType<RelationOptionsFor<Company[], Employee>>({
+  entity: () => Company,
+  cardinality: 'mm',
+  references: (employee) => employee.companyId,
+});
 
 // @ts-expect-error a to-many cardinality needs an array field
 expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '1m' });
@@ -147,6 +158,21 @@ expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '1
 expectType<RelationOptionsFor<Company[]>>({ entity: () => Company, cardinality: 'm1' });
 // @ts-expect-error `entity` is required
 expectType<RelationOptionsFor<Company>>({ cardinality: 'm1' });
+expectType<RelationOptionsFor<Company>>({
+  entity: () => Company,
+  cardinality: 'm1',
+  // @ts-expect-error a many-to-one holds its foreign key, so it is no inverse side
+  mappedBy: (company) => company.id,
+});
+// @ts-expect-error a to-one joins through no junction
+expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '11', through: () => Company });
+expectType<RelationOptionsFor<Company[]>>({
+  entity: () => Company,
+  cardinality: '1m',
+  mappedBy: (company) => company.id,
+  // @ts-expect-error an inverse side holds no foreign key for an action to apply to
+  onDelete: 'CASCADE',
+});
 
 // ─── mappedBy: one member of the target, read off its key map ───
 class Employee {
@@ -252,6 +278,12 @@ defineEntity(Account, {
   fields: { id: { type: Number, isId: true } },
   // @ts-expect-error a check reads the entity's own fields
   checks: [{ where: { emial: { $ne: '' } } }],
+});
+
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error the options a relation takes are its decorator's, so a many-to-one is no inverse side
+  relations: { owner: { cardinality: 'm1', entity: () => Company, mappedBy: (company) => company.id } },
 });
 
 defineEntity(Account, {

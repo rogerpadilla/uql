@@ -86,6 +86,16 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
     expect(res).toEqual({ changes: 3, ids: [], firstId: undefined, created: undefined });
   });
 
+  /** `node:sqlite` answers a change count as a `bigint` once it reads integers as ones. */
+  it('should report a change count the driver answers as a bigint as a number', async () => {
+    use(false);
+    stmt.run.mockReturnValue(driver.wrap({ changes: 3n }));
+
+    const res = await querier.run('UPDATE t SET a = ?', [1]);
+
+    expect(res.changes).toBe(3);
+  });
+
   /** A statement that reads nothing has no rows to give, so asking for them runs it rather than failing. */
   it('should run a statement that reads nothing when asked for its rows', async () => {
     use(false);

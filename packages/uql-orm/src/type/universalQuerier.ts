@@ -212,8 +212,8 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * dialect's bind-parameter limit) and return their IDs in payload order.
    *
    * Provided IDs and client-generated ones (`@Id({ onInsert })`) are always returned as-is.
-   * Database-generated IDs are exact on `'returning'` dialects (Postgres, MariaDB, MongoDB);
-   * on MySQL/SQLite they are inferred from the driver header, which is only reliable for
+   * Database-generated IDs are exact wherever the statement returns them, which is everywhere but
+   * MySQL: there they are inferred from the driver header, which is only reliable for
    * auto-increment keys in batches without explicit IDs - otherwise those entries are
    * `undefined` rather than potentially wrong values. A composite key is never one the statement
    * reports, so those rows are named as written, `onInsert` columns included.

@@ -3,9 +3,8 @@ import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import { introspectSchema, SchemaAST } from '../schema/index.js';
-import type { ForeignKeyAction, TableNode } from '../schema/types.js';
+import type { TableNode } from '../schema/types.js';
 import type {
-  DialectName,
   LoggingOptions,
   Migration,
   MigrationDefinition,
@@ -47,40 +46,28 @@ export class Migrator {
   public get entities(): Type<object>[] {
     return this._entities ?? getEntities();
   }
-  public readonly dialectName: DialectName;
   /** The generator given, or this dialect's once {@link getSchemaGenerator} has loaded it. */
   public schemaGenerator?: SchemaGenerator;
-  public schemaIntrospector?: SchemaIntrospector;
-  private readonly defaultForeignKeyAction?: ForeignKeyAction;
+  public schemaIntrospector: SchemaIntrospector;
   private readonly target: MigrationTarget;
 
   constructor(
     private readonly pool: QuerierPool<Querier, MigratorDialect>,
     options: MigratorOptions = {},
   ) {
-    this.dialectName = pool.dialect.dialectName;
-    this.target = migrationTargetFor(pool.dialect);
-    this.defaultForeignKeyAction = options.defaultForeignKeyAction;
-    this.storage = options.storage ?? this.target.storage(pool, options.tableName);
+    this.target = migrationTargetFor(pool, options.defaultForeignKeyAction);
+    this.storage = options.storage ?? this.target.storage(options.tableName);
     this.migrationsPath = options.migrationsPath ?? './migrations';
     this._logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
-    this.schemaIntrospector = this.createIntrospector();
+    this.schemaIntrospector = introspectorFor(pool);
     this.schemaGenerator = options.schemaGenerator;
   }
 
   /** The schema generator, loaded on first use: MongoDB's needs its optional peer. */
   async getSchemaGenerator(): Promise<SchemaGenerator> {
-    this.schemaGenerator ??= await this.target.generator(this.pool.dialect, this.defaultForeignKeyAction);
-    if (!this.schemaGenerator) {
-      throw new TypeError(`No schema generator for dialect '${this.dialectName}'`);
-    }
+    this.schemaGenerator ??= await this.target.generator();
     return this.schemaGenerator;
-  }
-
-  /** `schema` reads one namespace instead of the connection's own; see {@link BaseSqlIntrospector.schema}. */
-  protected createIntrospector(schema?: string): SchemaIntrospector | undefined {
-    return introspectorFor(this.dialectName, this.pool, schema);
   }
 
   /**
@@ -180,7 +167,7 @@ export class Migrator {
   public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
 
-    return this.target.withSession(this.pool, async ({ querier, transaction }) => {
+    return this.target.withSession(async ({ querier, transaction }) => {
       try {
         this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
@@ -282,10 +269,6 @@ export class Migrator {
    */
   async getDiffs(): Promise<SchemaDiff[]> {
     const generator = await this.getSchemaGenerator();
-    if (!this.schemaIntrospector) {
-      throw new TypeError(`No introspector for dialect '${this.dialectName}'`);
-    }
-
     const ast = await this.introspectClaimedSchemas();
     // Both sides built once: the database's above, the entities' here. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
@@ -309,11 +292,7 @@ export class Migrator {
     const claimed = new Set(this.entities.map((entity) => this.pool.dialect.resolveSchema(getMeta(entity))));
     const merged = new SchemaAST();
     for (const schema of claimed) {
-      const introspector = this.introspectorFor(schema);
-      if (!introspector) {
-        continue;
-      }
-      for (const table of (await introspectSchema(introspector)).getTables()) {
+      for (const table of (await introspectSchema(this.schemaIntrospectorFor(schema))).getTables()) {
         merged.addTable(table);
       }
     }
@@ -358,10 +337,7 @@ export class Migrator {
    */
   private async planEntity(generator: SchemaGenerator, entity: Type<object>, options: SyncOptions): Promise<string[]> {
     const meta = getMeta(entity);
-    const introspector = this.introspectorFor(this.pool.dialect.resolveSchema(meta));
-    if (!introspector) {
-      throw new TypeError(`No introspector for '${meta.entity.name}' on '${this.dialectName}'`);
-    }
+    const introspector = this.schemaIntrospectorFor(this.pool.dialect.resolveSchema(meta));
     const tableName = generator.resolveTableName(meta);
 
     return (await introspector.tableExists(tableName))
@@ -392,8 +368,8 @@ export class Migrator {
   }
 
   /** The introspector for a claimed schema, which is the connection's own where none is claimed. */
-  private introspectorFor(schema: string | undefined): SchemaIntrospector | undefined {
-    return schema === undefined ? this.schemaIntrospector : this.createIntrospector(schema);
+  private schemaIntrospectorFor(schema: string | undefined): SchemaIntrospector {
+    return schema === undefined ? this.schemaIntrospector : introspectorFor(this.pool, schema);
   }
 
   /**
@@ -494,7 +470,7 @@ export class Migrator {
 
   /** Runs the statements a generator wrote, in one transaction where the engine takes DDL in one. */
   public async executeSyncStatements(statements: string[], options: { logging?: boolean }): Promise<void> {
-    await this.target.withSession(this.pool, ({ run, transaction }) =>
+    await this.target.withSession(({ run, transaction }) =>
       transaction(async () => {
         for (const statement of statements) {
           if (options.logging) this.logger.logSchema(`Executing: ${statement}`);

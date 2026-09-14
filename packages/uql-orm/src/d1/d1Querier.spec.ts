@@ -15,7 +15,7 @@ function buildDb(stmt: ReturnType<typeof buildStmt>) {
 
 /** What D1 answers: the rows a statement read, and its metadata. */
 function result(results: RawRow[], meta: D1Result['meta'] = {}): D1Result<RawRow> {
-  return { results, success: true, meta };
+  return { results, meta };
 }
 
 describe('D1Querier', () => {

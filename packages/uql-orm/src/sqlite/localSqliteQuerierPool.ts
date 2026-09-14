@@ -26,6 +26,29 @@ export type LocalSqliteDatabase = {
 };
 
 /**
+ * A `node:sqlite` or `bun:sqlite` handle as a {@link LocalSqliteDatabase}. Neither says whether a statement
+ * reads, so `reads` does: taken by `run()`, a RETURNING statement's rows would be lost, and its ids with them.
+ */
+export function adaptSqlite<S extends Omit<SqlitePreparedStatement, 'reader'>>(
+  db: Omit<LocalSqliteDatabase, 'prepare'> & { prepare(sql: string): S },
+  reads: (stmt: S) => boolean,
+): LocalSqliteDatabase {
+  return {
+    prepare: (sql) => {
+      const stmt = db.prepare(sql);
+      return {
+        reader: reads(stmt),
+        all: (...values) => stmt.all(...values),
+        run: (...values) => stmt.run(...values),
+        iterate: (...values) => stmt.iterate(...values),
+      };
+    },
+    loadExtension: (path) => db.loadExtension(path),
+    close: () => db.close(),
+  };
+}
+
+/**
  * Pool for a SQLite database opened in this process, whichever driver provides it. SQLite gives one
  * connection per file, so the shared-handle lifecycle is {@link AbstractSharedHandleQuerierPool}'s.
  *

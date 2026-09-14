@@ -225,7 +225,9 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('posts');
 
-      expect(result!.code).toContain("@ManyToOne({ entity: () => User, onDelete: 'CASCADE', onUpdate: 'CASCADE' })");
+      expect(result!.code).toContain(
+        "@ManyToOne({ entity: () => User, references: (post) => post.authorId, onDelete: 'CASCADE', onUpdate: 'CASCADE' })",
+      );
     });
 
     it('should omit the referential action when introspection found none', () => {
@@ -250,7 +252,116 @@ describe('EntityCodeGenerator', () => {
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('posts');
 
-      expect(result!.code).toContain('@ManyToOne({ entity: () => User })');
+      expect(result!.code).toContain('@ManyToOne({ entity: () => User, references: (post) => post.authorId })');
+    });
+
+    it('should name the foreign key a relation joins on, so no column has to be named after the relation', () => {
+      const ast = new SchemaAST();
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const posts = mockTableNode('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'written_by', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'posts_users_fk',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('written_by')!] },
+        to: { table: users, columns: [users.columns.get('id')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      expect(result!.code).toContain('@ManyToOne({ entity: () => User, references: (post) => post.writtenBy })');
+      expect(result!.code).toContain('user?: User;');
+    });
+
+    it('should pair the columns of a foreign key pointing at a column other than the primary key', () => {
+      const ast = new SchemaAST();
+      const users = mockTableNode('users', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'code', type: { category: 'integer' } },
+      ]);
+      const posts = mockTableNode('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_code', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'posts_users_fk',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('author_code')!] },
+        to: { table: users, columns: [users.columns.get('code')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      expect(result!.code).toContain(
+        '@ManyToOne({ entity: () => User, references: (post, user) => [{ local: post.authorCode, foreign: user.code }] })',
+      );
+    });
+
+    it('should pair a self-referencing foreign key over two parameters, since one name cannot be both sides', () => {
+      const ast = new SchemaAST();
+      const employees = mockTableNode('employees', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'code', type: { category: 'integer' } },
+        { name: 'mentor_code', type: { category: 'integer' } },
+      ]);
+      ast.addTable(employees);
+
+      ast.addRelationship({
+        name: 'employees_mentor_fk',
+        type: 'ManyToOne',
+        from: { table: employees, columns: [employees.columns.get('mentor_code')!] },
+        to: { table: employees, columns: [employees.columns.get('code')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('employees');
+
+      expect(result!.code).toContain(
+        'references: (local, foreign) => [{ local: local.mentorCode, foreign: foreign.code }]',
+      );
+    });
+
+    it('should pair every column of a composite foreign key', () => {
+      const ast = new SchemaAST();
+      const users = mockTableNode('users', [
+        { name: 'tenant_id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+      ]);
+      const posts = mockTableNode('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'tenant_id', type: { category: 'integer' } },
+        { name: 'author_id', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'posts_users_fk',
+        type: 'ManyToOne',
+        from: { table: posts, columns: [posts.columns.get('tenant_id')!, posts.columns.get('author_id')!] },
+        to: { table: users, columns: [users.columns.get('tenant_id')!, users.columns.get('id')!] },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      expect(result!.code).toContain(
+        'references: (post, user) => [{ local: post.tenantId, foreign: user.tenantId }, { local: post.authorId, foreign: user.id }]',
+      );
     });
 
     it('should generate OneToMany relations on the inverse side', () => {

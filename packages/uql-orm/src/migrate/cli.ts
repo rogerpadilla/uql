@@ -66,7 +66,7 @@ export async function main(args = process.argv.slice(2)) {
         break;
       case 'generate:from-db':
       case 'generate-from-db':
-        await runGenerateFromDb(migrator, filteredArgs.slice(1), config);
+        await runGenerateFromDb(migrator, filteredArgs.slice(1));
         break;
       case 'sync':
         await runSync(migrator, filteredArgs.slice(1), config);
@@ -229,7 +229,7 @@ function readOutput(args: readonly string[]): string | undefined {
 export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
   // Pulling the database into entity files is what `generate:from-db` does; one implementation.
   if (args.includes('--pull')) {
-    return runGenerateFromDb(migrator, args, config);
+    return runGenerateFromDb(migrator, args);
   }
 
   const force = args.includes('--force');
@@ -253,51 +253,38 @@ export async function runSync(migrator: Migrator, args: string[], config: Partia
   console.log('\nSchema sync completed.');
 }
 
-export async function runGenerateFromDb(migrator: Migrator, args: string[], config: Partial<Config>) {
+export async function runGenerateFromDb(migrator: Migrator, args: string[]) {
   const outputDir = readOutput(args) ?? './src/entities';
 
-  if (!migrator.schemaIntrospector) {
-    console.error('No introspector available. Check your pool configuration.');
-    process.exit(1);
-  } else {
-    console.log('\nAnalyzing database schema...');
+  console.log('\nAnalyzing database schema...');
 
-    const ast = await migrator.schemaIntrospector.introspect();
-    const tableCount = ast.tables.size;
+  const ast = await migrator.schemaIntrospector.introspect();
+  const tableCount = ast.tables.size;
 
-    console.log(`Found ${tableCount} table(s): ${Array.from(ast.tables.keys()).join(', ')}`);
-    console.log('\nGenerating entities...');
+  console.log(`Found ${tableCount} table(s): ${Array.from(ast.tables.keys()).join(', ')}`);
+  console.log('\nGenerating entities...');
 
-    const generator = createEntityCodeGenerator(ast, {
-      addSyncComments: true,
-      includeRelations: true,
-      includeIndexes: true,
-    });
+  const generator = createEntityCodeGenerator(ast, {
+    addSyncComments: true,
+    includeRelations: true,
+    includeIndexes: true,
+  });
 
-    const entities = generator.generateAll();
+  const entities = generator.generateAll();
 
-    // Ensure output directory exists
-    if (!fs.existsSync(outputDir)) {
-      fs.mkdirSync(outputDir, { recursive: true });
-    }
-
-    // Write entity files
-    for (const entity of entities) {
-      const filePath = path.join(outputDir, entity.fileName);
-      fs.writeFileSync(filePath, entity.code, 'utf-8');
-      console.log(`  ✓ ${entity.className} -> ${filePath}`);
-    }
-
-    console.log(`\nGenerated ${entities.length} entities to ${outputDir}`);
+  fs.mkdirSync(outputDir, { recursive: true });
+  for (const entity of entities) {
+    const filePath = path.join(outputDir, entity.fileName);
+    fs.writeFileSync(filePath, entity.code, 'utf-8');
+    console.log(`  ✓ ${entity.className} -> ${filePath}`);
   }
+
+  console.log(`\nGenerated ${entities.length} entities to ${outputDir}`);
 }
 
 export async function runDriftCheck(migrator: Migrator, config: Partial<Config>) {
   if (!config.entities || config.entities.length === 0) {
     console.error('No entities configured. Add entities to your uql config.');
-    process.exit(1);
-  } else if (!migrator.schemaIntrospector) {
-    console.error('No introspector available. Check your pool configuration.');
     process.exit(1);
   } else {
     console.log('\nChecking for schema drift...');

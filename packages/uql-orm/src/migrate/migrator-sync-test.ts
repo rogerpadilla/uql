@@ -4,13 +4,13 @@ import { Entity, Field, Id, removeEntity } from '../entity/index.js';
 import { idKey } from '../type/index.js';
 import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
+import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
 export interface DatabaseConfig {
   name: string;
   /** A factory, not a pool: nothing is opened for a backend whose suite never runs. */
   createPool: () => SqlQuerierPool;
-  createIntrospector: (pool: SqlQuerierPool) => SchemaIntrospector;
   /** The engine's own dialect: what it declares it can alter decides which gated tests run. */
   dialect: AbstractSqlDialect;
   /** A hand-written key column, for seeding the table a sync is then asked to reconcile. */
@@ -59,7 +59,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
     beforeAll(() => {
       pool = db.createPool();
-      introspector = db.createIntrospector(pool);
+      introspector = introspectorFor(pool);
     });
 
     afterAll(() => pool.end());

@@ -16,13 +16,10 @@ import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
  * into the transaction already open - see {@link PgliteQuerierPool}, which is why that one is worth
  * saying out loud.
  *
- * Subclasses supply only how to open the handle and how to wrap it, the way {@link AbstractPgQuerierPool}
- * takes `buildQuerier` alone. The lazy open and the close were written out once per pool before, along
- * with three partial copies of the paragraph above.
+ * Subclasses supply only how to open the handle and how to wrap it.
  *
  * @remarks Deliberately not re-exported from `querier/index.ts`, which the root entry point re-exports:
- * only the three driver entries need this, and each imports it by path, as `postgres/abstractPgQuerier.ts`
- * is imported.
+ * only the driver entries that open a single handle need this, and each imports it by path.
  */
 export abstract class AbstractSharedHandleQuerierPool<
   DB extends { close(): unknown },

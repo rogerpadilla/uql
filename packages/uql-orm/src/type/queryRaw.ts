@@ -1,10 +1,10 @@
-import type { QueryContext, QueryDialect } from './dialect.js';
+import type { QueryContext, SqlQueryDialect } from './dialect.js';
 import type { Type } from './utility.js';
 
 /** What a `raw` callback receives. See {@link QueryRawFn}. */
 export type QueryRawRenderOptions = {
   /** The dialect rendering the SQL. */
-  dialect: QueryDialect;
+  dialect: SqlQueryDialect;
   /** The alias of the table in scope, unescaped; empty where there is none. */
   prefix: string;
   /** {@link prefix} escaped, with its trailing dot. */

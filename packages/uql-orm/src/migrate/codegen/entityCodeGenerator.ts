@@ -23,6 +23,7 @@ import {
 import { camelCase, lowerFirst, pascalCase, singularize } from '../../util/string.util.js';
 import { buildFieldOptionsSource, fieldNeedsRaw } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
+import { memberSource } from './sourceLiteral.js';
 
 /**
  * Options for entity code generation.
@@ -318,16 +319,40 @@ export class EntityCodeGenerator {
 
     // Decorator. `onDelete`/`onUpdate` only when introspection found a real referential action, so a
     // round-trip through an unconstrained column stays as terse as before.
-    const fkActions: string[] = [];
-    if (rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION) fkActions.push(`onDelete: '${rel.onDelete}'`);
-    if (rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION) fkActions.push(`onUpdate: '${rel.onUpdate}'`);
-    const fkActionsSource = fkActions.length ? `, ${fkActions.join(', ')}` : '';
-    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName}${fkActionsSource} })`);
+    const options = [`entity: () => ${relatedClassName}`];
+    const references = this.referencesSource(rel, relatedClassName);
+    if (references) options.push(`references: ${references}`);
+    if (rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onDelete: '${rel.onDelete}'`);
+    if (rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onUpdate: '${rel.onUpdate}'`);
+    lines.push(`  @${decoratorName}({ ${options.join(', ')} })`);
 
     // Property
     lines.push(`  ${propertyName}?: ${relatedClassName};`);
 
     return lines.join('\n');
+  }
+
+  /**
+   * The `references` callback of a to-one: its foreign key column where that is the target's whole primary
+   * key, column pairs otherwise, and nothing when the columns do not pair up.
+   */
+  private referencesSource(rel: RelationshipNode, relatedClassName: string): string | undefined {
+    if (!rel.from.columns.length || rel.from.columns.length !== rel.to.columns.length) {
+      return undefined;
+    }
+    const member = (param: string, column: ColumnNode) =>
+      memberSource(param, this.options.propertyNameTransformer(column.name));
+    const own = lowerFirst(this.options.classNameTransformer(rel.from.table.name));
+    const key = rel.to.table.primaryKey;
+    if (rel.from.columns.length === 1 && key.length === 1 && rel.to.columns[0].name === key[0].name) {
+      return `(${own}) => ${member(own, rel.from.columns[0])}`;
+    }
+    const target = lowerFirst(relatedClassName);
+    const [local, foreign] = own === target ? ['local', 'foreign'] : [own, target];
+    const pairs = rel.from.columns.map(
+      (column, i) => `{ local: ${member(local, column)}, foreign: ${member(foreign, rel.to.columns[i])} }`,
+    );
+    return `(${local}, ${foreign}) => [${pairs.join(', ')}]`;
   }
 
   /**
@@ -349,11 +374,9 @@ export class EntityCodeGenerator {
     }
 
     // The inverse side, mapped by the related class's property that points back at this one.
-    const inverseProp = this.options.propertyNameTransformer(this.options.singularize(table.name));
     const param = lowerFirst(relatedClassName);
-    lines.push(
-      `  @${decoratorName}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${param}.${inverseProp} })`,
-    );
+    const inverse = memberSource(param, this.options.propertyNameTransformer(this.options.singularize(table.name)));
+    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`);
 
     // Property
     if (inverseType === 'OneToMany' || inverseType === 'ManyToMany') {

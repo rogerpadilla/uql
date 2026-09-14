@@ -48,7 +48,7 @@ class TestPost {
   @Field({ references: () => TestUser })
   authorId?: number;
 
-  @ManyToOne({ entity: () => TestUser })
+  @ManyToOne({ entity: () => TestUser, references: (testPost) => testPost.authorId })
   author?: TestUser;
 }
 

@@ -2,6 +2,7 @@ import type { Options } from 'better-sqlite3';
 import type { ExtraOptions } from '../type/index.js';
 import {
   AbstractLocalSqliteQuerierPool,
+  adaptSqlite,
   type LocalSqliteDatabase,
   type LocalSqlitePoolOptions,
 } from './localSqliteQuerierPool.js';
@@ -32,13 +33,12 @@ export class Sqlite3QuerierPool extends AbstractLocalSqliteQuerierPool<Sqlite3Po
 
     if (typeof Bun !== 'undefined') {
       const { Database } = await import('bun:sqlite');
-      const { adaptBunSqlite } = await import('./bunSqliteAdapter.bun.js');
       const bunOpts = { ...driverOpts, safeIntegers: true };
-      return adaptBunSqlite(
+      const bunDb =
         typeof this.filename === 'string'
           ? new Database(this.filename, bunOpts)
-          : Database.deserialize(this.filename, bunOpts),
-      );
+          : Database.deserialize(this.filename, bunOpts);
+      return adaptSqlite(bunDb, (stmt) => stmt.columnNames.length > 0);
     }
     const { default: BetterSqlite3 } = await import('better-sqlite3');
     return new BetterSqlite3(this.filename, driverOpts).defaultSafeIntegers(true);

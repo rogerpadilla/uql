@@ -46,9 +46,6 @@ const MAX_LIMIT = BigInt.asUintN(64, -1n);
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
   protected override readonly featureDefaults: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: false,
-    supportsJsonb: false,
     ifNotExists: true,
     indexIfNotExists: false,
     schemas: true,

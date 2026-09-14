@@ -5,15 +5,7 @@
  *
  * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
  */
-import type {
-  Querier,
-  QuerierPool,
-  QuerierPoolDialect,
-  QuerierPoolQuerier,
-  SqlQuerier,
-  SqlQuerierPool,
-  UniversalQuerier,
-} from './index.js';
+import type { Querier, QuerierPool, SqlQuerier, SqlQuerierPool, UniversalQuerier } from './index.js';
 
 class Article {
   id!: number;
@@ -26,12 +18,6 @@ declare const sqlQuerier: SqlQuerier;
 declare const sqlPool: SqlQuerierPool;
 
 export const assignable: UniversalQuerier[] = [querier, pool, sqlQuerier, sqlPool];
-
-// ─── QuerierPoolQuerier / QuerierPoolDialect: extract the pool's own Q/D generics ───
-declare const extractedQuerier: QuerierPoolQuerier<SqlQuerierPool>;
-declare const extractedDialect: QuerierPoolDialect<SqlQuerierPool>;
-export const querierExtractionMatches: SqlQuerier = extractedQuerier;
-export const dialectExtractionMatches: SqlQuerierPool['dialect'] = extractedDialect;
 
 // ─── transaction: the callback receives the pool's own querier type, not the base Querier ───
 export async function transactionCallbackIsTypedToThePool() {

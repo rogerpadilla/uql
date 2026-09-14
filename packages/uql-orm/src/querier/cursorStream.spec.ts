@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { streamViaCursor } from './pgCursorStream.js';
+import { streamViaCursor } from './cursorStream.js';
 
 type Row = { id: number };
 

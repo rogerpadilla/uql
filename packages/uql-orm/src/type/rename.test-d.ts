@@ -26,6 +26,7 @@ class Movie {
   @ManyToOne({ entity: () => Studio, references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
   studio?: Studio;
   @Field({ type: Number, references: () => Cinema }) cinemaId?: number;
+  @ManyToOne({ entity: () => Cinema, references: (movie) => movie.cinemaId }) venue?: Cinema;
   @Field({ type: Number, computed: (movie) => raw`${movie.rating} * 2` }) score?: number;
 }
 

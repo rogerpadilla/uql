@@ -5,12 +5,13 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { Company, createSpec, User } from '../test/index.js';
 import type { UpdatePayload } from '../type/index.js';
 import { PostgresDialect } from './postgresDialect.js';
-import { POSTGRES_WIRE_DRIVER_CAPABILITIES } from './postgresWireDriverCapabilities.js';
 
 /** What is Postgres' alone: pgvector's narrower vector types, its wire drivers, `pg_class` stats. */
 class PostgresDialectSpec extends PgFamilySpec {
-  /** What `uql-orm/bunSql` builds for Postgres: the engine's dialect, with the wire driver's binding. */
-  readonly wirePostgresDialect = new PostgresDialect({ driverCapabilities: POSTGRES_WIRE_DRIVER_CAPABILITIES });
+  /** A wire driver's binding, as `uql-orm/bunSql` gives it: arrays as literals, JSON re-cast through text. */
+  readonly wirePostgresDialect = new PostgresDialect({
+    driverCapabilities: { nativeArrays: false, explicitJsonCast: true },
+  });
 
   constructor() {
     super(new PostgresDialect({}));

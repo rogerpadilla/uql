@@ -284,7 +284,7 @@ class Tome {
   @Field({ references: () => Author })
   authorId?: number;
 
-  @ManyToOne({ entity: () => Author })
+  @ManyToOne({ entity: () => Author, references: (tome) => tome.authorId })
   author?: Author;
 
   @AfterLoad()

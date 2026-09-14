@@ -12,6 +12,11 @@ export function quoted(text: string): string {
   return `'${text.replace(/\\/g, '\\\\').replace(/'/g, "\\'")}'`;
 }
 
+/** `user.email`, or `user['first-name']` for a property name that is no identifier. */
+export function memberSource(param: string, property: string): string {
+  return isIdentifierName(property) ? `${param}.${property}` : `${param}[${quoted(property)}]`;
+}
+
 /**
  * SQL as a `raw` tagged template. A database reprints an expression as arbitrary text, and exactly
  * three sequences can end or interpolate a template literal, so escaping those is the whole job.

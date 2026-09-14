@@ -26,7 +26,7 @@ it('writes an interface per registered entity, relations included', () => {
       publishedAt: { type: Date },
       authorId: { references: () => Author },
     },
-    relations: { author: { cardinality: 'm1', entity: () => Author } },
+    relations: { author: { cardinality: 'm1', entity: () => Author, references: (post) => post.authorId } },
   });
 
   expect(entityTypesSource([Author, Post])).toBe(
@@ -60,7 +60,6 @@ it('emits names a generated file can carry, whatever a content type was called',
     fields: {
       id: { type: Number, isId: true },
       'hero-image': { type: String },
-      outsideId: { references: () => Outside },
     },
     relations: { outside: { cardinality: 'm1', entity: () => Outside } },
   });

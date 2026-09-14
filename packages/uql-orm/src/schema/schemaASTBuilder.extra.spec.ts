@@ -59,7 +59,7 @@ describe('SchemaASTBuilder Extra Coverage', () => {
       @Field({ type: Number })
       targetId?: number;
 
-      @ManyToOne({ entity: () => Target })
+      @ManyToOne({ entity: () => Target, references: (source) => source.targetId })
       target?: Target;
     }
 

@@ -60,7 +60,8 @@ export type QueryContextOptions = {
 };
 
 /**
- * Capabilities of the database driver (transport layer).
+ * How a Postgres-wire driver binds a parameter, which is all its dialect's `driverCapabilities` option may
+ * change: what the engine has is the dialect's own to state.
  */
 export interface DriverCapabilities {
   /**
@@ -74,8 +75,6 @@ export interface DriverCapabilities {
    * `toPgArray` string literals instead.
    */
   readonly nativeArrays: boolean;
-  /** Whether the dialect natively supports the JSONB binary JSON type (Postgres/CockroachDB). */
-  readonly supportsJsonb: boolean;
 }
 
 /**
@@ -84,15 +83,13 @@ export interface DriverCapabilities {
  *   or MongoDB's `insertedIds`), so IDs are exact for every row.
  * - `'firstId'`: the driver header only exposes the first generated ID (MySQL `insertId`);
  *   the remaining IDs are inferred by incrementing it.
- * - `'lastId'`: the driver header only exposes the last generated ID (SQLite `lastInsertRowid`);
- *   the remaining IDs are inferred backwards from it.
  */
-export type InsertIdSource = 'returning' | 'firstId' | 'lastId';
+export type InsertIdSource = 'returning' | 'firstId';
 
 /**
  * Features of the database engine (SQL syntax layer).
  */
-export interface EngineFeatures {
+export interface DialectFeatures {
   readonly ifNotExists: boolean;
   readonly indexIfNotExists: boolean;
   /**
@@ -118,7 +115,7 @@ export interface EngineFeatures {
    * A boolean rather than a mode: SQLite would accept a `VIRTUAL` column here, but emitting one where
    * the entity said `stored` makes the same entity a stored column on a new database and a virtual one
    * on an old, which nothing diffs and no one can see. Refusal has one form; only what UQL *emits*
-   * earns a mode, which is what makes {@link EngineFeatures.commentSyntax} three-way.
+   * earns a mode, which is what makes {@link DialectFeatures.commentSyntax} three-way.
    */
   readonly generatedColumnAdd: boolean;
   /**
@@ -153,20 +150,28 @@ export interface EngineFeatures {
   /** Whether the engine has unsigned integers, so `@Field({ unsigned: true })` reaches the column. */
   readonly supportsUnsigned: boolean;
   /**
-   * Whether the engine has SQL-level cursors (`DECLARE`/`FETCH FORWARD`/`CLOSE`), which is how a
-   * driver with no cursor API of its own still streams a result set instead of buffering it - see
-   * `postgres/pgCursorStream.ts`. True across the Postgres wire family, whose spelling that helper
-   * speaks; SQL Server and Oracle have cursors of their own but not this syntax.
-   *
-   * The node-`pg` family reports `true` and goes on using `pg-query-stream`: the flag says the engine
-   * has cursors, not that the driver needs them.
+   * Whether the engine has `DECLARE`/`FETCH FORWARD`/`CLOSE` cursors, which a querier with no stream of
+   * its own pages a read through (`querier/cursorStream.ts`) instead of reading it whole. The engine's
+   * answer, not the driver's: node-`pg` streams on its own and keeps doing so.
    */
   readonly serverSideCursors: boolean;
 }
 
-export interface DialectFeatures extends EngineFeatures, DriverCapabilities {}
+/**
+ * What a SQL statement is rendered through, as a `raw` callback and a query context see it:
+ * `AbstractSqlDialect` is the one implementation.
+ */
+export interface SqlQueryDialect {
+  /**
+   * The SQL dialect name.
+   */
+  readonly dialectName: SqlDialectName;
 
-export interface QueryDialect {
+  /**
+   * the escape character for identifiers.
+   */
+  readonly escapeIdChar: '"' | '`';
+
   /**
    * The dialect features.
    */
@@ -269,26 +274,6 @@ export interface QueryDialect {
    * The column a field of `meta` is stored in, named the way this dialect names columns.
    */
   columnOf<E>(meta: EntityMeta<E>, key: string): string;
-}
-
-/**
- * Supported SQL dialect identifiers.
- */
-export type SqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite' | 'mssql';
-
-/**
- * Minimal dialect interface exposing escapeIdChar for SQL operations
- */
-export interface SqlQueryDialect extends QueryDialect {
-  /**
-   * The SQL dialect name (postgres, mysql, mariadb, sqlite, mssql).
-   */
-  readonly dialectName: SqlDialectName;
-
-  /**
-   * the escape character for identifiers.
-   */
-  readonly escapeIdChar: '"' | '`';
 
   /**
    * Build an aggregate query.
@@ -306,6 +291,11 @@ export interface SqlQueryDialect extends QueryDialect {
    */
   placeholder(index: number): string;
 }
+
+/**
+ * Supported SQL dialect identifiers.
+ */
+export type SqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb' | 'sqlite' | 'mssql';
 
 /**
  * An index capability that some engines have and others reject outright. Verified live: expression

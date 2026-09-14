@@ -1,7 +1,6 @@
 import { AbstractSqliteQuerier, type SqliteBindValue } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
-import { decodeBigInts } from '../util/wideNumber.js';
 
 /** What a statement comes back with on a session: each row an array of its values, named by `columns`. */
 export type TursoResultSet = {
@@ -51,32 +50,33 @@ export class TursoSessionQuerier extends AbstractSqliteQuerier {
     super(dialect, extra);
   }
 
-  protected override async execute(query: string, values?: unknown[]) {
-    const { columns, rows, rowsAffected } = await this.session.execute(query, toBindValues(values), true);
+  protected override async execute(query: string, values: SqliteBindValue[]) {
+    const { columns, rows, rowsAffected } = await this.session.execute(query, values, true);
     return { rows: rows.map((row) => toRow(columns, row)), changes: rowsAffected };
   }
 
   /** Row by row off the statement's cursor, as the server steps it, each decoded as `execute` decodes one. */
-  override async *internalStream<T>(query: string, values?: unknown[]) {
+  protected override async iterate(query: string, values: SqliteBindValue[]) {
     const { DatabaseError, decodeValue } = await import('@tursodatabase/serverless');
-    const { entries } = await this.session.executeRaw(query, toBindValues(values));
-    let columns: string[] = [];
-    for await (const entry of entries) {
-      if (entry.type === 'step_error' || entry.type === 'error') {
-        throw new DatabaseError(entry.error?.message ?? 'SQL execution failed', entry.error?.code);
-      }
-      if (entry.cols) {
-        columns = entry.cols.map(({ name }) => name);
-      }
-      if (entry.row) {
-        yield decodeBigInts(
-          toRow(
+    const { entries } = await this.session.executeRaw(query, values);
+    async function* rows() {
+      let columns: string[] = [];
+      for await (const entry of entries) {
+        if (entry.type === 'step_error' || entry.type === 'error') {
+          throw new DatabaseError(entry.error?.message ?? 'SQL execution failed', entry.error?.code);
+        }
+        if (entry.cols) {
+          columns = entry.cols.map(({ name }) => name);
+        }
+        if (entry.row) {
+          yield toRow(
             columns,
             entry.row.map((value) => decodeValue(value, true)),
-          ),
-        ) as T;
+          );
+        }
       }
     }
+    return rows();
   }
 
   override async internalRelease() {
@@ -87,9 +87,4 @@ export class TursoSessionQuerier extends AbstractSqliteQuerier {
 /** A row the driver answers as an array of values, named by the statement's columns. */
 function toRow(columns: readonly string[], values: readonly unknown[]): RawRow {
   return Object.fromEntries(columns.map((column, at) => [column, values[at]]));
-}
-
-/** Bound parameters reach a driver as `unknown[]` from the compiler; a session binds them as they are. */
-function toBindValues(values?: unknown[]): SqliteBindValue[] {
-  return (values ?? []) as SqliteBindValue[];
 }

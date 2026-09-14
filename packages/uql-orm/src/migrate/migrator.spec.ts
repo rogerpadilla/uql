@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
-import { defineEntity, Entity, Id } from '../entity/index.js';
+import { Entity, Id } from '../entity/index.js';
+import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -21,7 +22,7 @@ import type {
 } from '../type/index.js';
 import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { MongoSchemaIntrospector } from './introspection/mongoIntrospector.js';
-import { MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
+import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
 import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';
 import { Migrator } from './migrator.js';
@@ -283,9 +284,14 @@ describe('Migrator Core Methods', () => {
 
     it('should infer MySQL generator and introspector', async () => {
       const m = new Migrator({ ...pool, dialect: new MySqlDialect() });
-      expect(m.dialectName).toBe('mysql');
       expect(await m.getSchemaGenerator()).toBeInstanceOf(SqlSchemaGenerator);
       expect(m.schemaIntrospector).toBeInstanceOf(MysqlSchemaIntrospector);
+    });
+
+    it('should infer MariaDB generator and introspector', async () => {
+      const m = new Migrator({ ...pool, dialect: new MariaDialect() });
+      expect(await m.getSchemaGenerator()).toBeInstanceOf(SqlSchemaGenerator);
+      expect(m.schemaIntrospector).toBeInstanceOf(MariadbSchemaIntrospector);
     });
 
     it('should infer SQLite generator and introspector', async () => {
@@ -313,10 +319,6 @@ describe('Migrator Core Methods', () => {
     expect(filePath).toContain('initial_schema.ts');
     const { writeFile } = await import('node:fs/promises');
     expect(writeFile).toHaveBeenCalledWith(expect.any(String), expect.stringContaining('export default {'), 'utf-8');
-  });
-
-  it('getDialect should return the dialect', () => {
-    expect(migrator.dialectName).toBe('postgres');
   });
 
   it('status should return pending and executed migrations', async () => {
@@ -469,14 +471,6 @@ describe('Migrator Core Methods', () => {
 
       const filePath = await migrator.generateFromEntities('test');
       expect(filePath).toBe('');
-    });
-
-    it('getDiffs should throw for a dialect with no schema generator', async () => {
-      const m = new Migrator(
-        { ...pool, dialect: { dialectName: 'unknown' } as unknown as MigratorDialect },
-        { storage },
-      );
-      await expect(m.getDiffs()).rejects.toThrow("No schema generator for dialect 'unknown'");
     });
 
     it('a forced sync throws if the querier is not a SQL one', async () => {
@@ -638,31 +632,6 @@ describe('Migrator Core Methods', () => {
       expect(statements.some((sql) => sql.startsWith('CREATE TABLE'))).toBe(true);
     });
 
-    it('createIntrospector and createGenerator should return undefined for unknown dialect', () => {
-      const unknownPool = {
-        ...pool,
-        dialect: { dialectName: 'unknown' } as unknown as MigratorDialect,
-      };
-      const m = new Migrator(unknownPool, { storage });
-      expect(m.schemaGenerator).toBeUndefined();
-      expect(m.schemaIntrospector).toBeUndefined();
-    });
-
-    it('a single-entity sync says which entity it has no introspector for', async () => {
-      class NoIntrospectorRow {
-        id?: number;
-      }
-      defineEntity(NoIntrospectorRow, { fields: { id: { type: Number, isId: true } } });
-      const unknownPool = {
-        ...pool,
-        dialect: { dialectName: 'unknown', resolveSchema: () => undefined } as unknown as MigratorDialect,
-      };
-      const m = new Migrator(unknownPool, { storage, schemaGenerator: new SqlSchemaGenerator(new PostgresDialect()) });
-      await expect(m.sync({ entity: NoIntrospectorRow })).rejects.toThrow(
-        "No introspector for 'NoIntrospectorRow' on 'unknown'",
-      );
-    });
-
     it('a forced sync rolls back on error', async () => {
       vi.spyOn(querier, 'run').mockRejectedValueOnce(new Error('Sync error'));
       await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow('Sync error');
@@ -689,15 +658,6 @@ describe('Migrator Core Methods', () => {
 
       await expect(migrator.sync({ force: true, logging: true })).rejects.toThrow('Sync error');
       expect(querier.release).toHaveBeenCalled();
-    });
-
-    it('a forced sync throws if the schema generator is missing', async () => {
-      const unknownPool = {
-        ...pool,
-        dialect: { dialectName: 'unknown' } as unknown as MigratorDialect,
-      };
-      const m = new Migrator(unknownPool, { storage });
-      await expect(m.sync({ force: true, logging: true })).rejects.toThrow("No schema generator for dialect 'unknown'");
     });
 
     it('getMigrations should load and sort migrations', async () => {

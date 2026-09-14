@@ -1,6 +1,5 @@
-// The concrete dialects are behind their own entries (`uql-orm/postgres`, `/mysql`, `/maria`,
-// `/sqlite`, `/cockroachdb`): importing the root should not carry four engines' worth of SQL.
+// Each engine's dialect is behind its own entry, and the family bases they extend behind none: the root
+// carries no engine's SQL.
 export * from './abstractDialect.js';
 export * from './abstractSqlDialect.js';
-export * from './mysqlLikeSqlDialect.js';
 export * from './queryContext.js';

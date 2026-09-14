@@ -1,5 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryUpdateResult, RawRow } from '../type/index.js';
@@ -14,7 +15,7 @@ class HydratedChild {
   payload?: Json<{ b?: number }>;
   @Field({ references: () => HydratedParent })
   parentId?: number;
-  @ManyToOne({ entity: () => HydratedParent })
+  @ManyToOne({ entity: () => HydratedParent, references: (hydratedChild) => hydratedChild.parentId })
   parent?: HydratedParent;
 }
 
@@ -267,5 +268,41 @@ describe('AbstractSqlQuerier error context', () => {
     querier.failure = 'plain string failure';
 
     await expect(querier.commitTransaction()).rejects.toBe('plain string failure');
+  });
+});
+
+describe('AbstractSqlQuerier stream', () => {
+  /** A driver with no stream of its own, recording the first word of every statement it reads. */
+  class ReadingSqlQuerier extends AbstractSqlQuerier {
+    readonly reads: string[] = [];
+
+    protected override async internalAll<T>(query: string): Promise<T[]> {
+      this.reads.push(query.split(' ')[0]);
+      return [{ id: 1 }] as T[];
+    }
+
+    protected override async internalRun(): Promise<QueryUpdateResult> {
+      return { changes: 0 };
+    }
+
+    protected override async internalRelease(): Promise<void> {}
+  }
+
+  it('should page through a server-side cursor where the engine has one', async () => {
+    const querier = new ReadingSqlQuerier(new PostgresDialect());
+
+    const rows = await Array.fromAsync(querier.findManyStream(HydratedParent, {}));
+
+    expect(rows).toEqual([{ id: 1 }]);
+    expect(querier.reads).toContain('DECLARE');
+  });
+
+  it('should read the rows whole where the engine has no cursors', async () => {
+    const querier = new ReadingSqlQuerier(new SqliteDialect());
+
+    const rows = await Array.fromAsync(querier.findManyStream(HydratedParent, {}));
+
+    expect(rows).toEqual([{ id: 1 }]);
+    expect(querier.reads).toEqual(['SELECT']);
   });
 });

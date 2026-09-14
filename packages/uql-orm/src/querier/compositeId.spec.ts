@@ -30,31 +30,45 @@ class Badge {
 }
 
 /**
- * One column per key of each side, and a relation over each - which is how a junction earns its
- * foreign keys and how populating one finds its way to the target. The derived column names are the
- * ones `through` pairs by, so declaring them is not a second convention: `<rel><Key>` either way.
+ * One column per key of each side, and a relation over each naming its columns - which is how a junction
+ * earns its foreign keys, how populating one finds its way to the target, and how `through` finds the
+ * columns it pairs by.
  */
 @Entity()
 class EnrolmentBadge {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) enrolmentStudentId?: number;
   @Field({ type: String }) enrolmentCourseId?: string;
-  @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+  @ManyToOne({
+    entity: () => Enrolment,
+    references: (enrolmentBadge, enrolment) => [
+      { local: enrolmentBadge.enrolmentStudentId, foreign: enrolment.studentId },
+      { local: enrolmentBadge.enrolmentCourseId, foreign: enrolment.courseId },
+    ],
+  })
+  enrolment?: Enrolment;
   @Field({ type: Number }) badgeId?: number;
-  @ManyToOne({ entity: () => Badge }) badge?: Badge;
+  @ManyToOne({ entity: () => Badge, references: (enrolmentBadge) => enrolmentBadge.badgeId }) badge?: Badge;
 }
 
 /**
- * The foreign key columns are declared rather than left to registration - which derives these exact
- * names - so a payload can name them: they are what the reads below group and correlate by, and only
- * a declared column is on the entity's type. Registration keeps a column that is already there.
+ * The foreign key columns are declared rather than left to registration, so a payload can name them:
+ * they are what the reads below group and correlate by, and only a declared column is on the entity's
+ * type. The relation names them, since a declared column is never joined by its name.
  */
 @Entity()
 class Note {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) enrolmentStudentId?: number;
   @Field({ type: String }) enrolmentCourseId?: string;
-  @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+  @ManyToOne({
+    entity: () => Enrolment,
+    references: (note, enrolment) => [
+      { local: note.enrolmentStudentId, foreign: enrolment.studentId },
+      { local: note.enrolmentCourseId, foreign: enrolment.courseId },
+    ],
+  })
+  enrolment?: Enrolment;
   @Field({ type: String }) body?: string;
 }
 
@@ -90,7 +104,14 @@ class Session {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number }) termYear?: number;
   @Field({ type: String }) termSeason?: string;
-  @ManyToOne({ entity: () => Term }) term?: Term;
+  @ManyToOne({
+    entity: () => Term,
+    references: (session, term) => [
+      { local: session.termYear, foreign: term.year },
+      { local: session.termSeason, foreign: term.season },
+    ],
+  })
+  term?: Term;
 }
 
 const pool = new Sqlite3QuerierPool(':memory:');

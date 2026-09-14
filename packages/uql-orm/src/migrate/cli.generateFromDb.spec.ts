@@ -6,7 +6,6 @@ import { runGenerateFromDb } from './cli.js';
 import type { Migrator } from './migrator.js';
 
 vi.mock('node:fs', () => ({
-  existsSync: vi.fn(),
   mkdirSync: vi.fn(),
   writeFileSync: vi.fn(),
 }));
@@ -30,13 +29,12 @@ describe('runGenerateFromDb', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.spyOn(console, 'log').mockImplementation(() => {});
-    vi.mocked(fs.existsSync).mockReturnValue(true);
   });
 
   it('should write one entity file per introspected table to the default directory', async () => {
-    await runGenerateFromDb(createMigrator(), [], {});
+    await runGenerateFromDb(createMigrator(), []);
 
-    expect(fs.mkdirSync).not.toHaveBeenCalled();
+    expect(fs.mkdirSync).toHaveBeenCalledWith('./src/entities', { recursive: true });
     expect(fs.writeFileSync).toHaveBeenCalledTimes(1);
     const [filePath, code] = vi.mocked(fs.writeFileSync).mock.calls[0];
     expect(filePath).toBe('src/entities/Shop.ts');
@@ -46,22 +44,15 @@ describe('runGenerateFromDb', () => {
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Generated 1 entities'));
   });
 
-  it.each(['--output', '-o'])('should honour %s as the output directory', async (flag) => {
-    await runGenerateFromDb(createMigrator(), [flag, 'generated/models'], {});
+  it.each(['--output', '-o'])('should honour %s as the output directory, creating it', async (flag) => {
+    await runGenerateFromDb(createMigrator(), [flag, 'generated/models']);
 
+    expect(fs.mkdirSync).toHaveBeenCalledWith('generated/models', { recursive: true });
     expect(vi.mocked(fs.writeFileSync).mock.calls[0][0]).toBe('generated/models/Shop.ts');
   });
 
-  it('should create the output directory when it does not exist', async () => {
-    vi.mocked(fs.existsSync).mockReturnValue(false);
-
-    await runGenerateFromDb(createMigrator(), ['-o', 'generated/models'], {});
-
-    expect(fs.mkdirSync).toHaveBeenCalledWith('generated/models', { recursive: true });
-  });
-
   it('should ignore an output flag with no value after it', async () => {
-    await runGenerateFromDb(createMigrator(), ['--output'], {});
+    await runGenerateFromDb(createMigrator(), ['--output']);
 
     expect(vi.mocked(fs.writeFileSync).mock.calls[0][0]).toBe('src/entities/Shop.ts');
   });

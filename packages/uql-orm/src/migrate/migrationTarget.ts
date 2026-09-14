@@ -1,6 +1,5 @@
 import type { ForeignKeyAction } from '../schema/types.js';
 import {
-  isKnownMigratorDialect,
   isMongoQuerier,
   isSqlQuerier,
   type MigrationStorage,
@@ -16,7 +15,7 @@ import { withMongoQuerierForMigrations, withSqlQuerierForMigrations } from './ac
 import { MigrationBuilder } from './builder/migrationBuilder.js';
 import { type MigrationSource, migrationSource } from './codegen/migrationFile.js';
 import { runMongoCommand } from './generator/mongoCommand.js';
-import { createSchemaGenerator, SqlSchemaGenerator } from './schemaGenerator.js';
+import { SqlSchemaGenerator } from './schemaGenerator.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
 import { MongoMigrationStorage } from './storage/mongoStorage.js';
 
@@ -29,13 +28,13 @@ export type MigrationSession = {
   transaction(work: () => Promise<void>): Promise<void>;
 };
 
-/** Everything a migrator does differently per engine family, chosen once from its dialect. */
+/** Everything a migrator does differently per engine family, chosen once from its pool. */
 export type MigrationTarget = {
   readonly source: MigrationSource;
-  storage(pool: QuerierPool, tableName: string | undefined): MigrationStorage;
-  /** The schema generator, `undefined` for a dialect with none. Async because MongoDB's loads its optional peer. */
-  generator(dialect: MigratorDialect, defaultForeignKeyAction?: ForeignKeyAction): Promise<SchemaGenerator | undefined>;
-  withSession<T>(pool: QuerierPool, task: (session: MigrationSession) => Promise<T>): Promise<T>;
+  storage(tableName: string | undefined): MigrationStorage;
+  /** The dialect's schema generator. Async because MongoDB's loads its optional peer. */
+  generator(): Promise<SchemaGenerator>;
+  withSession<T>(task: (session: MigrationSession) => Promise<T>): Promise<T>;
 };
 
 const sqlSession = (querier: SqlQuerier): MigrationSession => ({
@@ -59,25 +58,25 @@ async function mongoSchemaGenerator(
   return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
 }
 
-const sqlTarget: MigrationTarget = {
-  source: migrationSource.SqlQuerier,
-  storage: (pool, tableName) => new DatabaseMigrationStorage(pool, { tableName }),
-  generator: async (dialect, defaultForeignKeyAction) =>
-    isKnownMigratorDialect(dialect.dialectName) ? createSchemaGenerator(dialect, defaultForeignKeyAction) : undefined,
-  withSession: (pool, task) => withSqlQuerierForMigrations(pool, 'Migrator', (querier) => task(sqlSession(querier))),
-};
-
-const mongoTarget: MigrationTarget = {
-  source: migrationSource.MongoQuerier,
-  storage: (pool, tableName) => new MongoMigrationStorage(pool, { tableName }),
-  generator: (dialect, defaultForeignKeyAction) =>
-    mongoSchemaGenerator(dialect.namingStrategy, defaultForeignKeyAction),
-  withSession: (pool, task) =>
-    withMongoQuerierForMigrations(pool, 'Migrator', (querier) => task(mongoSession(querier))),
-};
-
-export function migrationTargetFor(dialect: MigratorDialect): MigrationTarget {
-  return dialect.dialectName === 'mongodb' ? mongoTarget : sqlTarget;
+export function migrationTargetFor(
+  pool: QuerierPool<Querier, MigratorDialect>,
+  defaultForeignKeyAction?: ForeignKeyAction,
+): MigrationTarget {
+  const { dialect } = pool;
+  if (dialect.dialectName === 'mongodb') {
+    return {
+      source: migrationSource.MongoQuerier,
+      storage: (tableName) => new MongoMigrationStorage(pool, { tableName }),
+      generator: () => mongoSchemaGenerator(dialect.namingStrategy, defaultForeignKeyAction),
+      withSession: (task) => withMongoQuerierForMigrations(pool, 'Migrator', (querier) => task(mongoSession(querier))),
+    };
+  }
+  return {
+    source: migrationSource.SqlQuerier,
+    storage: (tableName) => new DatabaseMigrationStorage(pool, { tableName }),
+    generator: async () => new SqlSchemaGenerator(dialect, defaultForeignKeyAction),
+    withSession: (task) => withSqlQuerierForMigrations(pool, 'Migrator', (querier) => task(sqlSession(querier))),
+  };
 }
 
 /** A builder running each operation on `querier`, as SQL or as MongoDB driver commands. */

@@ -24,13 +24,13 @@ export abstract class BaseEntity {
   @Field({ references: () => Company })
   companyId?: string;
 
-  @ManyToOne({ entity: () => Company })
+  @ManyToOne({ entity: () => Company, references: (baseEntity) => baseEntity.companyId })
   company?: Company;
 
   @Field({ references: () => User })
   creatorId?: string;
 
-  @ManyToOne({ entity: () => User })
+  @ManyToOne({ entity: () => User, references: (baseEntity) => baseEntity.creatorId })
   creator?: User;
 
   /**
@@ -105,7 +105,7 @@ export class Profile extends BaseEntity {
   // Narrows the inherited m1 relation to 1-1. A real field rather than `declare`, because the standard
   // decorator spec has nothing to decorate on a `declare` member; the initializer marks the shadowing as
   // deliberate.
-  @OneToOne({ entity: () => User })
+  @OneToOne({ entity: () => User, references: (profile) => profile.creatorId })
   override creator?: User = undefined;
 }
 
@@ -147,7 +147,7 @@ export class LedgerAccount extends BaseEntity {
   @Field({ references: () => LedgerAccount })
   parentLedgerId?: string;
 
-  @ManyToOne({ entity: () => LedgerAccount })
+  @ManyToOne({ entity: () => LedgerAccount, references: (ledgerAccount) => ledgerAccount.parentLedgerId })
   parentLedger?: LedgerAccount;
 }
 
@@ -187,7 +187,7 @@ export class Tax extends BaseEntity {
   @Field({ references: () => TaxCategory })
   categoryId?: string;
 
-  @ManyToOne({ entity: () => TaxCategory })
+  @ManyToOne({ entity: () => TaxCategory, references: (tax) => tax.categoryId })
   category?: TaxCategory;
 
   @Field({ type: String })
@@ -218,7 +218,11 @@ export class MeasureUnit extends BaseEntity {
   @Field({ references: () => MeasureUnitCategory })
   categoryId?: string;
 
-  @ManyToOne({ entity: () => MeasureUnitCategory, cascade: 'persist' })
+  @ManyToOne({
+    entity: () => MeasureUnitCategory,
+    references: (measureUnit) => measureUnit.categoryId,
+    cascade: 'persist',
+  })
   category?: MeasureUnitCategory;
 
   @Field({ type: Number, softDelete: () => Date.now() })
@@ -251,25 +255,25 @@ export class Item extends BaseEntity {
   @Field({ references: () => LedgerAccount })
   buyLedgerAccountId?: string;
 
-  @ManyToOne({ entity: () => LedgerAccount })
+  @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.buyLedgerAccountId })
   buyLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => LedgerAccount })
   saleLedgerAccountId?: string;
 
-  @ManyToOne({ entity: () => LedgerAccount })
+  @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.saleLedgerAccountId })
   saleLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => Tax })
   taxId?: string;
 
-  @ManyToOne({ entity: () => Tax })
+  @ManyToOne({ entity: () => Tax, references: (item) => item.taxId })
   tax?: Tax;
 
   @Field({ references: () => MeasureUnit })
   measureUnitId?: string;
 
-  @ManyToOne({ entity: () => MeasureUnit })
+  @ManyToOne({ entity: () => MeasureUnit, references: (item) => item.measureUnitId })
   measureUnit?: MeasureUnit;
 
   @Field({ type: Number })
@@ -370,7 +374,7 @@ export class ItemAdjustment extends BaseEntity {
   @Field({ references: () => Item })
   itemId?: string;
 
-  @ManyToOne({ entity: () => Item })
+  @ManyToOne({ entity: () => Item, references: (itemAdjustment) => itemAdjustment.itemId })
   item?: Item;
 
   @Field({ type: Number })
@@ -382,13 +386,16 @@ export class ItemAdjustment extends BaseEntity {
   @Field({ references: () => Storehouse })
   storehouseId?: string;
 
-  @ManyToOne({ entity: () => Storehouse })
+  @ManyToOne({ entity: () => Storehouse, references: (itemAdjustment) => itemAdjustment.storehouseId })
   storehouse?: Storehouse;
 
   @Field({ references: () => InventoryAdjustment })
   inventoryAdjustmentId?: string;
 
-  @ManyToOne({ entity: () => InventoryAdjustment })
+  @ManyToOne({
+    entity: () => InventoryAdjustment,
+    references: (itemAdjustment) => itemAdjustment.inventoryAdjustmentId,
+  })
   inventoryAdjustment?: InventoryAdjustment;
 }
 
@@ -425,7 +432,7 @@ export class InvoiceLine {
   @Field({ references: () => Invoice })
   invoiceId?: number;
 
-  @ManyToOne({ entity: () => Invoice })
+  @ManyToOne({ entity: () => Invoice, references: (invoiceLine) => invoiceLine.invoiceId })
   invoice?: Invoice;
 }
 
@@ -465,7 +472,7 @@ export class TypedRow {
   @Field({ type: Date }) at?: Date;
   @Field({ type: 'blob' }) bytes?: Uint8Array;
   @Field({ references: () => TypedGroup }) groupId?: number;
-  @ManyToOne({ entity: () => TypedGroup }) group?: TypedGroup;
+  @ManyToOne({ entity: () => TypedGroup, references: (typedRow) => typedRow.groupId }) group?: TypedGroup;
 }
 
 /** Holds {@link TypedRow}s, so a populated row can be read back beside a read of its own. */

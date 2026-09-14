@@ -25,9 +25,9 @@ class Author {
 class Post {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => Author }) authorId?: number;
-  @ManyToOne({ entity: () => Author }) author?: Author;
+  @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
   @Field({ references: () => Author }) reviewerId?: number;
-  @ManyToOne({ entity: () => Author }) reviewer?: Author;
+  @ManyToOne({ entity: () => Author, references: (post) => post.reviewerId }) reviewer?: Author;
 }
 
 /** Soft-deletable through a renamed column. */
@@ -44,7 +44,7 @@ class Chunk {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) text?: string;
   @Field({ references: () => Author }) authorId?: number;
-  @ManyToOne({ entity: () => Author }) author?: Author;
+  @ManyToOne({ entity: () => Author, references: (chunk) => chunk.authorId }) author?: Author;
   @Field({ type: 'vector' }) embedding?: number[];
 }
 

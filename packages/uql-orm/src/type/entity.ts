@@ -632,25 +632,18 @@ export type FieldOptionsFor<V, E = unknown> =
 export type RelationTarget<V> = Extract<Unpacked<V>, object>;
 
 /**
- * {@link RelationOptions} for a relation field declared as `V`, with `entity` required and pinned to
- * `V`'s own type, and the cardinality restricted to the ones that field shape can hold. Together those
- * reject `@ManyToOne({ entity: () => Other })` on a `Company` field, and any to-many cardinality on a
- * field that is not an array. A to-many additionally needs a {@link RelationJoin}.
- *
- * The join is required through the `cardinality` written rather than through `IsMany<V>`: a conditional
- * member of the intersection leaves a `mappedBy` callback without a contextual type inside a generic
- * call (`defineEntity`), where a union keyed on a property does not.
+ * {@link RelationOptions} for a relation field declared as `V`: what each cardinality's decorator takes,
+ * keyed on the `cardinality` written and restricted to the ones the field's shape holds. A key, not a
+ * conditional on `IsMany<V>`, which left a `mappedBy` callback untyped inside `defineEntity`.
  */
-export type RelationOptionsFor<V, O = unknown> = Omit<
-  RelationOptions<RelationTarget<V>, O>,
-  'entity' | 'cardinality'
-> & {
-  readonly entity: EntityGetter<RelationTarget<V>>;
+export type RelationOptionsFor<V, O = unknown> = {
   readonly cardinality: IsMany<V> extends true ? '1m' | 'mm' : '11' | 'm1';
 } & (
-    | ({ readonly cardinality: '1m' | 'mm' } & RelationJoin<RelationTarget<V>, O>)
-    | { readonly cardinality: '11' | 'm1' }
-  );
+  | ({ readonly cardinality: '11' } & RelationOneToOneOptions<RelationTarget<V>, O>)
+  | ({ readonly cardinality: 'm1' } & RelationManyToOneOptions<RelationTarget<V>, O>)
+  | ({ readonly cardinality: '1m' } & RelationOneToManyOptions<RelationTarget<V>, O>)
+  | ({ readonly cardinality: 'mm' } & RelationManyToManyOptions<RelationTarget<V>, O>)
+);
 
 /**
  * The method names of an entity, so hook registrations name a method that exists.
@@ -697,15 +690,19 @@ export type RelationOptions<E, O = unknown> = {
    */
   through?: EntityGetter;
   /**
-   * The join columns where no convention fits: each pairs a field of the declaring entity with one of
-   * the target, `(order, customer) => [{ local: order.customerCode, foreign: customer.code }]`. A
-   * `through` relation takes none: its junction's columns follow the convention.
+   * The join columns: the foreign key a to-one declares, `(post) => post.authorId`, which points at the
+   * target's primary key, or pairs where no key fits, `(order, customer) => [{ local: order.customerCode,
+   * foreign: customer.code }]`. A `through` relation takes none: it joins by the junction's column
+   * referencing each side.
    */
-  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
+  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => FieldKey<O> | readonly RelationReference<O, E>[];
 };
 
 /** One pair of join columns, each a field read off its entity's key map. */
 export type RelationReference<O, E> = { readonly local: FieldKey<O>; readonly foreign: FieldKey<E> };
+
+/** {@link RelationOptions.references} as pairs alone, for a to-many, which holds no foreign key of its own to name. */
+type RelationReferencePairs<E, O> = (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
 
 /**
  * A relation once `getMeta` has resolved it: `references` is filled in and `mappedBy` is the key its
@@ -718,27 +715,22 @@ export type RelationReference<O, E> = { readonly local: FieldKey<O>; readonly fo
  * from "declared, but an inverse side too, so neither owns the foreign key" needs the unresolved shape
  * still there to find. A phase-split metadata map costs more than the call parentheses it saves.
  */
-export type RelationMeta = RelationRegistration & { references: RelationReferences };
+export type RelationMeta = Omit<RelationRegistration, 'references'> & { references: RelationReferences };
 
 /**
  * A relation as the registry takes it, whichever entity it targets: `mappedBy` and `references` read
- * off their key maps down to the names they give, `references` unset until `getMeta` settles it.
+ * off their key maps down to the names they give. `references` stays unset, or the one column a to-one
+ * names, until `getMeta` pairs it with the target's key, which registration may run before the target has.
  */
 export type RelationRegistration = Omit<RelationOptions<object>, 'mappedBy' | 'references'> & {
   mappedBy?: string;
-  references?: RelationReferences;
+  references?: RelationReferences | string;
 };
 
 /** How a to-many owner reaches its children: a junction entity or the join columns, never both. */
 type RelationOwnerJoin<E, O> =
   | (Required<Pick<RelationOptions<E, O>, 'through'>> & { readonly references?: never })
-  | (Required<Pick<RelationOptions<E, O>, 'references'>> & { readonly through?: never });
-
-/**
- * Every way a to-many can say where its rows are. Required because nothing about the field implies it:
- * without one of the three, resolution has no columns to join on and throws.
- */
-type RelationJoin<E, O> = RelationOwnerJoin<E, O> | Required<Pick<RelationOptions<E>, 'mappedBy'>>;
+  | { readonly references: RelationReferencePairs<E, O>; readonly through?: never };
 
 // `onDelete`/`onUpdate` only here: the owning side is the one that holds the foreign key, so the inverse
 // side (`mappedBy`) has no constraint to attach an action to.

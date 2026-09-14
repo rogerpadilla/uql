@@ -7,8 +7,7 @@ describe('BunSqlQuerierPool', () => {
   it('should initialize with correct dialect', () => {
     const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
     expect(pool.dialect).toBeInstanceOf(PostgresDialect);
-    expect(pool.dialect.features.explicitJsonCast).toBe(true);
-    expect(pool.dialect.features.nativeArrays).toBe(false);
+    expect(pool.dialect).toMatchObject({ driverCapabilities: { explicitJsonCast: true, nativeArrays: false } });
   });
 
   it('should support config object with adapter', () => {
@@ -22,8 +21,7 @@ describe('BunSqlQuerierPool', () => {
     // bun:sql routes CockroachDB through its own Postgres wire-protocol implementation, so it
     // needs the identical wire-driver-capability fix as postgres (verified live: without it,
     // $set/$push on a JSONB column silently produce the wrong value or throw).
-    expect(pool.dialect.features.explicitJsonCast).toBe(true);
-    expect(pool.dialect.features.nativeArrays).toBe(false);
+    expect(pool.dialect).toMatchObject({ driverCapabilities: { explicitJsonCast: true, nativeArrays: false } });
   });
 
   /** `Sqlite3QuerierPool` runs on `bun:sqlite` under Bun, so SQLite is refused here rather than half-served. */

@@ -35,9 +35,6 @@ import { escapeSingleQuotes } from '../util/sqlLiteral.js';
  */
 export class MsSqlDialect extends MergeSqlDialect {
   protected override readonly featureDefaults: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: false,
-    supportsJsonb: false,
     // Neither object takes an `IF NOT EXISTS`; both need a `sys` catalogue lookup around them, which
     // the generator does not emit.
     ifNotExists: false,

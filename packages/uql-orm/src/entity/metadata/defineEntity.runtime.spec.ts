@@ -104,7 +104,11 @@ it('relates two content types to each other', async () => {
   const Author = register({ name: 'author', fields: [{ name: 'name', type: 'text' }] });
   const Article = register({ name: 'article', fields: [{ name: 'title', type: 'text' }] });
   defineField(Article, 'authorId', { references: () => Author });
-  defineRelation(Article, 'author', { cardinality: 'm1', entity: () => Author });
+  defineRelation(Article, 'author', {
+    cardinality: 'm1',
+    entity: () => Author,
+    references: (article) => article['authorId'],
+  });
   await sync([Author, Article]);
 
   const querier = await pool.getQuerier();
@@ -147,7 +151,7 @@ it('joins a relation added after the entity has already been used', async () => 
   // `note` was settled before this relation existed. Registering one marks its metadata changed, so
   // the next read settles it again rather than joining on columns nothing ever resolved.
   defineField(Note, 'ownerId', { references: () => Owner });
-  defineRelation(Note, 'owner', { cardinality: 'm1', entity: () => Owner });
+  defineRelation(Note, 'owner', { cardinality: 'm1', entity: () => Owner, references: (note) => note['ownerId'] });
   await sync([Note]);
 
   await querier.insertOne(Note, { id: 1, title: 'Notes', ownerId: 1 });

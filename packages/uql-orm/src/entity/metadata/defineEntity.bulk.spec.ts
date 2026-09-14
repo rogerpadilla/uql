@@ -59,7 +59,11 @@ it('defineEntity bulk relations and FK fields match incremental registration', (
   }
   defineField(Incremental, 'id', { type: Number, isId: true });
   defineField(Incremental, 'targetId', { type: Number, references: () => Target });
-  defineRelation(Incremental, 'target', { cardinality: 'm1', entity: () => Target });
+  defineRelation(Incremental, 'target', {
+    cardinality: 'm1',
+    entity: () => Target,
+    references: (incremental) => incremental.targetId,
+  });
   defineEntity(Incremental, { name: 'LinkedRow' });
 
   class Bulk {
@@ -74,7 +78,7 @@ it('defineEntity bulk relations and FK fields match incremental registration', (
       targetId: { type: Number, references: () => Target },
     },
     relations: {
-      target: { cardinality: 'm1', entity: () => Target },
+      target: { cardinality: 'm1', entity: () => Target, references: (bulk) => bulk.targetId },
     },
   });
 
@@ -118,7 +122,7 @@ it('defineEntity bulk relations allow a related entity shaped differently than t
       authorId: { references: () => Author },
     },
     relations: {
-      author: { cardinality: 'm1', entity: () => Author },
+      author: { cardinality: 'm1', entity: () => Author, references: (book) => book.authorId },
     },
   });
 

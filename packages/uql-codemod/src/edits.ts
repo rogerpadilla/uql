@@ -24,6 +24,10 @@ export function inserted(node: ts.Node, text: string): Edit {
   return { start: node.getStart(), end: node.getStart(), text };
 }
 
+export function appended(node: ts.Node, text: string): Edit {
+  return { start: node.getEnd(), end: node.getEnd(), text };
+}
+
 /**
  * Removes one element of a comma-separated list - a parameter, a named import, a JSON property - taking
  * the separator that would otherwise dangle. The last element gives up the comma before it; any other

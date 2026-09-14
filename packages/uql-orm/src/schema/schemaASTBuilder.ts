@@ -6,7 +6,7 @@
  * - Database introspection results (TableSchema[])
  */
 
-import { getMeta, soleIdOf } from '../entity/metadata/definition.js';
+import { foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
@@ -188,60 +188,53 @@ function tableOf(ctx: BuildContext, meta: EntityMeta<object>): TableNode | undef
 }
 
 /**
- * Add relationships from entity relation decorators.
+ * Add a relationship for each foreign key the entity holds, whether a relation declares it or a bare
+ * `@Field({ references })` does.
  */
 function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   const table = tableOf(ctx, meta);
   if (!table) return;
 
-  for (const [key, relation] of definedEntries(meta.relations)) {
-    const relatedMeta = getMeta(relation.entity());
+  for (const foreignKey of foreignKeysOf(meta)) {
+    const relatedMeta = getMeta(foreignKey.entity());
     const relatedTable = tableOf(ctx, relatedMeta);
     if (!relatedTable) continue;
 
-    // Only the owning side gets the FK. `mappedBy` marks the inverse side of a one-to-one, whose
-    // `references` describe how to join back (its own primary key against the owner's FK column) -
-    // reading those as a foreign key emitted a reversed constraint (`User(id) REFERENCES
-    // user_profile(creatorId)`), which SQLite rejects outright as a foreign key mismatch.
-    const ownsForeignKey = relation.cardinality === 'm1' || (relation.cardinality === '11' && !relation.mappedBy);
-    if (ownsForeignKey) {
-      // Every pair, not just the first: a composite key is one constraint over all its columns, and
-      // the engine requires the referenced columns to match a unique constraint as a whole.
-      const localColumns: ColumnNode[] = [];
-      const foreignColumns: ColumnNode[] = [];
+    // Every pair, not just the first: a composite key is one constraint over all its columns, and
+    // the engine requires the referenced columns to match a unique constraint as a whole.
+    const localColumns: ColumnNode[] = [];
+    const foreignColumns: ColumnNode[] = [];
 
-      for (const { local: localProp, foreign: foreignProp } of relation.references) {
-        const localField = meta.fields[localProp];
-        const foreignField = relatedMeta.fields[foreignProp];
-        const localColumn = localField && table.columns.get(ctx.resolveColumnName(localProp, localField));
-        const foreignColumn =
-          foreignField && relatedTable.columns.get(ctx.resolveColumnName(foreignProp, foreignField));
-        if (!localColumn || !foreignColumn) break;
-        localColumns.push(localColumn);
-        foreignColumns.push(foreignColumn);
-      }
-
-      // A pair that cannot be resolved drops the whole constraint: half of one enforces a rule
-      // nobody declared, over a subset of the key.
-      if (localColumns.length !== relation.references.length) continue;
-
-      ctx.ast.addRelationship({
-        name: derivedForeignKeyName(
-          table.name,
-          localColumns.map((column) => column.name),
-        ),
-        type: relation.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
-        from: { table, columns: localColumns },
-        to: { table: relatedTable, columns: foreignColumns },
-        // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
-        // references, onDelete })` work with no relation declared at all.
-        onDelete:
-          relation.onDelete ?? meta.fields[relation.references[0].local]?.onDelete ?? ctx.defaultForeignKeyAction,
-        onUpdate: relation.onUpdate ?? ctx.defaultForeignKeyAction,
-        confidence: 1.0,
-        inferredFrom: 'entity_decorator',
-      });
+    for (const { local: localProp, foreign: foreignProp } of foreignKey.references) {
+      const localField = meta.fields[localProp];
+      const foreignField = relatedMeta.fields[foreignProp];
+      const localColumn = localField && table.columns.get(ctx.resolveColumnName(localProp, localField));
+      const foreignColumn = foreignField && relatedTable.columns.get(ctx.resolveColumnName(foreignProp, foreignField));
+      if (!localColumn || !foreignColumn) break;
+      localColumns.push(localColumn);
+      foreignColumns.push(foreignColumn);
     }
+
+    // A pair that cannot be resolved drops the whole constraint: half of one enforces a rule
+    // nobody declared, over a subset of the key.
+    if (localColumns.length !== foreignKey.references.length) continue;
+
+    ctx.ast.addRelationship({
+      name: derivedForeignKeyName(
+        table.name,
+        localColumns.map((column) => column.name),
+      ),
+      type: foreignKey.cardinality === 'm1' ? 'ManyToOne' : 'OneToOne',
+      from: { table, columns: localColumns },
+      to: { table: relatedTable, columns: foreignColumns },
+      // Falls back to the FK column's own `onDelete`, which is what makes a bare `@Field({
+      // references, onDelete })` work with no relation declared at all.
+      onDelete:
+        foreignKey.onDelete ?? meta.fields[foreignKey.references[0].local]?.onDelete ?? ctx.defaultForeignKeyAction,
+      onUpdate: foreignKey.onUpdate ?? ctx.defaultForeignKeyAction,
+      confidence: 1.0,
+      inferredFrom: 'entity_decorator',
+    });
   }
 }
 

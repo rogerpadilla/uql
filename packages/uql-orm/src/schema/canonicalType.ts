@@ -397,7 +397,7 @@ export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): s
   return type.unsigned && features.supportsUnsigned ? `${sqlType} UNSIGNED` : sqlType;
 }
 
-/** See {@link EngineFeatures.stringSizing} for what each mode means. */
+/** See {@link DialectFeatures.stringSizing} for what each mode means. */
 function formatStringSqlType(type: CanonicalType, base: string, sizing: DialectFeatures['stringSizing']): string {
   if (sizing === 'text') {
     return base;

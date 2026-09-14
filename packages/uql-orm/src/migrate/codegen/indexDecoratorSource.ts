@@ -1,6 +1,6 @@
 import type { IndexNode } from '../../schema/types.js';
 import { type IndexColumnSchema, isVectorIndexType, type VectorDistance } from '../../type/index.js';
-import { isIdentifierName, quoted, rawTag } from './sourceLiteral.js';
+import { memberSource, rawTag } from './sourceLiteral.js';
 
 /**
  * A vector index carries its metric in the operator class pgvector names after it
@@ -101,9 +101,4 @@ function indexEntrySource(entry: IndexColumnSchema, propertyName: (column: strin
   const column = entry.expression ? rawTag(entry.column) : memberSource(param, propertyName(entry.column));
   const modifiers = significantModifiers(entry);
   return modifiers.length === 0 ? column : `{ column: ${column}, ${modifiers.join(', ')} }`;
-}
-
-/** `user.email`, or `user['first-name']` for a property name that is no identifier. */
-function memberSource(param: string, property: string): string {
-  return isIdentifierName(property) ? `${param}.${property}` : `${param}[${quoted(property)}]`;
 }

@@ -34,9 +34,6 @@ import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 export class SqliteDialect extends AbstractSqlDialect {
   /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
   protected override readonly featureDefaults: DialectFeatures = {
-    explicitJsonCast: false,
-    nativeArrays: false,
-    supportsJsonb: false,
     ifNotExists: true,
     indexIfNotExists: true,
     schemas: false, // SQLite's namespaces are attached database files, not declared objects

@@ -1,4 +1,3 @@
-import { streamViaCursor } from '../postgres/pgCursorStream.js';
 import type { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
@@ -20,10 +19,8 @@ export type PgliteDatabase = {
 /**
  * Querier for PGlite, Postgres compiled to WASM and run in this process.
  *
- * @remarks Extends {@link AbstractSqlQuerier} rather than `PgQuerier`, whose `internalStream`
- * hands a `pg-query-stream` object to `query()`, which PGlite's client has no equivalent of - so
- * streaming pages the rows in SQL instead. `BEGIN`/`COMMIT` are plain statements on the single
- * connection, leaving transactions to the base class.
+ * @remarks Extends {@link AbstractSqlQuerier} rather than `PgQuerier`, whose stream needs `pg-query-stream`,
+ * which PGlite's client cannot run. `BEGIN`/`COMMIT` are plain statements on the single connection.
  */
 export class PgliteQuerier extends AbstractSqlQuerier {
   constructor(
@@ -44,16 +41,6 @@ export class PgliteQuerier extends AbstractSqlQuerier {
     // `affectedRows`, not `rowCount`: PGlite derives the former from the command tag of a write only,
     // where the latter also counts a `SELECT`'s rows and is absent altogether from a DDL tag.
     return this.buildUpdateResult({ rows: res.rows, changes: res.affectedRows ?? 0 });
-  }
-
-  /** Postgres compiled to WASM is still Postgres: `DECLARE`/`FETCH` streams what the client cannot. */
-  protected override async *internalStream<T>(query: string, values?: unknown[]) {
-    yield* streamViaCursor<T>(
-      (sql, params) => this.internalAll<T>(sql, params),
-      query,
-      values,
-      this.hasOpenTransaction,
-    );
   }
 
   /** The handle belongs to the pool, which hands out one querier per unit of work over it. */

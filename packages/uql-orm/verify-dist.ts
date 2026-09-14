@@ -120,7 +120,7 @@ function checkBrowserGraph(): number {
 // raising one is deliberate - and the CHANGELOG entry for that release says which module grew.
 const BUDGETS: Record<string, number> = {
   '.': 31_600,
-  './postgres': 27_100,
+  './postgres': 27_800,
   './migrate': 47_800,
   './browser': 2_000,
 };

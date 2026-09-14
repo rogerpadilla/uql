@@ -10,7 +10,7 @@ import type { Config } from '../type/index.js';
 import * as cliConfig from './cli-config.js';
 import * as cli from './cli.js';
 import type { Migrator } from './migrator.js';
-import { createSchemaGenerator } from './schemaGenerator.js';
+import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
 class TestEntity {
@@ -39,7 +39,7 @@ class DriftedEntity {
 
 const mockMigrator = {
   // A real generator, because `runDriftCheck` names the expected schema through it.
-  getSchemaGenerator: vi.fn().mockResolvedValue(createSchemaGenerator(new SqliteDialect())),
+  getSchemaGenerator: vi.fn().mockResolvedValue(new SqlSchemaGenerator(new SqliteDialect())),
   up: vi.fn().mockResolvedValue([]),
   down: vi.fn().mockResolvedValue([]),
   status: vi.fn().mockResolvedValue({ executed: [], pending: [] }),
@@ -49,6 +49,7 @@ const mockMigrator = {
   autoSync: vi.fn().mockResolvedValue(undefined),
   planSync: vi.fn().mockResolvedValue([]),
   pending: vi.fn().mockResolvedValue([]),
+  schemaIntrospector: { introspect: vi.fn().mockResolvedValue(new SchemaAST()) },
   entities: [TestEntity],
 };
 
@@ -266,11 +267,7 @@ describe('CLI', () => {
   });
 
   it('runSync with --pull should use db-to-entity direction', async () => {
-    const migrator = {
-      ...mockMigrator,
-      schemaIntrospector: { introspect: vi.fn().mockResolvedValue(new SchemaAST()) },
-      sync: vi.fn(),
-    } as unknown as Migrator;
+    const migrator = { ...mockMigrator, sync: vi.fn() } as unknown as Migrator;
 
     await cli.runSync(migrator, ['--pull'], { entities: [TestEntity] });
     expect(console.log).toHaveBeenCalled();
@@ -298,13 +295,6 @@ describe('CLI', () => {
     expect(console.log).toHaveBeenCalledWith('\nSchema is already in sync.');
   });
 
-  it('runGenerateFromDb should exit if no introspector', async () => {
-    const migrator = { ...mockMigrator, schemaIntrospector: undefined } as unknown as Migrator;
-    await cli.runGenerateFromDb(migrator, [], {});
-    expect(console.error).toHaveBeenCalledWith('No introspector available. Check your pool configuration.');
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
   it('runDriftCheck should exit if no entities', async () => {
     await cli.runDriftCheck(mockMigrator as unknown as Migrator, { entities: [] });
     expect(console.error).toHaveBeenCalledWith('No entities configured. Add entities to your uql config.');
@@ -328,22 +318,12 @@ describe('CLI', () => {
   });
 
   it('main drift:check with config', async () => {
-    // Modify shared mock to include introspector
-    (mockMigrator as unknown as Migrator).schemaIntrospector = {
-      introspect: vi.fn().mockResolvedValue(new SchemaAST()),
-    } as unknown as Migrator['schemaIntrospector'];
-
     vi.mocked(cliConfig.loadConfig).mockResolvedValue({
       pool: mockPool,
       entities: [TestEntity],
     });
 
-    try {
-      await cli.main(['drift:check']);
-    } finally {
-      // Clean up shared mock
-      delete (mockMigrator as unknown as Migrator).schemaIntrospector;
-    }
+    await cli.main(['drift:check']);
 
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Checking for schema drift'));
   });
@@ -395,11 +375,14 @@ describe('CLI', () => {
   });
 
   it('main generate:from-db and its hyphenated alias pull entities from the database', async () => {
-    await cli.main(['generate:from-db']);
-    await cli.main(['generate-from-db']);
-    // The shared mock has no introspector, which is the first thing the command needs.
-    expect(console.error).toHaveBeenNthCalledWith(1, 'No introspector available. Check your pool configuration.');
-    expect(console.error).toHaveBeenNthCalledWith(2, 'No introspector available. Check your pool configuration.');
+    const output = mkdtempSync(join(tmpdir(), 'uql-entities-'));
+    try {
+      await cli.main(['generate:from-db', '--output', output]);
+      await cli.main(['generate-from-db', '--output', output]);
+      expect(mockMigrator.schemaIntrospector.introspect).toHaveBeenCalledTimes(2);
+    } finally {
+      rmSync(output, { recursive: true, force: true });
+    }
   });
 
   it('main drift-check (hyphenated alias)', async () => {
@@ -435,13 +418,6 @@ describe('CLI', () => {
       process.chdir(cwd);
       rmSync(dir, { recursive: true, force: true });
     }
-  });
-
-  it('runDriftCheck should exit if there is no introspector to compare against', async () => {
-    const migrator = { ...mockMigrator, schemaIntrospector: undefined } as unknown as Migrator;
-    await cli.runDriftCheck(migrator, { entities: [TestEntity] });
-    expect(console.error).toHaveBeenCalledWith('No introspector available. Check your pool configuration.');
-    expect(process.exit).toHaveBeenCalledWith(1);
   });
 
   /** An informational drift names no fix, so the INFO group prints none. */

@@ -27,7 +27,7 @@ class FkEmployee {
   @Id({ type: Number }) id?: number;
   @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
   @Field({ references: () => FkCompany, onDelete: 'CASCADE' }) companyId?: number;
-  @ManyToOne({ entity: () => FkCompany }) company?: FkCompany;
+  @ManyToOne({ entity: () => FkCompany, references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
 }
 
 /** The one referential action the introspector used to read back as `undefined`. */
@@ -35,7 +35,7 @@ class FkEmployee {
 class FkSetDefault {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => FkCompany, onDelete: 'SET DEFAULT' }) companyId?: number;
-  @ManyToOne({ entity: () => FkCompany }) company?: FkCompany;
+  @ManyToOne({ entity: () => FkCompany, references: (fkSetDefault) => fkSetDefault.companyId }) company?: FkCompany;
 }
 
 /** A key that is not the default big integer, which is what catches a serial spelled independently. */

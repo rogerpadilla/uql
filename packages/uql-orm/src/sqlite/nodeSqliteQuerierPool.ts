@@ -1,10 +1,10 @@
 import type { ExtraOptions } from '../type/index.js';
 import {
   AbstractLocalSqliteQuerierPool,
+  adaptSqlite,
   type LocalSqliteDatabase,
   type LocalSqlitePoolOptions,
 } from './localSqliteQuerierPool.js';
-import { adaptNodeSqlite } from './nodeSqliteAdapter.js';
 
 /**
  * The `DatabaseSync` options worth surfacing, plus the loadable extensions to install. Declared here
@@ -46,6 +46,6 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSq
       // `node:sqlite` refuses `loadExtension` unless the database was opened with this on.
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });
-    return adaptNodeSqlite(nodeDb);
+    return adaptSqlite(nodeDb, (stmt) => stmt.columns().length > 0);
   }
 }

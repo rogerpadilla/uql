@@ -58,7 +58,7 @@ class SecureParent {
   id?: number;
   @Field({ references: () => SecureRelated })
   relatedId?: number;
-  @ManyToOne({ entity: () => SecureRelated })
+  @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
 
@@ -1119,7 +1119,7 @@ class MongoDialectSpec implements Spec {
     class Shelf {
       @Id({ type: String }) id?: string;
       @Field({ references: () => VectorItem }) vectorItemId?: number;
-      @ManyToOne({ entity: () => VectorItem }) vectorItem?: VectorItem;
+      @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
     }
     expect(() =>
       this.dialect.aggregationPipeline(Shelf, {
