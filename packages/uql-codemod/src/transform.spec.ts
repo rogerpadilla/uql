@@ -450,11 +450,13 @@ class Entity {
   });
 
   it('names the foreign key a to-one found by name, where its class declares or inherits it', () => {
-    const { text } = codemod(`
+    const { text, unresolved } = codemod(`
       class Company { id?: number; }
-      class Owned { companyId?: number; }
+      class Owned { @Field({ type: Number }) companyId?: number; }
       class Employee extends Owned {
-        managerId?: number;
+        @Field({ type: Number }) managerId?: number;
+        sponsorId?: number;
+        @ManyToOne({ entity: () => Company }) sponsor?: Company;
         @ManyToOne({ entity: () => Company }) company?: Company;
         @OneToOne({
           entity: () => Employee,
@@ -469,6 +471,11 @@ class Entity {
     );
     expect(text).toContain('entity: () => Employee, references: (employee) => employee.managerId,');
     expect(text).toContain('@ManyToOne({ entity: () => Company }) employer?: Company;');
+    // A member that is no column would be refused on first read once named.
+    expect(text).toContain('@ManyToOne({ entity: () => Company }) sponsor?: Company;');
+    expect(unresolved).toContainEqual(
+      expect.stringContaining("declare the foreign key column 'sponsorId' and name it in 'references'"),
+    );
   });
 
   it('declares the foreign key a to-one created by name, typed as the key it points at', () => {
@@ -523,11 +530,17 @@ class Employee extends Base {
       declare const relation: string;
       defineRelation(Supplier, relation, { cardinality: 'm1', entity: () => Company });
       defineRelation(Supplier, 'vendor', { cardinality: 'm1', entity: () => Company });
+      class Buyer { id?: number; companyId?: number; company?: Company; }
+      defineEntity(Buyer, { fields: { id: { type: Number } }, relations: { company: { cardinality: 'm1', entity: () => Company } } });
     `);
 
     expect(unresolved).toContainEqual(
       expect.stringContaining("declare the foreign key column 'vendorId' and name it in 'references'"),
     );
+    expect(unresolved).toContainEqual(
+      expect.stringContaining("declare the foreign key column 'companyId' and name it in 'references'"),
+    );
+    expect(text).toContain("{ company: { cardinality: 'm1', entity: () => Company } } });");
 
     expect(text).toContain(
       '@ManyToOne({ entity: () => Company, references: (contractor) => contractor.companyId }) company?: Company;',

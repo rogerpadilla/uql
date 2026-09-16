@@ -217,8 +217,13 @@ function noteHandNamedColumns(sql: ts.Expression | undefined, owner: Owner, ctx:
 
 /** The names of the members of the entity `node` declares or names. */
 function memberNames(node: ts.Node, checker: ts.TypeChecker): ReadonlySet<string> {
+  return propertyNames(instanceTypeOf(node, checker));
+}
+
+/** The instance type of the entity `node` declares or names. */
+function instanceTypeOf(node: ts.Node, checker: ts.TypeChecker): ts.Type {
   const type = checker.getTypeAtLocation(node);
-  return propertyNames(type.getConstructSignatures()[0]?.getReturnType() ?? type);
+  return type.getConstructSignatures()[0]?.getReturnType() ?? type;
 }
 
 function propertyNames(type: ts.Type): ReadonlySet<string> {
@@ -323,16 +328,16 @@ function addRelationEntity(decorator: ts.Decorator, node: ts.PropertyDeclaration
 }
 
 /**
- * Names the foreign key a to-one found by name alone, `references: (post) => post.authorId` beside `author`.
- * A key the entity neither declares nor inherits is declared first, on a decorated property, typed as the
- * target's key; elsewhere it is reported.
+ * Names the foreign key a to-one used to find by name, `references: (post) => post.authorId` beside `author`.
+ * `site` says where the entity declares its columns: the decorated property, ahead of which a missing column
+ * is declared, or `defineEntity`'s `fields`. A column it cannot see declared is reported instead.
  */
 function addForeignKeyReference(
   relation: ts.ObjectLiteralExpression,
   key: string | undefined,
   owner: Owner,
   ctx: Context,
-  property?: ts.PropertyDeclaration,
+  site?: ts.PropertyDeclaration | ts.ObjectLiteralExpression,
 ): void {
   const options: Options = { kind: 'literal', node: relation };
   const cardinality = propertyValue(relation, 'cardinality');
@@ -343,20 +348,37 @@ function addForeignKeyReference(
     return;
   }
   const column = `${key}Id`;
-  if (!memberNames(owner.entity, ctx.checker).has(column)) {
-    if (!property) {
-      ctx.unresolved.push(
-        `${ctx.describe(relation)}: declare the foreign key column '${column}' and name it in 'references'`,
-      );
-      return;
-    }
-    const declared = foreignKeyColumn(property, column, relation, ctx);
-    if (!declared) {
-      return;
-    }
-    ctx.edits.push(declared);
+  const declaration = columnDeclaration(column, relation, owner, ctx.checker, site);
+  if (typeof declaration === 'string') {
+    ctx.unresolved.push(`${ctx.describe(site && ts.isPropertyDeclaration(site) ? site : relation)}: ${declaration}`);
+    return;
+  }
+  if (declaration) {
+    ctx.edits.push(declaration);
+    ctx.imports.set('Field', 'the foreign key column');
   }
   ctx.edits.push(appended(last, `, references: (${owner.param}) => ${memberAccess(owner.param, column)}`));
+}
+
+const undeclaredColumn = (column: string) => `declare the foreign key column '${column}' and name it in 'references'`;
+
+/** Nothing where `column` is declared, the declaration to write where a decorated class lacks it, or why neither. */
+function columnDeclaration(
+  column: string,
+  relation: ts.ObjectLiteralExpression,
+  owner: Owner,
+  checker: ts.TypeChecker,
+  site: ts.PropertyDeclaration | ts.ObjectLiteralExpression | undefined,
+): Edit | string | undefined {
+  const member = instanceTypeOf(owner.entity, checker).getProperty(column);
+  if (site && ts.isPropertyDeclaration(site)) {
+    if (!member) {
+      return foreignKeyColumn(site, column, relation, checker);
+    }
+    return member.declarations?.some(isFieldProperty) ? undefined : undeclaredColumn(column);
+  }
+  const declared = site ? objectProperties(site).some(({ name }) => propertyKey(name) === column) : member;
+  return declared ? undefined : undeclaredColumn(column);
 }
 
 /** `@Field({ references: () => Target }) <column>?: <key type>;` ahead of the relation, or why it cannot be written. */
@@ -364,42 +386,40 @@ function foreignKeyColumn(
   property: ts.PropertyDeclaration,
   column: string,
   relation: ts.ObjectLiteralExpression,
-  ctx: Context,
-): Edit | undefined {
-  const { checker } = ctx;
+  checker: ts.TypeChecker,
+): Edit | string {
   const targetType = checker.getNonNullableType(checker.getTypeAtLocation(property));
   const target = entityGetterTarget(relation) ?? relationTargetFor(targetType, checker);
   const keys = targetType.getProperties().filter((member) => member.declarations?.some(isIdProperty));
-  const [soleKey] = keys;
-  if (!target || !soleKey || keys.length > 1) {
-    const advice =
-      keys.length > 1
-        ? `'${target}' has a composite key: declare a column per key and pair each in 'references'`
-        : `declare the foreign key column '${column}' and name it in 'references'`;
-    ctx.unresolved.push(`${ctx.describe(property)}: ${advice}`);
-    return undefined;
+  if (keys.length > 1) {
+    return `'${target}' has a composite key: declare a column per key and pair each in 'references'`;
   }
-  const source = property.getSourceFile();
-  const indent = ' '.repeat(source.getLineAndCharacterOfPosition(property.getStart()).character);
-  ctx.imports.set('Field', 'the foreign key column');
-  return inserted(
-    property,
-    `@Field({ references: () => ${target} }) ${column}?: ${keyTypeSource(soleKey, property, ctx)};\n${indent}`,
-  );
+  const [key] = keys;
+  if (!target || !key) {
+    return undeclaredColumn(column);
+  }
+  const indent = ' '.repeat(property.getSourceFile().getLineAndCharacterOfPosition(property.getStart()).character);
+  const type = keyTypeSource(key, property, checker);
+  return inserted(property, `@Field({ references: () => ${target} }) ${column}?: ${type};\n${indent}`);
 }
 
 /** The key's type as written where that is in scope, the same file, or as the checker spells it out. */
-function keyTypeSource(key: ts.Symbol, at: ts.Node, ctx: Context): string {
+function keyTypeSource(key: ts.Symbol, at: ts.Node, checker: ts.TypeChecker): string {
   const written = key.declarations?.find(isIdProperty)?.type;
   if (written && written.getSourceFile() === at.getSourceFile()) {
     return written.getText();
   }
-  return ctx.checker.typeToString(ctx.checker.getNonNullableType(ctx.checker.getTypeOfSymbolAtLocation(key, at)), at);
+  return checker.typeToString(checker.getNonNullableType(checker.getTypeOfSymbolAtLocation(key, at)), at);
 }
 
-function isIdProperty(node: ts.Declaration): node is ts.PropertyDeclaration {
-  return ts.isPropertyDeclaration(node) && decoratorsOf(node).some((decorator) => decoratorName(decorator) === 'Id');
-}
+/** Whether a declaration is a property carrying one of `names` as a decorator. */
+const decoratedWith =
+  (names: ReadonlySet<string>) =>
+  (node: ts.Declaration): node is ts.PropertyDeclaration =>
+    ts.isPropertyDeclaration(node) && decoratorsOf(node).some((decorator) => names.has(decoratorName(decorator) ?? ''));
+
+const isIdProperty = decoratedWith(new Set(['Id']));
+const isFieldProperty = decoratedWith(FIELD_DECORATORS);
 
 /**
  * Writes the edits `rewrite` reads off `value`, which still names members as strings, or reports it
@@ -478,6 +498,7 @@ function rewriteDefineCall(call: ts.CallExpression, ctx: Context): void {
 }
 
 function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner, ctx: Context): void {
+  const fields = propertyValue(options, 'fields');
   for (const index of arrayElements(propertyValue(options, 'indexes'))) {
     if (ts.isObjectLiteralExpression(index)) {
       rewriteIndexOptions(index, owner, ctx);
@@ -486,7 +507,7 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
   for (const check of arrayElements(propertyValue(options, 'checks'))) {
     renameSqlOption(optionsOf(check), 'expression', 'where', check, owner, ctx);
   }
-  for (const field of objectProperties(propertyValue(options, 'fields'))) {
+  for (const field of objectProperties(fields)) {
     renameSqlOption(optionsOf(field.initializer), 'virtual', 'computed', field, owner, ctx);
   }
   for (const filter of objectProperties(propertyValue(options, 'filters'))) {
@@ -495,10 +516,11 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
   for (const hook of objectProperties(propertyValue(options, 'hooks'))) {
     rewriteKeyList(hook.initializer, owner.param, hook, 'a hook list', ctx);
   }
+  const declared = fields && ts.isObjectLiteralExpression(fields) ? fields : undefined;
   for (const relation of objectProperties(propertyValue(options, 'relations'))) {
     if (ts.isObjectLiteralExpression(relation.initializer)) {
       rewriteRelationOptions(relation.initializer, owner.param, ctx);
-      addForeignKeyReference(relation.initializer, propertyKey(relation.name), owner, ctx);
+      addForeignKeyReference(relation.initializer, propertyKey(relation.name), owner, ctx, declared);
     }
   }
 }
@@ -777,10 +799,7 @@ function isIdKeyBrand(member: ts.ClassElement): boolean {
  * One written makes `idKey` a value the file has to import, which is recorded for {@link addImports}.
  */
 function brandIdKey(node: ts.ClassDeclaration | ts.ClassExpression, ctx: Context): void {
-  const ids = node.members.filter(
-    (m): m is ts.PropertyDeclaration =>
-      ts.isPropertyDeclaration(m) && decoratorsOf(m).some((d) => decoratorName(d) === 'Id'),
-  );
+  const ids = node.members.filter(isIdProperty);
   if (!ids.length || node.members.some(isIdKeyBrand)) {
     return;
   }
@@ -843,9 +862,9 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     if (RELATION_DECORATORS.has(name) && options.kind === 'literal') {
       const target = relationTargetFor(ctx.checker.getTypeAtLocation(node), ctx.checker);
       rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
-    }
-    if (TO_ONE_DECORATORS.has(name) && options.kind === 'literal') {
-      addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx, node);
+      if (TO_ONE_DECORATORS.has(name)) {
+        addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx, node);
+      }
     }
   }
   if (decorators.length) {
@@ -1194,9 +1213,9 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     }
     if (ts.isCallExpression(node)) {
       rewriteDefineCall(node, ctx);
-    }
-    if (importsUql && ts.isCallExpression(node)) {
-      rewriteBuilderCall(node, ctx);
+      if (importsUql) {
+        rewriteBuilderCall(node, ctx);
+      }
     }
     if (ts.isPropertyAssignment(node)) {
       rewriteStatementKeys(node, ctx);

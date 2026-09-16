@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [Unreleased]
+
+- **Fixed (codemod): a to-one whose `<relation>Id` is no declared column is reported**, an undecorated property or one `defineEntity`'s `fields` leave out, instead of named and refused on first read.
+
 ## [0.66.0] - 2026-09-16
 
 - **Breaking: every to-one names its foreign key column in `references`**, a declared field; a relation no longer creates one. The codemod declares and names it.

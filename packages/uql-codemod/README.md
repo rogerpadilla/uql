@@ -45,7 +45,7 @@ Reported with what to do, never guessed:
 - An export removed with no one-to-one replacement (`setQuerierPool`, `getQuerier`, `augmentWhere`, `AbstractPgQuerier`, ...).
 - A value it cannot read: options passed as a variable or a spread, a list that is not a literal, a key under a computed name.
 - A to-one onto a composite key: declare a column per key and pair each with it in `references`.
-- A to-one in `defineEntity`/`defineRelation` whose entity has no foreign key column: declare it with `defineField`.
+- A to-one whose `<relation>Id` is not a declared column: an undecorated property, a `defineEntity` whose `fields` leave it out, or a `defineRelation` whose entity has no such member.
 - A partial-index `where` string that interpolates, since `raw` would bind what the template spliced in.
 - A `col()` whose entity it cannot tell: a raw built apart from its query, one under a relation filter, or a column no field maps.
 - SQL in a definition that names a column by hand, as a note: a rename reaches a callback's refs, ``(user) => raw`lower(${user.email})` ``, and never the text.
