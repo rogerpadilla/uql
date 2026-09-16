@@ -126,8 +126,15 @@ expectType<FieldOptionsFor<number>>({ type: Number, defaultValue: 'nope' });
 expectType<RelationTarget<Company>>(new Company());
 expectType<RelationTarget<Company[]>>(new Company());
 
-expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: 'm1' });
-expectType<RelationOptionsFor<Company>>({ entity: () => Company, cardinality: '11' });
+type Holder = { companyId?: number; company?: Company };
+expectType<RelationOptionsFor<Company, Holder>>({
+  entity: () => Company,
+  cardinality: 'm1',
+  references: (holder) => holder.companyId,
+});
+expectType<RelationOptionsFor<Company, Holder>>({ entity: () => Company, cardinality: '11', mappedBy: (c) => c.id });
+// @ts-expect-error the side holding the foreign key names it
+expectType<RelationOptionsFor<Company, Holder>>({ entity: () => Company, cardinality: 'm1' });
 expectType<RelationOptionsFor<Company[]>>({
   entity: () => Company,
   cardinality: '1m',
@@ -256,13 +263,19 @@ class Account {
   id?: number;
   email?: string;
   createdAt?: Date;
+  ownerId?: number;
   owner?: Company;
   touch() {}
 }
 
 defineEntity(Account, {
-  fields: { id: { type: Number, isId: true }, email: { type: String }, createdAt: { type: 'timestamptz' } },
-  relations: { owner: { cardinality: 'm1', entity: () => Company } },
+  fields: {
+    id: { type: Number, isId: true },
+    email: { type: String },
+    createdAt: { type: 'timestamptz' },
+    ownerId: { references: () => Company },
+  },
+  relations: { owner: { cardinality: 'm1', entity: () => Company, references: (account) => account.ownerId } },
   indexes: [
     { columns: (account) => [account.email], unique: true },
     {
@@ -285,6 +298,51 @@ defineEntity(Account, {
   // @ts-expect-error the options a relation takes are its decorator's, so a many-to-one is no inverse side
   relations: { owner: { cardinality: 'm1', entity: () => Company, mappedBy: (company) => company.id } },
 });
+
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error a many-to-one names the foreign key it joins by
+  relations: { owner: { cardinality: 'm1', entity: () => Company } },
+});
+
+defineEntity(Account, {
+  fields: { id: { type: Number, isId: true }, email: { type: String } },
+  relations: {
+    owner: {
+      cardinality: 'm1',
+      entity: () => Company,
+      // @ts-expect-error a pair's column holds the value of the key it joins, and `email` is a string
+      references: (account, company) => [{ local: account.email, foreign: company.id }],
+    },
+  },
+});
+
+class Sponsorship {
+  id?: number;
+  sponsorId?: number | null;
+  sponsor?: Company;
+}
+defineEntity(Sponsorship, {
+  fields: { id: { type: Number, isId: true }, sponsorId: { references: () => Company, nullable: true } },
+  relations: {
+    sponsor: { cardinality: 'm1', entity: () => Company, references: (sponsorship) => sponsorship.sponsorId },
+  },
+});
+
+@Entity({ relations: { company: { cardinality: 'm1', entity: () => Company, references: (seat) => seat.companyId } } })
+export class Seat {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => Company }) companyId?: number;
+  company?: Company;
+}
+
+// @ts-expect-error a many-to-one in `@Entity` names its foreign key too
+@Entity({ relations: { company: { cardinality: 'm1', entity: () => Company } } })
+export class UnlinkedSeat {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => Company }) companyId?: number;
+  company?: Company;
+}
 
 defineEntity(Account, {
   // @ts-expect-error wrong `type` for a string field

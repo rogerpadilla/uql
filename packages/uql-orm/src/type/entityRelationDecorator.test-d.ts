@@ -2,14 +2,15 @@
  * Type-level regression tests for the relation decorators (`@OneToOne`, `@ManyToOne`, `@OneToMany`,
  * `@ManyToMany`) applied directly to a class property - not through `RelationOptionsFor` in isolation
  * (see `entityOptions.test-d.ts`), but through the actual `MemberDecorator` a real property must
- * accept. `entity` is inferred from the mandatory getter and then checked two ways: the property's
- * type must match the target entity, and its array-ness must match the cardinality.
+ * accept. `entity` is inferred from the mandatory getter and then checked: the property's type must match
+ * the target entity, its array-ness must match the cardinality, and the side of a to-one holding the
+ * foreign key must name it in `references`, on columns that can hold the key each one joins.
  *
  * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
  * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
  * error it guards ever stops happening, keeping the negatives locked in.
  */
-import { Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../index.js';
+import { Field, Id, idKey, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../index.js';
 
 class Company {
   @Id({ type: Number }) id?: number;
@@ -60,4 +61,115 @@ export class Employee {
     references: (employee, project) => [{ local: employee.id, foreign: project.ownerId }],
   })
   badSharedProjects?: Unrelated[];
+}
+
+abstract class Authored {
+  @Field({ references: () => Company }) creatorId?: number;
+  @ManyToOne({ entity: () => Company, references: (authored) => authored.creatorId }) creator?: Company;
+}
+
+export class Contract extends Authored {
+  @Id({ type: Number }) id?: number;
+  // @ts-expect-error a many-to-one names the foreign key it joins by
+  @ManyToOne({ entity: () => Company }) client?: Company;
+  // @ts-expect-error the owning side of a one-to-one holds its foreign key the same way
+  @OneToOne({ entity: () => Company }) vendor?: Company;
+}
+
+abstract class Unkeyed {
+  // @ts-expect-error `references` reads the class declaring the relation, which a subclass's column is not on
+  @ManyToOne({ entity: () => Company, references: (unkeyed) => unkeyed.ownerId }) owner?: Company;
+}
+export class Keyed extends Unkeyed {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => Company }) ownerId?: number;
+}
+
+class Berth {
+  [idKey]?: 'dock' | 'slot';
+  @Id({ type: String }) dock?: string;
+  @Id({ type: Number }) slot?: number;
+}
+
+export class Mooring {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) companyCode?: string;
+  // @ts-expect-error a foreign key holds the value of the key it references, and `Company.id` is a number
+  @ManyToOne({ entity: () => Company, references: (mooring) => mooring.companyCode }) company?: Company;
+
+  @Field({ type: String }) berthDock?: string;
+  @Field({ type: Number }) berthSlot?: number;
+  @ManyToOne({
+    entity: () => Berth,
+    references: (mooring, berth) => [
+      { local: mooring.berthDock, foreign: berth.dock },
+      { local: mooring.berthSlot, foreign: berth.slot },
+    ],
+  })
+  berth?: Berth;
+  @ManyToOne({
+    entity: () => Berth,
+    references: (mooring, berth) => [
+      // @ts-expect-error each column holds the value of the key it is paired with
+      { local: mooring.berthSlot, foreign: berth.dock },
+      { local: mooring.berthSlot, foreign: berth.slot },
+    ],
+  })
+  crossed?: Berth;
+  // @ts-expect-error one column cannot hold a key of several
+  @ManyToOne({ entity: () => Berth, references: (mooring) => mooring.berthDock }) sole?: Berth;
+}
+
+type Uuid = `${string}-${string}`;
+
+class Ledger {
+  @Id({ type: 'uuid' }) id?: Uuid;
+}
+
+class Note {
+  @Id({ type: Number }) id?: number;
+}
+
+/** A column holds every value of the key it joins: a wider one does, a narrower one does not. */
+export class Entry {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) ledgerCode?: string;
+  @ManyToOne({ entity: () => Ledger, references: (entry) => entry.ledgerCode }) ledger?: Ledger;
+  @Field({ type: String }) noteRef?: Uuid;
+  // @ts-expect-error a `Uuid` column cannot hold every `number` key
+  @ManyToOne({ entity: () => Note, references: (entry) => entry.noteRef }) note?: Note;
+}
+
+class Review {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) body?: string;
+  @Field({ type: Number }) berthSlot?: number;
+  @Field({ references: () => Company }) companyId?: number;
+  @ManyToOne({ entity: () => Company, references: (review) => review.companyId }) company?: Company;
+  touch(): void {}
+}
+
+/** `mappedBy` names the member of the target holding this side's key: its relation, or its one column. */
+export class Reviewed {
+  @Id({ type: Number }) id?: number;
+  @OneToMany({ entity: () => Review, mappedBy: (review) => review.company }) byRelation?: Review[];
+  @OneToMany({ entity: () => Review, mappedBy: (review) => review.companyId }) byColumn?: Review[];
+  // @ts-expect-error a method holds no key
+  @OneToMany({ entity: () => Review, mappedBy: (review) => review.touch }) byMethod?: Review[];
+  // @ts-expect-error a string column cannot hold this side's number key
+  @OneToMany({ entity: () => Review, mappedBy: (review) => review.body }) byBody?: Review[];
+}
+
+export class ReviewedBerth {
+  [idKey]?: 'dock' | 'slot';
+  @Id({ type: String }) dock?: string;
+  @Id({ type: Number }) slot?: number;
+  // @ts-expect-error one column cannot hold a composite key: map it by the relation on the other side
+  @OneToMany({ entity: () => Review, mappedBy: (review) => review.berthSlot }) reviews?: Review[];
+}
+
+export class Docking {
+  @Id({ type: Number }) id?: number;
+  // @ts-expect-error a column references one key, and `Berth`'s is composite
+  @Field({ references: () => Berth }) berthId?: number;
 }

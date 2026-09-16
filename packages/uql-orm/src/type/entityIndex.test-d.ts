@@ -71,7 +71,7 @@ export class Post {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
   @Field({ references: () => Article }) articleId?: number;
-  @ManyToOne({ entity: () => Article }) author?: Article;
+  @ManyToOne({ entity: () => Article, references: (post) => post.articleId }) author?: Article;
 }
 
 /** `include`'s columns are the entity's too: a typo there builds nothing, the server refusing it. */
@@ -115,7 +115,7 @@ export class SoftDeleted {
   @Field({ type: String }) title?: string;
   @Field({ type: Date }) deletedAt?: Date;
   @Field({ references: () => Article }) articleId?: number;
-  @ManyToOne({ entity: () => Article }) author?: Article;
+  @ManyToOne({ entity: () => Article, references: (softDeleted) => softDeleted.articleId }) author?: Article;
 }
 
 /**

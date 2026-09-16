@@ -10,7 +10,7 @@
  */
 
 import type { FilterOptions } from '../index.js';
-import { defineEntity, Field, Filter, Id } from '../index.js';
+import { defineEntity, defineFilter, Field, Filter, Id } from '../index.js';
 
 class Invoice {
   id?: number;
@@ -70,4 +70,25 @@ defineEntity(Bill, {
     // @ts-expect-error 'statuz' is not a field of Bill
     active: { where: { statuz: 'active' } },
   },
+});
+
+// ─── a security filter fails closed, and `softDelete` is the built-in filter's name ───
+// @ts-expect-error a security filter never skips a missing value
+export const skippingSecurityFilter: FilterOptions<Invoice> = { where: {}, security: true, onMissing: 'skip' };
+export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active' }, onMissing: 'skip' };
+
+// @ts-expect-error `softDelete` is reserved for the filter `@Field({ softDelete })` registers
+@Filter('softDelete', { where: { status: 'active' } })
+class ReservedInvoice {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) status?: string;
+}
+void ReservedInvoice;
+
+// @ts-expect-error likewise imperatively
+defineFilter(Bill, 'softDelete', { where: { status: 'active' } });
+defineEntity(Bill, {
+  fields: { id: { type: Number, isId: true } },
+  // @ts-expect-error and among an entity's filters
+  filters: { softDelete: { where: { status: 'active' } } },
 });

@@ -6,7 +6,7 @@
  * - Database introspection results (TableSchema[])
  */
 
-import { foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
+import { fieldOf, foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
@@ -122,12 +122,7 @@ export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGet
   if (!hasExplicitType && field.references && !seen.has(field.references)) {
     seen.add(field.references);
     const referencedMeta = getMeta(field.references());
-    // The column names which key it points at when the target has several; otherwise there is one.
-    const referencedKey = field.referencedKey ?? soleIdOf(referencedMeta, 'a foreign key');
-    const referencedIdField = referencedMeta.fields[referencedKey as string];
-    if (referencedIdField) {
-      return resolveColumnCanonicalType(referencedIdField, seen);
-    }
+    return resolveColumnCanonicalType(fieldOf(referencedMeta, soleIdOf(referencedMeta, 'a foreign key')), seen);
   }
   return fieldOptionsToCanonical(field);
 }
@@ -206,10 +201,10 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>)
     const foreignColumns: ColumnNode[] = [];
 
     for (const { local: localProp, foreign: foreignProp } of foreignKey.references) {
-      const localField = meta.fields[localProp];
-      const foreignField = relatedMeta.fields[foreignProp];
-      const localColumn = localField && table.columns.get(ctx.resolveColumnName(localProp, localField));
-      const foreignColumn = foreignField && relatedTable.columns.get(ctx.resolveColumnName(foreignProp, foreignField));
+      const localColumn = table.columns.get(ctx.resolveColumnName(localProp, fieldOf(meta, localProp)));
+      const foreignColumn = relatedTable.columns.get(
+        ctx.resolveColumnName(foreignProp, fieldOf(relatedMeta, foreignProp)),
+      );
       if (!localColumn || !foreignColumn) break;
       localColumns.push(localColumn);
       foreignColumns.push(foreignColumn);

@@ -323,25 +323,82 @@ function addRelationEntity(decorator: ts.Decorator, node: ts.PropertyDeclaration
 }
 
 /**
- * Names the foreign key a to-one found by name alone, `references: (post) => post.authorId` beside `author`,
- * where its entity declares or inherits that key: a declared key is no longer joined by its name.
+ * Names the foreign key a to-one found by name alone, `references: (post) => post.authorId` beside `author`.
+ * A key the entity neither declares nor inherits is declared first, on a decorated property, typed as the
+ * target's key; elsewhere it is reported.
  */
 function addForeignKeyReference(
   relation: ts.ObjectLiteralExpression,
   key: string | undefined,
   owner: Owner,
   ctx: Context,
+  property?: ts.PropertyDeclaration,
 ): void {
   const options: Options = { kind: 'literal', node: relation };
   const cardinality = propertyValue(relation, 'cardinality');
   const toOne = !cardinality || (ts.isStringLiteralLike(cardinality) && TO_ONE_CARDINALITIES.has(cardinality.text));
   const joined = ['mappedBy', 'through', 'references'].some((option) => findProperty(options, option));
   const last = relation.properties.at(-1);
-  const column = `${key}Id`;
-  if (!key || !last || !toOne || joined || !memberNames(owner.entity, ctx.checker).has(column)) {
+  if (!key || !last || !toOne || joined) {
     return;
   }
+  const column = `${key}Id`;
+  if (!memberNames(owner.entity, ctx.checker).has(column)) {
+    if (!property) {
+      ctx.unresolved.push(
+        `${ctx.describe(relation)}: declare the foreign key column '${column}' and name it in 'references'`,
+      );
+      return;
+    }
+    const declared = foreignKeyColumn(property, column, relation, ctx);
+    if (!declared) {
+      return;
+    }
+    ctx.edits.push(declared);
+  }
   ctx.edits.push(appended(last, `, references: (${owner.param}) => ${memberAccess(owner.param, column)}`));
+}
+
+/** `@Field({ references: () => Target }) <column>?: <key type>;` ahead of the relation, or why it cannot be written. */
+function foreignKeyColumn(
+  property: ts.PropertyDeclaration,
+  column: string,
+  relation: ts.ObjectLiteralExpression,
+  ctx: Context,
+): Edit | undefined {
+  const { checker } = ctx;
+  const targetType = checker.getNonNullableType(checker.getTypeAtLocation(property));
+  const target = entityGetterTarget(relation) ?? relationTargetFor(targetType, checker);
+  const keys = targetType.getProperties().filter((member) => member.declarations?.some(isIdProperty));
+  const [soleKey] = keys;
+  if (!target || !soleKey || keys.length > 1) {
+    const advice =
+      keys.length > 1
+        ? `'${target}' has a composite key: declare a column per key and pair each in 'references'`
+        : `declare the foreign key column '${column}' and name it in 'references'`;
+    ctx.unresolved.push(`${ctx.describe(property)}: ${advice}`);
+    return undefined;
+  }
+  const source = property.getSourceFile();
+  const indent = ' '.repeat(source.getLineAndCharacterOfPosition(property.getStart()).character);
+  ctx.imports.set('Field', 'the foreign key column');
+  return inserted(
+    property,
+    `@Field({ references: () => ${target} }) ${column}?: ${keyTypeSource(soleKey, property, ctx)};\n${indent}`,
+  );
+}
+
+/** The key's type as written where that is in scope, the same file, or as the checker spells it out. */
+function keyTypeSource(key: ts.Symbol, at: ts.Node, ctx: Context): string {
+  const written = key.declarations?.find(isIdProperty)?.type;
+  if (written && written.getSourceFile() === at.getSourceFile()) {
+    return written.getText();
+  }
+  return ctx.checker.typeToString(ctx.checker.getNonNullableType(ctx.checker.getTypeOfSymbolAtLocation(key, at)), at);
+}
+
+function isIdProperty(node: ts.Declaration): node is ts.PropertyDeclaration {
+  return ts.isPropertyDeclaration(node) && decoratorsOf(node).some((decorator) => decoratorName(decorator) === 'Id');
 }
 
 /**
@@ -788,7 +845,7 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
       rewriteRelationOptions(options.node, owner.param, ctx, paramFor(target));
     }
     if (TO_ONE_DECORATORS.has(name) && options.kind === 'literal') {
-      addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx);
+      addForeignKeyReference(options.node, propertyKey(node.name), owner, ctx, node);
     }
   }
   if (decorators.length) {

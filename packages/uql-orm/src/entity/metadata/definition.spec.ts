@@ -110,46 +110,6 @@ it('defineEntity refuses a dotted name, pointing at the schema option', () => {
   );
 });
 
-it('a to-one onto a composite key derives one column per key, named after each', () => {
-  @Entity()
-  class Pair {
-    [idKey]?: 'left' | 'right';
-    @Id({ type: String }) left?: string;
-    @Id({ type: Number }) right?: number;
-  }
-  @Entity()
-  class PairOwner {
-    @Id({ type: Number }) id?: number;
-    @ManyToOne({ entity: () => Pair }) pair?: Pair;
-  }
-  const meta = getMeta(PairOwner);
-  expect(meta.relations.pair?.references).toEqual([
-    { local: 'pairLeft', foreign: 'left' },
-    { local: 'pairRight', foreign: 'right' },
-  ]);
-  expect(meta.fields['pairLeft']).toMatchObject({ type: String, referencedKey: 'left' });
-  expect(meta.fields['pairRight']).toMatchObject({ type: Number, referencedKey: 'right' });
-});
-
-it('a derived foreign key onto a key typed only by its own reference falls back to Number', () => {
-  @Entity()
-  class Root {
-    @Id({ type: Number }) id?: number;
-  }
-  class Extension {
-    id?: number;
-  }
-  // Imperative, because `@Id` requires a `type` the runtime lets a reference supply instead.
-  defineId(Extension, 'id', { references: () => Root });
-  defineEntity(Extension);
-  @Entity()
-  class ExtensionNote {
-    @Id({ type: Number }) id?: number;
-    @ManyToOne({ entity: () => Extension }) extension?: Extension;
-  }
-  expect(getMeta(ExtensionNote).fields['extensionId']).toMatchObject({ type: Number, typeFromReference: true });
-});
-
 it('an inverse side keeps the columns it names itself', () => {
   @Entity()
   class Shelf {
@@ -891,8 +851,6 @@ it('one-to-many through a junction joins by the junction columns', () => {
     { local: 'bookId', foreign: 'id' },
     { local: 'authorId', foreign: 'id' },
   ]);
-  // The to-one shape would have derived one reference and put an `authorsId` column on the owner.
-  expect(meta.fields['authorsId']).toBeUndefined();
 });
 
 it('to-many relation with no way to join', () => {
@@ -913,7 +871,7 @@ it('to-many relation with no way to join', () => {
     }
     getMeta(Novel);
   }).toThrow(
-    `'Novel.chapters' is a to-many relation with no way to join: it needs 'mappedBy' (the field on the other side), 'through' (a junction entity), or 'references' (the columns).`,
+    `'Novel.chapters' is a to-many relation with no way to join: it needs 'mappedBy' (the member on the other side), 'through' (a junction entity), or 'references' (the columns).`,
   );
 });
 
@@ -929,6 +887,7 @@ it('mappedBy naming neither a field nor a relation', () => {
   class Album {
     @Field({ type: Number, isId: true })
     id?: number;
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @OneToMany({ entity: () => Track, mappedBy: (track) => track.undeclared })
     tracks?: Track[];
   }
@@ -962,7 +921,7 @@ it('a junction with no column referencing a side says which to declare', () => {
   }
 
   expect(() => getMeta(Shirt)).toThrow(
-    `'Shirt.colours' joins through 'ShirtColour', which has no column referencing 'Shirt.id': declare one, '@Field({ references: () => Shirt })'.`,
+    `'Shirt.colours' joins through 'ShirtColour', which has no column referencing 'Shirt.id': declare '@Field({ references: () => Shirt })'.`,
   );
 });
 
@@ -994,13 +953,15 @@ it('a junction resolves when read first, even with an inverse side leading back 
     @Id({ type: Number }) id?: number;
     // Ahead of the junction's own foreign key, and leading back through the junction.
     @OneToMany({ entity: () => Review, mappedBy: (review) => review.screening }) reviews?: Review[];
-    @ManyToOne({ entity: () => Film }) film?: Film;
+    @Field({ references: () => Film }) filmId?: number;
+    @ManyToOne({ entity: () => Film, references: (screening) => screening.filmId }) film?: Film;
     @Field({ references: () => Review }) reviewId?: number;
   }
   @Entity()
   class Review {
     @Id({ type: Number }) id?: number;
-    @ManyToOne({ entity: () => Screening }) screening?: Screening;
+    @Field({ references: () => Screening }) screeningId?: number;
+    @ManyToOne({ entity: () => Screening, references: (review) => review.screeningId }) screening?: Screening;
     @ManyToMany({ entity: () => Film, through: () => Screening }) films?: Film[];
   }
 
@@ -1016,7 +977,8 @@ it('an inverse side of a relation through a junction resolves whichever side is 
   class Genre {
     @Id({ type: Number }) id?: number;
     @ManyToMany({ entity: () => Album, mappedBy: (album) => album.genres }) albums?: Album[];
-    @ManyToOne({ entity: () => Album }) featured?: Album;
+    @Field({ references: () => Album }) featuredId?: number;
+    @ManyToOne({ entity: () => Album, references: (genre) => genre.featuredId }) featured?: Album;
   }
   @Entity()
   class Album {
@@ -1053,30 +1015,6 @@ it('at most one softDelete field', () => {
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
 });
 
-it('auto-generates the FK column from a relation-only declaration', () => {
-  @Entity()
-  class AutoFkTarget {
-    @Id({ type: Number })
-    id?: number;
-    @Field({ type: String })
-    name?: string;
-  }
-
-  @Entity()
-  class AutoFkOwner {
-    @Id({ type: Number })
-    id?: number;
-    @ManyToOne({ entity: () => AutoFkTarget })
-    target?: AutoFkTarget;
-  }
-
-  const meta = getMeta(AutoFkOwner);
-  // auto-created FK column mirrors an explicit `@Field({ references })` column
-  expect(meta.fields['targetId']).toMatchObject({ name: 'targetId', type: Number, typeFromReference: true });
-  expect(meta.fields['targetId']!.references!()).toBe(AutoFkTarget);
-  expect(meta.relations.target!.references).toEqual([{ local: 'targetId', foreign: 'id' }]);
-});
-
 it('a to-one joins on the foreign key its references names, whatever either is called', () => {
   @Entity()
   class Author {
@@ -1095,25 +1033,7 @@ it('a to-one joins on the foreign key its references names, whatever either is c
   expect(getKeys(getMeta(Essay).fields)).toEqual(['id', 'writtenById']);
 });
 
-it('refuses a to-one joining a column it declares by name alone, which a rename splits', () => {
-  @Entity()
-  class Harbour {
-    @Id({ type: Number }) id?: number;
-  }
-  @Entity()
-  class Ferry {
-    @Id({ type: Number }) id?: number;
-    @Field({ references: () => Harbour }) harbourId?: number;
-    @ManyToOne({ entity: () => Harbour }) harbour?: Harbour;
-  }
-
-  expect(() => getMeta(Ferry)).toThrow(
-    "'Ferry.harbour' joins 'harbourId' by name, which a rename does not follow: link them with " +
-      "'references: (ferry) => ferry.harbourId'.",
-  );
-});
-
-it('refuses a relation it cannot resolve on every read, rather than handing back the half-resolved one', () => {
+it('refuses a to-one naming no foreign key, on every read rather than handing back a half-resolved one', () => {
   @Entity()
   class Quay {
     @Id({ type: Number }) id?: number;
@@ -1122,30 +1042,66 @@ it('refuses a relation it cannot resolve on every read, rather than handing back
   class Barge {
     @Id({ type: Number }) id?: number;
     @Field({ references: () => Quay }) quayId?: number;
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @ManyToOne({ entity: () => Quay }) quay?: Quay;
   }
 
-  expect(() => getMeta(Barge)).toThrow("'Barge.quay' joins 'quayId' by name");
-  expect(() => getMeta(Barge)).toThrow("'Barge.quay' joins 'quayId' by name");
+  const refusal =
+    "'Barge.quay' needs 'references', the foreign key column it joins by, or 'mappedBy', the member on the " +
+    'other side holding it.';
+  expect(() => getMeta(Barge)).toThrow(refusal);
+  expect(() => getMeta(Barge)).toThrow(refusal);
 });
 
-it('refuses a to-one onto a composite key joining columns it declares by name alone', () => {
+it('refuses a join on a member that is not a column of its entity', () => {
   @Entity()
-  class Berth {
-    [idKey]?: 'dock' | 'slot';
-    @Id({ type: String }) dock?: string;
-    @Id({ type: Number }) slot?: number;
+  class Pier {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, computed: raw`1` }) berthCount?: number;
+  }
+  class Tug {
+    id?: number;
+    pierId?: number;
+    pier?: Pier;
+  }
+  defineEntity(Tug, { fields: { id: { type: Number, isId: true } } });
+  defineRelation(Tug, 'pier', { cardinality: 'm1', entity: () => Pier, references: (tug) => tug.pierId });
+  class Yacht {
+    id?: number;
+    pierId?: number;
+    pier?: Pier;
+  }
+  defineEntity(Yacht, { fields: { id: { type: Number, isId: true }, pierId: { type: Number } } });
+  defineRelation(Yacht, 'pier', {
+    cardinality: 'm1',
+    entity: () => Pier,
+    references: (yacht, pier) => [{ local: yacht.pierId, foreign: pier.berthCount }],
+  });
+
+  expect(() => getMeta(Tug)).toThrow("'Tug.pier' joins 'Tug.pierId', which is not a column: declare it with '@Field'.");
+  expect(() => getMeta(Yacht)).toThrow(
+    "'Yacht.pier' joins 'Pier.berthCount', which is not a column: declare it with '@Field'.",
+  );
+});
+
+it('refuses a to-one whose foreign key references another entity', () => {
+  @Entity()
+  class Harbour {
+    @Id({ type: Number }) id?: number;
   }
   @Entity()
-  class Mooring {
+  class Marina {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) berthDock?: string;
-    @ManyToOne({ entity: () => Berth }) berth?: Berth;
+  }
+  @Entity()
+  class Ferry {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Marina }) harbourId?: number;
+    @ManyToOne({ entity: () => Harbour, references: (ferry) => ferry.harbourId }) harbour?: Harbour;
   }
 
-  expect(() => getMeta(Mooring)).toThrow(
-    "'Mooring.berth' joins 'berthDock', 'berthSlot' by name, which a rename does not follow: link them with " +
-      "'references' pairs.",
+  expect(() => getMeta(Ferry)).toThrow(
+    "'Ferry.harbour' joins 'Ferry.harbourId', a foreign key to 'Marina', not to 'Harbour'.",
   );
 });
 
@@ -1160,6 +1116,7 @@ it('refuses references naming one column for a composite key, which needs a colu
   class Rental {
     @Id({ type: Number }) id?: number;
     @Field({ type: String }) lockerRef?: string;
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @ManyToOne({ entity: () => Locker, references: (rental) => rental.lockerRef }) locker?: Locker;
   }
 
@@ -1189,13 +1146,14 @@ it('refuses references naming one column on a relation that holds no foreign key
   );
 });
 
-it('a relation a base class declares gives every entity extending it its own foreign key column', () => {
+it('a relation a base class declares joins on its foreign key in every entity extending it', () => {
   @Entity()
   class Region {
     @Id({ type: Number }) id?: number;
   }
   abstract class Regional {
-    @ManyToOne({ entity: () => Region }) region?: Region;
+    @Field({ references: () => Region }) regionId?: number;
+    @ManyToOne({ entity: () => Region, references: (regional) => regional.regionId }) region?: Region;
   }
   @Entity()
   class Office extends Regional {
@@ -1206,8 +1164,8 @@ it('a relation a base class declares gives every entity extending it its own for
     @Id({ type: Number }) id?: number;
   }
 
-  expect(getKeys(getMeta(Office).fields)).toEqual(['id', 'regionId']);
-  expect(getKeys(getMeta(Depot).fields)).toEqual(['id', 'regionId']);
+  expect(getMeta(Office).relations.region?.references).toEqual([{ local: 'regionId', foreign: 'id' }]);
+  expect(getMeta(Depot).relations.region?.references).toEqual([{ local: 'regionId', foreign: 'id' }]);
 });
 
 it('auto-registers the built-in softDelete filter from @Field({ softDelete })', () => {
@@ -1231,6 +1189,7 @@ it('registers @Filter and bulk filters', () => {
 
 it('softDelete is a reserved filter name', () => {
   expect(() => {
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Filter('softDelete', { where: { status: 'bogus' } })
     @Entity()
     class ReservedFilter {
@@ -1250,6 +1209,7 @@ it('softDelete is a reserved filter name', () => {
  */
 it('a security filter cannot opt into skipping when its condition is unresolved', () => {
   expect(() => {
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Filter('tenant', { where: () => undefined, security: true, onMissing: 'skip' })
     @Entity()
     class SkippableSecurityFilter {
@@ -1303,7 +1263,16 @@ it('a junction pairs every key of both sides, and the inverse side swaps the gro
   @Entity()
   class EnrolmentBadge {
     @Id({ type: Number }) id?: number;
-    @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+    @Field({ type: Number }) enrolmentStudentId?: number;
+    @Field({ type: String }) enrolmentCourseId?: string;
+    @ManyToOne({
+      entity: () => Enrolment,
+      references: (enrolmentBadge, enrolment) => [
+        { local: enrolmentBadge.enrolmentStudentId, foreign: enrolment.studentId },
+        { local: enrolmentBadge.enrolmentCourseId, foreign: enrolment.courseId },
+      ],
+    })
+    enrolment?: Enrolment;
     @Field({ references: () => Badge }) badgeId?: number;
   }
 
@@ -1331,6 +1300,7 @@ it('refuses an inverse relation mapped by a field when the key is composite', ()
     [idKey]?: 'studentId' | 'courseId';
     @Id({ type: Number }) studentId?: number;
     @Id({ type: String }) courseId?: string;
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @OneToMany({ entity: () => Note, mappedBy: (note) => note.enrolmentStudentId })
     notes?: Note[];
   }
@@ -1357,6 +1327,96 @@ it('pairs an inverse relation mapped by a field from the parent side', () => {
   expect(getMeta(Owner).relations.notes?.references).toEqual([{ local: 'id', foreign: 'ownerId' }]);
 });
 
+/** A foreign key to another entity would join this key against that one's, returning unrelated rows. */
+it('refuses an inverse relation mapped by a field referencing another entity', () => {
+  @Entity()
+  class Reader {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Review {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Reader }) readerId?: number;
+  }
+  @Entity()
+  class Critic {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({ entity: () => Review, mappedBy: (review) => review.readerId })
+    reviews?: Review[];
+  }
+
+  expect(() => getMeta(Critic)).toThrow(
+    "'Critic.reviews' joins 'Review.readerId', a foreign key to 'Reader', not to 'Critic'.",
+  );
+});
+
+it('refuses a to-many joining columns whose foreign key, on the other side, references another entity', () => {
+  @Entity()
+  class Crew {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Sailor {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Crew }) crewId?: number;
+  }
+  @Entity()
+  class Captain {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({
+      entity: () => Sailor,
+      references: (captain, sailor) => [{ local: captain.id, foreign: sailor.crewId }],
+    })
+    sailors?: Sailor[];
+  }
+
+  expect(() => getMeta(Captain)).toThrow(
+    "'Captain.sailors' joins 'Sailor.crewId', a foreign key to 'Crew', not to 'Captain'.",
+  );
+});
+
+it('refuses an inverse relation mapped by a relation to another entity', () => {
+  @Entity()
+  class Editor {
+    @Id({ type: Number }) id?: number;
+  }
+  @Entity()
+  class Draft {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) editorId?: number;
+    @ManyToOne({ entity: () => Editor, references: (draft) => draft.editorId }) editor?: Editor;
+  }
+  @Entity()
+  class Proofreader {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({ entity: () => Draft, mappedBy: (draft) => draft.editor }) drafts?: Draft[];
+  }
+
+  expect(() => getMeta(Proofreader)).toThrow(
+    "'Proofreader.drafts' is mapped by 'Draft.editor', a relation to 'Editor', not to 'Proofreader'.",
+  );
+});
+
+it('accepts an inverse relation mapped by a field referencing the entity it inherits it from', () => {
+  @Entity()
+  class Shelf {
+    @Id({ type: Number }) id?: number;
+    @OneToMany({ entity: () => Volume, mappedBy: (volume) => volume.shelfId })
+    volumes?: Volume[];
+  }
+  class Bookcase extends Shelf {
+    label?: string;
+  }
+  defineEntity(Bookcase, { fields: { label: { type: String } } });
+  @Entity()
+  class Volume {
+    @Id({ type: Number }) id?: number;
+    @Field({ references: () => Shelf }) shelfId?: number;
+  }
+
+  expect(getMeta(Bookcase).relations.volumes?.references).toEqual([{ local: 'id', foreign: 'shelfId' }]);
+});
+
 /** The message a registration error carries, for a test that pins what it says and not how. */
 function getError(run: () => unknown): string {
   try {
@@ -1378,6 +1438,7 @@ it('refuses a plain foreign key pointing at a composite key', () => {
   @Entity()
   class Note {
     @Id({ type: Number }) id?: number;
+    // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Field({ references: () => Enrolment }) enrolmentStudentId?: number;
   }
 
@@ -1385,7 +1446,7 @@ it('refuses a plain foreign key pointing at a composite key', () => {
   const error = getError(() => getMeta(Note));
   expect(error).toContain(`'Note.enrolmentStudentId'`);
   expect(error).toContain('composite (studentId, courseId)');
-  expect(error).toContain('@ManyToOne({ entity: () => Enrolment })');
+  expect(error).toContain("pair each with it in a '@ManyToOne' to 'Enrolment'");
 });
 
 /** Every column of the parent's key, or the ones it did not replace would widen the child's. */
@@ -1461,18 +1522,18 @@ it('extends inherits the fields, relations, hooks and filters of a base and its 
   defineHook(Timestamped, 'stamp', 'beforeInsert');
 
   class Owned extends Timestamped {
-    ownerId?: number;
+    ownerId?: string;
     owner?: User;
   }
-  defineField(Owned, 'ownerId', { type: Number });
+  defineField(Owned, 'ownerId', { type: String });
   defineRelation(Owned, 'owner', { cardinality: 'm1', entity: () => User, references: (owned) => owned.ownerId });
-  defineFilter(Owned, 'mine', { where: { ownerId: 1 }, default: false });
+  defineFilter(Owned, 'mine', { where: { ownerId: 'u1' }, default: false });
 
   class Ticket {
     id?: number;
     title?: string;
     createdAt?: Date;
-    ownerId?: number;
+    ownerId?: string;
     owner?: User;
     stamp(): void {}
   }
@@ -1485,7 +1546,7 @@ it('extends inherits the fields, relations, hooks and filters of a base and its 
   expect(getKeys(meta.fields).sort()).toEqual(['createdAt', 'id', 'ownerId', 'title']);
   expect(meta.relations['owner']?.references).toEqual([{ local: 'ownerId', foreign: 'id' }]);
   expect(meta.hooks?.beforeInsert).toEqual([{ methodName: 'stamp' }]);
-  expect(meta.filters?.['mine']).toEqual({ where: { ownerId: 1 }, default: false });
+  expect(meta.filters?.['mine']).toEqual({ where: { ownerId: 'u1' }, default: false });
   expect(meta.ids).toEqual(['id']);
 });
 
@@ -1562,7 +1623,9 @@ it('a junction keeps the relations it declares itself', () => {
   class FilmScreening {
     @Field({ type: Number, isId: true })
     id?: number;
-    @ManyToOne({ entity: () => Film, cascade: 'delete' })
+    @Field({ references: () => Film })
+    filmId?: number;
+    @ManyToOne({ entity: () => Film, cascade: 'delete', references: (filmScreening) => filmScreening.filmId })
     film?: Film;
     @Field({ references: () => Screening })
     screeningId?: number;

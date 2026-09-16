@@ -28,7 +28,7 @@ if (!existsSync(declarations)) {
   throw new Error(`no declarations at ${declarations} - run 'bun run build' first.`);
 }
 
-const entities = /*ts*/ `import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany } from 'uql-orm';
 
 @Entity() export class Company {
   @Id({ type: Number }) id?: number;
@@ -43,7 +43,22 @@ const entities = /*ts*/ `import { Entity, Field, Id, ManyToOne, OneToMany } from
   @Field({ type: Number }) age?: number;
   @Field({ type: Date }) createdAt?: Date;
   @Field({ type: Number, references: () => Company }) companyId?: number;
-  @ManyToOne({ entity: () => Company }) company?: Company;
+  @ManyToOne({ entity: () => Company, references: (u) => u.companyId }) company?: Company;
+}
+@Entity() export class Membership {
+  [idKey]?: 'userId' | 'companyId';
+  @Id({ type: Number }) userId?: number;
+  @Id({ type: Number }) companyId?: number;
+}
+@Entity() export class Seat {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number }) memberUserId?: number;
+  @Field({ type: Number }) memberCompanyId?: number;
+  @ManyToOne({
+    entity: () => Membership,
+    references: (s, m) => [{ local: s.memberUserId, foreign: m.userId }, { local: s.memberCompanyId, foreign: m.companyId }],
+  })
+  member?: Membership;
 }
 `;
 

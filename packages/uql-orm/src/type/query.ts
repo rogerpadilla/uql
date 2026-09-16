@@ -115,14 +115,21 @@ export type FilterOptions<E = unknown> = {
   readonly where: FilterWhere<E>;
   /** Applied to every query unless bypassed via `QueryOptions.filters`. Defaults to `true`. */
   readonly default?: boolean;
-  /**
-   * Row-level-security filter: always applied (ignores `QueryOptions.filters` bypass) and
-   * AND-merged so a client `$where` on the same field can't override it.
-   */
-  readonly security?: boolean;
-  /** What to do when {@link where} returns `undefined`. Defaults to `skip`, or `throw` for `security`. */
-  readonly onMissing?: FilterOnMissing;
-};
+} & (
+  | {
+      readonly security?: false;
+      /** What to do when {@link FilterOptions.where} returns `undefined`. Defaults to `skip`. */
+      readonly onMissing?: FilterOnMissing;
+    }
+  | {
+      /**
+       * Row-level-security filter: always applied (ignores `QueryOptions.filters` bypass) and
+       * AND-merged so a client `$where` on the same field can't override it. It fails closed.
+       */
+      readonly security: true;
+      readonly onMissing?: 'throw';
+    }
+);
 
 /**
  * direction for the sort.

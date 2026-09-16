@@ -35,7 +35,10 @@ class Order {
   @Field({ type: Number })
   total?: number;
 
-  @ManyToOne({ entity: () => Customer })
+  @Field({ references: () => Customer })
+  customerId?: number;
+
+  @ManyToOne({ entity: () => Customer, references: (order) => order.customerId })
   customer?: Customer;
 }
 

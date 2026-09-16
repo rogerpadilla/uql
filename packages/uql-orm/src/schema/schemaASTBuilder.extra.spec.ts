@@ -97,85 +97,13 @@ describe('SchemaASTBuilder Extra Coverage', () => {
     expect(rel?.from.columns[0].name).toBe('groupIdKey');
   });
 
-  it('should skip relation if local field is missing', () => {
-    @Entity()
-    class RelTarget {
-      @Id({ type: Number }) id?: number;
-    }
-
-    @Entity()
-    class RelSource {
-      @Id({ type: Number }) id?: number;
-
-      // 'missingId' field does not exist
-      @ManyToOne({
-        entity: () => RelTarget,
-        references: (relSource, relTarget) => [{ local: 'missingId' as never, foreign: relTarget.id }],
-      })
-      target?: RelTarget;
-    }
-
-    const ast = buildSchemaAST([RelTarget, RelSource]);
-    // Should have no relationships because local field is missing
-    expect(ast.relationships.length).toBe(0);
-  });
-
-  it('should skip relation if foreign field is missing', () => {
-    @Entity()
-    class RelTarget2 {
-      @Id({ type: Number }) id?: number;
-    }
-
-    @Entity()
-    class RelSource2 {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) targetId?: number;
-
-      // 'missingId' field does not exist on target
-      @ManyToOne({
-        entity: () => RelTarget2,
-        references: (relSource2, relTarget2) => [{ local: relSource2.targetId, foreign: 'missingId' as never }],
-      })
-      target?: RelSource2;
-    }
-
-    const ast = buildSchemaAST([RelTarget2, RelSource2]);
-    expect(ast.relationships.length).toBe(0);
-  });
-
-  it('should skip relation if columns are inlined computed (no columns created)', () => {
-    @Entity()
-    class ComputedTarget {
-      @Id({ type: Number }) id?: number;
-    }
-
-    @Entity()
-    class ComputedSource {
-      @Id({ type: Number }) id?: number;
-
-      @Field({ type: Number, computed: raw`1` })
-      targetId?: number;
-
-      @ManyToOne({
-        entity: () => ComputedTarget,
-        references: (computedSource, computedTarget) => [
-          { local: computedSource.targetId, foreign: computedTarget.id },
-        ],
-      })
-      target?: ComputedTarget;
-    }
-
-    const ast = buildSchemaAST([ComputedTarget, ComputedSource]);
-    // Relation depends on 'targetId' column, but it is inlined, so no column => no relation in AST
-    expect(ast.relationships.length).toBe(0);
-  });
-
   it('should handle missing tables due to unstable resolution (Entity Guards)', () => {
     @Entity()
     class Unstable {
       @Id({ type: Number }) id?: number;
       @Field({ type: String, index: true }) name?: string;
-      @ManyToOne({ entity: () => Unstable }) self?: Unstable;
+      @Field({ references: () => Unstable }) selfId?: number;
+      @ManyToOne({ entity: () => Unstable, references: (unstable) => unstable.selfId }) self?: Unstable;
     }
 
     let callCount = 0;

@@ -11,8 +11,6 @@ class TypoRejected {
   @Field({ type: String, nulable: true }) a?: string;
   // @ts-expect-error - registration works this out; it is not authorable
   @Field({ type: String, typeFromReference: true }) b?: string;
-  // @ts-expect-error - likewise
-  @Field({ type: String, referencedKey: 'id' }) c?: string;
 }
 
 @Entity()

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { sqlToCanonical } from '../schema/canonicalType.js';
@@ -51,7 +51,7 @@ describe('SqlSchemaGenerator Advanced', () => {
     expect(new SqlSchemaGenerator(new PostgresDialect({ namingStrategy })).namingStrategy).toBe(namingStrategy);
   });
 
-  it('types a foreign key as the key it points at, declared or derived from a relation', () => {
+  it('types a foreign key as the key it points at', () => {
     @Entity()
     class RefTarget {
       @Id({ type: String, columnType: 'uuid' }) id?: string;
@@ -60,11 +60,28 @@ describe('SqlSchemaGenerator Advanced', () => {
     class RefSource {
       @Id({ type: Number }) id?: number;
       @Field({ references: () => RefTarget }) ownerId?: string;
-      @ManyToOne({ entity: () => RefTarget }) target?: RefTarget;
     }
     const { fields } = getMeta(RefSource);
     expect(generator.getSqlType(fields.ownerId!)).toBe('UUID');
-    expect(generator.getSqlType(fields['targetId']!)).toBe('UUID');
+  });
+
+  /** One resolution for the column a table gets and the type this reports, so the two cannot disagree. */
+  it('types a foreign key as its create statement does, its own columnType first, and a shared key never serial', () => {
+    @Entity()
+    class Account {
+      @Id({ type: Number }) id?: number;
+    }
+    @Entity()
+    class AccountProfile {
+      @Id({ type: Number, references: () => Account }) id?: number;
+      @Field({ references: () => Account, columnType: 'int' }) backupId?: number;
+    }
+    const { fields } = getMeta(AccountProfile);
+    const ddl = generator.generateCreateSchema([Account, AccountProfile]).join('\n');
+
+    expect(generator.getSqlType(fields.id!)).toBe('BIGINT');
+    expect(generator.getSqlType(fields.backupId!)).toBe('INTEGER');
+    expect(ddl).toContain('CREATE TABLE "AccountProfile" (\n  "id" BIGINT NOT NULL,\n  "backupId" INTEGER,');
   });
 
   it('comments a column of a table that has no comment of its own', () => {

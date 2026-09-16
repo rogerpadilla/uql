@@ -1551,7 +1551,16 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Attendance {
       @Id({ type: Number }) id?: number;
-      @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+      @Field({ type: Number }) enrolmentStudentId?: number;
+      @Field({ type: String }) enrolmentCourseId?: string;
+      @ManyToOne({
+        entity: () => Enrolment,
+        references: (attendance, enrolment) => [
+          { local: attendance.enrolmentStudentId, foreign: enrolment.studentId },
+          { local: attendance.enrolmentCourseId, foreign: enrolment.courseId },
+        ],
+      })
+      enrolment?: Enrolment;
     }
 
     expect(() => this.dialect.aggregationPipeline(Attendance, { $where: { enrolment: { studentId: 1 } } })).toThrow(

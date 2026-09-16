@@ -133,14 +133,11 @@ export function isSoleIdField<E>(meta: EntityMeta<E>, field: FieldOptions): bool
 }
 
 /**
- * Whether the database generates this column's value.
- *
- * The only answer: the schema AST asked it separately and disagreed on three counts - it ignored
- * `onInsert`, so a key the application generates was still emitted `AUTO_INCREMENT`, and it ignored
- * `columnType`, where this one used to let *any* declared width suppress the whole inference. A key
- * that states its width is still a generated key; one that states how it is filled is not.
+ * Whether the database generates this column's value: a numeric key nothing else fills. `onInsert` fills
+ * it from the application and `references` from the row it shares its key with; a `columnType` only
+ * states its width. The one answer the create statement and the diff both read.
  */
 export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boolean {
   if (field.autoIncrement !== undefined) return field.autoIncrement;
-  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert;
+  return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.references;
 }

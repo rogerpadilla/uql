@@ -1,9 +1,9 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta, soleIdOf } from '../entity/index.js';
-import { canonicalToSql, engineType, fieldOptionsToCanonical, isVectorCategory } from '../schema/canonicalType.js';
+import { getMeta } from '../entity/index.js';
+import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
 import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import { buildSchemaAST, resolveColumnCanonicalType } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
@@ -435,26 +435,15 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return def;
   }
 
+  /**
+   * The column type a field gets, resolved as its table resolves it. A field alone cannot tell that it is
+   * one column of a composite key, which its table never makes serial.
+   */
   public getSqlType(field: FieldMeta): string {
-    // A foreign key takes the type of the key it points at. A `referencedKey` the target does not
-    // have falls through to this column's own options, as the AST builder does with the same case.
-    if (field.references) {
-      const refMeta = getMeta(field.references());
-      const refIdField = refMeta.fields[field.referencedKey ?? soleIdOf(refMeta, 'a foreign key')];
-      if (refIdField) {
-        return this.getSqlType({ ...refIdField, references: undefined, isId: undefined, autoIncrement: false });
-      }
-    }
-
-    // Get canonical type and convert to SQL
-    const canonical = fieldOptionsToCanonical(field);
-
-    // Special case for serial primary keys
-    if (isAutoIncrement(field, field.isId === true)) {
-      return this.serialType(canonical);
-    }
-
-    return this.canonicalTypeToSql(canonical);
+    const canonical = resolveColumnCanonicalType(field);
+    return isAutoIncrement(field, field.isId === true)
+      ? this.serialType(canonical)
+      : this.canonicalTypeToSql(canonical);
   }
 
   /** The statements that alter `column` in place, as this dialect spells them. */

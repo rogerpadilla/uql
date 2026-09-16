@@ -220,7 +220,8 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
 export class Post {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string;
-  @ManyToOne({ entity: () => User }) author?: User;
+  @Field({ references: () => User }) authorId?: string;
+  @ManyToOne({ entity: () => User, references: (post) => post.authorId }) author?: User;
 }
 
 @Entity()

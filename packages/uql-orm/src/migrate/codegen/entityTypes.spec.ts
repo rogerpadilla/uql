@@ -60,8 +60,9 @@ it('emits names a generated file can carry, whatever a content type was called',
     fields: {
       id: { type: Number, isId: true },
       'hero-image': { type: String },
+      outsideId: { references: () => Outside },
     },
-    relations: { outside: { cardinality: 'm1', entity: () => Outside } },
+    relations: { outside: { cardinality: 'm1', entity: () => Outside, references: () => 'outsideId' } },
   });
   const collides = { blogpost: class {} }.blogpost;
   defineEntity(collides, { fields: { id: { type: Number, isId: true } } });

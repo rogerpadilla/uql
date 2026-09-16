@@ -2,6 +2,7 @@ import type {
   EntityIndexColumnInput,
   EntityIndexOptions,
   EntityOptions,
+  FilterName,
   FilterOptions,
   RefMap,
   Type,
@@ -21,7 +22,7 @@ import { drainRegistrations } from './bag.js';
  * here would find only what the base class left behind. `defineEntity` reads it off the class instead,
  * which is correct for the imperative path because it runs later still.
  */
-export function Entity<E>(opts?: EntityOptions<E>) {
+export function Entity<E>(opts?: NoInfer<EntityOptions<E>>) {
   return (entity: Type<E>, context?: ClassDecoratorContext): void => {
     applyMembers(entity, drainRegistrations(context?.metadata));
     defineEntity(entity, opts);
@@ -33,7 +34,7 @@ export function Entity<E>(opts?: EntityOptions<E>) {
  *
  * @example `@Filter('active', { where: { status: 'active' }, default: false })`
  */
-export function Filter<E>(name: string, opts: FilterOptions<E>) {
+export function Filter<E, N extends string>(name: FilterName<N>, opts: FilterOptions<E>) {
   return (entity: Type<E>): void => {
     defineFilter(entity, name, opts);
   };

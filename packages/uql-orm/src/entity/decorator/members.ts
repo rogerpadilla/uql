@@ -2,6 +2,7 @@ import type {
   EntityGetter,
   FieldOptions,
   FieldType,
+  HasCompositeKey,
   HookEvent,
   IdValue,
   NamedIdKey,
@@ -46,7 +47,9 @@ type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
     ? EnumValue<Extract<E[number], TsTypeOf<T>>, TsTypeOf<T>>
     : TsTypeOf<T>
   : O extends { readonly references: EntityGetter<infer E> }
-    ? IdValue<E>
+    ? HasCompositeKey<E> extends true
+      ? { readonly __compositeKeyNeedsAColumnPerKey: true }
+      : IdValue<E>
     : never;
 
 /**

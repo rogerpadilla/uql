@@ -18,6 +18,11 @@ export const idKey = Symbol('idKey');
  */
 export const SOFT_DELETE_FILTER = 'softDelete';
 
+/** A filter name an entity may declare: any but {@link SOFT_DELETE_FILTER}, which a refusal names. */
+export type FilterName<N extends string> = N extends typeof SOFT_DELETE_FILTER
+  ? `'${N}' is reserved for the filter @Field({ softDelete }) registers`
+  : N;
+
 /**
  * Infers the key names of an entity
  */
@@ -269,6 +274,9 @@ export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdK
  */
 export type IdValue<E> = E[IdKey<E>];
 
+/** Whether `E`'s primary key spans several columns, which no single column can reference. */
+export type HasCompositeKey<E> = true extends IsUnion<IdKey<E>> ? true : false;
+
 /** Every column of a key, which is how a composite row is named and what a `$where` reduces to. */
 type IdMap<E> = Partial<Pick<E, IdKey<E>>>;
 
@@ -428,11 +436,6 @@ export type FieldMeta<V = TsTypeOf<FieldType>> = Except<FieldOptions<V>, 'comput
    * what keeps a `uuid` primary key from becoming TEXT on every foreign key pointing at it.
    */
   readonly typeFromReference?: boolean;
-  /**
-   * Which key of the referenced entity this column points at, where that entity has more than one.
-   * Set by `fillOwningSide`; without it a composite target's columns would all take the first key's type.
-   */
-  readonly referencedKey?: string;
 };
 
 /**
@@ -683,7 +686,7 @@ export type RelationOptions<E, O = unknown> = {
   readonly onDelete?: ForeignKeyAction;
   readonly onUpdate?: ForeignKeyAction;
   /** The inverse side: the member of the target holding the foreign key or the owning relation, `(post) => post.author`. */
-  mappedBy?: (keys: KeyMap<E>) => Key<E>;
+  mappedBy?: (keys: KeyMap<E>) => RelationKey<E> | ForeignKey<E, O>;
   /**
    * The pivot entity of a many-to-many. Unconstrained by `E`: a pivot holds foreign keys to both
    * sides and is not a relation value of the target, so nothing about it is derivable from `E`.
@@ -695,11 +698,21 @@ export type RelationOptions<E, O = unknown> = {
    * foreign: customer.code }]`. A `through` relation takes none: it joins by the junction's column
    * referencing each side.
    */
-  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => FieldKey<O> | readonly RelationReference<O, E>[];
+  references?: (local: KeyMap<O>, foreign: KeyMap<E>) => ForeignKey<O, E> | readonly RelationReference<O, E>[];
 };
 
-/** One pair of join columns, each a field read off its entity's key map. */
-export type RelationReference<O, E> = { readonly local: FieldKey<O>; readonly foreign: FieldKey<E> };
+/** The one column of `O` that can be a foreign key to `E`: a field holding `E`'s key, which has to be a single one. */
+type ForeignKey<O, E> = HasCompositeKey<E> extends true ? never : FieldKeyHolding<O, IdValue<E>>;
+
+/** One pair of join columns, each a field read off its entity's key map, the local one holding the foreign's value. */
+export type RelationReference<O, E> = {
+  readonly [F in keyof E]-?: { readonly local: FieldKeyHolding<O, E[F]>; readonly foreign: F };
+}[FieldKey<E>];
+
+/** The fields of `O` that can hold any value `V` takes. */
+type FieldKeyHolding<O, V> = {
+  readonly [K in keyof O]-?: [NonNullable<V>] extends [NonNullable<O[K]>] ? K : never;
+}[FieldKey<O>];
 
 /** {@link RelationOptions.references} as pairs alone, for a to-many, which holds no foreign key of its own to name. */
 type RelationReferencePairs<E, O> = (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
@@ -732,13 +745,11 @@ type RelationOwnerJoin<E, O> =
   | { readonly references: RelationReferencePairs<E, O>; readonly through?: never };
 
 // `onDelete`/`onUpdate` only here: the owning side is the one that holds the foreign key, so the inverse
-// side (`mappedBy`) has no constraint to attach an action to.
-type RelationOptionsOwner<E, O> = Pick<
-  RelationOptions<E, O>,
-  'entity' | 'references' | 'cascade' | 'onDelete' | 'onUpdate'
->;
-type RelationOptionsInverseSide<E> = Pick<RelationOptions<E>, 'entity' | 'cascade'> &
-  Required<Pick<RelationOptions<E>, 'mappedBy'>>;
+// side (`mappedBy`) has no constraint to attach an action to. `references` is required: it names that key.
+type RelationOptionsOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade' | 'onDelete' | 'onUpdate'> &
+  Required<Pick<RelationOptions<E, O>, 'references'>>;
+type RelationOptionsInverseSide<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> &
+  Required<Pick<RelationOptions<E, O>, 'mappedBy'>>;
 type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> & RelationOwnerJoin<E, O>;
 
 /**
@@ -783,17 +794,17 @@ export type RelationReferences = { readonly local: string; readonly foreign: str
 
 export type RelationCardinality = '11' | 'm1' | '1m' | 'mm';
 
-export type RelationOneToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O> | RelationOptionsInverseSide<E>;
+export type RelationOneToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O> | RelationOptionsInverseSide<E, O>;
 
 export type RelationOneToManyOptions<E, O = unknown> =
-  | RelationOptionsInverseSide<E>
+  | RelationOptionsInverseSide<E, O>
   | RelationOptionsThroughOwner<E, O>;
 
 export type RelationManyToOneOptions<E, O = unknown> = RelationOptionsOwner<E, O>;
 
 export type RelationManyToManyOptions<E, O = unknown> =
   | RelationOptionsThroughOwner<E, O>
-  | RelationOptionsInverseSide<E>;
+  | RelationOptionsInverseSide<E, O>;
 
 /**
  * Lifecycle hook event names.
@@ -1103,7 +1114,7 @@ export type EntityOptions<E = unknown> = {
    */
   readonly schema?: string;
   /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
-  readonly filters?: Record<string, FilterOptions<E>>;
+  readonly filters?: Record<string, FilterOptions<E>> & { readonly [SOFT_DELETE_FILTER]?: never };
   /** Scalar fields; use `isId: true` on exactly one field for the primary key. */
   readonly fields?: EntityFieldOptions<E>;
   readonly relations?: EntityRelationOptions<E>;

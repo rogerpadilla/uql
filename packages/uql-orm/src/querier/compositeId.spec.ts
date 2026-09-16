@@ -420,18 +420,21 @@ describe('changing the primary key of an existing table', () => {
 describe('a composite key across a relation', () => {
   const dialect = new PostgresDialect();
 
-  /** Declares no foreign key of its own, so every column below is one registration worked out. */
   @Entity()
   class Attendance {
     @Id({ type: Number }) id?: number;
-    @ManyToOne({ entity: () => Enrolment }) enrolment?: Enrolment;
+    @Field({ type: Number }) enrolmentStudentId?: number;
+    @Field({ type: String }) enrolmentCourseId?: string;
+    @ManyToOne({
+      entity: () => Enrolment,
+      references: (attendance, enrolment) => [
+        { local: attendance.enrolmentStudentId, foreign: enrolment.studentId },
+        { local: attendance.enrolmentCourseId, foreign: enrolment.courseId },
+      ],
+    })
+    enrolment?: Enrolment;
   }
   const ddl = new SqlSchemaGenerator(dialect).generateCreateSchema([Enrolment, Attendance]).join('\n');
-
-  it('derives one column per key, named for the relation and the key', () => {
-    expect(ddl).toContain('"enrolmentStudentId"');
-    expect(ddl).toContain('"enrolmentCourseId"');
-  });
 
   it('names one foreign key over every column, not one per column', () => {
     expect(ddl).toContain(
@@ -439,12 +442,6 @@ describe('a composite key across a relation', () => {
     );
     // Two single-column constraints would not enforce the pair, and the engine rejects them anyway.
     expect(ddl).not.toContain('FOREIGN KEY ("enrolmentStudentId") REFERENCES');
-  });
-
-  /** Neither column states a type, so both are resolved from the key each one points at. */
-  it('types each foreign key column from the key it points at', () => {
-    expect(ddl).toContain('"enrolmentStudentId" BIGINT');
-    expect(ddl).toContain('"enrolmentCourseId" TEXT');
   });
 
   it('correlates a relation filter on every key of the parent', () => {

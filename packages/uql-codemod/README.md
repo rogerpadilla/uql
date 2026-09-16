@@ -28,7 +28,7 @@ Only `--flag=value` is read, and anything unrecognised is an error. It exits `0`
 - `entity: () => X` on a bare relation decorator, and `Relation<T>` to `T`, its import going with the last use.
 - `virtual` to `computed` (on `@Field` and in `defineEntity`'s `fields`), a check's `expression` and a filter's `condition` to `where` (`@Entity`/`defineEntity`, `@Filter`, `defineFilter`), `raw('sql')` to the tagged template, and a `raw` alias argument onto `.as()`.
 - Members named by string to callbacks: `mappedBy: 'author'` to `(post) => post.author`, and `@Index`, `include`, `references` and `@Entity`/`defineEntity`'s `indexes` and `hooks` likewise: `@Index((post) => [post.title])`.
-- `references: (post) => post.authorId` on a to-one (`@ManyToOne`, `@OneToOne`, or `defineEntity`/`defineRelation`) whose entity declares or inherits `authorId`, which it used to join by name.
+- `references: (post) => post.authorId` on a to-one (`@ManyToOne`, `@OneToOne`, or `defineEntity`/`defineRelation`) that names no foreign key, declaring `@Field({ references: () => User }) authorId` first on a decorated class that has no such column, typed as the key it points at.
 - A partial-index `where` string to `raw`, importing it, on entities and in the migration builder.
 - `col('cost')` to the ref it names, ``(product) => raw`${product.cost}` `` in a `computed` and `refs(Item).cost` in a statement, and `$lock: { wait: 'skip' }` to `{ $wait: 'skip' }`, or to `true` for `{}` and a `'block'` wait.
 - An aggregate's `$agg` to `$select`, and each field it or `$text`'s `$fields` names to a key: `{ $sum: { amount: true } }`.
@@ -44,7 +44,8 @@ Reported with what to do, never guessed:
 - `@Log()`, `@Serialized()`, `@Transactional()` and `@InjectQuerier()`: a `@Transactional()` method becomes a `pool.transaction()` around its body, and only you know which pool.
 - An export removed with no one-to-one replacement (`setQuerierPool`, `getQuerier`, `augmentWhere`, `AbstractPgQuerier`, ...).
 - A value it cannot read: options passed as a variable or a spread, a list that is not a literal, a key under a computed name.
-- A to-one onto a composite key whose columns the entity declares: pair each with its key in `references`, which the error at startup spells out.
+- A to-one onto a composite key: declare a column per key and pair each with it in `references`.
+- A to-one in `defineEntity`/`defineRelation` whose entity has no foreign key column: declare it with `defineField`.
 - A partial-index `where` string that interpolates, since `raw` would bind what the template spliced in.
 - A `col()` whose entity it cannot tell: a raw built apart from its query, one under a relation filter, or a column no field maps.
 - SQL in a definition that names a column by hand, as a note: a rename reaches a callback's refs, ``(user) => raw`lower(${user.email})` ``, and never the text.

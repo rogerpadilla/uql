@@ -108,28 +108,6 @@ describe('SchemaASTBuilder', () => {
       expect(accountIdCol?.type.category).toBe('uuid');
     });
 
-    it('should infer an auto-created FK column type from the referenced primary key for a relation-only entity', () => {
-      @Entity()
-      class Owner {
-        @Id({ type: 'uuid' })
-        id?: string;
-      }
-      @Entity()
-      class Holding {
-        @Id({ type: Number }) id?: number;
-        // Relation only, no explicit `@Field` FK column - the auto-created `ownerId`
-        // column must inherit 'uuid' from Owner.id just like an explicit FK column would.
-        @ManyToOne({ entity: () => Owner })
-        owner?: Owner;
-      }
-
-      const ast = buildSchemaAST([Owner, Holding]);
-
-      const ownerIdCol = ast.getTable('Holding')?.columns.get('ownerId');
-
-      expect(ownerIdCol?.type.category).toBe('uuid');
-    });
-
     it('should still respect an explicit type on a FK field over the referenced entity', () => {
       @Entity()
       class Parent2 {
@@ -531,35 +509,6 @@ describe('SchemaASTBuilder', () => {
       expect(index.include).toEqual(['legacy_total']);
     });
 
-    it('should resolve a foreign key by its own options where the target lacks the referenced key', () => {
-      const field = {
-        type: 'uuid' as const,
-        references: () => User,
-        referencedKey: 'nonesuch',
-        typeFromReference: true,
-      };
-      expect(resolveColumnCanonicalType(field)).toEqual(resolveColumnCanonicalType({ type: 'uuid' }));
-    });
-
-    it('should handle OneToOne with missing local field', () => {
-      @Entity()
-      class Related {
-        @Id({ type: Number }) id?: number;
-      }
-      @Entity()
-      class Owner {
-        @Id({ type: Number }) id?: number;
-        @OneToOne({
-          entity: () => Related,
-          references: (owner, related) => [{ local: 'nonExistent' as never, foreign: related.id }],
-        })
-        related?: Related;
-      }
-
-      const ast = buildSchemaAST([Related, Owner]);
-      expect(ast.relationships.length).toBe(0);
-    });
-
     it('should skip indexing non-existent columns from entity', () => {
       @Entity()
       class BadIndex {
@@ -589,66 +538,6 @@ describe('SchemaASTBuilder', () => {
       expect(table).toBeDefined();
       expect(table?.name).toBe('User');
       expect(table?.columns.get('name')).toBeDefined();
-    });
-
-    it('should handle OneToOne relation without explicit references (default inference)', () => {
-      @Entity()
-      class ProfileDef {
-        @Id({ type: Number }) id?: number;
-      }
-      @Entity()
-      class UserDef {
-        @Id({ type: Number }) id?: number;
-        @OneToOne({ entity: () => ProfileDef })
-        profile?: ProfileDef;
-      }
-
-      const ast = buildSchemaAST([ProfileDef, UserDef]);
-      const rel = ast.relationships.find((r) => r.from.table.name === 'UserDef');
-      expect(rel).toBeDefined();
-      expect(rel?.from.columns[0].name).toBe('profileId');
-      expect(rel?.to.columns[0].name).toBe('id');
-    });
-
-    it('should skip relation if foreign field is missing (broken relation)', () => {
-      @Entity()
-      class Other {
-        @Id({ type: Number }) id?: number;
-      }
-      @Entity()
-      class Main {
-        @Id({ type: Number }) id?: number;
-        @OneToOne({
-          entity: () => Other,
-          references: (main, other) => [{ local: main.otherId, foreign: 'nonExistent' as never }],
-        })
-        other?: Other;
-        @Field({ type: Number }) otherId?: number;
-      }
-
-      const ast = buildSchemaAST([Other, Main]);
-      expect(ast.relationships.length).toBe(0);
-    });
-
-    it('should skip relation if foreign column is missing (broken relation)', () => {
-      @Entity()
-      class Other2 {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: Number, computed: raw`true` }) computed?: number;
-      }
-      @Entity()
-      class Main2 {
-        @Id({ type: Number }) id?: number;
-        @OneToOne({
-          entity: () => Other2,
-          references: (main2, other2) => [{ local: main2.otherId, foreign: other2.computed }],
-        })
-        other?: Other2;
-        @Field({ type: Number }) otherId?: number;
-      }
-
-      const ast = buildSchemaAST([Other2, Main2]);
-      expect(ast.relationships.length).toBe(0);
     });
   });
 

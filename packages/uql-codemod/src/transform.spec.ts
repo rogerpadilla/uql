@@ -471,8 +471,45 @@ class Entity {
     expect(text).toContain('@ManyToOne({ entity: () => Company }) employer?: Company;');
   });
 
+  it('declares the foreign key a to-one created by name, typed as the key it points at', () => {
+    const { text, unresolved } = codemodFile(`import { ManyToOne, OneToOne } from 'uql-orm';
+${STUBS}
+type Uuid = \`\${string}-\${string}\`;
+abstract class Base {
+  @Id({ type: 'uuid' }) id?: Uuid;
+}
+class Company extends Base {}
+class Pair {
+  [idKey]?: 'left' | 'right';
+  @Id({ type: Number }) left?: number;
+  @Id({ type: Number }) right?: number;
+}
+class Employee extends Base {
+  @ManyToOne({ entity: () => Company })
+  company?: Company;
+  @OneToOne({ entity: () => Employee }) manager?: Employee;
+  @ManyToOne({ entity: () => Pair }) pair?: Pair;
+}
+`);
+
+    expect(text).toContain(`import { Field, ManyToOne, OneToOne } from 'uql-orm';`);
+    expect(text).toContain(
+      '  @Field({ references: () => Company }) companyId?: Uuid;\n' +
+        '  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId })\n' +
+        '  company?: Company;',
+    );
+    expect(text).toContain(
+      '  @Field({ references: () => Employee }) managerId?: Uuid;\n' +
+        '  @OneToOne({ entity: () => Employee, references: (employee) => employee.managerId }) manager?: Employee;',
+    );
+    expect(text).toContain('  @ManyToOne({ entity: () => Pair }) pair?: Pair;');
+    expect(unresolved).toContainEqual(
+      expect.stringContaining("'Pair' has a composite key: declare a column per key and pair each in 'references'"),
+    );
+  });
+
   it('leaves a to-one that already says how it joins, and names the key in defineEntity and defineRelation', () => {
-    const { text } = codemod(`
+    const { text, unresolved } = codemod(`
       class Company { id?: number; contractor?: Contractor; }
       class Contractor {
         companyId?: number;
@@ -485,7 +522,12 @@ class Entity {
       defineRelation(Supplier, 'manager', { cardinality: '11', entity: () => Supplier });
       declare const relation: string;
       defineRelation(Supplier, relation, { cardinality: 'm1', entity: () => Company });
+      defineRelation(Supplier, 'vendor', { cardinality: 'm1', entity: () => Company });
     `);
+
+    expect(unresolved).toContainEqual(
+      expect.stringContaining("declare the foreign key column 'vendorId' and name it in 'references'"),
+    );
 
     expect(text).toContain(
       '@ManyToOne({ entity: () => Company, references: (contractor) => contractor.companyId }) company?: Company;',

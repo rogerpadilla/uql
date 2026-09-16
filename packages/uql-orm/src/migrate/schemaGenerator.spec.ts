@@ -354,18 +354,6 @@ describe('SqlSchemaGenerator (MySQL)', () => {
     const sql = generator.generateDropIndex('users', 'email_idx');
     expect(sql).toBe('DROP INDEX `email_idx` ON `users`;');
   });
-
-  it('should keep a foreign key on its own type when the referenced key is not there', () => {
-    // A `referencedKey` naming a column the target does not have used to reach a spread of
-    // `undefined`, which carries no type at all and rendered as the default string column.
-    const type = generator.getSqlType({
-      type: 'uuid',
-      references: () => TestUser,
-      referencedKey: 'nonesuch',
-    });
-
-    expect(type).toBe('CHAR(36)');
-  });
 });
 
 describe('SqlSchemaGenerator (SQLite)', () => {
