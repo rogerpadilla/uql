@@ -1,7 +1,38 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, User } from '../test/index.js';
 import type { Query, QueryStringified } from '../type/index.js';
-import { parseQueryParams, stringifyQuery } from './query.js';
+import { raw } from '../util/index.js';
+import { parseQueryParams, stringifyQuery, wireJson } from './query.js';
+
+const RAW_REFUSED = 'raw SQL cannot travel over HTTP: what leaves the browser is JSON';
+const BINARY_REFUSED = 'binary cannot travel over HTTP: what leaves the browser is JSON';
+
+describe('wireJson', () => {
+  /** JSON keeps none of a `raw` fragment, so it would arrive as `{}` and be built into a statement. */
+  it('should refuse a raw fragment wherever it sits', () => {
+    expect(() => wireJson({ $where: { name: raw`lower(name)` } })).toThrow(RAW_REFUSED);
+    expect(() => wireJson({ $select: [raw`LOG10(price)`] })).toThrow(RAW_REFUSED);
+    expect(() => wireJson({ $where: { name: { $not: raw`lower(name)` } } })).toThrow(RAW_REFUSED);
+  });
+
+  /** JSON writes a blob as an object keyed by index, which no column reads: `{"0":1,"1":2}`. */
+  it('should refuse binary, in a filter and in a write payload alike', () => {
+    expect(() => wireJson({ $where: { thumb: new Uint8Array([1, 2]) } })).toThrow(BINARY_REFUSED);
+    expect(() => wireJson({ bytes: new Uint8Array([1, 2]) })).toThrow(BINARY_REFUSED);
+    expect(() => wireJson({ bytes: new Uint8Array([1, 2]).buffer })).toThrow(BINARY_REFUSED);
+  });
+
+  /** ISO 8601 is what a date column reads, so a `Date` travels rather than being refused. */
+  it('should write a date as ISO 8601', () => {
+    expect(wireJson({ $where: { createdAt: new Date(0) } })).toBe(
+      '{"$where":{"createdAt":"1970-01-01T00:00:00.000Z"}}',
+    );
+  });
+
+  it('should write the JSON a query travels as', () => {
+    expect(wireJson({ $where: { name: 'lorem' } })).toBe('{"$where":{"name":"lorem"}}');
+  });
+});
 
 describe('parseQueryParams rejections', () => {
   /** A row lock outlives the request that asked for it over HTTP, so it is refused rather than dropped. */
@@ -146,6 +177,10 @@ describe('parseQueryParams', () => {
 });
 
 describe('stringifyQuery', () => {
+  it('should refuse a raw fragment, as the body it mirrors does', () => {
+    expect(() => stringifyQuery({ $where: { $exists: raw`SELECT 1` } })).toThrow(RAW_REFUSED);
+  });
+
   it('should stringify an empty query', () => {
     expect(stringifyQuery(undefined)).toBe('');
     expect(stringifyQuery({})).toBe('');

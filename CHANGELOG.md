@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.68.1] - 2026-09-17
+
+- **Fixed: what JSON cannot carry no longer leaves the browser silently**: a `raw` fragment travelled as `{}` and a `Uint8Array` as an object keyed by index. The client's types refuse a fragment, and either one throws rather than reach the server. A `Date` still travels, as ISO 8601.
+- **`WireQuery<E>` is what an RPC contract declares as its input**: a `Query<E>` without the `raw` JSON cannot carry, so tRPC, oRPC and TanStack Start type it directly - Start with `strict.input` left on.
+- **Breaking (types): `D1Database` is now `D1Queryable`**, what uql calls on D1 rather than a name shadowing Cloudflare's own binding type; a pool still takes a binding or a `withSession()` session. The codemod renames it.
+- **Breaking (types): a query type names its transport's `raw` before its key set**, `QueryWhere<E, Raw, K>` and the same on `QueryPopulate`, `QueryCount` and `UpdatePayload`, so an explicit key set moves one place right.
+
 ## [0.68.0] - 2026-09-17
 
 - **Breaking: `$all` and `$elemMatch` match an element by what it holds, on every engine**: an object's keys, nested ones included, and an array's elements, beside an operator too. SQLite, SQL Server and MongoDB matched only an identical element. `uql-orm/postgres` grows 0.5 KB gzipped.

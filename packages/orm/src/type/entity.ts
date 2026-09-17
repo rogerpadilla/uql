@@ -132,7 +132,7 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
     : JsonUpdateOp<T>;
 
 /** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and JSON operators. */
-type UpdateExtra<V> = (undefined extends V ? null : never) | QueryRaw | JsonUpdateOpFor<V>;
+type UpdateExtra<V, Raw> = (undefined extends V ? null : never) | Raw | JsonUpdateOpFor<V>;
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a
@@ -148,10 +148,10 @@ export type EntityData<E, F extends keyof E = FieldKey<E>, R extends keyof E = R
 type RelationData<V> = V extends readonly (infer T)[] ? EntityData<T>[] : V extends object ? EntityData<V> : never;
 
 /** {@link EntityData} made partial, each member also taking its {@link UpdateExtra}. */
-export type UpdatePayload<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
-  [P in F]?: E[P] | UpdateExtra<E[P]>;
+export type UpdatePayload<E, Raw = QueryRaw, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
+  [P in F]?: E[P] | UpdateExtra<E[P], Raw>;
 } & {
-  [P in R]?: E[P] | RelationData<E[P]> | UpdateExtra<E[P]>;
+  [P in R]?: E[P] | RelationData<E[P]> | UpdateExtra<E[P], Raw>;
 };
 
 /** The key's name where the entity states it, by the `idKey` brand or a conventional name; `never` otherwise. */

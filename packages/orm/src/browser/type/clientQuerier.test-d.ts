@@ -5,7 +5,8 @@ import type { CrudOperation } from '../../http/contract.js';
  * by `bun run ts` only.
  */
 import { idKey } from '../../type/index.js';
-import type { Json, UniversalQuerier } from '../../type/index.js';
+import type { Json, UniversalQuerier, WireQuery } from '../../type/index.js';
+import { raw } from '../../util/index.js';
 import type { ClientQuerier } from './clientQuerier.js';
 
 class Author {
@@ -26,6 +27,7 @@ class Article {
   title!: string;
   tags?: string[];
   kind?: Json<{ public?: number }>;
+  addresses?: Json<{ city?: string }[]>;
   author?: Author;
 
   // a write payload is `EntityData<E>`, never `E`: typed as `E` the calls below stop compiling,
@@ -59,6 +61,44 @@ export type CoversEveryCrudOperation = AssertEmpty<Exclude<CrudOperation, keyof 
 
 declare const server: UniversalQuerier;
 declare const client: ClientQuerier;
+
+/**
+ * A `raw` fragment renders SQL against a dialect, and a query leaving the browser travels as JSON, which
+ * keeps none of it. The server takes each of these; the client refuses them rather than send `{}`.
+ */
+export async function rawIsServerOnly() {
+  await server.findMany(Article, { $select: [raw`LOG10(id)`.as('score')] });
+  // @ts-expect-error a raw projection cannot travel
+  await client.findMany(Article, { $select: [raw`LOG10(id)`.as('score')] });
+
+  await server.findMany(Article, { $where: { title: raw`lower(title)` } });
+  // @ts-expect-error nor a raw comparison
+  await client.findMany(Article, { $where: { title: raw`lower(title)` } });
+
+  await server.findMany(Article, { $where: { $exists: raw`SELECT 1` } });
+  // @ts-expect-error nor a raw sub-query
+  await client.findMany(Article, { $where: { $exists: raw`SELECT 1` } });
+
+  await server.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
+  // @ts-expect-error nor a raw value in an update
+  await client.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
+
+  // Nested in an operator map, where the fragment is furthest from the method that refuses it.
+  await server.findMany(Article, { $where: { title: { $not: raw`lower(title)` } } });
+  // @ts-expect-error nor a raw under a per-field `$not`
+  await client.findMany(Article, { $where: { title: { $not: raw`lower(title)` } } });
+
+  await server.findMany(Article, { $where: { addresses: { $elemMatch: { city: raw`lower(city)` } } } });
+  // @ts-expect-error nor a raw inside `$elemMatch`
+  await client.findMany(Article, { $where: { addresses: { $elemMatch: { city: raw`lower(city)` } } } });
+
+  // What an RPC contract declares as its input is the same query, without the `raw` the wire cannot carry.
+  const wire: WireQuery<Article> = { $select: { title: true }, $where: { id: 1 } };
+  await client.findMany(Article, wire);
+  // @ts-expect-error a raw projection is not part of it
+  const rawWire: WireQuery<Article> = { $select: [raw`LOG10(id)`] };
+  void rawWire;
+}
 
 export async function clientServerParity() {
   // The same query/payload literals must be accepted by both interfaces.

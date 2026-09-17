@@ -40,7 +40,7 @@ export type QuerySelect<E, F extends keyof E = FieldKey<E>, V = BooleanLike> = {
  * Accepted `$select` value: a field map, or raw SQL projections built with `raw()`
  * (e.g. ``[raw`*`, raw`LOG10(points)`.as('score')]``). The raw form is SQL-only.
  */
-export type QuerySelectValue<E> = QuerySelect<E> | readonly QueryRaw[];
+export type QuerySelectValue<E, Raw = QueryRaw> = QuerySelect<E> | readonly Raw[];
 
 /**
  * Fields to exclude from the query result - `{ name: true }` blacklists fields.
@@ -51,8 +51,8 @@ export type QueryExclude<E> = QuerySelect<E>;
 /**
  * relation population map.
  */
-export type QueryPopulate<E, R extends keyof E = RelationKey<E>> = {
-  [K in R]?: BooleanLike | QueryPopulateRelationOptions<E[K]>;
+export type QueryPopulate<E, Raw = QueryRaw, R extends keyof E = RelationKey<E>> = {
+  [K in R]?: BooleanLike | QueryPopulateRelationOptions<E[K], Raw>;
 };
 
 /**
@@ -66,8 +66,8 @@ export const COUNT_RESULT_KEY = '_count';
  * which ones count: a correlated count in the read's own statement, so no related row is loaded. Comes
  * back under `_count`, which keeps it clear of a relation of the same name `$populate` filled.
  */
-export type QueryCount<E, R extends keyof E = ToManyRelationKey<E>> = {
-  [K in R]?: BooleanLike | QueryFilter<RelationTarget<E[K]>>;
+export type QueryCount<E, Raw = QueryRaw, R extends keyof E = ToManyRelationKey<E>> = {
+  [K in R]?: BooleanLike | QueryFilter<RelationTarget<E[K]>, Raw>;
 };
 
 /**
@@ -78,8 +78,10 @@ export type QueryConflictPaths<E> = QuerySelect<E, FieldKey<E>, true>;
 /**
  * Options to populate a relation declared as `V`, by its cardinality.
  */
-export type QueryPopulateRelationOptions<V> =
-  IsMany<V> extends true ? RelationQuery<RelationTarget<V>> : QueryUnique<RelationTarget<V>> & { $required?: boolean };
+export type QueryPopulateRelationOptions<V, Raw = QueryRaw> =
+  IsMany<V> extends true
+    ? RelationQuery<RelationTarget<V>, Raw>
+    : QueryUnique<RelationTarget<V>, Raw> & { $required?: boolean };
 
 /**
  * The per-request context parameterized filters read, set with `withContext(ctx, cb)`. An interface,
@@ -187,18 +189,18 @@ export type QueryPager = {
 /**
  * Which rows a statement addresses.
  */
-export type QueryFilter<E> = {
+export type QueryFilter<E, Raw = QueryRaw> = {
   /**
    * filtering options.
    */
-  $where?: QueryWhere<E>;
+  $where?: QueryWhere<E, Raw>;
 };
 
 /**
  * A filter plus the page `count` takes. No `$sort`: ordering picks *which* rows a page holds, never
  * how many, so a count that accepted one would promise an influence it cannot have.
  */
-export type QueryPage<E> = QueryFilter<E> & QueryPager;
+export type QueryPage<E, Raw = QueryRaw> = QueryFilter<E, Raw> & QueryPager;
 
 /**
  * A filter plus the ordering and page `updateMany`/`deleteMany` take. Both settle the
@@ -206,7 +208,7 @@ export type QueryPage<E> = QueryFilter<E> & QueryPager;
  * vector `$sort` is as valid here as on a read: it ranks the settle query's rows, which has the
  * projection list to hold the distance. `$lock` stays off these, declared on {@link Query} instead.
  */
-export type QuerySearch<E> = QueryPage<E> & {
+export type QuerySearch<E, Raw = QueryRaw> = QueryPage<E, Raw> & {
   /**
    * sorting options.
    */
@@ -216,23 +218,23 @@ export type QuerySearch<E> = QueryPage<E> & {
 /**
  * query options.
  */
-export type Query<E> = {
+export type Query<E, Raw = QueryRaw> = {
   /**
    * field selection - `{ name: true }` whitelists fields, or raw SQL projections
    * (``[raw`LOG10(points)`.as('score')]``, SQL dialects only - MongoDB rejects the raw-array form).
    * Mutually exclusive with `$exclude`.
    */
-  $select?: QuerySelectValue<E>;
+  $select?: QuerySelectValue<E, Raw>;
 
   /**
    * relation population options.
    */
-  $populate?: QueryPopulate<E>;
+  $populate?: QueryPopulate<E, Raw>;
 
   /**
    * how many rows each named relation holds, under `_count` on every row. See {@link QueryCount}.
    */
-  $count?: QueryCount<E>;
+  $count?: QueryCount<E, Raw>;
 
   /**
    * field exclusion - `{ name: true }` blacklists fields. Mutually exclusive with positive `$select`.
@@ -272,7 +274,7 @@ export type Query<E> = {
   /**
    * filtering options.
    */
-  $where?: QueryWhere<E>;
+  $where?: QueryWhere<E, Raw>;
 
   /**
    * Index from where start the search
@@ -284,6 +286,12 @@ export type Query<E> = {
    */
   $limit?: number;
 };
+
+/**
+ * A {@link Query} as it travels as JSON, which a `raw` SQL fragment cannot: what the browser client takes,
+ * and what an RPC contract (tRPC, oRPC, TanStack Start) declares as its input.
+ */
+export type WireQuery<E> = Query<E, never>;
 
 /**
  * `Query`'s clauses grouped by the shape of their value, for the wire parser and the relation query
@@ -331,19 +339,19 @@ type RelationClause = (
  * A populated relation's own query: the clause groups its runtime check accepts, so the two cannot
  * drift, and a clause added to {@link Query} stays off it until it joins one of them.
  */
-export type RelationQuery<E = object> = Pick<Query<E>, RelationClause> & {
+export type RelationQuery<E = object, Raw = QueryRaw> = Pick<Query<E, Raw>, RelationClause> & {
   $required?: boolean;
 };
 
 /**
  * options to get a single record.
  */
-export type QueryOne<E> = Except<Query<E>, '$limit'>;
+export type QueryOne<E, Raw = QueryRaw> = Except<Query<E, Raw>, '$limit'>;
 
 /**
  * options to get an unique record.
  */
-export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$populate' | '$where'>;
+export type QueryUnique<E, Raw = QueryRaw> = Pick<QueryOne<E, Raw>, '$select' | '$exclude' | '$populate' | '$where'>;
 
 /**
  * The clauses that shape a row, captured as key sets rather than maps: a naked type parameter skips
@@ -357,13 +365,14 @@ type QueryProjection<
   X extends FieldKey<E>,
   P extends RelationKey<E>,
   C extends RelationKey<E>,
+  Raw = QueryRaw,
 > = {
-  $select?: QuerySelect<E, S, V> | readonly QueryRaw[];
+  $select?: QuerySelect<E, S, V> | readonly Raw[];
   $exclude?: QuerySelect<E, X, V>;
-  $populate?: QueryPopulate<E, P>;
+  $populate?: QueryPopulate<E, Raw, P>;
   // Narrowing the captured names to the to-many ones leaves a to-one relation no key here at all,
   // so counting one is an excess property rather than a value to check.
-  $count?: QueryCount<E, C & ToManyRelationKey<E>>;
+  $count?: QueryCount<E, Raw, C & ToManyRelationKey<E>>;
 };
 
 /**
@@ -376,7 +385,8 @@ export type QueryProjected<
   X extends FieldKey<E>,
   P extends RelationKey<E>,
   C extends RelationKey<E> = never,
-> = Query<E> & QueryProjection<E, S, V, X, P, C>;
+  Raw = QueryRaw,
+> = Query<E, Raw> & QueryProjection<E, S, V, X, P, C, Raw>;
 
 /**
  * A {@link QueryOne} whose projection is captured, so {@link QueryFindResult} can shape the row.
@@ -388,7 +398,8 @@ export type QueryOneProjected<
   X extends FieldKey<E>,
   P extends RelationKey<E>,
   C extends RelationKey<E> = never,
-> = QueryOne<E> & QueryProjection<E, S, V, X, P, C>;
+  Raw = QueryRaw,
+> = QueryOne<E, Raw> & QueryProjection<E, S, V, X, P, C, Raw>;
 
 /**
  * The keys a query comes back with, as the runtime projects them: a positive `$select`'s, or every

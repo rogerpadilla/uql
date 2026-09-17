@@ -28,8 +28,9 @@ export class Employee {
 
   @Field({ references: () => Company }) companyId?: number;
   @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
-  // @ts-expect-error `@ManyToOne` targets `Company`; the property must hold a `Company`, not a string
-  @ManyToOne({ entity: () => Company }) badCompany?: string;
+  // @ts-expect-error `@ManyToOne` targets `Company`; the property must hold a `Company`, not a string.
+  // Its `references` is what a valid one takes, so what this pins is the property's type and nothing else.
+  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) badCompany?: string;
   // @ts-expect-error `references` names a column of the declaring entity, never a relation
   @ManyToOne({ entity: () => Company, references: (employee) => employee.company }) employer?: Company;
   // @ts-expect-error a to-many pairs its columns; naming one is for the side of a to-one holding the key

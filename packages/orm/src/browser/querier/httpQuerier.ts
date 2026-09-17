@@ -4,7 +4,6 @@ import type {
   EntityData,
   EntityId,
   FieldKey,
-  Query,
   QueryFilter,
   QueryFindResult,
   QueryOneProjected,
@@ -17,6 +16,7 @@ import type {
   RequestSuccessResponse,
   Type,
   UpdatePayload,
+  WireQuery,
   WrittenId,
 } from '../../type/index.js';
 import { isScalarId } from '../../util/object.util.js';
@@ -67,7 +67,7 @@ export class HttpQuerier implements ClientQuerier {
   >(
     entity: Type<E>,
     id: EntityId<E>,
-    q?: QueryOneProjected<E, S, V, X, P, C>,
+    q?: QueryOneProjected<E, S, V, X, P, C, never>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
     const basePath = this.getBasePath(entity);
@@ -87,7 +87,7 @@ export class HttpQuerier implements ClientQuerier {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C>,
+    q: QueryOneProjected<E, S, V, X, P, C, never>,
     opts?: RequestOptions,
   ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
     return this.read<QueryFindResult<E, S, V, X, P, C> | undefined>(
@@ -106,10 +106,10 @@ export class HttpQuerier implements ClientQuerier {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: QueryProjected<E, S, V, X, P, C, never>,
     opts?: RequestFindOptions,
   ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
-    const data: Query<E> & { count?: boolean } = { ...q };
+    const data: WireQuery<E> & { count?: boolean } = { ...q };
     if (opts?.count) {
       data.count = true;
     }
@@ -125,7 +125,7 @@ export class HttpQuerier implements ClientQuerier {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: QueryProjected<E, S, V, X, P, C, never>,
     opts?: RequestFindOptions,
   ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
     const response = await this.findMany(entity, q, { ...opts, count: true });
@@ -135,12 +135,12 @@ export class HttpQuerier implements ClientQuerier {
     return { ...response, count: response.count };
   }
 
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: RequestOptions) {
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E, never>, opts?: RequestOptions) {
     return this.read<number>(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
   }
 
   /** The `count` route capped at one row, so existence needs no endpoint of its own. */
-  async exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: RequestOptions) {
+  async exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, never>, opts?: RequestOptions) {
     const res = await this.count(entity, { ...q, $limit: 1 }, opts);
     return { ...res, data: res.data > 0 };
   }
@@ -162,14 +162,19 @@ export class HttpQuerier implements ClientQuerier {
   async updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
-    payload: UpdatePayload<E>,
+    payload: UpdatePayload<E, never>,
     opts?: RequestOptions,
   ) {
     const basePath = this.getBasePath(entity);
     return patch<number>(`${basePath}/${idSegment(entity, id)}`, payload, this.buildOptions(opts));
   }
 
-  updateMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, payload: UpdatePayload<E>, opts?: RequestOptions) {
+  updateMany<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E, never>,
+    payload: UpdatePayload<E, never>,
+    opts?: RequestOptions,
+  ) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(q);
     return patch<number>(`${basePath}${qs}`, payload, this.buildOptions(opts));
@@ -195,7 +200,7 @@ export class HttpQuerier implements ClientQuerier {
     return remove<number>(`${basePath}/${idSegment(entity, id)}${qs}`, this.buildOptions(opts));
   }
 
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions & RequestOptions = {}) {
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, never>, opts: QueryOptions & RequestOptions = {}) {
     const basePath = this.getBasePath(entity);
     const qs = stringifyQuery(opts.hardDelete ? { ...q, hardDelete: opts.hardDelete } : q);
     return remove<number>(`${basePath}${qs}`, this.buildOptions(opts));

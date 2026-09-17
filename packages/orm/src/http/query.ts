@@ -1,4 +1,4 @@
-import type { Query, QueryOptions } from '../type/index.js';
+import type { QueryOptions, WireQuery } from '../type/index.js';
 // the clause lists themselves, not the barrel: this module is in the browser bundle's graph
 import {
   QUERY_BOOLEAN_CLAUSES,
@@ -7,6 +7,9 @@ import {
   QUERY_ROOT_NUMBER_CLAUSES,
   QUERY_ROOT_OBJECT_CLAUSES,
 } from '../type/query.js';
+// the brand alone, not the class: importing `QueryRaw` for an `instanceof` kept it, and `ColumnRef`
+// with it, in the browser bundle, which is on a size budget
+import { RAW_VALUE } from '../type/queryRaw.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys, isWhereMap } from '../util/object.util.js';
 
@@ -24,7 +27,7 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
   ...QUERY_BOOLEAN_CLAUSES,
   'hardDelete',
   'count',
-] satisfies (keyof Query<unknown> | keyof Pick<QueryOptions, 'hardDelete'> | 'count')[]);
+] satisfies (keyof WireQuery<unknown> | keyof Pick<QueryOptions, 'hardDelete'> | 'count')[]);
 
 /**
  * Keys that mean something locally but that this transport can never honor, so they are rejected
@@ -32,13 +35,13 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
  * row lock taken here is released before the response is written: honoring `$lock` is impossible,
  * and ignoring it would hand the caller a read they believe is serialized and is not.
  */
-const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof Query<unknown>)[]);
+const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery<unknown>)[]);
 
 /**
  * Parse raw query-string entries (with JSON-stringified values) into a UQL query object.
  * Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
  */
-export function parseQueryParams(params: Record<string, unknown> = {}): Query<unknown> {
+export function parseQueryParams(params: Record<string, unknown> = {}): WireQuery<unknown> {
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
     if (REJECTED_QUERY_KEYS.has(key)) {
@@ -79,7 +82,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): Query<un
     }
   }
 
-  return query as Query<unknown>;
+  return query as WireQuery<unknown>;
 }
 
 /**
@@ -96,8 +99,31 @@ export function stringifyQuery(query?: Record<string, unknown>): string {
     if (value === undefined) {
       continue;
     }
-    params.append(key, typeof value === 'object' && value !== null ? JSON.stringify(value) : String(value));
+    params.append(key, typeof value === 'object' && value !== null ? wireJson(value) : String(value));
   }
   const qs = params.toString();
   return qs ? `?${qs}` : '';
+}
+
+/**
+ * What leaves the browser, as JSON, refusing what JSON keeps nothing of rather than letting the server
+ * build a statement around the remains. A `raw` fragment renders SQL against a dialect the client does not
+ * have and arrives as `{}`; binary arrives as an object keyed by index. A `Date` is not among them - it
+ * serializes to ISO 8601, which is what a date column reads. This is what a cast, or a JavaScript caller,
+ * hits where the client's types already refuse a fragment.
+ */
+export function wireJson(value: unknown): string {
+  return JSON.stringify(value, (_key: string, held: unknown) => {
+    if (typeof held !== 'object' || held === null) {
+      return held;
+    }
+    if (RAW_VALUE in held) {
+      throw new TypeError('raw SQL cannot travel over HTTP: what leaves the browser is JSON');
+    }
+    // A blob is a field value, so no type parameter reaches it: this is the only place it is caught.
+    if (held instanceof ArrayBuffer || ArrayBuffer.isView(held)) {
+      throw new TypeError('binary cannot travel over HTTP: what leaves the browser is JSON');
+    }
+    return held;
+  });
 }

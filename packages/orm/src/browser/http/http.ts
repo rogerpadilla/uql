@@ -1,4 +1,5 @@
 import type { RequestErrorResponse } from '../../http/contract.js';
+import { wireJson } from '../../http/query.js';
 import type { RequestSuccessResponse } from '../../type/index.js';
 import type { RequestOptions } from '../type/index.js';
 import { notify } from './bus.js';
@@ -22,18 +23,15 @@ export function get<T>(url: string, opts?: RequestOptions) {
 }
 
 export function post<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  const body = JSON.stringify(payload);
-  return request<T>(url, { method: 'post', body }, opts);
+  return request<T>(url, { method: 'post', body: wireJson(payload) }, opts);
 }
 
 export function patch<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  const body = JSON.stringify(payload);
-  return request<T>(url, { method: 'patch', body }, opts);
+  return request<T>(url, { method: 'patch', body: wireJson(payload) }, opts);
 }
 
 export function put<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  const body = JSON.stringify(payload);
-  return request<T>(url, { method: 'put', body }, opts);
+  return request<T>(url, { method: 'put', body: wireJson(payload) }, opts);
 }
 
 export function remove<T>(url: string, opts?: RequestOptions) {
@@ -46,8 +44,7 @@ export function remove<T>(url: string, opts?: RequestOptions) {
  * (fetch only normalizes the classic verbs).
  */
 export function query<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  const body = JSON.stringify(payload);
-  return request<T>(url, { method: 'QUERY', body }, opts);
+  return request<T>(url, { method: 'QUERY', body: wireJson(payload) }, opts);
 }
 
 function request<T>(url: string, init: RequestInit, opts?: RequestOptions) {

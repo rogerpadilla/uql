@@ -1,3 +1,5 @@
+import type { QueryRaw } from './queryRaw.js';
+
 /**
  * The envelope a wire response wraps its result in.
  */
@@ -18,6 +20,12 @@ export type RequestCountedSuccessResponse<E> = RequestSuccessResponse<E> & {
  * client one hands back the envelope its transport wrapped it in.
  */
 export type QuerierTransport = 'server' | 'client';
+
+/**
+ * The `raw` SQL a transport carries. A client's query and payload travel as JSON, which a `raw` fragment
+ * is not: it would arrive as `{}`, so the client's types refuse one rather than let it leave.
+ */
+export type QuerierRaw<W extends QuerierTransport> = { server: QueryRaw; client: never }[W];
 
 /**
  * A querier method's result on a transport: `Promise<User[]>` on the server, the response envelope on

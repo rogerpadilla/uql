@@ -1034,13 +1034,13 @@ let q: SqliteQuerier; let db: SqliteDatabase;
   it('renames the dialect and D1 types to the one each duplicated', () => {
     const { text, unresolved } =
       codemodFile(`import type { EngineFeatures, KnownMigratorDialect, QueryDialect } from 'uql-orm';
-import { type D1Preparer, D1QuerierPool } from 'uql-orm/d1';
-let a: QueryDialect; let b: KnownMigratorDialect; let c: D1Preparer; let d: EngineFeatures;
+import { type D1Database, type D1Preparer, D1QuerierPool } from 'uql-orm/d1';
+let a: QueryDialect; let b: KnownMigratorDialect; let c: D1Preparer; let d: EngineFeatures; let e: D1Database;
 `);
 
     expect(text).toBe(`import type { DialectFeatures, DialectName, SqlQueryDialect } from 'uql-orm';
-import { type D1Database, D1QuerierPool } from 'uql-orm/d1';
-let a: SqlQueryDialect; let b: DialectName; let c: D1Database; let d: DialectFeatures;
+import { type D1Queryable, D1QuerierPool } from 'uql-orm/d1';
+let a: SqlQueryDialect; let b: DialectName; let c: D1Queryable; let d: DialectFeatures; let e: D1Queryable;
 `);
     expect(unresolved).toEqual([]);
   });

@@ -15,16 +15,16 @@ export interface D1PreparedStatement {
 }
 
 /**
- * The part of a D1 binding uql calls, which a session from `withSession()` - how a read-replicated
- * database is read - has too. The rest of a binding is typed by `@cloudflare/workers-types`.
+ * What uql calls on D1: a binding (`env.DB`) and a session from `env.DB.withSession()` - how a
+ * read-replicated database is read - answer it alike. Both are typed by `@cloudflare/workers-types`.
  */
-export interface D1Database {
+export interface D1Queryable {
   prepare(query: string): D1PreparedStatement;
 }
 
 export class D1Querier extends AbstractSqliteQuerier {
   constructor(
-    readonly db: D1Database,
+    readonly db: D1Queryable,
     dialect: SqliteDialect,
     override readonly extra?: ExtraOptions,
   ) {

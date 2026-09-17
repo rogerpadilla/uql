@@ -28,13 +28,16 @@ export type QueryTextSearchOptions<E> = {
  * entity's keys so each stays linked for rename. An object and nothing else, so a wrong value is
  * reported on its key: ids go through `{ id: 1 }` or the by-id methods.
  */
-export type QueryWhere<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = QueryWhereRootOperator<E> & {
+export type QueryWhere<E, Raw = QueryRaw, K extends keyof E = FieldKey<E> | RelationKey<E>> = QueryWhereRootOperator<
+  E,
+  Raw
+> & {
   [P in K]?: P extends FieldKey<E>
-    ? QueryWhereFieldValue<E[P]>
-    : QueryWhere<RelationTarget<E[P]>> | QueryRelationSizeFilter;
+    ? QueryWhereFieldValue<E[P], Raw>
+    : QueryWhere<RelationTarget<E[P]>, Raw> | QueryRelationSizeFilter;
 } & ([JsonFieldPaths<E>] extends [never]
     ? unknown
-    : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>> });
+    : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>, Raw> });
 
 /**
  * Filter a to-many relation by its row count.
@@ -45,24 +48,24 @@ export type QueryRelationSizeFilter = {
   readonly $size: number | QuerySizeComparisonOps;
 };
 
-export type QueryWhereRootOperator<E> = {
+export type QueryWhereRootOperator<E, Raw = QueryRaw> = {
   /**
    * joins query clauses with a logical `AND`, returns records that match all the clauses.
    */
-  $and?: QueryWhereArray<E>;
+  $and?: QueryWhereArray<E, Raw>;
   /**
    * joins query clauses with a logical `OR`, returns records that match any of the clauses.
    */
-  $or?: QueryWhereArray<E>;
+  $or?: QueryWhereArray<E, Raw>;
   /**
    * joins query clauses with a logical `AND`, returns records that do not match all the clauses.
    * @see {@link QueryWhereFieldOperatorMap.$not} for per-field negation.
    */
-  $not?: QueryWhereArray<E>;
+  $not?: QueryWhereArray<E, Raw>;
   /**
    * joins query clauses with a logical `OR`, returns records that do not match any of the clauses.
    */
-  $nor?: QueryWhereArray<E>;
+  $nor?: QueryWhereArray<E, Raw>;
   /**
    * whether the specified fields match against a full-text search of the given string.
    */
@@ -70,11 +73,11 @@ export type QueryWhereRootOperator<E> = {
   /**
    * whether the record exists in the given sub-query.
    */
-  $exists?: QueryRaw;
+  $exists?: Raw;
   /**
    * whether the record does not exists in the given sub-query.
    */
-  $nexists?: QueryRaw;
+  $nexists?: Raw;
 };
 
 /**
@@ -112,7 +115,7 @@ export type QueryVectorNear = QueryVectorQuery & {
   [K in QueryOrderedOp]?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
 };
 
-export type QueryWhereFieldOperatorMap<T> = {
+export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
   /**
    * whether a value is equal to the given value.
    */
@@ -125,7 +128,7 @@ export type QueryWhereFieldOperatorMap<T> = {
    * negates the given comparison for a single field.
    * @see {@link QueryWhereRootOperator.$not} for root-level clause negation.
    */
-  $not?: QueryWhereFieldValue<T>;
+  $not?: QueryWhereFieldValue<T, Raw>;
   /**
    * whether a value is less than the given value.
    */
@@ -215,9 +218,9 @@ export type QueryWhereFieldOperatorMap<T> = {
    * @example { addresses: { $elemMatch: { city: { $like: 'New%' } } } }
    */
   $elemMatch?: unknown extends T
-    ? QueryWhereElemMatch<unknown>
+    ? QueryWhereElemMatch<unknown, Raw>
     : NonNullable<T> extends readonly (infer U)[]
-      ? QueryWhereElemMatch<U>
+      ? QueryWhereElemMatch<U, Raw>
       : never;
   /**
    * whether a vector is within a given distance of the query vector. `$sort` ranks by distance;
@@ -233,11 +236,11 @@ export type QueryWhereFieldOperatorMap<T> = {
  * field comparison. An untyped element (`unknown`) accepts any keys but still requires the
  * object-of-conditions shape (a bare scalar is rejected).
  */
-export type QueryWhereElemMatch<U> = unknown extends U
-  ? { [key: string]: QueryWhereFieldValue<unknown> | undefined }
+export type QueryWhereElemMatch<U, Raw = QueryRaw> = unknown extends U
+  ? { [key: string]: QueryWhereFieldValue<unknown, Raw> | undefined }
   : NonNullable<U> extends Scalar
-    ? QueryWhereFieldOperators<NonNullable<U>>
-    : { [K in keyof NonNullable<U>]?: QueryWhereFieldValue<NonNullable<U>[K]> };
+    ? QueryWhereFieldOperators<NonNullable<U>, Raw>
+    : { [K in keyof NonNullable<U>]?: QueryWhereFieldValue<NonNullable<U>[K], Raw> };
 
 /**
  * Simple relational comparison operators. `Pick`'s constraint ties this back to
@@ -307,11 +310,11 @@ type QueryAllowedOp<T> =
  * The operators a field of type `T` takes. `unknown`, and a column typed as every scalar at once (a
  * runtime-defined entity), take all of them, since nothing narrows what they hold.
  */
-export type QueryWhereFieldOperators<T> = unknown extends T
-  ? QueryWhereFieldOperatorMap<T>
+export type QueryWhereFieldOperators<T, Raw = QueryRaw> = unknown extends T
+  ? QueryWhereFieldOperatorMap<T, Raw>
   : IsUntypedColumn<T> extends true
-    ? QueryWhereFieldOperatorMap<T>
-    : Pick<QueryWhereFieldOperatorMap<T>, QueryAllowedOp<T>>;
+    ? QueryWhereFieldOperatorMap<T, Raw>
+    : Pick<QueryWhereFieldOperatorMap<T, Raw>, QueryAllowedOp<T>>;
 
 /**
  * Whether a column admits every scalar at once, which is what an entity keyed by an index signature
@@ -324,14 +327,14 @@ type IsUntypedColumn<T> = [Scalar] extends [NonNullable<T>] ? true : false;
  * A field's filter value: the value, `null` where it is optional, a list as an implicit `$in` (not on
  * an array field, where it would be ambiguous), or an operator map.
  */
-export type QueryWhereFieldValue<T> =
+export type QueryWhereFieldValue<T, Raw = QueryRaw> =
   | T
   | (undefined extends T ? null : never)
   | (IsMany<T> extends true ? never : T[])
-  | QueryWhereFieldOperators<T>
-  | QueryRaw;
+  | QueryWhereFieldOperators<T, Raw>
+  | Raw;
 
 /**
  * query filter array - the value every {@link QueryGroupOp} takes.
  */
-export type QueryWhereArray<E> = (QueryWhere<E> | QueryRaw)[];
+export type QueryWhereArray<E, Raw = QueryRaw> = (QueryWhere<E, Raw> | Raw)[];

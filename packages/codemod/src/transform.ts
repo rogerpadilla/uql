@@ -98,7 +98,8 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['QueryDialect', { to: 'SqlQueryDialect' }],
   ['EngineFeatures', { to: 'DialectFeatures' }],
   ['KnownMigratorDialect', { to: 'DialectName', from: 'uql-orm' }],
-  ['D1Preparer', { to: 'D1Database' }],
+  ['D1Preparer', { to: 'D1Queryable' }],
+  ['D1Database', { to: 'D1Queryable', from: 'uql-orm/d1' }],
 ]);
 
 export type FileResult = {

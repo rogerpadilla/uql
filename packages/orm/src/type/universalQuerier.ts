@@ -13,7 +13,7 @@ import type {
 } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
-import type { QuerierCountedResult, QuerierResult, QuerierTransport } from './wire.js';
+import type { QuerierCountedResult, QuerierRaw, QuerierResult, QuerierTransport } from './wire.js';
 
 /**
  * The operations the server and the browser client declare alike, per transport `W`, options `O`,
@@ -31,7 +31,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   >(
     entity: Type<E>,
     id: EntityId<E>,
-    q?: QueryOneProjected<E, S, V, X, P, C>,
+    q?: QueryOneProjected<E, S, V, X, P, C, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, QueryFindResult<E, S, V, X, P, C> | undefined>;
 
@@ -50,7 +50,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C>,
+    q: QueryOneProjected<E, S, V, X, P, C, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, QueryFindResult<E, S, V, X, P, C> | undefined>;
 
@@ -69,7 +69,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: QueryProjected<E, S, V, X, P, C, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, QueryFindResult<E, S, V, X, P, C>[]>;
 
@@ -83,29 +83,29 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
     const C extends RelationKey<E> = never,
   >(
     entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
+    q: QueryProjected<E, S, V, X, P, C, QuerierRaw<W>>,
     opts?: O,
   ): QuerierCountedResult<W, QueryFindResult<E, S, V, X, P, C>>;
 
   /** Count the records matching the filter, or those a page of them takes. */
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: O): QuerierResult<W, number>;
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E, QuerierRaw<W>>, opts?: O): QuerierResult<W, number>;
 
   /** Whether any record matches: a count capped at one row, so the engine stops at the first match. */
-  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: O): QuerierResult<W, boolean>;
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, QuerierRaw<W>>, opts?: O): QuerierResult<W, boolean>;
 
   /** Update the record with the given primary key; resolves to the number of affected rows. */
   updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
-    payload: UpdatePayload<E>,
+    payload: UpdatePayload<E, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, number>;
 
   /** Update the records matching the query; resolves to the number of affected rows. */
   updateMany<E extends object>(
     entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: UpdatePayload<E>,
+    q: QuerySearch<E, QuerierRaw<W>>,
+    payload: UpdatePayload<E, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, number>;
 
@@ -123,7 +123,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param q the criteria to look for the records
    * @return the number of affected records
    */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: DO): QuerierResult<W, number>;
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, QuerierRaw<W>>, opts?: DO): QuerierResult<W, number>;
 }
 
 /**
