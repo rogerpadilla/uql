@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.67.1] - 2026-09-16
+
+- **Fixed: `HookContext` is exported from `uql-orm` again**, where the lifecycle hooks guide imports it.
+
 ## [0.67.0] - 2026-09-16
 
 - **Breaking: the `uql-orm` root exports only the documented helpers, `raw`, `refs`, `withDeleted` and `DefaultLogger`**; import the rest from `uql-orm/util`. `COLUMN_TYPES_BY_FAMILY` is now `COLUMN_TYPES`.

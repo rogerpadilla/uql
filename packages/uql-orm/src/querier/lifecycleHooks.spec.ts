@@ -15,9 +15,10 @@ import {
   ManyToOne,
   OneToMany,
 } from '../entity/index.js';
+import type { HookContext } from '../index.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import type { Querier, QuerierListener } from '../type/index.js';
-import { getKeys, type HookContext } from '../util/index.js';
+import { getKeys } from '../util/index.js';
 
 /**
  * Every hook, observed through the public querier API rather than through `emitHook`: the emission
