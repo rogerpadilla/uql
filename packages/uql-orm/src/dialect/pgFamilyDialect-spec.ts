@@ -752,7 +752,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: 3 } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") = $1');
+    expect(sql).toBe(
+      'SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) = $1',
+    );
     expect(values).toEqual([3]);
   }
 
@@ -764,7 +766,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: { $gte: 2 } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") >= $1');
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) >= $1',
+    );
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
@@ -775,7 +779,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE (JSONB_ARRAY_LENGTH("entries") > $1 AND JSONB_ARRAY_LENGTH("entries") <= $2)',
+      'SELECT "id" FROM "JsonRecord" WHERE (JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) > $1 AND JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) <= $2)',
     );
     expect(res.values).toEqual([0, 5]);
 
@@ -786,11 +790,13 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: { $between: [1, 10] } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") BETWEEN $1 AND $2');
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) BETWEEN $1 AND $2',
+    );
     expect(res.values).toEqual([1, 10]);
   }
 
-  /** `jsonSize` numbers its placeholders in a context of its own, which has to start after the values before it. */
+  /** A `$size` count numbers its placeholders in a fragment of its own, which has to start after the values before it. */
   shouldFind$sizeAfterAnotherBoundValue() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, JsonRecord, {
@@ -798,7 +804,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { id: 7, entries: { $size: 3 } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND JSONB_ARRAY_LENGTH("entries") = $2');
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) = $2',
+    );
     expect(res.values).toEqual([7, 3]);
 
     res = this.exec((ctx) =>
@@ -808,7 +816,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND (JSONB_ARRAY_LENGTH("entries") > $2 AND JSONB_ARRAY_LENGTH("entries") <= $3)',
+      'SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND (JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) > $2 AND JSONB_ARRAY_LENGTH(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) <= $3)',
     );
     expect(res.values).toEqual([7, 0, 5]);
   }
@@ -821,7 +829,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'city\' ILIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'city\') ILIKE $1)',
     );
     expect(values).toEqual(['new%']);
   }
@@ -834,7 +842,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE (_uql_elem->>\'price\')::numeric > $1 AND _uql_elem->\'active\' = $2::jsonb)',
+      "SELECT \"id\" FROM \"JsonRecord\" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF(\"entries\") = 'array' THEN \"entries\" END) AS _uql_elem WHERE CASE WHEN JSONB_TYPEOF((_uql_elem->'price')) = 'number' THEN ((_uql_elem->>'price'))::numeric END > ($1)::numeric AND (_uql_elem->'active') = $2::jsonb)",
     );
     // The boolean compares as JSON: extracting it as text loses the type.
     expect(values).toEqual([100, 'true']);
@@ -848,9 +856,22 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'name\' = $1 AND _uql_elem->>\'status\' = ANY($2))',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'name\') = $1 AND (_uql_elem->>\'status\') = ANY($2))',
     );
     expect(values).toEqual(['exact', ['active', 'pending']]);
+  }
+
+  shouldFind$elemMatchHoldingBesideAnOperator() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, JsonRecord, {
+        $select: { id: true },
+        $where: { entries: { $elemMatch: { tags: ['a'], meta: { size: 1 }, price: { $gt: 1 } } } },
+      }),
+    );
+    expect(sql).toBe(
+      "SELECT \"id\" FROM \"JsonRecord\" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF(\"entries\") = 'array' THEN \"entries\" END) AS _uql_elem WHERE (_uql_elem->'tags') @> $1::jsonb AND CASE WHEN JSONB_TYPEOF(((_uql_elem->'meta')->'size')) = 'number' THEN (((_uql_elem->'meta')->>'size'))::numeric END = ($2)::numeric AND CASE WHEN JSONB_TYPEOF((_uql_elem->'price')) = 'number' THEN ((_uql_elem->>'price'))::numeric END > ($3)::numeric)",
+    );
+    expect(values).toEqual(['["a"]', 1, 1]);
   }
 
   shouldFind$elemMatchWithStringOperators() {
@@ -861,7 +882,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'name\' LIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'name\') LIKE $1)',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -874,7 +895,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $elemMatch: { status: { $ne: 'deleted' } } } },
       }),
     );
-    expect(res.sql).toContain("_uql_elem->>'status' IS DISTINCT FROM $1");
+    expect(res.sql).toContain("(_uql_elem->>'status') IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -883,9 +904,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } },
       }),
     );
-    expect(res.sql).toContain("(_uql_elem->>'qty')::numeric >= $1");
-    expect(res.sql).toContain("(_uql_elem->>'price')::numeric < $2");
-    expect(res.sql).toContain("(_uql_elem->>'discount')::numeric <= $3");
+    expect(res.sql).toContain(
+      "CASE WHEN JSONB_TYPEOF((_uql_elem->'qty')) = 'number' THEN ((_uql_elem->>'qty'))::numeric END >= ($1)::numeric",
+    );
+    expect(res.sql).toContain(
+      "CASE WHEN JSONB_TYPEOF((_uql_elem->'price')) = 'number' THEN ((_uql_elem->>'price'))::numeric END < ($2)::numeric",
+    );
+    expect(res.sql).toContain(
+      "CASE WHEN JSONB_TYPEOF((_uql_elem->'discount')) = 'number' THEN ((_uql_elem->>'discount'))::numeric END <= ($3)::numeric",
+    );
 
     // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
     res = this.exec((ctx) =>
@@ -905,12 +932,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         },
       }),
     );
-    expect(res.sql).toContain("_uql_elem->>'a' LIKE");
-    expect(res.sql).toContain("_uql_elem->>'b' LIKE");
-    expect(res.sql).toContain("_uql_elem->>'c' ILIKE");
-    expect(res.sql).toContain("_uql_elem->>'d' ILIKE");
-    expect(res.sql).toContain("_uql_elem->>'e' LIKE");
-    expect(res.sql).toContain("_uql_elem->>'f' ILIKE");
+    expect(res.sql).toContain("(_uql_elem->>'a') LIKE");
+    expect(res.sql).toContain("(_uql_elem->>'b') LIKE");
+    expect(res.sql).toContain("(_uql_elem->>'c') ILIKE");
+    expect(res.sql).toContain("(_uql_elem->>'d') ILIKE");
+    expect(res.sql).toContain("(_uql_elem->>'e') LIKE");
+    expect(res.sql).toContain("(_uql_elem->>'f') ILIKE");
 
     // Test $regex, $nin
     res = this.exec((ctx) =>
@@ -919,8 +946,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } },
       }),
     );
-    expect(res.sql).toContain("_uql_elem->>'code' ~ $1");
-    expect(res.sql).toContain("_uql_elem->>'tag' <> ALL($2)");
+    expect(res.sql).toContain("(_uql_elem->>'code') ~ $1");
+    expect(res.sql).toContain("(_uql_elem->>'tag') <> ALL($2)");
   }
 
   shouldFindByJsonDotNotation() {
@@ -930,7 +957,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': 1 },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'public\'))::numeric = $1');
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE CASE WHEN JSONB_TYPEOF(("kind"->\'public\')) = \'number\' THEN (("kind"->>\'public\'))::numeric END = ($1)::numeric',
+    );
     expect(values).toEqual([1]);
   }
 
@@ -941,7 +970,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { 'kind.private': { $ne: 0 } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'private\'))::numeric IS DISTINCT FROM $1');
+    expect(sql).toBe(
+      'SELECT "id" FROM "Company" WHERE CASE WHEN JSONB_TYPEOF(("kind"->\'private\')) = \'number\' THEN (("kind"->>\'private\'))::numeric END IS DISTINCT FROM ($1)::numeric',
+    );
     expect(values).toEqual([0]);
   }
 
@@ -953,7 +984,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE ((("kind"->>\'public\'))::numeric > $1 AND (("kind"->>\'public\'))::numeric <= $2)',
+      'SELECT "id" FROM "Company" WHERE (CASE WHEN JSONB_TYPEOF(("kind"->\'public\')) = \'number\' THEN (("kind"->>\'public\'))::numeric END > ($1)::numeric AND CASE WHEN JSONB_TYPEOF(("kind"->\'public\')) = \'number\' THEN (("kind"->>\'public\'))::numeric END <= ($2)::numeric)',
     );
     expect(values).toEqual([0, 1]);
   }
@@ -1189,7 +1220,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, '1'],
     },
     /**
@@ -1197,7 +1228,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
      * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
      */
     pullPushSameKey: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false), '{tags}', COALESCE((JSONB_SET("kind", '{tags}', COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS("kind"->'tags') WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb), false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), '{tags}', COALESCE((JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
@@ -1263,7 +1294,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $sort: { 'kind.public': 1 },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY ("kind"->>\'public\')');
+    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY ("kind"->\'public\')');
   }
 
   shouldSortByJsonDotNotationDeep() {
@@ -1273,7 +1304,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $sort: { 'kind.theme.color': -1 },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY (("kind"->\'theme\')->>\'color\') DESC');
+    expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY (("kind"->\'theme\')->\'color\') DESC');
   }
 
   shouldFormatPgArrayWithBinary() {

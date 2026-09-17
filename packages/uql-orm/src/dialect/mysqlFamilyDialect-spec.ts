@@ -4,12 +4,21 @@ import { JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
 /**
- * The seven JSON operator tests MySQL and MariaDB render byte-for-byte identically, save for how a
- * JSON value is read back for a boolean comparison - `jsonCastText`, which each dialect exposes to
- * match its own `AbstractSqlDialect.jsonCast` override (`CAST(v AS JSON)` vs `JSON_EXTRACT(v, '$')`).
+ * The JSON operator tests MySQL and MariaDB render alike, save for what each dialect spells its own way:
+ * a value read as JSON (`jsonCastText`: `CAST(v AS JSON)` vs `JSON_EXTRACT(v, '$')`), a path of an array
+ * element (`elemPath`: `->>` vs `JSON_VALUE`), and how an `$elemMatch` subquery opens (`elemSelect`,
+ * which MySQL hints).
  */
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   protected abstract jsonCastText(operand: string): string;
+
+  /** A field of the exploded element, as text or, with `json`, as the JSON value. */
+  protected abstract elemPath(field: string, json?: boolean): string;
+
+  protected abstract readonly elemSelect: string;
+
+  /** The `FROM` every `$elemMatch` reads its elements through. */
+  private readonly elemFrom = "JSON_TABLE(`entries`, '$[*]' COLUMNS (v JSON PATH '$')) AS _uql_elem";
 
   /** Backslash quoting, and a boolean stored as an integer. */
   protected override inlineLiterals() {
@@ -100,7 +109,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $select: { id: true },
       $where: { entries: { $size: 3 } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) = ?');
+    expect(ctx.sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE CASE WHEN JSON_TYPE(`entries`) = 'ARRAY' THEN JSON_LENGTH(`entries`) END = ?",
+    );
     expect(ctx.values).toEqual([3]);
   }
 
@@ -111,7 +122,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $select: { id: true },
       $where: { entries: { $size: { $gte: 2 } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) >= ?');
+    expect(ctx.sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE CASE WHEN JSON_TYPE(`entries`) = 'ARRAY' THEN JSON_LENGTH(`entries`) END >= ?",
+    );
     expect(ctx.values).toEqual([2]);
 
     // Multiple comparison operators
@@ -121,7 +134,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
     });
     expect(ctx.sql).toBe(
-      'SELECT `id` FROM `JsonRecord` WHERE (JSON_LENGTH(`entries`) > ? AND JSON_LENGTH(`entries`) <= ?)',
+      "SELECT `id` FROM `JsonRecord` WHERE (CASE WHEN JSON_TYPE(`entries`) = 'ARRAY' THEN JSON_LENGTH(`entries`) END > ? AND CASE WHEN JSON_TYPE(`entries`) = 'ARRAY' THEN JSON_LENGTH(`entries`) END <= ?)",
     );
     expect(ctx.values).toEqual([0, 5]);
 
@@ -131,7 +144,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $select: { id: true },
       $where: { entries: { $size: { $between: [1, 10] } } },
     });
-    expect(ctx.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_LENGTH(`entries`) BETWEEN ? AND ?');
+    expect(ctx.sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE CASE WHEN JSON_TYPE(`entries`) = 'ARRAY' THEN JSON_LENGTH(`entries`) END BETWEEN ? AND ?",
+    );
     expect(ctx.values).toEqual([1, 10]);
   }
 
@@ -143,7 +158,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_TABLE(`entries`, '$[*]' COLUMNS (`city` TEXT PATH '$.city')) AS _uql_elem WHERE _uql_elem.`city` LIKE ?)",
+      `SELECT \`id\` FROM \`JsonRecord\` WHERE EXISTS (${this.elemSelect} FROM ${this.elemFrom} WHERE ${this.elemPath('city')} LIKE ?)`,
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -154,9 +169,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $select: { id: true },
       $where: { entries: { $elemMatch: { price: { $gte: 50 }, active: { $ne: false } } } },
     });
-    expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM JSON_TABLE');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`price` AS DECIMAL) >= ?');
-    expect(ctx.sql).toContain(`NOT (${this.jsonCastText('_uql_elem.`active`')} <=> ${this.jsonCastText('?')})`);
+    expect(ctx.sql).toContain(`EXISTS (${this.elemSelect} FROM ${this.elemFrom}`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('price')} AS DOUBLE) >= CAST(? AS DOUBLE)`);
+    expect(ctx.sql).toContain(`NOT (${this.elemPath('active', true)} <=> ${this.jsonCastText('?')})`);
   }
 
   shouldFind$elemMatchWithAllOperators() {
@@ -185,16 +200,16 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
         },
       },
     });
-    expect(ctx.sql).toContain('_uql_elem.`a` = ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`b` AS DECIMAL) > ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`c` AS DECIMAL) < ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`d` AS DECIMAL) <= ?');
-    expect(ctx.sql).toContain('_uql_elem.`e` LIKE ?');
+    expect(ctx.sql).toContain(`${this.elemPath('a')} = ?`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('b')} AS DOUBLE) > CAST(? AS DOUBLE)`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('c')} AS DOUBLE) < CAST(? AS DOUBLE)`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('d')} AS DOUBLE) <= CAST(? AS DOUBLE)`);
+    expect(ctx.sql).toContain(`${this.elemPath('e')} LIKE ?`);
     // A JSON path folds case exactly as a column does: both sides, never the pattern alone.
-    expect(ctx.sql).toContain('LOWER(_uql_elem.`f`) LIKE ?');
+    expect(ctx.sql).toContain(`LOWER(${this.elemPath('f')}) LIKE ?`);
     expect(ctx.values).toContain('hi');
-    expect(ctx.sql).toContain('_uql_elem.`m` REGEXP ?');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`n` AS DECIMAL) IN (');
-    expect(ctx.sql).toContain('CAST(_uql_elem.`o` AS DECIMAL) NOT IN (');
+    expect(ctx.sql).toContain(`${this.elemPath('m')} REGEXP ?`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('n')} AS DOUBLE) IN (`);
+    expect(ctx.sql).toContain(`CAST(${this.elemPath('o')} AS DOUBLE) NOT IN (`);
   }
 }

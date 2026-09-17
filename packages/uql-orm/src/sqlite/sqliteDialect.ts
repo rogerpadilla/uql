@@ -5,14 +5,16 @@ import {
   type HydrateKind,
   type RelationRows,
 } from '../dialect/abstractSqlDialect.js';
-import { JSON_ELEM_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import {
   chainedCall,
   groupsPerCall,
-  jsonAssignCall,
-  jsonElemExists,
+  jsonSetCall,
+  type JsonAccessMode,
   jsonPath,
+  jsonArraySlotArgs,
+  type JsonSlot,
+  jsonSlotArgs,
   jsonRemoveCall,
   jsonSetTarget,
 } from '../dialect/jsonSql.js';
@@ -21,7 +23,6 @@ import type {
   FieldOptions,
   QueryContext,
   QueryPager,
-  QuerySizeComparisonOps,
   QueryTextSearchOptions,
   SqlDialectFeatures,
   Type,
@@ -52,8 +53,6 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   rowLockOf: true,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
-  partialJsonContainment: false,
-  typedJsonElements: true,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: true,
@@ -183,40 +182,44 @@ export class SqliteDialect extends AbstractSqlDialect {
     ctx.addValue(search.$value);
   }
 
+  protected override jsonLength(slot: JsonSlot): string {
+    return `JSON_ARRAY_LENGTH(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))})`;
+  }
+
+  /** `JSON_EACH` walks the array at the path itself, each element's `fullkey` naming it from the column. */
+  protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
+    return `JSON_EACH(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}) ${alias}`;
+  }
+
+  protected override jsonIsArray(slot: JsonSlot): string {
+    return `JSON_TYPE(${jsonSlotArgs(slot)}) = 'array'`;
+  }
+
+  /** An object element's `value` is its JSON text, which its fields are paths into. */
+  protected override jsonElemDoc(alias: string): string {
+    return `${alias}.value`;
+  }
+
   /**
-   * Each element is read back as JSON text through `->` at its own `fullkey`, so it compares
-   * correctly whatever its type. `JSON_EACH`'s `value` column would not: it unquotes strings (`a`
-   * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
+   * A scalar element's `value` is already typed, so a number and a string compare as such. Its JSON form
+   * is read back from the column at the element's own `fullkey`, since `value` flattens a boolean to 0/1.
    */
-  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-    const from = this.jsonElemFrom(jsonField, [], alias);
-    const conditions = (value as unknown[]).map((val) =>
-      jsonElemExists(from, [`${jsonField} -> ${alias}.fullkey = ${this.jsonScalarParam(ctx, val)}`]),
-    );
-    return `(${conditions.join(' AND ')})`;
-  }
-
-  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSON_ARRAY_LENGTH(${jsonField})`), value),
-    );
-  }
-
-  /** `JSON_EACH` yields both scalar and object elements, so one form covers each case. */
-  protected override jsonElemFrom(jsonField: string, _fields: readonly string[], alias: string): string {
-    return `JSON_EACH(${jsonField}) ${alias}`;
-  }
-
-  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
-    if (field === undefined) {
-      return `${alias}.value`;
+  protected override jsonElemValue(slot: JsonSlot, alias: string, mode: JsonAccessMode): string {
+    if (mode === 'json') {
+      return `${slot.base} -> ${alias}.fullkey`;
     }
-    return asJson ? `${alias}.value -> ${jsonPath(field)}` : `JSON_EXTRACT(${alias}.value, ${jsonPath(field)})`;
+    const value = this.jsonElemDoc(alias);
+    return mode === 'numeric' ? this.numericCast(value) : value;
   }
 
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `JSON_EXTRACT(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
+  /** `JSON_EXTRACT` already answers a number as one, and orders it by value. */
+  protected override readonly jsonSortModes: readonly JsonAccessMode[] = ['text'];
+
+  /** `->` for the JSON value, and `JSON_EXTRACT` for SQLite's own: a number as a number, a string as text. */
+  protected override jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
+    return mode === 'json'
+      ? `(${escapedColumn} -> ${jsonPath(path)})`
+      : `JSON_EXTRACT(${escapedColumn}, ${jsonPath(path)})`;
   }
 
   protected override numericCast(expr: string): string {
@@ -227,22 +230,9 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON(${operand})`;
   }
 
-  /**
-   * `JSON_REPLACE` leaves an absent key (and a NULL column) untouched. Elements are read back
-   * through `->` at their own `fullkey` so each keeps its JSON type - `JSON_EACH`'s `value` would
-   * flatten booleans to 0/1 and stringify objects.
-   */
-  protected override jsonPullKey(
-    ctx: QueryContext,
-    expr: string,
-    escapedCol: string,
-    key: string,
-    value: unknown,
-  ): string {
-    const path = jsonPath(key);
-    const elem = `${escapedCol} -> ${JSON_PULL_ALIAS}.fullkey`;
-    const kept = `SELECT JSON_GROUP_ARRAY(JSON(${elem})) FROM JSON_EACH(${escapedCol}, ${path}) ${JSON_PULL_ALIAS} WHERE ${elem} <> ${this.jsonScalarParam(ctx, value)}`;
-    return `JSON_REPLACE(${expr}, ${path}, (${kept}))`;
+  /** `JSON` keeps each element's JSON type in the array, which answers `[]` for no rows. */
+  protected override jsonArrayOf(elem: string): string {
+    return `JSON_GROUP_ARRAY(JSON(${elem}))`;
   }
 
   protected override jsonSet(
@@ -251,9 +241,8 @@ export class SqliteDialect extends AbstractSqlDialect {
     set: Record<string, unknown>,
     field?: FieldOptions,
   ): string {
-    return jsonAssignCall(
+    return jsonSetCall(
       (value) => this.jsonScalarParam(ctx, value),
-      'JSON_SET',
       jsonSetTarget(expr, field, `'{}'`),
       set,
       this.maxFunctionArgs,
@@ -262,17 +251,10 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   /** `[#]` appends, creating the array where it is absent: `JSON_SET`, since Turso's `JSON_INSERT` will not touch an existing array. */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
-    return jsonAssignCall(
-      (value) => this.jsonScalarParam(ctx, value),
-      'JSON_SET',
-      expr,
-      push,
-      this.maxFunctionArgs,
-      '[#]',
-    );
+    return jsonSetCall((value) => this.jsonScalarParam(ctx, value), expr, push, this.maxFunctionArgs, '[#]');
   }
 
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall('JSON_REMOVE', expr, unset, this.maxFunctionArgs);
+    return jsonRemoveCall(expr, unset, this.maxFunctionArgs);
   }
 }

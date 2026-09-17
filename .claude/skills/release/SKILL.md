@@ -13,7 +13,7 @@ Staged and unstaged alike (and related files). Make sure to understand everythin
 
 ## 2. Settle the changelog entry
 
-Compress `[Unreleased]`, the CHANGELOG.md header says how, then rename its heading to the version the bump will produce, dated today. Reorder so related bullets sit together. Be clear and concise for humans, simplify and unify.
+Compress `[Unreleased]`, the CHANGELOG.md header says how, then rename its heading to the version the bump will produce, dated today. Reorder so related bullets sit together. Be clear and concise for humans, simplify and unify; only put/keep what really worth it for end-users.
 
 `release.github` looks the entry up by the version it bumped to, so a heading naming a different version stops the release. What nothing checks is severity: decide the heading and the bump level together.
 

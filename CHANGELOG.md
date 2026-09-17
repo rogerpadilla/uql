@@ -2,6 +2,22 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.68.0] - 2026-09-17
+
+- **Breaking: `$all` and `$elemMatch` match an element by what it holds, on every engine**: an object's keys, nested ones included, and an array's elements, beside an operator too. SQLite, SQL Server and MongoDB matched only an identical element. `uql-orm/postgres` grows 0.5 KB gzipped.
+- **Breaking: one `$eq` or `$in` in `$elemMatch` compares an element by JSON type**, as `$all` does, so `'5'` no longer matches `5`.
+- **Breaking (MongoDB): `$pull` compares an object element with its key order**, as SQLite and SQL Server do.
+- **Fixed: a JSON path holding no array matches no `$size`, `$all` or `$elemMatch`, and `$pull` leaves it alone**; Postgres, CockroachDB and MongoDB failed the statement, and the other engines miscounted it or rewrote it as an array.
+- **Fixed (MongoDB): `$size` takes comparison bounds**, and every relation `$size` in one `$where` applies, not just the last.
+- **`$between` and `$not` work on a JSON path, and `$elemMatch` reads a nested field**, where SQL Server dropped one past 4000 characters. A JSON number is cast on both sides, so an index over the path serves the comparison.
+- **Fixed: sorting by a JSON path orders numbers by value**, where `10` sorted before `9`.
+- **Fixed (MySQL, MariaDB): a JSON number compares with its fraction**, which a `DECIMAL` cast rounded: `{ 'kind.price': { $gt: 1.2 } }` no longer misses `1.4`.
+- **Fixed (Postgres, CockroachDB): a numeric comparison on a JSON path no longer fails on a row holding text**; regenerate a numeric `jsonPath` index, whose expression changed.
+- **MySQL indexes a JSON path**: `jsonPath` compiles to the expression queries compare, and a string path takes a `length`.
+- **Fixed (MySQL): `$elemMatch` returns the right rows on a large table**, where the planner could answer every row with one row's elements.
+- **Breaking: a vector search defaults to its index's metric** where neither the query nor the field names one, so an `l2` index serves it instead of a cosine scan.
+- **Fixed (MariaDB): a vector reads back with every float32 digit**, not the six `VEC_ToText` keeps.
+
 ## [0.67.1] - 2026-09-16
 
 - **Fixed: `HookContext` is exported from `uql-orm` again**, where the lifecycle hooks guide imports it.

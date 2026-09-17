@@ -9,7 +9,6 @@ import type {
   QueryContext,
   QueryOptions,
   QueryPager,
-  QuerySizeComparisonOps,
   QueryTextSearchOptions,
   SqlDialectFeatures,
   Type,
@@ -22,9 +21,9 @@ import {
   type DerivedRelation,
   type RelationRows,
 } from './abstractSqlDialect.js';
-import { COUNT_ALIAS, JSON_PULL_ALIAS } from './aliases.js';
+import { COUNT_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
-import { jsonAssignCall, jsonPath, jsonRemoveCall, jsonSetTarget } from './jsonSql.js';
+import { jsonSetCall, jsonPath, jsonRemoveCall, type JsonSlot, jsonSetTarget } from './jsonSql.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -54,12 +53,13 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   rowLockOf: true,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
-  partialJsonContainment: true,
-  typedJsonElements: false,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: false,
 };
+
+/** The one `JSON_TABLE` column an exploded array reads each element through, as a JSON document. */
+const ELEM_COLUMN = 'v';
 
 /** What MySQL and MariaDB share, their JSON functions above all: `JSON_LENGTH`, `JSON_CONTAINS`, `JSON_TABLE`, `JSON_SET`. */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
@@ -213,13 +213,18 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   /**
    * A number and bytes cross JSON as text, where JSON would round the one and spell the other as base64,
-   * and a vector as the engine reads one back: text on MariaDB, which stores it packed.
+   * and a vector as the engine reads one back: its packed bytes on MariaDB.
    */
   protected override readonly carriedFields = {
     numeric: (expr) => `CAST(${expr} AS CHAR)`,
-    blob: (expr) => `CONCAT(${this.escape(BYTES_PREFIX)}, HEX(${expr}))`,
+    blob: (expr) => this.bytesAsText(expr),
     vector: (expr, field) => this.selectFieldExpr(expr, field),
   } satisfies CarriedFields;
+
+  /** Bytes as the hex text `decodeColumn` reads back, whole. */
+  protected bytesAsText(expr: string): string {
+    return `CONCAT(${this.escape(BYTES_PREFIX)}, HEX(${expr}))`;
+  }
 
   override escape(value: unknown): string {
     return escapeMysqlSqlLiteral(value);
@@ -244,39 +249,14 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(')');
   }
 
+  /** `DOUBLE`, never a bare `DECIMAL`, which is `DECIMAL(10,0)` and rounds `1.4` to `1`. */
   protected override numericCast(expr: string): string {
-    return `CAST(${expr} AS DECIMAL)`;
+    return `CAST(${expr} AS DOUBLE)`;
   }
 
   protected override neExpr(field: string, ph: string): string {
     // MySQL/MariaDB null-safe inequality: true when values differ or one side is NULL.
     return `NOT (${field} <=> ${ph})`;
-  }
-
-  /** How a surviving element is fed back into the array a `$pull` rebuilds. */
-  protected jsonPullElem(alias: string): string {
-    return `${alias}.v`;
-  }
-
-  /** Condition keeping the elements a `$pull` does *not* remove, given the bound pulled value. */
-  protected jsonPullKeep(alias: string, operand: string): string {
-    return `${alias}.v <> ${operand}`;
-  }
-
-  /**
-   * `JSON_REPLACE` leaves an absent key (and a NULL column) untouched, which is what makes `$pull`
-   * a no-op there. The subquery reads the column, so its value binds exactly once.
-   */
-  protected override jsonPullKey(
-    ctx: QueryContext,
-    expr: string,
-    escapedCol: string,
-    key: string,
-    value: unknown,
-  ): string {
-    const elements = `JSON_TABLE(${escapedCol}, ${jsonPath(key, '[*]')} COLUMNS (v JSON PATH '$')) ${JSON_PULL_ALIAS}`;
-    const kept = `SELECT COALESCE(JSON_ARRAYAGG(${this.jsonPullElem(JSON_PULL_ALIAS)}), JSON_ARRAY()) FROM ${elements} WHERE ${this.jsonPullKeep(JSON_PULL_ALIAS, this.jsonScalarParam(ctx, value))}`;
-    return `JSON_REPLACE(${expr}, ${jsonPath(key)}, (${kept}))`;
   }
 
   /**
@@ -289,9 +269,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     set: Record<string, unknown>,
     field?: FieldOptions,
   ): string {
-    return jsonAssignCall(
+    return jsonSetCall(
       (value) => this.jsonScalarParam(ctx, value),
-      'JSON_SET',
       jsonSetTarget(expr, field, `'{}'`),
       set,
       this.maxFunctionArgs,
@@ -310,48 +289,41 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `JSON_MERGE_PRESERVE(${expr}, JSON_OBJECT(${entries.join(', ')}))`;
   }
 
+  /**
+   * `->` for the value and `->>` for its text, each taking the whole path (`'$.a.b'`): a bare key, as
+   * Postgres chains them, is "Invalid JSON path expression" here.
+   */
+  protected override jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
+    return mode === 'json' ? `${escapedColumn}->${jsonPath(path)}` : `(${escapedColumn}->>${jsonPath(path)})`;
+  }
+
+  /** `JSON_CONTAINS` of the array as the path reads it, which is what a multi-valued index is matched by. */
+  protected override jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    return `JSON_CONTAINS(${this.jsonValue(slot)}, ${this.addValue(ctx, JSON.stringify(values))})`;
+  }
+
   protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall('JSON_REMOVE', expr, unset, this.maxFunctionArgs);
+    return jsonRemoveCall(expr, unset, this.maxFunctionArgs);
+  }
+
+  /** Only an array's, where `JSON_LENGTH` counts a scalar as 1 and an object by its keys. */
+  protected override jsonLength(slot: JsonSlot): string {
+    return `CASE WHEN ${this.jsonIsArray(slot)} THEN JSON_LENGTH(${this.jsonValue(slot)}) END`;
+  }
+
+  protected override jsonIsArray(slot: JsonSlot): string {
+    return `JSON_TYPE(${this.jsonValue(slot)}) = 'ARRAY'`;
   }
 
   /**
-   * MySQL's `->`/`->>` take a full JSON path (`'$.a.b'`, never a bare key) and only apply to a
-   * column reference, so the whole dotted path goes into a single accessor instead of the base's
-   * chained `col->'a'->>'b'`, which the server rejects with "Invalid JSON path expression".
+   * Each element of the array at the path as one `JSON` column, which any path then reads the way it reads
+   * a column's document.
    */
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `(${escapedColumn}->>${jsonPath(jsonPathStr)})`;
+  protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
+    return `JSON_TABLE(${slot.base}, ${jsonPath(slot.path, '[*]')} COLUMNS (${ELEM_COLUMN} JSON PATH '$')) AS ${alias}`;
   }
 
-  protected override getJsonPathJsonbExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `${escapedColumn}->${jsonPath(jsonPathStr)}`;
-  }
-
-  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    return `JSON_CONTAINS(${jsonField}, ${this.addValue(ctx, JSON.stringify(value))})`;
-  }
-
-  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSON_LENGTH(${jsonField})`), value),
-    );
-  }
-
-  /**
-   * `JSON_TABLE` with its columns declared up front. A scalar element reads as `JSON` where `asJson`,
-   * since `TEXT` reads a nested array as `NULL`.
-   */
-  protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
-    const columns = fields.length
-      ? fields.map((field) => `${this.escapeId(field, true)} TEXT PATH ${jsonPath(field)}`).join(', ')
-      : `elem_text ${asJson ? 'JSON' : 'TEXT'} PATH '$'`;
-    return `JSON_TABLE(${jsonField}, '$[*]' COLUMNS (${columns})) AS ${alias}`;
-  }
-
-  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
-    const ref = field === undefined ? `${alias}.elem_text` : `${alias}.${this.escapeId(field, true)}`;
-    // `JSON_TABLE` columns stay `TEXT` so the string operators keep working; the JSON form reads
-    // that text back as JSON.
-    return asJson ? this.jsonCast(ref) : ref;
+  protected override jsonElemDoc(alias: string): string {
+    return `${alias}.${ELEM_COLUMN}`;
   }
 }

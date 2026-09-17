@@ -14,7 +14,7 @@ const TABLE = 'mysql_json_array_index';
 /** Enough rows that a scan is the more expensive plan, so the planner's choice means something. */
 const ROWS = 1000;
 
-/** The array is the whole column, which is what `$all` reads and what its `JSON_CONTAINS(col, ?)` names. */
+/** The array is the whole column, which `$all`'s `JSON_CONTAINS` and `$elemMatch`'s `MEMBER OF` name. */
 @Index((jsonArrayIndexed) => [{ column: jsonArrayIndexed.tags, jsonArray: { type: String, length: 64 } }], {
   name: 'ix_json_tags',
 })
@@ -51,21 +51,31 @@ describe('MySQL JSON array index', () => {
     await pool.end();
   }, provisioningTimeout);
 
+  const planFor = (tags: object) =>
+    pool.withQuerier((querier) => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, JsonArrayIndexed, { $select: { id: true }, $where: { tags } });
+      return querier.all(`EXPLAIN ${ctx.sql}`, ctx.values).then(JSON.stringify);
+    });
+
   it('should answer $all from the index', async () => {
-    const ctx = dialect.createContext();
-    dialect.find(ctx, JsonArrayIndexed, { $select: { id: true }, $where: { tags: { $all: ['t7'] } } });
+    expect(await planFor({ $all: ['t7'] })).toContain('ix_json_tags');
+  });
 
-    const plan = await pool.withQuerier((querier) => querier.all(`EXPLAIN ${ctx.sql}`, ctx.values));
-
-    expect(JSON.stringify(plan)).toContain('ix_json_tags');
+  it('should answer an element equal to one value, or to one of several, from the index', async () => {
+    expect(await planFor({ $elemMatch: { $eq: 't7' } })).toContain('ix_json_tags');
+    expect(await planFor({ $elemMatch: { $in: ['t7', 't8'] } })).toContain('ix_json_tags');
   });
 
   it('should find the rows it indexed', async () => {
-    const found = await pool.withQuerier((querier) =>
-      querier.findMany(JsonArrayIndexed, { $select: { id: true }, $where: { tags: { $all: ['t7'] } } }),
-    );
+    const byAll = await pool.findMany(JsonArrayIndexed, { $select: { id: true }, $where: { tags: { $all: ['t7'] } } });
+    const byElemIn = await pool.findMany(JsonArrayIndexed, {
+      $select: { id: true },
+      $where: { tags: { $elemMatch: { $in: ['t7', 't8'] } } },
+    });
 
-    expect(found).toHaveLength(1);
+    expect(byAll).toHaveLength(1);
+    expect(byElemIn).toHaveLength(2);
   });
 
   /** The server states no column name for a multi-valued key part, which diffing has to survive. */

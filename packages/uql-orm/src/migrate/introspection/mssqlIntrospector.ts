@@ -1,5 +1,9 @@
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
-import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
+import {
+  AbstractSqlSchemaIntrospector,
+  type JoinedForeignKeyRow,
+  type TableRowReader,
+} from './abstractSqlSchemaIntrospector.js';
 
 /**
  * SQL Server schema introspector.
@@ -168,23 +172,9 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapForeignKeysResult(
     _read: TableRowReader,
     _tableName: string,
-    results: {
-      constraint_name: string;
-      columns: string;
-      referenced_table: string;
-      referenced_columns: string;
-      delete_rule: string;
-      update_rule: string;
-    }[],
+    results: JoinedForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
-    return results.map((row) => ({
-      name: row.constraint_name,
-      columns: row.columns.split(','),
-      references: { table: row.referenced_table, columns: row.referenced_columns.split(',') },
-      // `sys` spells them with an underscore: `SET_NULL`, `NO_ACTION`.
-      onDelete: this.normalizeReferentialAction(row.delete_rule.replaceAll('_', ' ')),
-      onUpdate: this.normalizeReferentialAction(row.update_rule.replaceAll('_', ' ')),
-    }));
+    return this.joinedForeignKeys(results);
   }
 
   /**

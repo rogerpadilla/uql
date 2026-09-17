@@ -55,9 +55,9 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   }
 
   /**
-   * Every distance metric this dialect has, and how it spells each. Empty means no vector search at
-   * all, which is what MySQL and D1 are. The key set is the single answer to "is this metric
-   * supported here", so a metric cannot be searchable and unindexable or the reverse.
+   * Every distance metric this dialect has, and how a search and an index spell each. Empty means no
+   * vector search at all, which is what MySQL and D1 are. The key set is the single answer to "is this
+   * metric supported here", for a query and an index alike.
    */
   readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map();
 
@@ -65,17 +65,17 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   abstract escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
 
   /**
-   * Resolve common parameters for a vector similarity ORDER BY expression.
-   * Shared by all dialect overrides of `appendVectorSort`.
+   * What a distance expression reads, for a `$sort` and a `$near` alike. The metric falls back to the
+   * field's, then its index's, which serves no other, then cosine.
    */
-  protected resolveVectorSortParams<E>(
+  protected resolveVectorDistance<E>(
     meta: EntityMeta<E>,
     key: string,
     search: QueryVectorSearch,
   ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined } {
     const field = meta.fields[key as FieldKey<E>];
     const colName = this.resolveColumnName(key, field);
-    const distance = search.$distance ?? field?.distance ?? 'cosine';
+    const distance = search.$distance ?? field?.distance ?? findVectorIndex(meta, key)?.distance ?? 'cosine';
     return { colName, distance, field };
   }
 
@@ -97,7 +97,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
 
   /**
    * The distance a vector `$sort` projects, which the projection names after `$project`. Delegates to
-   * `appendVectorSort` so each dialect's distance syntax is written once.
+   * `appendVectorDistance` so each dialect's distance syntax is written once.
    */
   protected appendVectorProjection<E>(
     ctx: QueryContext,
@@ -112,20 +112,25 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     if (meta.fields[alias as FieldKey<E>]) {
       throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
     }
-    this.appendVectorSort(ctx, meta, key, search);
+    this.appendVectorDistance(ctx, meta, key, search);
   }
 
   /**
    * The distance expression, in whichever of the two shapes this dialect spells it. One method for
    * both, so the metric lookup and its refusal exist once rather than per shape.
    */
-  protected appendVectorSort<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, search: QueryVectorSearch): void {
+  protected appendVectorDistance<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    search: QueryVectorSearch,
+  ): void {
     if (this.vectorMetrics.size === 0) {
       throw new TypeError(
         `${this.dialectName} does not support vector similarity search. Use raw() for vector queries.`,
       );
     }
-    const { colName, distance, field } = this.resolveVectorSortParams(meta, key, search);
+    const { colName, distance, field } = this.resolveVectorDistance(meta, key, search);
     const metric = this.vectorMetrics.get(distance);
     if (!metric) {
       throw unsupportedVectorMetric(this.dialectName, distance);

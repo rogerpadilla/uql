@@ -144,10 +144,6 @@ export interface SqlDialectFeatures extends DialectFeatures {
   readonly orderedUpsertReturning: boolean;
   /** Whether a JSON aggregate takes an `ORDER BY` of its own; where not, a relation's rows keep their derived table's order. */
   readonly orderedJsonAggregates: boolean;
-  /** Whether JSON array containment matches an object element that merely includes the given keys, as `@>` does. */
-  readonly partialJsonContainment: boolean;
-  /** Whether an exploded scalar JSON element keeps its SQL type, as SQLite's `JSON_EACH` does. */
-  readonly typedJsonElements: boolean;
   /** Whether the engine has pgvector's `halfvec` and `sparsevec`; elsewhere both map onto `vector`. */
   readonly narrowVectorTypes: boolean;
   /** Whether an ANN index's tuning `SET` applies only inside a transaction, as `SET LOCAL` does. */

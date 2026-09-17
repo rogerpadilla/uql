@@ -22,6 +22,14 @@ class L2Item {
   @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
 }
 
+/** A field with no metric of its own, whose index names one: an index only serves the metric it was built for. */
+@Entity({ name: 'L2IndexedItem' })
+@Index((l2IndexedItem) => [l2IndexedItem.vec], { type: 'hnsw', distance: 'l2' })
+class L2IndexedItem {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: 'vector' }) vec!: number[];
+}
+
 /**
  * Every dialect's vector search side by side: the metrics it has and the expression each compiles to,
  * the query shapes around them being identical. Each mapping was verified against a live engine, since
@@ -157,6 +165,18 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
 
     expect(sql).toBe(
       `SELECT ${q('id')} FROM ${q('L2Item')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
+    );
+  });
+
+  it("should take the index's metric where the field names none", () => {
+    const { sql } = find(L2IndexedItem, {
+      $select: { id: true },
+      $sort: { vec: { $vector: [1, 2, 3] } },
+      $limit: 10,
+    });
+
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('L2IndexedItem')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
     );
   });
 

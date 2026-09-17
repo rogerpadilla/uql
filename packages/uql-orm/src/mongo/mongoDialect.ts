@@ -21,7 +21,6 @@ import type {
   QueryPopulate,
   QuerySelect,
   QuerySelectValue,
-  QuerySizeComparisonOps,
   QuerySortMap,
   QueryTextSearchOptions,
   QueryVectorSearch,
@@ -50,9 +49,11 @@ import {
   getKeys,
   getRelationRequestSummary,
   hasKeys,
+  isJsonObject,
   isJsonUpdateOp,
   isOperatorMap,
   isOperatorObject,
+  isRecord,
   isVectorSearch,
   normalizeScalarFieldSelection,
   type ParsedGroupEntry,
@@ -214,7 +215,7 @@ export class MongoDialect extends AbstractDialect {
         if (!lookups) {
           throw new TypeError(`filtering by relation '${key}' is not supported here on MongoDB`);
         }
-        Object.assign(filter, this.appendRelationLookup(meta, key, val, lookups));
+        this.appendRelationLookup(filter, meta, key, val, lookups);
       } else {
         this.assertNoRaw(val);
         this.assertKnownPathRoot(meta, key);
@@ -223,12 +224,20 @@ export class MongoDialect extends AbstractDialect {
         if ((key === MongoDialect.ID_KEY || isReference) && !isOperatorObject(val)) {
           val = this.toWireId(val);
         }
-        if (isOperatorObject(val)) {
-          val = this.transformOperators(val);
-        } else if (Array.isArray(val)) {
-          val = { $in: val };
+        if (!isOperatorObject(val)) {
+          filter[key] = Array.isArray(val) ? { $in: val } : val;
+          continue;
         }
-        filter[key] = val;
+        // MongoDB's `$size` takes only a number, so bounds become an `$expr` beside the other operators.
+        const { $size: size, ...ops } = val;
+        if (!isRecord(size)) {
+          filter[key] = this.transformOperators(val);
+        } else {
+          MongoDialect.andExpr(filter, MongoDialect.arraySize(key, size));
+          if (hasKeys(ops)) {
+            filter[key] = this.transformOperators(ops);
+          }
+        }
       }
     }
     return filter as Filter<E>;
@@ -267,26 +276,45 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * Emits the correlated `$lookup` for one relation condition and returns the condition that tests its
-   * result: presence of a row for a plain relation filter, a comparison against the row count for
+   * Emits the correlated `$lookup` for one relation condition, and adds to `filter` the condition testing
+   * its result: presence of a row for a plain relation filter, a comparison against the row count for
    * `$size`. The target's (and, for ManyToMany, the junction's) own filters scope the lookup, so a
    * relation subquery can no more read out-of-scope rows than a direct query on the target can.
    */
   private appendRelationLookup<E>(
+    filter: Record<string, unknown>,
     meta: EntityMeta<E>,
     relKey: string,
     val: unknown,
     lookups: RelationLookups,
-  ): Record<string, unknown> {
+  ): void {
     const temp = `${REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
     const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_ALIAS }];
     const where = (sizeVal === undefined ? val : {}) as QueryWhere<object>;
     lookups.temps.push(temp);
     lookups.stages.push(this.relationLookup(meta, meta.relations[relKey]!, where, temp, tail));
-    return sizeVal === undefined
-      ? { [`${temp}.0`]: { $exists: true } }
-      : { $expr: this.compareRelationCount(temp, sizeVal) };
+    if (sizeVal === undefined) {
+      filter[`${temp}.0`] = { $exists: true };
+    } else {
+      MongoDialect.andExpr(filter, MongoDialect.compareCount(this.tally(temp), sizeVal));
+    }
+  }
+
+  /** Adds `expr` to `filter`'s `$expr`, `AND`ed with any already there. */
+  private static andExpr(filter: Record<string, unknown>, expr: Record<string, unknown>): void {
+    filter['$expr'] = filter['$expr'] ? { $and: [filter['$expr'], expr] } : expr;
+  }
+
+  /**
+   * `$size` against bounds, which MongoDB's own `$size` takes only as a number: the array at `path` counted
+   * in an `$expr`, which no other value satisfies. `$and` may evaluate every operand, so the count reads an
+   * empty array in place of any other value.
+   */
+  private static arraySize(path: string, size: Readonly<Record<string, unknown>>): Record<string, unknown> {
+    const value = `$${path}`;
+    const count = { $size: { $cond: [{ $isArray: value }, value, []] } };
+    return { $and: [{ $isArray: value }, MongoDialect.compareCount(count, size)] };
   }
 
   /**
@@ -359,24 +387,23 @@ export class MongoDialect extends AbstractDialect {
     };
   }
 
-  /**
-   * Compares the looked-up row count, which is `[{ n: <count> }]` or `[]` when nothing matched - hence
-   * the `$ifNull` fallback to 0, so `{ $size: 0 }` matches parents with no related row at all.
-   */
-  private compareRelationCount(temp: string, sizeVal: number | QuerySizeComparisonOps): Record<string, unknown> {
-    const count = this.tally(temp);
-    if (typeof sizeVal === 'number') {
-      return { $eq: [count, sizeVal] };
+  /** `count` compared with `size`, a number or its bounds, as an aggregation expression. */
+  private static compareCount(
+    count: unknown,
+    size: number | Readonly<Record<string, unknown>>,
+  ): Record<string, unknown> {
+    if (typeof size === 'number') {
+      return { $eq: [count, size] };
     }
-    const comparisons: Record<string, unknown>[] = Object.entries(sizeVal)
+    const comparisons: Record<string, unknown>[] = Object.entries(size)
       .filter(([, bound]) => bound !== undefined)
       .flatMap(([op, bound]): Record<string, unknown>[] =>
-        op === '$between'
-          ? [{ $gte: [count, (bound as [number, number])[0]] }, { $lte: [count, (bound as [number, number])[1]] }]
+        op === '$between' && Array.isArray(bound)
+          ? [{ $gte: [count, bound[0]] }, { $lte: [count, bound[1]] }]
           : [{ [op]: [count, bound] }],
       );
     if (!comparisons.length) {
-      throw new TypeError('$size on a relation needs at least one comparison');
+      throw new TypeError('$size needs at least one comparison');
     }
     return comparisons.length === 1 ? comparisons[0]! : { $and: comparisons };
   }
@@ -457,7 +484,13 @@ export class MongoDialect extends AbstractDialect {
       // mapping - passing it through raw sends UQL-only operators (`$startsWith`, `$between`, ...)
       // straight to the server, which rejects them as unknown.
       if (op === '$elemMatch') {
-        result[op] = this.transformElemMatch(val as Record<string, unknown>);
+        result[op] = this.held(val);
+        continue;
+      }
+      // An object or an array is matched by what it holds, as the SQL engines read it, where native `$all`
+      // compares the whole element. MongoDB takes `$elemMatch` there only when every value is one.
+      if (op === '$all' && Array.isArray(val) && val.some((value) => Array.isArray(value) || isOperatorMap(value))) {
+        result[op] = this.allHolding(val);
         continue;
       }
       // Native MongoDB operators - pass through directly
@@ -502,15 +535,39 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * Maps the conditions inside `$elemMatch`: an operator map applies to the element itself, anything
-   * else is a per-field map whose operator objects each need mapping.
+   * What a value holding `value` matches, as the SQL engines read it: an operator map tests it, an array
+   * holds each element by `$all`, an object each key by {@link containment}, and a scalar is equal.
    */
-  private transformElemMatch(match: Record<string, unknown>): Record<string, unknown> {
-    if (isOperatorObject(match)) {
-      return this.transformOperators(match);
+  private held(value: unknown): unknown {
+    if (Array.isArray(value)) {
+      return this.transformOperators({ $all: value });
     }
+    if (!isOperatorMap(value)) {
+      return value;
+    }
+    return isOperatorObject(value) ? this.transformOperators(value) : this.containment(value);
+  }
+
+  /**
+   * `$all` as one `$elemMatch` per value, since native `$all` never looks into an element that is an array:
+   * an array element holds each of its values alike, an object or operator map as {@link held} reads it.
+   */
+  private allHolding(values: readonly unknown[]): Record<string, unknown>[] {
+    return values.map((value) => {
+      if (Array.isArray(value)) {
+        return { $elemMatch: { $all: this.allHolding(value) } };
+      }
+      return { $elemMatch: isOperatorMap(value) ? this.held(value) : { $eq: value } };
+    });
+  }
+
+  /** An object's keys as {@link held} reads each, a nested object's by its dotted path rather than whole. */
+  private containment(object: Record<string, unknown>, prefix = ''): Record<string, unknown> {
     return Object.fromEntries(
-      Object.entries(match).map(([field, val]) => [field, isOperatorObject(val) ? this.transformOperators(val) : val]),
+      Object.entries(object).flatMap(([key, value]) => {
+        const path = prefix ? `${prefix}.${key}` : key;
+        return isJsonObject(value) ? Object.entries(this.containment(value, path)) : [[path, this.held(value)]];
+      }),
     );
   }
 
@@ -1093,16 +1150,15 @@ export class MongoDialect extends AbstractDialect {
     const { set, push, pull, unset } = groups;
     const exprKeys = [...Object.keys(pull), ...Object.keys(set), ...Object.keys(push)];
 
-    // MongoDB rejects two operators targeting one path in a single update document, so any path
-    // reached by more than one operator group forces the pipeline form.
+    // Native `$pull` fails on a value that is no array, and MongoDB rejects two operators targeting one
+    // path in a single update document: either forces the pipeline form.
     const allPaths = [...exprKeys, ...unset];
-    if (new Set(allPaths).size < allPaths.length) {
+    if (hasKeys(pull) || new Set(allPaths).size < allPaths.length) {
       return this.getUpdatePipeline(groups, new Set(exprKeys));
     }
     return {
       ...(hasKeys(set) && { $set: set }),
       ...(hasKeys(push) && { $push: push }),
-      ...(hasKeys(pull) && { $pull: pull }),
       ...(unset.size > 0 && { $unset: Object.fromEntries([...unset].map((path) => [path, ''])) }),
     } as UpdateFilter<E>;
   }
@@ -1127,9 +1183,9 @@ export class MongoDialect extends AbstractDialect {
       if (path in push) {
         expr = { $concatArrays: [expr, [{ $literal: push[path] }]] };
       }
-      // Only `$set` and `$push` create a key. A `$pull` alone has to leave an absent one absent, and
-      // `$$REMOVE` is how a pipeline `$set` skips a field - without it the filter would store `[]`.
-      assignments[path] = path in set || path in push ? expr : { $cond: [{ $isArray: `$${path}` }, expr, '$$REMOVE'] };
+      // Only `$set` and `$push` create a key. A `$pull` alone leaves any value that is no array as it is,
+      // and an absent one absent, since a pipeline `$set` of a missing field adds none.
+      assignments[path] = path in set || path in push ? expr : { $cond: [{ $isArray: `$${path}` }, expr, `$${path}`] };
     }
     return [{ $set: assignments }, ...(unset.size > 0 ? [{ $unset: [...unset] }] : [])];
   }

@@ -63,9 +63,9 @@ class CockroachDialectSpec extends PgFamilySpec {
   shouldHaveVectorOperatorClassesAndNoExtension() {
     expect(this.crdb.vectorMetrics).toEqual(
       new Map([
-        ['cosine', { op: '<=>', opsSuffix: 'cosine' }],
-        ['l2', { op: '<->', opsSuffix: 'l2' }],
-        ['inner', { op: '<#>', opsSuffix: 'ip' }],
+        ['cosine', { op: '<=>', index: 'cosine' }],
+        ['l2', { op: '<->', index: 'l2' }],
+        ['inner', { op: '<#>', index: 'ip' }],
       ]),
     );
     expect(this.crdb.vectorExtension).toBeUndefined();

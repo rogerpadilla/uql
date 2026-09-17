@@ -36,21 +36,14 @@ export function someKey<T extends object>(obj: T, pred: (key: keyof T & string) 
   return false;
 }
 
-/** Whether any enumerable value of `obj` satisfies `pred`, short-circuiting like {@link someKey}. */
-export function someValue(obj: object, pred: (value: unknown) => boolean): boolean {
-  return someKey(obj, (key) => pred((obj as Record<string, unknown>)[key]));
+/** Whether `key` names an operator (`$eq`, `$push`...) rather than a field. */
+export function isOperatorKey(key: string): boolean {
+  return key.startsWith('$');
 }
-
-const isOperatorKey = (key: string) => key.startsWith('$');
 
 /** Whether `value` is a non-empty object with an operator key (`$eq`, `$push`...): the one test every dialect classifies with. */
 export function isOperatorObject(value: unknown): value is Record<string, unknown> {
-  return hasKeys(value) && !Array.isArray(value) && someKey(value, isOperatorKey);
-}
-
-/** Whether every key of the non-empty object `value` is an operator (no plain field names mixed in). */
-export function isOperatorOnlyObject(value: unknown): value is Record<string, unknown> {
-  return hasKeys(value) && !Array.isArray(value) && !someKey(value, (key) => !isOperatorKey(key));
+  return isRecord(value) && someKey(value, isOperatorKey);
 }
 
 /** Whether `value` is an object that is not an array, whose keys can be read. */

@@ -14,6 +14,12 @@ export class MariaDialectSpec extends MySqlFamilySpec {
     return `JSON_EXTRACT(${operand}, '$')`;
   }
 
+  protected override elemPath(field: string, json = false): string {
+    return `${json ? 'JSON_EXTRACT' : 'JSON_VALUE'}(_uql_elem.v, '$.${field}')`;
+  }
+
+  protected override readonly elemSelect = 'SELECT 1';
+
   shouldFilterByJsonDotNotation() {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, Company, {
@@ -22,10 +28,13 @@ export class MariaDialectSpec extends MySqlFamilySpec {
         'kind.public': 1,
       },
     });
-    expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_VALUE(`kind`, '$.public') AS DECIMAL) = ?");
+    expect(ctx.sql).toBe(
+      "SELECT `id` FROM `Company` WHERE CAST(JSON_VALUE(`kind`, '$.public') AS DOUBLE) = CAST(? AS DOUBLE)",
+    );
     expect(ctx.values).toEqual([1]);
   }
 
+  /** MariaDB orders JSON as text, so a number sorts by its value before the text breaks ties. */
   shouldSortByJsonDotNotation() {
     const ctx = this.dialect.createContext();
     this.dialect.find(ctx, Company, {
@@ -34,7 +43,8 @@ export class MariaDialectSpec extends MySqlFamilySpec {
         'kind.theme.color': -1,
       },
     });
-    expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_VALUE(`kind`, '$.theme.color') DESC");
+    const path = "JSON_VALUE(`kind`, '$.theme.color')";
+    expect(ctx.sql).toBe(`SELECT \`id\` FROM \`Company\` ORDER BY CAST(${path} AS DOUBLE) DESC, ${path} DESC`);
   }
 
   shouldFilterByJsonDotNotationDeep() {
@@ -71,11 +81,11 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, '1'],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(JSON_EXTRACT(`kind`, '$.tags')) = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$'))) ELSE JSON_EXTRACT(`kind`, '$.tags') END), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$')))), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(JSON_EXTRACT(`kind`, '$.tags')) = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(JSON_COMPACT(_uql_pull.v)), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE NOT JSON_EQUALS(_uql_pull.v, JSON_EXTRACT(?, '$'))) ELSE JSON_EXTRACT(`kind`, '$.tags') END), JSON_OBJECT('tags', JSON_ARRAY(JSON_EXTRACT(?, '$')))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
@@ -108,11 +118,11 @@ export class MariaDialectSpec extends MySqlFamilySpec {
     expect(values).toEqual(['[1,2,3]']);
   }
 
-  shouldReadVectorThroughVecToText() {
+  shouldReadVectorAsItsPackedBytes() {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, VectorItem, { $select: { id: true, name: true, vec: true } }),
     );
-    expect(sql).toBe('SELECT `id`, `name`, VEC_ToText(`vec`) `vec` FROM `VectorItem`');
+    expect(sql).toBe("SELECT `id`, `name`, CONCAT('\\\\x', HEX(`vec`)) `vec` FROM `VectorItem`");
   }
 
   /**

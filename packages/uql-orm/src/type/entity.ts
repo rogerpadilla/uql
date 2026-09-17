@@ -300,7 +300,10 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly type?: FieldType;
   /** A vector column's dimensions: `@Field({ type: 'vector', dimensions: 1536 })`. */
   readonly dimensions?: number;
-  /** The metric a vector search on this field uses unless it names its own `$distance`; `'cosine'` by default. */
+  /**
+   * The metric a vector search on this field uses unless it names its own `$distance`; by default its
+   * vector index's metric, else `'cosine'`.
+   */
   readonly distance?: VectorDistance;
   /** The entity this column is a foreign key to. */
   readonly references?: EntityGetter;
@@ -609,11 +612,13 @@ export type IndexJsonPath = {
   readonly path: string;
   /** How the value is read, matching what the queries over it compare against. */
   readonly type: FieldType;
+  /** Length of a string value, which MySQL keys as `CHAR(n)` and so requires. */
+  readonly length?: number;
 };
 
 /**
- * MySQL's multi-valued index, one key per element of the JSON array at `path`, what `$all` and
- * `$elemMatch` containment use; refused on any other engine.
+ * MySQL's multi-valued index, one key per element of the JSON array at `path`, which `$all` and an
+ * `$elemMatch` on one value or several use; refused on any other engine.
  * @example `@Index((user) => [{ column: user.tags, jsonArray: { type: String, length: 64 } }])`
  */
 export type IndexJsonArray = {

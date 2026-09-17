@@ -77,11 +77,20 @@ class TestSqlDialect extends AbstractSqlDialect {
     return this.unsupported();
   }
 
-  protected jsonAll(): string {
+  /** Postgres's chain, which the specs below spell their paths in. */
+  protected jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
+    const segments = path.split('.');
+    return segments.reduce((expr, segment, index) => {
+      const op = mode === 'text' && index === segments.length - 1 ? '->>' : '->';
+      return `(${expr}${op}'${segment}')`;
+    }, escapedColumn);
+  }
+
+  protected jsonLength(): string {
     return this.unsupported();
   }
 
-  protected jsonSize(): string {
+  protected jsonIsArray(): string {
     return this.unsupported();
   }
 
@@ -89,7 +98,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return this.unsupported();
   }
 
-  protected jsonElemRef(): string {
+  protected jsonElemDoc(): string {
     return this.unsupported();
   }
 
@@ -477,7 +486,7 @@ describe('AbstractSqlDialect', () => {
     it('should compare a path by simple equality', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': 1 });
-      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) = ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) = CAST(? AS NUMERIC)");
       expect(ctx.values).toEqual([1]);
     });
 
@@ -491,21 +500,21 @@ describe('AbstractSqlDialect', () => {
     it('should compare a path with $ne', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $ne: 1 } });
-      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) <> ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) <> CAST(? AS NUMERIC)");
       expect(ctx.values).toEqual([1]);
     });
 
     it('should compare a path with $gt as a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $gt: 0 } });
-      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) > ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) > CAST(? AS NUMERIC)");
       expect(ctx.values).toEqual([0]);
     });
 
     it('should compare a path with $lt as a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $lt: 1 } });
-      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) < ?");
+      expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) < CAST(? AS NUMERIC)");
       expect(ctx.values).toEqual([1]);
     });
 
@@ -513,7 +522,7 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $gte: 0, $lte: 1 } });
       expect(ctx.sql).toBe(
-        " WHERE (CAST((`kind`->>'public') AS NUMERIC) >= ? AND CAST((`kind`->>'public') AS NUMERIC) <= ?)",
+        " WHERE (CAST((`kind`->>'public') AS NUMERIC) >= CAST(? AS NUMERIC) AND CAST((`kind`->>'public') AS NUMERIC) <= CAST(? AS NUMERIC))",
       );
       expect(ctx.values).toEqual([0, 1]);
     });
@@ -603,7 +612,7 @@ describe('AbstractSqlDialect', () => {
     it('should combine a path with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { name: 'Acme', 'kind.public': 1 });
-      expect(ctx.sql).toBe(" WHERE `name` = ? AND CAST((`kind`->>'public') AS NUMERIC) = ?");
+      expect(ctx.sql).toBe(" WHERE `name` = ? AND CAST((`kind`->>'public') AS NUMERIC) = CAST(? AS NUMERIC)");
       expect(ctx.values).toEqual(['Acme', 1]);
     });
 
@@ -613,7 +622,7 @@ describe('AbstractSqlDialect', () => {
         $and: [{ 'kind.public': { $eq: 1 } }, { 'kind.private': { $ne: 0 } }],
       });
       expect(ctx.sql).toBe(
-        " WHERE CAST((`kind`->>'public') AS NUMERIC) = ? AND CAST((`kind`->>'private') AS NUMERIC) <> ?",
+        " WHERE CAST((`kind`->>'public') AS NUMERIC) = CAST(? AS NUMERIC) AND CAST((`kind`->>'private') AS NUMERIC) <> CAST(? AS NUMERIC)",
       );
       expect(ctx.values).toEqual([1, 0]);
     });
@@ -625,7 +634,7 @@ describe('AbstractSqlDialect', () => {
         'kind.private': { $ne: 0 },
       });
       expect(ctx.sql).toBe(
-        " WHERE CAST((`kind`->>'public') AS NUMERIC) = ? AND CAST((`kind`->>'private') AS NUMERIC) <> ?",
+        " WHERE CAST((`kind`->>'public') AS NUMERIC) = CAST(? AS NUMERIC) AND CAST((`kind`->>'private') AS NUMERIC) <> CAST(? AS NUMERIC)",
       );
       expect(ctx.values).toEqual([1, 0]);
     });
@@ -939,7 +948,7 @@ describe('AbstractSqlDialect', () => {
         $select: { id: true },
         $sort: { 'kind.public': 1 },
       });
-      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'public')");
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->'public')");
     });
 
     it('should sort by a path several levels deep', () => {
@@ -948,7 +957,7 @@ describe('AbstractSqlDialect', () => {
         $select: { id: true },
         $sort: { 'kind.theme.color': -1 },
       });
-      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY ((`kind`->'theme')->>'color') DESC");
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY ((`kind`->'theme')->'color') DESC");
     });
 
     it('should combine a path sort with a regular sort', () => {
@@ -957,7 +966,7 @@ describe('AbstractSqlDialect', () => {
         $select: { id: true },
         $sort: { name: 1, 'kind.public': -1 },
       });
-      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->>'public') DESC");
+      expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY `name`, (`kind`->'public') DESC");
     });
   });
 

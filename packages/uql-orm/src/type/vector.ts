@@ -34,15 +34,13 @@ export interface QueryVectorSearch extends QueryVectorQuery {
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
 
 /**
- * How a dialect spells a metric: an operator with the operator class an index names from it, or a
- * function, `metricArg` where it takes the metric by name. One map, so its keys say which metrics exist.
+ * How a dialect spells a metric: an operator, or a function taking the metric by name where `metricArg`
+ * says so, and `index`, how the dialect's vector index names it where it builds one. One map serves the
+ * query and the index alike, so its keys say which metrics exist.
  */
 export type VectorMetric =
-  | { readonly op: string; readonly opsSuffix: string }
-  | { readonly fn: string; readonly metricArg?: string };
-
-/** The operator form, for the pgvector-family dialects whose index DDL also needs `opsSuffix`. */
-export type VectorOperatorMetric = Extract<VectorMetric, { op: string }>;
+  | { readonly op: string; readonly index: string }
+  | { readonly fn: string; readonly metricArg?: string; readonly index?: string };
 
 /** The error every dialect throws for a metric it lacks. */
 export function unsupportedVectorMetric(dialectName: string, distance: VectorDistance, indexName?: string): TypeError {

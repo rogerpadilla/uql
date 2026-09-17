@@ -97,6 +97,11 @@ describe('decodeColumn', () => {
     expect(decodeColumn('[1,0,2]', 'halfvec')).toEqual([1, 0, 2]);
   });
 
+  /** MariaDB's `VEC_ToText` keeps six digits, so its vectors cross as their packed float32s instead. */
+  it('should read a vector packed as little-endian float32s in hex, every digit kept', () => {
+    expect(decodeColumn('\\xDED6FC3DDB0F49400000003F000000C0', 'vector')).toEqual([0.1234567, 3.1415927, 0.5, -2]);
+  });
+
   it('should keep text that is not that column’s literal', () => {
     expect(decodeColumn('[1,2]', 'sparsevec')).toBe('[1,2]');
   });

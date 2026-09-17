@@ -61,6 +61,10 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
   items?: { name?: string; active?: boolean; count?: number; note?: string | null }[];
   /** Array of scalars, for `$elemMatch` conditions applied to the element itself. */
   flags?: boolean[];
+  /** Array of numbers, which a scalar `$elemMatch` compares as numbers. */
+  ranks?: number[];
+  /** A fraction, which a comparison must not round. */
+  rating?: number;
   description?: string;
   country?: string;
   theme?: { color?: string };

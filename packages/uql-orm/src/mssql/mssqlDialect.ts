@@ -1,7 +1,7 @@
 import { type CarriedFields, type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
-import { COUNT_ALIAS, JSON_ELEM_ALIAS } from '../dialect/aliases.js';
+import { COUNT_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
-import { jsonPath } from '../dialect/jsonSql.js';
+import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSlotArgs } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import { fieldOptionsToCanonical } from '../schema/canonicalType.js';
@@ -14,7 +14,6 @@ import type {
   QueryContext,
   QueryOptions,
   QueryPager,
-  QuerySizeComparisonOps,
   SqlDialectFeatures,
   Type,
   VectorDistance,
@@ -49,12 +48,18 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   rowLockOf: true,
   orderedUpsertReturning: false,
   orderedJsonAggregates: true,
-  partialJsonContainment: false,
-  typedJsonElements: false,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: false,
 };
+
+/** The `type` `OPENJSON` reports for the JSON scalar an element is compared with; anything else binds as a string. */
+function openJsonType(value: unknown): number {
+  if (typeof value === 'number') {
+    return 2;
+  }
+  return typeof value === 'boolean' ? 3 : 1;
+}
 
 /** Microsoft SQL Server 2017 and up. Identifiers are `"`-quoted, the ANSI spelling `tedious` enables. */
 export class MsSqlDialect extends MergeSqlDialect {
@@ -288,25 +293,18 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * `JSON_VALUE` returns `NVARCHAR(4000)` and, in the lax mode that is the default, answers NULL
-   * rather than erroring for anything longer - so a long string read through it disappears without a
-   * word. `OPENJSON` has no such bound, so the path is split and its last segment matched as a key.
+   * `OPENJSON` at the path's parent, matching its last segment as a key, in either reading: `JSON_VALUE`
+   * answers NULL for text past 4000 characters, and `JSON_QUERY` for a scalar. A value reads back as
+   * text, which {@link jsonScalarParam} binds its operand as, and an array or object as its own JSON.
    */
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
-    const dot = jsonPathStr.lastIndexOf('.');
-    const parent = dot === -1 ? '$' : `$.${jsonPathStr.slice(0, dot).split('.').map(escapeSingleQuotes).join('.')}`;
-    const leaf = escapeSingleQuotes(jsonPathStr.slice(dot + 1));
+  protected override jsonPathReading(escapedColumn: string, path: string): string {
+    if (!path) {
+      return escapedColumn;
+    }
+    const dot = path.lastIndexOf('.');
+    const parent = dot === -1 ? '$' : `$.${path.slice(0, dot).split('.').map(escapeSingleQuotes).join('.')}`;
+    const leaf = escapeSingleQuotes(path.slice(dot + 1));
     return `(SELECT ${this.#elem.value} FROM OPENJSON(${escapedColumn}, '${parent}') WHERE ${this.#elem.key} = N'${leaf}')`;
-  }
-
-  /**
-   * The same read as the scalar one. `JSON_QUERY` answers NULL for anything that is not an object or
-   * an array, so it cannot serve the JSON access mode a boolean or a number operand asks for -
-   * `OPENJSON` returns both as text, and {@link jsonScalarParam} binds the operand as the matching
-   * text. An array or object comes back as its own JSON text, which is what `OPENJSON` takes next.
-   */
-  protected override getJsonPathJsonbExpr(escapedColumn: string, jsonPathStr: string): string {
-    return this.getJsonPathScalarExpr(escapedColumn, jsonPathStr);
   }
 
   /**
@@ -347,36 +345,43 @@ export class MsSqlDialect extends MergeSqlDialect {
     return `JSON_QUERY(${this.addValue(ctx, JSON.stringify(value))})`;
   }
 
-  protected override jsonElemFrom(jsonField: string, _fields: readonly string[], alias: string): string {
-    return `OPENJSON(${jsonField}) ${alias}`;
+  protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
+    return `OPENJSON(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}) ${alias}`;
   }
 
-  /** `JSON_VALUE`'s 4000-character bound applies to an element's field, unlike a whole column. */
-  protected override jsonElemRef(alias: string, field?: string): string {
-    return field === undefined
-      ? `${alias}.${this.#elem.value}`
-      : `JSON_VALUE(${alias}.${this.#elem.value}, ${jsonPath(field)})`;
+  /** `JSON_QUERY` answers an array or an object as written, and a scalar as NULL. */
+  protected override jsonIsArray(slot: JsonSlot): string {
+    return `LEFT(JSON_QUERY(${jsonSlotArgs(slot)}), 1) = '['`;
   }
 
-  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-    const conditions = (value as unknown[]).map(
-      (val) =>
-        `EXISTS (SELECT 1 FROM OPENJSON(${jsonField}) ${alias} WHERE ${alias}.${this.#elem.value} = ${this.jsonScalarParam(ctx, val)})`,
-    );
-    return `(${conditions.join(' AND ')})`;
+  /** An object element's `value` is its JSON text, which its fields are paths into. */
+  protected override jsonElemDoc(alias: string): string {
+    return `${alias}.${this.#elem.value}`;
   }
 
-  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-    return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(
-        fragmentCtx,
-        () => fragmentCtx.append(`(SELECT COUNT(*) FROM OPENJSON(${jsonField}) ${alias})`),
-        value,
-      ),
-    );
+  /**
+   * An element of the value's own JSON type: `OPENJSON` reads a string and a number back as the same text,
+   * so the `type` it reports is what tells `'5'` from `5`. A number compares by value, cast on both sides:
+   * text against a numeric parameter converts implicitly, which throws on an element that is no number.
+   */
+  protected override jsonElemEquals(ctx: QueryContext, _slot: JsonSlot, alias: string, value: unknown): string {
+    const type = `${alias}.${this.#elem.type}`;
+    if (value === null) {
+      return `${type} = 0`;
+    }
+    const elem = this.jsonElemDoc(alias);
+    const param = this.jsonScalarParam(ctx, value);
+    const equal =
+      typeof value === 'number' ? `${this.numericCast(elem)} = ${this.numericCast(param)}` : `${elem} = ${param}`;
+    return `${equal} AND ${type} = ${openJsonType(value)}`;
   }
+
+  protected override jsonLength(slot: JsonSlot): string {
+    return `(SELECT COUNT(*) FROM OPENJSON(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))}))`;
+  }
+
+  /** SQL Server orders JSON as the text `OPENJSON` reads, so a number sorts by its value first. */
+  protected override readonly jsonSortModes: readonly JsonAccessMode[] = ['numeric', 'text'];
 
   /** `JSON_MODIFY` takes one path per call, so several keys chain into one expression. */
   protected override jsonSet(
@@ -414,7 +419,8 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   /**
    * The surviving elements are re-aggregated into an array and written back whole - there is no
-   * remove-by-value. `JSON_QUERY` is what marks the rebuilt text as JSON rather than a string.
+   * remove-by-value. `JSON_QUERY` is what marks the rebuilt text as JSON rather than a string. Only an
+   * array is rewritten: `JSON_MODIFY` would create an absent key, and any other value stays as it is.
    */
   protected override jsonPullKey(
     ctx: QueryContext,
@@ -423,24 +429,22 @@ export class MsSqlDialect extends MergeSqlDialect {
     key: string,
     value: unknown,
   ): string {
-    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-    const val = `${alias}.${this.#elem.value}`;
+    const slot = { base: escapedCol, path: key };
+    const val = this.jsonElemDoc(JSON_PULL_ALIAS);
     // `OPENJSON` hands back a string element unquoted and a null one as SQL NULL, so each survivor is
     // re-encoded from its reported `type` before the array is put back together - concatenated raw,
     // the result is text the engine then refuses to parse as JSON.
     const encoded =
-      `CASE ${alias}.${this.#elem.type}` +
+      `CASE ${JSON_PULL_ALIAS}.${this.#elem.type}` +
       ` WHEN 0 THEN 'null'` +
       ` WHEN 1 THEN '"' + STRING_ESCAPE(${val}, 'json') + '"'` +
       ` ELSE ${val} END`;
     // `IS NULL OR` because a JSON null element reads back as SQL NULL, and `<>` against one is
     // unknown rather than true - which silently dropped every null from the array it rebuilt.
     const kept =
-      `SELECT '[' + STRING_AGG(${encoded}, ',') + ']' FROM OPENJSON(${escapedCol}, ${jsonPath(key)}) ${alias}` +
+      `SELECT '[' + STRING_AGG(${encoded}, ',') + ']' FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)}` +
       ` WHERE ${val} IS NULL OR ${val} <> ${this.jsonScalarParam(ctx, value)}`;
-    // `JSON_MODIFY` creates a path it does not find, so a `$pull` against an absent key would add an
-    // empty array where the other engines leave the document alone.
-    const path = jsonPath(key);
-    return `CASE WHEN JSON_QUERY(${escapedCol}, ${path}) IS NULL THEN ${expr} ELSE JSON_MODIFY(${expr}, ${path}, JSON_QUERY(COALESCE((${kept}), '[]'))) END`;
+    const pulled = `JSON_MODIFY(${expr}, ${jsonPath(key)}, JSON_QUERY(COALESCE((${kept}), '[]')))`;
+    return `CASE WHEN ${this.jsonIsArray(slot)} THEN ${pulled} ELSE ${expr} END`;
   }
 }

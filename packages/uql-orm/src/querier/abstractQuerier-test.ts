@@ -3,6 +3,7 @@ import { getEntities } from '../entity/index.js';
 import {
   assertDefined,
   Company,
+  type CompanyKind,
   InventoryAdjustment,
   Item,
   ItemAdjustment,
@@ -830,6 +831,36 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found?.kind).toEqual({ public: 1 });
   }
 
+  /** A `$pull` leaves a key holding no array as it is, as an older writer may have left it. */
+  async shouldPullFromANonArrayJsonKeyAsNoop() {
+    const scalar: CompanyKind = { public: 1 };
+    const object: CompanyKind = { public: 1 };
+    Reflect.set(scalar, 'tags', 'a');
+    Reflect.set(object, 'tags', { k: 'a' });
+    await this.querier.insertMany(Company, [
+      { name: 'JSON Pull Scalar', kind: scalar },
+      { name: 'JSON Pull Object', kind: object },
+      { name: 'JSON Pull Array', kind: { public: 1, tags: ['a', 'b'] } },
+    ]);
+
+    await this.querier.updateMany(
+      Company,
+      { $where: { name: { $startsWith: 'JSON Pull ' } } },
+      { kind: { $pull: { tags: 'a' } } },
+    );
+
+    const found = await this.querier.findMany(Company, {
+      $select: { name: true, kind: true },
+      $where: { name: { $startsWith: 'JSON Pull ' } },
+      $sort: { name: 1 },
+    });
+    expect(found.map(({ name, kind }) => [name, kind])).toEqual([
+      ['JSON Pull Array', { public: 1, tags: ['b'] }],
+      ['JSON Pull Object', { public: 1, tags: { k: 'a' } }],
+      ['JSON Pull Scalar', { public: 1, tags: 'a' }],
+    ]);
+  }
+
   /**
    * The `$pull` on the absent `labels` stays a no-op even when another key in the same payload has
    * to be composed differently (on MongoDB that combination switches the whole update to an
@@ -1487,6 +1518,151 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(byInBoth).toHaveLength(2);
   }
 
+  /** A fractional operand against a JSON number compares as a fraction, on a path and inside `$elemMatch`. */
+  async shouldFindByJsonDotPathFraction() {
+    await this.querier.insertOne(Company, { name: 'JSON Rated Low', kind: { rating: 1.4, items: [{ count: 1.4 }] } });
+    await this.querier.insertOne(Company, { name: 'JSON Rated High', kind: { rating: 2.6, items: [{ count: 2.6 }] } });
+
+    const byGt = await this.querier.findMany(Company, { $where: { 'kind.rating': { $gt: 1.2 } } });
+    expect(byGt).toHaveLength(2);
+
+    const byLt = await this.querier.findMany(Company, { $where: { 'kind.rating': { $lt: 1.5 } } });
+    expect(byLt.map(({ name }) => name)).toEqual(['JSON Rated Low']);
+
+    const byEq = await this.querier.findMany(Company, { $where: { 'kind.rating': 1.4 } });
+    expect(byEq.map(({ name }) => name)).toEqual(['JSON Rated Low']);
+
+    const byIn = await this.querier.findMany(Company, { $where: { 'kind.rating': { $in: [2.6] } } });
+    expect(byIn.map(({ name }) => name)).toEqual(['JSON Rated High']);
+
+    const byBetween = await this.querier.findMany(Company, { $where: { 'kind.rating': { $between: [1.3, 1.5] } } });
+    expect(byBetween.map(({ name }) => name)).toEqual(['JSON Rated Low']);
+
+    const byElem = await this.querier.findMany(Company, {
+      $where: { 'kind.items': { $elemMatch: { count: { $gt: 1.5 } } } },
+    });
+    expect(byElem.map(({ name }) => name)).toEqual(['JSON Rated High']);
+
+    const byNot = await this.querier.findMany(Company, { $where: { 'kind.rating': { $not: { $gt: 2 } } } });
+    expect(byNot.map(({ name }) => name)).toEqual(['JSON Rated Low']);
+  }
+
+  /**
+   * An object element is contained where it holds the given keys, nested ones too, and its other keys do
+   * not matter: `$all` and `$elemMatch` mean the same on every engine, with an operator beside them or not.
+   */
+  async shouldMatchAJsonArrayElementByContainment() {
+    await this.querier.insertMany(Company, [
+      {
+        name: 'JSON Contained',
+        kind: {
+          items: [{ name: 'first', active: true }],
+          meta: { list: [{ tag: { key: 'a', size: 1 }, n: 2, labels: ['x', 'y'] }], grid: [[1, 2, 3]] },
+        },
+      },
+      {
+        name: 'JSON Not Contained',
+        kind: {
+          items: [{ name: 'second' }],
+          meta: { list: [{ tag: { key: 'b' }, n: 3, labels: ['x'] }], grid: [[1, 3]] },
+        },
+      },
+    ]);
+
+    const byAll = await this.querier.findMany(Company, { $where: { 'kind.items': { $all: [{ name: 'first' }] } } });
+    expect(byAll.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byNested = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $all: [{ tag: { key: 'a' } }] } },
+    });
+    expect(byNested.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byNestedArray = await this.querier.findMany(Company, { $where: { 'kind.meta.grid': { $all: [[2, 1]] } } });
+    expect(byNestedArray.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byElem = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: 'a' } } } },
+    });
+    expect(byElem.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byElemArray = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { labels: ['y'] } } },
+    });
+    expect(byElemArray.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byElemBesideOperator = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: 'a' }, labels: ['y'], n: { $gt: 1 } } } },
+    });
+    expect(byElemBesideOperator.map(({ name }) => name)).toEqual(['JSON Contained']);
+
+    const byNestedOperator = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: { $in: ['a', 'c'] } } } } },
+    });
+    expect(byNestedOperator.map(({ name }) => name)).toEqual(['JSON Contained']);
+  }
+
+  /** A path holding a scalar or an object has no elements: no array operator matches it, and none fails the read. */
+  async shouldMatchNoArrayOperatorOnANonArrayPath() {
+    await this.querier.insertMany(Company, [
+      { name: 'JSON List Scalar', kind: { meta: { list: 5 } } },
+      { name: 'JSON List Object', kind: { meta: { list: { k: 5 } } } },
+      { name: 'JSON List Array', kind: { meta: { list: [5], none: [] } } },
+    ]);
+
+    const bySize = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $size: 1 } } });
+    expect(bySize.map(({ name }) => name)).toEqual(['JSON List Array']);
+
+    const byBounds = await this.querier.findMany(Company, {
+      $where: {
+        'kind.meta.list': { $size: { $lte: 2 }, $elemMatch: { $eq: 5 } },
+        'kind.meta.none': { $size: { $lt: 1 } },
+      },
+    });
+    expect(byBounds.map(({ name }) => name)).toEqual(['JSON List Array']);
+
+    const byElem = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $elemMatch: { $gt: 1 } } } });
+    expect(byElem.map(({ name }) => name)).toEqual(['JSON List Array']);
+
+    const byElemEq = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $elemMatch: { $eq: 5 } } } });
+    expect(byElemEq.map(({ name }) => name)).toEqual(['JSON List Array']);
+
+    const byElemIn = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { $in: [5, 6] } } },
+    });
+    expect(byElemIn.map(({ name }) => name)).toEqual(['JSON List Array']);
+  }
+
+  /**
+   * A JSON number compares and sorts as a number, and an array element matches only its own type,
+   * whatever other rows hold at the same path.
+   */
+  async shouldCompareAJsonPathAcrossTypes() {
+    await this.querier.insertMany(Company, [
+      { name: 'JSON Mixed Ten', kind: { meta: { score: 10, list: ['1'] } } },
+      { name: 'JSON Mixed Nine', kind: { meta: { score: 9, list: [1] } } },
+      { name: 'JSON Mixed Text', kind: { meta: { score: 'abc', list: [true] } } },
+    ]);
+
+    const byScore = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.score': { $gt: 1 } },
+      $sort: { 'kind.meta.score': 1 },
+    });
+    expect(byScore.map(({ name }) => name)).toEqual(['JSON Mixed Nine', 'JSON Mixed Ten']);
+
+    const byNumber = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { $eq: 1 } } },
+    });
+    expect(byNumber.map(({ name }) => name)).toEqual(['JSON Mixed Nine']);
+
+    const byText = await this.querier.findMany(Company, {
+      $where: { 'kind.meta.list': { $elemMatch: { $in: ['1', 'x'] } } },
+    });
+    expect(byText.map(({ name }) => name)).toEqual(['JSON Mixed Ten']);
+
+    const byBoolean = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $all: [true] } } });
+    expect(byBoolean.map(({ name }) => name)).toEqual(['JSON Mixed Text']);
+  }
+
   /**
    * `$elemMatch` over object elements, as containment and with per-field operators, each field compared
    * as its own type.
@@ -1555,8 +1731,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
    * SQLite's `$all` matches a string element.
    */
   async shouldFindByJsonDotPathArrayOperators() {
-    await this.querier.insertOne(Company, { name: 'JSON Path Two', kind: { tags: ['a', 'b'] } });
-    await this.querier.insertOne(Company, { name: 'JSON Path One', kind: { tags: ['c'] } });
+    await this.querier.insertOne(Company, { name: 'JSON Path Two', kind: { tags: ['a', 'b'], ranks: [1, 2] } });
+    await this.querier.insertOne(Company, { name: 'JSON Path One', kind: { tags: ['c'], ranks: [3] } });
 
     const bySize = await this.querier.findMany(Company, { $where: { 'kind.tags': { $size: 2 } } });
     expect(bySize.map(({ name }) => name)).toEqual(['JSON Path Two']);
@@ -1566,6 +1742,22 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const byMissing = await this.querier.findMany(Company, { $where: { 'kind.tags': { $all: ['absent'] } } });
     expect(byMissing).toEqual([]);
+
+    const byElem = await this.querier.findMany(Company, { $where: { 'kind.tags': { $elemMatch: { $eq: 'b' } } } });
+    expect(byElem.map(({ name }) => name)).toEqual(['JSON Path Two']);
+
+    const byElemIn = await this.querier.findMany(Company, {
+      $where: { 'kind.tags': { $elemMatch: { $in: ['c', 'z'] } } },
+    });
+    expect(byElemIn.map(({ name }) => name)).toEqual(['JSON Path One']);
+
+    const byRank = await this.querier.findMany(Company, { $where: { 'kind.ranks': { $elemMatch: { $eq: 2 } } } });
+    expect(byRank.map(({ name }) => name)).toEqual(['JSON Path Two']);
+
+    const byRankIn = await this.querier.findMany(Company, {
+      $where: { 'kind.ranks': { $elemMatch: { $in: [3, 9] } } },
+    });
+    expect(byRankIn.map(({ name }) => name)).toEqual(['JSON Path One']);
   }
 
   /** `$push` onto an absent key creates the array, consistently across every dialect. */

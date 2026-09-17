@@ -7,10 +7,11 @@ import {
   type Query,
   type QueryContext,
   QueryRaw,
-  type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
   type SqlDialectFeatures,
   type Type,
+  type VectorDistance,
+  type VectorMetric,
 } from '../type/index.js';
 import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
@@ -18,14 +19,21 @@ import type { DialectOptions } from './abstractDialect.js';
 import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
-import { jsonSetTarget } from './jsonSql.js';
-import { PG_VECTOR_METRICS } from './pgVectorMetrics.js';
+import { type JsonAccessMode, type JsonSlot, jsonSetTarget } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
 /** A Postgres-wire dialect's options: the base's, and how its driver binds a parameter. */
 export type PgLikeDialectOptions = DialectOptions & {
   readonly driverCapabilities?: Partial<DriverCapabilities>;
 };
+
+/** Each metric's pgvector distance operator, and the infix of the operator class its index is built with. */
+export const PG_VECTOR_METRICS: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+  ['cosine', { op: '<=>', index: 'cosine' }],
+  ['l2', { op: '<->', index: 'l2' }],
+  ['inner', { op: '<#>', index: 'ip' }],
+  ['l1', { op: '<+>', index: 'l1' }],
+]);
 
 /** What the Postgres-wire engines have. */
 export const PG_FEATURES: SqlDialectFeatures = {
@@ -48,8 +56,6 @@ export const PG_FEATURES: SqlDialectFeatures = {
   rowLockOf: true,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
-  partialJsonContainment: true,
-  typedJsonElements: false,
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: true,
   serialDeclaresPrimaryKey: false,
@@ -169,30 +175,51 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(')');
   }
 
-  protected override jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string {
-    return `${jsonField} @> ${this.jsonVal(ctx, value)}`;
+  protected override jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    return `${this.jsonValue(slot)} @> ${this.jsonVal(ctx, values)}`;
   }
 
-  protected override jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string {
-    return this.buildFragment(ctx, (fragmentCtx) =>
-      this.buildSizeComparison(fragmentCtx, () => fragmentCtx.append(`JSONB_ARRAY_LENGTH(${jsonField})`), value),
-    );
+  protected override jsonLength(slot: JsonSlot): string {
+    return `JSONB_ARRAY_LENGTH(${this.jsonArray(slot)})`;
   }
 
-  /**
-   * Object elements stay `jsonb` so each field can pick `->` or `->>`. Scalar elements are exploded
-   * as text unless they are compared as JSON, where `_text` would yield `text = jsonb`.
-   */
-  protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
-    const fn = fields.length || asJson ? 'JSONB_ARRAY_ELEMENTS' : 'JSONB_ARRAY_ELEMENTS_TEXT';
-    return `${fn}(${jsonField}) AS ${alias}`;
+  /** Each element stays `jsonb`, so it is read as any path is: `->` for the value, `->>` for its text. */
+  protected override jsonElemFrom(slot: JsonSlot, alias: string): string {
+    return `JSONB_ARRAY_ELEMENTS(${this.jsonArray(slot)}) AS ${alias}`;
   }
 
-  protected override jsonElemRef(alias: string, field?: string, asJson = false): string {
-    if (field === undefined) {
-      return alias;
+  protected override jsonIsArray(slot: JsonSlot): string {
+    return `JSONB_TYPEOF(${this.jsonValue(slot)}) = 'array'`;
+  }
+
+  /** The array at `slot`, NULL where the value there is none: the array functions fail the whole read on one. */
+  private jsonArray(slot: JsonSlot): string {
+    return `CASE WHEN ${this.jsonIsArray(slot)} THEN ${this.jsonValue(slot)} END`;
+  }
+
+  protected override jsonElemDoc(alias: string): string {
+    return alias;
+  }
+
+  /** `->` down the path and `->>` for its text, the document's own text being `#>> '{}'`. */
+  protected override jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
+    if (!path) {
+      return mode === 'json' ? escapedColumn : `(${escapedColumn} #>> '{}')`;
     }
-    return asJson ? `${alias}->'${escapeSingleQuotes(field)}'` : `${alias}->>'${escapeSingleQuotes(field)}'`;
+    const segments = path.split('.');
+    return segments.reduce((expr, segment, index) => {
+      const op = mode === 'text' && index === segments.length - 1 ? '->>' : '->';
+      return `(${expr}${op}'${escapeSingleQuotes(segment)}')`;
+    }, escapedColumn);
+  }
+
+  /** A number only where the value is one: the cast throws on any other text, failing the whole read. */
+  override jsonPathExpr(escapedColumn: string, path: string, mode: JsonAccessMode): string {
+    const read = super.jsonPathExpr(escapedColumn, path, mode);
+    if (mode !== 'numeric') {
+      return read;
+    }
+    return `CASE WHEN JSONB_TYPEOF(${this.jsonValue({ base: escapedColumn, path })}) = 'number' THEN ${read} END`;
   }
 
   protected override get regexpOp(): string {
@@ -205,10 +232,19 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return 'IS DISTINCT FROM';
   }
 
-  /** One array parameter, which a context that inlines values has none of: it lists them instead. */
-  protected override formatIn(ctx: QueryContext, operand: string, values: unknown[], negate: boolean): string {
+  /**
+   * One array parameter, which a context that inlines values has none of: it lists them instead. The
+   * array takes its type from `operand`, so it needs none of the casts `bind` would give each value.
+   */
+  protected override formatIn(
+    ctx: QueryContext,
+    operand: string,
+    values: unknown[],
+    negate: boolean,
+    bind: (value: unknown) => string,
+  ): string {
     if (!values.length || ctx.inlineValues) {
-      return super.formatIn(ctx, operand, values, negate);
+      return super.formatIn(ctx, operand, values, negate, bind);
     }
     const ph = this.addValue(ctx, values);
     return negate ? `${operand} <> ALL(${ph})` : `${operand} = ANY(${ph})`;
@@ -233,8 +269,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `create_if_missing => false` keeps an absent key (and a NULL column) untouched; `WITH
-   * ORDINALITY` keeps the surviving elements in their original order.
+   * `create_if_missing => false` keeps an absent key (and a NULL column) untouched, and a value that is no
+   * array is set back as it is; `WITH ORDINALITY` keeps the surviving elements in their original order.
    */
   protected override jsonPullKey(
     ctx: QueryContext,
@@ -243,9 +279,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     key: string,
     value: unknown,
   ): string {
-    const escapedKey = escapeSingleQuotes(key);
-    const kept = `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${escapedCol}->'${escapedKey}') WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
-    return `JSONB_SET(${expr}, '{${escapedKey}}', COALESCE((${kept}), '[]'::jsonb), false)`;
+    const slot = { base: escapedCol, path: key };
+    const kept = `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
+    const pulled = `CASE WHEN ${this.jsonIsArray(slot)} THEN COALESCE((${kept}), '[]'::jsonb) ELSE COALESCE(${this.jsonValue(slot)}, 'null') END`;
+    return `JSONB_SET(${expr}, '{${escapeSingleQuotes(key)}}', ${pulled}, false)`;
   }
 
   /**

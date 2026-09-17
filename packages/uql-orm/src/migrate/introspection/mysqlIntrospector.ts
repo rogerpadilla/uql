@@ -1,6 +1,10 @@
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
-import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
+import {
+  AbstractSqlSchemaIntrospector,
+  type JoinedForeignKeyRow,
+  type TableRowReader,
+} from './abstractSqlSchemaIntrospector.js';
 
 /**
  * MySQL/MariaDB schema introspector.
@@ -139,22 +143,9 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapForeignKeysResult(
     _read: TableRowReader,
     _tableName: string,
-    results: {
-      constraint_name: string;
-      columns: string;
-      referenced_table: string;
-      referenced_columns: string;
-      delete_rule: string;
-      update_rule: string;
-    }[],
+    results: JoinedForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
-    return results.map((row) => ({
-      name: row.constraint_name,
-      columns: row.columns.split(','),
-      references: { table: row.referenced_table, columns: row.referenced_columns.split(',') },
-      onDelete: this.normalizeReferentialAction(row.delete_rule),
-      onUpdate: this.normalizeReferentialAction(row.update_rule),
-    }));
+    return this.joinedForeignKeys(results);
   }
 
   /**

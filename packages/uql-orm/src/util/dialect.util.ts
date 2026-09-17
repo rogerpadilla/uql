@@ -39,6 +39,7 @@ import {
   getFieldKeys,
   getKeys,
   hasKeys,
+  isOperatorObject,
   isScalarId,
   isRecord,
   isWhereMap,
@@ -316,7 +317,7 @@ const JSON_UPDATE_OPS: readonly string[] = [
 
 /** Type guard: checks whether an update payload value is a JSON operator object. */
 export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
-  return value !== null && typeof value === 'object' && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
+  return isRecord(value) && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
 }
 
 /**
@@ -504,6 +505,11 @@ export function isOperatorMap(value: unknown): value is Record<string, unknown> 
     !(value instanceof Uint8Array) &&
     !(value instanceof QueryRaw)
   );
+}
+
+/** A JSON object, matched by what it holds: a plain object with no operator key. */
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return isOperatorMap(value) && !isOperatorObject(value);
 }
 
 /**

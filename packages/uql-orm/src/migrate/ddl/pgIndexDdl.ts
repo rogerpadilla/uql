@@ -1,4 +1,3 @@
-import { COCKROACH_VECTOR_METRICS, PG_VECTOR_METRICS } from '../../dialect/pgVectorMetrics.js';
 import type { IndexType } from '../../schema/types.js';
 import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/index.js';
 import { unsupportedVectorMetric } from '../../type/vector.js';
@@ -33,9 +32,6 @@ export class PgIndexDdl extends IndexDdl {
     'jsonPath',
   ]);
 
-  /** The metrics its vector index takes, each naming the operator class it is built with. */
-  protected readonly vectorMetrics = PG_VECTOR_METRICS;
-
   /** pgvector's own index types; CockroachDB's native one widens this. */
   protected isVectorIndex(index: IndexSchema): boolean {
     return index.type === 'hnsw' || index.type === 'ivfflat';
@@ -53,12 +49,12 @@ export class PgIndexDdl extends IndexDdl {
     if (!this.isVectorIndex(index) || !index.distance) {
       return entry.opsClass ? ` ${entry.opsClass}` : '';
     }
-    const metric = this.vectorMetrics.get(index.distance);
+    const metric = this.dialect.vectorMetrics.get(index.distance)?.index;
     if (!metric) {
       throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
     }
     const vectorType = this.dialect.supportedVectorType(index.vectorType ?? 'vector');
-    const opsClass = `${vectorType}_${metric.opsSuffix}_ops`;
+    const opsClass = `${vectorType}_${metric}_ops`;
     // IVFFlat has neither a sparsevec nor an L1 operator class; HNSW has all of them (pgvector 0.8.2).
     if (index.type === 'ivfflat' && (vectorType === 'sparsevec' || index.distance === 'l1')) {
       throw new TypeError(`ivfflat has no ${opsClass} operator class (index "${index.name}"); use hnsw`);
@@ -95,8 +91,6 @@ export class CockroachIndexDdl extends PgIndexDdl {
     ...PG_INDEX_TYPE_HINTS,
     ['ivfflat', "; declare type: 'vector' instead"],
   ]);
-
-  protected override readonly vectorMetrics = COCKROACH_VECTOR_METRICS;
 
   private isNativeVectorIndex(index: IndexSchema): boolean {
     return index.type === 'vector';

@@ -194,9 +194,12 @@ describe('index features', () => {
     );
   });
 
-  /** A number is compared cast to a number, so the index over it carries the same cast. */
+  /** A number is compared cast to a number, only where it is one on Postgres, so the index carries the same cast. */
   it.each([
-    ['postgres', 'CREATE INDEX IF NOT EXISTS "i" ON "t" (((("kind"->>\'rating\'))::numeric));'],
+    [
+      'postgres',
+      'CREATE INDEX IF NOT EXISTS "i" ON "t" ((CASE WHEN JSONB_TYPEOF(("kind"->\'rating\')) = \'number\' THEN (("kind"->>\'rating\'))::numeric END));',
+    ],
     ['sqlite', "CREATE INDEX IF NOT EXISTS `i` ON `t` ((CAST(JSON_EXTRACT(`kind`, '$.rating') AS REAL)));"],
   ] as const)('should index a numeric JSON path on %s', (dialect, expected) => {
     expect(render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] })).toBe(
@@ -204,11 +207,36 @@ describe('index features', () => {
     );
   });
 
-  // MySQL takes the DDL but never matches it back to the query (26.7), so it is refused instead.
-  it.each(['mysql', 'mariadb'] as const)('should reject a JSON path index on %s', (dialect) => {
+  // MariaDB has no expression indexes at all.
+  it('should reject a JSON path index on MariaDB', () => {
     expect(() =>
-      render(dialect, { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] }),
-    ).toThrow(`${dialect} does not support indexes over a path inside a JSON column (index "i")`);
+      render('mariadb', { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] }),
+    ).toThrow('mariadb does not support indexes over a path inside a JSON column (index "i")');
+  });
+
+  /**
+   * A number is the query's own expression. A string is keyed as `CHAR(n)` in the collation `->>`
+   * returns, the one form the planner matches back to the bare `->>` a query compares. Verified live
+   * in `mysqlJsonPathIndex.test.ts`, on the plan for the statement `find` builds.
+   */
+  it('should index a JSON path on MySQL', () => {
+    expect(render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'rating', type: Number } }] })).toBe(
+      "CREATE INDEX `i` ON `t` ((CAST((`kind`->>'$.rating') AS DOUBLE)));",
+    );
+    expect(
+      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String, length: 32 } }] }),
+    ).toBe(
+      "CREATE INDEX `i` ON `t` ((CAST((`kind`->>'$.theme.color') AS CHAR(32) CHARACTER SET utf8mb4) COLLATE utf8mb4_bin));",
+    );
+  });
+
+  it('should reject a MySQL JSON path index it cannot key', () => {
+    expect(() =>
+      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'theme.color', type: String } }] }),
+    ).toThrow("a MySQL index over the string JSON path 'theme.color' needs a length");
+    expect(() =>
+      render('mysql', { entries: [{ column: 'kind', jsonPath: { path: 'isArchived', type: Boolean } }] }),
+    ).toThrow("mysql cannot index the boolean JSON path 'isArchived', which compares as JSON");
   });
 
   /**

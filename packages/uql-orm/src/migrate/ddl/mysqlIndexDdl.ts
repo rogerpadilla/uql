@@ -1,7 +1,6 @@
-import { jsonPath } from '../../dialect/jsonSql.js';
-import { MARIA_VECTOR_METRICS } from '../../maria/mariaVectorMetrics.js';
+import { jsonTypeMode } from '../../dialect/jsonSql.js';
 import type { IndexType } from '../../schema/types.js';
-import type { IndexFeature, IndexJsonArray, IndexSchema } from '../../type/index.js';
+import type { IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
 import { unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
@@ -26,8 +25,32 @@ export class MysqlLikeIndexDdl extends IndexDdl {
 }
 
 export class MySqlIndexDdl extends MysqlLikeIndexDdl {
-  /** The multi-valued index is the only JSON index MySQL has - see `IndexFeature` for why. */
-  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'prefixLength', 'jsonArray']);
+  protected override readonly indexFeatures = new Set<IndexFeature>([
+    'expression',
+    'prefixLength',
+    'jsonPath',
+    'jsonArray',
+  ]);
+
+  /**
+   * A number as the query reads it. A string as `CHAR(n)` in the collation `->>` returns, which the
+   * planner strips back to the bare `->>` a query compares; any other collation leaves it unused. A
+   * boolean compares as JSON, which no key part can hold.
+   */
+  protected override jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
+    const mode = jsonTypeMode(json.type);
+    if (mode === 'json') {
+      throw new TypeError(`mysql cannot index the boolean JSON path '${json.path}', which compares as JSON`);
+    }
+    const expr = super.jsonPathIndexExpr(escapedColumn, json);
+    if (mode === 'numeric') {
+      return expr;
+    }
+    if (!json.length) {
+      throw new TypeError(`a MySQL index over the string JSON path '${json.path}' needs a length`);
+    }
+    return `CAST(${expr} AS CHAR(${json.length}) CHARACTER SET utf8mb4) COLLATE utf8mb4_bin`;
+  }
 
   /**
    * `CAST(col AS CHAR(64) ARRAY)`, over the column itself where the array is the whole document -
@@ -35,7 +58,7 @@ export class MySqlIndexDdl extends MysqlLikeIndexDdl {
    * indexes the array at that path instead, as `'tags.ids': { $all: [...] }` reads it.
    */
   protected override jsonArrayIndexExpr(escapedColumn: string, json: IndexJsonArray): string {
-    const source = json.path ? `${escapedColumn}->${jsonPath(json.path)}` : escapedColumn;
+    const source = json.path ? this.dialect.jsonPathExpr(escapedColumn, json.path, 'json') : escapedColumn;
     return `CAST(${source} AS ${arrayCastType(json)} ARRAY)`;
   }
 
@@ -78,7 +101,7 @@ export class MariaIndexDdl extends MysqlLikeIndexDdl {
   protected override indexTuning(index: IndexSchema): string {
     let tuning = super.indexTuning(index) + (index.m === undefined ? '' : ` M=${index.m}`);
     if (index.distance) {
-      const metric = MARIA_VECTOR_METRICS.get(index.distance);
+      const metric = this.dialect.vectorMetrics.get(index.distance)?.index;
       if (!metric) {
         throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
       }

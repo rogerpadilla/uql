@@ -1,6 +1,5 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
-import { PG_FEATURES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
-import { COCKROACH_VECTOR_METRICS } from '../dialect/pgVectorMetrics.js';
+import { PG_FEATURES, PG_VECTOR_METRICS, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
 
@@ -8,7 +7,12 @@ import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
-  override readonly vectorMetrics = COCKROACH_VECTOR_METRICS;
+  /**
+   * pgvector's but `l1`: `<+>` and `vector_l1_ops` answer "unimplemented: operator class ... is not
+   * supported" (verified live on v26.2), tracked at https://github.com/cockroachdb/cockroach/issues/147839.
+   * Re-check that issue before adding it.
+   */
+  override readonly vectorMetrics = new Map([...PG_VECTOR_METRICS].filter(([metric]) => metric !== 'l1'));
 
   /** An upsert batch mixing an update and an insert returns the update first (verified on v26.2). */
   override readonly features: SqlDialectFeatures = { ...PG_FEATURES, orderedUpsertReturning: false };

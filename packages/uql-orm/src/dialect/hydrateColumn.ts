@@ -1,5 +1,5 @@
 import { decodeWideNumber } from '../util/wideNumber.js';
-import { parseVectorLiteral, type VectorCast } from './vectorCast.js';
+import { decodeFloat32s, parseVectorLiteral, type VectorCast } from './vectorCast.js';
 
 /**
  * How a stored column is decoded on read: the inverse of `AbstractSqlDialect.persistKind`. `json`
@@ -14,56 +14,59 @@ export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'b
  * and untouched where it does not match its column's format.
  */
 export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
-  if (kind === 'boolean') {
-    // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
-    return typeof value === 'boolean' ? value : Boolean(value);
-  }
+  return DECODERS[kind](value);
+}
 
-  if (kind === 'date') {
-    return typeof value === 'string' ? (parseDate(value) ?? value) : value;
-  }
+type Decoder = (value: unknown) => unknown;
 
-  if (kind === 'bytes') {
-    return typeof value === 'string' && value.startsWith(BYTES_PREFIX)
-      ? hexBytes(value.slice(BYTES_PREFIX.length))
-      : value;
-  }
+/** A decoder of the text a driver returned; anything else it already decoded, and is kept. */
+function fromText(decode: (text: string, value: unknown) => unknown): Decoder {
+  return (value) => {
+    const text = asText(value);
+    return text === undefined ? value : decode(text, value);
+  };
+}
 
-  const text = asText(value);
+/** A vector's text in the literal its cast writes, or its packed float32s in hex, which MariaDB reads. */
+function vectorDecoder(cast: VectorCast): Decoder {
+  return fromText((text, value) =>
+    text.startsWith(BYTES_PREFIX)
+      ? decodeFloat32s(hexBytes(text.slice(BYTES_PREFIX.length)))
+      : (parseVectorLiteral(text, cast) ?? value),
+  );
+}
 
-  if (kind === 'bigint') {
+const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
+  // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
+  boolean: (value) => (typeof value === 'boolean' ? value : Boolean(value)),
+  date: (value) => (typeof value === 'string' ? (parseDate(value) ?? value) : value),
+  // Only a string can be bytes that crossed JSON: bytes a driver already decoded stay as they are.
+  bytes: (value) =>
+    typeof value === 'string' && value.startsWith(BYTES_PREFIX) ? hexBytes(value.slice(BYTES_PREFIX.length)) : value,
+  // A number too, not just text: `type: BigInt` is BIGINT, which the pg pools decode at the wire.
+  bigint: (value) => {
     if (typeof value === 'bigint') {
       return value;
     }
     try {
-      // A number, not just text: `type: BigInt` is BIGINT, which the pg pools decode at the wire.
-      return BigInt(text ?? (value as number));
+      return BigInt(asText(value) ?? Number(value));
     } catch {
       // Not an integer after all (a fractional column declared `bigint`); keep what the driver gave.
       return value;
     }
-  }
-
-  // Everything below decodes text; anything else the driver already returned correctly.
-  if (text === undefined) {
-    return value;
-  }
-
-  if (kind === 'number') {
-    return decodeWideNumber(text);
-  }
-
-  if (kind === 'json') {
+  },
+  number: fromText(decodeWideNumber),
+  json: fromText((text, value) => {
     try {
       return JSON.parse(text);
     } catch {
-      // Keep the original value when the driver returns non-JSON text.
       return value;
     }
-  }
-
-  return parseVectorLiteral(text, kind) ?? value;
-}
+  }),
+  vector: vectorDecoder('vector'),
+  halfvec: vectorDecoder('halfvec'),
+  sparsevec: vectorDecoder('sparsevec'),
+};
 
 /**
  * An ISO 8601 timestamp as a `Date`, its fraction cut to the milliseconds one holds, and a bare date at

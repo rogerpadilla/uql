@@ -41,11 +41,11 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       values: ['new-tag', 123, '1'],
     },
     pull: {
-      sql: 'UPDATE "Company" SET "kind" = CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem."value", \'json\') + \'"\' ELSE _uql_elem."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem WHERE _uql_elem."value" IS NULL OR _uql_elem."value" <> @p1), \'[]\'))) END, "updatedAt" = @p2 WHERE "id" = @p3',
+      sql: 'UPDATE "Company" SET "kind" = CASE WHEN LEFT(JSON_QUERY("kind", \'$.tags\'), 1) = \'[\' THEN JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_pull."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_pull."value", \'json\') + \'"\' ELSE _uql_pull."value" END, \',\') + \']\' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", \'$.tags\'), 1) = \'[\' THEN "kind" END, \'$.tags\') _uql_pull WHERE _uql_pull."value" IS NULL OR _uql_pull."value" <> @p1), \'[]\'))) ELSE "kind" END, "updatedAt" = @p2 WHERE "id" = @p3',
       values: ['a', 123, '1'],
     },
     pullPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = JSON_MODIFY(COALESCE(CASE WHEN JSON_QUERY("kind", \'$.tags\') IS NULL THEN "kind" ELSE JSON_MODIFY("kind", \'$.tags\', JSON_QUERY(COALESCE((SELECT \'[\' + STRING_AGG(CASE _uql_elem."type" WHEN 0 THEN \'null\' WHEN 1 THEN \'"\' + STRING_ESCAPE(_uql_elem."value", \'json\') + \'"\' ELSE _uql_elem."value" END, \',\') + \']\' FROM OPENJSON("kind", \'$.tags\') _uql_elem WHERE _uql_elem."value" IS NULL OR _uql_elem."value" <> @p1), \'[]\'))) END, \'{}\'), \'append $.tags\', @p2), "updatedAt" = @p3 WHERE "id" = @p4',
+      sql: "UPDATE \"Company\" SET \"kind\" = JSON_MODIFY(COALESCE(CASE WHEN LEFT(JSON_QUERY(\"kind\", '$.tags'), 1) = '[' THEN JSON_MODIFY(\"kind\", '$.tags', JSON_QUERY(COALESCE((SELECT '[' + STRING_AGG(CASE _uql_pull.\"type\" WHEN 0 THEN 'null' WHEN 1 THEN '\"' + STRING_ESCAPE(_uql_pull.\"value\", 'json') + '\"' ELSE _uql_pull.\"value\" END, ',') + ']' FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY(\"kind\", '$.tags'), 1) = '[' THEN \"kind\" END, '$.tags') _uql_pull WHERE _uql_pull.\"value\" IS NULL OR _uql_pull.\"value\" <> @p1), '[]'))) ELSE \"kind\" END, '{}'), 'append $.tags', @p2), \"updatedAt\" = @p3 WHERE \"id\" = @p4",
       values: ['a', 'b', 123, '1'],
     },
     setPushCombined: {
@@ -231,7 +231,7 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     // A numeric operand reads the path as a number, which is what `TRY_CAST` is doing here.
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE TRY_CAST((SELECT "value" FROM OPENJSON("kind", \'$\')' +
-        ' WHERE "key" = N\'private\') AS FLOAT) = @p1',
+        ' WHERE "key" = N\'private\') AS FLOAT) = TRY_CAST(@p1 AS FLOAT)',
     );
     expect(values).toEqual([1]);
   }
@@ -248,23 +248,24 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $size: 2 } } }),
     );
     expect(sql).toBe(
-      `SELECT "id" FROM "Company" WHERE (SELECT COUNT(*) FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem) = @p1`,
+      `SELECT "id" FROM "Company" WHERE (SELECT COUNT(*) FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN "kind" END, '$.tags')) = @p1`,
     );
     expect(values).toEqual([2]);
   }
 
-  /** Containment is one `EXISTS` per value, since an exploded element compares as text here. */
+  /** Containment is one `EXISTS` per value, an exploded element reading as text and its `type` telling `'5'` from `5`. */
   shouldMatchEveryValueOfAJsonArray() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $all: ['a', 'b'] } } }),
     );
     expect(sql).toContain(
-      `EXISTS (SELECT 1 FROM OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'tags')) _uql_elem WHERE _uql_elem."value" = @p1)`,
+      `EXISTS (SELECT 1 FROM OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", '$.tags'), 1) = '[' THEN "kind" END, '$.tags') _uql_elem WHERE _uql_elem."value" = @p1 AND _uql_elem."type" = 1)`,
     );
     expect(sql).toContain(' AND EXISTS');
     expect(values).toEqual(['a', 'b']);
   }
 
+  /** A field of an element is read as any path is, through `OPENJSON`, which has no 4000-character bound. */
   shouldMatchAJsonArrayElementByItsFields() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
@@ -274,8 +275,8 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM' +
-        ` OPENJSON((SELECT "value" FROM OPENJSON("kind", '$') WHERE "key" = N'items')) _uql_elem` +
-        ` WHERE JSON_VALUE(_uql_elem."value", '$.name') = @p1)`,
+        ` OPENJSON(CASE WHEN LEFT(JSON_QUERY("kind", '$.items'), 1) = '[' THEN "kind" END, '$.items') _uql_elem` +
+        ` WHERE (SELECT "value" FROM OPENJSON(_uql_elem."value", '$') WHERE "key" = N'name') = @p1)`,
     );
     expect(values).toEqual(['a']);
   }

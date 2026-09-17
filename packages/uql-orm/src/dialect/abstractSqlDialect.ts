@@ -71,10 +71,10 @@ import {
   idOnlyQuery,
   columnFamily,
   countedRelations,
+  isJsonObject,
   isJsonUpdateOp,
   isOperatorMap,
-  isOperatorObject,
-  isOperatorOnlyObject,
+  isOperatorKey,
   isVectorSearch,
   normalizeScalarFieldSelection,
   parentJoins,
@@ -85,15 +85,21 @@ import {
   parseSortByCount,
   populatesRelations,
   raw,
-  someValue,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
-import { escapeAnsiSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
-import { COUNT_ALIAS, COUNTED_ROWS_ALIAS, JSON_ELEM_ALIAS, relationSortColumn } from './aliases.js';
+import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
+import { COUNT_ALIAS, COUNTED_ROWS_ALIAS, JSON_ELEM_ALIAS, JSON_PULL_ALIAS, relationSortColumn } from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
-import { buildElemMatchConditions } from './jsonArrayElemMatchUtils.js';
-import { isJsonbOp, type JsonAccessMode, jsonCompareMode, jsonElemExists } from './jsonSql.js';
+import {
+  holdsOperator,
+  isJsonScalar,
+  type JsonAccessMode,
+  jsonCompareMode,
+  jsonElemExists,
+  jsonPath,
+  type JsonSlot,
+} from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
   NO_JOINS,
@@ -131,6 +137,12 @@ type LikeOp = { readonly pattern: (value: string) => string; readonly insensitiv
 
 /** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
 type HydratableField = readonly [string, HydrateKind];
+
+/**
+ * A JSON value a condition compares: `read` spells it the way each operator reads it, and `slot` is
+ * where an array operator finds it. A path of a column, an array element, or a field of one.
+ */
+type JsonTarget = { readonly read: (mode: JsonAccessMode) => string; readonly slot: JsonSlot };
 
 /**
  * One `ORDER BY` term, taken apart: `key` is the path it sorts by, and `output` says `expr` already
@@ -197,10 +209,7 @@ export type CarriedFields = { readonly [F in ColumnFamily]?: (expr: string, fiel
 
 /** The key a term answers under in a populated relation's row, which a raw expression has only once aliased. */
 export function relationTermKey({ sql, key }: SelectTerm): string {
-  if (key === undefined) {
-    throw new TypeError(`a raw $select in a populated relation needs an alias, the key its value lands under: ${sql}`);
-  }
-  return key;
+  return orRefuse(key, `a raw $select in a populated relation needs an alias, the key its value lands under: ${sql}`);
 }
 
 /**
@@ -220,6 +229,14 @@ function projectedKeys<E>(
 }
 
 export type { HydrateKind };
+
+/** `value`, where there is one; a `TypeError` saying `refusal` where there is none. */
+function orRefuse<T>(value: T | undefined, refusal: string): T {
+  if (value === undefined) {
+    throw TypeError(refusal);
+  }
+  return value;
+}
 
 /** An `$in`/`$nin` operand, which the types require to be an array but `/http` hands over untyped. */
 function inOperands(op: string, value: unknown): unknown[] {
@@ -462,8 +479,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /**
    * The expression a scalar field is read through in the statement's own rows, the plain column by
-   * default. MariaDB reads a vector column back with `VEC_ToText`, since selecting it raw yields its
-   * binary form. A related row's column crosses JSON through {@link carriedFields} instead.
+   * default. MariaDB reads a vector column back as hex, since selecting it raw yields its binary form.
+   * A related row's column crosses JSON through {@link carriedFields} instead.
    */
   protected selectFieldExpr(escapedColumn: string, _field: FieldOptions): string {
     return escapedColumn;
@@ -738,7 +755,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // Detect JSONB dot-notation: 'column.path' where column is a registered JSON/JSONB field
     const jsonDot = this.resolveJsonDotPath(meta, key, opts.prefix);
     if (jsonDot) {
-      this.compareJsonPath(ctx, jsonDot, val);
+      ctx.append(this.jsonConditions(ctx, this.jsonPathTarget(jsonDot), val));
       return;
     }
 
@@ -758,22 +775,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     const value = this.normalizeWhereValue(val);
-    const operators = getKeys(value);
+    const parts = getKeys(value).map((op) => this.fieldCondition(ctx, entity, key as FieldKey<E>, op, value[op], opts));
+    ctx.append(AbstractSqlDialect.conjunction(parts));
+  }
 
-    if (operators.length > 1) {
-      ctx.append('(');
-    }
-
-    operators.forEach((op, index) => {
-      if (index > 0) {
-        ctx.append(' AND ');
-      }
-      this.compareFieldOperator(ctx, entity, key as FieldKey<E>, op, value[op], opts);
-    });
-
-    if (operators.length > 1) {
-      ctx.append(')');
-    }
+  /** Conditions joined by `AND`, parenthesized where there is more than one. */
+  private static conjunction(parts: readonly string[]): string {
+    return parts.length > 1 ? `(${parts.join(' AND ')})` : parts.join('');
   }
 
   protected compareLogicalOperator<E>(
@@ -821,14 +829,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   private static readonly VECTOR_QUERY_KEYS: ReadonlySet<string> = new Set<string>(VECTOR_QUERY_KEYS);
 
   /**
-   * The runtime half of {@link QueryVectorNear}'s bounds, derived from the map above rather than
-   * spelled again: both are `QueryOrderedOp`, so `$near` can never accept a comparison the renderer
-   * below has no operator for.
+   * The ordered comparisons, `QueryOrderedOp` at runtime, derived from the map above rather than spelled
+   * again: {@link QueryVectorNear}'s bounds, so `$near` never accepts one the renderer has no operator
+   * for, and the operators that read a JSON path as a number.
    */
-  private static readonly NEAR_BOUND_OPS: ReadonlySet<string> = new Set<string>([
+  private static readonly ORDERED_OPS: ReadonlySet<string> = new Set<string>([
     ...AbstractSqlDialect.COMPARE_OP_MAP.keys(),
     '$between',
   ]);
+
+  /** The operators an equality compares by value, which a JSON path reads the way that value compares. */
+  private static readonly EQUALITY_OPS: ReadonlySet<string> = new Set<string>(['$eq', '$ne', '$in', '$nin']);
 
   /**
    * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.
@@ -908,7 +919,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return inlined ? this.rawFragment(ctx, inlined, prefix, entity) : undefined;
   }
 
-  /** One operator of a field's condition. Both come from the query as data, so neither is trusted. */
+  /** {@link fieldCondition}, appended. */
   compareFieldOperator<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -917,43 +928,45 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     val: unknown,
     opts: QueryOptions = {},
   ): void {
+    ctx.append(this.fieldCondition(ctx, entity, key, op, val, opts));
+  }
+
+  /** One operator of a field's condition. Both come from the query as data, so neither is trusted. */
+  private fieldCondition<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: FieldKey<E>,
+    op: string,
+    val: unknown,
+    opts: QueryOptions,
+  ): string {
+    if (op === '$not') {
+      return `NOT (${this.buildFragment(ctx, (fragmentCtx) => this.compare(fragmentCtx, entity, key, val, opts))})`;
+    }
+    if (op === '$near') {
+      return this.vectorNearCondition(ctx, getMeta(entity), key as string, val as QueryVectorNear);
+    }
     const field = this.resolveOperandField(ctx, entity, key as string, opts);
-
-    if (this.appendOperatorCondition(ctx, field, op, val)) {
-      return;
-    }
-
-    switch (op) {
-      case '$not':
-        ctx.append('NOT (');
-        this.compare(ctx, entity, key, val, opts);
-        ctx.append(')');
-        break;
-      case '$all':
-        ctx.append(this.jsonAll(ctx, field, val));
-        break;
-      case '$size':
-        ctx.append(this.jsonSize(ctx, field, val as number | QuerySizeComparisonOps));
-        break;
-      case '$elemMatch':
-        ctx.append(this.jsonElemMatch(ctx, field, val as Record<string, unknown>));
-        break;
-      case '$near':
-        this.compareVectorNear(ctx, getMeta(entity), key as string, val as QueryVectorNear);
-        break;
-      default:
-        throw TypeError(`unknown operator: ${op}`);
-    }
+    const condition =
+      this.operatorCondition(ctx, field, op, val) ?? this.jsonArrayCondition(ctx, { base: field, path: '' }, op, val);
+    return orRefuse(condition, `unknown operator: ${op}`);
   }
 
   /**
    * `<operand> <op> <value>` for every operator that needs only its left-hand SQL, shared by a column, a
-   * `HAVING` expression and a `$size` count; `undefined` for the rest.
+   * JSON path, a `HAVING` expression, a count and a distance; `undefined` for the rest. `bind` renders
+   * each compared value, a plain placeholder unless a JSON path reads it otherwise.
    */
-  protected operatorCondition(ctx: QueryContext, operand: string, op: string, val: unknown): string | undefined {
+  protected operatorCondition(
+    ctx: QueryContext,
+    operand: string,
+    op: string,
+    val: unknown,
+    bind: (value: unknown) => string = (value) => this.addValue(ctx, value),
+  ): string | undefined {
     const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
     if (compareOp) {
-      return `${operand}${compareOp}${this.addValue(ctx, val)}`;
+      return `${operand}${compareOp}${bind(val)}`;
     }
 
     const like = this.likeCondition(ctx, operand, op, val);
@@ -963,17 +976,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
     switch (op) {
       case '$eq':
-        return val === null ? `${operand} IS NULL` : `${operand} = ${this.addValue(ctx, val)}`;
+        return val === null ? `${operand} IS NULL` : `${operand} = ${bind(val)}`;
       case '$ne':
-        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, this.addValue(ctx, val));
+        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, bind(val));
       case '$regex':
         return this.regexCondition(operand, this.addValue(ctx, val));
       case '$in':
       case '$nin':
-        return this.formatIn(ctx, operand, inOperands(op, val), op === '$nin');
+        return this.formatIn(ctx, operand, inOperands(op, val), op === '$nin', bind);
       case '$between': {
         const [min, max] = val as [unknown, unknown];
-        return `${operand} BETWEEN ${this.addValue(ctx, min)} AND ${this.addValue(ctx, max)}`;
+        return `${operand} BETWEEN ${bind(min)} AND ${bind(max)}`;
       }
       case '$isNull':
         return operand + (val ? ' IS NULL' : ' IS NOT NULL');
@@ -984,160 +997,183 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
   }
 
-  /** {@link operatorCondition}, appended; `false` when `op` needs more than an operand. */
-  protected appendOperatorCondition(ctx: QueryContext, operand: string, op: string, val: unknown): boolean {
-    const condition = this.operatorCondition(ctx, operand, op, val);
-    if (condition === undefined) {
-      return false;
-    }
-    ctx.append(condition);
-    return true;
-  }
-
-  /**
-   * Build a comparison condition for a JSON field.
-   * Used by both `$elemMatch` and dot-notation paths.
-   * All dialect-specific behavior comes from overridable methods on `this`.
-   */
-  protected buildJsonFieldCondition(
-    ctx: QueryContext,
-    fieldAccessor: (path: string, mode: JsonAccessMode) => string,
-    jsonPath: string,
-    op: string,
-    value: unknown,
-    asJson = false,
-  ): string {
-    const jsonField = fieldAccessor(jsonPath, asJson ? 'json' : 'text');
-    // The left side of a comparison reads the path the way its operand is compared: a numeric one
-    // cast to a number, a boolean as the JSON value.
-    const comparand = (val: unknown) => fieldAccessor(jsonPath, jsonCompareMode(val));
-    // The `$like` family reads a JSON path exactly as it reads a column, case folding included.
-    const like = this.likeCondition(ctx, jsonField, op, value);
-    if (like) {
-      return like;
-    }
-    // The ordered comparisons read the path as a number whatever the operand is, and spell their
-    // operator out of the same table a comparison against a column does.
-    const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
-    if (compareOp) {
-      return `${fieldAccessor(jsonPath, 'numeric')}${compareOp}${this.addValue(ctx, value)}`;
-    }
+  /** `$all`, `$size` and `$elemMatch`, which read the JSON array at `slot`; `undefined` for the rest. */
+  private jsonArrayCondition(ctx: QueryContext, slot: JsonSlot, op: string, val: unknown): string | undefined {
     switch (op) {
-      case '$eq':
-        if (value === null) return `${jsonField} IS NULL`;
-        return `${comparand(value)} = ${this.jsonOperand(ctx, value, asJson)}`;
-      case '$ne':
-        if (value === null) return `${jsonField} IS NOT NULL`;
-        return this.neExpr(comparand(value), this.jsonOperand(ctx, value, asJson));
-      case '$regex':
-        return this.regexCondition(jsonField, this.addValue(ctx, value));
-      case '$in':
-      case '$nin':
-        return this.jsonInNin(ctx, jsonField, comparand, op, value, asJson);
       case '$all':
-        return this.jsonAll(ctx, jsonField, value);
+        return this.jsonAll(ctx, slot, val as readonly unknown[]);
       case '$size':
-        return this.jsonSize(ctx, jsonField, value as number | QuerySizeComparisonOps);
+        return this.sizeCondition(
+          ctx,
+          (fragmentCtx) => fragmentCtx.append(this.jsonLength(slot)),
+          val as number | QuerySizeComparisonOps,
+        );
       case '$elemMatch':
-        return this.jsonElemMatch(ctx, jsonField, value as Record<string, unknown>);
+        return this.jsonElemMatch(ctx, slot, val as Record<string, unknown>);
       default:
-        throw TypeError(`unknown operator: ${op}`);
+        return undefined;
     }
   }
 
-  private jsonInNin(
-    ctx: QueryContext,
-    jsonField: string,
-    comparand: (value: unknown) => string,
-    op: string,
-    value: unknown,
-    asJson: boolean,
-  ): string {
-    const values = inOperands(op, value);
-    const negate = op === '$nin';
-    if (!asJson) {
-      return this.formatIn(ctx, comparand(values), values, negate);
+  /** A path of a JSON document, read the way each operator reads it. */
+  private jsonPathTarget(slot: JsonSlot): JsonTarget {
+    return { slot, read: (mode) => this.jsonPathExpr(slot.base, slot.path, mode) };
+  }
+
+  /** Every operator `target` is compared with, `AND`-joined. */
+  private jsonConditions(ctx: QueryContext, target: JsonTarget, val: unknown): string {
+    const value = this.normalizeWhereValue(val);
+    return AbstractSqlDialect.conjunction(getKeys(value).map((op) => this.jsonCondition(ctx, target, op, value[op])));
+  }
+
+  private jsonCondition(ctx: QueryContext, target: JsonTarget, op: string, value: unknown): string {
+    if (op === '$not') {
+      return `NOT (${this.jsonConditions(ctx, target, value)})`;
     }
-    // JSON values have no portable array literal, so the set expands into explicit comparisons.
-    const comparisons = values.map((val) => `${jsonField} ${negate ? '<>' : '='} ${this.jsonScalarParam(ctx, val)}`);
-    return `(${comparisons.join(negate ? ' AND ' : ' OR ')})`;
-  }
-
-  /** The bound operand of a JSON comparison: JSON-encoded when comparing against the JSON value. */
-  protected jsonOperand(ctx: QueryContext, value: unknown, asJson: boolean): string {
-    return asJson ? this.jsonScalarParam(ctx, value) : this.addValue(ctx, value);
-  }
-
-  /** `$all`: the JSON array at `jsonField` contains every value (also serves element containment). */
-  protected abstract jsonAll(ctx: QueryContext, jsonField: string, value: unknown): string;
-
-  /** `$size`: the length of the JSON array at `jsonField`, compared against `value`. */
-  protected abstract jsonSize(ctx: QueryContext, jsonField: string, value: number | QuerySizeComparisonOps): string;
-
-  /**
-   * The JSON array at `jsonField` as rows, the `FROM` of an `EXISTS`, under a fresh `alias` so a nested
-   * one cannot shadow it. `fields` are an object element's keys (MySQL lists them up front), empty for
-   * scalars, which `asJson` reads as JSON rather than text.
-   */
-  protected abstract jsonElemFrom(
-    jsonField: string,
-    fields: readonly string[],
-    alias: string,
-    asJson?: boolean,
-  ): string;
-
-  /**
-   * References an exploded element under `alias` (the same one passed to the {@link jsonElemFrom}
-   * call it explodes): the element itself, or one `field` of it. `asJson` asks for the JSON-valued
-   * form instead of the text one - see {@link isJsonbOp} for when that matters.
-   */
-  protected abstract jsonElemRef(alias: string, field?: string, asJson?: boolean): string;
-
-  /**
-   * `$elemMatch`: an element satisfies `match`. Operator keys test a scalar element; a plain object is
-   * containment, which an index can serve; anything else tests each exploded object's fields.
-   */
-  protected jsonElemMatch(ctx: QueryContext, jsonField: string, match: Record<string, unknown>): string {
-    // Conditions on the element itself. One `FROM` serves them all, so the element is read as JSON
-    // only when *every* operand needs it - the same all-operands rule the comparison classifier uses.
-    if (isOperatorOnlyObject(match)) {
-      const entries = Object.entries(match);
-      const asJson = !this.features.typedJsonElements && entries.every(([op, val]) => isJsonbOp(op, val));
-      const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-      const conditions = entries.map(([op, val]) =>
-        this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), '', op, val, asJson),
+    const array = this.jsonArrayCondition(ctx, target.slot, op, value);
+    if (array !== undefined) {
+      return array;
+    }
+    const mode = AbstractSqlDialect.jsonOperatorMode(op, value);
+    const operand = target.read(mode);
+    // Only a boolean compares as a JSON value, so the set holds two at most, and MySQL documents `IN()`
+    // as unsupported on JSON values: the comparisons are spelled out.
+    if (mode === 'json' && (op === '$in' || op === '$nin')) {
+      const negate = op === '$nin';
+      const comparisons = inOperands(op, value).map(
+        (val) => `${operand} ${negate ? '<>' : '='} ${this.jsonScalarParam(ctx, val)}`,
       );
-      return jsonElemExists(this.jsonElemFrom(jsonField, [], alias, asJson), conditions);
+      return `(${comparisons.join(negate ? ' AND ' : ' OR ')})`;
     }
-    if (isOperatorObject(match)) {
-      throw TypeError(`$elemMatch cannot mix operators with field names: ${Object.keys(match).join(', ')}`);
-    }
-
-    // A plain object with no nested operators is containment, which is also the only form an index
-    // can serve. SQLite compares elements exactly, so it always expands the per-field form below.
-    if (this.features.partialJsonContainment && !someValue(match, isOperatorObject)) {
-      return this.jsonAll(ctx, jsonField, [match]);
-    }
-
-    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
-    const conditions = buildElemMatchConditions(match, (field, op, opVal) => {
-      const asJson = isJsonbOp(op, opVal);
-      return this.buildJsonFieldCondition(ctx, this.elemAccessor(alias, asJson), field, op, opVal, asJson);
-    });
-    return jsonElemExists(this.jsonElemFrom(jsonField, Object.keys(match), alias), conditions);
+    const condition = this.operatorCondition(ctx, operand, op, value, (val) => this.jsonOperand(ctx, val, mode));
+    return orRefuse(condition, `unknown operator: ${op}`);
   }
 
   /**
-   * How a `$elemMatch` reads one exploded element: {@link jsonPathExpr}'s counterpart, over a column
-   * of the derived table rather than a path of the document. An empty field names the element itself,
-   * which is what the operator-only form matches on.
+   * How `op` reads a JSON value: an ordered comparison as a number, an equality as its operand compares,
+   * and a pattern or a null check as text.
    */
-  private elemAccessor(alias: string, asJson: boolean): (field: string, mode: JsonAccessMode) => string {
-    return (field, mode) => {
-      const ref = this.jsonElemRef(alias, field || undefined, asJson);
-      return mode === 'numeric' ? this.numericCast(ref) : ref;
-    };
+  private static jsonOperatorMode(op: string, value: unknown): JsonAccessMode {
+    if (AbstractSqlDialect.ORDERED_OPS.has(op)) {
+      return 'numeric';
+    }
+    return AbstractSqlDialect.EQUALITY_OPS.has(op) ? jsonCompareMode(value) : 'text';
   }
+
+  /** A bound operand of a JSON comparison, read the way `mode` reads the value it is compared with. */
+  private jsonOperand(ctx: QueryContext, value: unknown, mode: JsonAccessMode): string {
+    if (mode === 'json') {
+      return this.jsonScalarParam(ctx, value);
+    }
+    const placeholder = this.addValue(ctx, value);
+    return mode === 'numeric' ? this.numericCast(placeholder) : placeholder;
+  }
+
+  /** The JSON value at `slot`, as an array operator reads it. */
+  protected jsonValue(slot: JsonSlot): string {
+    return slot.path ? this.jsonPathExpr(slot.base, slot.path, 'json') : slot.base;
+  }
+
+  /**
+   * `$all`: the JSON array at `slot` has an element holding each value, as Postgres's `@>` and MySQL's
+   * `JSON_CONTAINS` read one: a scalar equal, an array each of its elements, an object each of its keys.
+   * Plain JSON goes to {@link jsonContains}; an operator anywhere in it is matched element by element.
+   */
+  private jsonAll(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    return holdsOperator(values) ? this.jsonElemsHold(ctx, slot, values) : this.jsonContains(ctx, slot, values);
+  }
+
+  /** `$all` over plain JSON, which an engine with containment of its own spells natively, for an index to serve. */
+  protected jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    return this.jsonElemsHold(ctx, slot, values);
+  }
+
+  /** One `EXISTS` per value, over the elements of the array at `slot`: a scalar equal, anything else held. */
+  private jsonElemsHold(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    const alias = ctx.claimAlias(JSON_ELEM_ALIAS);
+    const from = this.jsonElemFrom(slot, alias);
+    const element: JsonTarget = {
+      slot: { base: this.jsonElemDoc(alias), path: '' },
+      read: (mode) => this.jsonElemValue(slot, alias, mode),
+    };
+    const conditions = values.map((value) => {
+      const holds =
+        isOperatorMap(value) || Array.isArray(value)
+          ? this.jsonHolds(ctx, element, value)
+          : [this.jsonElemEquals(ctx, slot, alias, value)];
+      return jsonElemExists(from, holds, this.jsonElemHint);
+    });
+    return AbstractSqlDialect.conjunction(conditions);
+  }
+
+  /**
+   * What the JSON `target` reads satisfies to hold `value`: an array each of its elements, an object each
+   * of its keys as a path, and an operator map or a scalar compared as a path is.
+   */
+  private jsonHolds(ctx: QueryContext, target: JsonTarget, value: unknown): string[] {
+    if (Array.isArray(value)) {
+      return [this.jsonAll(ctx, target.slot, value)];
+    }
+    if (!isJsonObject(value)) {
+      return [this.jsonConditions(ctx, target, value)];
+    }
+    const { base, path } = target.slot;
+    return Object.entries(value).flatMap(([key, item]) =>
+      this.jsonHolds(ctx, this.jsonPathTarget({ base, path: path ? `${path}.${key}` : key }), item),
+    );
+  }
+
+  /** An element of the array at `slot` equal to `value`, both read as JSON. */
+  protected jsonElemEquals(ctx: QueryContext, slot: JsonSlot, alias: string, value: unknown): string {
+    return `${this.jsonElemValue(slot, alias, 'json')} = ${this.jsonScalarParam(ctx, value)}`;
+  }
+
+  /** The JSON array at `slot` contains at least one of `values`, each as `$all` reads it. */
+  protected jsonAny(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
+    return `(${values.map((value) => this.jsonAll(ctx, slot, [value])).join(' OR ')})`;
+  }
+
+  /** How many elements the JSON array at `slot` has, which `$size` compares. */
+  protected abstract jsonLength(slot: JsonSlot): string;
+
+  /** Whether the value at `slot` is a JSON array: the array operators match, and `$pull` changes, no other. */
+  protected abstract jsonIsArray(slot: JsonSlot): string;
+
+  /** The JSON array at `slot` as one row per element under `alias`, the `FROM` of an `EXISTS`. */
+  protected abstract jsonElemFrom(slot: JsonSlot, alias: string): string;
+
+  /** An exploded element as a JSON document, which its fields are paths into. */
+  protected abstract jsonElemDoc(alias: string): string;
+
+  /** An element of the array at `slot` itself, read the way `mode` reads a path: its document, or its root. */
+  protected jsonElemValue(_slot: JsonSlot, alias: string, mode: JsonAccessMode): string {
+    const doc = this.jsonElemDoc(alias);
+    return mode === 'json' ? doc : this.jsonPathExpr(doc, '', mode);
+  }
+
+  /**
+   * `$elemMatch`: an element holds `match`, as `$all` reads one value, its operators testing the element
+   * itself. An element equal to one value, or to one of several, is containment whatever the operator
+   * says, which compares by JSON type and is what an array index serves.
+   */
+  protected jsonElemMatch(ctx: QueryContext, slot: JsonSlot, match: Record<string, unknown>): string {
+    const keys = Object.keys(match);
+    if (keys.some(isOperatorKey) && !keys.every(isOperatorKey)) {
+      throw TypeError(`$elemMatch cannot mix operators with field names: ${keys.join(', ')}`);
+    }
+    const single = keys.length === 1;
+    const { $eq: equal, $in: within } = match;
+    if (single && isJsonScalar(equal)) {
+      return this.jsonAll(ctx, slot, [equal]);
+    }
+    if (single && Array.isArray(within) && within.length > 0 && within.every(isJsonScalar)) {
+      return this.jsonAny(ctx, slot, within);
+    }
+    return this.jsonAll(ctx, slot, [match]);
+  }
+
+  /** The optimizer hint a `$elemMatch` subquery opens with, where the engine plans one wrong without it. */
+  protected readonly jsonElemHint: string = '';
 
   /**
    * A JSON-encoded bound parameter, cast to the dialect's JSON type. Only the positional-placeholder
@@ -1249,43 +1285,56 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
             ? { key: keyPath, expr: this.escapeId(value.$project), direction: '', output: true }
             : {
                 key: keyPath,
-                expr: this.buildFragment(ctx, (fragmentCtx) => this.appendVectorSort(fragmentCtx, meta, key, value)),
+                expr: this.buildFragment(ctx, (fragmentCtx) =>
+                  this.appendVectorDistance(fragmentCtx, meta, key, value),
+                ),
                 direction: '',
                 output: false,
               },
         );
         continue;
       }
-      columns.push({
-        key: keyPath,
-        ...this.sortColumn(ctx, meta, key, prefix),
-        direction: this.resolveSortDirection(value),
+      const direction = this.resolveSortDirection(value);
+      // A JSON path can sort by more than one reading, each carried under a name of its own.
+      this.sortColumns(ctx, meta, key, prefix).forEach((column, index) => {
+        columns.push({ key: index ? `${keyPath}:${index}` : keyPath, ...column, direction });
       });
     }
   }
 
   /**
-   * The `ORDER BY` operand for one key. A key that is not a field of `meta` - a `raw()` projection, a
-   * `$select` alias - is an output alias, which is never table-qualified and needs no resolving.
+   * The `ORDER BY` operands for one key: a JSON path's in each of {@link jsonSortModes}. A key that is
+   * not a field of `meta` - a `raw()` projection, a `$select` alias - is an output alias, which is never
+   * table-qualified and needs no resolving.
    */
-  private sortColumn<E>(
+  private sortColumns<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     key: string,
     prefix: string | undefined,
-  ): Pick<SortTerm, 'expr' | 'output'> {
+  ): Pick<SortTerm, 'expr' | 'output'>[] {
     const field = meta.fields[key as FieldKey<E>];
     if (field) {
       const expr =
         this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta), meta.entity) ??
         this.columnWithPrefix(key, field, prefix);
-      return { expr, output: false };
+      return [{ expr, output: false }];
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
-    return json
-      ? { expr: this.jsonPathExpr(json.column, json.jsonPath, 'text'), output: false }
-      : { expr: this.escapeId(key), output: true };
+    if (!json) {
+      return [{ expr: this.escapeId(key), output: true }];
+    }
+    return this.jsonSortModes.map((mode) => ({
+      expr: this.jsonPathExpr(json.base, json.path, mode),
+      output: false,
+    }));
   }
+
+  /**
+   * How a JSON path is sorted by: as the JSON value, which the engine orders by type and a number by its
+   * value. An engine that orders JSON as text reads a number first, then the text.
+   */
+  protected readonly jsonSortModes: readonly JsonAccessMode[] = ['json'];
 
   /**
    * `LIMIT`/`OFFSET`. `sorted` says whether an `ORDER BY` was emitted just before, which
@@ -1494,21 +1543,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   private resolveSortDirection(sort: unknown): string {
     const direction = AbstractSqlDialect.SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
-    if (direction === undefined) {
-      throw TypeError(`unknown sort direction: ${sort}`);
-    }
-    return direction;
+    return orRefuse(direction, `unknown sort direction: ${sort}`);
   }
 
-  /** Scalar comparison operators shared by `HAVING` conditions and `$size` comparisons. */
+  /** Every operator of one `HAVING` condition, `AND`-joined. */
   protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
     const ops = this.normalizeWhereValue(condition);
-    getKeys(ops).forEach((op, i) => {
-      if (i > 0) ctx.append(' AND ');
-      if (!this.appendOperatorCondition(ctx, expr, op, ops[op])) {
-        throw TypeError(`unsupported HAVING operator: ${op}`);
-      }
-    });
+    const parts = getKeys(ops).map((op) =>
+      orRefuse(this.operatorCondition(ctx, expr, op, ops[op]), `unsupported HAVING operator: ${op}`),
+    );
+    ctx.append(parts.join(' AND '));
   }
 
   /**
@@ -1956,14 +2000,29 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return Object.entries(pull).reduce((acc, [key, value]) => this.jsonPullKey(ctx, acc, escapedCol, key, value), expr);
   }
 
-  /** Wrap `expr` so the array at `key` no longer contains `value`. */
-  protected abstract jsonPullKey(
-    ctx: QueryContext,
-    expr: string,
-    escapedCol: string,
-    key: string,
-    value: unknown,
-  ): string;
+  /**
+   * Wrap `expr` so the array at `key` no longer contains `value`: the array rebuilt from the elements that
+   * differ from it, and any other value put back as it is. `JSON_REPLACE` leaves an absent key, and a NULL
+   * column, untouched.
+   */
+  protected jsonPullKey(ctx: QueryContext, expr: string, escapedCol: string, key: string, value: unknown): string {
+    const slot = { base: escapedCol, path: key };
+    const elem = this.jsonElemValue(slot, JSON_PULL_ALIAS, 'json');
+    const differs = this.jsonDiffers(elem, this.jsonScalarParam(ctx, value));
+    const kept = `SELECT ${this.jsonArrayOf(elem)} FROM ${this.jsonElemFrom(slot, JSON_PULL_ALIAS)} WHERE ${differs}`;
+    const pulled = `CASE WHEN ${this.jsonIsArray(slot)} THEN (${kept}) ELSE ${this.jsonValue(slot)} END`;
+    return `JSON_REPLACE(${expr}, ${jsonPath(key)}, ${pulled})`;
+  }
+
+  /** The elements a `$pull` keeps, back in one array, and an empty one where it keeps none. */
+  protected jsonArrayOf(elem: string): string {
+    return `COALESCE(JSON_ARRAYAGG(${elem}), JSON_ARRAY())`;
+  }
+
+  /** Whether an element is not the pulled value, both read as JSON. */
+  protected jsonDiffers(elem: string, operand: string): string {
+    return `${elem} <> ${operand}`;
+  }
 
   /** Shallow assignment of top-level keys, matching PostgreSQL's `jsonb || jsonb`. */
   protected abstract jsonSet(
@@ -2012,17 +2071,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     });
   }
 
-  /**
-   * Resolves a dot-notation key to its JSON field metadata.
-   * Shared by `where()` and `sort()` to detect 'column.path' keys where 'column' is a JSON/JSONB field.
-   *
-   * @returns resolved metadata or `undefined` if the key is not a JSON dot-notation path
-   */
-  protected resolveJsonDotPath<E>(
-    meta: EntityMeta<E>,
-    key: string,
-    prefix?: string,
-  ): { jsonPath: string; column: string } | undefined {
+  /** A `column.path` key of `meta`'s JSON field as the path it names, shared by `where` and `sort`; else `undefined`. */
+  protected resolveJsonDotPath<E>(meta: EntityMeta<E>, key: string, prefix?: string): JsonSlot | undefined {
     const dotIndex = key.indexOf('.');
     if (dotIndex <= 0) {
       return undefined;
@@ -2034,7 +2084,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const colName = this.resolveColumnName(root, field);
     const prefixed = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    return { jsonPath: key.slice(dotIndex + 1), column: prefixed };
+    return { base: prefixed, path: key.slice(dotIndex + 1) };
   }
 
   /**
@@ -2042,65 +2092,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * so `$where`, `$sort` and every operator reach a path the same way. Public because a JSON index
    * is matched back by its own text, so the migrator's `CREATE INDEX` has to spell it from here too.
    */
-  jsonPathExpr(escapedColumn: string, jsonPath: string, mode: JsonAccessMode): string {
-    if (mode === 'json') {
-      return this.getJsonPathJsonbExpr(escapedColumn, jsonPath);
-    }
-    const scalar = this.getJsonPathScalarExpr(escapedColumn, jsonPath);
-    return mode === 'numeric' ? this.numericCast(scalar) : scalar;
+  jsonPathExpr(escapedColumn: string, path: string, mode: JsonAccessMode): string {
+    return mode === 'numeric'
+      ? this.numericCast(this.jsonPathReading(escapedColumn, path, 'text'))
+      : this.jsonPathReading(escapedColumn, path, mode);
   }
 
-  /**
-   * Compare a JSONB dot-notation path, e.g. `'settings.isArchived': { $ne: true }`.
-   * Receives a pre-resolved `resolveJsonDotPath` result to avoid redundant computation.
-   */
-  protected compareJsonPath(ctx: QueryContext, resolved: { jsonPath: string; column: string }, val: unknown): void {
-    const { jsonPath, column } = resolved;
-    const accessor = (path: string, mode: JsonAccessMode) => this.jsonPathExpr(column, path, mode);
-    const value = this.normalizeWhereValue(val);
-    const operators = getKeys(value);
-
-    if (operators.length > 1) {
-      ctx.append('(');
-    }
-
-    operators.forEach((op, index) => {
-      if (index > 0) ctx.append(' AND ');
-      const asJson = isJsonbOp(op, value[op]);
-      const sql = this.buildJsonFieldCondition(ctx, accessor, jsonPath, op, value[op], asJson);
-      if (sql) {
-        ctx.append(sql);
-      }
-    });
-
-    if (operators.length > 1) {
-      ctx.append(')');
-    }
-  }
-
-  /**
-   * Returns SQL that extracts a scalar value from a JSON path.
-   * Dialects can override this to customize path access syntax while preserving
-   * the shared comparison/operator pipeline.
-   */
-  protected getJsonPathScalarExpr(escapedColumn: string, jsonPath: string): string {
-    const segments = jsonPath.split('.');
-    let expr = escapedColumn;
-    for (let i = 0; i < segments.length; i++) {
-      const op = i === segments.length - 1 ? '->>' : '->';
-      expr = `(${expr}${op}'${escapeSingleQuotes(segments[i])}')`;
-    }
-    return expr;
-  }
-
-  protected getJsonPathJsonbExpr(escapedColumn: string, jsonPath: string): string {
-    const segments = jsonPath.split('.');
-    let expr = escapedColumn;
-    for (const segment of segments) {
-      expr = `(${expr}->'${escapeSingleQuotes(segment)}')`;
-    }
-    return expr;
-  }
+  /** A path of the JSON in `escapedColumn`, `''` for the document itself, as its JSON value or its text. */
+  protected abstract jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string;
 
   /**
    * Normalizes a raw WHERE value into an operator map.
@@ -2387,76 +2386,63 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     rel: RelationMeta,
     opts: QueryComparisonOptions,
   ): void {
-    this.buildSizeComparison(
+    const count: QueryBuildFn = (fragmentCtx) =>
+      this.appendRelationSubquery(fragmentCtx, getMeta(entity), relKey, rel, opts, 'COUNT(*)', {});
+    ctx.append(this.sizeCondition(ctx, count, sizeVal));
+  }
+
+  /**
+   * `<expr> <op> <value>` for each bound, `AND`-joined. `expr` is spelled once per bound because it is an
+   * expression, not a column: a `WHERE` has no output alias to refer back to. Shared by `$size`, which
+   * counts, and `$near`, which measures a distance.
+   */
+  private boundConditions(
+    ctx: QueryContext,
+    expr: QueryBuildFn,
+    bounds: Record<string, unknown>,
+    condition: (operand: string, op: string, val: unknown) => string | undefined,
+    refusal: string,
+  ): string {
+    const parts = Object.entries(bounds)
+      .filter(([, val]) => val !== undefined)
+      .map(([op, val]) => orRefuse(condition(this.buildFragment(ctx, expr), op, val), `${refusal}: ${op}`));
+    return AbstractSqlDialect.conjunction(parts);
+  }
+
+  /**
+   * A count compared with `size`, a number or its bounds. A count is never NULL, so its equality stays
+   * plain rather than the null-safe `$ne` (`IS DISTINCT FROM`, `IS NOT`): same rows, shorter SQL.
+   */
+  private sizeCondition(ctx: QueryContext, count: QueryBuildFn, size: number | QuerySizeComparisonOps): string {
+    const bounds = typeof size === 'number' ? { $eq: size } : size;
+    return this.boundConditions(
       ctx,
-      () => this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, 'COUNT(*)', {}),
-      sizeVal,
+      count,
+      bounds,
+      (operand, op, val) => {
+        if (op === '$eq' || op === '$ne') {
+          return `${operand} ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx, val)}`;
+        }
+        return AbstractSqlDialect.ORDERED_OPS.has(op) ? this.operatorCondition(ctx, operand, op, val) : undefined;
+      },
+      'unsupported $size comparison operator',
     );
   }
 
-  /**
-   * `<expr> <op> <value>` for each operator, AND-joined and parenthesized when there is more than
-   * one. `exprFn` is re-run per operator because what it appends is an expression, not a column:
-   * a `WHERE` has no output alias to refer back to, so the only way to compare it twice is to spell
-   * it twice. Shared by `$size`, which counts, and `$near`, which measures a distance.
-   */
-  private buildExprComparison(
-    ctx: QueryContext,
-    exprFn: () => void,
-    ops: Record<string, unknown>,
-    appendOp: (op: string, val: unknown) => void,
-  ): void {
-    const entries = Object.entries(ops).filter(([, v]) => v !== undefined);
-
-    if (entries.length > 1) {
-      ctx.append('(');
-    }
-
-    entries.forEach(([op, val], index) => {
-      if (index > 0) {
-        ctx.append(' AND ');
-      }
-      exprFn();
-      appendOp(op, val);
-    });
-
-    if (entries.length > 1) {
-      ctx.append(')');
-    }
-  }
-
-  /**
-   * Build a complete `$size` comparison expression.
-   * @param sizeExprFn - function that appends the size expression to ctx (e.g. `JSONB_ARRAY_LENGTH("col")`)
-   */
-  protected buildSizeComparison(
-    ctx: QueryContext,
-    sizeExprFn: () => void,
-    sizeVal: number | QuerySizeComparisonOps,
-  ): void {
-    if (typeof sizeVal === 'number') {
-      sizeExprFn();
-      ctx.append(' = ');
-      ctx.addValue(sizeVal);
-      return;
-    }
-    this.buildExprComparison(ctx, sizeExprFn, sizeVal, (op, val) => this.appendSizeOp(ctx, op, val));
-  }
-
   /** `<distance> <op> ?`, the `$where` half of a vector search, its bounds checked here since `/http` input is untyped. */
-  protected compareVectorNear<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, near: QueryVectorNear): void {
+  private vectorNearCondition<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, near: QueryVectorNear): string {
     const bounds: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(near)) {
       if (AbstractSqlDialect.VECTOR_QUERY_KEYS.has(op) || val === undefined) {
         continue;
       }
-      if (!AbstractSqlDialect.NEAR_BOUND_OPS.has(op)) {
+      if (!AbstractSqlDialect.ORDERED_OPS.has(op)) {
         throw TypeError(`unsupported $near bound: ${op}`);
       }
       bounds[op] = val;
     }
     if (!hasKeys(bounds)) {
-      const boundOps = [...AbstractSqlDialect.NEAR_BOUND_OPS].join(', ');
+      const boundOps = [...AbstractSqlDialect.ORDERED_OPS].join(', ');
       throw TypeError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
     }
     // Required by the type, so this only fires for a query that never met it: `/http` casts client
@@ -2467,37 +2453,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       throw TypeError(`$near on '${key}' needs its own $vector`);
     }
     const search: QueryVectorSearch = { $vector, $distance };
-    this.buildExprComparison(
+    const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, search);
+    return this.boundConditions(
       ctx,
-      () => this.appendVectorSort(ctx, meta, key, search),
+      distance,
       bounds,
-      (op, val) => this.appendOperatorCondition(ctx, '', op, val),
+      (operand, op, val) => this.operatorCondition(ctx, operand, op, val),
+      'unsupported $near bound',
     );
-  }
-
-  /** The runtime half of {@link QuerySizeComparisonOps}: what a count can sensibly be compared with. */
-  private static readonly SIZE_COMPARE_OPS: ReadonlySet<string> = new Set([
-    '$eq',
-    '$ne',
-    '$gt',
-    '$gte',
-    '$lt',
-    '$lte',
-    '$between',
-  ]);
-
-  /** ` <op> <value>` after a count already written, refusing any operator a count cannot be compared with. */
-  private appendSizeOp(ctx: QueryContext, op: string, val: unknown): void {
-    if (!AbstractSqlDialect.SIZE_COMPARE_OPS.has(op)) {
-      throw TypeError(`unsupported $size comparison operator: ${op}`);
-    }
-    // A COUNT is never NULL, so equality stays plain here instead of taking the shared renderer's
-    // null-safe `$ne` (`IS DISTINCT FROM` on Postgres, `IS NOT` on SQLite). Same rows, shorter SQL.
-    if (op === '$eq' || op === '$ne') {
-      ctx.append(` ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx, val)}`);
-      return;
-    }
-    this.appendOperatorCondition(ctx, '', op, val);
   }
 
   /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */
@@ -2535,12 +2498,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `${field} ${this.neOp} ${ph}`;
   }
 
-  /** `operand IN (...)` binding each value, or the constant an empty set reduces to: no value is in it. */
-  protected formatIn(ctx: QueryContext, operand: string, values: unknown[], negate: boolean): string {
+  /** `operand IN (...)` of each value as `bind` renders it, or the constant an empty set reduces to: no value is in it. */
+  protected formatIn(
+    _ctx: QueryContext,
+    operand: string,
+    values: unknown[],
+    negate: boolean,
+    bind: (value: unknown) => string,
+  ): string {
     if (!values.length) {
       return negate ? '1 = 1' : '1 = 0';
     }
-    const phs = values.map((v) => this.addValue(ctx, v)).join(', ');
+    const phs = values.map(bind).join(', ');
     return `${operand} ${negate ? 'NOT IN' : 'IN'} (${phs})`;
   }
 

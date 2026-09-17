@@ -26,7 +26,7 @@ export class D1SqliteDialect extends SqliteDialect {
    * to SQL that only fails once it reaches the edge. `raw()` is no escape hatch either, hence a
    * message that names the product that does the job.
    */
-  protected override appendVectorSort(): never {
+  protected override appendVectorDistance(): never {
     throw new TypeError(
       'Cloudflare D1 has no vector functions and cannot load sqlite-vec. Use Cloudflare Vectorize for vector search.',
     );

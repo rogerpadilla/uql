@@ -1,5 +1,5 @@
 import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
-import { jsonPath } from '../dialect/jsonSql.js';
+import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
 import { MYSQL_FEATURES, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type {
@@ -13,7 +13,6 @@ import type {
   VectorMetric,
 } from '../type/index.js';
 import { columnFamily } from '../util/field.util.js';
-import { MARIA_VECTOR_METRICS } from './mariaVectorMetrics.js';
 
 export class MariaDialect extends MysqlLikeSqlDialect {
   override readonly dialectName = 'mariadb';
@@ -58,16 +57,15 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /**
-   * MariaDB supports neither MySQL's `->`/`->>` shorthand nor the base's chained form. `JSON_VALUE`
-   * reads a scalar and `JSON_EXTRACT` the subtree that the array operators need.
+   * `JSON_EXTRACT` for the value and `JSON_VALUE` for its text, which every version has: MySQL's `->`/`->>`
+   * arrive only in 13.1.
    */
-  protected override getJsonPathScalarExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `JSON_VALUE(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
+  protected override jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string {
+    return `${mode === 'json' ? 'JSON_EXTRACT' : 'JSON_VALUE'}(${escapedColumn}, ${jsonPath(path)})`;
   }
 
-  protected override getJsonPathJsonbExpr(escapedColumn: string, jsonPathStr: string): string {
-    return `JSON_EXTRACT(${escapedColumn}, ${jsonPath(jsonPathStr)})`;
-  }
+  /** MariaDB orders JSON as the text it stores, so a number sorts by its value first. */
+  protected override readonly jsonSortModes: readonly JsonAccessMode[] = ['numeric', 'text'];
 
   /** MariaDB has no `CAST(val AS JSON)`; `JSON_EXTRACT` at the root reads a value as JSON. */
   protected override jsonCast(operand: string): string {
@@ -75,22 +73,23 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /**
-   * MariaDB stores JSON as text, so JSON_ARRAYAGG would re-quote each element into a string
-   * (`["\"a\""]`). JSON_COMPACT marks it back as JSON, keeping element types intact.
+   * MariaDB stores JSON as text, so `JSON_ARRAYAGG` would re-quote each element into a string
+   * (`["\"a\""]`); `JSON_COMPACT` marks it back as JSON, keeping its type.
    */
-  protected override jsonPullElem(alias: string): string {
-    return `JSON_COMPACT(${alias}.v)`;
+  protected override jsonArrayOf(elem: string): string {
+    return super.jsonArrayOf(`JSON_COMPACT(${elem})`);
   }
 
-  /** Text-backed JSON compares as text, so use JSON_EQUALS for key-order-independent equality. */
-  protected override jsonPullKeep(alias: string, operand: string): string {
-    return `NOT JSON_EQUALS(${alias}.v, ${operand})`;
+  /** Text-backed JSON compares as text, so `JSON_EQUALS` compares it as JSON, key order aside. */
+  protected override jsonDiffers(elem: string, operand: string): string {
+    return `NOT JSON_EQUALS(${elem}, ${operand})`;
   }
 
-  /** `VEC_DISTANCE_COSINE`/`VEC_DISTANCE_EUCLIDEAN`, 11.7+: the metric's own name, uppercased. */
-  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map(
-    [...MARIA_VECTOR_METRICS].map(([metric, name]) => [metric, { fn: `VEC_DISTANCE_${name.toUpperCase()}` }]),
-  );
+  /** `VEC_DISTANCE_COSINE`/`VEC_DISTANCE_EUCLIDEAN`, 11.7+, which the index's `DISTANCE=` names alike. */
+  override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
+    ['cosine', { fn: 'VEC_DISTANCE_COSINE', index: 'cosine' }],
+    ['l2', { fn: 'VEC_DISTANCE_EUCLIDEAN', index: 'euclidean' }],
+  ]);
 
   /**
    * A `VECTOR` column holds a packed little-endian float32 blob, and MariaDB refuses text where one
@@ -121,8 +120,11 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     return `SET STATEMENT ${settings.join(', ')} FOR ${sql}`;
   }
 
-  /** The reverse: selecting a `VECTOR` column raw yields that blob, so it is read back as text. */
+  /**
+   * The reverse: a `VECTOR` column reads back as its packed bytes in hex, which every driver hands over
+   * alike, and never through `VEC_ToText`, which keeps six of the nine digits a float32 needs.
+   */
   protected override selectFieldExpr(escapedColumn: string, field: FieldOptions): string {
-    return columnFamily(field.type) === 'vector' ? `VEC_ToText(${escapedColumn})` : escapedColumn;
+    return columnFamily(field.type) === 'vector' ? this.bytesAsText(escapedColumn) : escapedColumn;
   }
 }

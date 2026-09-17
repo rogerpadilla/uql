@@ -15,6 +15,12 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     return `CAST(${operand} AS JSON)`;
   }
 
+  protected override elemPath(field: string, json = false): string {
+    return json ? `_uql_elem.v->'$.${field}'` : `(_uql_elem.v->>'$.${field}')`;
+  }
+
+  protected override readonly elemSelect = 'SELECT /*+ NO_SEMIJOIN() */ 1';
+
   /** The inserted row is read through its alias here; `VALUES(col)` is deprecated since MySQL 8.0.20. */
   override shouldUpsert() {
     const { sql, values } = this.exec((ctx) =>
@@ -72,7 +78,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.public': 1 } }),
     );
-    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE CAST((`kind`->>'$.public') AS DECIMAL) = ?");
+    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE CAST((`kind`->>'$.public') AS DOUBLE) = CAST(? AS DOUBLE)");
     expect(res.values).toEqual([1]);
 
     res = this.exec((ctx) =>
@@ -80,8 +86,35 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     );
     expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE (`kind`->>'$.theme.color') = ?");
 
+    // Sorted by the JSON value, which MySQL orders by type and a number by its value.
     res = this.exec((ctx) => this.dialect.find(ctx, Company, { $select: { id: true }, $sort: { 'kind.public': -1 } }));
-    expect(res.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'$.public') DESC");
+    expect(res.sql).toBe("SELECT `id` FROM `Company` ORDER BY `kind`->'$.public' DESC");
+  }
+
+  /**
+   * An element equal to one value, or to one of several, is containment, which compares by JSON type and
+   * which a multi-valued index serves. Verified against the plan in `mysqlJsonArrayIndex.test.ts`.
+   */
+  shouldFindAScalarElementByContainment() {
+    const byElem = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { 'kind.flags': { $elemMatch: { $eq: true } } },
+      }),
+    );
+    expect(byElem.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_CONTAINS(`kind`->'$.flags', ?)");
+    expect(byElem.values).toEqual(['[true]']);
+
+    const byElemIn = this.exec((ctx) =>
+      this.dialect.find(ctx, Company, {
+        $select: { id: true },
+        $where: { 'kind.ranks': { $elemMatch: { $in: [3, 9] } } },
+      }),
+    );
+    expect(byElemIn.sql).toBe(
+      "SELECT `id` FROM `Company` WHERE (JSON_TYPE(`kind`->'$.ranks') = 'ARRAY' AND JSON_OVERLAPS(`kind`->'$.ranks', ?))",
+    );
+    expect(byElemIn.values).toEqual(['[3,9]']);
   }
 
   /**
@@ -107,7 +140,9 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, Company, { $select: { id: true }, $where: { 'kind.tags': { $size: 2 } } }),
     );
-    expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_LENGTH(`kind`->'$.tags') = ?");
+    expect(res.sql).toBe(
+      "SELECT `id` FROM `Company` WHERE CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN JSON_LENGTH(`kind`->'$.tags') END = ?",
+    );
     expect(res.values).toEqual([2]);
   }
   // The MySQL-family SQL for these lives in `MysqlLikeSqlDialect`, so it is asserted here.
@@ -130,12 +165,12 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, '1'],
     },
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)) ELSE `kind`->'$.tags' END), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
     },
     /** `$push` appends to the pulled array, not to the stored one. */
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`->'$.tags') = 'ARRAY' THEN (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) AS _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON)) ELSE `kind`->'$.tags' END), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {

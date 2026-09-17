@@ -3180,7 +3180,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { entries: { $elemMatch: { $elemMatch: { $eq: 5 } } } },
+        $where: { entries: { $elemMatch: { $elemMatch: { $gt: 5 } } } },
       }),
     );
     const aliases = new Set(sql.match(/_uql_elem(?:_\d+)?/g));

@@ -255,7 +255,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem.value, '$.zip') = ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') = ? AND JSON_EXTRACT(_uql_elem.value, '$.zip') = ?)",
     );
     expect(values).toEqual(['NYC', '10001']);
   }
@@ -268,7 +268,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT `id` FROM `JsonRecord` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)))',
+      "SELECT `id` FROM `JsonRecord` WHERE (EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)) AND EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE `entries` -> _uql_elem.fullkey = JSON(?)))",
     );
     expect(values).toEqual(['"admin"', '"user"']);
   }
@@ -280,7 +280,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: 3 } },
       }),
     );
-    expect(sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) = ?');
+    expect(sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) = ?",
+    );
     expect(values).toEqual([3]);
   }
 
@@ -292,7 +294,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: { $gte: 2 } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) >= ?');
+    expect(res.sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) >= ?",
+    );
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
@@ -303,7 +307,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `JsonRecord` WHERE (JSON_ARRAY_LENGTH(`entries`) > ? AND JSON_ARRAY_LENGTH(`entries`) <= ?)',
+      "SELECT `id` FROM `JsonRecord` WHERE (JSON_ARRAY_LENGTH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) > ? AND JSON_ARRAY_LENGTH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) <= ?)",
     );
     expect(res.values).toEqual([0, 5]);
 
@@ -314,8 +318,33 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { entries: { $size: { $between: [1, 10] } } },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(`entries`) BETWEEN ? AND ?');
+    expect(res.sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE JSON_ARRAY_LENGTH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) BETWEEN ? AND ?",
+    );
     expect(res.values).toEqual([1, 10]);
+  }
+
+  shouldFind$elemMatchHoldingBesideAnOperator() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, JsonRecord, {
+        $select: { id: true },
+        $where: { entries: { $elemMatch: { tags: ['a'], meta: { size: 1 }, price: { $gt: 1 } } } },
+      }),
+    );
+    expect(sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(_uql_elem.value, '$.tags') = 'array' THEN _uql_elem.value END, '$.tags') _uql_elem_2 WHERE _uql_elem.value -> _uql_elem_2.fullkey = JSON(?)) AND CAST(JSON_EXTRACT(_uql_elem.value, '$.meta.size') AS REAL) = CAST(? AS REAL) AND CAST(JSON_EXTRACT(_uql_elem.value, '$.price') AS REAL) > CAST(? AS REAL))",
+    );
+    expect(values).toEqual(['"a"', 1, 1]);
+  }
+
+  shouldFind$allHoldingANestedArray() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, JsonRecord, { $select: { id: true }, $where: { entries: { $all: [['a']] } } }),
+    );
+    expect(sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(_uql_elem.value) = 'array' THEN _uql_elem.value END) _uql_elem_2 WHERE _uql_elem.value -> _uql_elem_2.fullkey = JSON(?)))",
+    );
+    expect(values).toEqual(['"a"']);
   }
 
   // Tests for $elemMatch with nested operators
@@ -327,7 +356,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(`entries`) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
     );
     expect(values).toEqual(['new%']);
   }
@@ -340,8 +369,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toContain('EXISTS (SELECT 1 FROM JSON_EACH');
-    expect(sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.price') AS REAL) < ?");
-    expect(sql).toContain("_uql_elem.value -> '$.active' = JSON(?)");
+    expect(sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.price') AS REAL) < CAST(? AS REAL)");
+    expect(sql).toContain("(_uql_elem.value -> '$.active') = JSON(?)");
     // The boolean binds as JSON text, not as SQLite's 0/1 integer.
     expect(values).toEqual([100, 'true']);
   }
@@ -364,9 +393,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') IS NOT ?");
-    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.b') AS REAL) > ?");
-    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.c') AS REAL) >= ?");
-    expect(res.sql).toContain("_uql_elem.value -> '$.active' = JSON(?)");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.b') AS REAL) > CAST(? AS REAL)");
+    expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.c') AS REAL) >= CAST(? AS REAL)");
+    expect(res.sql).toContain("(_uql_elem.value -> '$.active') = JSON(?)");
     expect(res.values).toContain('true');
 
     // Test $like, $startsWith, $endsWith
@@ -409,7 +438,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': 1 },
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) = ?");
+    expect(sql).toBe(
+      "SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) = CAST(? AS REAL)",
+    );
     expect(values).toEqual([1]);
   }
 
@@ -420,7 +451,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $ne: 0 } },
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) IS NOT ?");
+    expect(sql).toBe(
+      "SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) IS NOT CAST(? AS REAL)",
+    );
     expect(values).toEqual([0]);
   }
 
@@ -431,7 +464,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.public': { $gt: 0 } },
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) > ?");
+    expect(sql).toBe(
+      "SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) > CAST(? AS REAL)",
+    );
     expect(values).toEqual([0]);
   }
 
@@ -506,11 +541,11 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
      * type; `JSON_EACH`'s `value` column would flatten booleans to 0/1 and stringify objects.
      */
     pull: {
-      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?))), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)) ELSE (`kind` -> '$.tags') END), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
     },
     pullPushSameKey: {
-      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_REPLACE(`kind`, '$.tags', (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(`kind`, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?))), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
+      sql: "UPDATE `Company` SET `kind` = JSON_SET(JSON_REPLACE(`kind`, '$.tags', CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN (SELECT JSON_GROUP_ARRAY(JSON(`kind` -> _uql_pull.fullkey)) FROM JSON_EACH(CASE WHEN JSON_TYPE(`kind`, '$.tags') = 'array' THEN `kind` END, '$.tags') _uql_pull WHERE `kind` -> _uql_pull.fullkey <> JSON(?)) ELSE (`kind` -> '$.tags') END), '$.tags[#]', JSON(?)), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {

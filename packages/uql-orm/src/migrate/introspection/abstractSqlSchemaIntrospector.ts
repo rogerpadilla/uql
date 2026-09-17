@@ -25,6 +25,16 @@ import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
  */
 export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[]) => Promise<T[]>;
 
+/** A foreign key as MySQL and SQL Server list one: a row, its column lists comma-joined. */
+export type JoinedForeignKeyRow = {
+  readonly constraint_name: string;
+  readonly columns: string;
+  readonly referenced_table: string;
+  readonly referenced_columns: string;
+  readonly delete_rule: string;
+  readonly update_rule: string;
+};
+
 /** A SQL introspector: an engine states its catalogue queries (`get*Query`) and how their rows map (`map*Result`). */
 export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
   constructor(
@@ -147,10 +157,21 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return [tableName];
   }
 
-  /** The {@link ForeignKeyAction} a catalogue names, whatever its case. */
+  /** The {@link ForeignKeyAction} a catalogue names, whatever its case, and `SET_NULL` as SQL Server spells it. */
   protected normalizeReferentialAction(action: string): ForeignKeyAction | undefined {
-    const upper = action.toUpperCase();
-    return FOREIGN_KEY_ACTIONS.find((known) => known === upper);
+    const spelled = action.toUpperCase().replaceAll('_', ' ');
+    return FOREIGN_KEY_ACTIONS.find((known) => known === spelled);
+  }
+
+  /** Foreign keys read one row each, as {@link JoinedForeignKeyRow} lists them. */
+  protected joinedForeignKeys(rows: readonly JoinedForeignKeyRow[]): ForeignKeySchema[] {
+    return rows.map((row) => ({
+      name: row.constraint_name,
+      columns: row.columns.split(','),
+      references: { table: row.referenced_table, columns: row.referenced_columns.split(',') },
+      onDelete: this.normalizeReferentialAction(row.delete_rule),
+      onUpdate: this.normalizeReferentialAction(row.update_rule),
+    }));
   }
 
   /**

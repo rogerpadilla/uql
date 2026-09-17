@@ -19,6 +19,15 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     expect(found?.vec).toEqual([1, 0, 0]);
   }
 
+  /** Every digit a float32 holds comes back, so a vector read and written again is the same vector. */
+  async shouldReadAVectorInEveryDigit() {
+    const id = await this.querier.insertOne(VectorItem, { name: 'precise', vec: [0.1234567, 3.1415927, -0.5] });
+
+    const found = await this.querier.findOneById(VectorItem, id);
+
+    expect(found?.vec).toEqual([0.1234567, 3.1415927, -0.5]);
+  }
+
   async shouldSortByVectorSimilarity() {
     await this.querier.insertMany(VectorItem, [
       { name: 'north', vec: [0, 1, 0] },

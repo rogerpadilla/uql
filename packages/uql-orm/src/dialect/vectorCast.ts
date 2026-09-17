@@ -20,11 +20,8 @@ export function resolveVectorCast(field: { type?: unknown; columnType?: unknown 
  * declaring `type: 'sparsevec'` still hands UQL the dense array its field type promises.
  */
 export function toSparsevecLiteral(values: readonly unknown[]): string {
-  const pairs = values
-    .map((value, index) => `${index + 1}:${value}`)
-    .filter((_, index) => Number(values[index]) !== 0)
-    .join(',');
-  return `{${pairs}}/${values.length}`;
+  const pairs = values.flatMap((value, index) => (Number(value) === 0 ? [] : [`${index + 1}:${value}`]));
+  return `{${pairs.join(',')}}/${values.length}`;
 }
 
 /**
@@ -65,4 +62,28 @@ function parseDense(text: string): number[] | undefined {
   } catch {
     return undefined;
   }
+}
+
+/** Packed little-endian float32s, each read as {@link shortestFloat32}. */
+export function decodeFloat32s(bytes: Uint8Array): number[] {
+  const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);
+  return Array.from({ length: bytes.byteLength / 4 }, (_, at) => shortestFloat32(view.getFloat32(at * 4, true)));
+}
+
+/**
+ * `value` in the fewest significant digits that read back to it as a float32, by bisection: nine always
+ * do, and a count past one that does nearly always does too, so at worst it keeps a digit it could drop.
+ */
+function shortestFloat32(value: number): number {
+  let low = 1;
+  let high = 9;
+  while (low < high) {
+    const mid = (low + high) >> 1;
+    if (Math.fround(Number(value.toPrecision(mid))) === value) {
+      high = mid;
+    } else {
+      low = mid + 1;
+    }
+  }
+  return Number(value.toPrecision(low));
 }

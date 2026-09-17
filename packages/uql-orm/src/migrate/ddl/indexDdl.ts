@@ -6,6 +6,7 @@ import {
   type IndexColumnSchema,
   type IndexFeature,
   type IndexJsonArray,
+  type IndexJsonPath,
   type IndexSchema,
 } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
@@ -123,12 +124,17 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     }
     const column = this.dialect.escapeId(entry.column);
     if (entry.jsonPath) {
-      return `(${this.dialect.jsonPathExpr(column, entry.jsonPath.path, jsonTypeMode(entry.jsonPath.type))})`;
+      return `(${this.jsonPathIndexExpr(column, entry.jsonPath)})`;
     }
     if (entry.jsonArray) {
       return `(${this.jsonArrayIndexExpr(column, entry.jsonArray)})`;
     }
     return entry.length === undefined ? column : `${column}(${entry.length})`;
+  }
+
+  /** The path read the way a query comparing it reads it, which is how the planner matches the two. */
+  protected jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
+    return this.dialect.jsonPathExpr(escapedColumn, json.path, jsonTypeMode(json.type));
   }
 
   /**

@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
-import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
+import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import {
   Company,
   createSpec,
@@ -394,7 +394,44 @@ class MongoDialectSpec implements Spec {
   shouldThrowOnEmptyRelationSizeComparison() {
     expect(() =>
       this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: undefined } } }),
-    ).toThrow('$size on a relation needs at least one comparison');
+    ).toThrow('$size needs at least one comparison');
+  }
+
+  /** Each relation `$size` of one `$where` joins its `$expr`, where the last one replaced the others. */
+  shouldApplyEveryRelationSize() {
+    @Entity()
+    class Shelf {
+      @Id({ type: String }) id?: string;
+      @OneToMany({ entity: () => Book, mappedBy: (book) => book.shelfId }) books?: Book[];
+      @OneToMany({ entity: () => Lamp, mappedBy: (lamp) => lamp.shelfId }) lamps?: Lamp[];
+    }
+    @Entity()
+    class Book {
+      @Id({ type: String }) id?: string;
+      @Field({ references: () => Shelf }) shelfId?: string;
+    }
+    @Entity()
+    class Lamp {
+      @Id({ type: String }) id?: string;
+      @Field({ references: () => Shelf }) shelfId?: string;
+    }
+    const tally = (temp: string) => ({ $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_ALIAS}`, 0] }, 0] });
+
+    const { stages, filter } = this.dialect.whereWithRelations(Shelf, { books: { $size: 1 }, lamps: { $size: 2 } });
+
+    expect(stages).toHaveLength(2);
+    expect(filter).toEqual({
+      $expr: { $and: [{ $eq: [tally('_uql_rel_0'), 1] }, { $eq: [tally('_uql_rel_1'), 2] }] },
+    });
+  }
+
+  /** MongoDB's `$size` takes only a number, so bounds are counted in an `$expr`, which only an array meets. */
+  shouldCountAnArrayAgainstSizeBounds() {
+    const count = { $size: { $cond: [{ $isArray: '$entries' }, '$entries', []] } };
+    expect(this.dialect.where(JsonRecord, { entries: { $size: { $gte: 1, $lt: 3 }, $all: ['a'] } })).toEqual({
+      entries: { $all: ['a'] },
+      $expr: { $and: [{ $isArray: '$entries' }, { $and: [{ $gte: [count, 1] }, { $lt: [count, 3] }] }] },
+    });
   }
 
   /**
@@ -805,6 +842,20 @@ class MongoDialectSpec implements Spec {
 
   shouldPassThroughSizeOperator() {
     expect(this.dialect.where(JsonRecord, { entries: { $size: 3 } })).toEqual({ entries: { $size: 3 } });
+  }
+
+  shouldMatchAnElementByWhatItHolds() {
+    expect(
+      this.dialect.where(JsonRecord, {
+        entries: { $elemMatch: { tags: ['a'], meta: { size: 1 }, price: { $gt: 1 } } },
+      }),
+    ).toEqual({ entries: { $elemMatch: { tags: { $all: ['a'] }, 'meta.size': 1, price: { $gt: 1 } } } });
+    expect(this.dialect.where(JsonRecord, { entries: { $all: ['a', { name: 'b', tags: ['x'] }] } })).toEqual({
+      entries: { $all: [{ $elemMatch: { $eq: 'a' } }, { $elemMatch: { name: 'b', tags: { $all: ['x'] } } }] },
+    });
+    expect(this.dialect.where(JsonRecord, { entries: { $all: [[1, 2]] } })).toEqual({
+      entries: { $all: [{ $elemMatch: { $all: [{ $elemMatch: { $eq: 1 } }, { $elemMatch: { $eq: 2 } }] } }] },
+    });
   }
 
   shouldPassThroughElemMatchOperator() {
@@ -1438,22 +1489,38 @@ class MongoDialectSpec implements Spec {
     expect(
       this.dialect.getUpdateFilter({
         name: 'plain',
-        kind: { $set: { private: 1 }, $unset: ['public'], $push: { tags: 'x' }, $pull: { labels: 'y' } },
+        kind: { $set: { private: 1 }, $unset: ['public'], $push: { tags: 'x' } },
       }),
     ).toEqual({
       $set: { name: 'plain', 'kind.private': 1 },
       $push: { 'kind.tags': 'x' },
-      $pull: { 'kind.labels': 'y' },
       $unset: { 'kind.public': '' },
     });
   }
 
   /** Disjoint paths stay on the cheaper single-document form. */
   shouldKeepUpdateDocumentWhenPathsAreDisjoint() {
-    expect(this.dialect.getUpdateFilter({ kind: { $push: { tags: 'x' }, $pull: { labels: 'y' } } })).toEqual({
+    expect(this.dialect.getUpdateFilter({ kind: { $push: { tags: 'x' }, $unset: ['labels'] } })).toEqual({
       $push: { 'kind.tags': 'x' },
-      $pull: { 'kind.labels': 'y' },
+      $unset: { 'kind.labels': '' },
     });
+  }
+
+  /** Native `$pull` fails on a value that is no array, which the pipeline puts back as it is. */
+  shouldUsePipelineForPull() {
+    expect(this.dialect.getUpdateFilter({ kind: { $pull: { labels: 'y' } } })).toEqual([
+      {
+        $set: {
+          'kind.labels': {
+            $cond: [
+              { $isArray: '$kind.labels' },
+              { $filter: { input: { $ifNull: ['$kind.labels', []] }, cond: { $ne: ['$$this', { $literal: 'y' }] } } },
+              '$kind.labels',
+            ],
+          },
+        },
+      },
+    ]);
   }
 
   /** `$pull` filters the stored array, then `$push` appends to that result. */
