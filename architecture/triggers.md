@@ -1,192 +1,193 @@
 # Triggers
 
-Design for the [roadmap](roadmap.md)'s triggers item. Depends on R7. Trigger-backed behaviour is Postgres only; the generated-column arm of `computed` is not, and each arm names its own support below.
+Design for the [roadmap](roadmap.md)'s triggers item: what a column the database derives needs beyond the generated column that already shipped. The unstored aggregate needs nothing more and runs on every engine; everything a trigger stores waits for R7.
 
-## What ships
+## One option, one dial
 
-**Two declaration sites.** A column the database computes is a field option; a trigger that is not about one column is an entity option.
-
-| Site                               | Declares                               |
-| :--------------------------------- | :------------------------------------- |
-| `@Field({ computed, stored, on })` | a column the caller does not write     |
-| `@Entity({ triggers: [...] })`     | a trigger that is not about one column |
-
-A trigger is a schema object carrying a table, timing, an event set with its columns, a `when`, a body, a deferral mode and an owner. The authored API writes one; `computed` generates one where it needs one. Same generator, differ, drop ordering and naming. Lowering pays both ways: the aggregate needs a deferral mode and per-event `UPDATE OF` columns, so the authored trigger gets both for free.
-
-### `computed` and the mechanism it picks
-
-One option pair says _this column is computed, not written by the caller_. Which machinery Postgres needs is not an API choice, it is forced. Measured on Postgres 18:
-
-| Expression                                              | Result                                              |
-| :------------------------------------------------------ | :-------------------------------------------------- |
-| `GENERATED ALWAYS AS (first \|\| ' ' \|\| last) STORED` | legal                                               |
-| `GENERATED ALWAYS AS (now()) STORED`                    | **`ERROR: generation expression is not immutable`** |
-| `GENERATED ALWAYS AS (n * 2) VIRTUAL`                   | legal, new in PG 18                                 |
-
-A generated column cannot hold `now()`, and none can aggregate across a relation. So:
+`computed` says what the database derives; `stored` says when it recomputes. What the callback returns and what `stored` holds pick the machinery, so no option names it.
 
 ```ts
-@Field({ computed: raw`"first" || ' ' || "last"` })                 // inlined into the statement
-@Field({ computed: raw`"first" || ' ' || "last"`, stored: true })   // GENERATED ALWAYS AS ... STORED
-@Field({ computed: raw`now()`, on: ['insert', 'update'] })          // BEFORE trigger
-@Field({ computed: { resources: { $count: '*' } } })                // correlated subquery
-@Field({ computed: { resources: { $count: '*' } }, stored: true })  // AFTER trigger on the child
+@Field({ type: String, computed: (u) => raw`${u.first} || ' ' || ${u.last}` })               readonly fullName?: string;
+@Field({ type: String, computed: (u) => raw`${u.first} || ' ' || ${u.last}`, stored: true }) readonly fullName?: string;
+@Field({ computed: (u) => u.resources.count() })                                              readonly resourceCount?: number;
+@Field({ computed: (u) => u.resources.count(), stored: true })                                readonly resourceCount?: number;
+@Field({ type: Date, computed: raw`now()`, stored: ['update'] })                              readonly updatedAt?: Date;
 ```
 
-`stored` is one dial across both halves, the promise generated columns already keep: `$select`/`$where`/`$sort` behave the same either way and the result type is unchanged, so flipping it edits no call site.
+| `stored`               | The database recomputes     | SQL expression                                                                      | Relation aggregate             |
+| :--------------------- | :-------------------------- | :---------------------------------------------------------------------------------- | :----------------------------- |
+| `false`, the default   | never: each read derives it | spliced into the statement                                                          | read in the parent's statement |
+| `true`                 | whenever an input changes   | `GENERATED ALWAYS AS (...) STORED`                                                  | `AFTER` triggers on the child  |
+| `['insert', 'update']` | on the events listed        | a `BEFORE` trigger; `ON UPDATE CURRENT_TIMESTAMP` on the MySQL family for the clock | refused                        |
 
-`on` is what selects a trigger, so nothing infers immutability: UQL cannot know whether a user's `raw` is immutable, and learning it from a rejected migration is a bad error. Naming _when_ a value is stamped is only meaningful for a trigger, and it is information the author has anyway.
+- **SQL names its type; an aggregate is its type.** A `raw` says nothing about what it returns, so it carries `type`; `count()` returns a number, so it carries none.
+- **Flipping `stored` edits no call site.** `$select`, `$where` and `$sort` read the field the same way on either side, and the result type does not move. Start unstored; store what profiling names.
+- **An event list is what selects a stamp**, so nothing infers immutability. `GENERATED ALWAYS AS (now()) STORED` fails on Postgres 18 with _generation expression is not immutable_, UQL cannot know whether a `raw` is immutable, and learning it from a rejected migration is a bad error.
+- **A field the database writes is `readonly`**, and write payloads leave it out (below). Its value never reaches the database from UQL, so the type should never let a caller think it does.
 
-`computed` replaced `virtual`, gone since 0.54.0: the rename is what lets `stored: true` read as a dial rather than a contradiction.
+## Typing
+
+Verified by type-checking these shapes in memory against a copy of `Field` and `Entity` as they are declared today.
+
+**`Field` takes two overloads.** The column overload is today's signature, with `stored` widened to take an event list; its SQL callbacks see `RefMap<E>` alone. The aggregate overload's callback sees `RefMap<E> & RelationRefs<E>` and returns an `Aggregate<V, Storable>`: `stored: true` is accepted only where `Storable` is `true`, and the field's value is `V`.
+
+```ts
+@Field({ computed: (u) => u.resources.count({ isArchived: { $ne: true } }), stored: true }) readonly activeCount?: number;
+@Field({ computed: (o) => o.items.sum((item) => item.amount), stored: true })               readonly total?: number;
+@Field({ computed: (p) => p.bids.max((bid) => bid.amount) })                                 readonly topBid?: number | null;
+```
+
+- **The relation is read off a ref, never named by a key**, as every definition names a member. A relation the class lacks is a compile error, since `This` is inferred where the decorator is applied (`rename.test-d.ts`).
+- **The aggregate's `where` is an `EntityPredicate` of the child**, the type checks and partial indexes already take. A misspelled child field, a value of the wrong type, and a relation, `$text` or `$exists` inside it are all compile errors.
+- **`count` and `sum` are the storable aggregates, in the type.** A stored `max` fails to compile, as does an event list on any aggregate. `sum` takes numeric fields only.
+- **The property must equal the aggregate's value.** Today's check is one-way, since a decorator context accepts a property narrower than its value, so a `number` property would take `max()`'s `number | null`. The aggregate overload checks both directions and names the mismatch (`__propertyMustAdmit: number | null`). `count` and `sum` are never null - stored, the column is `NOT NULL DEFAULT 0`; unstored, the read is `COALESCE(..., 0)` - while `min`, `max` and `avg` are nullable, since an empty set has no extreme.
+- **A write payload leaves `readonly` fields out.** `EntityData` and `UpdatePayload` default their key set to `WritableKey<E>`, which drops a key whose `Pick` differs from its mutable copy. `insert(User, { resourceCount })`, `update(...)` with one, and `user.resourceCount = 2` are compile errors; reads, hydration and `$select` are untouched. A decorator cannot see `readonly`, so on a class it is a convention a missing modifier merely leaves unenforced; `defineEntity`, which writes the entity type itself, marks every database-written field `readonly`.
+- **Only aggregates pay.** Per entity, in instantiations: a plain one costs the same as today (70.8), one with a SQL `computed` the same (116 against 117), and one with a stored count 197. The exact check adds about 35 per aggregate field. A single union constraint also type-checked but charged every plain entity 16% more, which is why it is two overloads.
 
 ## The maintained aggregate
 
-The stored arm over a relation. The aggregate points at a relation that already exists, and the operator says what is maintained:
+`stored: true` over a relation. UQL derives the triggers and their function, the column - `bigint NOT NULL DEFAULT 0` for a count, read through `decodeWideNumber`, and the summed field's type for a sum - the backfill, and the check that finds drift.
 
-```ts
-@OneToMany({ entity: () => Resource, mappedBy: (resource) => resource.creatorId })
-resources?: Resource[];
+**An aggregate field loads when asked** (`eager: false`), stored or not, as a relation does: a user loaded on every request should not recount anything. Flipping `stored` still edits no call site.
 
-@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
-@Field({ computed: { items: { $sum: { amount: true } } }, stored: true })         orderTotal?: number;
-@Field({ computed: { resources: { $countInserts: '*' } }, stored: true }) resourceCreatedCount?: number;
-@Field({ computed: { resources: { $count: '*' }, $where: { isArchived: false } }, stored: true }) activeCount?: number;
-```
+**No index is created for it.** The trigger's `UPDATE parent SET c = c + <delta> WHERE <key> = NEW.<fk>` hits the parent's key, pairing every column of a composite one, and the backfill groups by the child's foreign key, which migrations already index.
 
-`$count` and `$sum` are `QueryAggregateOp` verbatim, and the shape is an aggregate `$select` entry's inner shape with the relation standing where the alias does.
+### Which aggregates store
 
-UQL derives from it the trigger, its function, `updatable: false` and `NOT NULL DEFAULT 0` on the column, the backfill in the generated migration, and the resync.
+A trigger maintains an aggregate only if a row change becomes a delta.
 
-**No index is created for it.** The column takes `index` like any other; auto-creating one would be wrong as often as right, since the case study's `resourceCount` is only ever read by primary key. The trigger's `UPDATE parent SET c = c + <delta> WHERE id = NEW.<fk>` hits the parent's primary key, and the backfill and resync group by the child's foreign key, which migrations already index.
+| Aggregate      | Insert      | Delete                                           | Stored                                               |
+| :------------- | :---------- | :----------------------------------------------- | :--------------------------------------------------- |
+| `count`, `sum` | `+1` / `+x` | `-1` / `-x`                                      | **yes** - invertible, O(1), never reads the children |
+| `min`, `max`   | compare     | **rescan** when the removed row held the extreme | no - a different cost model                          |
+| `avg`          |             |                                                  | no - two columns, not one                            |
 
-### Which operators ship
+The same line `pg_ivm` draws, drawn in the type.
 
-An aggregate is maintainable by a trigger only if a row change becomes a delta.
-
-| Operator         | Insert      | Delete                                           | Ships                                                       |
-| :--------------- | :---------- | :----------------------------------------------- | :---------------------------------------------------------- |
-| `$count`, `$sum` | `+1` / `+x` | `-1` / `-x`                                      | **yes** - invertible, O(1), never reads the children        |
-| `$countInserts`  | `+1`        | nothing                                          | **yes** - and it is the only one for which that is correct  |
-| `$min`, `$max`   | compare     | **rescan** when the removed row held the extreme | no - different cost model                                   |
-| `$avg`           |             |                                                  | no - two columns, not one                                   |
-| everything else  |             |                                                  | no - holistic aggregates are not incrementally maintainable |
-
-The same line `pg_ivm` draws. An operator outside the shipping rows is refused at registration, naming the operator and the reason.
-
-`$countInserts` is the one operator an aggregate's `$select` does not have, because it is not a query aggregate: it tallies INSERT events, so it has no delete branch, no backfill and no resync - added to a populated table it starts every existing row at zero, and drift on one is permanent. It sits beside `$count` on purpose - the place to make two things impossible to confuse is where the author picks between them. The case study's repair migration overwrote a lifetime tally with a live count.
+A lifetime tally - every row ever created, deleted ones included - is not an aggregate: it has no delete branch and nothing to recount it from, so drift on one is permanent. Count a table that keeps its rows instead, soft-deleted and read through `withDeleted`.
 
 ### How the body is derived
 
-**An aggregate is a predicate differentiated.** INSERT adds the delta where NEW matches, DELETE subtracts it where OLD matches, UPDATE applies `(NEW matches) - (OLD matches)` to each side of the edge. One UPDATE branch covers reparenting, filtering in, filtering out, and all three at once. Soft delete needs no special case: it is an UPDATE flipping a default-on `$where` filter, which is already one of the predicate's columns.
+**An aggregate is a predicate differentiated.** INSERT adds the delta where NEW matches, DELETE subtracts it where OLD matches, and UPDATE applies `(NEW matches) - (OLD matches)` to each side of the edge. One UPDATE body covers reparenting, filtering in, filtering out, and all three at once; soft delete is an UPDATE flipping a default-on filter, which is already one of the predicate's columns. Each side is `coalesce(pred, false)`, since a predicate is three-valued and a delta is not.
 
-This is the only thing the declarative layer does that authoring cannot, and it is the whole reason it exists. An authored trigger reproduces every bug below by construction, because the author writes the body and the branch everyone forgets is the transition.
+This is the only thing the declarative layer does that authoring cannot, and the reason it exists: the branch every hand-written counter forgets is the transition.
 
-**Which filters materialize.** A trigger predicate sees only `NEW` and `OLD`, so:
+**The child's default-on filters are included**, soft delete among them, or the column disagrees with the `_count` under its own name. Two refusals stay at run time, since no type can see them: a per-request `security` filter, and a filtered many-to-many, whose predicate lives on the far table where a junction insert cannot read it. An unfiltered many-to-many is a trigger on the declared `through` entity, whose own rows are the ones counted.
 
-- a `$where` traversing a relation, using `$size`, or needing a subquery is **refused at registration**, naming the key;
-- the entity's default-on filters are **included**, soft delete among them, or the aggregate disagrees with the `_count` under its own name;
-- a per-request `security` filter is **refused**; it cannot be in a trigger.
+**One function, three single-event triggers**, shared by every aggregate reading the same child: `afterInsert`, `afterDelete`, and `afterUpdate` with `changed` set to the keys and predicate columns - the same machinery an authored trigger uses, below. Single-event triggers are what make `WHEN` legal everywhere, since Postgres refuses one naming `OLD` on an INSERT.
 
-**Many-to-many is a trigger on the junction, unfiltered only.** A junction here is the declared `through` entity, so it already has a table and metadata to hang one on; the counted rows are its own, so the edge is its local foreign key and the framing applies unchanged. A filtered many-to-many is refused: the predicate lives on the far table, so a junction insert could not evaluate it without a join, and flipping a flag on one `Tag` would fan out to every `User` linked to it.
+**Not a constraint trigger.** Measured on Postgres 18, `CONSTRAINT ... DEFERRABLE INITIALLY IMMEDIATE` behaves as a plain `AFTER` row trigger after the statement and after commit, adding only `SET CONSTRAINTS`. Deferral buys a shorter lock window on the parent and no correctness, while a constraint trigger refuses `OR REPLACE`, `FOR EACH STATEMENT` and transition tables.
 
-**One trigger per counted entity and deferral mode.** Aggregates reading the same entity share one generated body, which keeps write amplification flat. Two that disagree about deferral cannot share one, because the mode belongs to the trigger, not the body.
+**The function runs as its owner.** A role allowed to insert children but not to update the parent, or row-level security on the parent, would otherwise fail every child write. It is `SECURITY DEFINER`, owned by the migration role, schema-qualifies its tables and pins `search_path`. Authored triggers run as the invoker.
 
-**`UPDATE OF` and `WHEN` keep it cheap**, and both are legal on a deferred constraint trigger. Verified on Postgres 18: an update touching only columns outside the event list never enters the function, and `WHEN` is evaluated when the event is queued, so flipping a predicate on then off inside one transaction queues both deltas and they telescope.
+**The body is engine-neutral.** It is rows of `(parent table, key, delta, predicate)` rendered as `UPDATE`s, not procedural logic. Postgres ships first; SQLite, MySQL and MariaDB row triggers are a renderer each, and SQL Server's statement-level `inserted`/`deleted` is the set-based form. CockroachDB takes no `UPDATE OF` in a trigger ([known limitations](https://www.cockroachlabs.com/docs/stable/known-limitations)), so its renderer emits `changed` as the `WHEN` alone.
 
-### Deferral
+**Refused where it would count twice or cannot run:**
 
-Two modes, one keyword apart, defaulting to `INITIALLY IMMEDIATE`.
-
-| Mode                                            | Written at    | Readable in the writing transaction | `SET CONSTRAINTS` escape |
-| :---------------------------------------------- | :------------ | :---------------------------------- | :----------------------- |
-| `CONSTRAINT ... DEFERRABLE INITIALLY IMMEDIATE` | statement end | yes                                 | yes                      |
-| `CONSTRAINT ... DEFERRABLE INITIALLY DEFERRED`  | commit        | **no**                              | yes                      |
-
-A plain `AFTER ... FOR EACH ROW` trigger is not a third mode: measured on Postgres 18 it is indistinguishable from `INITIALLY IMMEDIATE` after the statement and after commit, differing only in ignoring `SET CONSTRAINTS`. `INITIALLY IMMEDIATE` is the only mode both correct to read in the transaction that wrote the row and escapable per transaction, so a bulk importer gets the lock-contention fix with one `SET CONSTRAINTS ALL DEFERRED` rather than every ordinary read going stale.
+- an edge whose foreign key cascades on update, since `ON UPDATE CASCADE` rewrites the children, and the trigger would then move a count that the key change had already moved;
+- a child that is its own parent on the MySQL family, whose triggers cannot update the table that fired them.
 
 ## The database-side stamp
 
 ```ts
-@Field({ computed: raw`now()`, on: ['insert', 'update'] }) updatedAt?: Date;
+@Field({ type: Date, computed: raw`now()`, stored: ['update'] }) readonly updatedAt?: Date;
 ```
 
-The most common trigger in every codebase surveyed, and the one UQL currently gets wrong. `fillOnFields` stamps `onUpdate` into the payload, so it is right for every write UQL makes and absent from every write it does not - a raw SQL UPDATE, a data migration, a second service. The `on` arm generates the `BEFORE` trigger instead and the ORM stops stamping the column, so there is one writer rather than two that can disagree. It takes no deferral mode, since a constraint trigger cannot be `BEFORE`.
+The most common trigger in every codebase surveyed. `fillOnFields` stamps `onUpdate` into UQL's own writes and misses every other writer: a raw UPDATE, a data migration, a second service. An event list moves the stamp into the database and the ORM stops writing the column, so there is one writer. Postgres takes a `BEFORE` row trigger; the MySQL family takes its native `ON UPDATE CURRENT_TIMESTAMP` when the stamp is the clock, which the migration builder already emits as `onUpdateNow`.
 
-**The column must be read back.** Once the database writes it the in-memory entity is stale unless the write returns it, so the column joins the statement's `RETURNING` list. Hibernate is the prior art and the reason to get it right: it has cooperated with database-generated columns via `@Generated` for years, and 6.5 was largely about returning them in the mutation statement instead of a follow-up `SELECT`.
+Nothing reads it back. A UQL write returns ids and counts, never rows, exactly as for a stored generated column; the next read has the value.
 
 ## The authored trigger
 
+The escape hatch, and the last of these to build: once aggregates and stamps are declared, the census below has one trigger left, a NOTIFY.
+
 ```ts
+const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector('english', ${row.body});`;
+
 @Entity({
-  triggers: [
-    {
-      on: { update: ['body'], insert: true },
-      timing: 'before',
-      when: { body: { $ne: raw`OLD."body"` } },
-      run: (c) => raw`NEW.${c.searchVector} := to_tsvector('english', NEW.${c.body}); RETURN NEW;`,
+  triggers: {
+    beforeInsert: { run: tsvectorOf },
+    beforeUpdate: { changed: (post) => [post.body], run: tsvectorOf },
+    afterUpdate: {
+      changed: (post) => [post.status],
+      run: (row) => raw`PERFORM pg_notify('post_status', ${row.id}::text);`,
     },
-  ],
+  },
 })
-class Post {}
 ```
 
-- **`on` carries its columns.** `update: ['body']` emits `UPDATE OF "body"`, so a write touching nothing else never enters the function.
-- **`when` is a `QueryWhere`, not a string**, compiled against `NEW` with `OLD` reachable as a value. The aggregate's `$where` and an authored `when` are then the same thing compiled the same way: one predicate implementation, one set of tests, and a typo is a compile error rather than SQL that parses and never matches.
-- **`run` stays raw.** A trigger body is arbitrary procedural code; pretending otherwise would invent a language. It takes the property-to-column map, so a renamed property is a compile error.
+- **Keyed by event**, with the names hooks already use; upsert has no key, since `INSERT ... ON CONFLICT` fires the insert or the update triggers row by row. A key takes one trigger or a list, fired in list order: the generated names carry the position, and Postgres fires same-event triggers by name.
+- **The event fixes `run`'s parameters.** `(row)` on insert, `(row, old)` on update, `(old)` on delete; `row` renders `NEW."col"` and `old` renders `OLD."col"`. Reaching for `old` on an insert is a compile error, not a runtime refusal, and no body spells `NEW.` or `OLD.` itself.
+- **`changed` exists only on update keys.** A member-list callback, emitted as `UPDATE OF` plus `WHEN (OLD.c IS DISTINCT FROM NEW.c OR ...)`: the filter nearly every update trigger wants, typed and with no SQL.
+- **`when` is an `EntityPredicate<E>`**, compiled against the event's row by the same compiler as an aggregate's `where`, or a SQL callback taking `run`'s parameters.
+- **`run` stays raw**, written for the engine it runs on. A trigger body is procedural code; pretending otherwise would invent a language.
+- **The generator owns the boilerplate.** It adds `RETURN NEW` or `RETURN NULL` by timing - a `BEFORE` body that returns nothing silently skips the row - and wraps the body in a function with its tables schema-qualified and `search_path` pinned.
+- **Reuse is a TypeScript function over refs**, as `tsvectorOf` above. It is the checked form of `TG_ARGV`, whose column names are strings nothing checks. There is no function object; a standalone function or an extension becomes an R7 schema object when something needs one.
 
-The plpgsql function is generated beside the trigger and dropped with it, because Postgres has no inline body.
+## Ownership, drift and recount
 
-**Prerequisite, shipped: a DDL render path for an interpolated `raw`.** `compileDdl` renders one with an empty prefix, values written as literals and refs resolved through the dialect's naming strategy; `@Entity({ checks })` and a partial index's `where` use it.
+- **The diff touches only what it owns.** Every trigger and function UQL creates takes the `_uql` prefix, and drift compares only those, so the first check does not offer to drop every hand-written trigger in the database - the reason MikroORM grew `ignoreTriggers`. It does warn about a trigger it does not own on a table it maintains an aggregate from: that is a second writer, and adopting UQL over hand-written counters drops them in the migration that creates their replacement.
+- **Compare what UQL rendered, never the engine's reprint.**
+  - Postgres reprints a body from its parse tree, so each function carries its rendered body's hash in `COMMENT ON FUNCTION`, read back beside `pg_trigger`'s timing, events and `tgattr`. SQLite keeps a trigger's text verbatim and compares it directly.
+  - A body change is `CREATE OR REPLACE FUNCTION`; a shape change is `CREATE OR REPLACE TRIGGER`. A release that renders differently replaces each function once, which locks no table.
+  - A hash in the function's _name_ was rejected: it would make every body change a rename.
+- **`sync` creates them too.** A test database built from the entities then carries the same triggers as production, which is exactly what the case study's never-written counters lacked. PGlite runs PL/pgSQL, so in-process tests exercise the real ones.
+- **Storing an aggregate is two steps.**
+  - First, the column and the triggers commit together.
+  - Then the backfill walks the parents. Each is locked with `SELECT ... FOR UPDATE` and recounted in a new statement. Under READ COMMITTED that is exact: a writer whose trigger reached the parent first commits before the recount's snapshot, and one arriving later adds its delta on top.
+  - No child write waits for more than one parent, and the column reads low until the walk ends. The backfill runs outside the migration's transaction, which is the roadmap's non-transactional migration.
+  - Unstoring drops the triggers and the column.
+- **Drift in the data is its own check.** `aggregate:check` compares each stored aggregate with its recount, and `--repair` walks the parents the same way; `drift:check` stays about the schema. It is the answer to every write no row trigger sees: TRUNCATE, a session under `session_replication_role = replica` (bulk loaders, logical replication), and `DISABLE TRIGGER`.
+- **A refusal lives where its layer knows enough.** Shapes are refused by the types. The run-time refusals - a `security` filter, a filtered many-to-many, a cascading key, a self-parent on MySQL - are refused at registration. An engine without a renderer is not a shape, and registration has no dialect, so it is refused in `buildEntityAST` beside `compileDdl`. MongoDB refuses everything stored and reads everything unstored.
 
-## Ownership, diff and resync
+## Build order
 
-- **The diff only touches objects it owns, and never by text.** Generated triggers and functions take the `_uql` name prefix; drift compares only those, so the first drift check does not offer to drop every hand-written trigger in the database. The generated body is hashed into `COMMENT ON FUNCTION` and compared by hash, because a database reprints a body from its parse tree. UQL already emits `COMMENT ON` - `commentSyntax` carries a table's and a column's comment, and the Postgres and MySQL introspectors read one back - so what is new is the object it hangs on. Putting the hash in the function's _name_ was rejected: it makes every body change a rename.
-- **An authored body is created and never compared**, exactly like a check constraint. Its timing, events and `forEach` still are, so a dropped or reshaped one is reported.
-- **Resync is a data command, not a schema one.** `aggregate:check` and `aggregate:repair` sit beside `drift:check`: that one reports schema drift, these report data drift. The verification query is the backfill with a comparison, so it is the same generator exposed - `appendRelationSubquery(..., 'COUNT(*)')` already derives it from the relation alone and applies the target's own filters. Recomputing under concurrent writes can lose an insert whose deferred trigger commits after the subquery's snapshot, so resync reports by default and repairs under a lock.
-- **TRUNCATE bypasses every aggregate.** A constraint trigger cannot carry a TRUNCATE event. Resync is the answer.
-- **Support is per arm, not per feature.** Inlining an unstored `computed` works everywhere. `GENERATED ALWAYS AS` is Postgres 12+, MySQL 5.7+, MariaDB 5.2+ and SQLite 3.31+, with Mongo refusing. Everything trigger-backed - both `on` arms and every stored aggregate - is Postgres only, because deferred constraint triggers and plpgsql do not port. Refuse elsewhere rather than downgrading silently, following `estimatedCount`'s base-throws/subclass-overrides pattern or the `indexFeatures` capability set.
+1. **Relation refs and the unstored aggregate.** No R7, every engine, the same operators and compile path as the roadmap's relation aggregates, plus the two overloads and `WritableKey`. Enough on its own for the case study below.
+2. **After R7, on Postgres:** stored aggregates and event lists, then authored triggers. They need:
+   - `SchemaDiffResult` flattened, since it has one field per kind (`schema/types.ts`);
+   - a `pg_trigger`/`pg_proc` introspector;
+   - row-qualified refs (`row`/`old`) in `compileDdl`, which qualifies nothing today;
+   - trigger-backed rows in `FIELD_OPTION_FAMILY`/`deadOn`, since `GENERATED_WRITES` kills `defaultValue` on anything `computed` while a stored aggregate derives one;
+   - a migration step outside the transaction, for the backfill.
+3. **Other engines**, a renderer each.
 
-## Typing
+The typing above is verified; the runtime claims are reasoned from the Postgres documentation and owed an integration suite, on Postgres and PGlite. It covers insert and delete, reparenting, a filter flip, soft delete, a backfill racing concurrent writes, and `aggregate:check` after TRUNCATE.
 
-The relation name is checked at compile time. `Field(opts)` resolves before it knows its class, but `ClassFieldDecoratorContext<This, Value>` carries `This`, inferred where the decorator is applied: the relation decorators already read their declaring class that way for `references`. The check rides on the returned decorator's `context` parameter, gated behind a conditional return type so only a field carrying a relation `computed` pays for it: ungated, about 41 extra instantiations on every decorated field; gated, four. Verified against self-references, inherited fields and forward references, none circular.
+## Not in this design
 
-## What is still missing
-
-The generated-column arm already made the option rules conditional: `FIELD_OPTION_FAMILY` (`util/fieldOption.util.ts`) is `satisfies Record<keyof FieldOptions, ...>`, and `deadOn` treats a stored `computed` as the real column it is. A stored aggregate reads and migrates like a stored generated column, so most of the read path is there. What is not:
-
-- **R7.** `SchemaDiffResult` (`schema/types.ts`) still has a field per kind, so a trigger and its function add two more create lists, two drop lists and a diff list, and every consumer grows a branch.
-- **The `NEW`/`OLD` operand prefix.** `compileDdl` already renders the DDL-time `QueryWhere` and interpolated `raw` the authored `when` and an aggregate's `$where` are written in, as a partial index and a check use it; a trigger needs its operands qualified by `NEW`/`OLD`, where those take none.
-- **Trigger introspection.** No introspector reads `pg_trigger` or `pg_proc`, so nothing can yet report a trigger dropped or reshaped in the database. Timing, events, `tgattr` (the `UPDATE OF` columns), `tgdeferrable`/`tginitdeferred` and the function's comment are exactly what the diff above compares.
-- **A `RETURNING` list of ordinary columns.** The dialects compose one for generated ids and, on an upsert, one extra expression (`returningIdExpression`); the stamp arm needs a declared column in it.
-- **The write half of a trigger-backed column.** `GENERATED_WRITES` kills `defaultValue`, `updatable` and the `on*` callbacks on anything `computed` - right for `GENERATED ALWAYS AS`, wrong for an aggregate, which derives `NOT NULL DEFAULT 0` and `updatable: false` and is written by a trigger rather than by the engine. The two arms take different rows of that table, and `on` has to be placed there too.
-- **The backfill.** It is a data statement inside a generated schema migration, and R7's vocabulary is DDL; the aggregate's schema object emits it beside its own `CREATE`, the way a resync emits the same query with a comparison.
-
-Where a refusal lives follows from what its layer knows. An operator outside the shipping rows, a `$where` traversing a relation, a filtered many-to-many are all shapes, refused at registration. Postgres-only is not a shape and registration has no dialect, so it is refused where `buildEntityAST` has one - the same place a partial-index predicate compiles.
-
-## Not in this release
-
-- **`$min`/`$max`**, which need a rescan on delete. Different cost model, stated when they land.
-- **Multi-level aggregates.** `counter_culture` counts through a chain of relations; a trigger fires on the child and a grandchild's insert never touches the child's row. Refused rather than half-supported.
-- **Statement-level bodies with transition tables.** A constraint trigger refuses both `FOR EACH STATEMENT` and `REFERENCING ... NEW TABLE` as syntax errors, so a deferred aggregate is per-row always and a bulk insert of N rows issues N UPDATEs. Transition tables would collapse that to one, and the two cannot be had together. It replaces the body rather than a keyword, so it is its own option later.
-- **Reading an aggregate from `$count`, `$size` or `$sort` automatically.** It needs a predicate-equivalence engine, and it makes a query's correctness depend on a column declared elsewhere: adding one would silently change an unrelated call site, and a drifted one would make a previously-correct read wrong. Selecting the column is how you ask for the cheap answer, visibly.
+- **Stored `min`/`max`**: a rescan on delete is a different cost model.
+- **Multi-level aggregates.** `counter_culture` counts through a chain of relations, but a trigger fires on the child, and a grandchild's insert never touches the child's row. Refused rather than half-supported.
+- **Statement-level bodies with transition tables.** A row trigger issues one UPDATE per child row; `REFERENCING NEW TABLE` collapses a bulk write to one statement. Postgres takes it only on a single-event trigger - the shape these already have - and without `UPDATE OF`, so it is a flag later rather than a redesign.
+- **A hot parent.** Every writer of its children serializes on the parent's row, and under REPEATABLE READ or SERIALIZABLE the losers see serialization failures to retry. Deferral only shortens the wait. Statement-level bodies, which update parents in key order and so cannot deadlock one another, and a sharded counter are the fixes.
+- **Reading a stored aggregate for `$count`, `$size` or `$sort` automatically.** It needs a predicate-equivalence engine, and it makes a query's correctness depend on a column declared elsewhere: adding one would silently change an unrelated call site, and a drifted one would make a previously correct read wrong. Selecting the field is how you ask for the cheap answer, visibly.
 
 ## Why
 
-The case study is Variability: nineteen counter columns kept by five triggers, **459 lines of SQL across four migrations**, 125 of them hand-written `down`. Five bugs, none of which a test would have caught.
+The case study is Variability, read from its production database on Postgres 18.4.
 
-- `'queryCount'` passed to a trigger on `Search`, a column `Workspace` does not have, while `Search.workspaceId` is `nullable: false` - so the branch always runs and aborts at COMMIT, swallowed by a fire-and-forget `.catch(log)`. Search history is entirely dead.
-- `Resource.messageCount` and `messageCreatedCount` declared, never added by a migration, never written by the function. They exist in e2e, which builds from the entities, and not in production, which came from a dump.
-- No UPDATE branch, so `PUT /api/resources/move` re-parents a resource and both workspaces are permanently wrong.
-- `resourceCount` counts archived rows the Library list excludes; its one consumer compensates by hand and says so in a comment.
-- The repair migration sets `resourceCreatedCount = resourceCount`, destroying the distinction it exists to keep.
+| In production                                                                                                                                             | Under this design                                                                       |
+| :-------------------------------------------------------------------------------------------------------------------------------------------------------- | :-------------------------------------------------------------------------------------- |
+| One function, `app_sync_entity_count()`, with the parent tables hard-coded and the counter columns passed as `TG_ARGV` strings into `EXECUTE format(...)` | nothing                                                                                 |
+| Five `CONSTRAINT ... AFTER INSERT OR DELETE DEFERRABLE INITIALLY DEFERRED` triggers                                                                       | nothing                                                                                 |
+| Seventeen counters on `User` and `Workspace` that the triggers keep                                                                                       | `resourceCount` and `threadCount` as `computed: (u) => u.resources.count()`; 15 dropped |
+| `Resource.messageCount`, `Resource.messageCreatedCount` and `Transcript.captionsCount`, declared and never written                                        | dropped                                                                                 |
 
-The migrations are also name-sorted, and one calls a function only a later-sorting file creates. Generated DDL is ordered by its dependency graph, which is what R7 exists to settle.
+**Two of the twenty counters have a reader, and both only size a loading skeleton**, one of them capped at a page. Folders and people already count at query time. Every bug below came from storing a count nobody needed stored:
 
-Independent evidence, since one application is not evidence. A census of every trigger in every unrelated codebase to hand found four: three `updated_at` stampers and one NOTIFY, and no counters at all - so the case for the aggregate is not frequency. `django-pgtrigger` has fourteen cookbook recipes and no counter. Rails has the opposite: `counter_cache` is core ActiveRecord, and `counter_culture` exists because the built-in one misses the reparent branch, arriving independently at conditional counters, a `fix_counts` repair command, and `execute_after_commit: true` for deadlocks - three decisions above, reached from the other direction.
+- **Search history has been dead since February.** `'queryCount'` is passed to the trigger on `Search`, but `Workspace` has no such column, and `Search.workspaceId` is `nullable: false`, so the failing branch always runs. Every insert aborts at COMMIT, and a fire-and-forget `.catch(log)` swallows the error. The table's last row is dated 2026-02-26, the date of the migration that made the triggers deferred.
+- **Three counters are declared and never written.** `Resource.messageCount` and `messageCreatedCount` are wrong on 28 of 175 resources. `Transcript.captionsCount` is null on all 173 transcripts, 165 of which have captions.
+- **There is no UPDATE branch**, so moving a resource between workspaces leaves both counts wrong for good. The bug is latent: the counters show no drift today.
+- **`resourceCount` counts archived rows** the Library list excludes, and its consumer compensates by hand.
+- **The repair migration set `resourceCreatedCount = resourceCount`**, destroying the distinction the column existed to keep.
+- **The migrations themselves:** 459 lines of SQL across four name-sorted migrations, 125 of them a hand-written `down`, and one calls a function that only a later-sorting file creates. Generated DDL is ordered by its dependency graph, which is what R7 settles.
 
-Across ecosystems, the two halves are always split and the second half is always missing.
+**Independent evidence**, since one application is not evidence.
 
-|                                | Authors triggers                                                                           | Diffs them                                                           | Maintained aggregate |
+- A census of every trigger in every unrelated codebase to hand found four: three `updated_at` stampers and one NOTIFY, and no counters.
+- `django-pgtrigger` has fourteen cookbook recipes and no counter either.
+- Rails is the exception: `counter_cache` is core ActiveRecord, and `counter_culture` exists because the built-in one misses the reparent branch. It arrives independently at conditional counters and at a `fix_counts` repair command.
+
+| Library                        | Authors triggers                                                                           | Diffs them                                                           | Maintained aggregate |
 | :----------------------------- | :----------------------------------------------------------------------------------------- | :------------------------------------------------------------------- | :------------------- |
 | **hair_trigger** (Rails)       | yes - declared on the model, `.of(:name)` is `UPDATE OF`, a rake task writes the migration | via migrations                                                       | no                   |
 | **django-pgtrigger**           | yes - fourteen cookbook recipes                                                            | yes                                                                  | no                   |
@@ -194,8 +195,14 @@ Across ecosystems, the two halves are always split and the second half is always
 | **Atlas**                      | yes - `trigger` block with `update_of`, ROW/STATEMENT                                      | yes - the best diff engine here                                      | no                   |
 | **MikroORM 7.2**               | yes - `@Trigger`/`triggers`, a body callback over the column map, on five engines          | yes - by body text, with `ignoreTriggers` to spare hand-written ones | no                   |
 
-Everything else has no construct: Prisma and Drizzle offer none; TypeORM, Doctrine, ent and GORM stop at application-level lifecycle hooks; Sequelize has an imperative `queryInterface.createTrigger` and no diff; SQLAlchemy core has DDL event listeners Alembic cannot see; Hibernate 6 has no trigger but `@Generated` cooperates with a column the database writes; EF Core's `HasTrigger()` only declares that one exists, so writes drop the `OUTPUT` clause.
+**Everything else stops short.**
 
-`hair_trigger` is the closest prior art for the authored layer and got there in 2011; Atlas has the strongest diff engine, though triggers are a paid feature there and it carries no `when` or deferrable; `alembic_utils` is the best autogenerate story. MikroORM moved fastest: triggers in 7.0, then stored routines and native row-level security, which takes most of what was unclaimed around this - and its `ignoreTriggers` flag is the argument for owning objects by prefix rather than diffing every trigger in the database. What no one has is a `when` that is a typed condition rather than a SQL string, `UPDATE OF` columns and a deferral mode on a declared trigger, and a **maintained aggregate**. Rails has the aggregate and puts it in the application, which is why `counter_culture` ships `fix_counts`; the trigger libraries have the mechanism and no aggregate built on it.
+- Prisma 8, Drizzle 1.0 and Kysely have no trigger construct.
+- TypeORM, Doctrine, ent and GORM stop at application-level hooks.
+- Sequelize has an imperative `queryInterface.createTrigger` and no diff.
+- EF Core's `HasTrigger()` only declares that a trigger exists.
+- The unstored arm has prior art in TypeORM's `@VirtualColumn({ query })` and MikroORM's `formula`: subqueries written by hand, not aggregates typed from a relation.
 
-The standard objection is that triggers hide logic outside source control, cannot be stepped through in a debugger, and _"often exist only in the production environment and not in development installations."_ Every one of those describes a trigger that was never **declared** - and the third is the case study's second bug exactly. A declared trigger is in source control, in every environment, and reported when it drifts. The debugger point stays true and is a real cost.
+**What no one has:** a body whose `NEW`/`OLD` references are typed, and a maintained aggregate that starts life as a read. Rails puts its aggregate in the application, which is why `counter_culture` ships `fix_counts`; the trigger libraries have the mechanism and build no aggregate on it.
+
+**The standard objection** is that triggers hide logic outside source control, cannot be stepped through in a debugger, and _"often exist only in the production environment and not in development installations."_ Every one of those describes a trigger that was never **declared**. A declared trigger is in source control, in every environment, and reported when it drifts. The debugger point stays true, and it is a real cost - one more reason the default is unstored.

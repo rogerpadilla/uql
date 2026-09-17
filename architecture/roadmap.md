@@ -65,6 +65,14 @@ export default {
 };
 ```
 
+**A nullable column's property admits `null`.** A column is nullable unless `nullable: false`, and a read hydrates `null` into it, yet `@Field({ type: String }) name?: string` compiles: the property says a read never returns what it does. Give the column overload of `Field` the exact check [triggers](triggers.md) gives aggregates, with `null` in the declared value unless `nullable: false`. Drizzle and Prisma type it that way because their types come from the schema. A decision rather than a fix: it changes most entities - 178 of Variability's 228 fields - and needs a codemod.
+
+```ts
+@Field({ type: String }) name?: string;                   // refused: the column can hold null
+@Field({ type: String }) name?: string | null;
+@Field({ type: String, nullable: false }) email?: string;
+```
+
 ## Views and materialized views
 
 ```ts
@@ -91,10 +99,11 @@ What gates it is nulls. A UQL column is nullable unless declared otherwise, the 
 ## Triggers
 
 ```ts
-@Field({ computed: { resources: { $count: '*' } }, stored: true })        resourceCount?: number;
+@Field({ computed: (u) => u.resources.count() })               readonly resourceCount?: number; // read in the parent's statement
+@Field({ computed: (u) => u.resources.count(), stored: true }) readonly resourceCount?: number; // kept by triggers
 ```
 
-The generated-column arm of `computed`/`stored` shipped; left are the trigger-backed arms, which need R7 and are Postgres only. The maintained aggregate is the case worth declaring rather than authoring: it is the only one that generates the reparent branch every hand-written version forgets. [The design](triggers.md), whose last section is what is left to build - trigger introspection and a `RETURNING` list of ordinary columns among it.
+Two steps. The unstored aggregate needs no R7, runs on every engine, and shares its operators and compile path with the relation aggregates below. The stored arms - maintained aggregates, `stored: ['update']` stamps, then authored triggers - need R7 and ship on Postgres first. The maintained aggregate is the case worth declaring rather than authoring: it generates the reparent branch every hand-written counter forgets. [The design](triggers.md).
 
 ## Batching
 
@@ -133,7 +142,7 @@ await pool.findMany(User, { $select: { id: true }, $count: { posts: true }, $max
 // { id, _count: { posts }, _max: { posts: { createdAt } } }
 ```
 
-R6. `$count` over a relation is the one aggregate a read carries; `$sum`/`$avg`/`$min`/`$max` are the same correlated subquery with another function, and each lands under its own `_`-key. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
+R6. `$count` over a relation is the one aggregate a read carries; `$sum`/`$avg`/`$min`/`$max` are the same correlated subquery with another function, and each lands under its own `_`-key. The unstored `computed` aggregate of [triggers](triggers.md) is the same compile path under a field's name. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
 
 ## Smaller items
 
