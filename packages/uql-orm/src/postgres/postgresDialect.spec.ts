@@ -2,8 +2,8 @@ import { expect } from 'vitest';
 import { JSON_UPDATE_PAYLOADS } from '../dialect/abstractSqlDialect-spec.js';
 import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { Company, createSpec, User } from '../test/index.js';
-import type { UpdatePayload } from '../type/index.js';
+import { Company, createSpec, InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
+import { raw } from '../util/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 /** What is Postgres' alone: pgvector's narrower vector types, its wire drivers, `pg_class` stats. */
@@ -51,12 +51,6 @@ class PostgresDialectSpec extends PgFamilySpec {
    * out. Binding the dense `[0,0,1]` every other vector type takes fails with "invalid input syntax
    * for type sparsevec", so the dense array an entity declares is converted on the way out.
    */
-
-  /**
-   * `sparsevec` takes pgvector's sparse literal, `{index:value,...}/dimensions` with the zeros left
-   * out. Binding the dense `[0,0,1]` every other vector type takes fails with "invalid input syntax
-   * for type sparsevec", so the dense array an entity declares is converted on the way out.
-   */
   shouldBindSparsevecAsASparseLiteral() {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
@@ -95,22 +89,16 @@ class PostgresDialectSpec extends PgFamilySpec {
   }
 
   /** Booleans go in unquoted: `{"true"}` would bind the *string* "true" to a `boolean[]`. */
-
-  /** Booleans go in unquoted: `{"true"}` would bind the *string* "true" to a `boolean[]`. */
   shouldNormalizeBooleanArrayToUnquotedPostgresLiterals() {
     const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
     expect(d.normalizeValue([true, false])).toBe('{true,false}');
   }
 
   /** `String(bytes)` would stringify a `bytea` element as comma-separated bytes; it needs hex. */
-
-  /** `String(bytes)` would stringify a `bytea` element as comma-separated bytes; it needs hex. */
   shouldNormalizeBinaryArrayElementsToHexEscapes() {
     const d = new PostgresDialect({ driverCapabilities: { nativeArrays: false } });
     expect(d.normalizeValue([new Uint8Array([0x00, 0x0f, 0xff])])).toBe('{"\\\\x000fff"}');
   }
-
-  // JSONB operator tests
 
   /**
    * Bun SQL's `explicitJsonCast` wraps every bound JSON parameter in an extra `(::text)::jsonb`
@@ -142,6 +130,126 @@ class PostgresDialectSpec extends PgFamilySpec {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_count" FROM pg_class WHERE oid = to_regclass($1)');
     expect(values).toEqual(['"User"']);
+  }
+
+  shouldFindWithARawExistsSubquery() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true, name: true },
+        $where: {
+          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              User,
+              { $select: { id: true }, $where: { companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "id", "name" FROM "Item" WHERE EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
+    );
+    expect(values).toEqual([]);
+  }
+
+  shouldFindWithARawNotExistsSubquery() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: {
+          $nexists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              User,
+              { $select: { id: true }, $where: { companyId: raw((o) => o.ctx.append(`${escapedPrefix}"companyId"`)) } },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "id" FROM "Item" WHERE NOT EXISTS (SELECT "User"."id" FROM "User" WHERE "User"."companyId" = "Item"."companyId")',
+    );
+    expect(values).toEqual([]);
+  }
+
+  /** Beside a filter of its own, whose value binds first. */
+  shouldFindWithARawExistsSubqueryAndAFilter() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, InventoryAdjustment, {
+        $select: { id: true, description: true },
+        $where: {
+          createdAt: { $gte: 1000 },
+          $exists: raw(({ ctx, dialect, escapedPrefix }) => {
+            dialect.find(
+              ctx,
+              ItemAdjustment,
+              {
+                $select: { id: true },
+                $where: {
+                  inventoryAdjustmentId: raw((o) => o.ctx.append(`${escapedPrefix}"id"`)),
+                  buyPrice: { $gte: 100 },
+                },
+              },
+              { autoPrefix: true },
+            );
+          }),
+        },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "id", "description" FROM "InventoryAdjustment" ' +
+        'WHERE "createdAt" >= $1 AND EXISTS (SELECT "ItemAdjustment"."id" FROM "ItemAdjustment" ' +
+        'WHERE "ItemAdjustment"."inventoryAdjustmentId" = "InventoryAdjustment"."id" AND "ItemAdjustment"."buyPrice" >= $2)',
+    );
+    expect(values).toEqual([1000, 100]);
+  }
+
+  /** The children are read inside the statement, so their filter binds before the parent's own. */
+  shouldFilterAPopulatedOneToManyInsideTheStatement() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, InventoryAdjustment, {
+        $select: { id: true, description: true },
+        $populate: {
+          itemAdjustments: { $select: { buyPrice: true, number: true }, $where: { buyPrice: { $gte: 100 } } },
+        },
+        $where: { createdAt: { $gte: 1000 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      `SELECT "InventoryAdjustment"."id", "InventoryAdjustment"."description", (SELECT COALESCE(JSON_AGG("_uql_row"), '[]'::json)` +
+        ' FROM (SELECT "itemAdjustments"."buyPrice"::text "buyPrice", "itemAdjustments"."number"::text "number"' +
+        ' FROM "ItemAdjustment" "itemAdjustments" WHERE "itemAdjustments"."buyPrice" >= $1' +
+        ' AND "itemAdjustments"."inventoryAdjustmentId" = "InventoryAdjustment"."id") "itemAdjustments"' +
+        ' CROSS JOIN LATERAL (SELECT "itemAdjustments"."buyPrice", "itemAdjustments"."number") "_uql_row") "itemAdjustments"' +
+        ' FROM "InventoryAdjustment" WHERE "InventoryAdjustment"."createdAt" >= $2',
+    );
+    expect(values).toEqual([100, 1000]);
+  }
+
+  /** A to-one is joined, so its filter joins with it, binding before the parent's own. */
+  shouldFilterAPopulatedManyToOneInItsJoin() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true, name: true },
+        $populate: { tax: { $select: { name: true, percentage: true }, $where: { percentage: { $gte: 10 } } } },
+        $where: { salePrice: { $gte: 50 } },
+      }),
+    );
+
+    expect(sql).toBe(
+      'SELECT "Item"."id", "Item"."name", "tax"."id" "tax.id", "tax"."name" "tax.name", "tax"."percentage" "tax.percentage" ' +
+        'FROM "Item" LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."taxId" AND "tax"."percentage" >= $1 ' +
+        'WHERE "Item"."salePrice" >= $2',
+    );
+    expect(values).toEqual([10, 50]);
   }
 }
 

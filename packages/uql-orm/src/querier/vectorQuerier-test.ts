@@ -4,24 +4,19 @@ import type { WithDistance } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
 /**
- * Shared vector-search expectations for every SQL backend that computes distances natively:
- * pgvector, CockroachDB, libSQL and Turso. The dialects express the distance differently (an
- * operator, or one of several function names), but the metrics mean the same thing everywhere, so
- * the results below are dialect-independent.
- *
- * @remarks These have to run against a live engine, not just assert the generated SQL: the SQLite
- * family shipped `vec_distance_cosine` calls for engines whose function is named
- * `vector_distance_cos`, and nothing caught it because no test executed a vector query there.
+ * Shared vector-search expectations for every SQL backend that computes distances natively (pgvector,
+ * CockroachDB, libSQL, Turso), run against a live engine: each names its distance function its own way,
+ * and only a real query shows a wrong one.
  */
 export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
   async shouldInsertAndRetrieveVector() {
     const id = await this.querier.insertOne(VectorItem, { name: 'alpha', vec: [1, 0, 0] });
     const found = await this.querier.findOneById(VectorItem, id);
     expect(found).toBeDefined();
-    expect(found!.name).toBe('alpha');
+    expect(found?.name).toBe('alpha');
     // The array that went in, not the engine's text for it: the field declares `number[]` and a read
     // that returned the literal made every consumer's arithmetic silently wrong while type-checking.
-    expect(found!.vec).toEqual([1, 0, 0]);
+    expect(found?.vec).toEqual([1, 0, 0]);
   }
 
   async shouldSortByVectorSimilarity() {

@@ -8,12 +8,8 @@ import { JsonRecord, NarrowVectorItem, VectorItem } from '../test/index.js';
 import { columnFamily } from '../util/field.util.js';
 
 /**
- * Which columns a dialect decodes on read, and as what.
- *
- * The integration suites prove the round-trip end to end, but only on the entities and engines they
- * happen to cover: the `sparsevec`-is-dense-off-Postgres rule reached exactly one of them. This
- * pins the classification itself, which is the part that has to stay right for a column the tests
- * have not thought of yet.
+ * Which columns a dialect decodes on read, and as what: the classification itself, for the columns the
+ * round-trip suites do not happen to cover.
  */
 
 /** A string key, so nothing at all needs decoding: numeric ids do (see the `number` cases below). */
@@ -52,30 +48,30 @@ class LogicalRow {
 describe('hydratableFields', () => {
   const postgres = new PostgresDialect();
 
-  it('lists nothing for an entity with no encoded column, so reads skip the loop', () => {
+  it('should list nothing for an entity with no encoded column, so reads skip the loop', () => {
     expect(postgres.hydratableFields(PlainRow)).toEqual([]);
   });
 
-  it('classifies a JSON column', () => {
+  it('should classify a JSON column', () => {
     expect(postgres.hydratableFields(JsonRecord)).toContainEqual(['entries', 'json']);
   });
 
-  it('classifies a dense vector by the cast the dialect writes', () => {
+  it('should classify a dense vector by the cast the dialect writes', () => {
     expect(postgres.hydratableFields(VectorItem)).toContainEqual(['vec', 'vector']);
   });
 
-  it('classifies booleans, which only the entity can disambiguate from a small integer', () => {
+  it('should classify booleans, which only the entity can disambiguate from a small integer', () => {
     // SQLite stores 0/1 in an INTEGER and MySQL uses TINYINT(1); the column type cannot say.
     expect(new SqliteDialect().hydratableFields(FlagRow)).toContainEqual(['active', 'boolean']);
     expect(new MariaDialect().hydratableFields(FlagRow)).toContainEqual(['active', 'boolean']);
   });
 
-  it('classifies every numeric field, since a decimal comes back as text from more than one driver', () => {
+  it('should classify every numeric field, since a decimal comes back as text from more than one driver', () => {
     // Including the id: `type: Number` is BIGINT, and this is the value every consumer indexes by.
     expect(postgres.hydratableFields(VectorItem)).toContainEqual(['id', 'number']);
   });
 
-  it('classifies a column declared by its SQL type, not only by its constructor', () => {
+  it('should classify a column declared by its SQL type, not only by its constructor', () => {
     expect(postgres.hydratableFields(LogicalRow)).toEqual([
       ['id', 'number'],
       ['active', 'boolean'],
@@ -84,17 +80,14 @@ describe('hydratableFields', () => {
     ]);
   });
 
-  it('keeps `bigint` apart from `number`, since both declare a BIGINT column', () => {
-    // `type: BigInt` promises a bigint property, and the pg pools decode BIGINT to a JS number at the
-    // wire, so sharing the numeric kind would hand a `number` to a field typed `bigint`.
-    //
-    // This is also what guards the one load-bearing order in `hydrateKind`: `BigInt` is in the numeric
-    // family, so letting the switch answer for it turns this back into `'number'`.
+  it('should keep `bigint` apart from `number`, since both declare a BIGINT column', () => {
+    // `type: BigInt` promises a bigint where the pg pools decode BIGINT to a number, so it has a kind of
+    // its own, which `hydrateKind` answers before the numeric family `BigInt` belongs to.
     expect(postgres.hydratableFields(LogicalRow)).toContainEqual(['huge', 'bigint']);
     expect(columnFamily(BigInt)).toBe('numeric');
   });
 
-  it('keeps the narrow vector casts on Postgres, the only engine that has them', () => {
+  it('should keep the narrow vector casts on Postgres, the only engine that has them', () => {
     expect(postgres.hydratableFields(NarrowVectorItem)).toEqual([
       ['id', 'number'],
       ['half', 'halfvec'],
@@ -102,7 +95,7 @@ describe('hydratableFields', () => {
     ]);
   });
 
-  it('reads narrow vectors back as dense everywhere else, because that is how they were written', () => {
+  it('should read narrow vectors back as dense everywhere else, because that is how they were written', () => {
     // The bug this prevents: decoding by the field's own declared cast would hunt for a `{1:1}/3`
     // literal on an engine that only ever stored `[0,0,1]`, and hand back the raw text instead.
     for (const dialect of [new CockroachDialect(), new MariaDialect(), new SqliteDialect()]) {
@@ -114,7 +107,7 @@ describe('hydratableFields', () => {
     }
   });
 
-  it('computes the list once per entity, since it is a function of the column not the row', () => {
+  it('should compute the list once per entity, since it is a function of the column not the row', () => {
     // A 1000-row read would otherwise re-answer the same question 1000 times, and `columnFamily`
     // lowercases a string on every call. The two narrow-vector cases above cover the other half of
     // this: the cache is per dialect, so a shared one would make the second of them read the first's

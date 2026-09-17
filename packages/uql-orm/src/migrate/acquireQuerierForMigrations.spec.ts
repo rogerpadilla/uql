@@ -2,13 +2,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { Querier } from '../type/index.js';
 import { acquireQuerierForMigrations, withMongoQuerierForMigrations } from './acquireQuerierForMigrations.js';
 
 describe('acquireQuerierForMigrations', () => {
-  it('prefers getMigrationQuerier when present', async () => {
-    const fromMigration = { release: vi.fn() } as unknown as Querier;
-    const fromDefault = { release: vi.fn() } as unknown as Querier;
+  it('should prefer getMigrationQuerier when present', async () => {
+    const fromMigration = { release: vi.fn() };
+    const fromDefault = { release: vi.fn() };
     const getQuerier = vi.fn().mockResolvedValue(fromDefault);
     const getMigrationQuerier = vi.fn().mockResolvedValue(fromMigration);
     const pool = createMockQuerierPool(new PostgresDialect(), getQuerier, { getMigrationQuerier });
@@ -20,8 +19,8 @@ describe('acquireQuerierForMigrations', () => {
     expect(getQuerier).not.toHaveBeenCalled();
   });
 
-  it('falls back to getQuerier', async () => {
-    const fromDefault = { release: vi.fn() } as unknown as Querier;
+  it('should fall back to getQuerier', async () => {
+    const fromDefault = { release: vi.fn() };
     const getQuerier = vi.fn().mockResolvedValue(fromDefault);
     const pool = createMockQuerierPool(new PostgresDialect(), getQuerier);
 
@@ -31,16 +30,16 @@ describe('acquireQuerierForMigrations', () => {
     expect(getQuerier).toHaveBeenCalledTimes(1);
   });
 
-  it('hands a MongoDB querier to the task and releases it', async () => {
-    const querier = { db: {}, release: vi.fn() } as unknown as Querier;
+  it('should hand a MongoDB querier to the task and release it', async () => {
+    const querier = { db: {}, release: vi.fn() };
     const pool = createMockQuerierPool(new MongoDialect(), vi.fn().mockResolvedValue(querier));
 
     expect(await withMongoQuerierForMigrations(pool, 'Test', async (q) => q)).toBe(querier);
     expect(querier.release).toHaveBeenCalledTimes(1);
   });
 
-  it('refuses a querier with no MongoDB handle, and still releases it', async () => {
-    const querier = { release: vi.fn() } as unknown as Querier;
+  it('should refuse a querier with no MongoDB handle, and still releases it', async () => {
+    const querier = { release: vi.fn() };
     const pool = createMockQuerierPool(new MongoDialect(), vi.fn().mockResolvedValue(querier));
 
     await expect(withMongoQuerierForMigrations(pool, 'Test', async () => {})).rejects.toThrow(

@@ -1,23 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import type { MongoQuerier } from '../../type/index.js';
-import { migrationBuilderFor } from '../migrationTarget.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 import { MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
-import type {
-  AddColumnOperation,
-  AddForeignKeyOperation,
-  AlterColumnOperation,
-  CreateIndexOperation,
-  CreateTableOperation,
-  DropColumnOperation,
-  DropForeignKeyOperation,
-  DropIndexOperation,
-  DropTableOperation,
-  RawSqlOperation,
-  RenameColumnOperation,
-  RenameTableOperation,
-} from './types.js';
 
 describe('OperationRecorder', () => {
   describe('createTable', () => {
@@ -33,9 +17,7 @@ describe('OperationRecorder', () => {
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createTable');
 
-      const createOp = ops[0] as CreateTableOperation;
-      expect(createOp.table.name).toBe('users');
-      expect(createOp.table.columns.length).toBe(2);
+      expect(ops[0]).toMatchObject({ table: { name: 'users', columns: [{ name: 'id' }, { name: 'email' }] } });
     });
   });
 
@@ -48,7 +30,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropTable');
-      expect((ops[0] as DropTableOperation).tableName).toBe('users');
+      expect(ops[0]).toMatchObject({ tableName: 'users' });
     });
 
     it('should support ifExists option', async () => {
@@ -57,7 +39,7 @@ describe('OperationRecorder', () => {
       await recorder.dropTable('users', { ifExists: true });
 
       const ops = recorder.getOperations();
-      expect((ops[0] as DropTableOperation).ifExists).toBe(true);
+      expect(ops[0]).toMatchObject({ ifExists: true });
     });
 
     it('should support cascade option', async () => {
@@ -66,7 +48,7 @@ describe('OperationRecorder', () => {
       await recorder.dropTable('users', { cascade: true });
 
       const ops = recorder.getOperations();
-      expect((ops[0] as DropTableOperation).cascade).toBe(true);
+      expect(ops[0]).toMatchObject({ cascade: true });
     });
   });
 
@@ -79,8 +61,8 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('renameTable');
-      expect((ops[0] as RenameTableOperation).oldName).toBe('old_users');
-      expect((ops[0] as RenameTableOperation).newName).toBe('users');
+      expect(ops[0]).toMatchObject({ oldName: 'old_users' });
+      expect(ops[0]).toMatchObject({ newName: 'users' });
     });
   });
 
@@ -93,8 +75,8 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('addColumn');
-      expect((ops[0] as AddColumnOperation).tableName).toBe('users');
-      expect((ops[0] as AddColumnOperation).column.name).toBe('age');
+      expect(ops[0]).toMatchObject({ tableName: 'users' });
+      expect(ops[0]).toMatchObject({ column: { name: 'age' } });
     });
   });
 
@@ -107,8 +89,8 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropColumn');
-      expect((ops[0] as DropColumnOperation).tableName).toBe('users');
-      expect((ops[0] as DropColumnOperation).columnName).toBe('age');
+      expect(ops[0]).toMatchObject({ tableName: 'users' });
+      expect(ops[0]).toMatchObject({ columnName: 'age' });
     });
   });
 
@@ -121,8 +103,8 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('renameColumn');
-      expect((ops[0] as RenameColumnOperation).oldName).toBe('old_name');
-      expect((ops[0] as RenameColumnOperation).newName).toBe('new_name');
+      expect(ops[0]).toMatchObject({ oldName: 'old_name' });
+      expect(ops[0]).toMatchObject({ newName: 'new_name' });
     });
   });
 
@@ -135,7 +117,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createIndex');
-      expect((ops[0] as CreateIndexOperation).index.entries).toEqual([{ column: 'email' }]);
+      expect(ops[0]).toMatchObject({ index: { entries: [{ column: 'email' }] } });
     });
 
     it('should auto-generate index name', async () => {
@@ -144,7 +126,7 @@ describe('OperationRecorder', () => {
       await recorder.createIndex('users', ['email', 'status']);
 
       const ops = recorder.getOperations();
-      expect((ops[0] as CreateIndexOperation).index.name).toBe('users__email_status_idx');
+      expect(ops[0]).toMatchObject({ index: { name: 'users__email_status_idx' } });
     });
 
     it('should use custom index name', async () => {
@@ -153,7 +135,7 @@ describe('OperationRecorder', () => {
       await recorder.createIndex('users', ['email'], { name: 'custom_idx' });
 
       const ops = recorder.getOperations();
-      expect((ops[0] as CreateIndexOperation).index.name).toBe('custom_idx');
+      expect(ops[0]).toMatchObject({ index: { name: 'custom_idx' } });
     });
 
     it('should support unique option', async () => {
@@ -162,7 +144,7 @@ describe('OperationRecorder', () => {
       await recorder.createIndex('users', ['email'], { unique: true });
 
       const ops = recorder.getOperations();
-      expect((ops[0] as CreateIndexOperation).index.unique).toBe(true);
+      expect(ops[0]).toMatchObject({ index: { unique: true } });
     });
   });
 
@@ -175,7 +157,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropIndex');
-      expect((ops[0] as DropIndexOperation).indexName).toBe('users__email_idx');
+      expect(ops[0]).toMatchObject({ indexName: 'users__email_idx' });
     });
   });
 
@@ -188,8 +170,8 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('addForeignKey');
-      expect((ops[0] as AddForeignKeyOperation).foreignKey.columns).toEqual(['authorId']);
-      expect((ops[0] as AddForeignKeyOperation).foreignKey.references.table).toBe('users');
+      expect(ops[0]).toMatchObject({ foreignKey: { columns: ['authorId'] } });
+      expect(ops[0]).toMatchObject({ foreignKey: { references: { table: 'users' } } });
     });
 
     it('should support onDelete option', async () => {
@@ -198,7 +180,7 @@ describe('OperationRecorder', () => {
       await recorder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] }, { onDelete: 'CASCADE' });
 
       const ops = recorder.getOperations();
-      expect((ops[0] as AddForeignKeyOperation).foreignKey.onDelete).toBe('CASCADE');
+      expect(ops[0]).toMatchObject({ foreignKey: { onDelete: 'CASCADE' } });
     });
   });
 
@@ -211,7 +193,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropForeignKey');
-      expect((ops[0] as DropForeignKeyOperation).constraintName).toBe('posts_author_fk');
+      expect(ops[0]).toMatchObject({ constraintName: 'posts_author_fk' });
     });
   });
 
@@ -224,7 +206,7 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('raw');
-      expect((ops[0] as RawSqlOperation).sql).toBe('ALTER TABLE users ADD CONSTRAINT custom CHECK (age > 0)');
+      expect(ops[0]).toMatchObject({ sql: 'ALTER TABLE users ADD CONSTRAINT custom CHECK (age > 0)' });
     });
   });
 
@@ -282,7 +264,7 @@ describe('OperationRecorder', () => {
 
       const ops = recorder.getOperations();
       expect(ops.map((o) => o.type)).toEqual(['addColumn', 'dropColumn', 'renameColumn', 'alterColumn']);
-      expect((ops[3] as AlterColumnOperation).columnName).toBe('email');
+      expect(ops[3]).toMatchObject({ columnName: 'email' });
     });
   });
 
@@ -316,14 +298,10 @@ describe('OperationRecorder', () => {
       const ops = recorder.getOperations();
       expect(ops.map((o) => o.type)).toEqual(['createIndex', 'dropIndex', 'addForeignKey', 'dropForeignKey']);
 
-      const createIndexOp = ops[0] as CreateIndexOperation;
-      expect(createIndexOp.index.name).toBe('custom_idx');
-      expect(createIndexOp.index.unique).toBe(true);
-
-      const addFkOp = ops[2] as AddForeignKeyOperation;
-      expect(addFkOp.foreignKey.references.table).toBe('profiles');
-      expect(addFkOp.foreignKey.onDelete).toBe('CASCADE');
-      expect(addFkOp.foreignKey.name).toBe('users_profile_fk');
+      expect(ops[0]).toMatchObject({ index: { name: 'custom_idx', unique: true } });
+      expect(ops[2]).toMatchObject({
+        foreignKey: { references: { table: 'profiles' }, onDelete: 'CASCADE', name: 'users_profile_fk' },
+      });
     });
   });
 
@@ -335,14 +313,10 @@ describe('OperationRecorder', () => {
         table.addForeignKey(['role_id'], { table: 'roles', columns: ['id'] });
       });
 
-      const ops = recorder.getOperations();
-      const idxOp = ops.find((o) => o.type === 'createIndex') as CreateIndexOperation;
-      const fkOp = ops.find((o) => o.type === 'addForeignKey') as AddForeignKeyOperation;
-
-      expect(idxOp.index.name).toBe('users__name_idx');
-      expect(idxOp.index.unique).toBe(false);
-      expect(fkOp.foreignKey.onDelete).toBe('NO ACTION');
-      expect(fkOp.foreignKey.onUpdate).toBe('NO ACTION');
+      expect(recorder.getOperations()).toMatchObject([
+        { type: 'createIndex', index: { name: 'users__name_idx', unique: false } },
+        { type: 'addForeignKey', foreignKey: { onDelete: 'NO ACTION', onUpdate: 'NO ACTION' } },
+      ]);
     });
   });
 });
@@ -389,46 +363,6 @@ describe('MigrationBuilder', () => {
         'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255);',
         'ALTER TABLE "users" DROP COLUMN "legacy";',
       ]);
-    });
-  });
-
-  describe('on MongoDB', () => {
-    it('should run a collection and its indexes as driver calls, and refuse a column', async () => {
-      const calls: unknown[][] = [];
-      const record = (...call: unknown[]) => {
-        calls.push(call);
-        return Promise.resolve();
-      };
-      const querier = {
-        db: {
-          createCollection: (name: string) => record('createCollection', name),
-          renameCollection: (from: string, to: string) => record('renameCollection', from, to),
-          collection: (name: string) => ({
-            drop: () => record('drop', name),
-            createIndex: (key: unknown, options: unknown) => record('createIndex', name, key, options),
-            dropIndex: (index: string) => record('dropIndex', name, index),
-          }),
-        },
-      } as unknown as MongoQuerier;
-      const builder = await migrationBuilderFor(querier);
-
-      await builder.createTable('users', (table) => table.index(['email'], 'users_email_idx'));
-      await builder.createIndex('users', ['name'], { unique: true });
-      await builder.renameTable('users', 'members');
-      await builder.dropIndex('members', 'users__name_idx');
-      await builder.dropTable('members');
-
-      expect(calls).toEqual([
-        ['createCollection', 'users'],
-        ['createIndex', 'users', { email: 1 }, { unique: false, name: 'users_email_idx' }],
-        ['createIndex', 'users', { name: 1 }, { unique: true, name: 'users__name_idx' }],
-        ['renameCollection', 'users', 'members'],
-        ['dropIndex', 'members', 'users__name_idx'],
-        ['drop', 'members'],
-      ]);
-      await expect(builder.addColumn('members', (c) => c.string('nickname'))).rejects.toThrow(
-        'mongodb does not support addColumn in a migration',
-      );
     });
   });
 

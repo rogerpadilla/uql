@@ -10,12 +10,8 @@ import { parseVectorLiteral, type VectorCast } from './vectorCast.js';
 export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'bytes' | VectorCast;
 
 /**
- * Decode one non-null cell. Kept beside {@link HydrateKind} rather than inlined into the querier's
- * row walk, so classifying a column and decoding it stay one subject in one file.
- *
- * Every branch is a no-op on a value the driver already decoded, because which types arrive as text
- * varies per driver and the entity is the only thing that says what they were meant to be. A value
- * that does not match its column's format is returned untouched rather than replaced by a guess.
+ * Decodes one non-null cell. A no-op where the driver already decoded it, since that varies per driver,
+ * and untouched where it does not match its column's format.
  */
 export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
   if (kind === 'boolean') {
@@ -99,13 +95,7 @@ function hexBytes(hex: string): Uint8Array {
 /** Lazy so a consumer that never reads an encoded column never constructs one. */
 let decoder: TextDecoder | undefined;
 
-/**
- * The text a driver returned, or `undefined` when it returned something already decoded.
- *
- * Bytes count as text: `bun:sql` hands a MySQL DECIMAL, and any `SUM` over one, back as a `Buffer`,
- * so a string-only check left those as raw bytes. `TextDecoder` rather than `Buffer.toString`, because
- * this module is reachable from the browser entry and may not name a Node builtin.
- */
+/** The text a driver returned, bytes included (`bun:sql` hands a MySQL decimal as a `Buffer`), or `undefined`. */
 function asText(value: unknown): string | undefined {
   if (typeof value === 'string') {
     return value;

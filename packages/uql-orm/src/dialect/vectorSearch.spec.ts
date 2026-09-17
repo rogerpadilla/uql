@@ -11,7 +11,7 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { VectorItem } from '../test/index.js';
 import { TursoDialect } from '../turso/tursoDialect.js';
 import { TursoLocalDialect } from '../turso/tursoLocalDialect.js';
-import type { VectorDistance } from '../type/index.js';
+import type { Query, Type, VectorDistance } from '../type/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
 
@@ -23,13 +23,9 @@ class L2Item {
 }
 
 /**
- * Every dialect's vector search, side by side: which metrics it has and the expression it compiles
- * them to. Each engine supplies only that expression, since the query shapes around it - default
- * metric, combined sort, field default, projection, rejection - are identical everywhere.
- *
- * Every mapping here was verified against a live engine (pgvector 0.8, CockroachDB 26, MariaDB 12.3,
- * sqlite-vec 0.1.9, `@libsql/client` 0.17, `@tursodatabase/database` 0.7, MySQL 26.7, SQL Server 2025), because a wrong
- * function name or a missing conversion only surfaces at runtime.
+ * Every dialect's vector search side by side: the metrics it has and the expression each compiles to,
+ * the query shapes around them being identical. Each mapping was verified against a live engine, since
+ * a wrong function name only surfaces at run time.
  */
 type Engine = {
   name: string;
@@ -40,6 +36,10 @@ type Engine = {
 };
 
 const PG_OPS: Partial<Record<VectorDistance, string>> = { cosine: '<=>', l2: '<->', inner: '<#>', l1: '<+>' };
+const MARIA_FNS: Partial<Record<VectorDistance, string>> = {
+  cosine: 'VEC_DISTANCE_COSINE',
+  l2: 'VEC_DISTANCE_EUCLIDEAN',
+};
 const SQLITE_VEC_FNS: Partial<Record<VectorDistance, string>> = {
   cosine: 'vec_distance_cosine',
   l2: 'vec_distance_L2',
@@ -72,8 +72,7 @@ const engines: Engine[] = [
     name: 'MariaDialect',
     dialect: new MariaDialect({}),
     // A `VECTOR` column takes a packed float32 blob, so the query vector needs the text conversion.
-    distance: (metric, ph) =>
-      `${metric === 'cosine' ? 'VEC_DISTANCE_COSINE' : 'VEC_DISTANCE_EUCLIDEAN'}(\`vec\`, VEC_FromText(${ph}))`,
+    distance: (metric, ph) => `${MARIA_FNS[metric]}(\`vec\`, VEC_FromText(${ph}))`,
     supported: ['cosine', 'l2'],
     unsupported: ['inner', 'l1'],
   },
@@ -126,7 +125,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
     return ctx.sql;
   };
-  const find = <E>(entity: typeof VectorItem | typeof L2Item, query: object) => {
+  const find = <E extends object>(entity: Type<E>, query: Query<E>) => {
     const ctx = dialect.createContext();
     dialect.find(ctx, entity, query);
     return { sql: ctx.sql, values: ctx.values };
@@ -226,8 +225,7 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
     expect(values).toEqual(['[1,2,3]', 0.1, 0.5]);
   });
 
-  // The RAG shape: threshold in `$where`, ranking in `$sort`, both on the same field. This is what
-  // the docs used to do by over-fetching and filtering the rows in JavaScript.
+  // The RAG shape: a threshold in `$where` and the ranking in `$sort`, on the same field, in one statement.
   it('should filter and rank in one statement', () => {
     const { sql, values } = find(VectorItem, {
       $select: { id: true },
@@ -259,7 +257,8 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
   });
 
   it('should reject a bound that is not an ordering comparison', () => {
-    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } } as never)).toThrow(
+    // @ts-expect-error: a distance takes ordered bounds only
+    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } })).toThrow(
       'unsupported $near bound: $like',
     );
   });
@@ -304,7 +303,8 @@ describe.each(engines)('$name vector search', ({ dialect, distance, supported, u
   // bracket-access lookup would resolve it and emit that as the operator.
   it('should not resolve a metric through the prototype chain', () => {
     expect(() =>
-      find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as VectorDistance } } }),
+      // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
+      find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' } } }),
     ).toThrow('does not support vector distance metric: toString');
   });
 });
@@ -339,34 +339,29 @@ describe('dialects without vector search', () => {
 });
 
 /**
- * Reading a vector back. pgvector returns the column as text, and the field type promises `number[]`,
- * so a read that skipped this handed every consumer a string that still satisfied the compiler. In
- * Variability it made `cosineSimilarity` score a stored embedding as 0 against itself, which reads as
- * "different person" rather than as an error, and silently released every user-confirmed speaker.
- *
- * Driven by the column's own cast, never by sniffing the text: the write side already knows whether a
- * column is dense or sparse, and so does this.
+ * Reading a vector back: pgvector returns text where the field promises `number[]`, and a string still
+ * satisfies the compiler. Driven by the column's own cast, never by sniffing the text.
  */
 describe('parseVectorLiteral', () => {
-  it('reads a dense literal back as the array that was written', () => {
+  it('should read a dense literal back as the array that was written', () => {
     expect(parseVectorLiteral('[1,0,2.5]', 'vector')).toEqual([1, 0, 2.5]);
     expect(parseVectorLiteral('[-1,2e-3]', 'halfvec')).toEqual([-1, 0.002]);
     expect(parseVectorLiteral('[]', 'vector')).toEqual([]);
   });
 
-  it('expands a sparse literal to the dense array the field type promises', () => {
+  it('should expand a sparse literal to the dense array the field type promises', () => {
     // The exact inverse of toSparsevecLiteral, including the zeros it drops.
     expect(parseVectorLiteral(toSparsevecLiteral([1, 0, 2]), 'sparsevec')).toEqual([1, 0, 2]);
     expect(parseVectorLiteral('{}/3', 'sparsevec')).toEqual([0, 0, 0]);
   });
 
-  it('round-trips whatever the write side produced, for every cast', () => {
+  it('should round-trip whatever the write side produced, for every cast', () => {
     const dense = [0.5, 0, -2, 0, 1];
     expect(parseVectorLiteral(`[${dense.join(',')}]`, 'vector')).toEqual(dense);
     expect(parseVectorLiteral(toSparsevecLiteral(dense), 'sparsevec')).toEqual(dense);
   });
 
-  it('keeps out of the way when the text is not that column’s literal', () => {
+  it('should keep out of the way when the text is not that column’s literal', () => {
     // Returning undefined lets the caller keep the raw value instead of inventing one.
     expect(parseVectorLiteral('not a vector', 'vector')).toBeUndefined();
     expect(parseVectorLiteral('[1,two]', 'vector')).toBeUndefined();
@@ -389,12 +384,12 @@ describe('vector $project', () => {
     return ctx.sql;
   };
 
-  it('rejects a name the entity already uses', () => {
+  it('should reject a name the entity already uses', () => {
     expect(() => exec('name')).toThrow("$project 'name' collides with a field of 'VectorItem'");
     expect(() => exec('id')).toThrow("$project 'id' collides with a field of 'VectorItem'");
   });
 
-  it('accepts a name of its own', () => {
+  it('should accept a name of its own', () => {
     expect(exec('score')).toContain('::vector "score"');
   });
 });
@@ -422,11 +417,11 @@ describe('vector query-time tuning', () => {
   const pg = new PostgresDialect();
   const rank = { $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10, $candidates: 200 };
 
-  it('sets the candidate list for an HNSW index', () => {
+  it('should set the candidate list for an HNSW index', () => {
     expect(pg.vectorTuningStatements(getMeta(HnswItem), rank)).toEqual(['SET LOCAL hnsw.ef_search = 200']);
   });
 
-  it('sets the probe count for an IVFFlat index, which measures a different thing', () => {
+  it('should set the probe count for an IVFFlat index, which measures a different thing', () => {
     expect(pg.vectorTuningStatements(getMeta(IvfflatItem), rank)).toEqual(['SET LOCAL ivfflat.probes = 200']);
   });
 
@@ -435,7 +430,7 @@ describe('vector query-time tuning', () => {
    * a bounded search can return fewer rows than qualify. `strict_order` keeps the rows in distance
    * order, which `relaxed_order` would not - and the statement still orders by that distance.
    */
-  it('adds iterative scan when the query also filters by distance', () => {
+  it('should add iterative scan when the query also filters by distance', () => {
     const bounded = { ...rank, $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } };
 
     expect(pg.vectorTuningStatements(getMeta(HnswItem), bounded)).toEqual([
@@ -444,15 +439,14 @@ describe('vector query-time tuning', () => {
     ]);
   });
 
-  it('finds a $near nested inside a logical operator', () => {
+  it('should find a $near nested inside a logical operator', () => {
     const bounded = { ...rank, $where: { $or: [{ vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } }] } };
 
     expect(pg.vectorTuningStatements(getMeta(HnswItem), bounded)).toHaveLength(2);
   });
 
-  // Two ranked vector fields is ambiguous; the first wins. Pinned because the SQL side and MongoDB
-  // used to disagree here - one took the first entry and the other the last.
-  it('takes the first vector sort when more than one field is ranked', () => {
+  // Two ranked vector fields is ambiguous; the first wins, on the SQL side and MongoDB alike.
+  it('should take the first vector sort when more than one field is ranked', () => {
     @Entity({ name: 'TwoVectorItem' })
     @Index((twoVectorItem) => [twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })
     class TwoVectorItem {
@@ -469,17 +463,17 @@ describe('vector query-time tuning', () => {
     expect(tuned).toEqual(['SET LOCAL hnsw.ef_search = 200']);
   });
 
-  it('emits nothing for a field with no ANN index', () => {
+  it('should emit nothing for a field with no ANN index', () => {
     expect(pg.vectorTuningStatements(getMeta(VectorItem), rank)).toEqual([]);
   });
 
-  it('emits nothing without $candidates', () => {
+  it('should emit nothing without $candidates', () => {
     expect(pg.vectorTuningStatements(getMeta(HnswItem), { $sort: { vec: { $vector: [1, 2, 3] } } })).toEqual([]);
   });
 
   // The ANN index is what ranks: pgvector reaches for HNSW on an `ORDER BY distance LIMIT`, so a
   // query that never orders by distance would be setting a knob for a scan that does not use it.
-  it('emits nothing when the query does not rank by distance', () => {
+  it('should emit nothing when the query does not rank by distance', () => {
     expect(pg.vectorTuningStatements(getMeta(HnswItem), { $candidates: 200 })).toEqual([]);
   });
 
@@ -497,20 +491,20 @@ describe('vector query-time tuning', () => {
     },
   );
 
-  it('needs a transaction on Postgres and nowhere else', () => {
-    expect(pg.vectorTuningNeedsTransaction).toBe(true);
-    expect(new SqliteDialect().vectorTuningNeedsTransaction).toBe(false);
-    expect(new MariaDialect().vectorTuningNeedsTransaction).toBe(false);
+  it('should need a transaction on Postgres and nowhere else', () => {
+    expect(pg.features.vectorTuningNeedsTransaction).toBe(true);
+    expect(new SqliteDialect().features.vectorTuningNeedsTransaction).toBe(false);
+    expect(new MariaDialect().features.vectorTuningNeedsTransaction).toBe(false);
   });
 
   // SQLite, libSQL and Turso compute every distance, so there is no candidate list to widen.
-  it('emits nothing where the search is exact', () => {
+  it('should emit nothing where the search is exact', () => {
     expect(new SqliteDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
     expect(new TursoDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
   });
 
   /** MariaDB scopes the variable to the one statement, so it prefixes the SQL instead of preceding it. */
-  it('prefixes the statement on MariaDB rather than running a SET of its own', () => {
+  it('should prefix the statement on MariaDB rather than running a SET of its own', () => {
     @Entity({ name: 'MariaVecItem' })
     @Index((mariaVecItem) => [mariaVecItem.vec], { type: 'vector', distance: 'cosine' })
     class MariaVecItem {
@@ -527,7 +521,7 @@ describe('vector query-time tuning', () => {
   });
 
   /** One prefix sets every variable the statement needs: the tuning, and the cap a to-many lifts. */
-  it('sets the tuning beside the to-many cap in one prefix on MariaDB', () => {
+  it('should set the tuning beside the to-many cap in one prefix on MariaDB', () => {
     @Entity({ name: 'MariaVecChunk' })
     class MariaVecChunk {
       @Id({ type: Number }) id?: number;

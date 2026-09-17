@@ -47,10 +47,8 @@ class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
 
 describe('AbstractPoolQuerier connection lifecycle', () => {
   /**
-   * `lazyConnect` is `this.conn ??= await this.connect()` and releasing clears `conn`, so a stray call
-   * after release used to take a *second* connection from the pool with nobody left to give it back:
-   * the code that owned the release had already finished. Every occurrence cost the pool a connection
-   * permanently, and after `max` of them every acquire blocks forever.
+   * A call after release would take a second connection from the pool with nobody left to hand it back,
+   * so a released querier refuses instead.
    */
   it('should refuse to reconnect after being released', async () => {
     const querier = new StubPoolQuerier();
@@ -64,10 +62,8 @@ describe('AbstractPoolQuerier connection lifecycle', () => {
   });
 
   /**
-   * The handle used to be cleared only after `releaseConn` resolved, so a pool that rejected the
-   * hand-back left the querier pointing at a connection it had already tried to return. A later release
-   * then returned it twice, which pg reports as `Release called on client which has already been
-   * released to the pool`.
+   * The handle is cleared before `releaseConn` settles, so a rejected hand-back cannot be followed by a
+   * second release of the same connection.
    */
   it('should drop the connection even when handing it back fails', async () => {
     const querier = new StubPoolQuerier();

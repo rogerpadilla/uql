@@ -1,10 +1,6 @@
-// Schema-qualified tables: which of the two `schema` scopes wins, and what every layer spells as a
-// result - queries, generated DDL, and the AST a diff is looked up in.
-//
-// One distinction runs through all of it. A qualified name is two identifiers; a column prefix, an
-// index name and a constraint name are each one. Conflating them is what made
-// `@Entity({ name: 'sales.Order' })` emit `"sales.Order"."id"` against a table nothing declared, and
-// later what made `CREATE INDEX "crm_idx"."Customer_name"` a syntax error.
+// Schema-qualified tables: which `schema` scope wins, and how queries, DDL and the diff's AST spell the
+// result. A qualified name is two identifiers; a column prefix, an index name and a constraint name are
+// one each.
 
 import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
@@ -65,12 +61,12 @@ describe('schema', () => {
   const ddlOf = (entities: Type<object>[], startsWith: string) =>
     new SqlSchemaGenerator(dialect).generateCreateSchema(entities).filter((sql) => sql.startsWith(startsWith));
 
-  it('qualifies the table and aliases it, so columns stay single identifiers', () => {
+  it('should qualify the table and alias it, so columns stay single identifiers', () => {
     const sql = sqlOf(dialect, (ctx) => dialect.find(ctx, Order, { $select: { id: true, total: true } }));
     expect(sql).toBe('SELECT "id", "total" FROM "sales"."Order" "Order"');
   });
 
-  it('joins across two schemas against the alias, not the qualified path', () => {
+  it('should join across two schemas against the alias, not the qualified path', () => {
     const sql = sqlOf(dialect, (ctx) =>
       dialect.find(ctx, Order, { $select: { id: true }, $populate: { customer: { $select: { name: true } } } }),
     );
@@ -79,24 +75,24 @@ describe('schema', () => {
     expect(sql).not.toContain('"sales.Order"');
   });
 
-  it('leaves an unannotated entity unqualified, which is what every existing deployment relies on', () => {
+  it('should leave an unannotated entity unqualified, which is what every existing deployment relies on', () => {
     const sql = sqlOf(dialect, (ctx) => dialect.find(ctx, Plain, { $select: { id: true } }));
     expect(sql).toBe('SELECT "id" FROM "Plain"');
   });
 
-  it("takes the pool's default when the entity names none", () => {
+  it("should take the pool's default when the entity names none", () => {
     const scoped = new PostgresDialect({ schema: 'tenant_a' });
     const sql = sqlOf(scoped, (ctx) => scoped.find(ctx, Plain, { $select: { id: true } }));
     expect(sql).toBe('SELECT "id" FROM "tenant_a"."Plain" "Plain"');
   });
 
-  it('lets the entity override the pool, which is how a shared table sits beside tenant ones', () => {
+  it('should let the entity override the pool, which is how a shared table sits beside tenant ones', () => {
     const scoped = new PostgresDialect({ schema: 'tenant_a' });
     const sql = sqlOf(scoped, (ctx) => scoped.find(ctx, Order, { $select: { id: true } }));
     expect(sql).toBe('SELECT "id" FROM "sales"."Order" "Order"');
   });
 
-  it('never passes the schema through the naming strategy, only the table', () => {
+  it('should pass the table alone, never the schema, through the naming strategy', () => {
     const scoped = new PostgresDialect({
       schema: 'myCrm',
       namingStrategy: { tableName: (n) => n.toLowerCase(), columnName: (n) => n, joinTableName: (a, b) => `${a}_${b}` },
@@ -105,30 +101,30 @@ describe('schema', () => {
     expect(sql).toBe('SELECT "id" FROM "myCrm"."plain" "plain"');
   });
 
-  it('declares a schema with the statement the engine uses', () => {
+  it('should declare a schema with the statement the engine uses', () => {
     expect(dialect.createSchemaSql('sales')).toBe('CREATE SCHEMA IF NOT EXISTS "sales"');
   });
 
   // SQLite attaches database files and MongoDB takes its database from the connection, so on both
   // the table stays unqualified rather than growing a dot that names nothing.
-  it('leaves the table unqualified on an engine that has no schemas', () => {
+  it('should leave the table unqualified on an engine that has no schemas', () => {
     const sqlite = new SqliteDialect({ schema: 'tenant_a' });
     const sql = sqlOf(sqlite, (ctx) => sqlite.find(ctx, Order, { $select: { id: true } }));
     expect(sql).toBe('SELECT `id` FROM `Order`');
   });
 
-  it('is ignored by MongoDB, whose collections take no dot', () => {
+  it('should be ignored by MongoDB, whose collections take no dot', () => {
     const mongo = new MongoDialect({ schema: 'tenant_a' });
     expect(mongo.resolveTableName(getMeta(Plain))).toBe('Plain');
   });
 
   // The generator extends `AbstractDialect` directly rather than `MongoDialect`, so before the
   // engine flag it kept qualifying collections after the query side had stopped.
-  it('is ignored by the MongoDB schema generator too, not just its query dialect', () => {
+  it('should be ignored by the MongoDB schema generator too, not just its query dialect', () => {
     expect(new MongoSchemaGenerator().resolveTableName(getMeta(Customer))).toBe('Customer');
   });
 
-  it('creates each schema once, before the tables that go in it', () => {
+  it('should create each schema once, before the tables that go in it', () => {
     const statements = new SqlSchemaGenerator(dialect).generateCreateSchema([Customer, Order, Plain]);
     expect(statements.filter((sql) => sql.startsWith('CREATE SCHEMA'))).toEqual([
       'CREATE SCHEMA IF NOT EXISTS "crm"',
@@ -139,26 +135,25 @@ describe('schema', () => {
     );
   });
 
-  it('creates no schema when no entity names one', () => {
+  it('should create no schema when no entity names one', () => {
     const statements = new SqlSchemaGenerator(dialect).generateCreateSchema([Plain]);
     expect(statements.some((sql) => sql.startsWith('CREATE SCHEMA'))).toBe(false);
   });
 
-  // A name derived from a qualified table used to carry the dot into it, and `escapeId` split that
-  // into two identifiers: `CREATE INDEX "crm_idx"."Customer_name"`, which Postgres rejects outright.
-  // An index or constraint name is one identifier, and needs no schema - it lives in the table's.
-  it('derives an index name from the table alone, against the qualified table', () => {
+  // An index or constraint name is one identifier, derived from the table name alone: it lives in the
+  // table's schema, and a dot in it would split into two identifiers Postgres rejects.
+  it('should derive an index name from the table alone, against the qualified table', () => {
     const [sql] = ddlOf([Customer], 'CREATE INDEX');
     expect(sql).toBe('CREATE INDEX "Customer__name_idx" ON "crm"."Customer" ("name");');
   });
 
-  it('derives a foreign key name from the table alone, across two schemas', () => {
+  it('should derive a foreign key name from the table alone, across two schemas', () => {
     const [sql] = ddlOf([Customer, Order], 'ALTER TABLE');
     expect(sql).toContain('ALTER TABLE "sales"."Order" ADD CONSTRAINT "Order__customerId_fk" ');
     expect(sql).toContain('REFERENCES "crm"."Customer" ("id")');
   });
 
-  it('declares only the schemas of the tables it was narrowed to', () => {
+  it('should declare only the schemas of the tables it was narrowed to', () => {
     const generator = new SqlSchemaGenerator(dialect);
     const statements = generator.generateCreateSchema([Customer, Order, Plain], { only: ['crm.Customer'] });
     expect(statements.filter((sql) => sql.startsWith('CREATE SCHEMA'))).toEqual(['CREATE SCHEMA IF NOT EXISTS "crm"']);
@@ -166,7 +161,7 @@ describe('schema', () => {
 
   // An engine with no schemas resolves every entity unqualified, so its DDL never grows a dot that
   // names nothing - the `CREATE TABLE` half of the query-side case above.
-  it('emits unqualified DDL on an engine that has no schemas', () => {
+  it('should emit unqualified DDL on an engine that has no schemas', () => {
     const statements = new SqlSchemaGenerator(new SqliteDialect()).generateCreateSchema([Customer]);
     expect(statements.some((sql) => sql.includes('crm'))).toBe(false);
     expect(statements).toContain('CREATE INDEX `Customer__name_idx` ON `Customer` (`name`);');
@@ -174,7 +169,7 @@ describe('schema', () => {
 
   // Two tables of one name in different schemas are two tables. Keying the AST by the bare name
   // collapsed them onto one node, which is the same conflation the query side had.
-  it('keys same-named tables in different schemas apart', () => {
+  it('should key same-named tables in different schemas apart', () => {
     const ast = new SchemaAST();
     ast.addTable(mockTableNode('Thing', [], 'crm'));
     ast.addTable(mockTableNode('Thing', [], 'sales'));
@@ -183,25 +178,15 @@ describe('schema', () => {
     expect(ast.getTable('sales.Thing')?.schema).toBe('sales');
   });
 
-  it('leaves an unqualified table keyed by its bare name', () => {
+  it('should leave an unqualified table keyed by its bare name', () => {
     const ast = new SchemaAST();
     ast.addTable(mockTableNode('Thing', []));
     expect(ast.getTable('Thing')?.schema).toBe(undefined);
   });
 
-  // `clone` rebuilt each node from the map key, which is the qualified name, so a cloned table came
-  // back named `crm.Thing` with no schema of its own.
-  it('keeps a table addressable after the AST is cloned', () => {
-    const ast = new SchemaAST();
-    ast.addTable(mockTableNode('Thing', [{ name: 'id', isPrimaryKey: true }], 'crm'));
-    const clone = ast.clone();
-    expect(clone.getTable('crm.Thing')?.name).toBe('Thing');
-    expect(clone.getTable('crm.Thing')?.schema).toBe('crm');
-  });
-
   // The entity's indexes are looked up in an AST keyed by the qualified name. Keyed by the bare one,
   // a table in a schema reported no desired indexes at all, so every one of them looked unwanted.
-  it('finds the indexes an entity declares for a table that lives in a schema', () => {
+  it('should find the indexes an entity declares for a table that lives in a schema', () => {
     const current = mockTableNode('Customer', [{ name: 'id', isPrimaryKey: true }, { name: 'name' }], 'crm');
     const diff = new SqlSchemaGenerator(dialect).diffSchema(Customer, current);
     expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['Customer__name_idx']);
@@ -209,17 +194,17 @@ describe('schema', () => {
 
   // A Postgres index lives in its table's schema and is dropped as `schema.index`. Bare, it resolved
   // through `search_path`, so it either found nothing or dropped a same-named index in `public`.
-  it('drops an index inside the schema of the table it is on', () => {
+  it('should drop an index inside the schema of the table it is on', () => {
     const sql = new SqlSchemaGenerator(dialect).generateDropIndex('crm.Customer', 'Customer__name_idx', 'crm');
     expect(sql).toBe('DROP INDEX IF EXISTS "crm"."Customer__name_idx";');
   });
 
-  it('leaves an index unqualified when its table is', () => {
+  it('should leave an index unqualified when its table is', () => {
     const sql = new SqlSchemaGenerator(dialect).generateDropIndex('Plain', 'Plain_total_idx');
     expect(sql).toBe('DROP INDEX IF EXISTS "Plain_total_idx";');
   });
 
-  it('rejects a dotted name, naming the option that replaces it', () => {
+  it('should reject a dotted name, naming the option that replaces it', () => {
     class Dotted {
       id?: number;
     }

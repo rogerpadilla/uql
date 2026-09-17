@@ -4,17 +4,8 @@ import { pathToFileURL } from 'node:url';
 import type { Config } from '../type/index.js';
 
 /**
- * Loads the config with a plain `import()`, leaving TypeScript to whatever runs the CLI.
- *
- * @remarks uql deliberately bundles no transpiler. The config imports the entity classes, so whoever
- * loads it decides which decorator spec their decorators are invoked with, and only the runtime knows
- * the project's `tsconfig.json`. Bun and `node --import tsx` both get it right; a bundled loader would
- * be guessing, and `jiti` guessed wrong (it hardcodes the legacy transform, so standard decorators were
- * called as `(prototype, key)` and every field was silently dropped).
- *
- * Node's own type stripping covers a config that is only types plus a plain object, which is why the
- * error below distinguishes the two cases: decorators are not erasable syntax, so a config that reaches
- * decorated entity classes needs a runtime that actually transforms them.
+ * Loads the config with a plain `import()`, leaving TypeScript to the runtime: uql bundles no transpiler,
+ * since only the project knows its decorator spec. Node's type stripping handles no decorators.
  */
 async function importConfig(path: string): Promise<unknown> {
   const mod = (await import(pathToFileURL(path).href).catch((cause: unknown) => {

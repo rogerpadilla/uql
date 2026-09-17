@@ -1,7 +1,7 @@
 import { expect, it } from 'vitest';
 import { captureContext, getContext, withContext } from './context.js';
 
-it('captureContext replays the captured context on a later, foreign async tick', async () => {
+it('should replay a captured context on a later, foreign async tick', async () => {
   const scoped = withContext({ tenantId: 7 }, () => captureContext());
 
   // outside the original scope the ambient context is gone...
@@ -15,7 +15,7 @@ it('captureContext replays the captured context on a later, foreign async tick',
   expect(getContext()).toBeUndefined();
 });
 
-it('captureContext with no active context just invokes the callback', () => {
+it('should just invoke the callback of a capture made with no active context', () => {
   const scoped = captureContext();
   expect(scoped(() => getContext())).toBeUndefined();
   expect(scoped(() => 'ran')).toBe('ran');

@@ -1,7 +1,6 @@
 import type {
   EntityData,
   EntityGetter,
-  EntityId,
   EntityIndexInput,
   EntityMembers,
   EntityMeta,
@@ -253,11 +252,8 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     throw TypeError(`'${entity.name}' must have fields`);
   }
 
-  // A later call composes onto the entity, so saying nothing about the table retracts nothing - which
-  // is why `derivedName` is only ever *set*, never recomputed from what a previous call left.
-  // It records that the class name stood in, telling a naming strategy there is something to derive;
-  // comparing the two cannot, since an entity may name its table exactly what its class is called and
-  // a spec's minted class is named after its table.
+  // A later call composes onto the entity, so a name is only ever set, and `derivedName` records that
+  // the class name stood in, which is what a naming strategy derives from.
   if (opts.name !== undefined) {
     meta.name = opts.name;
     meta.derivedName = false;
@@ -340,28 +336,12 @@ export function relationOf<E>(meta: EntityMeta<E>, key: RelationKey<E>): Relatio
   return relation;
 }
 
-/**
- * Whether the caller named every column of the row's primary key, so {@link idOf} can name the row.
- *
- * `!= null` rather than falsiness: `0` and an empty string are ids a row can legitimately carry, and
- * reading them as "no id" is how a write of that row turned into a second insert. Distinct from
- * "does the row carry this column", which an insert asks of `undefined` alone because that is what
- * decides whether the column appears in its `VALUES` list at all.
- */
+/** Whether the row names every column of its primary key, `0` and `''` included. */
 export function namesKey<E>(meta: EntityMeta<E>, row: EntityData<E>): boolean {
   return meta.ids.every((key) => row[key] != null);
 }
 
-/**
- * A row's primary key: the value itself for a single key, an object carrying every key for a
- * composite - which is {@link WrittenId}, and reads as the {@link EntityId} a `$where` takes.
- *
- * What a settled write names its rows by, and what a write hands back. Naming a composite row by one
- * of its columns would address every row agreeing on that one.
- *
- * `WrittenId` does not reduce for an unresolved `E`, so which branch this entity is in cannot be
- * proven here, only checked - which is what `ids.length` does.
- */
+/** A row's primary key: its value, or a map of every column on a composite, checked at run time. */
 export function idOf<E>(meta: EntityMeta<E>, row: EntityData<E>): WrittenId<E> {
   const { ids } = meta;
   const id = ids.length === 1 ? row[ids[0]] : Object.fromEntries(ids.map((key) => [key, row[key]]));
@@ -649,11 +629,8 @@ function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
 }
 
 /**
- * Merges `ancestor` and its own ancestors into `meta`, nearest first, so a further one never overwrites
- * a nearer. An `abstract class BaseEntity` carrying `@Field`s but no `@Entity()` has nobody to drain
- * its registrations, so do it here. Walking the *class* prototype chain rather than the metadata
- * object's is what makes this work on every transformer: tsc and esbuild chain metadata across
- * `extends`, SWC does not.
+ * Merges `ancestor` and its ancestors into `meta`, nearest first, draining an undecorated base's
+ * registrations. Walks the class chain, since not every compiler chains decorator metadata.
  */
 function inheritFrom<E>(meta: EntityMeta<E>, ancestor: Type<object> | undefined): void {
   for (let parent = ancestor; parent && parent !== Object; parent = parentOf(parent)) {

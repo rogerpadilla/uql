@@ -6,6 +6,7 @@ import type {
   Query,
   QueryContext,
   QueryVectorSearch,
+  SqlDialectFeatures,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
@@ -16,37 +17,17 @@ import { AbstractDialect } from './abstractDialect.js';
 import type { VectorCast } from './vectorCast.js';
 
 /**
- * Vector similarity search for SQL dialects: the `ORDER BY <distance>` expression, its projection as
- * a named score, and the index metadata the schema generator reads.
- *
- * A layer of its own because it is nearly self-contained - it needs only `escapeId` from the SQL
- * dialect above it - unlike the JSON operators, which are woven into the generic comparison
- * machinery (`neExpr`, `numericCast`, `formatIn`, ...) and belong with it.
- *
- * A dialect declares which metrics it has, and how it spells each, in {@link vectorMetrics}. Both
- * shapes live in that one map - an operator (`"col" <=> $1`, Postgres/CockroachDB) or a function call
- * (`VEC_DISTANCE_COSINE(col, ?)`, MariaDB/SQLite) - so {@link appendVectorSort} is written once and an
- * engine with no vector search at all is simply the empty map.
+ * Vector search for the SQL dialects: the distance a `$sort` ranks by and projects, and the ANN tuning.
+ * Each dialect lists its metrics in {@link vectorMetrics}, an operator or a function; empty means no search.
  */
 export abstract class VectorSqlDialect extends AbstractDialect {
   readonly vectorExtension: string | undefined = undefined;
 
-  /**
-   * Whether {@link vectorTuningStatements} only applies inside a transaction. `SET LOCAL` does
-   * nothing outside one, so the querier - the only layer that knows whether a transaction is open -
-   * refuses instead of running a tuning that would silently not apply.
-   */
-  readonly vectorTuningNeedsTransaction: boolean = false;
+  abstract override readonly features: SqlDialectFeatures;
 
   /**
-   * `SET`s that widen an ANN index's search for one query, run before it on the same connection.
-   *
-   * Keyed off `$sort` rather than a `$where` `$near`, because the ANN index is what ranks: pgvector
-   * reaches for HNSW on an `ORDER BY distance LIMIT`, while a bare distance predicate scans whatever
-   * the planner picks. Tuning a query that never touches the index would set a knob for nothing.
-   *
-   * Empty by default: SQLite, libSQL and Turso compute every distance, so there is no candidate list
-   * to widen, and a field with no ANN index has nothing to tune either.
+   * `SET`s widening an ANN index's search for one query, run before it on its connection. Keyed off `$sort`,
+   * since the index is what ranks. Empty where every distance is computed anyway.
    */
   vectorTuningStatements<E>(_meta: EntityMeta<E>, _q: Query<E>): readonly string[] {
     return [];
@@ -58,13 +39,8 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   }
 
   /**
-   * The ANN index `$candidates` would tune for this query, and nothing when there is none to tune -
-   * no `$candidates`, no vector ranking, or a field with no ANN index on it. One place, so the two
-   * dialects that act on it cannot disagree about when tuning applies.
-   *
-   * Validates here rather than at each emitter because the number is spelled into the statement
-   * rather than bound: `SET LOCAL hnsw.ef_search = $1` is not a thing either engine accepts. `/http`
-   * casts client JSON straight to `Query`, so `'abc'` and `null` both reach this.
+   * The ANN index `$candidates` tunes for the query, or nothing to tune. Checked here, since the number is
+   * spelled into a `SET` rather than bound, and `/http` input is untyped.
    */
   protected tunedVectorIndex<E>(meta: EntityMeta<E>, q: Query<E>): EntityIndexMeta | undefined {
     const candidates = q.$candidates;
@@ -112,17 +88,11 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   }
 
   /**
-   * Whether this engine has pgvector's narrower vector types (`halfvec`, `sparsevec`) or only the one.
-   * Declared by the dialect that has them rather than looked up in a table keyed by dialect name.
-   */
-  protected readonly hasNarrowVectorTypes: boolean = false;
-
-  /**
    * The vector type this dialect actually has for a declared one, so the cast follows the column
    * rather than naming a type the engine does not define.
    */
   supportedVectorType(cast: VectorCast): VectorCast {
-    return this.hasNarrowVectorTypes ? cast : 'vector';
+    return this.features.narrowVectorTypes ? cast : 'vector';
   }
 
   /**

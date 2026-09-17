@@ -1,14 +1,7 @@
 /**
- * What a content type defined at runtime costs at compile time - the only thing it costs, since the
- * runtime half all works: `defineEntity.runtime.spec.ts` registers, migrates and queries one. The
- * shape is unknown when the code is compiled, so the querier checks it against whatever row type the
- * caller can supply, and these pin how much survives at each end of that.
- *
- * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
- *
- * Every `@ts-expect-error` below sits on the property it is about, which is where TypeScript 7 - what
- * this repo compiles with - reports it. An older compiler reports the same error at the call instead,
- * so an editor running its own 5.x/6.x server marks these unused; the checks hold either way.
+ * What a content type defined at runtime costs at compile time; `defineEntity.runtime.spec.ts` covers
+ * the runtime half. Each `@ts-expect-error` sits on the property TypeScript 7 reports, where an older
+ * compiler reports the call instead. Type-checked by `bun run ts` only.
  */
 import { idKey, type Querier, type Scalar, type Type } from '../../type/index.js';
 import { defineEntity, defineField } from './definition.js';

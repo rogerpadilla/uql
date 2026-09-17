@@ -6,35 +6,13 @@ import type { ExtraOptions } from '../type/index.js';
 import { decodeWideNumber } from '../util/wideNumber.js';
 import { type PgliteDatabase, PgliteQuerier } from './pgliteQuerier.js';
 
-/**
- * The driver's own options, minus the `dataDir` this pool takes as its first argument.
- *
- * @remarks Imported rather than restated so extensions and the filesystem hooks keep their real types:
- * `extensions: { vector }` from `@electric-sql/pglite-pgvector` is how a vector column becomes usable,
- * mirroring `LocalSqlitePoolOptions.extensions` for `sqlite-vec`. Type-only, like the `pg` imports in
- * `abstractPgQuerierPool.ts`, so nothing here reaches a runtime without the peer installed.
- */
+/** PGlite's own options but `dataDir`, the pool's first argument; `extensions: { vector }` enables pgvector. Type-only. */
 export type PglitePoolOptions = Omit<PGliteOptions, 'dataDir'>;
 
 /**
- * Pool for PGlite, Postgres compiled to WASM and run in this process. No server, no container.
- *
- * PGlite is single connection, so the shared-handle lifecycle is {@link AbstractSharedHandleQuerierPool}'s.
- * Where PGlite differs from the two SQLite-family pools there is that it does not refuse a second
- * `BEGIN`: a querier that opens a transaction while another already has one silently joins it, and that
- * one's `ROLLBACK` then discards both queriers' writes. Nothing reports it, so a unit of work that needs
- * a transaction of its own needs its own pool, and therefore its own database.
- *
- * @remarks Transactions are plain `BEGIN`/`COMMIT` statements rather than `db.transaction()`, whose
- * callback holds PGlite's transaction mutex and would block every other querier's reads until commit.
- * The cost is that PGlite cannot see the transaction, so it flushes to the filesystem after each
- * statement within one: pass `relaxedDurability: true` on a persistent `dataDir` to skip waiting on
- * those flushes.
- *
- * The dialect is plain `PostgresDialect`, `dialectName` included: PGlite *is* Postgres, so the
- * introspector, schema generator and CLI resolve to Postgres's. Both driver capabilities hold as
- * they are - PGlite serializes every built-in array type itself, and the `$n::jsonb` cast is what
- * makes its `Describe` report JSONB and pick its JSON serializer; a bare `$n` binds `[object Object]`.
+ * A pool for PGlite, Postgres in WASM in this process, on one connection. A second `BEGIN` silently joins
+ * the open transaction, so a unit of work needing its own needs its own pool. Transactions are plain
+ * statements, so pass `relaxedDurability` on a persistent `dataDir` to skip a flush per statement.
  */
 export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PostgresDialect> {
   constructor(

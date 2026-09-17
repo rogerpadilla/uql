@@ -1,6 +1,7 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { Entity, Field, Id, removeEntity } from '../entity/index.js';
+import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
@@ -45,6 +46,16 @@ export function describeMigratorSync(db: DatabaseConfig) {
     const escapeId = (id: string) => pool.dialect.escapeId(id);
     const dropTable = (tableName: string) => pool.run(`DROP TABLE IF EXISTS ${escapeId(tableName)}`);
 
+    /** The table as introspected, failing the test where it is missing. */
+    const introspectTable = async (tableName: string, tables = [tableName]) => {
+      const table = (await introspector.introspect(tables)).getTable(tableName);
+      assertDefined(table, `${tableName} was not introspected`);
+      return table;
+    };
+
+    /** The table's columns as introspected, sorted, so a test compares them as a set. */
+    const columnNamesOf = async (tableName: string) => [...(await introspectTable(tableName)).columns.keys()].sort();
+
     /** Names the table this test owns, guarantees it does not exist yet, and registers its teardown. */
     const givenNoTable = async (tableName: string) => {
       claimed.add(tableName);
@@ -64,8 +75,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
     afterAll(() => pool.end());
 
-    // Teardown here rather than trailing each test: a failed expectation used to leak its table into
-    // the shared database, where the next run's introspection would find it.
+    // Teardown here rather than trailing each test, so a failed expectation leaves no table behind for the
+    // next run's introspection.
     afterEach(async () => {
       for (const tableName of claimed) {
         await dropTable(tableName);
@@ -84,15 +95,11 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const tableName = 'AutoSyncUserTest1';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('name')} ${db.textType}`);
 
-      const before = await introspector.introspect([tableName]);
-      expect(before.getTable(tableName)).toBeDefined();
-      expect(Array.from(before.getTable(tableName)!.columns.keys()).sort()).toEqual(['id', 'name']);
+      expect(await columnNamesOf(tableName)).toEqual(['id', 'name']);
 
       await new Migrator(pool, { entities: [AutoSyncUserTest1] }).sync({ logging: true });
 
-      const after = await introspector.introspect([tableName]);
-      expect(after.getTable(tableName)).toBeDefined();
-      expect(Array.from(after.getTable(tableName)!.columns.keys()).sort()).toEqual(['email', 'id', 'name']);
+      expect(await columnNamesOf(tableName)).toEqual(['email', 'id', 'name']);
     });
 
     /**
@@ -109,10 +116,30 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Field({ type: String, index: true }) email?: string;
         @Field({ type: Number }) cost?: number;
         @Field({ type: Boolean }) active?: boolean;
+        @Field({ type: 'text' }) bio?: string;
+        @Field({ type: 'json' }) data?: object;
       }
 
       await givenNoTable('AutoSyncSettledTest');
       const migrator = new Migrator(pool, { entities: [AutoSyncSettledTest] });
+      await migrator.sync();
+
+      expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
+    });
+
+    /** Each engine reprints a default in its own words, which still has to read as the one declared. */
+    it('should have nothing to do on the defaults it created', async () => {
+      @Entity()
+      class AutoSyncDefaultsTest {
+        @Id({ type: String }) id?: string;
+        @Field({ type: String, defaultValue: "it's" }) quoted?: string;
+        @Field({ type: String, defaultValue: 'a\\b' }) slash?: string;
+        @Field({ type: 'text', defaultValue: 'none' }) note?: string;
+        @Field({ type: Number, defaultValue: -3 }) negative?: number;
+      }
+
+      await givenNoTable('AutoSyncDefaultsTest');
+      const migrator = new Migrator(pool, { entities: [AutoSyncDefaultsTest] });
       await migrator.sync();
 
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
@@ -177,13 +204,12 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const tableName = 'AutoSyncIndexTest';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('email')} ${db.textType}`);
 
-      const before = await introspector.introspect([tableName]);
-      expect(before.getTable(tableName)!.indexes).toEqual([]);
+      expect((await introspectTable(tableName)).indexes).toEqual([]);
 
       await new Migrator(pool, { entities: [AutoSyncIndexTest] }).sync({ logging: true });
 
       const after = await introspector.introspect([tableName]);
-      expect(after.getTable(tableName)!.indexes.map((index) => index.name)).toEqual(['AutoSyncIndexTest__email_idx']);
+      expect(after.getTable(tableName)?.indexes.map((index) => index.name)).toEqual(['AutoSyncIndexTest__email_idx']);
     });
 
     it('should add multiple new properties to an existing entity', async () => {
@@ -201,10 +227,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncProductTest1] }).sync({ logging: true });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['active', 'description', 'id', 'name', 'price']);
+      expect(await columnNamesOf(tableName)).toEqual(['active', 'description', 'id', 'name', 'price']);
     });
 
     it('should not modify table when schema is already in sync', async () => {
@@ -217,14 +240,11 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const tableName = 'AutoSyncCategoryTest1';
       await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('name')} ${db.textType}`);
 
-      const before = await introspector.introspect([tableName]);
-      expect(before.getTable(tableName)).toBeDefined();
+      const before = await columnNamesOf(tableName);
 
       await new Migrator(pool, { entities: [AutoSyncCategoryTest1] }).sync({ logging: true });
 
-      const after = await introspector.introspect([tableName]);
-      expect(after.getTable(tableName)).toBeDefined();
-      expect(after.getTable(tableName)!.columns.size).toBe(before.getTable(tableName)!.columns.size);
+      expect(await columnNamesOf(tableName)).toEqual(before);
     });
 
     it('should create a new table if it does not exist', async () => {
@@ -247,7 +267,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const ast = await introspector.introspect([tableName]);
       const table = ast.getTable(tableName);
       expect(table).toBeDefined();
-      expect(table!.columns.size).toBe(3);
+      expect(table?.columns.size).toBe(3);
     });
 
     it('should handle entity with custom table name', async () => {
@@ -263,10 +283,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncCustomNameTest1] }).sync({ logging: true });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['email', 'id', 'username']);
+      expect(await columnNamesOf(tableName)).toEqual(['email', 'id', 'username']);
     });
 
     it('should handle field with custom column name', async () => {
@@ -281,10 +298,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncCustomColumnTest1] }).sync({ logging: true });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'user_email']);
+      expect(await columnNamesOf(tableName)).toEqual(['id', 'user_email']);
     });
 
     it('should handle field rename safely (add new, keep old)', async () => {
@@ -299,10 +313,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncRenameTest] }).sync({ logging: true });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'newName', 'oldName']);
+      expect(await columnNamesOf(tableName)).toEqual(['id', 'newName', 'oldName']);
     });
 
     it('should drop old column and add new one when renaming with safe: false', async () => {
@@ -321,10 +332,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         drop: true,
       });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['id', 'newName']);
+      expect(await columnNamesOf(tableName)).toEqual(['id', 'newName']);
     });
 
     it('should NOT alter existing DOUBLE column to BIGINT for number field (Safe Mode)', async () => {
@@ -339,20 +347,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncFloatTest] }).sync({ logging: true });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-
-      const costCol = table!.columns.get('cost');
-      expect(costCol).toBeDefined();
-
-      const type = costCol!.type.category.toLowerCase();
-      const isFloatCompatible =
-        type.includes('double') || type.includes('float') || type.includes('real') || type.includes('decimal');
-
-      expect(isFloatCompatible).toBe(true);
-      expect(type).not.toContain('bigint');
-      expect(type).not.toContain('int8'); // postgres bigint alias
+      const costCol = (await introspectTable(tableName)).columns.get('cost');
+      expect(['float', 'decimal']).toContain(costCol?.type.category);
     });
 
     it('should block drops even if safe: false (when drop: false)', async () => {
@@ -370,19 +366,13 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncNoDropTest] }).sync({ logging: true, safe: false });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-      expect(Array.from(table!.columns.keys()).sort()).toEqual(['extraColumn', 'id', 'name']);
+      expect(await columnNamesOf(tableName)).toEqual(['extraColumn', 'id', 'name']);
     });
 
     /**
-     * A key a foreign key can point at, spelled the same as the column that will reference it. Not
-     * {@link DatabaseConfig.serialIdColumn}, which is `BIGINT UNSIGNED` on the MySQL family: an
-     * engine refuses a constraint whose two sides differ in signedness.
-     *
-     * The child table is claimed first so the shared teardown drops it first - a parent cannot go
-     * while a constraint still points at it, and a failed drop leaks the table into the next test.
+     * A key spelled like the column that will reference it, since an engine refuses a constraint whose
+     * sides differ in signedness (`serialIdColumn` is unsigned on MySQL). The child is claimed first, so
+     * the teardown drops it before the parent it points at.
      */
     const givenRelatedTables = async (parent: string, child: string) => {
       const idColumn = `${escapeId('id')} ${db.keyColumnType} PRIMARY KEY`;
@@ -408,12 +398,11 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await givenRelatedTables('FkSyncCompany', 'FkSyncEmployee');
       const fkTables = ['FkSyncCompany', 'FkSyncEmployee'];
-      const before = await introspector.introspect(fkTables);
-      expect(before.getTable('FkSyncEmployee')!.outgoingRelations).toHaveLength(0);
+      expect((await introspectTable('FkSyncEmployee', fkTables)).outgoingRelations).toHaveLength(0);
 
       await new Migrator(pool, { entities: [FkSyncCompany, FkSyncEmployee] }).sync({ logging: true });
 
-      const relations = (await introspector.introspect(fkTables)).getTable('FkSyncEmployee')!.outgoingRelations;
+      const relations = (await introspectTable('FkSyncEmployee', fkTables)).outgoingRelations;
       expect(relations).toHaveLength(1);
       expect(relations[0].to.table.name).toBe('FkSyncCompany');
       expect(relations[0].onDelete).toBe('CASCADE');
@@ -444,11 +433,11 @@ export function describeMigratorSync(db: DatabaseConfig) {
         );
         const fkTables = ['FkAlterCompany', 'FkAlterEmployee'];
         const before = await introspector.introspect(fkTables);
-        expect(before.getTable('FkAlterEmployee')!.outgoingRelations[0].onDelete).toBe('CASCADE');
+        expect(before.getTable('FkAlterEmployee')?.outgoingRelations[0].onDelete).toBe('CASCADE');
 
         await new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] }).sync({ logging: true, safe: false });
 
-        const relations = (await introspector.introspect(fkTables)).getTable('FkAlterEmployee')!.outgoingRelations;
+        const relations = (await introspectTable('FkAlterEmployee', fkTables)).outgoingRelations;
         expect(relations).toHaveLength(1);
         expect(relations[0].onDelete).toBe('SET NULL');
       },
@@ -477,6 +466,28 @@ export function describeMigratorSync(db: DatabaseConfig) {
       expect(await migrator.planSync()).toEqual([]);
     });
 
+    /** A foreign key to a table no entity names is left alone, as that table is, even by an unsafe sync. */
+    it.skipIf(!db.dialect.features.foreignKeyAlter)(
+      'should leave alone a foreign key to a table no entity names',
+      async () => {
+        @Entity()
+        class FkUnnamedEmployee {
+          @Id({ type: Number }) id?: number;
+          @Field({ type: Number }) companyId?: number;
+        }
+
+        await givenRelatedTables('FkUnnamedCompany', 'FkUnnamedEmployee');
+        await pool.run(
+          `ALTER TABLE ${escapeId('FkUnnamedEmployee')} ADD CONSTRAINT ${escapeId('fk_unnamed_company')} ` +
+            `FOREIGN KEY (${escapeId('companyId')}) REFERENCES ${escapeId('FkUnnamedCompany')} (${escapeId('id')})`,
+        );
+
+        const migrator = new Migrator(pool, { entities: [FkUnnamedEmployee] });
+
+        expect(await migrator.planSync({ safe: false })).toEqual([]);
+      },
+    );
+
     /**
      * The upgrade path for a database created while the serial was a fixed `BIGINT UNSIGNED`: the key
      * has to come back to the type it declares, or every foreign key pointing at it stays refused.
@@ -494,7 +505,9 @@ export function describeMigratorSync(db: DatabaseConfig) {
       }
 
       await givenNoTable('FkLegacyEmployee');
-      await givenTable('FkLegacyCompany', db.legacyUnsignedIdColumn!);
+      const legacyKey = db.legacyUnsignedIdColumn;
+      assertDefined(legacyKey);
+      await givenTable('FkLegacyCompany', legacyKey);
       await pool.run(
         `CREATE TABLE ${escapeId('FkLegacyEmployee')} (${db.legacyUnsignedIdColumn}, ${escapeId('companyId')} ${db.keyColumnType})`,
       );
@@ -503,17 +516,17 @@ export function describeMigratorSync(db: DatabaseConfig) {
       await migrator.sync({ logging: true, safe: false });
 
       const after = await introspector.introspect(['FkLegacyCompany', 'FkLegacyEmployee']);
-      expect(after.getTable('FkLegacyCompany')!.columns.get('id')!.type.unsigned).toBeFalsy();
+      const companyKey = after.getTable('FkLegacyCompany')?.columns.get('id');
+      assertDefined(companyKey);
+      expect(companyKey.type.unsigned).toBeFalsy();
       // The point of the alter: the constraint can finally be created.
-      expect(after.getTable('FkLegacyEmployee')!.outgoingRelations).toHaveLength(1);
+      expect(after.getTable('FkLegacyEmployee')?.outgoingRelations).toHaveLength(1);
       expect(await migrator.planSync({ safe: false })).toEqual([]);
     });
 
     /**
-     * An enum is a column `CHECK`, not a native type, so only the database can say the constraint was
-     * emitted and is enforced. A column *added* to a table that already exists used to arrive without
-     * it - the alter path renders from a `ColumnSchema`, which carried no values - so the entity
-     * promised a union the database accepted anything for.
+     * An enum is a column `CHECK`, so only the database can say it was emitted and is enforced, on a
+     * column added to a table that exists as on a created one.
      */
     it('should constrain an enum column it adds to an existing table', async () => {
       @Entity()
@@ -680,11 +693,6 @@ export function describeMigratorSync(db: DatabaseConfig) {
       expect(await migrator.planSync()).toEqual([]);
     });
 
-    /**
-     * `columnsToAdd` carries a {@link ColumnSchema}, which listed its fields by hand and so had no
-     * `generatedAs`: the ALTER emitted a plain column nobody ever fills. Only re-reading the value
-     * back proves the expression came with it.
-     */
     /** A table with a row in it, and the migrator that would give it a stored computed column. */
     const givenTableGainingAComputedColumn = async () => {
       @Entity({ name: 'SyncComputedAdded' })
@@ -700,6 +708,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       return new Migrator(pool, { entities: [ComputedAdded] });
     };
 
+    /** Reading the value back is what shows the added column carries its expression. */
     it.skipIf(!db.dialect.features.generatedColumnAdd)(
       'should add a stored computed column to a table that already exists',
       async () => {
@@ -766,14 +775,9 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncUnsafeAlterTest] }).sync({ logging: true, safe: false });
 
-      const ast = await introspector.introspect([tableName]);
-      const table = ast.getTable(tableName);
-      expect(table).toBeDefined();
-
-      const costCol = table!.columns.get('cost');
-      expect(costCol).toBeDefined();
-
-      const type = costCol!.type.category.toLowerCase();
+      const costCol = (await introspectTable(tableName)).columns.get('cost');
+      assertDefined(costCol);
+      const type = costCol.type.category.toLowerCase();
       expect(type).toContain('int');
       expect(type).not.toContain('double');
     });

@@ -5,14 +5,7 @@ import { renderIndexColumn } from '../../util/ddlExpression.util.js';
 import { derivedForeignKeyName, derivedIndexName } from '../../util/sql.util.js';
 import type { FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
-/**
- * A table the builder names but has not seen.
- *
- * A `RelationshipNode` points at a whole `TableNode` because the AST wires `incomingRelations` through
- * it; a builder creating one table has no node for the table its foreign key targets, and the
- * generator reads only the name. Stated once, so the three casts it replaces cannot be mistaken for a
- * node that was resolved and lost.
- */
+/** A table the builder names but has not seen, which the generator reads only the name of. */
 function unresolvedTable(name: string): TableNode {
   return { name } as TableNode;
 }
@@ -77,15 +70,8 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryR
 }
 
 /**
- * A builder's column as the AST node the generators render from.
- *
- * The shared half is spread, not copied field by field: `ColumnDefinition` *is* a `ColumnNode` minus
- * the graph links, so spreading it and adding those back is a node by construction. Listed one by one,
- * the copy silently dropped whatever the node gained next - `enum` first, and the type had no way to
- * say so. The two builder-only keys are destructured off: `index` and `foreignKey` are lifted onto the
- * table by `columnIndex`/`columnForeignKey`, which is the path that renders them.
- *
- * No `references` node either: `SchemaAST.addRelationship` sets that one.
+ * A builder's column as the node the generators render, spread so a field the node gains carries over.
+ * `index` and `foreignKey` are lifted onto the table elsewhere; `addRelationship` sets `references`.
  */
 export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName: string): ColumnNode {
   const { index: _index, foreignKey: _foreignKey, ...column } = col;

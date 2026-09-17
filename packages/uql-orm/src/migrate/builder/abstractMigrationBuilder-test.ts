@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
-import type { Spec } from '../../test/index.js';
+import { assertDefined, type Spec } from '../../test/index.js';
 import type { QuerierPool, SchemaIntrospector, SqlQuerier, TableSchema } from '../../type/index.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
 import type { MigrationBuilder } from './migrationBuilder.js';
@@ -18,12 +18,9 @@ export const BUILDER_TABLES = {
 } as const;
 
 /**
- * Shared integration suite for {@link MigrationBuilder}, run against a real engine.
- *
- * Its unit specs assert the SQL string a builder emits, which cannot tell whether an engine accepts
- * it: `alterTable` returned before its statements had run for as long as it existed, and every one of
- * those specs passed. Only the operations every engine supports live here; the ones an engine may
- * refuse are in {@link AlterCapableMigrationBuilderIt} or the dialect's own runner.
+ * Shared integration suite for {@link MigrationBuilder}: whether an engine accepts what a builder emits,
+ * which its unit specs, asserting SQL text, cannot tell. The operations an engine may refuse are in
+ * {@link AlterCapableMigrationBuilderIt} or the dialect's own runner.
  */
 export abstract class AbstractMigrationBuilderIt implements Spec {
   private readonly claimed = new Set<string>();
@@ -103,8 +100,8 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
 
   protected async getTableSchema(tableName: string): Promise<TableSchema> {
     const schema = await this.introspector.getTableSchema(tableName);
-    expect(schema, `Table ${tableName} not found`).toBeDefined();
-    return schema as TableSchema;
+    assertDefined(schema, `Table ${tableName} not found`);
+    return schema;
   }
 
   protected async getColumnNames(tableName: string) {
@@ -118,11 +115,8 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   }
 
   /**
-   * The column types the factory offers, minus `vector`, which needs an engine built for it.
-   *
-   * Named per type rather than asserted per type: what is under test is that the SQL each one
-   * produces is a type the engine actually has, and a `CREATE TABLE` naming one that does not fails
-   * outright. `jsonb`, `uuid` and `timestamptz` are the ones only Postgres has natively.
+   * Every column type the factory offers, bar `vector`: a `CREATE TABLE` naming a type the engine has not
+   * got fails outright. `jsonb`, `uuid` and `timestamptz` are native to Postgres alone.
    */
   async shouldCreateATableWithEveryColumnType() {
     await this.withBuilder(async (builder) => {

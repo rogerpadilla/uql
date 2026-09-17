@@ -1,13 +1,13 @@
 import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
 import { jsonPath } from '../dialect/jsonSql.js';
-import { MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
+import { MYSQL_FEATURES, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type {
-  DialectFeatures,
   EntityMeta,
   FieldOptions,
   Query,
   QueryContext,
+  SqlDialectFeatures,
   Type,
   VectorDistance,
   VectorMetric,
@@ -21,17 +21,16 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   // MariaDB 10.5+ has `INSERT ... RETURNING`, so ids come back exact per row - the upsert's too.
   override readonly insertIdSource = 'returning';
 
-  /** MariaDB has no `FOR ... OF`, so a lock cannot be narrowed to one table of a join. */
-  override readonly supportsLockOf = false;
-
   /**
    * Unlike MySQL: `VECTOR(n)` takes its dimension, every column of a vector index has to be NOT NULL,
-   * and `CREATE INDEX` takes `IF NOT EXISTS` - which MySQL's grammar has no place for.
+   * `CREATE INDEX` takes `IF NOT EXISTS`, and a lock cannot be narrowed to one table of a join.
    */
-  protected override readonly featureOverrides: Partial<DialectFeatures> = {
+  override readonly features: SqlDialectFeatures = {
+    ...MYSQL_FEATURES,
     vectorSupportsLength: true,
     vectorIndexRequiresNotNull: true,
     indexIfNotExists: true,
+    rowLockOf: false,
   };
 
   /**

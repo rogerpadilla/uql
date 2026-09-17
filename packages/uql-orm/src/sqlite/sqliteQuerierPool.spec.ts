@@ -111,8 +111,8 @@ describe('Sqlite3QuerierPool', () => {
   it('should open one database when acquisitions race', async () => {
     vi.stubGlobal('Bun', undefined);
     const pool = new Sqlite3QuerierPool(':memory:');
-    // The open is awaited, so callers arriving during the first one used to each start one of their own.
-    // The extras are unreachable and never closed, and `:memory:` makes each of them a database of its own.
+    // The open is awaited, so a caller arriving during it waits for the same database rather than opening
+    // one of its own, which on `:memory:` would be a separate, unclosed database.
     const [querier1, querier2] = await Promise.all([pool.getQuerier(), pool.getQuerier()]);
     expect(betterDatabaseCtor).toHaveBeenCalledTimes(1);
     expect(querier1.db).toBe(querier2.db);

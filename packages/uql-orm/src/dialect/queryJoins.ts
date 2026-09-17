@@ -51,11 +51,8 @@ export type QuerySortOptions = {
 };
 
 /**
- * What the statement joins, from the whole query rather than from `$populate` alone: ordering by a
- * related column needs that relation joined just as much as selecting it does. The two sources meet
- * here, so the columns, the `ORDER BY` and the row lock cannot disagree about what is in the
- * statement. `$sort` contributes to-one relations only; the rest is rejected where it is rendered.
- * `claimAlias` names each join's table, parents first.
+ * What the statement joins, from `$populate` and from a `$sort` by a to-one relation's field, so the
+ * columns, the `ORDER BY` and the lock agree. `claimAlias` names each join's table, parents first.
  */
 export function resolveQueryJoins<E>(
   meta: EntityMeta<E>,
@@ -171,13 +168,7 @@ function addSortJoins<E>(
   }
 }
 
-/**
- * The join an ordering may address at `path`, with the relation's own sort map, or why it may not.
- * Every backend answers this the same way - a to-many has no single value to order by, a relation
- * sort is a map of that relation's fields, and the path has to be joined - so it is answered once
- * here rather than per dialect, where the three checks had already drifted apart twice. Only the
- * remedy for an unjoined path is the dialect's business, which is what `unjoinable` says.
- */
+/** The join a sort may address at `path` with the relation's own sort map, or why it may not; `unjoinable` is the dialect's remedy. */
 export function resolveSortableJoin(
   relation: RelationMeta,
   path: string,

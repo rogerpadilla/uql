@@ -1,10 +1,6 @@
 /**
- * Type-level regression tests for which clauses each statement accepts, and for the values a column
- * accepts. Every negative here compiled once and produced a wrong statement at runtime. The positives
- * matter too: a clause wrongly rejected is as much a regression as one wrongly accepted.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build. Each `@ts-expect-error` fails the type-check if the error it guards ever stops happening.
+ * The clauses each statement accepts and the values a column accepts: a clause wrongly accepted
+ * produces a wrong statement, one wrongly rejected blocks a right one. Type-checked by `bun run ts` only.
  */
 import type { HttpQuerier } from '../browser/querier/httpQuerier.js';
 import type { Querier } from '../index.js';
@@ -113,10 +109,7 @@ export async function methodsAreNotRelations(querier: Querier) {
   await querier.findMany(Member, { $select: { displayName: true } });
 }
 
-/**
- * An optional property is a nullable column, so `null` is a value it holds - and clearing one is
- * what an update is for. Both of these needed an `as any` before.
- */
+/** An optional property is a nullable column, so `null` is a value it holds, and clearing one is what an update is for. */
 export async function nullIsAValueOfANullableColumn(querier: Querier) {
   await querier.updateMany(Member, { $where: { id: 1 } }, { teamId: null });
   await querier.count(Member, { $where: { teamId: null } });
@@ -127,12 +120,9 @@ export async function nullIsAValueOfANullableColumn(querier: Querier) {
 }
 
 /**
- * `Query` declares `$where`, `$skip` and `$limit` itself rather than intersecting {@link QueryPage},
- * because an assignability check against an intersection is repeated per
- * constituent and every query in a codebase pays it. This pins the inlined copies against
- * {@link QueryPage}, the same shape `count` takes and `updateMany`/`deleteMany` build on.
- * `false`, not `never`, is the failure value: `never` satisfies any constraint, so the assertion
- * would pass on a broken shape.
+ * `Query` restates `$where`, `$skip` and `$limit` rather than intersecting {@link QueryPage}, which every
+ * query would pay for; this pins the copies against it. `false` is the failure value, since `never`
+ * satisfies any constraint.
  */
 type AssertTrue<T extends true> = T;
 type Mutual<A, B> = A extends B ? (B extends A ? true : false) : false;

@@ -36,7 +36,7 @@ async function run(command: MongoCommand): Promise<Call[]> {
 }
 
 describe('mongoCommandSource', () => {
-  it('spells each command as the driver call runMongoCommand makes', () => {
+  it('should spell each command as the driver call runMongoCommand makes', () => {
     const commands: MongoCommand[] = [
       { action: 'createCollection', name: 'users' },
       { action: 'dropCollection', name: 'users' },
@@ -60,7 +60,7 @@ describe('mongoCommandSource', () => {
     ]);
   });
 
-  it('refuses a command it has no spelling for', () => {
+  it('should refuse a command it has no spelling for', () => {
     expect(() => mongoCommandSource('{"action":"compact","name":"users"}', 'db')).toThrow(
       'unsupported MongoDB migration command',
     );

@@ -92,38 +92,38 @@ describe('bunSql.util', () => {
   });
 
   describe('getAffectedRows', () => {
-    test('prefers affectedRows over count', () => {
+    test('should prefer affectedRows over count', () => {
       expect(getAffectedRows(result({ affectedRows: 2, count: 1 }))).toBe(2);
     });
 
-    test('uses count when the adapter leaves affectedRows null (postgres, cockroachdb)', () => {
+    test('should use count when the adapter leaves affectedRows null (postgres, cockroachdb)', () => {
       expect(getAffectedRows(result({ count: 3, affectedRows: null }))).toBe(3);
     });
 
-    test('uses count when a mysql read reports affectedRows 0', () => {
+    test('should use count when a mysql read reports affectedRows 0', () => {
       expect(getAffectedRows(result({ count: 2, affectedRows: 0 }, [{}, {}]))).toBe(2);
     });
 
-    test('counts the rows a returning insert wrote, not the rows it returned', () => {
+    test('should count the rows a returning insert wrote, not the rows it returned', () => {
       expect(getAffectedRows(result({ count: 1, affectedRows: null }, [{}]))).toBe(1);
     });
 
-    test('reports nothing when the header carries neither, leaving the rows to answer', () => {
+    test('should report nothing when the header carries neither, leaving the rows to answer', () => {
       expect(getAffectedRows(result({}))).toBeUndefined();
       expect(getAffectedRows(result({}, [{}]))).toBeUndefined();
     });
   });
 
   describe('getInsertId', () => {
-    test('coerces bigint to number', () => {
+    test('should coerce bigint to number', () => {
       expect(getInsertId(result({ lastInsertRowid: 99n }))).toBe(99);
     });
 
-    test('answers the exact text for an id past 2^53', () => {
+    test('should answer the exact text for an id past 2^53', () => {
       expect(getInsertId(result({ lastInsertRowid: 9007199254740993n }))).toBe('9007199254740993');
     });
 
-    test('returns numeric id as-is', () => {
+    test('should return numeric id as-is', () => {
       expect(getInsertId(result({ lastInsertRowid: 7 }))).toBe(7);
     });
   });

@@ -82,10 +82,9 @@ class CockroachDialectSpec extends PgFamilySpec {
 
   shouldNotResolveAMetricViaThePrototypeChain() {
     const ctx = this.dialect.createContext();
-    // 'toString' is not an own property of `vectorMetrics`, but `Object.prototype.toString` exists -
-    // a naive `in`/bracket-access check would resolve it as if it were a supported metric.
     expect(() =>
-      this.dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' as any } } }),
+      // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
+      this.dialect.find(ctx, VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' } } }),
     ).toThrow('cockroachdb does not support vector distance metric: toString');
   }
 

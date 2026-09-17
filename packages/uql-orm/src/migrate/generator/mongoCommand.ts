@@ -8,14 +8,7 @@ export type MongoIndexOptions = {
   readonly partialFilterExpression?: Readonly<Record<string, unknown>>;
 };
 
-/**
- * `SchemaGenerator` yields one string per statement, so {@link MongoSchemaGenerator} emits its
- * commands as JSON and this is their schema.
- *
- * Declared next to the generator that writes them because the migrator used to restate the shape
- * inline from `JSON.parse`, with `cmd.name!` assertions and a bare `action: string` - where a command
- * it had no branch for was silently a no-op.
- */
+/** The commands {@link MongoSchemaGenerator} emits as JSON, one per statement. */
 export type MongoCommand =
   | { readonly action: 'createCollection'; readonly name: string }
   | { readonly action: 'dropCollection'; readonly name: string }

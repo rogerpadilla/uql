@@ -1,13 +1,3 @@
-/**
- * SchemaAST Differ
- *
- * Compares two SchemaAST instances and produces a detailed diff.
- * Used for:
- * - Migration generation (entity vs database)
- * - Drift detection (expected vs actual)
- * - Schema synchronization
- */
-
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
 import { describeIndexDifferences, type IndexFacet, indexNameStem } from './indexDifferences.js';
 import type { SchemaAST } from './schemaAST.js';
@@ -42,21 +32,11 @@ export interface DiffOptions {
   /** Tables to exclude from comparison */
   excludeTables?: string[];
   /**
-   * A type as the engine would actually store it, for the caller that has a dialect.
-   *
-   * Several canonical types share one storage type per engine - a `boolean` is `TINYINT(1)` on MySQL
-   * and `INTEGER` on SQLite - so comparing them canonically reports an alteration on every sync for
-   * those columns. Passing both sides through the engine first is what settles that, and it is the
-   * only thing here a dialect is needed for, so it arrives as a function rather than as a dependency.
+   * A type as the engine stores it, since several canonical types share one storage type (a boolean is
+   * `TINYINT(1)` on MySQL): the one thing a dialect is needed for, passed as a function.
    */
   normalizeType?: (type: CanonicalType) => CanonicalType;
-  /**
-   * Whether two defaults are the same value, for the caller that has a dialect.
-   *
-   * A database reprints a default from its parse tree, so `'active'` comes back as
-   * `'active'::character varying` on Postgres and a symbolic `now()` matches no spelling of
-   * `CURRENT_TIMESTAMP`. Undoing that needs the dialect that wrote it, so it arrives as a function.
-   */
+  /** Whether two defaults are one value, as the dialect that reprinted them can tell: `'a'::character varying` is `'a'`. */
   defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
 }
 
@@ -100,14 +80,7 @@ function relationEnds(relation: RelationshipNode) {
   return { name: relation.name, fromTable: relation.from.table.name, toTable: relation.to.table.name };
 }
 
-/**
- * Compare two schemas and return the differences.
- *
- * @param source - The "expected" or "desired" schema (e.g., from entities)
- * @param target - The "actual" or "current" schema (e.g., from database)
- * @param options - Diff options
- * @returns Detailed diff result
- */
+/** The differences between the expected schema (the entities) and the actual one (the database). */
 export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffOptions = {}): SchemaDiffResult {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const normalizeName = nameNormalizer(opts);
@@ -158,13 +131,7 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
   };
 }
 
-/**
- * Compare two tables and return the differences.
- *
- * Exported because it is also how a migration is planned: the generator diffs one entity's table
- * against the one the database reported, then projects the result into a `SchemaDiff`. One
- * comparison serves both, so drift and migrations can no longer disagree about what has changed.
- */
+/** The differences between two tables, shared by migrations and drift detection so they cannot disagree. */
 export function diffTable(
   source: TableNode,
   target: TableNode,
@@ -182,13 +149,7 @@ export function diffTable(
   return { name: source.name, type: 'alter', columnDiffs, indexDiffs, primaryKeyDiff };
 }
 
-/**
- * The two keys, where they hold different columns.
- *
- * Compared by columns and in order. Not by name: the engine named the constraint on every table that
- * already exists, so matching on one would report every table as drifted the moment the convention
- * that derives names changes.
- */
+/** The two keys where they hold different columns, compared in order and never by the name the engine gave them. */
 function diffPrimaryKey(source: TableNode, target: TableNode): PrimaryKeyDiff | undefined {
   const expected = source.primaryKey.map((column) => column.name);
   const actual = target.primaryKey.map((column) => column.name);
@@ -258,14 +219,8 @@ function diffColumn(
 ): ColumnDiff | undefined {
   const differences: string[] = [];
 
-  // Two things a key column implies rather than states, and catalogues report inconsistently: its
-  // type, which is the dialect's serial spelling rather than one the entity chose and does not round
-  // trip (`BIGINT AUTO_INCREMENT` reads back as `BIGINT(20)`), and its nullability,
-  // which is NOT NULL in every engine whatever is reported - SQLite's `PRAGMA table_info` says
-  // `notnull: 0` for the `INTEGER PRIMARY KEY` that is the table's own rowid. Comparing either asked
-  // to rewrite the column on every sync, and on SQLite, which cannot alter one at all, failed
-  // outright. Everything else about a key column is still compared, which the blanket "never alter a
-  // key column" rule these two replace used to hide.
+  // A key column's type and nullability are implied, not stated, and catalogues report them
+  // inconsistently (`BIGINT(20)`, SQLite's `notnull: 0` rowid), so neither is compared.
   const generatedType = source.isAutoIncrement && target.isAutoIncrement;
   const impliedNotNull = source.isPrimaryKey && target.isPrimaryKey;
 
@@ -293,14 +248,8 @@ function diffColumn(
     differences.push(`unique: ${target.isUnique} -> ${source.isUnique}`);
   }
 
-  // Four things are deliberately not compared, all for one reason: a difference here could only be
-  // reported, never settled, because no statement this generator emits would change it.
-  //   - `isAutoIncrement`: no engine makes a column an identity, or unmakes one, without rewriting the
-  //     table, and the alter emitted for it is a bare `ALTER COLUMN TYPE`.
-  //   - `enum`: a check, and a database reprints one from its parse tree. See the roadmap.
-  //   - `generatedAs`: only Postgres 17 and the MySQL family can rewrite an expression in place.
-  //   - `comment`: fixable on every engine but SQLite, and the only one of the four worth revisiting.
-  // The same rule `describeIndexDifferences` follows for what it cannot read.
+  // Not compared, since no statement this generator emits could settle a difference: `isAutoIncrement`,
+  // `enum` (a check the database reprints), `generatedAs`, and `comment`.
 
   // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {
@@ -350,15 +299,7 @@ function diffIndex(
   };
 }
 
-/**
- * Compare two lists of relationships.
- *
- * Lists rather than whole schemas, because a migration diffs one table: its two sides are that
- * table's `outgoingRelations`, where `diffSchemas` passes the schema's every relationship.
- *
- * Matched by columns, never by name - the engine named every constraint that already exists, so
- * pairing on names would report every hand-named one as a drop and an add.
- */
+/** The differences between two lists of foreign keys, matched by their columns and never by the name the engine gave them. */
 export function diffRelationshipNodes(
   source: readonly RelationshipNode[],
   target: readonly RelationshipNode[],

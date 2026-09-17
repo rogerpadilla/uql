@@ -2,7 +2,6 @@ import type {
   AggregationCursor,
   ClientSession,
   Document,
-  Filter,
   FindCursor,
   MongoClient,
   OptionalUnlessRequiredId,
@@ -10,11 +9,10 @@ import type {
 } from 'mongodb';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
-import { fieldOf, getMeta, idOf, namesKey, soleIdOf } from '../entity/index.js';
+import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
 import type {
   EntityData,
-  EntityMeta,
   ExtraOptions,
   IdValue,
   PrimaryKey,
@@ -23,9 +21,10 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryConflictPaths,
-  QueryFilter,
+  QueryPage,
   QueryGroupMap,
   QueryOptions,
+  QueryPager,
   QuerySearch,
   QueryWhere,
   TransactionOptions,
@@ -37,8 +36,6 @@ import {
   getKeys,
   getSoftDeleteValue,
   hasKeys,
-  idOnlyQuery,
-  isPagedQuery,
   populatesRelations,
   throwNoPendingTransaction,
   throwPendingTransaction,
@@ -52,7 +49,7 @@ import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
  * as *unlimited*, so a read that passed it straight to the driver came back with the whole
  * collection. The reads answer it here instead, since no cursor can express it.
  */
-function asksForNoRows<E>(q: Query<E>): boolean {
+function asksForNoRows(q: QueryPager): boolean {
   return q.$limit === 0;
 }
 
@@ -242,29 +239,18 @@ export class MongodbQuerier extends AbstractQuerier {
     return [founds, counted[0]?.[COUNT_ALIAS] ?? 0];
   }
 
-  protected override async internalCount<E extends Document>(
-    entity: Type<E>,
-    qm: QueryFilter<E> = {},
-    opts?: QueryOptions,
-  ) {
+  /** The pipeline `countDocuments` runs, spelled out so a relation condition gets its lookups and a page its stages. */
+  protected override async internalCount<E extends Document>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {
+    if (asksForNoRows(q)) {
+      return 0;
+    }
     return this.timed('internalCount', undefined, async () => {
-      if (this.dialect.constrainsRelations(entity, qm.$where)) {
-        const { stages, filter } = this.dialect.whereWithRelations(entity, qm.$where, opts);
-        const [counted] = await this.execute((session) =>
-          this.collection(entity)
-            .aggregate<Record<typeof COUNT_ALIAS, number>>([...stages, { $match: filter }, { $count: COUNT_ALIAS }], {
-              session,
-            })
-            .toArray(),
-        );
-        return counted?.[COUNT_ALIAS] ?? 0;
-      }
-      const filter = this.dialect.where(entity, qm.$where, opts);
-      return this.execute((session) =>
-        this.collection(entity).countDocuments(filter, {
-          session,
-        }),
+      const { stages, filter } = this.dialect.whereWithRelations(entity, q.$where, opts);
+      const pipeline = [...stages, { $match: filter }, ...this.dialect.pagerStages(q), { $count: COUNT_ALIAS }];
+      const [counted] = await this.execute((session) =>
+        this.collection(entity).aggregate<Record<typeof COUNT_ALIAS, number>>(pipeline, { session }).toArray(),
       );
+      return counted?.[COUNT_ALIAS] ?? 0;
     });
   }
 
@@ -278,20 +264,9 @@ export class MongodbQuerier extends AbstractQuerier {
     );
   }
 
-  /**
-   * The ids matching `q`, in `q`'s own order and page, so a write can name the rows it settled on.
-   * Built from the read pipeline rather than stages assembled here: that dropped `$sort`/`$limit` on
-   * the floor, and skipped the relation-sort rejection {@link MongoDialect.sort} raises.
-   */
-  private async settleIds<E extends Document>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
-    const meta = getMeta(entity);
-    const pipeline = this.dialect.aggregationPipeline(entity, idOnlyQuery(meta, q), opts);
-    const founds = await this.execute((session) =>
-      this.collection(entity).aggregate<Document>(pipeline, { session }).toArray(),
-    );
-    // `normalizeIds` has already spread a compound `_id` back into its columns, so the settled rows
-    // are named the same way every other driver names them.
-    return this.dialect.normalizeIds(meta, founds).map((found) => idOf(meta, found));
+  /** A `find` filter cannot host the `$lookup` a relation condition needs, so such a write names its rows by id. */
+  protected override settlesWrite<E extends Document>(entity: Type<E>, q: QuerySearch<E>): boolean {
+    return super.settlesWrite(entity, q) || this.dialect.constrainsRelations(entity, q.$where);
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
@@ -321,27 +296,13 @@ export class MongodbQuerier extends AbstractQuerier {
     opts?: QueryOptions,
   ) {
     return this.timed('internalUpdateMany', undefined, async () => {
-      payload = clone(payload);
-      const meta = getMeta(entity);
-      const persistable = this.dialect.getPersistable(meta, payload as E, 'onUpdate');
-      // Settled to ids first in two cases: an `updateMany` filter cannot host a `$lookup`, so a
-      // relation condition has nowhere to go, and MongoDB takes no page on a write, so a paged one
-      // has to name the rows it picked rather than touching every match.
-      const where =
-        this.dialect.constrainsRelations(entity, qm.$where) || isPagedQuery(qm)
-          ? ({ _id: { $in: this.dialect.toWireId(await this.settleIds(entity, qm, opts)) } } as Filter<E>)
-          : this.dialect.where(entity, qm.$where, opts);
+      const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
+      const filter = this.dialect.where(entity, qm.$where, opts);
       // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
       const update = this.dialect.getUpdateFilter<E>(persistable);
-
       const { matchedCount } = await this.execute((session) =>
-        this.collection(entity).updateMany(where, update, {
-          session,
-        }),
+        this.collection(entity).updateMany(filter, update, { session }),
       );
-
-      await this.updateRelations(entity, qm, payload, opts);
-
       return matchedCount;
     });
   }
@@ -460,38 +421,25 @@ export class MongodbQuerier extends AbstractQuerier {
       const meta = getMeta(entity);
       // Soft-delete (stamp) unless `hardDelete` is requested or the entity has no soft-delete field.
       const softDelete = opts.hardDelete ? undefined : meta.softDelete;
-      // Hard delete targets matching rows regardless of soft-delete state (keeps other filters).
-      const findOpts = softDelete ? opts : { ...opts, filters: withoutSoftDeleteFilter(opts.filters) };
-      // Delete has always resolved its ids first (it stamps or removes them by `_id`), so a relation
-      // condition needs nothing extra here - and passing the whole query is what makes its page apply.
-      const ids = await this.settleIds(entity, qm, findOpts);
-      if (!ids.length) {
-        return 0;
-      }
-      let changes: number;
-      if (softDelete) {
-        const field = fieldOf(meta, softDelete);
-        // Stamp the mapped column: reads filter on it, so a `@Field({ name })` mismatch here would
-        // report a successful delete and leave the row visible.
-        const softDeleteColumn = this.dialect.resolveColumnName(softDelete, field);
-        const updateResult = await this.execute((session) =>
-          this.collection(entity).updateMany(
-            { _id: { $in: this.dialect.toWireId(ids) } } as Filter<E>,
-            { $set: { [softDeleteColumn]: getSoftDeleteValue(field) } } as UpdateFilter<E>,
-            {
-              session,
-            },
-          ),
+      if (!softDelete) {
+        const filter = this.dialect.where(entity, qm.$where, {
+          ...opts,
+          filters: withoutSoftDeleteFilter(opts.filters),
+        });
+        const { deletedCount } = await this.execute((session) =>
+          this.collection(entity).deleteMany(filter, { session }),
         );
-        changes = updateResult.matchedCount;
-      } else {
-        const deleteResult = await this.execute((session) =>
-          this.collection(entity).deleteMany({ _id: { $in: this.dialect.toWireId(ids) } } as Filter<E>, { session }),
-        );
-        changes = deleteResult.deletedCount;
+        return deletedCount;
       }
-      await this.deleteRelations(entity, ids, opts);
-      return changes;
+      const field = fieldOf(meta, softDelete);
+      // The mapped column, which reads filter on: a `@Field({ name })` mismatch would leave the row visible.
+      const column = this.dialect.resolveColumnName(softDelete, field);
+      const update = { $set: { [column]: getSoftDeleteValue(field) } } as UpdateFilter<E>;
+      const filter = this.dialect.where(entity, qm.$where, opts);
+      const { matchedCount } = await this.execute((session) =>
+        this.collection(entity).updateMany(filter, update, { session }),
+      );
+      return matchedCount;
     });
   }
 

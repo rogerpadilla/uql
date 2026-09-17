@@ -1,12 +1,6 @@
 /**
- * Type-level regression tests for `IdKey`/`IdValue` resolution: the precedence an entity's primary
- * key name is inferred at - `idKey` symbol override, then `_id`, then `id`, then `uuid`, falling back
- * to the full `FieldKey` union when none apply. Every `findOneById`/`updateOneById`/`deleteOneById`
- * call is typed against this, so a wrong id type at any precedence level is a compile error.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * The precedence an entity's key name is inferred at (the `idKey` brand, then `_id`, `id`, `uuid`, then
+ * every field), which every by-id method is typed against. Type-checked by `bun run ts` only.
  */
 import { idKey, type Querier } from '../index.js';
 

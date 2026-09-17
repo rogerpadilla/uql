@@ -3,14 +3,14 @@ import { get, patch, post, put, query, RequestError, remove } from './http.js';
 
 describe('http', () => {
   beforeEach(() => {
-    globalThis.fetch = vi.fn().mockImplementation(setupFetchStub({})) as unknown as typeof fetch;
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(setupFetchStub({})));
   });
 
   afterEach(() => {
-    vi.restoreAllMocks();
+    vi.unstubAllGlobals();
   });
 
-  it('post', async () => {
+  it('should send a POST with the JSON body', async () => {
     const body = {};
     await post('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -19,7 +19,7 @@ describe('http', () => {
     );
   });
 
-  it('patch', async () => {
+  it('should send a PATCH with the JSON body', async () => {
     const body = {};
     await patch('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -28,7 +28,7 @@ describe('http', () => {
     );
   });
 
-  it('put', async () => {
+  it('should send a PUT with the JSON body', async () => {
     const body = {};
     await put('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -37,17 +37,17 @@ describe('http', () => {
     );
   });
 
-  it('get', async () => {
+  it('should send a GET', async () => {
     await get('/?a=1');
     expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'get' }));
   });
 
-  it('remove', async () => {
+  it('should send a DELETE', async () => {
     await remove('/?a=1');
     expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'delete' }));
   });
 
-  it('query sends the uppercase QUERY method with a JSON body', async () => {
+  it('should send the uppercase QUERY method with a JSON body', async () => {
     const payload = { $where: { name: 'a' } };
     await query('/user', payload);
     expect(globalThis.fetch).toHaveBeenCalledWith(
@@ -56,7 +56,7 @@ describe('http', () => {
     );
   });
 
-  it('sends json headers by default', async () => {
+  it('should send json headers by default', async () => {
     await get('/');
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
@@ -66,7 +66,7 @@ describe('http', () => {
     );
   });
 
-  it('merges custom headers over the defaults', async () => {
+  it('should merge custom headers over the defaults', async () => {
     await get('/', { headers: { authorization: 'Bearer abc', accept: 'text/plain' } });
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
@@ -80,29 +80,27 @@ describe('http', () => {
     );
   });
 
-  it('rejects with a RequestError carrying the HTTP status', async () => {
-    globalThis.fetch = vi
-      .fn()
-      .mockImplementation(
-        setupFetchStubError({ error: { message: 'payment required', code: 402 } }, 402),
-      ) as unknown as typeof fetch;
+  it('should reject with a RequestError carrying the HTTP status', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(setupFetchStubError({ error: { message: 'payment required', code: 402 } }, 402)),
+    );
     const failure = remove('/?a=1');
     await expect(failure).rejects.toBeInstanceOf(RequestError);
     await expect(failure).rejects.toMatchObject({ message: 'payment required', status: 402 });
   });
 
-  it('passes an abort signal through to fetch', async () => {
+  it('should pass an abort signal through to fetch', async () => {
     const signal = AbortSignal.timeout(120_000);
     await get('/', { signal });
     expect(globalThis.fetch).toHaveBeenCalledWith('/', expect.objectContaining({ signal }));
   });
 
-  it('falls back to statusText when the error body is not the canonical envelope', async () => {
-    globalThis.fetch = vi.fn().mockImplementation(async () => ({
-      status: 502,
-      statusText: 'Bad Gateway',
-      json: async () => ({}),
-    })) as unknown as typeof fetch;
+  it('should fall back to statusText when the error body is not the canonical envelope', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockImplementation(async () => ({ status: 502, statusText: 'Bad Gateway', json: async () => ({}) })),
+    );
     await expect(get('/')).rejects.toThrow('Bad Gateway');
   });
 });

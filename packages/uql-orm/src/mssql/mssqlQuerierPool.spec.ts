@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
+import { getMeta } from '../entity/index.js';
+import { User } from '../test/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 
@@ -27,7 +29,7 @@ describe('MsSqlQuerierPool', () => {
   it('should pass the naming strategy and schema through to the dialect', () => {
     const pool = new MsSqlQuerierPool(config, { schema: 'crm' });
 
-    expect(pool.dialect.resolveSchema({ schema: undefined } as never)).toBe('crm');
+    expect(pool.dialect.resolveSchema(getMeta(User))).toBe('crm');
   });
 
   /** `mssql` connects the pool as a whole rather than per checkout, so two queriers share one connect. */

@@ -27,11 +27,8 @@ export type IsolationLevel = 'read uncommitted' | 'read committed' | 'repeatable
  */
 export type TransactionOptions = {
   /**
-   * Applies to this transaction only.
-   *
-   * @remarks MySQL and MariaDB set it as a statement of its own ahead of `START TRANSACTION`, so a
-   * `START TRANSACTION` that then fails leaves the level applied to whatever the pooled connection
-   * runs next. Set it per transaction that needs it rather than relying on what a connection carries.
+   * Applies to this transaction only. The MySQL family sets it ahead of `START TRANSACTION`, where a
+   * failed start leaves it on the connection: set it per transaction that needs it.
    */
   readonly isolationLevel?: IsolationLevel;
 };
@@ -45,9 +42,7 @@ export type DialectName = SqlDialectName | 'mongodb';
  * what makes a typo'd query key report as itself rather than as a missing `$entity`.
  */
 export interface Querier extends UniversalQuerier {
-  /**
-   * Find one record. Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Find one record, the entity passed first or as the query's `$entity`. */
   findOne<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -72,9 +67,7 @@ export interface Querier extends UniversalQuerier {
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
 
-  /**
-   * Find many records. Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Find many records, the entity passed first or as the query's `$entity`. */
   findMany<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -99,10 +92,7 @@ export interface Querier extends UniversalQuerier {
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
 
-  /**
-   * Stream records as an async iterable, in both patterns, each with the relations and counts
-   * `findMany` reads. Fires no lifecycle hooks.
-   */
+  /** Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`. No hooks fire. */
   findManyStream<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -127,9 +117,7 @@ export interface Querier extends UniversalQuerier {
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
 
-  /**
-   * Find many records and count. Supports both patterns.
-   */
+  /** Find many records and count every match, the entity passed first or as the query's `$entity`. */
   findManyAndCount<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -154,22 +142,15 @@ export interface Querier extends UniversalQuerier {
     opts?: QueryOptions,
   ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
 
-  /**
-   * Count records. Supports both patterns.
-   */
+  /** Count records, the entity passed first or as the query's `$entity`. */
   count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
 
-  /**
-   * Whether anything matches. Supports both patterns.
-   */
+  /** Whether anything matches, the entity passed first or as the query's `$entity`. */
   exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
   exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
 
-  /**
-   * Delete many records (soft-deletes when the entity has a soft-delete field, else removes them).
-   * Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Delete many records, the entity passed first or as `$entity`; soft-deletes where the entity has a soft-delete field. */
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
 

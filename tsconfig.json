@@ -11,6 +11,7 @@
     "moduleDetection": "force",
 
     "strict": true,
+    "noUnusedLocals": true,
     "noImplicitReturns": true,
     "noPropertyAccessFromIndexSignature": true,
     "verbatimModuleSyntax": true,

@@ -11,8 +11,8 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const res = await this.getConn().query(query, values);
-    // MariaDB may not set `affectedRows` when RETURNING is used; fall back to row count.
-    const changes = res.affectedRows ?? res.length ?? 0;
+    // An OK packet reports `affectedRows`; a `RETURNING` statement answers rows instead, and counts by them.
+    const changes = res.affectedRows ?? res.length;
     const rows = res.length ? Array.from<RawRow, RawRow>(res, decodeBigInts) : [];
     return this.buildUpdateResult({ rows, changes, upsertStatus: res.affectedRows });
   }

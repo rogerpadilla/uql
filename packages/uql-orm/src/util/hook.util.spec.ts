@@ -46,7 +46,10 @@ class Unhooked {
 
 describe('runHooks', () => {
   it('should bind `this` to each payload, so an awaited mutation reaches the original object', async () => {
-    const payloads = [{ title: 'Hello World' }, { title: 'Second One' }] as Article[];
+    const payloads = [
+      Object.assign(new Article(), { title: 'Hello World' }),
+      Object.assign(new Article(), { title: 'Second One' }),
+    ];
 
     await runHooks(Article, 'beforeInsert', payloads, ctx);
 
@@ -75,14 +78,14 @@ describe('runHooks', () => {
       }
     }
 
-    await runHooks(Ordered, 'beforeInsert', [{}, {}] as Ordered[], ctx);
+    await runHooks(Ordered, 'beforeInsert', [new Ordered(), new Ordered()], ctx);
 
     // Per payload, not per hook: a payload is fully processed before the next one starts.
     expect(order).toEqual(['first', 'second', 'first', 'second']);
   });
 
   it('should do nothing when the entity registers nothing for the event', async () => {
-    const payloads = [{ title: 'untouched' }] as Article[];
+    const payloads = [Object.assign(new Article(), { title: 'untouched' })];
 
     await runHooks(Article, 'beforeUpdate', payloads, ctx);
 

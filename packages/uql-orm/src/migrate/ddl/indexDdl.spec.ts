@@ -46,7 +46,7 @@ describe('index features', () => {
   } as const;
 
   const render = (dialect: keyof typeof dialects, index: Except<IndexSchema, 'name' | 'unique'>) =>
-    indexDdlFor(dialects[dialect]).getCreateIndexStatement('t', { name: 'i', unique: false, ...index } as IndexSchema);
+    indexDdlFor(dialects[dialect]).getCreateIndexStatement('t', { name: 'i', unique: false, ...index });
 
   /**
    * The types each engine's `CREATE INDEX` takes, verified live: Postgres 18's `pg_am` with pgvector,
@@ -321,18 +321,16 @@ describe('CREATE INDEX', () => {
   // `USING fulltext` is a syntax error on both, and it is the index `MATCH ... AGAINST` needs, so
   // `$text` on the MySQL family had no way to work. Verified on MySQL 26.7 and MariaDB 12.3.
   it.each([
-    ['mysql', new MySqlDialect()],
-    ['mariadb', new MariaDialect()],
-  ] as const)('should emit CREATE FULLTEXT INDEX on %s', (_name, dialect) => {
+    ['mysql', new MySqlDialect(), ''],
+    ['mariadb', new MariaDialect(), 'IF NOT EXISTS '],
+  ] as const)('should emit CREATE FULLTEXT INDEX on %s', (_name, dialect, ifNotExists) => {
     const sql = indexDdlFor(dialect).getCreateIndexStatement('articles', {
       name: 'text_idx',
       entries: [{ column: 'title' }, { column: 'body' }],
       unique: false,
       type: 'fulltext',
     });
-    expect(sql).toBe(
-      `CREATE FULLTEXT INDEX ${dialect.features.indexIfNotExists ? 'IF NOT EXISTS ' : ''}\`text_idx\` ON \`articles\` (\`title\`, \`body\`);`,
-    );
+    expect(sql).toBe(`CREATE FULLTEXT INDEX ${ifNotExists}\`text_idx\` ON \`articles\` (\`title\`, \`body\`);`);
   });
 
   // Postgres has no `fulltext` access method, so `USING fulltext` could only fail at the server.
@@ -349,8 +347,8 @@ describe('CREATE INDEX', () => {
     );
   });
 
-  // MySQL 26.7 has `VECTOR` columns but no vector index of any kind: `USING hnsw` is a syntax error
-  // and the inline `VECTOR INDEX` form is MariaDB's, so both used to generate DDL it rejects.
+  // MySQL 26.7 has `VECTOR` columns but no vector index: `USING hnsw` is a syntax error, and the inline
+  // `VECTOR INDEX` form is MariaDB's.
   it.each(['hnsw', 'ivfflat', 'vector'] as const)('should reject a %s index on MySQL', (type) => {
     const ddl = indexDdlFor(new MySqlDialect());
     expect(() =>
@@ -494,14 +492,14 @@ describe('CREATE INDEX', () => {
         entries: [{ column: 'embedding' }],
         unique: false,
         type: 'vector',
-        distance: 'toString' as any, // deliberately unvalidated input, mirroring dynamic/JSON query data
+        // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
+        distance: 'toString',
       }),
     ).toThrow('cockroachdb does not support vector distance metric: toString');
   });
 
   /**
-   * `CREATE VECTOR INDEX ... ON t (col)` is MariaDB's own statement (11.7+), verified on 12.3, and it
-   * is what lets `autoSync` add one to a table that already exists - the inline `CREATE TABLE` form
-   * it also has cannot, and taking that form for the only one is what used to skip the index.
+   * `CREATE VECTOR INDEX ... ON t (col)` is MariaDB's own statement (11.7+, verified on 12.3), and the
+   * one that lets `autoSync` add an index to a table that exists, which the inline form cannot.
    */
 });

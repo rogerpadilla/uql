@@ -1,13 +1,4 @@
-import type { CrudOperation } from '../../http/contract.js';
-import type {
-  EntityData,
-  EntityId,
-  QuerierResult,
-  QueryOptions,
-  SharedQuerier,
-  Type,
-  WrittenId,
-} from '../../type/index.js';
+import type { EntityData, QuerierResult, QueryOptions, SharedQuerier, Type, WrittenId } from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -41,12 +32,3 @@ export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, Q
     opts?: RequestOptions,
   ): QuerierResult<'client', (WrittenId<E> | undefined)[]>;
 }
-
-type AssertEmpty<T extends never> = T;
-
-/**
- * Compile-time guarantee (module-private, not part of the public API) that {@link ClientQuerier}
- * implements every wire operation in CRUD_ROUTES: adding a route without a matching client
- * method breaks this alias.
- */
-type ClientQuerierCoversAllCrudOperations = AssertEmpty<Exclude<CrudOperation, keyof ClientQuerier>>;

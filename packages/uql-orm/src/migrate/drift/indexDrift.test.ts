@@ -44,7 +44,7 @@ class DriftIndexUser {
   @Field({ type: Date, softDelete: true }) deletedAt?: Date;
 }
 
-/** The same table, with one index no longer unique and one covering column dropped. */
+/** The same table, with one index not unique and one covering column dropped. */
 @Index(() => [raw`lower("email")`], {
   where: raw`"deletedAt" IS NULL`,
   name: 'drift_email_live_idx',
@@ -92,11 +92,11 @@ describe('index drift (PostgreSQL)', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('reports nothing for the schema it just created', async () => {
+  it('should report nothing for the schema it just created', async () => {
     expect(await driftOf(DriftIndexUser)).toEqual([]);
   });
 
-  it('reports the indexes whose definition the entity changed', async () => {
+  it('should report the indexes whose definition the entity changed', async () => {
     const drifts = (await driftOf(DriftIndexUserEdited)).filter((drift) => drift.type === 'index_mismatch');
 
     expect(drifts.map((drift) => drift.index).sort()).toEqual(['drift_email_live_idx', 'drift_tenant_covering_idx']);
@@ -147,7 +147,7 @@ describe('index drift (CockroachDB)', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('reports nothing for the schema it just created, unique indexes included', async () => {
+  it('should report nothing for the schema it just created, unique indexes included', async () => {
     const actual = await introspector.introspect();
     expect(
       actual

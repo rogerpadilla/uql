@@ -1,6 +1,5 @@
 import { getMeta } from '../entity/index.js';
 import type {
-  DialectFeatures,
   EntityMeta,
   FieldOptions,
   InsertIdSource,
@@ -12,6 +11,7 @@ import type {
   QueryPager,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
+  SqlDialectFeatures,
   Type,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
@@ -33,34 +33,37 @@ import { aggregatesRelations } from './queryJoins.js';
  */
 const MAX_LIMIT = BigInt.asUintN(64, -1n);
 
-/**
- * Shared JSON-array / JSON-object operator implementation between MySQL and MariaDB.
- *
- * Both dialects support the MySQL-compatible JSON functions/operators used by:
- * - `$size` (JSON_LENGTH)
- * - `$all` (JSON_CONTAINS)
- * - `$elemMatch` (JSON_TABLE, or fast JSON_CONTAINS for the simple case)
- * - the update operators `$set` (JSON_SET), `$unset` (JSON_REMOVE), `$push` (JSON_MERGE_PRESERVE)
- *   and `$pull` (JSON_REPLACE over JSON_TABLE)
- */
+/** What the MySQL-family engines have. */
+export const MYSQL_FEATURES: SqlDialectFeatures = {
+  ifNotExists: true,
+  indexIfNotExists: false,
+  schemas: true,
+  dropTableCascade: false,
+  foreignKeyAlter: true,
+  primaryKeyAlter: true,
+  generatedColumnAdd: true,
+  commentSyntax: 'inline',
+  vectorIndexRequiresNotNull: false,
+  vectorSupportsLength: false,
+  supportsTimestamptz: false,
+  stringSizing: 'varchar',
+  supportsUnsigned: true,
+  serverSideCursors: false,
+  rowLocks: true,
+  rowLockWithWindow: true,
+  rowLockOf: true,
+  orderedUpsertReturning: true,
+  orderedJsonAggregates: true,
+  partialJsonContainment: true,
+  typedJsonElements: false,
+  narrowVectorTypes: false,
+  vectorTuningNeedsTransaction: false,
+  serialDeclaresPrimaryKey: false,
+};
+
+/** What MySQL and MariaDB share, their JSON functions above all: `JSON_LENGTH`, `JSON_CONTAINS`, `JSON_TABLE`, `JSON_SET`. */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
-  /** Default {@link DialectFeatures} for MySQL-compatible SQL dialects. */
-  protected override readonly featureDefaults: DialectFeatures = {
-    ifNotExists: true,
-    indexIfNotExists: false,
-    schemas: true,
-    dropTableCascade: false,
-    foreignKeyAlter: true,
-    primaryKeyAlter: true,
-    generatedColumnAdd: true,
-    commentSyntax: 'inline',
-    vectorIndexRequiresNotNull: false,
-    vectorSupportsLength: false,
-    supportsTimestamptz: false,
-    stringSizing: 'varchar',
-    supportsUnsigned: true,
-    serverSideCursors: false,
-  };
+  override readonly features: SqlDialectFeatures = MYSQL_FEATURES;
 
   /**
    * `information_schema` keeps InnoDB's own row estimate, which is live enough to answer before
@@ -90,13 +93,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     super.pager(ctx, opts);
   }
 
-  /**
-   * Signed, though MySQL's own convention is `UNSIGNED`: a foreign key column takes its type from the
-   * key it points at, resolved through the *canonical* type, which has no way to know this string said
-   * `UNSIGNED`. The two then disagree and the engine refuses the constraint - the same trap knex hit
-   * (knex#6129) and MikroORM still carries (mikro-orm#5485). Signed is also the portable half: no
-   * other engine here has unsigned integers, so an `@Id` means one range everywhere.
-   */
+  /** A signed key, so a foreign key taking its type from it matches, as MySQL refuses an `UNSIGNED` mismatch. */
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
   override readonly escapeIdChar = '`';
@@ -126,13 +123,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   override readonly insertIdSource: InsertIdSource = 'firstId';
 
   /**
-   * `INSERT ... ON DUPLICATE KEY UPDATE`, and `INSERT IGNORE` when every non-conflict column is itself a
-   * conflict key so there is nothing to assign. Neither form takes a conflict target: MySQL picks the
-   * unique index for you.
-   *
-   * The update assignments are built into their own context and pushed afterwards, since they read
-   * the inserted row rather than binding, and any value they *do* bind (an `onUpdate` field absent from
-   * the payload) has to land after the insert's for a `?`-placeholder driver.
+   * `INSERT ... ON DUPLICATE KEY UPDATE`, or `INSERT IGNORE` where there is nothing to assign. The
+   * assignments bind after the insert, where a `?` reads them.
    */
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
@@ -157,10 +149,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.pushValue(...insertCtx.values);
   }
 
-  /**
-   * Appended to both branches above. Empty on MySQL, which has no `INSERT ... RETURNING`; MariaDB
-   * 10.5+ has it, and used to restate this whole method just to add it.
-   */
+  /** Appended to both branches above: empty on MySQL, which has no `INSERT ... RETURNING`. */
   protected upsertReturning<E>(_meta: EntityMeta<E>): string {
     return '';
   }
@@ -349,12 +338,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `JSON_TABLE` needs its columns declared upfront, so the object form maps `fields` to columns.
-   * The scalar form's column is `JSON`, not `TEXT`, when `asJson` - `TEXT PATH '$'` silently reads
-   * a compound (array/object) element as `NULL`, since MySQL doesn't coerce those to text; only a
-   * true scalar element survives that coercion. A nested `$elemMatch` (each element being an array
-   * that itself gets exploded) always requests `asJson`, so this is what makes that case reach the
-   * inner elements at all rather than finding nothing.
+   * `JSON_TABLE` with its columns declared up front. A scalar element reads as `JSON` where `asJson`,
+   * since `TEXT` reads a nested array as `NULL`.
    */
   protected override jsonElemFrom(jsonField: string, fields: readonly string[], alias: string, asJson = false): string {
     const columns = fields.length

@@ -27,7 +27,7 @@ describe('Schema Generator with Naming Strategy', () => {
     expect(sql).toContain('"last_name"');
   });
 
-  it('keeps deriving a name a later registration says nothing about', () => {
+  it('should keep deriving a name a later registration says nothing about', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
 
     class ComposedRow {
@@ -41,7 +41,7 @@ describe('Schema Generator with Naming Strategy', () => {
     expect(generator.generateCreateSchema([ComposedRow]).join('\n')).toContain('CREATE TABLE "composed_row"');
   });
 
-  it('leaves a table the entity named alone, whatever it is called', () => {
+  it('should leave a table the entity named alone, whatever it is called', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() }));
 
     // Both of these state their table; a strategy derives a name, it does not rewrite one.

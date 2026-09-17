@@ -1,11 +1,7 @@
 /**
- * Type-level regression tests for `$select`: the field-map form and the raw-projection array form
- * (`raw` templates, each named with `.as()`). `$select`/`$exclude` mutual exclusivity is
- * enforced at runtime (a union-shaped `Query` would degrade error messages), so it has no
- * compile-time negative here.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
+ * `$select`: the field map and the raw-projection array (`raw` templates named with `.as()`).
+ * `$select`/`$exclude` exclusivity is enforced at run time, so it has no negative here. Type-checked by
+ * `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { raw } from '../util/index.js';

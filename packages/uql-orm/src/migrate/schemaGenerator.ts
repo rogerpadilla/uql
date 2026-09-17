@@ -105,26 +105,14 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * How an auto-increment key of `type` is spelled: the type as any other column renders it, plus what
-   * the engine appends to make it generated.
-   *
-   * Derived rather than a fixed string per dialect, because a foreign key column takes its type from
-   * the key it points at, resolved through the same canonical type. A key whose spelling ignored that
-   * type could never be referenced: `@Id({ columnType: 'int' })` emitted `BIGINT` while the column
-   * pointing at it emitted `INT`, and every engine refuses that constraint.
+   * An auto-increment key's type: its canonical type rendered like any column's, plus the engine's generated
+   * suffix, so a foreign key taking its type from this key gets the same one.
    */
   protected serialType(type: CanonicalType): string {
     return `${this.canonicalTypeToSql(type)} ${this.dialect.autoIncrementSuffix}`;
   }
 
-  /**
-   * The SQL type a column is spelled with: the engine's generated-key form for an auto-increment key,
-   * the canonical type otherwise.
-   *
-   * One method because both paths that spell a column need the same answer - written twice, with a
-   * comment asking the two to stay in sync, is how the generated key and the column referencing it
-   * came to disagree in the first place.
-   */
+  /** The SQL type a column is spelled with: the generated-key form for an auto-increment key, the canonical type otherwise. */
   protected columnSqlType(col: ColumnNode): string {
     return col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type);
   }
@@ -139,13 +127,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Every `CREATE TABLE` for `entities`, then their foreign keys.
-   *
-   * Two phases rather than inline constraints, because a relation graph is routinely cyclic: any
-   * `createdBy`-style back-reference makes `A` reference `B` while `B` references `A`, and no create
-   * order satisfies that. TypeORM's schema builder splits for the same reason (`createNewTables()`
-   * then `createForeignKeys()`). SQLite is the exception and keeps them inline: it cannot `ALTER` a
-   * foreign key in, but it resolves targets lazily, so a forward reference is fine there.
+   * Every `CREATE TABLE` for `entities`, then their foreign keys, since a relation graph is routinely
+   * cyclic. SQLite keeps them inline: it cannot add one later, and resolves a forward reference lazily.
    */
   generateCreateSchema(entities: readonly Type<object>[], options: CreateSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'create', options.only);
@@ -383,13 +366,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * A column definition from a {@link ColumnSchema}, whose type is already the engine's own spelling
-   * and may carry its own size.
-   *
-   * Kept apart from {@link generateColumnFromNode} rather than folded into it: a `ColumnSchema` has no
-   * `enum`, because introspection reads one back as a `CHECK` constraint and not as a property of the
-   * column, so only the node knows enough to emit that clause. Both spell the definition through
-   * {@link renderColumn}, which is the part that must not be written twice.
+   * A column definition from a {@link ColumnSchema}, whose type is already the engine's spelling. Apart from
+   * {@link generateColumnFromNode}, which alone knows an `enum`; both render through {@link renderColumn}.
    */
   public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
     return this.renderColumn({ ...column, type: sizedType(column) });
@@ -456,13 +434,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return this.features.commentSyntax === 'inline' ? ` COMMENT ${this.dialect.escape(comment)}` : '';
   }
 
-  /**
-   * The `COMMENT ON` statements a table and its columns need, on an engine that carries a comment
-   * that way. Empty on the others: MySQL writes them inline, SQLite has no comments at all.
-   *
-   * Emitted after the `CREATE TABLE` rather than folded into it, which is what `COMMENT ON` requires -
-   * and what makes a comment reach Postgres, where it was previously read as unsupported and dropped.
-   */
+  /** The `COMMENT ON` statements a table and its columns need, after the `CREATE TABLE`, where the engine uses them. */
   protected generateCommentStatements(table: TableNode): string[] {
     if (this.features.commentSyntax !== 'statement') {
       return [];
@@ -475,12 +447,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return statements;
   }
 
-  /**
-   * The `COMMENT ON COLUMN` one column needs, on an engine that carries a comment that way.
-   *
-   * Shared by `CREATE TABLE` and every path that adds a column: written only for the former, a column
-   * added later reached the database undocumented, the way its enum `CHECK` used to.
-   */
+  /** The `COMMENT ON COLUMN` a column needs where the engine uses one, for `CREATE TABLE` and every path adding a column. */
   protected generateColumnCommentStatement(
     tableName: string,
     column: { name: string; comment?: string },
@@ -494,11 +461,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * How this entity differs from the table the database reported, as the migrator's `SchemaDiff`.
-   *
-   * The comparison itself is {@link diffTable}, the same one drift detection runs, so the two can no
-   * longer disagree about what has changed. Only two things are this side's own: the entity becomes a
-   * table node first, and types are compared as the *engine* would store them - see `normalizeType`.
+   * How the entity differs from the table the database reported, compared by {@link diffTable}, the one
+   * drift detection runs, with types normalized as the engine stores them.
    */
   diffSchema(
     entity: Type<object>,
@@ -550,13 +514,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       fromName: tableDiff.primaryKeyDiff.actualName,
     };
 
-    // This table's own constraints, which is what `outgoingRelations` holds on both sides: the
-    // entity's as the AST derived them, the database's as the introspector read them back.
-    //
-    // None at all where the engine cannot alter one: SQLite resolves foreign keys lazily and keeps
-    // them inline at CREATE time, and its only way to change one afterwards is the twelve-step table
-    // rebuild, which a sync does not do. Reporting a difference nothing can apply would throw on
-    // every sync of an entity that has a relation. `drift:check` still names it.
+    // This table's own foreign keys. None where the engine cannot alter one (SQLite, short of rebuilding
+    // the table), since a difference nothing can apply would throw on every sync; `drift:check` names it.
     const relationDiffs = this.features.foreignKeyAlter
       ? diffRelationshipNodes(desired.outgoingRelations, currentTable.outgoingRelations, this.diffOptions())
       : [];
@@ -668,7 +627,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     // itself (SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT`, which cannot be split): there the column
     // has already declared it, and saying it again is a second primary key.
     const declaredByColumn =
-      this.dialect.serialDeclaresPrimaryKey && table.primaryKey.length === 1 && table.primaryKey[0].isAutoIncrement;
+      this.dialect.features.serialDeclaresPrimaryKey &&
+      table.primaryKey.length === 1 &&
+      table.primaryKey[0].isAutoIncrement;
     if (table.primaryKey.length && !declaredByColumn) {
       const pkColumns = table.primaryKey.map((c) => c.name);
       const pkName = table.primaryKeyName ?? derivedPrimaryKeyName(table.name, pkColumns);
@@ -792,13 +753,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
   }
 
-  /**
-   * `ADD COLUMN`, plus the constraint and index the column declares.
-   *
-   * `CREATE TABLE` lifts a column's `references` and `index` onto the table it is building; this had
-   * no lift, so a hand-written `addColumn(...).references(...).index()` emitted the column alone and
-   * dropped both without a word.
-   */
+  /** `ADD COLUMN`, plus the foreign key and index the column declares, as `CREATE TABLE` lifts them. */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string[] {
     this.assertColumnAddable(tableName, column);
     const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
@@ -875,12 +830,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Drops whatever key the table has.
-   *
-   * `constraintName` has to be what the constraint is *actually* called: the name introspection
-   * reported for a key the database already had, or the derived one for a key this generator itself
-   * added, which is what reversing a migration drops. Guessing either way names nothing. MySQL takes
-   * no name at all - a table's key is always `PRIMARY` there.
+   * Drops the table's key, by the name the constraint really has: introspected, or derived where this
+   * generator added it. MySQL takes no name.
    */
   generateDropPrimaryKeySql(tableName: string, constraintName?: string): string {
     this.assertPrimaryKeyAlterable(tableName);
@@ -954,12 +905,8 @@ function foreignKeyOf(relation: RelationshipNode): ForeignKeySchema {
 }
 
 /**
- * The entities as an AST, named the way `generator` names things.
- *
- * Its resolvers rather than a naming strategy, because the two disagree: a strategy renames whatever
- * it is handed, while a generator leaves an explicit `@Entity({ name })` alone. Build the AST the
- * other way and the table is created under one name and compared under another, which reports every
- * table of a project using a naming strategy as both missing and unexpected.
+ * The entities as an AST, named by `generator`'s resolvers rather than a naming strategy, which would
+ * also rename an explicit `@Entity({ name })` and so compare each table under another name.
  */
 export function buildEntityAST(
   generator: Pick<

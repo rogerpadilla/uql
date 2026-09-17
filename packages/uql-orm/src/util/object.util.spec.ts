@@ -3,7 +3,7 @@ import { defineField } from '../entity/index.js';
 import { clone, entityName, getKeys, hasKeys, isScalarId } from './object.util.js';
 
 describe('clone of what has nothing to copy', () => {
-  it('hands back a primitive and null as they are', () => {
+  it('should hand back a primitive and null as they are', () => {
     expect(clone(5)).toBe(5);
     expect(clone(null)).toBe(null);
   });
@@ -11,13 +11,13 @@ describe('clone of what has nothing to copy', () => {
 
 describe('entityName', () => {
   /** A meta registered through `@Field` alone never named its table, so it goes by its class. */
-  it('falls back to the class for a meta that names no table', () => {
+  it('should fall back to the class for a meta that names no table', () => {
     class Unnamed {}
     expect(entityName(defineField(Unnamed, 'label', { type: String }))).toBe('Unnamed');
   });
 });
 
-it('clone', () => {
+it('should clone objects and arrays deeply', () => {
   expect(clone({})).toEqual({});
   expect(clone({ a: 1 })).toEqual({ a: 1 });
   expect(clone([])).toEqual([]);
@@ -32,25 +32,28 @@ it('clone', () => {
   expect(cloned).toEqual(source);
 });
 
-it('hasKeys', () => {
+it('should tell whether an object has keys', () => {
   expect(hasKeys({})).toBe(false);
   expect(hasKeys({ a: 1 })).toBe(true);
 });
 
-it('getKeys', () => {
-  expect(getKeys(undefined as any)).toEqual([]);
-  expect(getKeys(null as any)).toEqual([]);
+it("should list an object's keys, and none for nothing", () => {
+  expect(getKeys(undefined)).toEqual([]);
+  expect(getKeys(null)).toEqual([]);
   expect(getKeys({})).toEqual([]);
   expect(getKeys({ a: 1 })).toEqual(['a']);
 });
 
 describe('isScalarId', () => {
-  it.each([[1], ['a'], [1n], [true], [null], [undefined]])('takes %p for a value, not a set of columns', (value) => {
-    expect(isScalarId(value)).toBe(true);
-  });
+  it.each([[1], ['a'], [1n], [true], [null], [undefined]])(
+    'should take %p for a value, not a set of columns',
+    (value) => {
+      expect(isScalarId(value)).toBe(true);
+    },
+  );
 
   /** The object ids a driver deals in: they address a row by themselves, whatever their prototype. */
-  it('takes the object values a column can hold', () => {
+  it('should take the object values a column can hold', () => {
     expect(isScalarId(new Date())).toBe(true);
     expect(isScalarId(new Uint8Array([1]))).toBe(true);
     expect(isScalarId({ toHexString: () => 'abc' })).toBe(false);
@@ -58,7 +61,7 @@ describe('isScalarId', () => {
   });
 
   /** A plain object names columns - a `$where` map, or a composite key's id - and a list is a list of those. */
-  it('leaves a plain object and an array to be read as columns', () => {
+  it('should leave a plain object and an array to be read as columns', () => {
     expect(isScalarId({ studentId: 1 })).toBe(false);
     expect(isScalarId({})).toBe(false);
     expect(isScalarId([1, 2])).toBe(false);

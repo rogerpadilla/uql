@@ -2,16 +2,8 @@
 const KEY_SEPARATOR = '\u001f';
 
 /**
- * A row's key as a string, for matching rows to each other.
- *
- * Reads the columns off the row rather than taking their values, because every caller matches a
- * whole page of rows against one fixed column list: taking an array would make each of them build
- * one per row, which is what a page of 250 rows paid 56 KB for.
- *
- * Values are normalized before joining, not stringified: `String(date)` is locale- and
- * timezone-dependent, so two equal dates could key apart, and a `Uint8Array` stringifies to its
- * bytes with commas. Every column is included, so two rows agreeing on one column of a composite
- * key are not treated as one row.
+ * A row's key over `columns`, for matching rows: read off the row, so a page builds no array per row, and
+ * normalized rather than stringified, since `String(date)` depends on the locale.
  */
 export function rowKey(row: unknown, columns: readonly string[]): string {
   const values = row as Record<string, unknown>;

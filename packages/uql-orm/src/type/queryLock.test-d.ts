@@ -1,10 +1,6 @@
 /**
- * Type-level regression tests for `$lock`. Both accepted shapes compile, the wait vocabulary is
- * closed, and the key is absent where a lock could never be honored: `count`/`update`/`delete`
- * (which take `QuerySearch`) and a populated relation.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build. Each `@ts-expect-error` fails the type-check if the error it guards ever stops happening.
+ * `$lock`: both shapes compile, the wait vocabulary is closed, and the key is absent where no lock could
+ * hold (`count`, `update`, `delete`, a populated relation). Type-checked by `bun run ts` only.
  */
 import type { ClientQuerier } from '../browser/type/clientQuerier.js';
 import type { Querier } from '../index.js';

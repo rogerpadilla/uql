@@ -1,14 +1,7 @@
 /**
- * Type-level regression tests for the relation decorators (`@OneToOne`, `@ManyToOne`, `@OneToMany`,
- * `@ManyToMany`) applied directly to a class property - not through `RelationOptionsFor` in isolation
- * (see `entityOptions.test-d.ts`), but through the actual `MemberDecorator` a real property must
- * accept. `entity` is inferred from the mandatory getter and then checked: the property's type must match
- * the target entity, its array-ness must match the cardinality, and the side of a to-one holding the
- * foreign key must name it in `references`, on columns that can hold the key each one joins.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * The relation decorators on a real property: the inferred target must match the property's type, its
+ * array-ness the cardinality, and a to-one holding the key must name it in `references` on columns that
+ * can hold it. `entityOptions.test-d.ts` covers `RelationOptionsFor` alone. Type-checked by `bun run ts` only.
  */
 import { Field, Id, idKey, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../index.js';
 

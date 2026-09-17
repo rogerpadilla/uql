@@ -2,9 +2,10 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
-import { introspectSchema, SchemaAST } from '../schema/index.js';
+import { SchemaAST } from '../schema/index.js';
 import type { TableNode } from '../schema/types.js';
 import type {
+  EntityMeta,
   LoggingOptions,
   Migration,
   MigrationDefinition,
@@ -124,13 +125,7 @@ export class Migrator {
     return this.runInOrder(executedMigrations, 'down', options);
   }
 
-  /**
-   * Narrow a run list by `to`/`step` and execute it, stopping at the first failure.
-   *
-   * Both directions do exactly this and differ only in the list they start from: `up` takes the
-   * pending migrations, `down` the executed ones reversed. Keeping the selection in one place is what
-   * makes `--to` and `--step` mean the same thing whichever way you are going.
-   */
+  /** Runs the list narrowed by `to`/`step`, stopping at the first failure: `up` over the pending, `down` over the executed reversed. */
   private async runInOrder(
     migrations: Migration<Querier>[],
     direction: 'up' | 'down',
@@ -269,7 +264,7 @@ export class Migrator {
    */
   async getDiffs(): Promise<SchemaDiff[]> {
     const generator = await this.getSchemaGenerator();
-    const ast = await this.introspectClaimedSchemas();
+    const ast = await this.introspectEntities(this.entities);
     // Both sides built once: the database's above, the entities' here. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
     // generator that compares no schema of its own - MongoDB, which reads only indexes.
@@ -282,30 +277,23 @@ export class Migrator {
   }
 
   /**
-   * One AST spanning every schema the entities claim, each table stamped with the schema it was read
-   * from. Read per schema rather than all at once, so a table comes back keyed exactly as the entity
-   * that wants it spells the key: `undefined` on both sides for the connection's default, a name on
-   * both sides otherwise. Ordinarily that is one schema and one pass, as before, and that pass keeps
-   * {@link schemaIntrospector} so a caller that replaced it still wins.
+   * The tables `entities` name, read a schema at a time so each is keyed as its entity spells it. Those
+   * alone: nothing else is diffed, and another table can be dropped mid-scan by whatever else is running.
    */
-  private async introspectClaimedSchemas(): Promise<SchemaAST> {
-    const claimed = new Set(this.entities.map((entity) => this.pool.dialect.resolveSchema(getMeta(entity))));
+  private async introspectEntities(entities: readonly Type<object>[]): Promise<SchemaAST> {
+    const { dialect } = this.pool;
+    const bySchema = Map.groupBy(new Set(entities), (entity) => dialect.resolveSchema(getMeta(entity)));
     const merged = new SchemaAST();
-    for (const schema of claimed) {
-      for (const table of (await introspectSchema(this.schemaIntrospectorFor(schema))).getTables()) {
+    for (const [schema, members] of bySchema) {
+      const tables = members.map((entity) => dialect.resolveTableAlias(getMeta(entity)));
+      for (const table of (await this.schemaIntrospectorFor(schema).introspect(tables)).getTables()) {
         merged.addTable(table);
       }
     }
     return merged;
   }
 
-  /**
-   * Applies the entity schema to the database: every registered entity, or the one `entity` names.
-   *
-   * The whole surface is this and {@link planSync}, which answers the same question without running
-   * it - `force` and a single entity included, so `--dry-run` means the same thing whatever else was
-   * asked for.
-   */
+  /** Applies the entity schema: every entity, or the one `entity` names. {@link planSync} answers the same without running it. */
   async sync(options: SyncOptions = {}): Promise<void> {
     const statements = await this.planSync(options);
     if (statements.length) {
@@ -315,14 +303,7 @@ export class Migrator {
     }
   }
 
-  /**
-   * Every table dropped and recreated.
-   *
-   * Both directions span the whole entity set rather than looping an entity at a time. A per-entity
-   * AST cannot resolve a cross-entity foreign key, so the old create loop silently produced a schema
-   * with no referential integrity; and the old drop loop went in reverse *declaration* order, which
-   * says nothing about the relation graph and is rejected as soon as the constraints are really there.
-   */
+  /** Every table dropped and recreated, the whole entity set at once, so foreign keys resolve and drop in graph order. */
   private forceStatements(generator: SchemaGenerator): string[] {
     return [
       ...generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
@@ -337,15 +318,18 @@ export class Migrator {
    */
   private async planEntity(generator: SchemaGenerator, entity: Type<object>, options: SyncOptions): Promise<string[]> {
     const meta = getMeta(entity);
-    const introspector = this.schemaIntrospectorFor(this.pool.dialect.resolveSchema(meta));
+    const { dialect } = this.pool;
+    const introspector = this.schemaIntrospectorFor(dialect.resolveSchema(meta));
     const tableName = generator.resolveTableName(meta);
 
-    return (await introspector.tableExists(tableName))
-      ? this.alterFromEntity(generator, entity, (await introspectSchema(introspector)).getTable(tableName), options)
-      : // Spanning the whole set, so a foreign key resolves against the tables it points at, and
-        // always including this entity: pinned to an explicit `entities` list, a sync of one outside
-        // it emitted nothing at all. `only` is what keeps the statements to this table.
-        generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
+    if (!(await introspector.tableExists(dialect.resolveTableAlias(meta)))) {
+      // Spanning the whole set, so a foreign key resolves against the tables it points at, and always
+      // including this entity: `only` is what keeps the statements to this table.
+      return generator.generateCreateSchema(this.entitiesWith(entity), { only: [tableName], ifNotExists: true });
+    }
+    // With the tables it references, which its foreign keys resolve against.
+    const ast = await this.introspectEntities([entity, ...referencedEntities(meta)]);
+    return this.alterFromEntity(generator, entity, ast.getTable(tableName), options);
   }
 
   /** The same for one entity against the table it already has, and nothing where the two agree. */
@@ -391,14 +375,7 @@ export class Migrator {
     ];
   }
 
-  /**
-   * New tables are emitted together, never one at a time: a single-entity AST has no other table for a
-   * relation to resolve against, so every cross-entity foreign key was dropped and generated schemas
-   * carried none. Spanning the graph is also what lets a cyclic relation (any `createdBy`
-   * back-reference) be created at all.
-   *
-   * Empty in, empty out, so a diff with no new tables does not build an AST for the whole graph.
-   */
+  /** The new tables, created together so a foreign key between them, cyclic included, resolves. Empty in, empty out. */
   private createSchema(generator: SchemaGenerator, tableNames: readonly string[]): string[] {
     return tableNames.length ? generator.generateCreateSchema(this.entities, { only: tableNames }) : [];
   }
@@ -602,23 +579,8 @@ export interface BuilderMigrationDefinition<Q extends Querier = SqlQuerier> {
 }
 
 /**
- * Define a migration using the type-safe builder API.
- *
- * @example
- * ```ts
- * export default defineBuilderMigration({
- *   async up(m) {
- *     await m.createTable('users', (t) => {
- *       t.id();
- *       t.string('email', { length: 255 }).unique();
- *       t.timestamps();
- *     });
- *   },
- *   async down(m) {
- *     await m.dropTable('users');
- *   }
- * });
- * ```
+ * Defines a migration with the builder:
+ * `defineBuilderMigration({ up: (m) => m.createTable('users', (t) => t.id()), down: (m) => m.dropTable('users') })`.
  */
 export function defineBuilderMigration<Q extends Querier = SqlQuerier>(
   migration: BuilderMigrationDefinition<Q>,
@@ -628,4 +590,11 @@ export function defineBuilderMigration<Q extends Querier = SqlQuerier>(
     up: async (querier) => migration.up(await migrationBuilderFor(querier), querier),
     down: async (querier) => migration.down(await migrationBuilderFor(querier), querier),
   };
+}
+
+/** The entities `meta` points at, through a relation or a foreign key field. */
+function referencedEntities(meta: EntityMeta<object>): Type<object>[] {
+  const fields = Object.values(meta.fields).flatMap((field) => field?.references?.() ?? []);
+  const relations = Object.values(meta.relations).flatMap((relation) => relation?.entity?.() ?? []);
+  return [...fields, ...relations];
 }

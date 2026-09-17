@@ -53,7 +53,7 @@ describe('Naming Strategy SQL Generation', () => {
   // Escaped column names are memoized per dialect instance. Entity metadata is shared between
   // dialects, so a cache leaking across them would quote or rename columns wrongly.
   describe('escaped columns are memoized per dialect, not per field', () => {
-    it('quotes the same entity differently for each dialect', () => {
+    it('should quote the same entity differently for each dialect', () => {
       const pg = new PostgresDialect();
       const mysql = new MySqlDialect();
       const pgCtx = pg.createContext();
@@ -64,7 +64,7 @@ describe('Naming Strategy SQL Generation', () => {
       expect(mysqlCtx.sql).toContain('(`firstName`)');
     });
 
-    it('applies each dialect’s own naming strategy to the same entity', () => {
+    it('should apply each dialect’s own naming strategy to the same entity', () => {
       const plain = new PostgresDialect();
       const snake = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
       const plainCtx = plain.createContext();
@@ -75,7 +75,7 @@ describe('Naming Strategy SQL Generation', () => {
       expect(snakeCtx.sql).toContain('"user_profile_dialect" ("first_name")');
     });
 
-    it('returns the same column on repeated use (cache hit path)', () => {
+    it('should return the same column on repeated use (cache hit path)', () => {
       const dialect = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
       const first = dialect.createContext();
       const second = dialect.createContext();

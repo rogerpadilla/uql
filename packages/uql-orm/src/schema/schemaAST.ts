@@ -1,27 +1,8 @@
-/**
- * SchemaAST Class
- *
- * The main class for working with schema graphs.
- * Provides graph operations like navigation, validation, and topological sorting.
- */
-
 import { qualifyName } from '../util/sql.util.js';
-import { createOrder, dropOrder, findCycles } from './dependencyGraph.js';
-import type {
-  ColumnNode,
-  IndexNode,
-  SchemaAST as ISchemaAST,
-  RelationshipNode,
-  RelationshipType,
-  TableNode,
-  ValidationError,
-} from './types.js';
+import { createOrder, dropOrder } from './dependencyGraph.js';
+import type { IndexNode, RelationshipNode, TableNode } from './types.js';
 
-/**
- * A table node with its collections empty, ready to be filled. Six places build one, and the fields
- * that are pure boilerplate are exactly the ones a new field gets forgotten in: {@link TableNode.schema}
- * was added and `SchemaAST.clone` kept rebuilding nodes without it.
- */
+/** A table node with its collections empty, ready to be filled. */
 export function createTableNode(name: string, schema?: string, comment?: string): TableNode {
   return {
     name,
@@ -36,272 +17,35 @@ export function createTableNode(name: string, schema?: string, comment?: string)
   };
 }
 
-/**
- * Schema AST - A graph representation of a database schema.
- *
- * Enables:
- * - Graph navigation (dependencies, dependents)
- * - Circular dependency detection
- * - Topological sorting for correct DDL order
- * - Smart relation inference
- * - Schema validation
- */
-export class SchemaAST implements ISchemaAST {
+/** A database schema as a graph: tables, the foreign keys between them, and their indexes. */
+export class SchemaAST {
   readonly tables: Map<string, TableNode> = new Map();
   readonly relationships: RelationshipNode[] = [];
   readonly indexes: IndexNode[] = [];
 
-  /**
-   * Get a table by the name it is keyed under: schema-qualified where it has one, so two tables of
-   * the same name in different schemas stay distinct. Build the key with `qualifyName`.
-   */
+  /** A table by the key it is stored under: schema-qualified where it has one (see `qualifyName`). */
   getTable(name: string): TableNode | undefined {
     return this.tables.get(name);
   }
 
-  /**
-   * Add a table to the schema.
-   */
   addTable(table: TableNode): void {
     this.tables.set(qualifyName(table.name, table.schema), table);
   }
 
-  /**
-   * Remove a table from the schema.
-   */
-  removeTable(name: string): boolean {
-    const table = this.tables.get(name);
-    if (!table) return false;
-
-    // Remove all relationships involving this table
-    for (let i = this.relationships.length - 1; i >= 0; i--) {
-      const rel = this.relationships[i];
-      if (rel.from.table === table || rel.to.table === table) {
-        this.relationships.splice(i, 1);
-      }
-    }
-
-    // Remove all indexes for this table
-    for (let i = this.indexes.length - 1; i >= 0; i--) {
-      if (this.indexes[i].table === table) {
-        this.indexes.splice(i, 1);
-      }
-    }
-
-    return this.tables.delete(name);
-  }
-
-  /**
-   * Get all table nodes.
-   */
   getTables(): TableNode[] {
-    return Array.from(this.tables.values());
+    return [...this.tables.values()];
   }
 
-  /**
-   * Get all table names.
-   */
-  getTableNames(): string[] {
-    return Array.from(this.tables.keys());
-  }
-
-  /**
-   * Get all tables that depend on this table (have FKs pointing to it).
-   * These are tables that reference this table's primary key.
-   */
-  getDependentTables(table: TableNode): TableNode[] {
-    return table.incomingRelations.map((r) => r.from.table);
-  }
-
-  /**
-   * Get all tables this table depends on (has FKs to).
-   * These are tables that this table references.
-   */
-  getDependencies(table: TableNode): TableNode[] {
-    return table.outgoingRelations.map((r) => r.to.table);
-  }
-
-  /**
-   * Get the relationship between two tables (if any).
-   */
-  getRelationship(from: TableNode, to: TableNode): RelationshipNode | undefined {
-    return this.relationships.find((r) => r.from.table === from && r.to.table === to);
-  }
-
-  /**
-   * Get all relationships for a table.
-   */
-  getTableRelationships(table: TableNode): RelationshipNode[] {
-    return this.relationships.filter((r) => r.from.table === table || r.to.table === table);
-  }
-
-  /**
-   * Get the column that a foreign key column references.
-   */
-  getReferencedColumn(fkColumn: ColumnNode): ColumnNode | undefined {
-    return fkColumn.references?.to.columns[0];
-  }
-
-  /**
-   * Detect circular foreign key dependencies.
-   * Returns arrays of tables that form cycles.
-   */
-  detectCircularDependencies(): TableNode[][] {
-    return findCycles(this.tables.values(), (table) => this.getDependencies(table));
-  }
-
-  /**
-   * Check if there are any circular dependencies.
-   */
-  hasCircularDependencies(): boolean {
-    return this.detectCircularDependencies().length > 0;
-  }
-
-  /**
-   * Get tables in correct order for CREATE (dependencies first).
-   * Tables with no dependencies come first, then tables that depend on them, etc.
-   */
+  /** Tables in `CREATE` order, each after the tables it references. */
   getCreateOrder(): TableNode[] {
-    return createOrder(this.tables.values(), (table) => this.getDependencies(table));
+    return createOrder(this.tables.values(), referencedTables);
   }
 
-  /**
-   * Get tables in correct order for DROP (dependents first).
-   * Tables that depend on others come first, then the tables they depend on.
-   */
+  /** Tables in `DROP` order, each before the tables it references. */
   getDropOrder(): TableNode[] {
-    return dropOrder(this.tables.values(), (table) => this.getDependencies(table));
+    return dropOrder(this.tables.values(), referencedTables);
   }
 
-  /**
-   * Validate schema integrity.
-   * Checks for:
-   * - Missing FK targets
-   * - Circular dependencies
-   * - Orphan columns
-   * - Duplicate indexes
-   */
-  validate(): ValidationError[] {
-    const errors: ValidationError[] = [];
-
-    // Check all FK targets exist
-    for (const rel of this.relationships) {
-      if (!this.tables.has(rel.to.table.name)) {
-        errors.push({
-          type: 'missing_fk_target',
-          message: `FK target table "${rel.to.table.name}" does not exist`,
-          relationship: rel,
-        });
-      }
-    }
-
-    // Check for circular dependencies
-    const cycles = this.detectCircularDependencies();
-    for (const cycle of cycles) {
-      errors.push({
-        type: 'circular_dependency',
-        message: `Circular FK: ${cycle.map((t) => t.name).join(' -> ')}`,
-        tables: cycle,
-      });
-    }
-
-    // Check for duplicate index names within same table
-    for (const table of this.tables.values()) {
-      const indexNames = new Set<string>();
-      for (const index of table.indexes) {
-        if (indexNames.has(index.name)) {
-          errors.push({
-            type: 'duplicate_index',
-            message: `Duplicate index name "${index.name}" in table "${table.name}"`,
-            table,
-          });
-        }
-        indexNames.add(index.name);
-      }
-    }
-
-    return errors;
-  }
-
-  /**
-   * Check if the schema is valid (no validation errors).
-   */
-  isValid(): boolean {
-    return this.validate().length === 0;
-  }
-
-  /**
-   * Check if a table looks like a junction table (ManyToMany through).
-   * Junction tables typically have:
-   * - Exactly 2 foreign keys
-   * - Few other columns (id, maybe timestamps)
-   * - Primary key might be composite of the FKs
-   */
-  isJunctionTable(table: TableNode): boolean {
-    const fkCount = table.outgoingRelations.length;
-    const columnCount = table.columns.size;
-
-    // Must have exactly 2 FKs
-    if (fkCount !== 2) {
-      return false;
-    }
-
-    // Should have few columns (typically: id + 2 FKs + maybe timestamps)
-    if (columnCount > 6) {
-      return false;
-    }
-
-    // Check if name suggests a junction (contains both related table names)
-    const relatedTables = table.outgoingRelations.map((r) => r.to.table.name.toLowerCase());
-    const tableName = table.name.toLowerCase();
-
-    // Common patterns: user_roles, post_tags, etc.
-    const containsBothNames = relatedTables.every(
-      (name) => tableName.includes(name.replace(/s$/, '')) || tableName.includes(name),
-    );
-
-    return containsBothNames || columnCount <= 5;
-  }
-
-  /**
-   * Infer relation type from schema structure.
-   */
-  inferRelationType(rel: RelationshipNode): RelationshipType {
-    const fromCol = rel.from.columns[0];
-
-    // Check if source is junction table -> ManyToMany
-    if (this.isJunctionTable(rel.from.table)) {
-      return 'ManyToMany';
-    }
-
-    // Unique FK -> OneToOne
-    if (fromCol?.isUnique) {
-      return 'OneToOne';
-    }
-
-    // Default: ManyToOne (many rows can reference same target)
-    return 'ManyToOne';
-  }
-
-  /**
-   * Get the inverse relation type.
-   */
-  getInverseRelationType(type: RelationshipType): RelationshipType {
-    switch (type) {
-      case 'OneToOne':
-        return 'OneToOne';
-      case 'OneToMany':
-        return 'ManyToOne';
-      case 'ManyToOne':
-        return 'OneToMany';
-      case 'ManyToMany':
-        return 'ManyToMany';
-    }
-  }
-
-  /**
-   * Add an index to the schema.
-   */
   addIndex(index: IndexNode): void {
     this.indexes.push(index);
     if (!index.table.indexes.includes(index)) {
@@ -309,32 +53,11 @@ export class SchemaAST implements ISchemaAST {
     }
   }
 
-  /**
-   * Get all indexes for a table.
-   */
-  getTableIndexes(tableName: string): IndexNode[] {
-    const table = this.tables.get(tableName);
-    return table?.indexes ?? [];
-  }
-
-  /**
-   * Find an index by name.
-   */
-  getIndex(name: string): IndexNode | undefined {
-    return this.indexes.find((i) => i.name === name);
-  }
-
-  /**
-   * Add a relationship to the schema.
-   */
+  /** Adds a foreign key, linking it from both tables and both column sets. */
   addRelationship(rel: RelationshipNode): void {
     this.relationships.push(rel);
-
-    // Update table links
     rel.from.table.outgoingRelations.push(rel);
     rel.to.table.incomingRelations.push(rel);
-
-    // Update column links
     for (const col of rel.from.columns) {
       col.references = rel;
     }
@@ -342,147 +65,8 @@ export class SchemaAST implements ISchemaAST {
       col.referencedBy.push(rel);
     }
   }
+}
 
-  /**
-   * Remove a relationship from the schema.
-   */
-  removeRelationship(name: string): boolean {
-    const index = this.relationships.findIndex((r) => r.name === name);
-    if (index === -1) return false;
-
-    const rel = this.relationships[index];
-
-    // Remove from table links
-    const fromIdx = rel.from.table.outgoingRelations.indexOf(rel);
-    if (fromIdx !== -1) rel.from.table.outgoingRelations.splice(fromIdx, 1);
-
-    const toIdx = rel.to.table.incomingRelations.indexOf(rel);
-    if (toIdx !== -1) rel.to.table.incomingRelations.splice(toIdx, 1);
-
-    // Remove from column links
-    for (const col of rel.from.columns) {
-      if (col.references === rel) {
-        col.references = undefined;
-      }
-    }
-    for (const col of rel.to.columns) {
-      const refIdx = col.referencedBy.indexOf(rel);
-      if (refIdx !== -1) col.referencedBy.splice(refIdx, 1);
-    }
-
-    this.relationships.splice(index, 1);
-    return true;
-  }
-
-  /**
-   * Create a deep clone of this schema.
-   */
-  clone(): SchemaAST {
-    const clone = new SchemaAST();
-
-    // First pass: tables and columns. The table is built before its columns so each clone can link
-    // back to it on creation - `columns` and `primaryKey` are readonly properties holding mutable
-    // containers, so they are filled in afterwards without reassigning anything.
-    for (const [name, table] of this.tables) {
-      const clonedTable = createTableNode(table.name, table.schema, table.comment);
-
-      for (const [colName, col] of table.columns) {
-        clonedTable.columns.set(colName, { ...col, table: clonedTable, referencedBy: [], references: undefined });
-      }
-      clonedTable.primaryKey.push(...table.primaryKey.flatMap((pk) => clonedTable.columns.get(pk.name) ?? []));
-
-      clone.tables.set(name, clonedTable);
-    }
-
-    // Second pass: clone relationships
-    for (const rel of this.relationships) {
-      const fromTable = clone.tables.get(rel.from.table.name);
-      const toTable = clone.tables.get(rel.to.table.name);
-
-      if (!fromTable || !toTable) continue;
-
-      const fromColumns = rel.from.columns
-        .map((c) => fromTable.columns.get(c.name))
-        .filter((c): c is ColumnNode => c !== undefined);
-      const toColumns = rel.to.columns
-        .map((c) => toTable.columns.get(c.name))
-        .filter((c): c is ColumnNode => c !== undefined);
-
-      const clonedRel: RelationshipNode = {
-        ...rel,
-        from: {
-          table: fromTable,
-          columns: fromColumns,
-        },
-        to: {
-          table: toTable,
-          columns: toColumns,
-        },
-        through: rel.through ? clone.tables.get(rel.through.name) : undefined,
-      };
-
-      clone.addRelationship(clonedRel);
-    }
-
-    // Third pass: clone indexes
-    for (const idx of this.indexes) {
-      const table = clone.tables.get(idx.table.name);
-      if (!table) continue;
-
-      clone.addIndex({ ...idx, table });
-    }
-
-    return clone;
-  }
-
-  /**
-   * Get statistics about the schema.
-   */
-  getStats(): {
-    tableCount: number;
-    columnCount: number;
-    relationshipCount: number;
-    indexCount: number;
-  } {
-    let columnCount = 0;
-    for (const table of this.tables.values()) {
-      columnCount += table.columns.size;
-    }
-
-    return {
-      tableCount: this.tables.size,
-      columnCount,
-      relationshipCount: this.relationships.length,
-      indexCount: this.indexes.length,
-    };
-  }
-
-  /**
-   * The schema as a plain object, for serialization and debugging. The graph links are what is left
-   * out - they are cycles, and nothing else is: listing the fields to keep instead dropped every
-   * option a column had gained since, `defaultValue` and `enum` included.
-   */
-  toJSON() {
-    return {
-      tables: Array.from(this.tables.values()).map((t) => ({
-        name: t.name,
-        columns: Array.from(t.columns.values()).map(
-          ({ table: _table, referencedBy: _referencedBy, references: _references, ...column }) => column,
-        ),
-        indexes: t.indexes.map((i) => ({
-          name: i.name,
-          columns: i.entries.map((entry) => entry.column),
-          unique: i.unique,
-        })),
-      })),
-      relationships: this.relationships.map((r) => ({
-        name: r.name,
-        type: r.type,
-        from: `${r.from.table.name}.${r.from.columns.map((c) => c.name).join(',')}`,
-        to: `${r.to.table.name}.${r.to.columns.map((c) => c.name).join(',')}`,
-        onDelete: r.onDelete,
-        onUpdate: r.onUpdate,
-      })),
-    };
-  }
+function referencedTables(table: TableNode): TableNode[] {
+  return table.outgoingRelations.map((rel) => rel.to.table);
 }

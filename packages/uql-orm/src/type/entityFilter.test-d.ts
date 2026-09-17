@@ -1,12 +1,7 @@
 /**
- * Type-level regression tests for named `$where` filters (`@Filter` / `defineFilter` /
- * `EntityOptions.filters`). A filter's `where` is either a plain `QueryWhere<E>` fragment or a
- * function of the ambient {@link UqlContext}, and both are checked against the entity the filter is
- * declared on.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * Named `$where` filters (`@Filter`, `defineFilter`, `EntityOptions.filters`): a plain `QueryWhere<E>`
+ * fragment or a function of the ambient {@link UqlContext}, both checked against the entity declaring
+ * it. Type-checked by `bun run ts` only.
  */
 
 import type { FilterOptions } from '../index.js';
@@ -36,11 +31,9 @@ export const contextFilter: FilterOptions<Invoice> = {
   security: true,
   onMissing: 'throw',
 };
-// Note: a typo'd fragment *returned* from a where callback is not rejected at compile time -
-// its object literal is checked once the callback's own return type has already been inferred and
-// widened, so the excess-property check that catches `where: { statuz: 'active' }` above never
-// sees it fresh. Annotating the callback's return type (`(): QueryWhere<Invoice> | undefined => ...`)
-// restores the check; the plain-fragment form above is the one that matters in practice.
+// A typo'd fragment *returned* from a where callback is not rejected: the literal is checked after the
+// callback's return type was inferred. Annotating that return type (`(): QueryWhere<Invoice> | undefined`)
+// restores the check.
 export const contextFilterReturningFragment: FilterOptions<Invoice> = {
   where: () => ({ status: 'active' }),
 };

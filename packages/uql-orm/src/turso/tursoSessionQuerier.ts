@@ -34,13 +34,7 @@ export type TursoSession = {
   close(): Promise<void>;
 };
 
-/**
- * Querier for Turso Cloud on a session of its own.
- *
- * @remarks The stream is what makes a transaction plain `BEGIN`/`COMMIT`, left to the base class, and
- * what `release` closes. A row comes back an array carrying its column names as hidden properties, so it
- * is rebuilt as the object every querier answers.
- */
+/** A Turso Cloud querier on a stream of its own, which holds its transaction and which `release` closes. */
 export class TursoSessionQuerier extends AbstractSqliteQuerier {
   constructor(
     readonly session: TursoSession,

@@ -51,7 +51,7 @@ describe('MySQL JSON array index', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('answers $all from the index', async () => {
+  it('should answer $all from the index', async () => {
     const ctx = dialect.createContext();
     dialect.find(ctx, JsonArrayIndexed, { $select: { id: true }, $where: { tags: { $all: ['t7'] } } });
 
@@ -60,7 +60,7 @@ describe('MySQL JSON array index', () => {
     expect(JSON.stringify(plan)).toContain('ix_json_tags');
   });
 
-  it('finds the rows it indexed', async () => {
+  it('should find the rows it indexed', async () => {
     const found = await pool.withQuerier((querier) =>
       querier.findMany(JsonArrayIndexed, { $select: { id: true }, $where: { tags: { $all: ['t7'] } } }),
     );
@@ -69,7 +69,7 @@ describe('MySQL JSON array index', () => {
   });
 
   /** The server states no column name for a multi-valued key part, which diffing has to survive. */
-  it('reports no drift for the index it just created', async () => {
+  it('should report no drift for the index it just created', async () => {
     const introspector = new MysqlSchemaIntrospector(pool);
     const actual = await introspector.introspect();
     const expected = buildSchemaAST([JsonArrayIndexed], { namingStrategy: dialect.namingStrategy });

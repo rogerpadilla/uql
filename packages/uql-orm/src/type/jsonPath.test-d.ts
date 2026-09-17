@@ -1,15 +1,7 @@
 /**
- * Type-level regression tests for typed JSON dot-paths in `$where` and `$sort`.
- *
- * Dotted keys are restricted to real JSON fields: a typed `Json<T>` payload produces one typed
- * path per (nested) key, and each path's value resolves via `JsonFieldPathValue` so operators and
- * values are checked against the path's own type. Untyped `Json<unknown>` payloads accept any
- * `field.suffix` path with fully permissive values. Relations are filtered via nested objects,
- * never dotted keys (matching the runtime, which throws for non-JSON dotted keys).
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * Typed JSON dot-paths in `$where` and `$sort`: a `Json<T>` field gives one typed path per nested key,
+ * checked against that key's type; `Json<unknown>` takes any path. Relations filter by nested objects,
+ * never dotted keys, as the runtime does. Type-checked by `bun run ts` only.
  */
 import type { Json, Querier } from '../index.js';
 

@@ -1,11 +1,6 @@
 /**
- * Type-level regression tests for `UpdatePayload` (field typo safety, `raw()` field values, and
- * relations settable via their own entity shape) and `QueryConflictPaths` (`upsertOne`/`upsertMany`'s
- * conflict-path map, typed against the entity like `$select`).
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * `UpdatePayload` (typo'd fields, `raw()` values, relations as their own entity shape) and
+ * `QueryConflictPaths`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { raw } from '../util/index.js';
@@ -50,12 +45,7 @@ export async function conflictPathSafety() {
   await querier.upsertMany(Employee, { ide: true }, [{ id: 1, name: 'x', salary: 1 }]);
 }
 
-/**
- * An entity carrying a lifecycle hook carries a method, and the whole-record writes used to take
- * `E`, which demanded that method back in the payload: the documented
- * `insertOne(Article, { title: 'Hello' })` did not compile. They take {@link EntityData} now, which
- * is the entity's fields and relations and none of its behaviour.
- */
+/** A write takes an entity's fields and relations, never its methods: a lifecycle hook is behaviour. */
 class Hooked {
   id?: number;
   title?: string;
@@ -66,6 +56,19 @@ class Hooked {
   generateSlug() {
     this.slug = this.title?.toLowerCase();
   }
+}
+
+/** A related entity with a hook of its own, whose method a nested row does not carry either. */
+class HookedTag {
+  id?: number;
+  name?: string;
+  audit() {}
+}
+
+class Tagged {
+  id?: number;
+  tags?: HookedTag[];
+  owner?: HookedTag;
 }
 
 /** A column the entity declares as required stays required in a write payload. */
@@ -82,6 +85,10 @@ export async function writePayloadsExcludeBehaviour(querier: Querier) {
   await querier.upsertOne(Hooked, { title: true }, { title: 'Hello' });
   // relations are persistable data, so they stay in the payload
   await querier.insertOne(Hooked, { title: 'Hello', tags: [{ id: 1, name: 'x' }] });
+  await querier.insertOne(Tagged, { tags: [{ name: 'x' }], owner: { name: 'y' } });
+  await querier.updateOneById(Tagged, 1, { tags: [{ name: 'x' }], owner: { name: 'y' } });
+  // @ts-expect-error a related row's typo is still caught
+  await querier.insertOne(Tagged, { tags: [{ nam: 'x' }] });
 
   await querier.insertOne(Required, { name: 'ok' });
   // @ts-expect-error 'name' is declared required, so the payload has to carry it

@@ -1,7 +1,13 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { SchemaAST } from '../../schema/schemaAST.js';
-import type { ColumnNode, TableNode } from '../../schema/types.js';
-import type { MongoQuerier, QuerierPool, SchemaIntrospector, TableSchema } from '../../type/index.js';
+import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
+import type { TableNode } from '../../schema/types.js';
+import {
+  isMongoQuerier,
+  type MongoQuerier,
+  type QuerierPool,
+  type SchemaIntrospector,
+  type TableSchema,
+} from '../../type/index.js';
 
 /** The parts of a Mongo index description this introspector reads. */
 type MongoIndex = { readonly name?: string; readonly key: Record<string, unknown>; readonly unique?: boolean };
@@ -23,39 +29,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
     for (const name of tableNames) {
       const schema = await this.getTableSchema(name);
       if (schema) {
-        const columns = new Map<string, ColumnNode>();
-        const table: TableNode = {
-          name,
-          columns,
-          primaryKey: [],
-          indexes: [],
-          incomingRelations: [],
-          outgoingRelations: [],
-        };
-
-        if (schema.indexes) {
-          for (const idx of schema.indexes) {
-            for (const { column: colName } of idx.entries) {
-              let column = columns.get(colName);
-              if (!column) {
-                column = {
-                  name: colName,
-                  type: { category: 'string' }, // MongoDB fields are flexible, but indexes usually target strings/numbers
-                  nullable: true,
-                  isPrimaryKey: false,
-                  isAutoIncrement: false,
-                  isUnique: false,
-                  table,
-                  referencedBy: [],
-                };
-                columns.set(colName, column);
-              }
-            }
-            table.indexes.push({ name: idx.name, table, entries: idx.entries, unique: idx.unique });
-          }
-        }
-
-        ast.addTable(table);
+        ast.addTable(buildTable(schema));
       }
     }
 
@@ -63,21 +37,18 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    return this.pool.withQuerier(async (querier) => {
-      const { db } = querier as MongoQuerier;
-      const collections = await db.listCollections({ name: tableName }).toArray();
-      if (collections.length === 0) {
+    return this.withDb(async (db) => {
+      if (!(await hasCollection(db, tableName))) {
         return undefined;
       }
 
-      // MongoDB doesn't have a fixed schema, but we can look at the indexes. Annotated rather than
-      // inferred: the driver's `indexes()` is overloaded and resolves to `any` on some versions, which
-      // silently made every field below unchecked.
+      // Annotated rather than inferred: the driver's `indexes()` is overloaded and resolves to `any` on
+      // some versions, which silently made every field below unchecked.
       const indexes: readonly MongoIndex[] = await db.collection(tableName).indexes();
 
       return {
         name: tableName,
-        columns: [], // We don't have columns in Mongo
+        columns: [],
         indexes: indexes.map((idx) => ({
           name: idx.name ?? Object.keys(idx.key).join('_'),
           entries: Object.keys(idx.key).map((column) => ({ column })),
@@ -87,16 +58,55 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
     });
   }
 
+  /** Collections only, the way a SQL engine lists its base tables: no view, nor the `system.views` behind one. */
   async getTableNames(): Promise<string[]> {
-    return this.pool.withQuerier(async (querier) => {
-      const { db } = querier as MongoQuerier;
-      const collections = await db.listCollections().toArray();
-      return collections.map((c: { name: string }) => c.name);
+    return this.withDb(async (db) => {
+      const filter = { type: 'collection', name: { $not: /^system\./ } };
+      const collections = await db.listCollections(filter, { nameOnly: true }).toArray();
+      return collections.map((collection) => collection.name);
     });
   }
 
   async tableExists(tableName: string): Promise<boolean> {
-    const names = await this.getTableNames();
-    return names.includes(tableName);
+    return this.withDb((db) => hasCollection(db, tableName));
   }
+
+  private withDb<T>(task: (db: MongoQuerier['db']) => Promise<T>): Promise<T> {
+    return this.pool.withQuerier((querier) => {
+      if (!isMongoQuerier(querier)) {
+        throw new TypeError('MongoSchemaIntrospector requires a MongoDB querier');
+      }
+      return task(querier.db);
+    });
+  }
+}
+
+async function hasCollection(db: MongoQuerier['db'], name: string): Promise<boolean> {
+  const collections = await db.listCollections({ name, type: 'collection' }, { nameOnly: true }).toArray();
+  return collections.length > 0;
+}
+
+/** Mongo has no columns to read, so a table's are the fields its indexes name, one node per field. */
+function buildTable({ name, indexes = [] }: TableSchema): TableNode {
+  const table = createTableNode(name);
+
+  for (const index of indexes) {
+    for (const { column } of index.entries) {
+      if (!table.columns.has(column)) {
+        table.columns.set(column, {
+          name: column,
+          type: { category: 'string' },
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+          table,
+          referencedBy: [],
+        });
+      }
+    }
+    table.indexes.push({ name: index.name, table, entries: index.entries, unique: index.unique });
+  }
+
+  return table;
 }

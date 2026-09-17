@@ -2,15 +2,15 @@ import { expect, it } from 'vitest';
 import * as browserContext from './context.browser.js';
 import * as nodeContext from './context.js';
 
-it('exposes the exact same API surface as the node context', () => {
+it('should expose the exact same API surface as the node context', () => {
   expect(Object.keys(browserContext).sort()).toEqual(Object.keys(nodeContext).sort());
 });
 
-it('shares the UqlSecurityError class with the node context (single identity per bundle)', () => {
+it('should share the UqlSecurityError class with the node context (single identity per bundle)', () => {
   expect(browserContext.UqlSecurityError).toBe(nodeContext.UqlSecurityError);
 });
 
-it('withContext scopes and restores the context for sync callbacks (nesting included)', () => {
+it('should scope and restore the context for sync callbacks, nesting included', () => {
   expect(browserContext.getContext()).toBeUndefined();
   const result = browserContext.withContext({ tenantId: 1 }, () => {
     expect(browserContext.getContext()).toEqual({ tenantId: 1 });
@@ -24,7 +24,7 @@ it('withContext scopes and restores the context for sync callbacks (nesting incl
   expect(browserContext.getContext()).toBeUndefined();
 });
 
-it('restores the context even when the callback throws', () => {
+it('should restore the context even when the callback throws', () => {
   expect(() =>
     browserContext.withContext({ tenantId: 1 }, () => {
       throw new TypeError('boom');
@@ -33,7 +33,7 @@ it('restores the context even when the callback throws', () => {
   expect(browserContext.getContext()).toBeUndefined();
 });
 
-it('captureContext replays the captured context later (sync semantics)', () => {
+it('should replay a captured context later, synchronously', () => {
   const scoped = browserContext.withContext({ tenantId: 9 }, () => browserContext.captureContext());
   expect(browserContext.getContext()).toBeUndefined();
   expect(scoped(() => browserContext.getContext())).toEqual({ tenantId: 9 });

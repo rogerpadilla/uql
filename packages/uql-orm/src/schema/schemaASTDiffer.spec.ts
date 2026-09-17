@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { mockTableNode } from '../test/index.js';
+import { columnsOf, mockTableNode } from '../test/index.js';
 import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
 import { diffSchemas } from './schemaASTDiffer.js';
-import type { IndexNode } from './types.js';
+import type { IndexNode, RelationshipNode } from './types.js';
 
 /** An index as one side of a comparison declares it, over the `users` fixture below. */
 type IndexParts = Partial<Pick<IndexNode, 'entries' | 'unique' | 'type' | 'where' | 'include'>>;
@@ -305,14 +305,11 @@ describe('SchemaASTDiffer', () => {
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'email', type: { category: 'string' } },
       ]);
-      const emailColumn = sourceTable.columns.get('email');
       source.addIndex({
         name: 'users__email_idx',
         table: sourceTable,
         entries: [{ column: 'email' }],
         unique: true,
-        source: 'entity',
-        syncStatus: 'entity_only',
       });
 
       const targetTable = mockTableNode('users', [
@@ -341,14 +338,11 @@ describe('SchemaASTDiffer', () => {
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
         { name: 'email', type: { category: 'string' } },
       ]);
-      const targetEmailColumn = targetTable.columns.get('email');
       target.addIndex({
         name: 'users__email_idx',
         table: targetTable,
         entries: [{ column: 'email' }],
         unique: true,
-        source: 'entity',
-        syncStatus: 'entity_only',
       });
 
       source.addTable(sourceTable);
@@ -468,8 +462,8 @@ describe('SchemaASTDiffer', () => {
       source.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')!] },
-        to: { table: users, columns: [users.columns.get('id')!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -497,8 +491,8 @@ describe('SchemaASTDiffer', () => {
       target.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')!] },
-        to: { table: users, columns: [users.columns.get('id')!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -522,24 +516,20 @@ describe('SchemaASTDiffer', () => {
       target.addTable(users);
       target.addTable(posts);
 
-      const sourceAuthor = posts.columns.get('author_id');
-      const sourceId = users.columns.get('id');
       source.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [sourceAuthor!] },
-        to: { table: users, columns: [sourceId!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
 
-      const targetAuthor = posts.columns.get('author_id');
-      const targetId = users.columns.get('id');
       target.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [targetAuthor!] },
-        to: { table: users, columns: [targetId!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
@@ -559,19 +549,19 @@ describe('SchemaASTDiffer', () => {
       const idx1 = {
         name: 'email_idx',
         table: t1,
-        columns: [t1.columns.get('email')!],
+        columns: columnsOf(t1, 'email'),
         entries: [{ column: 'email' }],
         unique: true,
       };
       const idx2 = {
         name: 'email_idx',
         table: t2,
-        columns: [t2.columns.get('email')!],
+        columns: columnsOf(t2, 'email'),
         entries: [{ column: 'email' }],
         unique: true,
       };
-      source.addIndex(idx1 as any);
-      target.addIndex(idx2 as any);
+      source.addIndex(idx1);
+      target.addIndex(idx2);
       const result = diffSchemas(source, target, { compareIndexes: true });
       expect(result.indexDiffs.length).toBe(0);
     });
@@ -583,20 +573,22 @@ describe('SchemaASTDiffer', () => {
       const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
       source.addTable(t1);
       target.addTable(t2);
-      const rel1 = {
+      const rel1: RelationshipNode = {
         name: '1_fk',
-        from: { table: t1, columns: [t1.columns.get('id')!] },
-        to: { table: t1, columns: [t1.columns.get('id')!] },
+        type: 'ManyToOne',
+        from: { table: t1, columns: columnsOf(t1, 'id') },
+        to: { table: t1, columns: columnsOf(t1, 'id') },
         onDelete: 'CASCADE',
       };
-      const rel2 = {
+      const rel2: RelationshipNode = {
         name: '1_fk',
-        from: { table: t2, columns: [t2.columns.get('id')!] },
-        to: { table: t2, columns: [t2.columns.get('id')!] },
+        type: 'ManyToOne',
+        from: { table: t2, columns: columnsOf(t2, 'id') },
+        to: { table: t2, columns: columnsOf(t2, 'id') },
         onDelete: 'CASCADE',
       };
-      source.addRelationship(rel1 as any);
-      target.addRelationship(rel2 as any);
+      source.addRelationship(rel1);
+      target.addRelationship(rel2);
       const result = diffSchemas(source, target, { compareRelationships: true });
       expect(result.relationshipDiffs.length).toBe(0);
     });
@@ -610,20 +602,22 @@ describe('SchemaASTDiffer', () => {
       target.addTable(t2);
 
       // One has explicit 'NO ACTION', other has undefined (which defaults to 'NO ACTION')
-      const rel1 = {
+      const rel1: RelationshipNode = {
         name: '1_fk',
-        from: { table: t1, columns: [t1.columns.get('id')!] },
-        to: { table: t1, columns: [t1.columns.get('id')!] },
+        type: 'ManyToOne',
+        from: { table: t1, columns: columnsOf(t1, 'id') },
+        to: { table: t1, columns: columnsOf(t1, 'id') },
         onDelete: 'NO ACTION',
       };
-      const rel2 = {
+      const rel2: RelationshipNode = {
         name: '1_fk',
-        from: { table: t2, columns: [t2.columns.get('id')!] },
-        to: { table: t2, columns: [t2.columns.get('id')!] },
+        type: 'ManyToOne',
+        from: { table: t2, columns: columnsOf(t2, 'id') },
+        to: { table: t2, columns: columnsOf(t2, 'id') },
         // onDelete undefined
       };
-      source.addRelationship(rel1 as any);
-      target.addRelationship(rel2 as any);
+      source.addRelationship(rel1);
+      target.addRelationship(rel2);
 
       const result = diffSchemas(source, target, { compareRelationships: true });
       expect(result.relationshipDiffs.length).toBe(0);
@@ -713,7 +707,7 @@ describe('SchemaASTDiffer', () => {
       }).indexDiffs;
     };
 
-    it('leaves the entries of an expression index uncompared, whatever the text says', () => {
+    it('should leave the entries of an expression index uncompared, whatever the text says', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'lower(email)', expression: true }] },
         { entries: [{ column: 'upper(email)', expression: true }] },
@@ -723,7 +717,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs).toEqual([]);
     });
 
-    it('still compares the rest of an index whose expression it cannot read', () => {
+    it('should still compare the rest of an index whose expression it cannot read', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'lower(email)', expression: true }], unique: true },
         { unique: false },
@@ -734,7 +728,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs[0].description).toBe('unique: false -> true');
     });
 
-    it('accepts a nulls order the entity left to the default the database states', () => {
+    it('should accept a nulls order the entity left to the default the database states', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email' }] },
         { entries: [{ column: 'email', order: 'asc', nulls: 'last' }] },
@@ -744,7 +738,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs).toEqual([]);
     });
 
-    it('reports a nulls order the entity asked for against the engine default', () => {
+    it('should report a nulls order the entity asked for against the engine default', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email', nulls: 'first' }] },
         { entries: [{ column: 'email', order: 'asc', nulls: 'last' }] },
@@ -754,7 +748,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs.length).toBe(1);
     });
 
-    it('accepts an access method the database does not name', () => {
+    it('should accept an access method the database does not name', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email' }], type: 'gin' },
         { entries: [{ column: 'email' }] },
@@ -764,7 +758,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs).toEqual([]);
     });
 
-    it('reports an access method that differs from the one the database names', () => {
+    it('should report an access method that differs from the one the database names', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email' }], type: 'gin' },
         { entries: [{ column: 'email' }], type: 'btree' },
@@ -775,7 +769,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs[0].description).toContain('type: btree -> gin');
     });
 
-    it('accepts a covering index whose stored columns were listed in another order', () => {
+    it('should accept a covering index whose stored columns were listed in another order', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email' }], include: ['status', 'name'] },
         { entries: [{ column: 'email' }], include: ['name', 'status'] },
@@ -785,7 +779,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs).toEqual([]);
     });
 
-    it('reports an operator class the entity asked for and the database does not have', () => {
+    it('should report an operator class the entity asked for and the database does not have', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'data', opsClass: 'jsonb_path_ops' }] },
         { entries: [{ column: 'data' }] },
@@ -796,7 +790,7 @@ describe('SchemaASTDiffer', () => {
       expect(diffs[0].description).toContain('jsonb_path_ops');
     });
 
-    it('reports a covering index whose stored columns changed', () => {
+    it('should report a covering index whose stored columns changed', () => {
       const diffs = diffIndexes(
         { entries: [{ column: 'email' }], include: ['status'] },
         { entries: [{ column: 'email' }] },

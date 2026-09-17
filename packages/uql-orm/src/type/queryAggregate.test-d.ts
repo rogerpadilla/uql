@@ -1,12 +1,6 @@
 /**
- * Type-level regression tests for the aggregate API: `$group` (grouped columns) is typed against the
- * entity, `$select` holds computed columns, and `$having`/`$sort` alias keys are
- * constrained to the grouped columns plus computed aliases.
- *
- * Not a runtime test: it has no assertions to execute. It is type-checked by `bun run ts`
- * (tsc over the whole tree), skipped by vitest (which collects only `.test.ts` / `.spec.ts`),
- * and left out of the build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails
- * the type-check if the error it guards ever stops happening, keeping the negatives locked in.
+ * The aggregate API: `$group` is typed against the entity, `$select` holds computed columns, and
+ * `$having`/`$sort` take the grouped columns and computed aliases only. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 
@@ -118,7 +112,7 @@ export async function aggregateTyping() {
 
   // Negative: $count takes a field or '*', not a numeric literal.
   await querier.aggregate(User, {
-    // @ts-expect-error $count no longer accepts 1
+    // @ts-expect-error $count takes '*', not 1
     $select: { total: { $count: 1 } },
   });
 
@@ -166,9 +160,8 @@ export async function aggregateTyping() {
 }
 
 /**
- * The result row carries exactly the columns the statement emits. It used to carry every field of
- * the entity whenever the compiler could not read `$group` - omitted, hoisted, or annotated - so
- * `rows[0].status` type-checked on a query whose SELECT never mentioned `status`.
+ * The result row carries exactly the columns the statement emits, whether `$group` is written inline,
+ * hoisted or annotated.
  */
 export async function resultRowCarriesOnlyEmittedColumns() {
   const aggOnly = await querier.aggregate(User, { $select: { total: { $sum: { age: true } } } });

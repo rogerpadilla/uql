@@ -130,14 +130,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     return (diff.indexesToAdd ?? []).map((index) => this.generateDropIndex(diff.tableName, index.name));
   }
 
-  /**
-   * MongoDB's key spec is where its index options live: `-1` for a descending entry and `'text'` for a
-   * full-text index, which is what `$text` needs since a text index declares its own fields.
-   *
-   * @remarks The SQL-only options are refused by the checks the SQL dialects refuse each other's with - a
-   * silently weaker index is worse than a clear failure. `where` is the filter's JSON, as
-   * {@link compileIndexPredicate} writes it.
-   */
+  /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     assertIndexType(index, MONGO_INDEX_TYPES, this.dialectName);
     assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.dialectName);

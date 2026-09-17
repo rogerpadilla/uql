@@ -205,12 +205,8 @@ export interface ErrorEmittingPool {
 }
 
 /**
- * Attaches an error listener to a connection pool so a dropped connection is logged instead of left
- * unhandled - which crashes the process for drivers that don't guard against it themselves
- * (node-postgres, `mssql`), or is silently swallowed by those that install a no-op of their own
- * (`mariadb`). Reported through the pool's own logger when it has one, and through the default one
- * otherwise: never dropped, whatever levels were configured, since a swallowed pool error is exactly
- * the failure this guards against.
+ * Logs a pool's dropped connection, which some drivers would otherwise crash the process on, through
+ * the pool's logger or the default one, whatever levels were configured.
  */
 export function attachPoolErrorHandler(pool: ErrorEmittingPool, message: string, logging?: LoggingOptions): void {
   const logger = new LoggerWrapper(isOwnLogger(logging) ? logging : true);

@@ -59,7 +59,7 @@ describe('Migrator Shared Pool', () => {
     await pool.end();
   });
 
-  it('runs a builder migration with a builder, both ways', async () => {
+  it('should run a builder migration with a builder, both ways', async () => {
     const pool = new Sqlite3QuerierPool(':memory:');
     const migrator = new Migrator(pool);
     const migration = {
@@ -92,7 +92,7 @@ describe('Migrator Shared Pool', () => {
     await pool.end();
   });
 
-  it('hands a builder migration the querier too, for a backfill that reads before it writes', async () => {
+  it('should hand a builder migration the querier too, for a backfill that reads before it writes', async () => {
     const pool = new Sqlite3QuerierPool(':memory:');
     const migrator = new Migrator(pool);
     await pool.withQuerier(async (querier) => {

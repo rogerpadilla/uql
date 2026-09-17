@@ -49,7 +49,7 @@ describe('PostgreSQL column type drift', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('reports the VARCHAR(255) the entity would have created as TEXT', async () => {
+  it('should report the VARCHAR(255) the entity would have created as TEXT', async () => {
     const drifts = await driftFor();
 
     expect(drifts).toHaveLength(1);
@@ -58,7 +58,7 @@ describe('PostgreSQL column type drift', () => {
     expect(drifts[0].actual).toBe('VARCHAR(255)');
   });
 
-  it('reports nothing once the entity states the length the column has', async () => {
+  it('should report nothing once the entity states the length the column has', async () => {
     expect(await driftFor(255)).toEqual([]);
   });
 });

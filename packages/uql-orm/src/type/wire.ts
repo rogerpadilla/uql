@@ -20,11 +20,8 @@ export type RequestCountedSuccessResponse<E> = RequestSuccessResponse<E> & {
 export type QuerierTransport = 'server' | 'client';
 
 /**
- * A querier method's result on the given transport, so one signature serves both:
- * `QuerierResult<'server', User[]>` is `Promise<User[]>` and `QuerierResult<'client', User[]>` is
- * `Promise<RequestSuccessResponse<User[]>>`. Indexing a map by the transport is what stands in for
- * the higher-kinded wrapper TypeScript cannot express, and it resolves away: errors and hovers show
- * the `Promise<User[]>` it picked, never this indirection.
+ * A querier method's result on a transport: `Promise<User[]>` on the server, the response envelope on
+ * the client. A map indexed by the transport, which resolves away in hovers.
  */
 export type QuerierResult<W extends QuerierTransport, T> = {
   server: Promise<T>;

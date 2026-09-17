@@ -1,26 +1,17 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
-import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
+import { PG_FEATURES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { COCKROACH_VECTOR_METRICS } from '../dialect/pgVectorMetrics.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryContext, Type } from '../type/index.js';
+import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
 
-/**
- * CockroachDB Dialect.
- * Shares AST/quoting/JSONB/full-text-search/vector-search/upsert logic with Postgres via
- * {@link PgLikeSqlDialect} (wire- and SQL-compatible for all of that, including pgvector's
- * `<=>`/`<->`/`<#>` operators, which CockroachDB implements natively). Unlike Postgres, CockroachDB
- * has no `xmax`/`ctid` system columns, so it uses `PgLikeSqlDialect.upsert`'s default as-is (no
- * `created` detection) rather than Postgres's `xmax`-based override; and no `vectorExtension`
- * either, since the vector type is native (no `CREATE EXTENSION` needed). Its `CREATE VECTOR INDEX`
- * syntax is the migrator's `CockroachIndexDdl`.
- */
+/** CockroachDB: the Postgres wire and SQL, without `xmax` (so no upsert `created`) and with native vectors. */
 export class CockroachDialect extends PgLikeSqlDialect {
   override readonly dialectName = 'cockroachdb';
 
   override readonly vectorMetrics = COCKROACH_VECTOR_METRICS;
 
-  /** Verified live on v26.2: an upsert batch mixing an update and an insert returned the update first. */
-  override readonly upsertReturningOrdered = false;
+  /** An upsert batch mixing an update and an insert returns the update first (verified on v26.2). */
+  override readonly features: SqlDialectFeatures = { ...PG_FEATURES, orderedUpsertReturning: false };
 
   /**
    * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an

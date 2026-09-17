@@ -7,12 +7,8 @@ export * from './securityError.js';
 const contextStorage = new AsyncLocalStorage<UqlContext>();
 
 /**
- * Runs `callback` with an ambient {@link UqlContext} that parameterized filters resolve from.
- * The context propagates across `await`s, `Promise.all` fan-out, and transactions (which reuse the
- * same querier), so every query inside the callback is scoped without threading it through calls.
- *
- * Browser bundles resolve this module to `context.browser.ts` (see the `browser` map in
- * package.json), which keeps the same API without `node:async_hooks`.
+ * Runs `callback` with a {@link UqlContext} parameterized filters read, across `await`s and transactions.
+ * The browser build keeps the API without `node:async_hooks`.
  * @example `await withContext({ tenantId }, () => querier.findMany(Invoice, {}))`
  */
 export function withContext<T>(context: UqlContext, callback: () => T): T {
@@ -25,17 +21,8 @@ export function getContext(): UqlContext | undefined {
 }
 
 /**
- * Captures the current ambient context and returns a runner that re-establishes it later. Use it to
- * carry the context across event boundaries where `AsyncLocalStorage` does not propagate - emitter
- * callbacks, timers, and queued work run on their own async ticks, so a context set by
- * {@link withContext} is not visible inside them unless replayed:
- *
- * ```ts
- * const scoped = captureContext(); // e.g. inside a scoped request or job
- * emitter.on('chunk', (chunk) => scoped(() => saveChunk(chunk))); // runs with that context
- * ```
- *
- * When no context is active at capture time, the runner just invokes the callback.
+ * A runner that re-establishes the current context, for work `AsyncLocalStorage` does not follow:
+ * `emitter.on('chunk', (chunk) => scoped(() => saveChunk(chunk)))`.
  */
 export function captureContext(): <T>(callback: () => T) => T {
   const context = getContext();

@@ -1,5 +1,4 @@
 import { ISOLATION_LEVEL } from 'mssql';
-import type { ConnectionPool, Request, Transaction } from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { IsolationLevel, QueryUpdateResult, RawRow, TransactionOptions } from '../type/index.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
@@ -10,32 +9,60 @@ type MsSqlResult = {
   rowsAffected: number[];
 };
 
+/** The part of the `Readable` a request streams into that a querier drives. */
+type MsSqlRowStream = AsyncIterable<unknown> & {
+  destroy(error: Error): unknown;
+  on(event: 'error', listener: (error: Error) => void): unknown;
+};
+
+/** The part of an `mssql` `Request` a querier drives. */
+type MsSqlRequest = {
+  input(name: string, value: unknown): unknown;
+  query(command: string): Promise<MsSqlResult>;
+  toReadableStream(): MsSqlRowStream;
+  cancel(): unknown;
+};
+
+/** The part of an `mssql` `Transaction` a querier drives. */
+type MsSqlTransaction = {
+  begin(isolationLevel?: number): Promise<unknown>;
+  commit(): Promise<unknown>;
+  rollback(): Promise<unknown>;
+  request(): MsSqlRequest;
+};
+
+/** The part of an `mssql` `ConnectionPool` a querier drives. */
+export type MsSqlConnection = {
+  request(): MsSqlRequest;
+  transaction(): MsSqlTransaction;
+};
+
 /**
  * A connection is a `ConnectionPool` handle here rather than a checked-out socket: `mssql` owns its
  * own pool and hands out `Request`s, so what UQL holds is the pool plus, once a transaction opens,
  * the `Transaction` every later request has to be bound to.
  */
-export class MsSqlQuerier extends AbstractPoolQuerier<ConnectionPool> {
-  #transaction?: Transaction;
+export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
+  #transaction?: MsSqlTransaction;
 
   /**
    * Values bind by name, `@p1` upward, matching {@link MsSqlDialect.placeholder}. `tedious` infers
    * a type from the JS value, which is why a `Date` and a `Uint8Array` reach it unconverted - the
    * inference is right for both, and wrong only for a bare `null`, which it calls `NVarChar`.
    */
-  #request(values?: unknown[]): Request {
+  #request(values?: unknown[]): MsSqlRequest {
     const request = this.#transaction ? this.#transaction.request() : this.getConn().request();
     values?.forEach((value, index) => request.input(`p${index + 1}`, value));
     return request;
   }
 
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const res = (await this.#request(values).query(query)) as unknown as MsSqlResult;
+    const res = await this.#request(values).query(query);
     return decodeWireTypes(res.recordset as T[] | undefined, res.recordset?.columns);
   }
 
   override async internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
-    const res = (await this.#request(values).query(query)) as unknown as MsSqlResult;
+    const res = await this.#request(values).query(query);
     return this.buildUpdateResult({
       // `rowsAffected` carries one entry per statement, and a `MERGE` upsert emits its `OUTPUT`
       // alongside the write, so the counts are summed rather than read at [0].
@@ -92,7 +119,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<ConnectionPool> {
   }
 
   /** The pool owns the socket; releasing a querier only drops this one's claim on it. */
-  protected override async releaseConn(_conn: ConnectionPool, _discard: boolean) {
+  protected override async releaseConn(_conn: MsSqlConnection, _discard: boolean) {
     const transaction = this.#transaction;
     this.#transaction = undefined;
     // A querier handed back mid-transaction would otherwise leave it open on a pooled connection.

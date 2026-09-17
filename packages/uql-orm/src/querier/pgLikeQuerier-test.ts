@@ -25,10 +25,8 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
   }
 
   /**
-   * `halfvec` and `sparsevec` round-tripping through a real database, insert included. Both used to
-   * bind as plain arrays there, and `sparsevec` additionally needs pgvector's sparse literal - two
-   * failures no assertion on generated SQL could see. CockroachDB has neither type and lands both on
-   * `vector`, which is exactly why the same test has to pass on both.
+   * `halfvec` and `sparsevec` through a real database, insert included, `sparsevec` in pgvector's sparse
+   * literal. CockroachDB stores both as `vector`, which is why the same test runs there.
    */
   async shouldRoundTripNarrowVectorTypes() {
     const id = await this.querier.insertOne(NarrowVectorItem, {
@@ -39,11 +37,11 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
 
     const found = await this.querier.findOneById(NarrowVectorItem, id);
 
-    expect(found!.name).toBe('narrow');
+    expect(found?.name).toBe('narrow');
     // Both come back dense, whichever literal the engine stored them as: `sparsevec` is a storage
     // format, and the field type promises the same array on the way out as on the way in.
-    expect(found!.half).toEqual([1, 0, 0]);
-    expect(found!.sparse).toEqual([0, 0, 1]);
+    expect(found?.half).toEqual([1, 0, 0]);
+    expect(found?.sparse).toEqual([0, 0, 1]);
   }
 
   async shouldSortByNarrowVectorDistance() {

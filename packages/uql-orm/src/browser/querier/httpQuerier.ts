@@ -43,14 +43,7 @@ export type HttpQuerierDefaults = {
   readonly entityPath?: (entity: Type<unknown>) => string;
 };
 
-/**
- * The id as one path segment.
- *
- * A composite key has no spelling here yet - the route is `/:id`, and how several columns share one
- * segment is a serialization to invent rather than copy. Refused rather than interpolated, which
- * would have sent `[object Object]` for the server to reject. Its callers are `async` so this
- * surfaces as a rejection, like every other failure they can hand back.
- */
+/** The id as one path segment, refusing a composite key, which has no spelling in `/:id` yet. Callers are `async`. */
 function idSegment<E>(entity: Type<E>, id: EntityId<E>): string {
   if (!isScalarId(id)) {
     throw new TypeError(`'${entity.name}' was addressed by an id object, which the HTTP route cannot carry.`);

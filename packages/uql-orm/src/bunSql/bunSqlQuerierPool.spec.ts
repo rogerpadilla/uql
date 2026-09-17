@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/index.js';
+import { assertDefined } from '../test/index.js';
 import { BunSqlQuerier } from './bunSqlQuerier.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
@@ -42,7 +43,9 @@ describe('BunSqlQuerierPool', () => {
 
     it('should provide no-op event listeners', () => {
       const pool = new BunSqlQuerierPool({ url: 'postgres://localhost' });
-      expect(() => pool.pool.on!('error', () => {})).not.toThrow();
+      const { on } = pool.pool;
+      assertDefined(on);
+      expect(() => on('error', () => {})).not.toThrow();
     });
   });
 

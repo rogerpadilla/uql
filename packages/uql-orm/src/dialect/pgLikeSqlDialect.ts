@@ -1,6 +1,5 @@
 import type { IndexType } from '../schema/types.js';
 import {
-  type DialectFeatures,
   type DriverCapabilities,
   type EntityMeta,
   type FieldOptions,
@@ -10,6 +9,7 @@ import {
   QueryRaw,
   type QuerySizeComparisonOps,
   type QueryTextSearchOptions,
+  type SqlDialectFeatures,
   type Type,
 } from '../type/index.js';
 import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
@@ -27,15 +27,35 @@ export type PgLikeDialectOptions = DialectOptions & {
   readonly driverCapabilities?: Partial<DriverCapabilities>;
 };
 
-/**
- * Shared AST/quoting/JSONB/full-text-search/vector-search implementation between Postgres and
- * CockroachDB (wire- and SQL-compatible for everything below, including `TO_TSVECTOR`/`TO_TSQUERY`
- * and pgvector's `<=>`/`<->`/`<#>` distance operators, which CockroachDB implements natively).
- * `xmax`-based upsert `created` detection is Postgres-only (CockroachDB has no `xmax`/`ctid`) and
- * stays in {@link PostgresDialect}, along with the `vectorExtension`/`vectorIndexStyle` values that
- * differ (Postgres needs `CREATE EXTENSION vector` and pgvector's `USING ivfflat/hnsw` index
- * syntax; CockroachDB's vector type and `CREATE VECTOR INDEX` syntax are both native).
- */
+/** What the Postgres-wire engines have. */
+export const PG_FEATURES: SqlDialectFeatures = {
+  ifNotExists: true,
+  indexIfNotExists: true,
+  schemas: true,
+  dropTableCascade: true,
+  foreignKeyAlter: true,
+  primaryKeyAlter: true,
+  generatedColumnAdd: true,
+  commentSyntax: 'statement',
+  vectorIndexRequiresNotNull: false,
+  vectorSupportsLength: true,
+  supportsTimestamptz: true,
+  stringSizing: 'bounded-text',
+  supportsUnsigned: false,
+  serverSideCursors: true,
+  rowLocks: true,
+  rowLockWithWindow: false,
+  rowLockOf: true,
+  orderedUpsertReturning: true,
+  orderedJsonAggregates: true,
+  partialJsonContainment: true,
+  typedJsonElements: false,
+  narrowVectorTypes: false,
+  vectorTuningNeedsTransaction: true,
+  serialDeclaresPrimaryKey: false,
+};
+
+/** What Postgres and CockroachDB share: JSONB, full-text search, pgvector's operators, and the upsert. */
 export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   /** How the driver binds a parameter: node-`pg`'s, unless the pool states its own. */
   readonly driverCapabilities: DriverCapabilities;
@@ -45,26 +65,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     this.driverCapabilities = { nativeArrays: true, explicitJsonCast: false, ...options.driverCapabilities };
   }
 
-  /** `FOR UPDATE` and a window function cannot share a statement here. See the base declaration. */
-  override readonly supportsWindowWithRowLock = false;
-
-  /** Default {@link DialectFeatures} for Postgres-wire dialects. */
-  protected override readonly featureDefaults: DialectFeatures = {
-    ifNotExists: true,
-    indexIfNotExists: true,
-    schemas: true,
-    dropTableCascade: true,
-    foreignKeyAlter: true,
-    primaryKeyAlter: true,
-    generatedColumnAdd: true,
-    commentSyntax: 'statement',
-    vectorIndexRequiresNotNull: false,
-    vectorSupportsLength: true,
-    supportsTimestamptz: true,
-    stringSizing: 'bounded-text',
-    supportsUnsigned: false,
-    serverSideCursors: true,
-  };
+  override readonly features: SqlDialectFeatures = PG_FEATURES;
 
   override readonly escapeIdChar = '"';
   // Shared default for both dialects. CockroachDB docs flag sequential PKs as a hotspotting risk
@@ -109,9 +110,6 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly vectorMetrics = PG_VECTOR_METRICS;
 
-  /** `SET LOCAL` applies to the enclosing transaction and to nothing at all without one. */
-  override readonly vectorTuningNeedsTransaction = true;
-
   /**
    * The GUC each pgvector index type reads for "how much of the index to explore". They are not the
    * same quantity - `ef_search` is a candidate-list size, `probes` a count of lists - which is why
@@ -123,11 +121,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   ]);
 
   /**
-   * `SET LOCAL hnsw.ef_search = N`, plus `hnsw.iterative_scan` when the query also filters by
-   * distance. Without iterative scan, HNSW returns its candidate list and the predicate then removes
-   * from it, so a `$near` can hand back fewer rows than qualify - the recall bug `$candidates`
-   * exists to answer. `strict_order`, never `relaxed_order`: the latter returns rows out of distance
-   * order, which would quietly contradict the `ORDER BY` the caller asked for.
+   * `SET LOCAL hnsw.ef_search = N`, plus `hnsw.iterative_scan = strict_order` where the query also filters
+   * by distance, which would otherwise drop rows the candidate list missed.
    */
   override vectorTuningStatements<E>(meta: EntityMeta<E>, q: Query<E>): readonly string[] {
     const indexType = this.tunedVectorIndex(meta, q)?.type;
@@ -211,10 +206,12 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /** One array parameter, which a context that inlines values has none of: it lists them instead. */
-  protected override formatIn(ctx: QueryContext, values: unknown[], negate: boolean): string {
-    if (values.length === 0 || ctx.inlineValues) return super.formatIn(ctx, values, negate);
+  protected override formatIn(ctx: QueryContext, operand: string, values: unknown[], negate: boolean): string {
+    if (!values.length || ctx.inlineValues) {
+      return super.formatIn(ctx, operand, values, negate);
+    }
     const ph = this.addValue(ctx, values);
-    return negate ? ` <> ALL(${ph})` : ` = ANY(${ph})`;
+    return negate ? `${operand} <> ALL(${ph})` : `${operand} = ANY(${ph})`;
   }
 
   protected override numericCast(expr: string): string {

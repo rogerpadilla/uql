@@ -87,11 +87,7 @@ export async function main(args = process.argv.slice(2)) {
         process.exit(1);
     }
 
-    // Close the connection pool
-    const pool = config.pool;
-    if (pool.end) {
-      await pool.end();
-    }
+    await config.pool.end();
   } catch (error) {
     console.error('Error:', (error as Error).message);
     process.exit(1);
@@ -236,8 +232,7 @@ export async function runSync(migrator: Migrator, args: string[], config: Partia
   const safe = !args.includes('--unsafe');
   const options = { force, safe, drop: !safe };
 
-  // Ahead of the warning as well as of the run: `--dry-run` means the same thing whatever else was
-  // asked for, and it used to be ignored beside `--force`.
+  // Ahead of the warning and the run: `--dry-run` means the same whatever else was asked for, `--force` included.
   if (args.includes('--dry-run')) {
     const statements = await migrator.planSync(options);
     console.log(statements.length ? `\n${statements.join('\n')}` : '\nSchema is already in sync.');

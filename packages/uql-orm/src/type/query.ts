@@ -1,4 +1,4 @@
-import type { FieldKey, IdKey, JsonFieldPaths, RelationKey, RelationTarget, WrittenId } from './entity.js';
+import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget, WrittenId } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -82,15 +82,8 @@ export type QueryPopulateRelationOptions<V> =
   IsMany<V> extends true ? RelationQuery<RelationTarget<V>> : QueryUnique<RelationTarget<V>> & { $required?: boolean };
 
 /**
- * Ambient per-request context (e.g. `{ tenantId, userId, roles }`) resolved by parameterized
- * filters. Set with `withContext(ctx, cb)`. It's an `interface` (not a type alias) so you can type
- * your keys once via declaration merging and get them typed wherever context is read:
- *
- * ```ts
- * declare module 'uql-orm' {
- *   interface UqlContext { tenantId: number; userId: string }
- * }
- * ```
+ * The per-request context parameterized filters read, set with `withContext(ctx, cb)`. An interface,
+ * so its keys can be typed once: `declare module 'uql-orm' { interface UqlContext { tenantId: number } }`.
  */
 export interface UqlContext {
   [key: string]: unknown;
@@ -159,16 +152,9 @@ export type QuerySortByCount = {
 };
 
 /**
- * sort by map - supports field keys, JSON dot-notation paths (restricted to real JSON fields,
- * like `QueryWhere`), relation sort via nested objects, and vector similarity search on
- * `number[]` fields. `Vector` is what confines a vector search to the level the statement ranks:
- * the queried entity. A relation of it is joined in one row at a time, so there is nothing to rank
- * there - the SQL dialects throw, and MongoDB would quietly drop it, so this is its only guard.
- *
- * One mapped type over the three key sets rather than three intersected. The sets are disjoint - a
- * JSON path is dotted, and a field key cannot also be a relation key - and an assignability check
- * against an intersection is repeated per constituent, which made this the single most expensive
- * type in the package to check.
+ * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or a vector distance,
+ * which `Vector` confines to the queried entity. One mapped type over the key sets: an intersection is
+ * checked once per member, which made this the costliest type to check.
  */
 export type QuerySortMap<E, Vector extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
   [P in K]?: P extends RelationKey<E>
@@ -267,26 +253,14 @@ export type Query<E> = {
   $distinct?: boolean;
 
   /**
-   * take a row-level lock on the rows this query returns (`SELECT ... FOR UPDATE`). Needs an open
-   * transaction: outside one the statement commits and drops the lock before the caller can act on
-   * the rows, so it is rejected rather than emitted. Locks only the queried entity, never anything
-   * reached through `$populate`. SQL only; MongoDB and the SQLite family reject it.
-   *
-   * Declared here rather than on {@link QuerySearch}, which `update`/`delete` take: that placement
-   * is what keeps the clause off those statements at the type level.
+   * Lock the rows this query returns, `SELECT ... FOR UPDATE`, inside an open transaction: outside one
+   * it is refused, since the lock would drop before the rows are used. SQL only, and not the SQLite family.
    */
   $lock?: QueryLock;
 
   /**
-   * how many candidates an approximate-nearest-neighbour index explores before ranking, for a vector
-   * search. Higher trades speed for recall; the default is whatever the engine's own is, which is
-   * tuned for speed. Ignored where the search is exact (SQLite, libSQL and Turso scan every row) and
-   * where the field carries no ANN index, since there is nothing to widen.
-   *
-   * The units are the index's, not UQL's, so the number is not comparable across index types: it
-   * becomes `hnsw.ef_search` or `ivfflat.probes` on Postgres, `mhnsw_ef_search` on MariaDB, and
-   * `numCandidates` on MongoDB Atlas. On Postgres it needs an open transaction, since a `SET LOCAL`
-   * outside one applies to nothing.
+   * How many candidates an ANN index explores before ranking a vector search, in that index's own units
+   * (`hnsw.ef_search`, `numCandidates`...); ignored where the search is exact. Postgres needs a transaction.
    */
   $candidates?: number;
 
@@ -312,13 +286,8 @@ export type Query<E> = {
 };
 
 /**
- * `Query`'s clauses grouped by the shape of their value - what a parser reading one off the wire and
- * a validator checking a relation's own query both need, and what each used to enumerate for itself.
- * Declared beside the type they describe so the two cannot drift, and `satisfies` fails the build
- * rather than the runtime if a clause is ever renamed.
- *
- * `$lock` is only in {@link QUERY_STATEMENT_CLAUSES}: neither a wire query nor a relation's query
- * accepts it.
+ * `Query`'s clauses grouped by the shape of their value, for the wire parser and the relation query
+ * check alike; `satisfies` keeps them in step with `Query`.
  */
 export const QUERY_OBJECT_CLAUSES = [
   '$select',
@@ -377,16 +346,8 @@ export type QueryOne<E> = Except<Query<E>, '$limit'>;
 export type QueryUnique<E> = Pick<QueryOne<E>, '$select' | '$exclude' | '$populate' | '$where'>;
 
 /**
- * The clauses that decide a row's shape, captured from the query as written: the field names
- * `$select` and `$exclude` list, the value those maps carry (a falsy one subtracts instead of
- * selecting, as it does at runtime, and a widened map is how a projection that is not statically
- * known announces itself), and the relation names `$populate` lists.
- *
- * Each is captured as a *key set* rather than as the map itself, which is what keeps the checks
- * intact: TypeScript skips excess-property checking on a naked type parameter, so a captured map
- * would take a typo'd key without a word, while a captured key set makes that typo fail its own
- * `FieldKey<E>` / `RelationKey<E>` constraint. Every other clause - `$where`, `$sort`, and each
- * populated relation's own query - stays the concrete {@link Query} it is today.
+ * The clauses that shape a row, captured as key sets rather than maps: a naked type parameter skips
+ * excess-property checks, while a key set fails its own constraint on a typo.
  * @internal
  */
 type QueryProjection<
@@ -430,10 +391,8 @@ export type QueryOneProjected<
 > = QueryOne<E> & QueryProjection<E, S, V, X, P, C>;
 
 /**
- * The keys a query comes back with, mirroring what the runtime projects: the fields a positive
- * `$select` names, or every field minus what a falsy `$select` entry or a truthy `$exclude` entry
- * subtracts, plus the relations `$populate` asked for. A positive `$select` wins outright, which is
- * why `$exclude` is only read on the branch where there is none.
+ * The keys a query comes back with, as the runtime projects them: a positive `$select`'s, or every
+ * field minus what `$select` or `$exclude` subtracts, plus the populated relations.
  * @internal
  */
 type ProjectedKeys<E, S, V, X, P> =
@@ -447,16 +406,9 @@ type ProjectedKeys<E, S, V, X, P> =
 type IsUniform<V> = [V] extends [true | 1] ? true : [V] extends [false | 0] ? true : false;
 
 /**
- * A row of a find result: the entity narrowed to the fields the query projected, plus the relations
- * it populated - reading anything the query left out is a compile error rather than a silent
- * `undefined`. Modifiers are preserved, so an optional field stays optional. Name a projected row
- * with it where a helper has to take one: `QueryFindResult<User, 'id' | 'name'>`.
- *
- * The entity itself when the query projects nothing, when it uses a raw-projection array (columns,
- * not fields), and when the projection is not uniform - a `Query<E>` built elsewhere, or a map
- * mixing selected and subtracted entries, whose positive keys inference cannot recover. Relations
- * keep their declared type: narrowing them means capturing their queries as maps, which costs those
- * queries their own checks.
+ * A find's row: the entity narrowed to what the query projected and populated, so reading anything
+ * else does not compile. The entity itself where the projection is raw, absent or not uniform.
+ * @example `QueryFindResult<User, 'id' | 'name'>`
  */
 export type QueryFindResult<
   E,
@@ -511,13 +463,7 @@ export type QueryStringified = {
   [K in keyof Query<unknown>]?: string;
 };
 
-/**
- * What upserting one row reports, against the entity rather than the driver.
- *
- * `created` is here and not on {@link QueryUpsertManyResult} because it is only ever knowable for a
- * single statement: a batch's `affectedRows` is a weighted sum on the dialects that report one at
- * all, and a batch of mixed shapes is several statements.
- */
+/** What upserting one row reports. `created` is only knowable for a single statement, so a batch has none. */
 export type QueryUpsertOneResult<E> = {
   readonly id?: WrittenId<E>;
   readonly changes?: number;

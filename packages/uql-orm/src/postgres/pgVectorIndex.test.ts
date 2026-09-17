@@ -52,7 +52,7 @@ describe('pgvector index', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('creates the index with the table it belongs to', async () => {
+  it('should create the index with the table it belongs to', async () => {
     await new Migrator(pool, { entities: [PgVectorIndexed] }).sync({ logging: false });
 
     const [index, ...rest] = await indexesOf();
@@ -65,7 +65,7 @@ describe('pgvector index', () => {
     expect(index.indexdef).toContain("ef_construction='32'");
   });
 
-  it('adds the index to a table that already exists', async () => {
+  it('should add the index to a table that already exists', async () => {
     await drop();
     await new Migrator(pool, { entities: [PgVectorUnindexed] }).sync({ logging: false });
     expect(await indexesOf()).toEqual([]);
@@ -75,7 +75,7 @@ describe('pgvector index', () => {
     expect((await indexesOf()).map((it) => it.indexname)).toEqual(['ix_pg_vec']);
   });
 
-  it('leaves the index alone on a second sync', async () => {
+  it('should leave the index alone on a second sync', async () => {
     const migrator = new Migrator(pool, { entities: [PgVectorIndexed] });
     await migrator.sync({ logging: false });
 

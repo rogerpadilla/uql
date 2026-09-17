@@ -88,16 +88,9 @@ export function jsonElemExists(from: string, conditions: readonly string[]): str
 export type JsonAccessMode = 'json' | 'numeric' | 'text';
 
 /**
- * How a JSON scalar has to be compared against `value` (or, for `$in`/`$nin`, against every element
- * of it). Extracting a JSON value yields *text*, which loses the type, so each operand type is
- * compared in the representation every engine agrees on:
- * - `numeric` - cast the accessor. Keeps `1` equal to a stored `1.0`, which strict JSON equality
- *   would not, and satisfies drivers that send typed parameters (`text = integer` otherwise).
- * - `json` - compare the JSON value against a JSON-encoded parameter. No cast recovers a boolean
- *   portably: PostgreSQL raises `text = boolean` and MySQL matches `'true'` against `1`.
- * - `text` - compare as extracted, which is also what the string operators need.
- *
- * Mixed operand types fall back to `text`, since one comparison cannot be two shapes at once.
+ * How a JSON scalar compares against `value`, since extraction yields text: `numeric` casts (so `1` equals
+ * `1.0`), `json` compares JSON values (the only portable boolean), and `text` compares as extracted,
+ * also for mixed operands.
  */
 export function jsonCompareMode(value: unknown): JsonAccessMode {
   const operands = Array.isArray(value) ? value : [value];
@@ -110,15 +103,7 @@ export function jsonCompareMode(value: unknown): JsonAccessMode {
   return operands.every((operand) => typeof operand === 'number') ? 'numeric' : 'text';
 }
 
-/**
- * The mode a *declared* type asks for: {@link jsonCompareMode}'s twin, reading the type instead of an
- * operand. An index over a JSON path is only reachable by a comparison that extracts it the same way,
- * so the two have to answer alike - which is why they are one pair over one vocabulary.
- *
- * Reads the type through `util/field.util`'s own classifier, which the dialects already carry:
- * resolving it through `schema/canonicalType` instead pulls that whole module into every consumer
- * bundle.
- */
+/** The mode a declared type asks for, {@link jsonCompareMode}'s twin: an index over a path is reached only by a comparison extracting it alike. */
 export function jsonTypeMode(type: FieldType): JsonAccessMode {
   const family = columnFamily(type);
   if (family === 'numeric') {
@@ -128,14 +113,8 @@ export function jsonTypeMode(type: FieldType): JsonAccessMode {
 }
 
 /**
- * Whether the operator reads the JSON *value* instead of its text form. The array operators always
- * do. Equality joins them for boolean operands, because extracting JSON as text loses the type in
- * a way no cast recovers portably: PostgreSQL raises `operator does not exist: text = boolean`,
- * MySQL compares `'true'` to `1` and silently matches nothing, and SQLite's `JSON_EXTRACT` yields
- * `1`. Comparing the JSON value against a JSON-encoded parameter is exact on every dialect.
- *
- * Numbers stay on the text accessor with a numeric cast, which keeps `1` equal to `1.0` - JSON
- * equality would not.
+ * Whether the operator reads the JSON value rather than its text: the array operators, and equality
+ * against a boolean, which no cast recovers portably from text.
  */
 export function isJsonbOp(op: string, value?: unknown): boolean {
   if (op === '$all' || op === '$size' || op === '$elemMatch') {

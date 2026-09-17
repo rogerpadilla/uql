@@ -19,13 +19,8 @@ export type NodeSqlitePoolOptions = LocalSqlitePoolOptions & {
 };
 
 /**
- * Pool backed by Node's built-in `node:sqlite`, so SQLite works with **no dependency at all** rather
- * than requiring the `better-sqlite3` native build. Use {@link Sqlite3QuerierPool} instead when you
- * want `better-sqlite3`, or are on Bun.
- *
- * @remarks `node:sqlite` needs no CLI flag from Node 22.13, and is still a release candidate
- * (stability 1.2) as of Node 26, so `better-sqlite3` via {@link Sqlite3QuerierPool} remains the
- * faster option for read-heavy work.
+ * A pool over Node's built-in `node:sqlite`, needing no dependency at all. {@link Sqlite3QuerierPool} is the
+ * faster choice for read-heavy work, and the one on Bun.
  */
 export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSqlitePoolOptions> {
   constructor(

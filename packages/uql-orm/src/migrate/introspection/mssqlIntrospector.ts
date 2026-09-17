@@ -31,9 +31,8 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: { count?: number }[]): boolean {
-    // No row, or no count in it, reads as `NaN`, which is not above zero.
-    return Number(results[0]?.count) > 0;
+  protected parseTableExistsResult([row]: { count: number }[]): boolean {
+    return row.count > 0;
   }
 
   /**
@@ -161,7 +160,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
-      entries: (row.columns ?? '').split(',').map((column) => ({ column })),
+      entries: row.columns.split(',').map((column) => ({ column })),
       unique: Boolean(row.is_unique),
     }));
   }
@@ -180,40 +179,32 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<ForeignKeySchema[]> {
     return results.map((row) => ({
       name: row.constraint_name,
-      columns: (row.columns || '').split(','),
-      references: { table: row.referenced_table, columns: (row.referenced_columns || '').split(',') },
+      columns: row.columns.split(','),
+      references: { table: row.referenced_table, columns: row.referenced_columns.split(',') },
       // `sys` spells them with an underscore: `SET_NULL`, `NO_ACTION`.
-      onDelete: this.normalizeReferentialAction((row.delete_rule || '').replaceAll('_', ' ')),
-      onUpdate: this.normalizeReferentialAction((row.update_rule || '').replaceAll('_', ' ')),
+      onDelete: this.normalizeReferentialAction(row.delete_rule.replaceAll('_', ' ')),
+      onUpdate: this.normalizeReferentialAction(row.update_rule.replaceAll('_', ' ')),
     }));
   }
 
   /**
-   * A default is stored wrapped in at least one layer of parentheses - `((0))` for a number,
-   * `(N'x')` for a string - because the engine reprints it from its own parse tree.
+   * The engine reprints a default from its own parse tree: all of it in one pair of parentheses, and a
+   * number in a second, so `((0))`, `((1)+(2))`, `(N'x')` and `(getdate())`.
    */
   protected parseDefaultValue(defaultValue: string | null): unknown {
-    if (defaultValue === null || defaultValue === undefined) {
+    if (defaultValue === null) {
       return undefined;
     }
-    let text = defaultValue.trim();
-    while (text.startsWith('(') && text.endsWith(')')) {
-      text = text.slice(1, -1).trim();
+    const text = defaultValue.slice(1, -1);
+    const number = /^\((-?\d+(?:\.\d+)?)\)$/.exec(text);
+    if (number) {
+      return Number(number[1]);
     }
-    if (text.toUpperCase() === 'NULL') {
-      return null;
+    const quoted = /^N?'(.*)'$/s.exec(text);
+    if (quoted) {
+      return quoted[1].replaceAll("''", "'");
     }
-    const unicode = text.startsWith("N'") ? text.slice(1) : text;
-    if (unicode.startsWith("'") && unicode.endsWith("'")) {
-      return unicode.slice(1, -1).replaceAll("''", "'");
-    }
-    if (/^-?\d+$/.test(text)) {
-      return Number.parseInt(text, 10);
-    }
-    if (/^-?\d+\.\d+$/.test(text)) {
-      return Number.parseFloat(text);
-    }
-    return text;
+    return text === 'NULL' ? null : text;
   }
 }
 

@@ -4,4 +4,6 @@ export * from './entity/index.js';
 export * from './namingStrategy/index.js';
 export * from './querier/index.js';
 export * from './type/index.js';
-export * from './util/index.js';
+export { withDeleted } from './util/filters.util.js';
+export { DefaultLogger } from './util/logger.js';
+export { raw, refs } from './util/raw.js';

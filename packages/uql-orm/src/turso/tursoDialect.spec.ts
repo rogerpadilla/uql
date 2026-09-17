@@ -25,14 +25,14 @@ function removeCalls(dialect: TursoDialect): number {
 
 describe('TursoDialect', () => {
   /** A Turso Cloud database runs libSQL unless it was created as `tursodb`, and libSQL caps a call at 127. */
-  it('chains a wide JSON update into calls libSQL takes', () => {
+  it('should chain a wide JSON update into calls libSQL takes', () => {
     expect(removeCalls(new TursoDialect())).toBe(2);
   });
 });
 
 describe('TursoLocalDialect', () => {
   /** The embedded Rust engine caps no function call. */
-  it('removes every key of a wide JSON update in one call', () => {
+  it('should remove every key of a wide JSON update in one call', () => {
     expect(removeCalls(new TursoLocalDialect())).toBe(1);
   });
 });

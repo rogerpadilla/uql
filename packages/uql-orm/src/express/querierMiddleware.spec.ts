@@ -28,7 +28,7 @@ describe('querierMiddleware', () => {
     app.use(errorHandler);
   });
 
-  it('GET routes with query-string parsing', async () => {
+  it('should route a GET, parsing the query string', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'John' }]);
     const res = await request(app).get('/api/user?$limit=5');
     expect(res.status).toBe(200);
@@ -36,13 +36,13 @@ describe('querierMiddleware', () => {
     expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 5 }));
   });
 
-  it('tolerates a trailing slash', async () => {
+  it('should tolerate a trailing slash', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     const res = await request(app).get('/api/user/');
     expect(res.status).toBe(200);
   });
 
-  it('POST routes with the parsed JSON body', async () => {
+  it('should route a POST with the parsed JSON body', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
     const res = await request(app).post('/api/user').send({ name: 'John' });
     expect(res.status).toBe(200);
@@ -51,14 +51,14 @@ describe('querierMiddleware', () => {
     expect(mockQuerier.commitTransaction).toHaveBeenCalled();
   });
 
-  it('PUT routes (saveOne upsert)', async () => {
+  it('should route a PUT to saveOne', async () => {
     mockQuerier.saveOne.mockResolvedValue(1);
     const res = await request(app).put('/api/user').send({ id: 1, name: 'John' });
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: 1, count: 1 });
   });
 
-  it('PATCH routes with the id sub-path', async () => {
+  it('should route a PATCH with the id sub-path', async () => {
     mockQuerier.updateMany.mockResolvedValue(1);
     const res = await request(app).patch('/api/user/1').send({ name: 'John' });
     expect(res.status).toBe(200);
@@ -68,14 +68,14 @@ describe('querierMiddleware', () => {
     });
   });
 
-  it('DELETE routes with the id sub-path', async () => {
+  it('should route a DELETE with the id sub-path', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const res = await request(app).delete('/api/user/1');
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: '1', count: 1 });
   });
 
-  it('the extended query parser reads bracket params as a $where map ($where[name]=John)', async () => {
+  it('should read bracket params as a $where map ($where[name]=John) with the extended parser', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const res = await request(app).get('/api/user/123?$where[name]=John');
     expect(res.status).toBe(200);
@@ -85,13 +85,13 @@ describe('querierMiddleware', () => {
     );
   });
 
-  it('a bracket list is not a $where ($where[]=1)', async () => {
+  it('should not read a bracket list as a $where ($where[]=1)', async () => {
     const res = await request(app).get('/api/user/123?$where[]=1');
     expect(res.status).toBe(400);
     expect(mockQuerier.findOne).not.toHaveBeenCalled();
   });
 
-  it('QUERY /api/user (RFC 10008) reads with the query in the body', async () => {
+  it('should read with the query in the body of a QUERY /api/user (RFC 10008)', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     const server = app.listen(0);
     try {
@@ -112,13 +112,13 @@ describe('querierMiddleware', () => {
     }
   });
 
-  it('unknown methods fall through to 404', async () => {
+  it('should fall through to 404 for an unknown method', async () => {
     const res = await request(app).options('/api/user/1');
     expect(res.status).toBe(404);
     expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
-  it('unknown entities fall through to 404 (respects exclude)', async () => {
+  it('should fall through to 404 for an unknown or excluded entity', async () => {
     class OtherEntity {}
     const router = querierMiddleware({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
     app = express();
@@ -127,29 +127,29 @@ describe('querierMiddleware', () => {
     expect(res.status).toBe(404);
   });
 
-  it('errorHandler maps non-Error exceptions to a generic 500', async () => {
+  it('should map a non-Error exception to a generic 500', async () => {
     mockQuerier.findOne.mockRejectedValue('raw string error');
     const res = await request(app).get('/api/user/one');
     expect(res.status).toBe(500);
     expect(res.body).toEqual({ error: { message: 'Internal Server Error', code: 500 } });
   });
 
-  it('errorHandler honors a numeric error status', async () => {
+  it('should honor a numeric error status', async () => {
     mockQuerier.findOne.mockRejectedValue(Object.assign(new Error('forbidden'), { status: 403 }));
     const res = await request(app).get('/api/user/one');
     expect(res.status).toBe(403);
     expect(res.body).toEqual({ error: { message: 'forbidden', code: 403 } });
   });
 
-  it('throws if no entities are provided', () => {
+  it('should throw if no entities are provided', () => {
     expect(() => querierMiddleware({ pool, include: [] })).toThrow('no entities for the uql middleware');
   });
 
-  it('uses getEntities when include is omitted', () => {
+  it('should use getEntities when include is omitted', () => {
     expect(querierMiddleware({ pool })).toBeDefined();
   });
 
-  it('hooks receive the express req as context', async () => {
+  it('should hand hooks the express request as context', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     app = express();
     app.use(express.json());

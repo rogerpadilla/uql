@@ -56,13 +56,7 @@ export type HookContext<E extends object, Ctx = unknown> = {
   readonly meta: EntityMeta<E>;
   readonly op: CrudOperation;
   readonly method: HttpMethod;
-  /**
-   * parsed query - mutate in place or reassign to shape it (e.g. force a `$select`, inject a
-   * `$sort`). For actual tenant/row-level scoping, prefer `@Filter(..., { security: true })` on
-   * the entity instead: unlike a hook mutation, it is AND-merged (a client `$where` on the same
-   * key cannot silently win), fails closed when its context is missing, and applies uniformly
-   * across every query path including joined relations.
-   */
+  /** The parsed query, to reshape in place. Scope rows with a `security` filter instead, which a client cannot override. */
   query: Query<E>;
   /**
    * request payload - reassignable for sanitization or field injection.
@@ -84,13 +78,7 @@ export type ResponseHook<Ctx = unknown> = <E extends object>(
 export type RequestHandlerOptions<Ctx = unknown> = {
   include?: Type<object>[];
   exclude?: Type<object>[];
-  /**
-   * The URL segment an entity is addressed by, defaulting to its kebab-cased class name.
-   *
-   * State it where the default cannot serve: a build that minifies class names renames every route,
-   * and two entities mapping one table in different schemas collide on one. The browser client takes
-   * the same option, so both ends can read one map.
-   */
+  /** The URL segment an entity is addressed by, its kebab-cased class name by default; the browser client takes the same option. */
   entityPath?: (entity: Type<unknown>) => string;
   /**
    * Allow augment any kind of request before it runs. Hooks may be async

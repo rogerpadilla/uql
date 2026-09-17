@@ -1,5 +1,5 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import type { ForeignKeyAction } from '../../schema/types.js';
+import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnSchema,
   ForeignKeySchema,
@@ -11,7 +11,6 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
-import { escapeAnsiSqlLiteral } from '../../util/sqlLiteral.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -26,25 +25,7 @@ import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
  */
 export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[]) => Promise<T[]>;
 
-/**
- * Abstract base class for SQL schema introspectors.
- *
- * Uses the template-method pattern to consolidate shared logic while allowing
- * dialect-specific implementations for SQL queries and type normalization.
- *
- * Subclasses must implement:
- * - `getTableNamesQuery()` - SQL to list all table names
- * - `tableExistsQuery()` - SQL to check if a table exists
- * - `getColumnsQuery()` - SQL to get column metadata
- * - `getIndexesQuery()` - SQL to get index metadata
- * - `getForeignKeysQuery()` - SQL to get foreign key metadata
- * - `getPrimaryKeyQuery()` - SQL to get primary key columns
- * - `mapColumnRow()` - Map a column query result row to ColumnSchema
- * - `mapIndexRow()` - Map an index query result row to IndexSchema
- * - `mapForeignKeyRow()` - Map a foreign key query result row to ForeignKeySchema
- * - `mapTableNameRow()` - Extract table name from a row
- * - `mapPrimaryKeyRow()` - Extract column name from a PK row
- */
+/** A SQL introspector: an engine states its catalogue queries (`get*Query`) and how their rows map (`map*Result`). */
 export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
   constructor(
     protected readonly pool: QuerierPool,
@@ -54,12 +35,12 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   }
 
   /**
-   * The schema every catalogue query filters on, as SQL: the one that was asked for, or the engine's
-   * expression for the connection's default. A literal rather than a bind parameter because these
-   * queries are assembled as text and several use it more than once.
+   * The schema every catalogue query filters on, as SQL: the one that was asked for, as the engine's
+   * own literal, or its expression for the connection's default. A literal rather than a bind
+   * parameter because these queries are assembled as text and several use it more than once.
    */
   protected get schemaExpr(): string {
-    return this.schema === undefined ? this.defaultSchemaExpr : escapeAnsiSqlLiteral(this.schema);
+    return this.schema === undefined ? this.defaultSchemaExpr : this.dialect.escape(this.schema);
   }
 
   /**
@@ -166,24 +147,10 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return [tableName];
   }
 
-  /**
-   * Normalize referential action string to standard type.
-   */
+  /** The {@link ForeignKeyAction} a catalogue names, whatever its case. */
   protected normalizeReferentialAction(action: string): ForeignKeyAction | undefined {
-    switch (action.toUpperCase()) {
-      case 'CASCADE':
-        return 'CASCADE';
-      case 'SET NULL':
-        return 'SET NULL';
-      case 'RESTRICT':
-        return 'RESTRICT';
-      case 'NO ACTION':
-        return 'NO ACTION';
-      case 'SET DEFAULT':
-        return 'SET DEFAULT';
-      default:
-        return undefined;
-    }
+    const upper = action.toUpperCase();
+    return FOREIGN_KEY_ACTIONS.find((known) => known === upper);
   }
 
   /**

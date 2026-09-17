@@ -9,14 +9,7 @@ export interface PgAnyPool<C extends PgAnyClient> extends ErrorEmittingPool {
   end: () => Promise<void>;
 }
 
-/**
- * Shared base class for Postgres-compatible querier pools. Each hands out a {@link PgQuerier} over its
- * driver's client, so a subclass supplies only the dialect and the driver's pool.
- *
- * Wires the crash-preventing error handler here, once, so a new pg-compatible pool subclass can't be
- * added without it - the constructor takes the already constructed pool and attaches the handler
- * unconditionally.
- */
+/** A Postgres-wire pool of {@link PgQuerier}s, attaching the error handler that keeps a dropped connection from crashing the process. */
 export abstract class AbstractPgQuerierPool<
   C extends PgAnyClient,
   D extends AbstractSqlDialect,

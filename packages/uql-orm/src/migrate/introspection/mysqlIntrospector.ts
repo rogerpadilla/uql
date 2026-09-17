@@ -1,4 +1,5 @@
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
@@ -28,9 +29,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: { count?: number | bigint }[]): boolean {
-    // No row, or no count in it, reads as `NaN`, which is not above zero.
-    return Number(results[0]?.count) > 0;
+  protected parseTableExistsResult([row]: { count: number | bigint }[]): boolean {
+    return Number(row.count) > 0;
   }
 
   protected getColumnsQuery(_tableName: string): string {
@@ -112,7 +112,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.column_key === 'PRI',
-      isAutoIncrement: (row.extra || '').toLowerCase().includes('auto_increment'),
+      isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
       length: this.toNumber(row.character_maximum_length),
       precision: this.toNumber(row.numeric_precision),
@@ -131,7 +131,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
       // place in the list, and it is reported as the expression it is, which is what stops diffing
       // from comparing an entry list the server cannot state against the entity's own.
-      entries: (row.columns ?? '').split(',').map((column) => (column ? { column } : { column, expression: true })),
+      entries: row.columns.split(',').map((column) => (column ? { column } : { column, expression: true })),
       unique: Boolean(row.is_unique),
     }));
   }
@@ -157,6 +157,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     }));
   }
 
+  /**
+   * MariaDB prints a string default as the literal it is (`'it''s'`). MySQL prints one bare, save an
+   * expression default (`DEFAULT ('x')`, what a `TEXT` column takes), which comes with a charset
+   * introducer and every quote and backslash escaped once more: `_utf8mb4\'x\'`.
+   */
   protected parseDefaultValue(defaultValue: string | null): unknown {
     if (defaultValue === null) {
       return undefined;
@@ -168,18 +173,13 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (normalized === 'CURRENT_TIMESTAMP' || normalized === 'CURRENT_TIMESTAMP()') {
       return 'CURRENT_TIMESTAMP';
     }
-    if (/^-?\d+$/.test(defaultValue)) {
-      return Number.parseInt(defaultValue, 10);
+    if (/^-?\d+(\.\d+)?$/.test(defaultValue)) {
+      return Number(defaultValue);
     }
-    if (/^-?\d+\.\d+$/.test(defaultValue)) {
-      return Number.parseFloat(defaultValue);
-    }
-
-    if (defaultValue?.startsWith("'") && defaultValue?.endsWith("'")) {
-      return defaultValue.slice(1, -1);
-    }
-
-    return defaultValue;
+    const introduced = /^_\w+(\\'.*\\')$/s.exec(defaultValue);
+    const literal = introduced ? unescapeMysqlString(introduced[1]) : defaultValue;
+    const quoted = /^'(.*)'$/s.exec(literal);
+    return quoted ? unescapeMysqlString(quoted[1]) : literal;
   }
 }
 

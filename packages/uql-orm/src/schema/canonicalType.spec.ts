@@ -5,7 +5,7 @@ import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { type ColumnFamily, COLUMN_TYPES_BY_FAMILY } from '../util/field.util.js';
+import { type ColumnFamily, COLUMN_TYPES } from '../type/index.js';
 import {
   areTypesEqual,
   canonicalToColumnType,
@@ -18,18 +18,15 @@ import {
 import type { CanonicalType, TypeCategory } from './types.js';
 
 describe('sqlToCanonical with parameters it cannot read', () => {
-  it('keeps the category and drops what is not a number', () => {
+  it('should keep the category and drop what is not a number', () => {
     expect(sqlToCanonical('DECIMAL(x,y)')).toEqual({ category: 'decimal' });
     expect(sqlToCanonical('VECTOR(n)')).toEqual({ category: 'vector' });
   });
 });
 
 /**
- * The family each canonical category belongs to. Stated here rather than shipped because the two
- * classifiers are deliberately separate: `sqlToCanonical` knows every dialect spelling and size, and
- * its tables are ~18 KB that only migrations reach, while `columnFamily` is in every bundle. What
- * they must not do is disagree, which is what the test below pins - the way `entityOptions.test-d.ts`
- * asserts `TsTypeOf` and `TypeFor` agree rather than deriving one from the other.
+ * The family each canonical category belongs to, stated here: `sqlToCanonical` ships only with
+ * migrations while `columnFamily` is in every bundle, so the test below pins that they agree.
  */
 const CATEGORY_FAMILY = {
   integer: 'numeric',
@@ -48,8 +45,8 @@ const CATEGORY_FAMILY = {
   sparsevec: 'vector',
 } as const satisfies Record<TypeCategory, ColumnFamily>;
 
-it('classifies every column type the same way canonical categories do', () => {
-  for (const [family, columnTypes] of Object.entries(COLUMN_TYPES_BY_FAMILY)) {
+it('should classify every column type the same way canonical categories do', () => {
+  for (const [family, columnTypes] of Object.entries(COLUMN_TYPES)) {
     for (const columnType of columnTypes) {
       const category = sqlToCanonical(columnType).category;
       expect([columnType, CATEGORY_FAMILY[category]]).toEqual([columnType, family]);
@@ -383,11 +380,8 @@ describe('canonicalType', () => {
   });
 
   describe('canonicalToSql edge cases', () => {
-    // BSON names, from MongoDB's own row of the type table. It used to answer `VARCHAR`, which no
-    // caller ever saw: every path into `canonicalToSql` is SQL-only (the SQL schema generator, the
-    // drift detector, `PgLikeSqlDialect`), and MongoDB migrates through `MongoSchemaGenerator`.
-    // That answer came from a branch that ignored the engine's map and hardcoded `VARCHAR` - the same
-    // branch that would have created every SQL Server string column non-Unicode.
+    // BSON names, from MongoDB's own row of the type table, though every caller of `canonicalToSql` is
+    // SQL-only: MongoDB migrates through `MongoSchemaGenerator`.
     it('should format string for mongodb dialect', () => {
       expect(canonicalToSql({ category: 'string', length: 100 }, mongo)).toBe('string(100)');
       expect(canonicalToSql({ category: 'string' }, mongo)).toBe('TEXT');

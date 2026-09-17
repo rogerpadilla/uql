@@ -69,12 +69,49 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     expect(index.include).toEqual(['status']);
   }
 
+  /** A method UQL has no index type for, `spgist` here, is reported as no type. */
+  async shouldReadAnIndexOperatorClassAndAccessMethod() {
+    const schema = await this.probe('probe_index_kinds', async (querier, table) => {
+      await querier.run(`CREATE TABLE ${table} (code TEXT, tags TEXT[], spot POINT)`);
+      await querier.run(`CREATE INDEX probe_code_idx ON ${table} (code text_pattern_ops NULLS FIRST)`);
+      await querier.run(`CREATE INDEX probe_tags_idx ON ${table} USING gin (tags)`);
+      await querier.run(`CREATE INDEX probe_spot_idx ON ${table} USING spgist (spot)`);
+    });
+
+    expect(schema.indexes).toEqual([
+      {
+        name: 'probe_code_idx',
+        unique: false,
+        type: 'btree',
+        entries: [{ column: 'code', order: 'asc', nulls: 'first', opsClass: 'text_pattern_ops' }],
+      },
+      { name: 'probe_spot_idx', unique: false, entries: [{ column: 'spot', order: 'asc', nulls: 'last' }] },
+      {
+        name: 'probe_tags_idx',
+        unique: false,
+        type: 'gin',
+        entries: [{ column: 'tags', order: 'asc', nulls: 'last' }],
+      },
+    ]);
+  }
+
   async shouldIntrospectArrayColumn() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-    const tagsCol = schema.columns.find((c) => c.name === 'tags');
-    expect(tagsCol).toBeDefined();
-    expect(tagsCol?.type.toUpperCase()).toContain('TEXT');
+    expect(this.getColumn(schema, 'tags').type).toBe('TEXT[]');
+  }
+
+  async shouldReadAnEnumColumnByItsTypeName() {
+    await this.pool.withQuerier((querier) => querier.run(`CREATE TYPE probe_mood AS ENUM ('calm', 'busy')`));
+    try {
+      const schema = await this.probe('probe_enum', (querier, table) =>
+        querier.run(`CREATE TABLE ${table} (mood probe_mood)`),
+      );
+
+      expect(this.getColumn(schema, 'mood').type).toBe('PROBE_MOOD');
+    } finally {
+      await this.pool.withQuerier((querier) => querier.run('DROP TYPE probe_mood'));
+    }
   }
 
   async shouldIntrospectIdentityColumn() {
@@ -105,6 +142,68 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
 
     const statusCol = this.getColumn(schema, 'status');
     expect(statusCol.length).toBe(50);
+  }
+
+  /** A `SERIAL` numbers itself through `nextval`, the way an identity column does without one. */
+  async shouldReadEveryDefaultSpelling() {
+    const schema = await this.probe('probe_defaults', (querier, table) =>
+      querier.run(/*sql*/ `
+        CREATE TABLE ${table} (
+          quoted TEXT DEFAULT 'it''s', negative INTEGER DEFAULT -3, fraction NUMERIC(6, 2) DEFAULT -12.5,
+          truthy BOOLEAN DEFAULT true, blank VARCHAR(5) DEFAULT NULL, stamped TIMESTAMP DEFAULT now(),
+          empty TEXT[] DEFAULT '{}', counter SERIAL
+        )
+      `),
+    );
+
+    expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
+      quoted: "it's",
+      negative: -3,
+      fraction: -12.5,
+      truthy: true,
+      blank: null,
+      stamped: 'now()',
+      empty: '{}',
+      counter: "nextval('probe_defaults_counter_seq')",
+    });
+    expect(this.getColumn(schema, 'counter').isAutoIncrement).toBe(true);
+  }
+
+  /** A table of the same name in the default schema is neither read nor in the way. */
+  async shouldReadOnlyTheSchemaItWasGiven() {
+    const table = `uql_probe.${INTROSPECT_TABLES.A}`;
+    const querier = await this.pool.getQuerier();
+    try {
+      await querier.run('CREATE SCHEMA uql_probe');
+      await querier.run(
+        `CREATE TABLE ${table} (id INTEGER CONSTRAINT probe_pk PRIMARY KEY, code INTEGER UNIQUE, note TEXT)`,
+      );
+      await querier.run(`CREATE INDEX probe_note_idx ON ${table} (note)`);
+      await querier.run(`COMMENT ON COLUMN ${table}.note IS 'probed'`);
+
+      const named = await new PostgresSchemaIntrospector(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
+      const own = await this.getTableSchema(INTROSPECT_TABLES.A);
+
+      expect(named).toMatchObject({
+        primaryKey: ['id'],
+        primaryKeyName: 'probe_pk',
+        indexes: [{ name: 'probe_note_idx' }],
+        foreignKeys: [],
+      });
+      expect(named?.columns.map(({ name, isUnique, comment }) => ({ name, isUnique, comment }))).toEqual([
+        { name: 'id', isUnique: false, comment: undefined },
+        { name: 'code', isUnique: true, comment: undefined },
+        { name: 'note', isUnique: false, comment: 'probed' },
+      ]);
+      expect(own.columns.map((column) => column.name)).toContain('status');
+    } finally {
+      await querier.run('DROP SCHEMA uql_probe CASCADE');
+      await querier.release();
+    }
+  }
+
+  async shouldEscapeTheSchemaItWasGiven() {
+    await expect(new PostgresSchemaIntrospector(this.pool, "uql'probe").getTableNames()).resolves.toEqual([]);
   }
 }
 

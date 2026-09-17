@@ -1,18 +1,14 @@
 /**
- * Foreign keys on a table that already exists.
- *
- * `SchemaDiff` has declared `foreignKeysToAdd`/`foreignKeysToDrop` since the type was written, and
- * nothing ever filled or read them: a sync added columns, indexes and even a primary key, and left
- * every foreign key exactly as the database had it. These lock the wiring in from both ends - the
- * diff that finds the difference, and the DDL that applies it.
+ * Foreign keys on a table that already exists: the diff that finds a difference, and the DDL that
+ * applies it.
  */
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { sqlToCanonical } from '../schema/canonicalType.js';
-import type { ColumnNode, ForeignKeyAction, RelationshipNode, TableNode } from '../schema/types.js';
+import type { ForeignKeyAction, RelationshipNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { columnsOf, mockSqlTableNode } from '../test/index.js';
 import type { ForeignKeySchema, SchemaDiff } from '../type/migration.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
@@ -30,7 +26,7 @@ class FkEmployee {
   @ManyToOne({ entity: () => FkCompany, references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
 }
 
-/** The one referential action the introspector used to read back as `undefined`. */
+/** The one referential action nothing else in these entities declares. */
 @Entity()
 class FkSetDefault {
   @Id({ type: Number }) id?: number;
@@ -104,10 +100,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
       expect(diff?.foreignKeysToAlter).toBeUndefined();
     });
 
-    /**
-     * The case the whole feature exists for: changing `onDelete` on a shipped relation used to
-     * produce no statement at all, so the database kept enforcing the old rule forever.
-     */
+    /** A changed `onDelete` on a shipped relation is a statement, or the database keeps the old rule. */
     it('should alter a foreign key whose referential action changed', () => {
       const { employee, company } = tables();
       addRelation(employee, company, 'employee_company_fk', 'NO ACTION');
@@ -126,7 +119,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
 
     it('should drop a foreign key the entity does not declare', () => {
       const { company } = tables();
-      const standalone = tableNode('FkStandalone', [
+      const standalone = mockSqlTableNode('FkStandalone', [
         { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
         // The type a `@Field({ references })` column derives from the key it points at.
         { name: 'companyId', sql: 'BIGINT' },
@@ -342,19 +335,19 @@ function alterFk(): Pick<SchemaDiff, 'foreignKeysToAlter'> {
 }
 
 function tables() {
-  const company = tableNode('FkCompany', [
+  const company = mockSqlTableNode('FkCompany', [
     { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
     { name: 'name', sql: 'VARCHAR', length: 255 },
   ]);
   return {
     company,
-    employee: tableNode('FkEmployee', [
+    employee: mockSqlTableNode('FkEmployee', [
       { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
       { name: 'name', sql: 'VARCHAR', length: 255 },
       // The type a `@Field({ references })` column derives from the key it points at.
       { name: 'companyId', sql: 'BIGINT' },
     ]),
-    setDefault: tableNode('FkSetDefault', [
+    setDefault: mockSqlTableNode('FkSetDefault', [
       { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
       // The type a `@Field({ references })` column derives from the key it points at.
       { name: 'companyId', sql: 'BIGINT' },
@@ -367,8 +360,8 @@ function addRelation(from: TableNode, to: TableNode, name: string, onDelete: For
   const relation: RelationshipNode = {
     name,
     type: 'ManyToOne',
-    from: { table: from, columns: [from.columns.get('companyId')!] },
-    to: { table: to, columns: [to.columns.get('id')!] },
+    from: { table: from, columns: columnsOf(from, 'companyId') },
+    to: { table: to, columns: columnsOf(to, 'id') },
     onDelete,
     onUpdate: 'NO ACTION',
   };
@@ -379,36 +372,4 @@ function addRelation(from: TableNode, to: TableNode, name: string, onDelete: For
 /** The index the migrator gives a foreign key column, under a name of the database's own. */
 function addCompanyIndex(table: TableNode, name: string): void {
   table.indexes.push({ name, table, entries: [{ column: 'companyId' }], unique: false });
-}
-
-function tableNode(
-  name: string,
-  cols: { name: string; sql: string; length?: number; isPrimaryKey?: boolean; isAutoIncrement?: boolean }[],
-): TableNode {
-  const columns = new Map<string, ColumnNode>();
-  const table: TableNode = {
-    name,
-    columns,
-    primaryKey: [],
-    indexes: [],
-    incomingRelations: [],
-    outgoingRelations: [],
-  };
-
-  for (const col of cols) {
-    columns.set(col.name, {
-      name: col.name,
-      type: { ...sqlToCanonical(col.sql), ...(col.length ? { length: col.length } : {}) },
-      nullable: !col.isPrimaryKey,
-      isPrimaryKey: !!col.isPrimaryKey,
-      isAutoIncrement: !!col.isAutoIncrement,
-      isUnique: false,
-      table,
-      referencedBy: [],
-    });
-  }
-
-  table.primaryKey.push(...[...columns.values()].filter((column) => column.isPrimaryKey));
-
-  return table;
 }

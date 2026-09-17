@@ -3,11 +3,8 @@ import { decodeBigInts } from '../util/wideNumber.js';
 import { type BunSqlConn, type BunSqlResult, getAffectedRows, getInsertId } from './bunSql.util.js';
 
 /**
- * Querier for `bun:sql`, Bun's built-in driver for Postgres, MySQL, MariaDB and CockroachDB.
- *
- * @remarks Exposes no `SQL` of its own: the pool's would run a statement on any connection, outside
- * the transaction this one's reserved connection holds. Raw access is `pool.sql`. It streams through the
- * base class, `bun:sql` having no cursor API ([oven-sh/bun#17181](https://github.com/oven-sh/bun/issues/17181)).
+ * A querier for `bun:sql` over a reserved connection, so raw SQL goes through `pool.sql` rather than
+ * this. Streams through the base class, `bun:sql` having no cursors.
  */
 export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
   override async internalAll<T>(query: string, values?: unknown[]) {

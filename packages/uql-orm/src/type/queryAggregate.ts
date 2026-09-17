@@ -1,23 +1,9 @@
 import type { FieldKey } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
+import type { RejectKeys } from './utility.js';
 
-/**
- * Maps the offending keys to `never`, turning an excess key into a compile error; resolves to
- * `unknown` (an inert intersection member) when there are none. Needed because `$group`/`$select` are
- * captured as whole maps, and TypeScript skips excess-property checking on a naked type parameter.
- * A find captures key sets instead, where an unknown key fails the capture's own constraint.
- * @internal
- */
-type Reject<K> = [K] extends [never] ? unknown : Record<K & string, never>;
-
-/**
- * The columns `$group` actually names: keys whose value is literally `true`, not `keyof G`.
- * Wherever `G` cannot be inferred - `$group` omitted, hoisted, or annotated - it *is* its own
- * constraint, whose every value is `true | undefined`, and keying off values yields `never` there
- * rather than every field of the entity.
- * @internal
- */
+/** The columns `$group` names by a literal `true`, so an uninferred `$group`, its own constraint, names none. */
 type GroupedKeys<G> = { [K in keyof G]: G[K] extends true ? K : never }[keyof G];
 
 /**
@@ -126,15 +112,8 @@ type QueryAggregateArgMap<E> = Record<'$count', QueryAggregateArg<E>> &
   Record<Exclude<AggregateOp, '$count' | TotallingOp>, QueryFieldRef<E>>;
 
 /**
- * An aggregate function applied to a field. Exactly one operation per entry (a second op is a
- * compile error). Only `$count` accepts `'*'` (i.e. `COUNT(*)`); every other op requires a field.
- * DISTINCT variants are flat ops (`$countDistinct`/`$sumDistinct`/`$avgDistinct`) taking a field.
- *
- * @example { $count: '*' }                    -> COUNT(*)
- * @example { $countDistinct: { id: true } }   -> COUNT(DISTINCT "id")
- * @example { $sum: { amount: true } }         -> SUM("amount")
- * @example { $sumDistinct: { amount: true } } -> SUM(DISTINCT "amount")
- * @example { $avg: { age: true } }            -> AVG("age")
+ * An aggregate over one field, exactly one op per entry: `{ $sum: { amount: true } }` is `SUM("amount")`,
+ * `{ $countDistinct: { id: true } }` is `COUNT(DISTINCT "id")`, and only `$count` takes `'*'`.
  */
 export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>>;
 
@@ -144,29 +123,10 @@ type FnWithOp<Ops extends string> = { [K in Ops]: { readonly [P in K]: unknown }
 /** Ops that count rows. Alone among the ops they answer `0`, never NULL, over an empty group. */
 type CountingOp = OpsOf<'$count' | '$countDistinct'>;
 
-/**
- * Group-by columns: an object mapping entity field keys to `true`, exactly like {@link QuerySelect}.
- * Typed against the entity, so a typo'd column is a compile error. Compute aggregate columns with
- * {@link QueryAggMap} (the `$select` key), not here.
- *
- * @example
- * ```ts
- * { status: true } // -> GROUP BY "status"
- * ```
- */
+/** The columns to group by, `{ status: true }`, typed against the entity like `$select`. */
 export type QueryGroupMap<E> = Readonly<QuerySelect<E, FieldKey<E>, true>>;
 
-/**
- * Computed aggregate columns: an object mapping your chosen output alias to an aggregate function.
- * Alias names are free (you are naming new columns); the aggregated field reference inside each
- * function is typed against the entity.
- *
- * @example
- * ```ts
- * { count: { $count: '*' }, avgAge: { $avg: { age: true } } }
- * // -> COUNT(*) AS "count", AVG("age") AS "avgAge"
- * ```
- */
+/** Computed columns by the alias each is read back under: `{ count: { $count: '*' }, avgAge: { $avg: { age: true } } }`. */
 export type QueryAggMap<E> = {
   readonly [alias: string]: QueryAggregateFn<E>;
 };
@@ -175,16 +135,8 @@ export type QueryAggMap<E> = {
 type FieldValueType<E, F> = F extends keyof E ? E[F] : unknown;
 
 /**
- * Resolves a single computed column's type from its aggregate function: `$count` is always
- * `number`; `$sum`/`$avg` total to a `number` or to `null`; `$min`/`$max` keep the aggregated
- * field's own type, likewise or `null`.
- *
- * Everything but `$count` is nullable: an aggregate over zero rows is NULL, and an ungrouped one
- * still returns a row, so a `$where` matching nothing hands back a row of NULLs.
- *
- * `$sum`/`$avg` are exact to 2^53: Postgres widens a sum over BIGINT to NUMERIC, and decoding that
- * text to satisfy this `number` drops the digits past that bound. Use `raw()` for a wider total.
- * @internal
+ * A computed column's type: a count is a `number`; every other aggregate is `null` over no rows, a
+ * total a `number` (exact to 2^53, `raw` beyond) and `$min`/`$max` the field's own type.
  */
 type QueryAggregateFnResult<E, Fn> =
   Fn extends FnWithOp<CountingOp>
@@ -201,44 +153,21 @@ type QueryAggregateFnResult<E, Fn> =
  */
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-/**
- * Infers the aggregated result row: grouped columns (`G`) keep their entity type; computed columns
- * (`A`) resolve from their aggregate function via {@link QueryAggregateFnResult}.
- *
- * Grouped columns come from {@link GroupedKeys}, not `keyof G`, so a `$group` the compiler could
- * not read contributes none rather than all of them.
- */
+/** An aggregate's row: each grouped column with its entity type, each computed one with its aggregate's. */
 export type QueryAggregateResult<E, G, A> = Simplify<
   Pick<E, GroupedKeys<G> & FieldKey<E>> & {
     -readonly [K in keyof A]: QueryAggregateFnResult<E, A[K]>;
   }
 >;
 
-/**
- * Erased runtime shape of a HAVING clause (alias -> comparison), consumed by the dialect builders.
- * Values are `unknown` because the SQL is built generically; the typed, per-column value checking
- * lives in {@link QueryAggregate.$having}.
- *
- * @example { count: { $gt: 5 } }   -> HAVING COUNT(*) > 5
- */
+/** A `HAVING` as the dialects read it, erased; {@link QueryAggregate.$having} is where it is typed. `{ count: { $gt: 5 } }` */
 export type QueryHavingMap = {
   readonly [alias: string]: QueryWhereFieldValue<unknown> | undefined;
 };
 
 /**
- * Aggregate query - separate from `Query<E>` to keep return types honest.
- * Used exclusively with `querier.aggregate()`.
- *
- * @example
- * ```ts
- * querier.aggregate(User, {
- *   $where: { deletedAt: { $isNull: true } },
- *   $group: { status: true },
- *   $select: { count: { $count: '*' }, avgAge: { $avg: { age: true } } },
- *   $having: { count: { $gt: 5 } },
- *   $sort: { count: -1 },
- * });
- * ```
+ * An aggregate query, apart from `Query` so its row type stays honest:
+ * `aggregate(User, { $group: { status: true }, $select: { n: { $count: '*' } }, $having: { n: { $gt: 5 } } })`.
  */
 export type QueryAggregate<
   E,
@@ -255,29 +184,19 @@ export type QueryAggregate<
 
   /**
    * Columns to group by - `{ status: true }`, typed against the entity like `$select`. A computed
-   * aggregate wrongly placed here (it belongs in `$select`) is rejected via {@link Reject}, since
+   * aggregate wrongly placed here (it belongs in `$select`) is rejected via {@link RejectKeys}, since
    * `$group` is captured as a generic and a bare generic skips excess-property checking. The captured
    * map meets its schema, {@link QueryGroupMap}, so each key keeps its link to the entity property.
    */
-  readonly $group?: G & QueryGroupMap<E> & Reject<Exclude<keyof G, FieldKey<E>>>;
+  readonly $group?: G & QueryGroupMap<E> & RejectKeys<Exclude<keyof G, FieldKey<E>>>;
 
   /**
-   * Computed aggregate columns - `{ count: { $count: '*' }, avgAge: { $avg: { age: true } } }`. The
-   * captured map meets its schema over the same aliases, as `$group` does, so field keys stay linked
-   * (a `Record<keyof A, ...>` spelling of the same type breaks the inference of `A`).
-   *
-   * An alias repeating a `$group` column is rejected: both would be emitted under that one name,
-   * leaving the driver to keep whichever it read last.
+   * The computed columns by alias, the captured map meeting its schema so field keys stay linked. An alias
+   * repeating a `$group` column is refused, since both would come back under one name.
    */
-  readonly $select?: A & { readonly [K in keyof A]: QueryAggregateFn<E> } & Reject<NamedKeys<A> & GroupedKeys<G>>;
+  readonly $select?: A & { readonly [K in keyof A]: QueryAggregateFn<E> } & RejectKeys<NamedKeys<A> & GroupedKeys<G>>;
 
-  /**
-   * Post-aggregation filtering, applied after grouping (SQL `HAVING`, MongoDB post-group `$match`).
-   * Keyed by the result columns (grouped columns + computed aliases), and each value is typed to that
-   * column's result type - a `$min`/`$max` over a `Date` field compares against a `Date`, a grouped
-   * column against its own type - reusing {@link QueryAggregateResult}. A name that is neither is a
-   * compile error.
-   */
+  /** Filtering after grouping, by a result column, each value typed as that column is. */
   readonly $having?: {
     readonly [K in keyof QueryAggregateResult<E, G, A>]?: QueryWhereFieldValue<QueryAggregateResult<E, G, A>[K]>;
   };

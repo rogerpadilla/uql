@@ -1,9 +1,6 @@
 /**
- * Type-level regression tests for what a write reports. `WrittenId` is exact where `EntityId` is a
- * union: the column's value on a single key, the key map on a composite, and never both. All four
- * write methods answer in that one shape, which is what makes `insertOne` and `saveOne` comparable.
- *
- * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
+ * What a write reports: `WrittenId` is the column's value on a single key and the key map on a
+ * composite, never both, for all four write methods alike. Type-checked by `bun run ts` only.
  */
 import { idKey, type Querier } from '../index.js';
 

@@ -17,13 +17,13 @@ import {
   jsonSetTarget,
 } from '../dialect/jsonSql.js';
 import type {
-  DialectFeatures,
   EntityMeta,
   FieldOptions,
   QueryContext,
   QueryPager,
   QuerySizeComparisonOps,
   QueryTextSearchOptions,
+  SqlDialectFeatures,
   Type,
   VectorDistance,
   VectorMetric,
@@ -31,33 +31,42 @@ import type {
 import { textSearchFields } from '../util/dialect.util.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 
+/** What SQLite and the engines derived from it have. */
+export const SQLITE_FEATURES: SqlDialectFeatures = {
+  ifNotExists: true,
+  indexIfNotExists: true,
+  schemas: false, // SQLite's namespaces are attached database files, not declared objects
+  dropTableCascade: false,
+  foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
+  primaryKeyAlter: false, // nor changing a key: the only route is rebuilding the table
+  generatedColumnAdd: false, // accepted in a CREATE TABLE, rejected in an ALTER
+  commentSyntax: 'none',
+  vectorIndexRequiresNotNull: false,
+  vectorSupportsLength: false,
+  supportsTimestamptz: false,
+  stringSizing: 'text',
+  supportsUnsigned: false,
+  serverSideCursors: false,
+  rowLocks: false,
+  rowLockWithWindow: true,
+  rowLockOf: true,
+  orderedUpsertReturning: true,
+  orderedJsonAggregates: true,
+  partialJsonContainment: false,
+  typedJsonElements: true,
+  narrowVectorTypes: false,
+  vectorTuningNeedsTransaction: false,
+  serialDeclaresPrimaryKey: true,
+};
+
 export class SqliteDialect extends AbstractSqlDialect {
-  /** Default {@link DialectFeatures} for SQLite and SQLite-derived dialects. */
-  protected override readonly featureDefaults: DialectFeatures = {
-    ifNotExists: true,
-    indexIfNotExists: true,
-    schemas: false, // SQLite's namespaces are attached database files, not declared objects
-    dropTableCascade: false,
-    foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
-    primaryKeyAlter: false, // nor changing a key: the only route is rebuilding the table
-    generatedColumnAdd: false, // accepted in a CREATE TABLE, rejected in an ALTER
-    commentSyntax: 'none',
-    vectorIndexRequiresNotNull: false,
-    vectorSupportsLength: false,
-    supportsTimestamptz: false,
-    stringSizing: 'text',
-    supportsUnsigned: false,
-    serverSideCursors: false,
-  };
+  override readonly features: SqlDialectFeatures = SQLITE_FEATURES;
 
   override readonly dialectName = 'sqlite';
 
   override readonly escapeIdChar = '`';
 
   override readonly autoIncrementSuffix = 'PRIMARY KEY AUTOINCREMENT';
-
-  // `AUTOINCREMENT` is only legal in that exact phrase, so the key cannot be lifted to table level.
-  override readonly serialDeclaresPrimaryKey = true;
 
   override readonly tableOptions = '';
 
@@ -70,9 +79,6 @@ export class SqliteDialect extends AbstractSqlDialect {
   override readonly isolationLevelStrategy = 'none';
 
   override readonly alterColumnSyntax = 'none';
-
-  /** SQLite locks the whole database, not rows, so `$lock` has nothing to map onto. */
-  override readonly supportsRowLocks = false;
 
   override readonly booleanLiteral = 'integer';
 
@@ -178,15 +184,6 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   /**
-   * SQLite compares an exploded element as whole JSON text, so containment cannot express "this
-   * element includes these keys" - `$elemMatch` always expands to per-field conditions.
-   */
-  protected override readonly jsonContainmentIsPartial = false;
-
-  /** `JSON_EACH` exposes a JSON boolean as `0`/`1` and a number as a number - already comparable. */
-  protected override readonly jsonScalarElemKeepsType = true;
-
-  /**
    * Each element is read back as JSON text through `->` at its own `fullkey`, so it compares
    * correctly whatever its type. `JSON_EACH`'s `value` column would not: it unquotes strings (`a`
    * vs `"a"`), flattens booleans to 0/1, and stringifies objects.
@@ -263,13 +260,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     );
   }
 
-  /**
-   * `[#]` appends, creating the array when the key is absent.
-   *
-   * @remarks `JSON_SET` rather than `JSON_INSERT`: the two are equivalent here because `[#]` always
-   * resolves past the end of the array, and Turso's engine implements `JSON_INSERT` as create-only,
-   * so it silently drops the element when the array already exists.
-   */
+  /** `[#]` appends, creating the array where it is absent: `JSON_SET`, since Turso's `JSON_INSERT` will not touch an existing array. */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
     return jsonAssignCall(
       (value) => this.jsonScalarParam(ctx, value),

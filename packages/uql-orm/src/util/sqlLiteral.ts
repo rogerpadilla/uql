@@ -1,16 +1,6 @@
-/**
- * SQL string literal escaping for `Dialect.escape`, in two flavors: ANSI single-quote doubling
- * (Postgres, SQLite) and MySQL backslash escaping (MySQL, MariaDB). Only the quoting step differs.
- *
- * **Security.** UQL never calls `Dialect.escape` itself, so this is the hand-written-SQL hatch; prefer
- * bound parameters. Two limits are inherent to inline MySQL literals (`sqlstring` and `sql-escaper`
- * share them): escaping breaks under the server's `NO_BACKSLASH_ESCAPES` mode, and under a charset
- * whose trailing byte can be `0x5C` (GBK, Big5, SJIS). `toSqlString()` values are emitted raw.
- *
- * PostgreSQL **array** literals (`{...}` with double-quoted elements and their own escape rules)
- * are separate from this helper; see {@link PostgresDialect} (array text format when
- * `nativeArrays` is false) - do not "unify" that path with this function.
- */
+// SQL literal escaping for `Dialect.escape`: ANSI quote doubling, or MySQL's backslashes. UQL binds
+// values instead, so this is the hand-written-SQL hatch, and inline MySQL literals break under
+// `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters. Postgres arrays are separate.
 
 type StringLiteralEscaper = (val: string) => string;
 
@@ -37,6 +27,17 @@ const MYSQL_ESCAPES: Record<string, string> = {
   "'": "\\'",
   '\\': '\\\\',
 };
+
+const MYSQL_UNESCAPES: Record<string, string> = Object.fromEntries(
+  Object.entries(MYSQL_ESCAPES).map(([char, escaped]) => [escaped[1], char]),
+);
+
+/** The text a MySQL string literal's body stands for: its backslash escapes and doubled quotes undone. */
+export function unescapeMysqlString(body: string): string {
+  return body.replace(/\\(.)|''/gs, (_, char: string | undefined) =>
+    char === undefined ? "'" : (MYSQL_UNESCAPES[char] ?? char),
+  );
+}
 
 const mysqlStringLiteral: StringLiteralEscaper = (val) =>
   `'${val.replace(MYSQL_SPECIALS, (char) => MYSQL_ESCAPES[char])}'`;

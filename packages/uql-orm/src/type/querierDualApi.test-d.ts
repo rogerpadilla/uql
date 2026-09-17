@@ -1,16 +1,7 @@
 /**
- * Type-level regression tests for the dual-API pattern on `Querier`: `findOne`/`findMany`/
- * `findManyStream`/`findManyAndCount`/`count`/`exists`/`deleteMany` each take either the classic
- * entity-as-argument form or a single entity-as-field (`{ $entity }`) object, useful for a query built
- * elsewhere (RPC/REST) that cannot carry the entity class itself until it lands back in code.
- *
- * `QuerierPool` has no such overload (see `querierPool.test-d.ts` for why): it is typed as a plain
- * `UniversalQuerier`, whose methods take only the entity-as-argument form, so the `{ $entity }` object
- * is rejected by arity, not by a special-cased type.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * The dual API on `Querier`: each read and `deleteMany` take the entity first or as the query's
+ * `$entity`, for a query built where the class is not at hand. A pool takes the first form only, so the
+ * other is rejected by arity. Type-checked by `bun run ts` only.
  */
 import type { Querier, QuerierPool } from '../index.js';
 

@@ -2,7 +2,7 @@ import { expect, it } from 'vitest';
 import { defineEntity } from '../../entity/index.js';
 import { entityTypesSource } from './entityTypes.js';
 
-it('writes an interface per registered entity, relations included', () => {
+it('should write an interface per registered entity, relations included', () => {
   class Author {
     id?: number;
     name?: string;
@@ -50,7 +50,7 @@ it('writes an interface per registered entity, relations included', () => {
   );
 });
 
-it('emits names a generated file can carry, whatever a content type was called', () => {
+it('should emit names a generated file can carry, whatever a content type was called', () => {
   const Outside = { outside: class {} }.outside;
   defineEntity(Outside, { fields: { id: { type: Number, isId: true } } });
 
@@ -80,7 +80,7 @@ it('emits names a generated file can carry, whatever a content type was called',
   expect(entityTypesSource([dashed, Outside])).toContain('  outside?: Outside;');
 });
 
-it('keeps the letters of a name in any script', () => {
+it('should keep the letters of a name in any script', () => {
   const owner = { dueño: class {} }.dueño;
   defineEntity(owner, { fields: { id: { type: Number, isId: true }, größe: { type: String } } });
 

@@ -60,16 +60,16 @@ describe('PostgreSQL JSON path index', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('answers a text path from its index', async () => {
+  it('should answer a text path from its index', async () => {
     expect(await planFor({ 'kind.name': 'n7' })).toContain('ix_json_name');
   });
 
   /** The numeric reading carries a cast on both ends; indexing it as text would leave this a scan. */
-  it('answers a numeric path from its index', async () => {
+  it('should answer a numeric path from its index', async () => {
     expect(await planFor({ 'kind.score': { $gte: ROWS - 5 } })).toContain('ix_json_score');
   });
 
-  it('finds the rows it indexed', async () => {
+  it('should find the rows it indexed', async () => {
     const found = await pool.withQuerier((querier) =>
       querier.findMany(JsonPathIndexed, { $select: { id: true }, $where: { 'kind.name': 'n7' } }),
     );
@@ -77,7 +77,7 @@ describe('PostgreSQL JSON path index', () => {
     expect(found).toHaveLength(1);
   });
 
-  it('reports no drift for the indexes it just created', async () => {
+  it('should report no drift for the indexes it just created', async () => {
     const introspector = new PostgresSchemaIntrospector(pool);
     const actual = await introspector.introspect([TABLE]);
     const expected = buildSchemaAST([JsonPathIndexed], { namingStrategy: dialect.namingStrategy });

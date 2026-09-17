@@ -3,7 +3,7 @@ import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { anyUuid, Company, createSpec, Item, MeasureUnitCategory, User } from '../test/index.js';
-import type { QueryConflictPaths, UpdatePayload } from '../type/index.js';
+import type { QueryConflictPaths } from '../type/index.js';
 import { MySqlDialect } from './mysqlDialect.js';
 
 export class MySqlDialectSpec extends MySqlFamilySpec {
@@ -85,8 +85,8 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
   }
 
   /**
-   * The comparison mode is decided from *all* operands, so a mixed `$in` cannot depend on element
-   * order - it used to read `values[0]`, making `[1, 'a']` and `['a', 1]` emit different SQL.
+   * The comparison mode is decided from every operand, so a mixed `$in` emits the same SQL in either
+   * order.
    */
   shouldNotLetJsonInOperandOrderChangeTheSql() {
     const sqlOf = (values: unknown[]) =>
@@ -110,8 +110,6 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     expect(res.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_LENGTH(`kind`->'$.tags') = ?");
     expect(res.values).toEqual([2]);
   }
-
-  // ─── JSON update operators ($set / $unset / $push / $pull) ───────────────
   // The MySQL-family SQL for these lives in `MysqlLikeSqlDialect`, so it is asserted here.
 
   protected override readonly jsonUpdateCases: Record<JsonUpdateCaseName, { sql: string; values: unknown[] }> = {
@@ -135,7 +133,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       sql: "UPDATE `Company` SET `kind` = JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', 123, '1'],
     },
-    /** Regression: `$push` must append to the pulled array, not to the stored one. */
+    /** `$push` appends to the pulled array, not to the stored one. */
     pullPushSameKey: {
       sql: "UPDATE `Company` SET `kind` = JSON_MERGE_PRESERVE(JSON_REPLACE(`kind`, '$.tags', (SELECT COALESCE(JSON_ARRAYAGG(_uql_pull.v), JSON_ARRAY()) FROM JSON_TABLE(`kind`, '$.tags[*]' COLUMNS (v JSON PATH '$')) _uql_pull WHERE _uql_pull.v <> CAST(? AS JSON))), JSON_OBJECT('tags', JSON_ARRAY(CAST(? AS JSON)))), `updatedAt` = ? WHERE `id` = ?",
       values: ['"a"', '"b"', 123, '1'],
@@ -156,10 +154,16 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
 
   shouldEscapeSingleQuotesInJsonKeys() {
     const { sql } = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
-        kind: { $unset: ["it's"] },
-        updatedAt: 123,
-      } as UpdatePayload<Company>),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        {
+          // @ts-expect-error: a key `CompanyKind` does not declare, spelt with a quote
+          kind: { $unset: ["it's"] },
+          updatedAt: 123,
+        },
+      ),
     );
     expect(sql).toBe("UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.it''s'), `updatedAt` = ? WHERE `id` = ?");
   }
@@ -210,7 +214,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       name: true,
       email: true,
       password: true,
-    } as QueryConflictPaths<User>;
+    } satisfies QueryConflictPaths<User>;
 
     this.dialect.upsert(ctx, User, conflictPaths, { name: 'John' });
 

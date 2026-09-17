@@ -4,25 +4,11 @@ import { assertNonNegativeInteger, getKeys } from '../util/index.js';
 import { AbstractSqlDialect } from './abstractSqlDialect.js';
 import { UPSERT_SOURCE_ALIAS } from './aliases.js';
 
-/**
- * Shared SQL between SQL Server and Oracle: the two engines that spell paging and upsert the way the
- * standard does, where the Postgres and MySQL families each predate it.
- *
- * A family base rather than a pair of knobs, the way {@link PgLikeSqlDialect} and
- * {@link MysqlLikeSqlDialect} already are - `pager` and `upsert` are both plain overrides, so nothing
- * in the core has to learn that a second spelling exists.
- */
+/** What SQL Server and Oracle share: paging and upsert spelled as the standard does. */
 export abstract class MergeSqlDialect extends AbstractSqlDialect {
   override readonly escapeIdChar = '"';
 
-  /**
-   * `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY`, and an `ORDER BY` where the statement has none.
-   *
-   * SQL Server refuses to page an unordered statement. A constant `ORDER BY` costs one clause the
-   * optimizer discards and keeps `$limit` and `$skip` meaning the same thing here as everywhere
-   * else; the alternative, `TOP (n)` in the select list, needs a second hook and still leaves a
-   * `$skip` with no `$sort` unanswerable.
-   */
+  /** `OFFSET ... FETCH NEXT`, and a constant `ORDER BY` where there is none, since SQL Server refuses to page without one. */
   override pager(ctx: QueryContext, opts: QueryPager & { $distinct?: boolean }, sorted = false): void {
     if (opts.$limit === undefined && opts.$skip === undefined) {
       return;
@@ -39,12 +25,8 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `MERGE`, which both engines take in place of the `ON CONFLICT`/`ON DUPLICATE KEY` the other
-   * families have. The rows go in as a `VALUES` row source rather than an `INSERT`, built by
-   * {@link AbstractSqlDialect.insertShape} so both shapes apply `onInsert` defaults identically.
-   *
-   * Every value binds before the assignments are rendered, so a `?`-placeholder engine needs none of
-   * the scratch-context reordering `ON CONFLICT` does - the source is read positionally, in order.
+   * `MERGE`, its rows a `VALUES` source built by {@link AbstractSqlDialect.insertShape}. Every value binds
+   * before the assignments, so `?` placeholders read in order.
    */
   override upsert<E>(
     ctx: QueryContext,

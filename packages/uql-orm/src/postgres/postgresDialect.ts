@@ -1,22 +1,16 @@
 import { COUNT_ALIAS } from '../dialect/aliases.js';
-import { PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
+import { PG_FEATURES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import type { QueryConflictPaths, QueryContext, SqlDialectName, Type } from '../type/index.js';
+import type { QueryConflictPaths, QueryContext, SqlDialectFeatures, SqlDialectName, Type } from '../type/index.js';
 
-/**
- * PostgreSQL dialect, the same class under every Postgres driver - `pg`, Neon, PGlite, `bun:sql` -
- * where a driver that binds differently passes `driverCapabilities` rather than subclassing it.
- * Shared Postgres-wire AST/quoting/JSONB/full-text-search/vector-search logic (including BIGINT
- * IDENTITY PKs) lives in {@link PgLikeSqlDialect}; this class adds what's Postgres-only: the `vector`
- * extension requirement, pgvector's index syntax, and `xmax`-based upsert `created` detection.
- */
+/** PostgreSQL, under every driver: `pg`, Neon, PGlite, `bun:sql`. Adds pgvector and the `xmax` upsert `created`. */
 export class PostgresDialect extends PgLikeSqlDialect {
   override readonly dialectName: SqlDialectName = 'postgres';
 
   override readonly vectorExtension: string | undefined = 'vector';
 
-  /** pgvector is the only engine with `halfvec` and `sparsevec`; every other maps them onto `vector`. */
-  protected override readonly hasNarrowVectorTypes = true;
+  /** pgvector is the only engine with `halfvec` and `sparsevec`. */
+  override readonly features: SqlDialectFeatures = { ...PG_FEATURES, narrowVectorTypes: true };
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     // The xmax system column is 0 for a newly inserted row and non-zero for an updated one (MVCC).

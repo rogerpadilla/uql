@@ -1,17 +1,19 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
-import type { DialectFeatures, QueryContext, SqlDialectName } from '../type/index.js';
+import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
 import { entitySql, raw, refs } from '../util/index.js';
 import { AbstractSqlDialect, type RelationRows } from './abstractSqlDialect.js';
+import { MYSQL_FEATURES } from './mysqlLikeSqlDialect.js';
 
 class TestSqlDialect extends AbstractSqlDialect {
   override readonly dialectName: SqlDialectName = 'mysql';
 
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
-  protected override readonly featureDefaults: DialectFeatures = {
+  override readonly features: SqlDialectFeatures = {
+    ...MYSQL_FEATURES,
     schemas: true,
     ifNotExists: true,
     indexIfNotExists: false,
@@ -128,7 +130,7 @@ class RefLedger {
   double?: number;
 }
 
-describe('AbstractSqlDialect (extra coverage)', () => {
+describe('AbstractSqlDialect', () => {
   const dialect = new TestSqlDialect();
   const pgr = (limit?: number, skip?: number, sorted = false) => {
     const ctx = dialect.createContext();
@@ -136,78 +138,80 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     return ctx.sql;
   };
 
-  it('selectTerms with empty selectArr', () => {
+  it('should select nothing for an empty select list', () => {
     expect(dialect.selectTerms(dialect.createContext(), User, [])).toEqual([{ sql: '*', bare: true }]);
   });
 
-  it('compareFieldOperator $in with empty array', () => {
+  it('should match nothing for an empty $in', () => {
     const ctx = dialect.createContext();
     dialect.compareFieldOperator(ctx, User, 'id', '$in', []);
-    expect(ctx.sql).toBe('`id` IN (NULL)');
+    expect(ctx.sql).toBe('1 = 0');
   });
 
-  it('compareFieldOperator $nin with empty array', () => {
+  it('should match every row for an empty $nin', () => {
     const ctx = dialect.createContext();
     dialect.compareFieldOperator(ctx, User, 'id', '$nin', []);
-    expect(ctx.sql).toBe('`id` NOT IN (NULL)');
+    expect(ctx.sql).toBe('1 = 1');
   });
 
-  // Every engine spells full-text search differently, so the base has no form to fall back on: it
-  // used to inherit MySQL's `MATCH ... AGAINST` no matter which engine it was talking to.
-  it('rejects $text on a dialect that declares no full-text search', () => {
+  // Every engine spells full-text search differently, so the base dialect has no form to fall back on.
+  it('should reject $text on a dialect that declares no full-text search', () => {
     const ctx = dialect.createContext();
     expect(() => dialect.where(ctx, User, { $text: { $fields: { name: true }, $value: 'x' } })).toThrow(
       'does not support $text full-text search',
     );
   });
 
-  it('normalizeValue keeps Date for driver-native binding', () => {
+  it('should keep a Date for the driver to bind natively', () => {
     const date = new Date('2026-01-02T03:04:05.000Z');
     expect(dialect.normalizeValue(date)).toBe(date);
   });
 
-  it('normalizeValue hands a bigint to the driver as it is, which every driver binds exactly', () => {
+  it('should hand a bigint to the driver as it is, which every driver binds exactly', () => {
     expect(dialect.normalizeValue(9007199254740993n)).toBe(9007199254740993n);
   });
 
-  it('rejects a $near that brings no $vector of its own', () => {
+  it('should reject a $near that brings no $vector of its own', () => {
     const ctx = dialect.createContext();
-    expect(() => dialect.where(ctx, VectorItem, { vec: { $near: { $lt: 0.5 } } } as never)).toThrow(
+    // @ts-expect-error: `$near` needs a `$vector`
+    expect(() => dialect.where(ctx, VectorItem, { vec: { $near: { $lt: 0.5 } } })).toThrow(
       "$near on 'vec' needs its own $vector",
     );
   });
 
-  it('rejects a $sort by relation in a statement that joins none', () => {
+  it('should reject a $sort by relation in a statement that joins none', () => {
     const ctx = dialect.createContext();
     expect(() => dialect.sort(ctx, ItemAdjustment, { item: { name: 1 } })).toThrow(
       "cannot $sort by relation 'item': this statement joins no relations",
     );
   });
 
-  it('reads an undefined group operator as no condition at all', () => {
+  it('should read an undefined group operator as no condition at all', () => {
     const ctx = dialect.createContext();
     dialect.where(ctx, Company, { $and: undefined });
     expect(ctx.sql).toBe('');
   });
 
-  it('rejects a $sort by relation that is not a map of its fields', () => {
+  it('should reject a $sort by relation that is not a map of its fields', () => {
     const ctx = dialect.createContext();
-    expect(() => dialect.find(ctx, ItemAdjustment, { $populate: { item: true }, $sort: { item: 1 } } as never)).toThrow(
+    // @ts-expect-error: a to-one sorts by its fields
+    expect(() => dialect.find(ctx, ItemAdjustment, { $populate: { item: true }, $sort: { item: 1 } })).toThrow(
       "$sort by relation 'item' expects a map of its fields, got 1",
     );
   });
 
-  it('rejects a $vector sort through a relation', () => {
+  it('should reject a $vector sort through a relation', () => {
     const ctx = dialect.createContext();
     expect(() =>
       dialect.find(ctx, Shelf, {
         $populate: { vectorItem: true },
+        // @ts-expect-error: a relation sorts by no vector
         $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
-      } as never),
+      }),
     ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
   });
 
-  it('emits no HAVING when every condition is undefined', () => {
+  it('should emit no HAVING when every condition is undefined', () => {
     const ctx = dialect.createContext();
     dialect.aggregate(ctx, User, {
       $group: { name: true },
@@ -217,7 +221,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     expect(ctx.sql).toBe('SELECT `name`, COUNT(*) `n` FROM `User` GROUP BY `name`');
   });
 
-  it('hydrates an aggregate as its field does, and a count as a number', () => {
+  it('should hydrate an aggregate as its field does, and a count as a number', () => {
     expect(
       dialect.hydratableAggregates(User, {
         $group: { name: true },
@@ -229,77 +233,71 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     ]);
   });
 
-  it('getUpsertUpdateAssignments without callback', () => {
+  it('should bind the onUpdate value an upsert payload leaves out', () => {
     const ctx = dialect.createContext();
-    const meta = getMeta(User);
-    const assignments = (dialect as any).getUpsertUpdateAssignments(ctx, meta, { id: true }, { name: 'John' });
-    expect(assignments).toContain('`name` = ?');
-    expect(ctx.values).toContain('John');
+    dialect.upsert(ctx, User, { id: true }, { id: '1', name: 'John' });
+    expect(ctx.sql).toContain('DO UPDATE SET `name` = EXCLUDED.`name`, `updatedAt` = ?');
+    expect(ctx.values).toEqual(['1', 'John', expect.any(Number), expect.any(Number)]);
   });
 
-  it('formatPersistableValue with vector type', () => {
+  it('should bind a vector as its text literal', () => {
     const ctx = dialect.createContext();
-    const field = { type: 'vector' as any };
-    (dialect as any).formatPersistableValue(ctx, field, [1, 2, 3]);
-    expect(ctx.values[0]).toBe('[1,2,3]');
+    dialect.insert(ctx, VectorItem, { vec: [1, 2, 3] });
+    expect(ctx.values).toEqual(['[1,2,3]']);
   });
-
-  // New operator tests
-  describe('new operators', () => {
-    it('compareFieldOperator $between', () => {
+  describe('operators', () => {
+    it('should compare with $between', () => {
       const ctx = dialect.createContext();
-      dialect.compareFieldOperator(ctx, User, 'createdAt', '$between', [100, 200] as any);
+      dialect.compareFieldOperator(ctx, User, 'createdAt', '$between', [100, 200]);
       expect(ctx.sql).toBe('`createdAt` BETWEEN ? AND ?');
       expect(ctx.values).toEqual([100, 200]);
     });
 
-    it('compareFieldOperator $isNull with true', () => {
+    it('should compare with $isNull: true', () => {
       const ctx = dialect.createContext();
       dialect.compareFieldOperator(ctx, User, 'name', '$isNull', true);
       expect(ctx.sql).toBe('`name` IS NULL');
     });
 
-    it('compareFieldOperator $isNull with false', () => {
+    it('should compare with $isNull: false', () => {
       const ctx = dialect.createContext();
       dialect.compareFieldOperator(ctx, User, 'name', '$isNull', false);
       expect(ctx.sql).toBe('`name` IS NOT NULL');
     });
 
-    it('compareFieldOperator $isNotNull with true', () => {
+    it('should compare with $isNotNull: true', () => {
       const ctx = dialect.createContext();
       dialect.compareFieldOperator(ctx, User, 'email', '$isNotNull', true);
       expect(ctx.sql).toBe('`email` IS NOT NULL');
     });
 
-    it('compareFieldOperator $isNotNull with false', () => {
+    it('should compare with $isNotNull: false', () => {
       const ctx = dialect.createContext();
       dialect.compareFieldOperator(ctx, User, 'email', '$isNotNull', false);
       expect(ctx.sql).toBe('`email` IS NULL');
     });
 
-    it('where clause with $between', () => {
+    it('should build a where clause with $between', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, User, { createdAt: { $between: [1000, 2000] } });
       expect(ctx.sql).toBe(' WHERE `createdAt` BETWEEN ? AND ?');
       expect(ctx.values).toEqual([1000, 2000]);
     });
 
-    it('where clause with $isNull', () => {
+    it('should build a where clause with $isNull', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, User, { name: { $isNull: true } });
       expect(ctx.sql).toBe(' WHERE `name` IS NULL');
     });
 
-    it('where clause with $isNotNull', () => {
+    it('should build a where clause with $isNotNull', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, User, { email: { $isNotNull: true } });
       expect(ctx.sql).toBe(' WHERE `email` IS NOT NULL');
     });
   });
-
-  // ─── raw() prefix bug fix ───────────────────────────────────────────
-  describe('raw() prefix fix', () => {
-    it('raw string in $and should not be prefixed', () => {
+  describe('raw() prefixing', () => {
+    it('should leave a raw string in $and unprefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`(kind->>'public')::boolean IS TRUE`],
@@ -307,7 +305,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(" WHERE (kind->>'public')::boolean IS TRUE");
     });
 
-    it('raw string in $or should not be prefixed', () => {
+    it('should leave a raw string in $or unprefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $or: [raw`kind IS NULL`, raw`kind = '{}'`],
@@ -315,7 +313,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(" WHERE kind IS NULL OR kind = '{}'");
     });
 
-    it('raw function in $and should still work (regression)', () => {
+    it('should run a raw function in $and', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw(() => 'custom_check(kind) = TRUE')],
@@ -323,7 +321,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(' WHERE custom_check(kind) = TRUE');
     });
 
-    it('raw string in $and mixed with regular field', () => {
+    it('should mix a raw string in $and with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         name: 'Acme',
@@ -334,13 +332,13 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
 
     /** An alias names a `$select` projection; anywhere else it would land mid-expression. */
-    it('writes no alias for a raw outside $select', () => {
+    it('should write no alias for a raw outside $select', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { $and: [raw`kind IS NOT NULL`.as('ignored')] });
       expect(ctx.sql).toBe(' WHERE kind IS NOT NULL');
     });
 
-    it('emits the text of a raw with no interpolation as written, whatever the prefix', () => {
+    it('should emit the text of a raw with no interpolation as written, whatever the prefix', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, { value: raw`COUNT(*)`, prefix: 'c' });
       expect(ctx.sql).toBe('COUNT(*)');
@@ -348,7 +346,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   });
 
   describe('raw() as a tagged template', () => {
-    it('binds an interpolated value instead of inlining it', () => {
+    it('should bind an interpolated value instead of inlining it', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`kind = ${'public'}`],
@@ -357,7 +355,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['public']);
     });
 
-    it('binds a value carrying SQL syntax rather than emitting it', () => {
+    it('should bind a value carrying SQL syntax rather than emitting it', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`name = ${"' OR 1=1 --"}`],
@@ -366,7 +364,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(["' OR 1=1 --"]);
     });
 
-    it('binds every interpolation of a multi-value fragment in order', () => {
+    it('should bind every interpolation of a multi-value fragment in order', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`GREATEST(0, ${10} - ${3}) > ${1}`],
@@ -375,7 +373,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([10, 3, 1]);
     });
 
-    it('resolves an interpolated raw in place so fragments compose', () => {
+    it('should resolve an interpolated raw in place so fragments compose', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`kind = ${'public'} AND ${raw`deleted_at IS NULL`}`],
@@ -384,7 +382,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['public']);
     });
 
-    it('shares the statement values array with the rest of the query', () => {
+    it('should share the statement values array with the rest of the query', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         name: 'Acme',
@@ -394,14 +392,14 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['Acme', 'public']);
     });
 
-    it('aliases a projection built as a template', () => {
+    it('should alias a projection built as a template', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, { $select: [raw`LOG10(${100})`.as('score')] });
       expect(ctx.sql).toContain('LOG10(?) `score`');
       expect(ctx.values).toEqual([100]);
     });
 
-    it('resolves an interpolated callback against the render options', () => {
+    it('should resolve an interpolated callback against the render options', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, {
         value: raw`${raw(({ escapedPrefix }) => `${escapedPrefix}kind`)} = ${'public'}`,
@@ -411,13 +409,13 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['public']);
     });
 
-    it("drops an interpolated fragment's alias, which belongs to a projection not an expression", () => {
+    it("should drop an interpolated fragment's alias, which belongs to a projection not an expression", () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { $and: [raw`kind = ${raw`'x'`.as('ignored')}`] });
       expect(ctx.sql).toBe(" WHERE kind = 'x'");
     });
 
-    it('emits a fragment with no interpolation unchanged', () => {
+    it('should emit a fragment with no interpolation unchanged', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [raw`kind IS NOT NULL`],
@@ -428,7 +426,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   });
 
   describe('refs()', () => {
-    it('renders a field as its column', () => {
+    it('should render a field as its column', () => {
       const ledger = refs(RefLedger);
       const ctx = dialect.createContext();
       dialect.where(ctx, RefLedger, { $and: [raw`${ledger.creditLimit} > ${0}`] });
@@ -436,7 +434,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([0]);
     });
 
-    it('names the column the way the dialect does', () => {
+    it('should name the column the way the dialect does', () => {
       const ledger = refs(RefLedger);
       const snake = new TestSqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
       const ctx = snake.createContext();
@@ -444,26 +442,26 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe(" WHERE `credit_limit` > 0 AND `display_label` <> ''");
     });
 
-    it('qualifies the column by the alias in scope', () => {
+    it('should qualify the column by the alias in scope', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).creditLimit}`, prefix: 'l' });
       expect(ctx.sql).toBe('`l`.`creditLimit`');
     });
 
-    it('renders an inlined computed field as its expression', () => {
+    it('should render an inlined computed field as its expression', () => {
       const ctx = dialect.createContext();
       dialect.getRawValue(ctx, { value: raw`${refs(RefLedger).double} + 1` });
       expect(ctx.sql).toBe('(`creditLimit` * 2) + 1');
     });
 
-    it("refuses a definition's ref rendered outside its entity's SQL", () => {
+    it("should refuse a definition's ref rendered outside its entity's SQL", () => {
       const sql = entitySql<RefLedger>((ledger) => raw`${ledger.creditLimit}`);
       expect(() => dialect.getRawValue(dialect.createContext(), { value: sql })).toThrow(
         "'creditLimit' was read off a definition's refs, so it renders only inside its entity's SQL",
       );
     });
 
-    it("qualifies refs in a joined relation's $where by the join's alias", () => {
+    it("should qualify refs in a joined relation's $where by the join's alias", () => {
       const tax = refs(Tax);
       const ctx = dialect.createContext();
       dialect.find(ctx, Item, {
@@ -475,45 +473,43 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toContain("`tax`.`name` = `tax`.`name` AND `tax`.`name` <> ''");
     });
   });
-
-  // ─── JSONB dot-notation ────────────────────────────────────────────
   describe('JSONB dot-notation', () => {
-    it('simple equality', () => {
+    it('should compare a path by simple equality', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': 1 });
       expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) = ?");
       expect(ctx.values).toEqual([1]);
     });
 
-    it('with $eq operator', () => {
+    it('should compare a path with $eq', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $eq: 'active' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') = ?");
       expect(ctx.values).toEqual(['active']);
     });
 
-    it('with $ne operator', () => {
+    it('should compare a path with $ne', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $ne: 1 } });
       expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) <> ?");
       expect(ctx.values).toEqual([1]);
     });
 
-    it('with $gt numeric operator', () => {
+    it('should compare a path with $gt as a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $gt: 0 } });
       expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) > ?");
       expect(ctx.values).toEqual([0]);
     });
 
-    it('with $lt numeric operator', () => {
+    it('should compare a path with $lt as a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $lt: 1 } });
       expect(ctx.sql).toBe(" WHERE CAST((`kind`->>'public') AS NUMERIC) < ?");
       expect(ctx.values).toEqual([1]);
     });
 
-    it('with multiple numeric operators', () => {
+    it('should compare a path with several numeric operators', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $gte: 0, $lte: 1 } });
       expect(ctx.sql).toBe(
@@ -522,58 +518,59 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([0, 1]);
     });
 
-    it('with $like string operator', () => {
+    it('should compare a path with $like', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $like: '%test%' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
       expect(ctx.values).toEqual(['%test%']);
     });
 
-    it('with $startsWith string operator', () => {
+    it('should compare a path with $startsWith', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $startsWith: 'pre' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
       expect(ctx.values).toEqual(['pre%']);
     });
 
-    it('with $endsWith string operator', () => {
+    it('should compare a path with $endsWith', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $endsWith: 'fix' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
       expect(ctx.values).toEqual(['%fix']);
     });
 
-    it('with $includes string operator', () => {
+    it('should compare a path with $includes', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $includes: 'mid' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
       expect(ctx.values).toEqual(['%mid%']);
     });
 
-    it('with $regex operator', () => {
+    it('should compare a path with $regex', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $regex: '^test' } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'description') REGEXP ?");
       expect(ctx.values).toEqual(['^test']);
     });
 
-    it('with $in operator', () => {
+    it('should compare a path with $in', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.country': { $in: ['a', 'b', 'c'] } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'country') IN (?, ?, ?)");
       expect(ctx.values).toEqual(['a', 'b', 'c']);
     });
 
-    it('with $nin operator', () => {
+    it('should compare a path with $nin', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.country': { $nin: ['x', 'y'] } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'country') NOT IN (?, ?)");
       expect(ctx.values).toEqual(['x', 'y']);
     });
 
-    it('with $in and $nin over booleans, compared as JSON', () => {
+    it('should compare a path with $in and $nin over booleans, as JSON', () => {
       const ctx = dialect.createContext();
-      dialect.where(ctx, Company, { 'kind.public': { $in: [true, false] }, 'kind.private': { $nin: [true] } } as never);
+      // @ts-expect-error: booleans where the entity declares 0 | 1
+      dialect.where(ctx, Company, { 'kind.public': { $in: [true, false] }, 'kind.private': { $nin: [true] } });
       expect(ctx.sql).toBe(
         " WHERE ((`kind`->'public') = CAST(? AS JSON) OR (`kind`->'public') = CAST(? AS JSON))" +
           " AND ((`kind`->'private') <> CAST(? AS JSON))",
@@ -581,35 +578,36 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['true', 'false', 'true']);
     });
 
-    it('rejects an $in that is not an array, as a column does', () => {
+    it('should reject an $in that is not an array, as a column does', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.where(ctx, Company, { 'kind.country': { $in: 'a' } } as never)).toThrow(
+      // @ts-expect-error: `$in` takes a list
+      expect(() => dialect.where(ctx, Company, { 'kind.country': { $in: 'a' } })).toThrow(
         '$in expects an array, got string',
       );
     });
 
-    it('with array shorthand (maps to $in)', () => {
+    it('should read an array on a path as $in', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.country': ['a', 'b'] });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'country') IN (?, ?)");
       expect(ctx.values).toEqual(['a', 'b']);
     });
 
-    it('deep nested path (two levels)', () => {
+    it('should compare a path two levels deep', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.theme.color': 'red' });
       expect(ctx.sql).toBe(" WHERE ((`kind`->'theme')->>'color') = ?");
       expect(ctx.values).toEqual(['red']);
     });
 
-    it('combined with regular field', () => {
+    it('should combine a path with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { name: 'Acme', 'kind.public': 1 });
       expect(ctx.sql).toBe(" WHERE `name` = ? AND CAST((`kind`->>'public') AS NUMERIC) = ?");
       expect(ctx.values).toEqual(['Acme', 1]);
     });
 
-    it('combined with $and', () => {
+    it('should combine a path with $and', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         $and: [{ 'kind.public': { $eq: 1 } }, { 'kind.private': { $ne: 0 } }],
@@ -620,7 +618,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([1, 0]);
     });
 
-    it('multiple dot-paths on same column', () => {
+    it('should combine several paths on the same column', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {
         'kind.public': 1,
@@ -632,24 +630,22 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([1, 0]);
     });
 
-    it('$eq with null value', () => {
+    it('should read $eq null on a path as IS NULL', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $eq: null } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'public') IS NULL");
       expect(ctx.values).toEqual([]);
     });
 
-    it('$ne with null value', () => {
+    it('should read $ne null on a path as IS NOT NULL', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.public': { $ne: null } });
       expect(ctx.sql).toBe(" WHERE (`kind`->>'public') IS NOT NULL");
       expect(ctx.values).toEqual([]);
     });
   });
-
-  // ─── Relation filtering ───────────────────────────────────────────
   describe('relation filtering', () => {
-    it('ManyToMany with simple id equality', () => {
+    it('should filter by a many-to-many on id equality', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { id: '5' } });
       expect(ctx.sql).toBe(
@@ -658,7 +654,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['5']);
     });
 
-    it('ManyToMany with operator filter', () => {
+    it('should filter by a many-to-many with an operator', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { name: { $like: '%react%' } } });
       expect(ctx.sql).toBe(
@@ -667,7 +663,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['%react%']);
     });
 
-    it('ManyToMany with multiple conditions on related entity', () => {
+    it('should filter by a many-to-many on several conditions of the related entity', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { id: '1', name: 'urgent' } });
       expect(ctx.sql).toContain('EXISTS (SELECT 1 FROM `ItemTag`');
@@ -676,7 +672,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['1', 'urgent']);
     });
 
-    it('OneToMany with simple filter', () => {
+    it('should filter by a one-to-many', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } });
       // Both entities have softDelete: the parent's condition sits outside the EXISTS, the target's
@@ -687,7 +683,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['kg']);
     });
 
-    it('inner EXISTS subquery scopes softDelete to the target, not the parent', () => {
+    it('should scope a soft-delete inside the EXISTS to the target, not the parent', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { name: 'kg' } });
       const existsPart = ctx.sql.split('EXISTS (')[1].split(')')[0];
@@ -696,7 +692,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(existsPart).not.toContain(' `deletedAt` IS NULL');
     });
 
-    it('combined with regular field', () => {
+    it('should combine a relation filter with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { companyId: '1', tags: { name: 'urgent' } });
       expect(ctx.sql).toContain('`companyId` = ?');
@@ -704,7 +700,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['1', 'urgent']);
     });
 
-    it('ManyToMany combined with regular field and raw', () => {
+    it('should combine a many-to-many filter with a regular field and raw', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, {
         companyId: '1',
@@ -717,7 +713,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['1', 'test']);
     });
 
-    it('ManyToOne with simple filter', () => {
+    it('should filter by a many-to-one', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { item: { name: 'Widget' } });
       expect(ctx.sql).toBe(
@@ -726,7 +722,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['Widget']);
     });
 
-    it('ManyToOne with operator filter', () => {
+    it('should filter by a many-to-one with an operator', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { item: { name: { $like: '%test%' } } });
       expect(ctx.sql).toBe(
@@ -735,7 +731,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['%test%']);
     });
 
-    it('ManyToOne combined with regular field', () => {
+    it('should combine a many-to-one filter with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { number: 5, item: { name: 'Widget' } });
       expect(ctx.sql).toContain('`number` = ?');
@@ -743,17 +739,16 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([5, 'Widget']);
     });
   });
-
-  // ─── Branch coverage: error & fallback paths ─────────────────────
   describe('edge cases', () => {
-    it('unsupported JSON operator throws TypeError', () => {
+    it('should throw on an unsupported JSON operator', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.where(ctx, Company, { 'kind.public': { $unsupported: 1 } } as any)).toThrow(
+      // @ts-expect-error: no such operator
+      expect(() => dialect.where(ctx, Company, { 'kind.public': { $unsupported: 1 } })).toThrow(
         'unknown operator: $unsupported',
       );
     });
 
-    it('base dialect $ilike uses LOWER() fallback', () => {
+    it('should fall back to LOWER() for $ilike on the base dialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $ilike: '%Active%' } });
       expect(ctx.sql).toBe(" WHERE LOWER((`kind`->>'description')) LIKE ?");
@@ -761,61 +756,66 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
   });
 
-  // ─── Unsafe map lookups: an unvalidated query-provided key (queries are plain data) must
-  // never resolve via the Object.prototype chain, nor be spliced into SQL unchecked ─────────
+  /** A key a query brings is plain data: it never resolves through `Object.prototype`, nor reaches SQL unchecked. */
   describe('unsafe map lookups', () => {
-    it('compareFieldOperator rejects an operator key that only exists on Object.prototype', () => {
+    it('should reject an operator key that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.where(ctx, User, { name: { toString: 'x' } } as any)).toThrow('unknown operator: toString');
+      // @ts-expect-error: no such operator
+      expect(() => dialect.where(ctx, User, { name: { toString: 'x' } })).toThrow('unknown operator: toString');
     });
 
-    it('having rejects an operator key that only exists on Object.prototype', () => {
+    it('should reject a HAVING operator key that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $select: { total: { $sum: { id: true } } },
+          $select: { total: { $sum: { createdAt: true } } },
+          // @ts-expect-error: no such operator
           $having: { total: { toString: 5 } },
-        } as any),
+        }),
       ).toThrow('unsupported HAVING operator: toString');
     });
 
-    it('sort rejects a direction that only exists on Object.prototype', () => {
+    it('should reject a sort direction that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.find(ctx, User, { $sort: { name: 'toString' } } as any)).toThrow(
+      // @ts-expect-error: no such direction
+      expect(() => dialect.find(ctx, User, { $sort: { name: 'toString' } })).toThrow(
         'unknown sort direction: toString',
       );
     });
 
-    it('aggregateSort rejects a direction that only exists on Object.prototype', () => {
+    it('should reject an aggregate sort direction that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
-          $select: { total: { $sum: { id: true } } },
+          $select: { total: { $sum: { createdAt: true } } },
+          // @ts-expect-error: no such direction
           $sort: { total: 'toString' },
-        } as any),
+        }),
       ).toThrow('unknown sort direction: toString');
     });
 
-    it('aggregate rejects a $group operator key that only exists on Object.prototype', () => {
+    it('should reject an aggregate function key that only exists on Object.prototype', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.aggregate(ctx, User, { $select: { total: { toString: 'id' } } } as any)).toThrow(
+      // @ts-expect-error: no such function
+      expect(() => dialect.aggregate(ctx, User, { $select: { total: { toString: 'id' } } })).toThrow(
         'unsupported aggregate operator: toString',
       );
     });
 
-    it('aggregate rejects an arbitrary $group operator key instead of splicing it as a SQL function name', () => {
+    it('should reject an arbitrary aggregate function key rather than splice it into SQL', () => {
       const ctx = dialect.createContext();
       expect(() =>
         dialect.aggregate(ctx, User, {
+          // @ts-expect-error: no such function
           $select: { total: { '$SUM(id); DROP TABLE users; --': 'id' } },
-        } as any),
+        }),
       ).toThrow('unsupported aggregate operator');
       expect(ctx.sql).not.toContain('DROP TABLE');
     });
   });
 
   describe('relation $count sort', () => {
-    it('ranks parents by a correlated count, not by a join', () => {
+    it('should rank parents by a correlated count, not by a join', () => {
       const ctx = dialect.createContext();
       dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 } });
       expect(ctx.sql).toBe(
@@ -825,29 +825,28 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([]);
     });
 
-    it('counts junction rows for a many-to-many', () => {
+    it('should count junction rows for a many-to-many', () => {
       const ctx = dialect.createContext();
       dialect.sort(ctx, Item, { tags: { $count: 1 } });
       expect(ctx.sql).toBe(' ORDER BY (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)');
     });
 
-    it('composes with an ordering by the parent own columns', () => {
+    it('should compose with an ordering by the parent own columns', () => {
       const ctx = dialect.createContext();
       dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 }, name: 1 });
       expect(ctx.sql).toContain('DESC, `name`');
     });
 
-    it('rejects a $count combined with other keys', () => {
+    it('should reject a $count combined with other keys', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1, name: 1 } } as never)).toThrow(
+      // @ts-expect-error: a to-many sorts by `$count` alone
+      expect(() => dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1, name: 1 } })).toThrow(
         '$count in a $sort cannot be combined with other keys',
       );
     });
   });
-
-  // ─── Relation $size (count) filtering ─────────────────────────────
   describe('relation $size', () => {
-    it('OneToMany with exact match', () => {
+    it('should filter by a one-to-many $size equal to a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: 3 } });
       expect(ctx.sql).toBe(
@@ -856,7 +855,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([3]);
     });
 
-    it('OneToMany with $gte comparison', () => {
+    it('should filter by a one-to-many $size with $gte', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
       expect(ctx.sql).toBe(
@@ -865,49 +864,49 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([2]);
     });
 
-    it('OneToMany with $eq comparison', () => {
+    it('should filter by a one-to-many $size with $eq', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $eq: 1 } } });
       expect(ctx.sql).toContain(') = ?');
       expect(ctx.values).toEqual([1]);
     });
 
-    it('OneToMany with $ne comparison', () => {
+    it('should filter by a one-to-many $size with $ne', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $ne: 0 } } });
       expect(ctx.sql).toContain(') <> ?');
       expect(ctx.values).toEqual([0]);
     });
 
-    it('OneToMany with $lt comparison', () => {
+    it('should filter by a one-to-many $size with $lt', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $lt: 10 } } });
       expect(ctx.sql).toContain(') < ?');
       expect(ctx.values).toEqual([10]);
     });
 
-    it('OneToMany with $lte comparison', () => {
+    it('should filter by a one-to-many $size with $lte', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, MeasureUnitCategory, { measureUnits: { $size: { $lte: 5 } } });
       expect(ctx.sql).toContain(') <= ?');
       expect(ctx.values).toEqual([5]);
     });
 
-    it('ManyToMany with exact match', () => {
+    it('should filter by a many-to-many $size equal to a number', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { $size: 5 } });
       expect(ctx.sql).toBe(' WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) = ?');
       expect(ctx.values).toEqual([5]);
     });
 
-    it('ManyToMany with $gt comparison', () => {
+    it('should filter by a many-to-many $size with $gt', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { $size: { $gt: 0 } } });
       expect(ctx.sql).toBe(' WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) > ?');
       expect(ctx.values).toEqual([0]);
     });
 
-    it('ManyToMany with $between', () => {
+    it('should filter by a many-to-many $size with $between', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { $size: { $between: [2, 8] } } });
       expect(ctx.sql).toBe(
@@ -916,7 +915,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual([2, 8]);
     });
 
-    it('combined with regular field', () => {
+    it('should combine a relation $size with a regular field', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { companyId: '1', tags: { $size: { $gte: 2 } } });
       expect(ctx.sql).toContain('`companyId` = ?');
@@ -925,17 +924,16 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['1', 2]);
     });
 
-    it('throws for unsupported $size comparison operator', () => {
+    it('should throw for unsupported $size comparison operator', () => {
       const ctx = dialect.createContext();
-      expect(() => dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } } as any)).toThrow(
+      // @ts-expect-error: no such comparison
+      expect(() => dialect.where(ctx, Item, { tags: { $size: { $like: 5 } } })).toThrow(
         'unsupported $size comparison operator: $like',
       );
     });
   });
-
-  // ─── $sort JSONB dot-notation tests ───────────────────────────────
   describe('$sort JSONB dot-notation', () => {
-    it('single level sort', () => {
+    it('should sort by a path one level deep', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
         $select: { id: true },
@@ -944,7 +942,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY (`kind`->>'public')");
     });
 
-    it('deep nested sort', () => {
+    it('should sort by a path several levels deep', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
         $select: { id: true },
@@ -953,7 +951,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY ((`kind`->'theme')->>'color') DESC");
     });
 
-    it('combined with regular sort', () => {
+    it('should combine a path sort with a regular sort', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Company, {
         $select: { id: true },
@@ -971,7 +969,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
   describe('$sort on an inlined computed field', () => {
     const tagsCountOperand = '(SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)';
 
-    it('orders by the expression, not by an alias that may not exist', () => {
+    it('should order by the expression, not by an alias that may not exist', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Item, { $select: { id: true }, $sort: { tagsCount: -1 } });
 
@@ -979,44 +977,42 @@ describe('AbstractSqlDialect (extra coverage)', () => {
     });
 
     /** One field, one rendering: the clause that reads it must not decide the operand for itself. */
-    it('builds the same operand $where does', () => {
+    it('should build the same operand $where does', () => {
       const filtered = dialect.createContext();
       dialect.find(filtered, Item, { $select: { id: true }, $where: { tagsCount: 1 } });
 
       expect(filtered.sql).toContain(`WHERE ${tagsCountOperand} = ?`);
     });
 
-    it('orders by the column itself when the field is a real one', () => {
+    it('should order by the column itself when the field is a real one', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, Item, { $select: { id: true }, $sort: { name: 1 } });
 
       expect(ctx.sql).toBe('SELECT `id` FROM `Item` ORDER BY `name`');
     });
   });
-
-  // ─── $distinct ────────────────────────────────────────────────────
   describe('$distinct', () => {
-    it('generates SELECT DISTINCT with $distinct: true', () => {
+    it('should generate SELECT DISTINCT with $distinct: true', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, { $distinct: true });
       expect(ctx.sql).toMatch(/^SELECT DISTINCT /);
     });
 
-    it('generates plain SELECT without $distinct', () => {
+    it('should generate plain SELECT without $distinct', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, {});
       expect(ctx.sql).toMatch(/^SELECT /);
       expect(ctx.sql).not.toMatch(/^SELECT DISTINCT /);
     });
 
-    it('$distinct: false behaves same as omitted', () => {
+    it('should read $distinct: false as no $distinct', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, { $distinct: false });
       expect(ctx.sql).toMatch(/^SELECT /);
       expect(ctx.sql).not.toMatch(/^SELECT DISTINCT /);
     });
 
-    it('$distinct with $select', () => {
+    it('should apply $distinct to a $select', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, {
         $distinct: true,
@@ -1025,7 +1021,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.sql).toBe('SELECT DISTINCT `name`, `email` FROM `User`');
     });
 
-    it('$distinct with $where and $sort', () => {
+    it('should apply $distinct with $where and $sort', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, {
         $distinct: true,
@@ -1037,7 +1033,7 @@ describe('AbstractSqlDialect (extra coverage)', () => {
       expect(ctx.values).toEqual(['1']);
     });
 
-    it('$distinct with $limit and $skip', () => {
+    it('should apply $distinct with $limit and $skip', () => {
       const ctx = dialect.createContext();
       dialect.find(ctx, User, {
         $distinct: true,

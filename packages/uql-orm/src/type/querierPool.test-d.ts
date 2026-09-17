@@ -1,9 +1,6 @@
 /**
- * Type-level regression test: a querier and a pool both satisfy {@link UniversalQuerier}, so one
- * parameter accepts either. The pool's surface used to be a hand-written subset of the querier's, and
- * an operation added to one and forgotten on the other would otherwise surface only in a consumer.
- *
- * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
+ * A querier and a pool both satisfy {@link UniversalQuerier}, so one parameter accepts either, and an
+ * operation cannot be added to one and forgotten on the other. Type-checked by `bun run ts` only.
  */
 import type { Querier, QuerierPool, SqlQuerier, SqlQuerierPool, UniversalQuerier } from './index.js';
 

@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { ISOLATION_LEVEL, Request } from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { MsSqlDialect } from './mssqlDialect.js';
-import { MsSqlQuerier } from './mssqlQuerier.js';
+import { type MsSqlConnection, MsSqlQuerier } from './mssqlQuerier.js';
 
 function buildRequest() {
   return Object.assign(new EventEmitter(), {
@@ -29,15 +29,14 @@ function buildTransaction(request: ReturnType<typeof buildRequest>) {
 describe('MsSqlQuerier', () => {
   let request: ReturnType<typeof buildRequest>;
   let transaction: ReturnType<typeof buildTransaction>;
-  let pool: { request: () => unknown; transaction: () => unknown };
+  let pool: MsSqlConnection;
   let querier: MsSqlQuerier;
 
   beforeEach(() => {
     request = buildRequest();
     transaction = buildTransaction(request);
     pool = { request: () => request, transaction: () => transaction };
-    // No cast: what the querier asks of the pool is structural.
-    querier = new MsSqlQuerier(async () => pool as never, new MsSqlDialect({}));
+    querier = new MsSqlQuerier(async () => pool, new MsSqlDialect({}));
   });
 
   it('should bind values by name, matching the placeholders the dialect emits', async () => {

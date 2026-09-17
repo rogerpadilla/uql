@@ -7,7 +7,6 @@ import { getMeta } from '../entity/index.js';
 import { fieldOptionsToCanonical } from '../schema/canonicalType.js';
 import { QueryRaw } from '../type/index.js';
 import type {
-  DialectFeatures,
   EntityMeta,
   FieldOptions,
   InsertIdSource,
@@ -16,6 +15,7 @@ import type {
   QueryOptions,
   QueryPager,
   QuerySizeComparisonOps,
+  SqlDialectFeatures,
   Type,
   VectorDistance,
   VectorMetric,
@@ -25,34 +25,40 @@ import { isAutoIncrement } from '../util/field.util.js';
 import { assertNonNegativeInteger } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 
-/**
- * Microsoft SQL Server 2017 and up - the floor `STRING_AGG` sets, every other construct here being
- * 2016 or older.
- *
- * Identifiers are `"`-quoted rather than bracketed: `escapeIdChar` is one character that doubles to
- * escape itself, `"` is the ANSI spelling, and `tedious` enables `QUOTED_IDENTIFIER` by default.
- * Brackets would buy nothing and cost the shared dialect spec, which reads that one character.
- */
+/** What SQL Server has. */
+const MSSQL_FEATURES: SqlDialectFeatures = {
+  // Neither object takes an `IF NOT EXISTS`; both need a `sys` catalogue lookup around them, which
+  // the generator does not emit.
+  ifNotExists: false,
+  indexIfNotExists: false,
+  schemas: true,
+  dropTableCascade: false,
+  foreignKeyAlter: true,
+  primaryKeyAlter: true,
+  generatedColumnAdd: true,
+  // Extended properties are out-of-band metadata with their own procedures, not comments.
+  commentSyntax: 'none',
+  vectorIndexRequiresNotNull: false,
+  vectorSupportsLength: true,
+  supportsTimestamptz: false,
+  stringSizing: 'varchar',
+  supportsUnsigned: false,
+  serverSideCursors: false,
+  rowLocks: true,
+  rowLockWithWindow: true,
+  rowLockOf: true,
+  orderedUpsertReturning: false,
+  orderedJsonAggregates: true,
+  partialJsonContainment: false,
+  typedJsonElements: false,
+  narrowVectorTypes: false,
+  vectorTuningNeedsTransaction: false,
+  serialDeclaresPrimaryKey: false,
+};
+
+/** Microsoft SQL Server 2017 and up. Identifiers are `"`-quoted, the ANSI spelling `tedious` enables. */
 export class MsSqlDialect extends MergeSqlDialect {
-  protected override readonly featureDefaults: DialectFeatures = {
-    // Neither object takes an `IF NOT EXISTS`; both need a `sys` catalogue lookup around them, which
-    // the generator does not emit.
-    ifNotExists: false,
-    indexIfNotExists: false,
-    schemas: true,
-    dropTableCascade: false,
-    foreignKeyAlter: true,
-    primaryKeyAlter: true,
-    generatedColumnAdd: true,
-    // Extended properties are out-of-band metadata with their own procedures, not comments.
-    commentSyntax: 'none',
-    vectorIndexRequiresNotNull: false,
-    vectorSupportsLength: true,
-    supportsTimestamptz: false,
-    stringSizing: 'varchar',
-    supportsUnsigned: false,
-    serverSideCursors: false,
-  };
+  override readonly features: SqlDialectFeatures = MSSQL_FEATURES;
 
   override readonly dialectName = 'mssql';
 
@@ -89,9 +95,6 @@ export class MsSqlDialect extends MergeSqlDialect {
   /** `OUTPUT` has no trailing form: it sits between the column list and `VALUES`. */
   override readonly returningPosition = 'after-target';
 
-  /** Microsoft documents no row order for a `MERGE ... OUTPUT`. */
-  override readonly upsertReturningOrdered = false;
-
   override readonly insertIdSource: InsertIdSource = 'returning';
 
   /** Holds the update key lock across the insert; without it two concurrent upserts of one key race. */
@@ -120,12 +123,8 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * `SET IDENTITY_INSERT` around the insert, where the payload states a key the engine would
-   * otherwise generate: writing one is refused outright ("cannot insert explicit value for identity
-   * column ... when IDENTITY_INSERT is set to OFF") rather than ignored.
-   *
-   * Emitted only for that case, because the setting is per-session and only one table may hold it at
-   * a time, so it is turned back off in the same batch it was turned on.
+   * `SET IDENTITY_INSERT` around an insert that states a key the engine would generate, which it otherwise
+   * refuses; turned off in the same batch, since one table per session may hold it.
    */
   override insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
     const table = this.identityInsertTarget(entity, payload);
@@ -151,13 +150,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     return stated ? this.escapedTableName(meta) : undefined;
   }
 
-  /**
-   * A `DECIMAL` read back as the exact text it was written as, where the entity declared the field a
-   * `String`. `tedious` decodes the type to a JS number before anything here can see it, so the
-   * digits past 2^53 are gone at the wire unless the column is converted before it crosses - the same
-   * reason MariaDB reads a vector column through `VEC_ToText`. 41 characters covers `DECIMAL(38, s)`
-   * with room for the sign and the point.
-   */
+  /** A `DECIMAL` declared `String`, converted before it crosses the wire, where `tedious` would round it. */
   protected override selectFieldExpr(escapedColumn: string, field: FieldOptions): string {
     const exactDecimal = field.type === String && fieldOptionsToCanonical(field).category === 'decimal';
     return exactDecimal ? `CONVERT(NVARCHAR(41), ${escapedColumn})` : escapedColumn;
@@ -317,13 +310,8 @@ export class MsSqlDialect extends MergeSqlDialect {
   }
 
   /**
-   * A value being *compared* against a JSON path, which reads back as the text `JSON_VALUE` yields:
-   * `'true'` for a boolean, `'12'` for a number. So only a boolean needs re-spelling; a number or a
-   * string already binds as the text it will be compared with.
-   *
-   * There is no "parse this text as JSON" cast to bind through the way `CAST(? AS JSON)` and
-   * `json(?)` serve the other families - `JSON_QUERY` marks text as JSON but answers NULL for a
-   * scalar - which is why reading and writing need the two different binders here.
+   * A value compared against a JSON path, which reads back as text, so only a boolean needs spelling as
+   * `'true'`; SQL Server has no cast that parses text as JSON.
    */
   protected override jsonScalarParam(ctx: QueryContext, value: unknown): string {
     return (
@@ -358,9 +346,6 @@ export class MsSqlDialect extends MergeSqlDialect {
     }
     return `JSON_QUERY(${this.addValue(ctx, JSON.stringify(value))})`;
   }
-
-  /** An exploded element compares as text here, so `$elemMatch` always expands per field. */
-  protected override readonly jsonContainmentIsPartial = false;
 
   protected override jsonElemFrom(jsonField: string, _fields: readonly string[], alias: string): string {
     return `OPENJSON(${jsonField}) ${alias}`;

@@ -1,6 +1,11 @@
+import BetterSqlite3 from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
+import { Entity, Field, Id } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
-import { Coupon, createSpec, probeForeignKeys, User } from '../test/index.js';
+import { Coupon, createSpec, probeForeignKeys } from '../test/index.js';
+import { idKey } from '../type/index.js';
+import { SqliteDialect } from './sqliteDialect.js';
+import { SqliteQuerier } from './sqliteQuerier.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
@@ -22,13 +27,6 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
 }
 
 createSpec(new SqliteQuerierSpec());
-
-// ─── insertMany: chunking and ID reliability ───
-import BetterSqlite3 from 'better-sqlite3';
-import { Entity, Field, Id } from '../entity/index.js';
-import { idKey } from '../type/index.js';
-import { SqliteDialect } from './sqliteDialect.js';
-import { SqliteQuerier } from './sqliteQuerier.js';
 
 /** Forces tiny statements: floor(6 / params-per-record) records per INSERT. */
 class TinyBatchDialect extends SqliteDialect {

@@ -1,14 +1,7 @@
 /**
- * Type-level regression tests for find-query input safety.
- *
- * A typo'd key is rejected in every clause: natively for the ones typed against `Query<E>`, and by
- * its own `FieldKey`/`RelationKey` constraint for the projection clauses the result type captures.
- * Vector-search distance projection is not auto-typed; annotate with `WithDistance`.
- *
- * Not a runtime test: it has no assertions to execute. It is type-checked by `bun run ts`
- * (tsc over the whole tree), skipped by vitest (which collects only `.test.ts` / `.spec.ts`),
- * and left out of the build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails
- * the type-check if the error it guards ever stops happening, keeping the negatives locked in.
+ * Find-query input: a typo'd key fails in every clause, natively where typed against `Query<E>` and by
+ * its own key constraint where the result captures it. A vector distance projection is annotated with
+ * `WithDistance`. Type-checked by `bun run ts` only.
  */
 import type { Querier, WithDistance } from '../index.js';
 

@@ -54,7 +54,7 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 | `alterColumnSyntax`       | `ALTER COLUMN`, type and nullability alone; the default is a constraint        | `MODIFY`                                      |
 | `commentSyntax`           | `none` - extended properties are not comments                                  | `statement`                                   |
 | `dropTableCascade`        | false                                                                          | true (`CASCADE CONSTRAINTS`)                  |
-| `supportsRowLocks`        | true, as table hints                                                           | true, `FOR UPDATE` verbatim                   |
+| `features.rowLocks`       | true, as table hints                                                           | true, `FOR UPDATE` verbatim                   |
 | `maxBindValues`           | **2100** - [a hard server limit](https://github.com/yiisoft/yii2/issues/10371) | 65535                                         |
 | `schemas`                 | true, default `dbo`                                                            | true                                          |
 | `regexCondition`          | `REGEXP_LIKE`, which a server below 2025 refuses itself                        | `REGEXP_LIKE`                                 |

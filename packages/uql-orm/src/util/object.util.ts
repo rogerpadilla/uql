@@ -43,11 +43,7 @@ export function someValue(obj: object, pred: (value: unknown) => boolean): boole
 
 const isOperatorKey = (key: string) => key.startsWith('$');
 
-/**
- * Whether `value` is a non-empty object whose keys are query/update operators (`$eq`, `$push`, ...).
- * The single source of this test: the SQL dialects, the MongoDB dialect and the `$elemMatch` walker
- * all classify operator objects with it, and they used to disagree about `{}`.
- */
+/** Whether `value` is a non-empty object with an operator key (`$eq`, `$push`...): the one test every dialect classifies with. */
 export function isOperatorObject(value: unknown): value is Record<string, unknown> {
   return hasKeys(value) && !Array.isArray(value) && someKey(value, isOperatorKey);
 }
@@ -62,7 +58,7 @@ export function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-export function getKeys<T extends object>(obj: T): (keyof T & string)[] {
+export function getKeys<T extends object>(obj: T | null | undefined): (keyof T & string)[] {
   return obj ? (Object.keys(obj) as (keyof T & string)[]) : [];
 }
 

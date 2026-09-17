@@ -7,14 +7,8 @@ export type MongoId = {
 };
 
 /**
- * Every value type storable in an entity column. Superset of {@link QueryComparableScalar}
- * and {@link PrimaryKey}.
- *
- * `Uint8Array` rather than `Buffer`, which every `Buffer` still satisfies: naming an ambient Node
- * global here made the whole key-checking layer depend on `@types/node` being in scope. Without it
- * `Buffer` resolves to nothing, this union collapses to `any`, and `FieldKey` - the basis of
- * `$select`, `$where`, `$sort`, `@Index` and `defineEntity({ fields })` - silently stops checking
- * anything. A browser or edge project would have got no type safety and no error saying so.
+ * Every value a column may hold. `Uint8Array` rather than `Buffer`, which would need `@types/node` and
+ * collapse to `any` without it, switching every key check off.
  */
 export type Scalar = string | number | boolean | bigint | Date | RegExp | Uint8Array | MongoId;
 
@@ -29,16 +23,8 @@ export type QueryComparableScalar = string | number | bigint | Date;
 export type PrimaryKey = string | number | bigint;
 
 /**
- * Marker type for JSON/JSONB fields.
- * Wrapping a field's TypeScript type with `Json<T>` ensures it is classified as a `FieldKey`
- * (not a `RelationKey`), enabling type-safe usage in `$where`, `$select`, and `$sort`. A column
- * holding a list of documents is `Json<T>[]`, also a field, whose dot-paths address the element.
- *
- * @example
- * ```ts
- * @Field({ type: 'jsonb' })
- * settings?: Json<{ isArchived?: boolean }>;
- * ```
+ * Brands a JSON field, `settings?: Json<{ isArchived?: boolean }>`, so it reads as a field rather than a
+ * relation; `Json<T>[]` is a list of documents.
  */
 export type Json<T = unknown> = T & { readonly __json?: never };
 
@@ -54,14 +40,17 @@ export interface RawRow {
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 /**
- * `Omit`, fixed on three counts. Its key has to exist, where `Omit<T, K extends keyof any>` lets a
- * typo or a renamed property silently omit nothing. Being a homomorphic mapped type it distributes
- * over unions, where `Omit` intersects each member's keys and flattens a discriminated union (e.g.
- * `EntityIndexMeta`'s `type`/`distance` pairing) into one non-discriminated shape. And it removes
- * the key from types carrying an index signature, where `Exclude<keyof T, K>` widens back to
- * `string | number` and leaves the key in place.
+ * `Omit` whose key has to exist, which distributes over a union rather than flattening it, and removes
+ * a key from a type with an index signature.
  */
 export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? never : P]: T[P] };
+
+/**
+ * Each key of `K` mapped to `never`, so an intersection with it makes naming one a compile error;
+ * `unknown`, inert, when there are none. A captured type parameter needs it: TypeScript skips the
+ * excess-property check on one.
+ */
+export type RejectKeys<K> = [K] extends [never] ? unknown : Record<K & string, never>;
 
 export type Unpacked<T> = T extends readonly (infer U)[]
   ? U

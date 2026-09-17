@@ -3,7 +3,7 @@ import { defineEntity, defineField } from '../entity/index.js';
 import { fieldOptionConflict } from './fieldOption.util.js';
 import { raw } from './raw.js';
 
-it('reports the option a column cannot use', () => {
+it('should report the option a column cannot use', () => {
   expect(fieldOptionConflict({ type: String, autoIncrement: true })).toBe(
     "cannot use 'autoIncrement': it applies to a numeric column, not to a string one",
   );
@@ -18,7 +18,7 @@ it('reports the option a column cannot use', () => {
   );
 });
 
-it('reports the option another option leaves unread', () => {
+it('should report the option another option leaves unread', () => {
   expect(fieldOptionConflict({ type: Number, computed: raw`1`, index: true })).toBe(
     "cannot use 'index': it is ignored on an inlined computed field",
   );
@@ -30,13 +30,13 @@ it('reports the option another option leaves unread', () => {
   );
 });
 
-it('reports the same option whichever order the field was written in', () => {
+it('should report the same option whichever order the field was written in', () => {
   const message = "cannot use 'length': it applies to a string column, not to a numeric one";
   expect(fieldOptionConflict({ type: Number, length: 10, autoIncrement: true })).toBe(message);
   expect(fieldOptionConflict({ autoIncrement: true, length: 10, type: Number })).toBe(message);
 });
 
-it('leaves a combination that applies alone', () => {
+it('should leave a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: 'vector', dimensions: 3, distance: 'cosine' })).toBe(undefined);
   // The column type is what the options are judged against, not the logical one.
   expect(fieldOptionConflict({ type: String, columnType: 'decimal', precision: 30, scale: 2 })).toBe(undefined);
@@ -49,7 +49,7 @@ it('leaves a combination that applies alone', () => {
   expect(fieldOptionConflict({ type: Number, isId: true, nullable: false })).toBe(undefined);
 });
 
-it('lets a stored computed column keep what a real column has, and refuses what the engine fills', () => {
+it('should let a stored computed column keep what a real column has, and refuse what the engine fills', () => {
   const stored = { type: String, computed: raw`a || b`, stored: true } as const;
 
   expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: false })).toBeUndefined();
@@ -61,7 +61,7 @@ it('lets a stored computed column keep what a real column has, and refuses what 
   );
 });
 
-it('defineField backstops what the decorators reject at compile time', () => {
+it('should backstop at run time what the decorators reject at compile time', () => {
   class Backstopped {
     id?: number;
     computed?: number;

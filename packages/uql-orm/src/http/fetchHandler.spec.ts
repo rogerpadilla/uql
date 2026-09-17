@@ -14,7 +14,7 @@ describe('createFetchHandler', () => {
     pool = createMockQuerierPool(new PostgresDialect(), async () => mockQuerier);
   });
 
-  it('GET /user/one', async () => {
+  it('should serve GET /user/one', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
     const handler = createFetchHandler({ pool, include: [User] });
     const where = encodeURIComponent(JSON.stringify({ name: 'John' }));
@@ -24,7 +24,7 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
   });
 
-  it('strips the basePath prefix', async () => {
+  it('should strip the basePath prefix', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     const handler = createFetchHandler({ pool, include: [User], basePath: '/api' });
     const resp = await handler(new Request('http://localhost/api/user'));
@@ -32,7 +32,7 @@ describe('createFetchHandler', () => {
     expect(await resp.json()).toEqual({ data: [{ id: 1 }] });
   });
 
-  it('parses JSON query parameters from the URL', async () => {
+  it('should parse JSON query parameters from the URL', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     const handler = createFetchHandler({ pool, include: [User] });
     const where = encodeURIComponent('{"name":"John"}');
@@ -43,7 +43,7 @@ describe('createFetchHandler', () => {
     );
   });
 
-  it('POST /user parses the JSON body and runs in a transaction', async () => {
+  it('should parse the JSON body of POST /user and run it in a transaction', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(
@@ -59,7 +59,7 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.commitTransaction).toHaveBeenCalled();
   });
 
-  it('QUERY (RFC 10008) reads with the JSON query in the body', async () => {
+  it('should read with the JSON query in the body of a QUERY (RFC 10008)', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1 });
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(
@@ -74,14 +74,14 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
   });
 
-  it('strips the basePath only at a path boundary', async () => {
+  it('should strip the basePath only at a path boundary', async () => {
     const handler = createFetchHandler({ pool, include: [User], basePath: '/api' });
     const resp = await handler(new Request('http://localhost/apiuser'));
     expect(resp.status).toBe(404);
     expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
-  it('tolerates an empty request body', async () => {
+  it('should tolerate an empty request body', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(new Request('http://localhost/user', { method: 'QUERY' }));
@@ -89,7 +89,7 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: {} }));
   });
 
-  it('400s on a malformed JSON body', async () => {
+  it('should answer 400 to a malformed JSON body', async () => {
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(new Request('http://localhost/user', { method: 'POST', body: '{bad' }));
     expect(resp.status).toBe(400);
@@ -97,14 +97,14 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.insertOne).not.toHaveBeenCalled();
   });
 
-  it('400s on a malformed JSON query parameter', async () => {
+  it('should answer 400 to a malformed JSON query parameter', async () => {
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(new Request('http://localhost/user?$where={bad'));
     expect(resp.status).toBe(400);
     expect(await resp.json()).toEqual({ error: { message: "invalid JSON in '$where'", code: 400 } });
   });
 
-  it('404s for unknown entities and routes', async () => {
+  it('should answer 404 to an unknown entity or route', async () => {
     const handler = createFetchHandler({ pool, include: [User] });
     const unknownEntity = await handler(new Request('http://localhost/other'));
     expect(unknownEntity.status).toBe(404);
@@ -115,7 +115,7 @@ describe('createFetchHandler', () => {
     expect(emptyPath.status).toBe(404);
   });
 
-  it('maps errors to the canonical envelope', async () => {
+  it('should map errors to the canonical envelope', async () => {
     mockQuerier.findOne.mockRejectedValue(new Error('One error'));
     const handler = createFetchHandler({ pool, include: [User] });
     const resp = await handler(new Request('http://localhost/user/one'));
@@ -123,7 +123,7 @@ describe('createFetchHandler', () => {
     expect(await resp.json()).toEqual({ error: { message: 'One error', code: 500 } });
   });
 
-  it('honors a numeric status thrown by a hook', async () => {
+  it('should honor a numeric status thrown by a hook', async () => {
     const handler = createFetchHandler({
       pool,
       include: [User],
@@ -136,7 +136,7 @@ describe('createFetchHandler', () => {
     expect(await resp.json()).toEqual({ error: { message: 'forbidden', code: 403 } });
   });
 
-  it('exposes the web Request to hooks as context', async () => {
+  it('should expose the web Request to hooks as context', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     const handler = createFetchHandler({
       pool,

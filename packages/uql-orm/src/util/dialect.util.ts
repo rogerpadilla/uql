@@ -47,12 +47,13 @@ import {
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
+/** The keys of `payload` a write persists as columns. */
 export function filterFieldKeys<E>(
   meta: EntityMeta<E>,
-  payload: EntityData<E>,
+  payload: EntityData<E> | UpdatePayload<E>,
   callbackKey: CallbackKey,
 ): FieldKey<E>[] {
-  return getKeys(payload as object).filter((key) => {
+  return getKeys(payload).filter((key) => {
     const fieldOpts = meta.fields[key];
     return fieldOpts && !isDatabaseWritten(fieldOpts) && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
   }) as FieldKey<E>[];
@@ -64,7 +65,6 @@ function isInsertableField<E>(meta: EntityMeta<E>, record: EntityData<E>, key: F
   return !!field && !isDatabaseWritten(field) && record[key] !== undefined;
 }
 
-/** Appends `record`'s not-yet-`seen` insertable keys (real, caller-written, defined value) to `keys`. */
 /**
  * The insertable keys `record` itself carries, as a string, for grouping rows by the statement they
  * can share. Only the row's own keys: the `onInsert` columns {@link getInsertFieldKeys} appends are a
@@ -80,6 +80,7 @@ export function insertShapeOf<E>(meta: EntityMeta<E>, record: EntityData<E>): st
   return shape;
 }
 
+/** Appends `record`'s not-yet-`seen` insertable keys to `keys`. */
 function addInsertFieldKeys<E>(
   meta: EntityMeta<E>,
   record: EntityData<E>,
@@ -95,16 +96,8 @@ function addInsertFieldKeys<E>(
 }
 
 /**
- * Resolves the columns of an INSERT statement: the union of the persistable fields provided by
- * any record (in first-seen order), plus every `onInsert` field. Records missing one of these
- * columns insert its database default.
- *
- * The column list is seeded from the first record, then extended by every other record's
- * not-yet-seen columns - a no-op scan for a homogeneous batch (every record the same shape).
- *
- * `onInsert` fields are always included so the column set is stable whether or not the caller
- * has run {@link fillOnFields} first (it stamps them on every record, but the querier's
- * chunk-size estimate inspects the raw payload).
+ * An insert's columns: every record's writable fields in first-seen order, plus every `onInsert` field,
+ * whether or not it was filled yet. A record missing one writes its default.
  */
 export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: EntityData<E>[]): FieldKey<E>[] {
   const seen = new Set<FieldKey<E>>();
@@ -268,7 +261,7 @@ export function isVectorSearch(value: unknown): value is QueryVectorSearch {
 export function findVectorSort<E>(
   sort: QuerySortMap<E> | undefined,
 ): { key: string; search: QueryVectorSearch } | undefined {
-  for (const key of getKeys(sort ?? {})) {
+  for (const key of getKeys(sort)) {
     const search = sort?.[key];
     // The guard narrows here, where a `.find()` over entries would hand back an untyped tuple.
     if (isVectorSearch(search)) {
@@ -353,17 +346,9 @@ export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): Query
 }
 
 /**
- * Returns a new `$where` map with every active entity filter's condition merged in, resolving
- * parameterized conditions against the explicit or ambient {@link UqlContext}. Never mutates the input.
- *
- * Convenience filters are active by default (unless `opts.filters === false` or bypassed by name), and
- * their keys are applied only when absent from the map, so an explicit `$where` on that key opts out.
- *
- * `security` filters are always active (bypass is ignored) and AND-merged, so a client `$where` on the
- * same field can't override them. A security condition that returns `undefined` fails the query closed
- * (throws {@link UqlSecurityError}) unless its `onMissing` is `skip`; one that returns an empty object
- * (`{}`) resolved to "no restriction" and adds nothing - the escape hatch for trusted cross-tenant
- * work (e.g. a maintenance job running under a `system` context).
+ * `$where` with the entity's active filters merged in, against the ambient {@link UqlContext}. A convenience
+ * filter yields to a `$where` on its key; a `security` one is always ANDed, and throws where its condition
+ * resolves to nothing, unless `onMissing: 'skip'`.
  */
 export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: QueryOptions): QueryWhere<E> {
   if (!meta.filters) {
@@ -435,10 +420,8 @@ export type ParsedGroupEntry =
     };
 
 /**
- * The `$size` of a relation condition (`{ comments: { $size: { $gte: 2 } } }`), or `undefined` when the
- * condition constrains the target's fields instead. Shared so every dialect agrees on which of the two
- * a relation key means, and so the ambiguous mix fails loudly: `{ $size: 2, name: 'x' }` used to fall
- * through to field filtering and emit a condition on a `$size` *column*.
+ * The `$size` of a relation condition, `{ comments: { $size: { $gte: 2 } } }`, or `undefined` where it
+ * filters the target's fields; a mix of the two, `{ $size: 2, name: 'x' }`, is refused.
  */
 export function parseRelationSize(val: unknown): number | QuerySizeComparisonOps | undefined {
   if (!val || typeof val !== 'object' || !('$size' in val)) {

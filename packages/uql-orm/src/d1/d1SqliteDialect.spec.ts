@@ -49,14 +49,14 @@ function mostCallArgs(sql: string): number {
 /** D1 caps a function call at 32 arguments, which a wide object or JSON update would pass in one call. */
 describe('D1SqliteDialect', () => {
   /** An item and the tax it joins, read as a to-many: 44 arguments in one `json_object`. */
-  it('keeps each call of a wide relation read within 32 arguments', () => {
+  it('should keep each call of a wide relation read within 32 arguments', () => {
     const ctx = dialect.createContext();
     dialect.find(ctx, Tag, { $populate: { items: { $populate: { tax: true } } } });
 
     expect(mostCallArgs(ctx.sql)).toBeLessThanOrEqual(32);
   });
 
-  it('keeps each call of a wide JSON update within 32 arguments', () => {
+  it('should keep each call of a wide JSON update within 32 arguments', () => {
     const ctx = dialect.createContext();
     const lists = Object.fromEntries(keys.slice(0, 20).map((key) => [key, 1]));
     dialect.update(
@@ -70,7 +70,7 @@ describe('D1SqliteDialect', () => {
   });
 
   /** The split calls read and write what one call would, on a real SQLite. */
-  it('reads and updates through the split calls', async () => {
+  it('should read and update through the split calls', async () => {
     const db = new BetterSqlite3(':memory:');
     await createTables(new SqliteQuerier(db, new SqliteDialect()));
     const d1 = new SqliteQuerier(db, dialect);

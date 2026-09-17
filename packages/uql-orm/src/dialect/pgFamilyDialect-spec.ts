@@ -5,10 +5,12 @@ import {
   Company,
   Item,
   ItemTag,
+  JsonRecord,
   MeasureUnitCategory,
   Profile,
   Tax,
   TaxCategory,
+  TypedRow,
   User,
   UserWithNonUpdatableId,
 } from '../test/index.js';
@@ -19,10 +21,7 @@ import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from './abstractSqlDi
 /**
  * Shared expectations for the Postgres-wire dialects (PostgreSQL, CockroachDB): `$n` placeholders,
  * `ON CONFLICT` upserts, `= ANY($1)` sets, the `jsonb` operators, `BEGIN [ISOLATION LEVEL ...]`.
- *
- * A family suite rather than a Postgres one CockroachDB happens to skip: it ran none of these before,
- * so everything its dialect shares with Postgres - which is nearly all of it - was only ever checked
- * against a live server. `MySqlFamilySpec` is the same shape for MySQL and MariaDB.
+ * `MySqlFamilySpec` is the same shape for MySQL and MariaDB.
  */
 export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   /**
@@ -45,7 +44,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   /** Neither runs `FOR UPDATE` beside a window function, so a locked paged read takes two. */
   shouldNotRunAWindowUnderARowLock() {
-    expect(this.dialect.supportsWindowWithRowLock).toBe(false);
+    expect(this.dialect.features.rowLockWithWindow).toBe(false);
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
@@ -194,17 +193,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   }
 
   /**
-   * Regression: each fallback (non-`EXCLUDED`) update column formats its value in an isolated
-   * context that always numbered its own placeholder from `$1` - correct only by coincidence when a
-   * single such column existed. With two, both rendered `$1` while the values landed at different
-   * positions, so the second column silently bound the wrong value.
-   */
-
-  /**
-   * Regression: each fallback (non-`EXCLUDED`) update column formats its value in an isolated
-   * context that always numbered its own placeholder from `$1` - correct only by coincidence when a
-   * single such column existed. With two, both rendered `$1` while the values landed at different
-   * positions, so the second column silently bound the wrong value.
+   * Each fallback (non-`EXCLUDED`) update column formats its value in a context of its own, whose
+   * placeholders still follow the ones before it: with two such columns, each binds its own value.
    */
   shouldUpsertWithTwoFallbackUpdateColumns() {
     @Entity({ name: 'UpsertFallbackWidget' })
@@ -244,64 +234,6 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(values[3]).toBe('Some Name B');
     expect(values[5]).toBe('50');
   }
-
-  /** Postgres/CockroachDB's numbered placeholders, unlike MySQL's positionless `?`. */
-
-  /** Postgres/CockroachDB's numbered placeholders, unlike MySQL's positionless `?`. */
-  override shouldBeSecure() {
-    let res = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
-        $select: { id: true, something: true } as any,
-        $where: {
-          id: 1,
-          something: 1,
-        } as any,
-        $sort: {
-          id: 1,
-          something: 1,
-        } as any,
-      }),
-    );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE "id" = $1 AND "something" = $2 ORDER BY "id", "something"');
-    expect(res.values).toEqual([1, 1]);
-
-    res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        something: 'anything',
-        createdAt: 1,
-      } as any),
-    );
-    expect(res.sql).toBe('INSERT INTO "User" ("name", "createdAt", "id") VALUES ($1, $2, $3) RETURNING "id" "id"');
-    expect(res.values).toEqual(['Some Name', 1, anyUuid]);
-
-    res = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        User,
-        {
-          $where: { something: 'anything' } as any,
-        },
-        {
-          name: 'Some Name',
-          something: 'anything',
-          updatedAt: 1,
-        } as any,
-      ),
-    );
-    expect(res.sql).toBe('UPDATE "User" SET "name" = $1, "updatedAt" = $2 WHERE "something" = $3');
-    expect(res.values).toEqual(['Some Name', 1, 'anything']);
-
-    res = this.exec((ctx) =>
-      this.dialect.delete(ctx, User, {
-        $where: { something: 'anything' } as any,
-      }),
-    );
-    expect(res.sql).toBe('DELETE FROM "User" WHERE "something" = $1');
-    expect(res.values).toEqual(['anything']);
-  }
-
-  /** `$in`/array-membership binds as a single native array via `= ANY(...)`, not `IN (?, ?, ...)`. */
 
   /** `$in`/array-membership binds as a single native array via `= ANY(...)`, not `IN (?, ?, ...)`. */
   override shouldFind$in() {
@@ -551,7 +483,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         Company,
         { $where: { id: '1' } },
         {
-          kind: null as any,
+          kind: null,
           updatedAt: 123,
         },
       ),
@@ -791,134 +723,118 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
 
-  /** Array text format (`{...}`) is distinct from scalar SQL string literals; see `toPgArray` JSDoc. */
-
-  // JSONB operator tests
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { city: 'NYC', zip: '10001' } } } as any,
+        $where: { entries: { $elemMatch: { city: 'NYC', zip: '10001' } } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "JsonRecord" WHERE "entries" @> $1::jsonb');
     expect(values).toEqual(['[{"city":"NYC","zip":"10001"}]']);
   }
 
   shouldFind$all() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $all: ['admin', 'user'] } } as any,
+        $where: { entries: { $all: ['admin', 'user'] } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE "kind" @> $1::jsonb');
+    expect(sql).toBe('SELECT "id" FROM "JsonRecord" WHERE "entries" @> $1::jsonb');
     expect(values).toEqual(['["admin","user"]']);
   }
 
   shouldFind$size() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $size: 3 } } as any,
+        $where: { entries: { $size: 3 } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") = $1');
+    expect(sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") = $1');
     expect(values).toEqual([3]);
   }
 
   shouldFind$sizeWithComparison() {
     // Single comparison operator
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $size: { $gte: 2 } } } as any,
+        $where: { entries: { $size: { $gte: 2 } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") >= $1');
+    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") >= $1');
     expect(res.values).toEqual([2]);
 
     // Multiple comparison operators
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $size: { $gt: 0, $lte: 5 } } } as any,
+        $where: { entries: { $size: { $gt: 0, $lte: 5 } } },
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Company" WHERE (JSONB_ARRAY_LENGTH("kind") > $1 AND JSONB_ARRAY_LENGTH("kind") <= $2)',
+      'SELECT "id" FROM "JsonRecord" WHERE (JSONB_ARRAY_LENGTH("entries") > $1 AND JSONB_ARRAY_LENGTH("entries") <= $2)',
     );
     expect(res.values).toEqual([0, 5]);
 
     // $between
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $size: { $between: [1, 10] } } } as any,
+        $where: { entries: { $size: { $between: [1, 10] } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE JSONB_ARRAY_LENGTH("kind") BETWEEN $1 AND $2');
+    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE JSONB_ARRAY_LENGTH("entries") BETWEEN $1 AND $2');
     expect(res.values).toEqual([1, 10]);
   }
 
-  /**
-   * Regression: `jsonSize` builds its comparison in an isolated context, which always numbers its
-   * own placeholders from `$1` - only correct by coincidence when `$size` is the sole bound value.
-   * With a preceding condition, the placeholder must shift to account for it.
-   */
-
-  /**
-   * Regression: `jsonSize` builds its comparison in an isolated context, which always numbers its
-   * own placeholders from `$1` - only correct by coincidence when `$size` is the sole bound value.
-   * With a preceding condition, the placeholder must shift to account for it.
-   */
+  /** `jsonSize` numbers its placeholders in a context of its own, which has to start after the values before it. */
   shouldFind$sizeAfterAnotherBoundValue() {
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: 'Acme', kind: { $size: 3 } } as any,
+        $where: { id: 7, entries: { $size: 3 } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "name" = $1 AND JSONB_ARRAY_LENGTH("kind") = $2');
-    expect(res.values).toEqual(['Acme', 3]);
+    expect(res.sql).toBe('SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND JSONB_ARRAY_LENGTH("entries") = $2');
+    expect(res.values).toEqual([7, 3]);
 
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { name: 'Acme', kind: { $size: { $gt: 0, $lte: 5 } } } as any,
+        $where: { id: 7, entries: { $size: { $gt: 0, $lte: 5 } } },
       }),
     );
     expect(res.sql).toBe(
-      'SELECT "id" FROM "Company" WHERE "name" = $1 AND (JSONB_ARRAY_LENGTH("kind") > $2 AND JSONB_ARRAY_LENGTH("kind") <= $3)',
+      'SELECT "id" FROM "JsonRecord" WHERE "id" = $1 AND (JSONB_ARRAY_LENGTH("entries") > $2 AND JSONB_ARRAY_LENGTH("entries") <= $3)',
     );
-    expect(res.values).toEqual(['Acme', 0, 5]);
+    expect(res.values).toEqual([7, 0, 5]);
   }
 
-  // Tests for $elemMatch with nested operators
-
-  // Tests for $elemMatch with nested operators
   shouldFind$elemMatchWithOperators() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { city: { $ilike: 'new%' } } } } as any,
+        $where: { entries: { $elemMatch: { city: { $ilike: 'new%' } } } },
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'city\' ILIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'city\' ILIKE $1)',
     );
     expect(values).toEqual(['new%']);
   }
 
   shouldFind$elemMatchWithMultipleOperators() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { price: { $gt: 100 }, active: { $eq: true } } } } as any,
+        $where: { entries: { $elemMatch: { price: { $gt: 100 }, active: { $eq: true } } } },
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE (_uql_elem->>\'price\')::numeric > $1 AND _uql_elem->\'active\' = $2::jsonb)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE (_uql_elem->>\'price\')::numeric > $1 AND _uql_elem->\'active\' = $2::jsonb)',
     );
     // The boolean compares as JSON: extracting it as text loses the type.
     expect(values).toEqual([100, 'true']);
@@ -926,26 +842,26 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   shouldFind$elemMatchWithMixedConditions() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { name: 'exact', status: { $in: ['active', 'pending'] } } } } as any,
+        $where: { entries: { $elemMatch: { name: 'exact', status: { $in: ['active', 'pending'] } } } },
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'name\' = $1 AND _uql_elem->>\'status\' = ANY($2))',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'name\' = $1 AND _uql_elem->>\'status\' = ANY($2))',
     );
     expect(values).toEqual(['exact', ['active', 'pending']]);
   }
 
   shouldFind$elemMatchWithStringOperators() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { name: { $startsWith: 'Test' } } } } as any,
+        $where: { entries: { $elemMatch: { name: { $startsWith: 'Test' } } } },
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("kind") AS _uql_elem WHERE _uql_elem->>\'name\' LIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS("entries") AS _uql_elem WHERE _uql_elem->>\'name\' LIKE $1)',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -953,18 +869,18 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   shouldFind$elemMatchWithAllOperators() {
     // Test $ne
     let res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { status: { $ne: 'deleted' } } } } as any,
+        $where: { entries: { $elemMatch: { status: { $ne: 'deleted' } } } },
       }),
     );
     expect(res.sql).toContain("_uql_elem->>'status' IS DISTINCT FROM $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } } as any,
+        $where: { entries: { $elemMatch: { qty: { $gte: 10 }, price: { $lt: 50 }, discount: { $lte: 20 } } } },
       }),
     );
     expect(res.sql).toContain("(_uql_elem->>'qty')::numeric >= $1");
@@ -973,10 +889,10 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
     // Test $like, $endsWith, $iendsWith, $istartsWith, $includes, $iincludes
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
         $where: {
-          kind: {
+          entries: {
             $elemMatch: {
               a: { $like: '%x%' },
               b: { $endsWith: '.pdf' },
@@ -986,7 +902,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
               f: { $iincludes: 'MID' },
             },
           },
-        } as any,
+        },
       }),
     );
     expect(res.sql).toContain("_uql_elem->>'a' LIKE");
@@ -998,23 +914,20 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
     // Test $regex, $nin
     res = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } } as any,
+        $where: { entries: { $elemMatch: { code: { $regex: '^A' }, tag: { $nin: ['x', 'y'] } } } },
       }),
     );
     expect(res.sql).toContain("_uql_elem->>'code' ~ $1");
     expect(res.sql).toContain("_uql_elem->>'tag' <> ALL($2)");
   }
 
-  // JSONB dot-notation tests (Postgres-specific)
-
-  // JSONB dot-notation tests (Postgres-specific)
   shouldFindByJsonDotNotation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': 1 } as any,
+        $where: { 'kind.public': 1 },
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'public\'))::numeric = $1');
@@ -1025,7 +938,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.private': { $ne: 0 } } as any,
+        $where: { 'kind.private': { $ne: 0 } },
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->>\'private\'))::numeric IS DISTINCT FROM $1');
@@ -1036,47 +949,44 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': { $gt: 0, $lte: 5 } } as any,
+        $where: { 'kind.public': { $gt: 0, $lte: 1 } },
       }),
     );
     expect(sql).toBe(
       'SELECT "id" FROM "Company" WHERE ((("kind"->>\'public\'))::numeric > $1 AND (("kind"->>\'public\'))::numeric <= $2)',
     );
-    expect(values).toEqual([0, 5]);
+    expect(values).toEqual([0, 1]);
   }
 
   shouldFindByJsonDotNotationWithIlike() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.public': { $ilike: '%active%' } } as any,
+        $where: { 'kind.description': { $ilike: '%active%' } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'public\') ILIKE $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'description\') ILIKE $1');
     expect(values).toEqual(['%active%']);
   }
 
-  // ManyToMany relation filtering (Postgres-specific)
-
-  // ManyToMany relation filtering (Postgres-specific)
   shouldFindByManyToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
         $select: { id: true },
-        $where: { tags: { id: 5 } } as any,
+        $where: { tags: { id: '5' } },
       }),
     );
     expect(sql).toBe(
       'SELECT "id" FROM "Item" WHERE EXISTS (SELECT 1 FROM "ItemTag" WHERE "ItemTag"."itemId" = "Item"."id" AND "ItemTag"."tagId" IN (SELECT "tags"."id" FROM "Tag" "tags" WHERE "tags"."id" = $1))',
     );
-    expect(values).toEqual([5]);
+    expect(values).toEqual(['5']);
   }
 
   shouldFindByOneToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, MeasureUnitCategory, {
         $select: { id: true },
-        $where: { measureUnits: { name: 'kg' } } as any,
+        $where: { measureUnits: { name: 'kg' } },
       }),
     );
     expect(sql).toBe(
@@ -1253,7 +1163,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $where: { 'kind.theme.color': 'red' } as any,
+        $where: { 'kind.theme.color': 'red' },
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "Company" WHERE (("kind"->\'theme\')->>\'color\') = $1');
@@ -1307,9 +1217,15 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
   /** Outside the types, which give a JSON key no `raw()`: evaluated in place, where stringified it was `{}`. */
   shouldSetAJsonKeyToARawExpression() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
-        kind: { $set: { private: raw`1 + ${1}` } },
-      } as never),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        {
+          // @ts-expect-error: a JSON key takes no `raw`
+          kind: { $set: { private: raw`1 + ${1}` } },
+        },
+      ),
     );
     expect(sql).toBe(
       'UPDATE "Company" SET "kind" = COALESCE("kind", \'{}\'::jsonb) || $1::jsonb' +
@@ -1354,7 +1270,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     const { sql } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
         $select: { id: true },
-        $sort: { 'kind.theme.color': -1 } as any,
+        $sort: { 'kind.theme.color': -1 },
       }),
     );
     expect(sql).toBe('SELECT "id" FROM "Company" ORDER BY (("kind"->\'theme\')->>\'color\') DESC');
@@ -1362,12 +1278,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   shouldFormatPgArrayWithBinary() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, {
+      this.dialect.find(ctx, TypedRow, {
         $select: { id: true },
-        $where: { id: { $in: [new Uint8Array([1, 2, 3])] } as any },
+        $where: { bytes: { $in: [new Uint8Array([1, 2, 3])] } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "User" WHERE "id" = ANY($1)');
+    expect(sql).toBe('SELECT "id" FROM "TypedRow" WHERE "bytes" = ANY($1)');
     expect(values).toEqual([[new Uint8Array([1, 2, 3])]]);
   }
 
@@ -1417,19 +1333,23 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['lamp']);
   }
 
-  shouldMatchNothingForAnEmptySet() {
-    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $in: [] } })).sql).toContain('"name" IN (NULL)');
-    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $nin: [] } })).sql).toContain(
-      '"name" NOT IN (NULL)',
-    );
+  shouldReduceAnEmptySetToAConstant() {
+    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $in: [] } })).sql).toContain(' WHERE 1 = 0');
+    expect(this.exec((ctx) => this.dialect.where(ctx, Item, { name: { $nin: [] } })).sql).toContain(' WHERE 1 = 1');
   }
 
   /** Outside the types, which give a JSON array no `raw()`: rendered in place rather than bound as an object. */
   shouldPushARawExpressionOntoAJsonArray() {
     const res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
-        kind: { $push: { tags: raw`to_jsonb(${'new'}::text)` } },
-      } as never),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        {
+          // @ts-expect-error: a JSON key takes no `raw`
+          kind: { $push: { tags: raw`to_jsonb(${'new'}::text)` } },
+        },
+      ),
     );
     expect(res.sql).toContain('JSONB_BUILD_ARRAY(to_jsonb($1::text))');
     expect(res.values).toEqual(['new', expect.any(Number), '1']);

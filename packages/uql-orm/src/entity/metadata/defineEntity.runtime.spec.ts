@@ -1,19 +1,11 @@
-import { afterAll, expect, it, vi } from 'vitest';
+import { afterAll, expect, it } from 'vitest';
 import { Migrator } from '../../migrate/migrator.js';
 import { SqlSchemaGenerator } from '../../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import type { ColumnType, Json, Scalar, Type } from '../../type/index.js';
 import { getKeys } from '../../util/index.js';
-import {
-  defineEntity,
-  defineField,
-  defineId,
-  defineRelation,
-  getEntities,
-  getMeta,
-  removeEntity,
-} from './definition.js';
+import { defineEntity, defineField, defineRelation, getEntities, getMeta, removeEntity } from './definition.js';
 
 /**
  * A content type an admin creates through a UI: its shape is a row in a table, not a class in the
@@ -54,7 +46,7 @@ const sync = (entities: Type<ContentRow>[]) => new Migrator(pool, { entities }).
 
 afterAll(() => pool.end());
 
-it('registers the table a hand-written entity would, whichever way the type is spelled', () => {
+it('should register the table a hand-written entity would, whichever way the type is spelled', () => {
   const Runtime = register({
     name: 'recipe',
     fields: [
@@ -79,7 +71,7 @@ it('registers the table a hand-written entity would, whichever way the type is s
   expect(getMeta(Runtime)).toMatchObject({ name: 'recipe', ids: ['id'] });
 });
 
-it('creates its table from the definition, and the rows read back', async () => {
+it('should create its table from the definition, and the rows read back', async () => {
   const Post = register({
     name: 'post',
     fields: [
@@ -100,7 +92,7 @@ it('creates its table from the definition, and the rows read back', async () => 
   expect(found).toEqual([{ id: 1, title: 'Arepas', views: 10 }]);
 });
 
-it('relates two content types to each other', async () => {
+it('should relate two content types to each other', async () => {
   const Author = register({ name: 'author', fields: [{ name: 'name', type: 'text' }] });
   const Article = register({ name: 'article', fields: [{ name: 'title', type: 'text' }] });
   defineField(Article, 'authorId', { references: () => Author });
@@ -120,7 +112,7 @@ it('relates two content types to each other', async () => {
   expect(article).toEqual({ id: 1, title: 'Notes', authorId: 1, author: { id: 1, name: 'Ada' } });
 });
 
-it('decodes a field added after the entity has already been used', async () => {
+it('should decode a field added after the entity has already been used', async () => {
   const Doc = register({ name: 'doc', fields: [{ name: 'title', type: 'text' }] });
   await sync([Doc]);
 
@@ -140,7 +132,7 @@ it('decodes a field added after the entity has already been used', async () => {
   expect(updated).toEqual({ id: 1, title: 'About', settings: { theme: 'dark' } });
 });
 
-it('joins a relation added after the entity has already been used', async () => {
+it('should join a relation added after the entity has already been used', async () => {
   const Owner = register({ name: 'owner', fields: [{ name: 'name', type: 'text' }] });
   const Note = register({ name: 'note', fields: [{ name: 'title', type: 'text' }] });
   await sync([Owner, Note]);
@@ -161,7 +153,7 @@ it('joins a relation added after the entity has already been used', async () => 
   expect(note).toEqual({ id: 1, title: 'Notes', ownerId: 1, owner: { id: 1, name: 'Ada' } });
 });
 
-it('takes a field added after the entity has already been used', async () => {
+it('should take a field added after the entity has already been used', async () => {
   const Page = register({ name: 'page', fields: [{ name: 'title', type: 'text' }] });
   await sync([Page]);
 
@@ -180,7 +172,7 @@ it('takes a field added after the entity has already been used', async () => {
   expect(updated).toEqual({ id: 1, title: 'About', subtitle: 'the team' });
 });
 
-it('creates one content type, whatever the migrator was configured with', async () => {
+it('should create one content type, whatever the migrator was configured with', async () => {
   const Memo = register({ name: 'memo', fields: [{ name: 'body', type: 'text' }] });
   // Pinned to an explicit list, which a content type created after startup is never in.
   await new Migrator(pool, { entities: [] }).sync({ entity: Memo });
@@ -193,7 +185,7 @@ it('creates one content type, whatever the migrator was configured with', async 
   expect(found).toEqual({ id: 1, body: 'hi' });
 });
 
-it('adds a field the admin added, and leaves one they retyped', async () => {
+it('should add a field the admin added, and leave one they retyped', async () => {
   const Tag = register({
     name: 'tag',
     fields: [
@@ -222,7 +214,7 @@ it('adds a field the admin added, and leaves one they retyped', async () => {
  * The audit columns every content type carries. A minted class has no base to extend, so `extends`
  * names one: the same merge, and the base is a bag of columns rather than an entity of its own.
  */
-it('gives every content type a base its class cannot extend', async () => {
+it('should give every content type a base its class cannot extend', async () => {
   class Audited {
     createdBy?: string;
   }
@@ -244,7 +236,7 @@ it('gives every content type a base its class cannot extend', async () => {
   expect(faq).toEqual({ id: 1, question: 'why', createdBy: 'ada' });
 });
 
-it('forgets a content type the admin deleted', () => {
+it('should forget a content type the admin deleted', () => {
   const Draft = register({ name: 'draft', fields: [{ name: 'title', type: 'text' }] });
   expect(getEntities()).toContain(Draft);
 

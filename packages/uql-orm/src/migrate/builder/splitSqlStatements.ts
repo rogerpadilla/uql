@@ -1,29 +1,9 @@
-/**
- * Splits a SQL blob on semicolons into separate statements.
- *
- * Uses a declarative Master-Regex scanner to rapidly
- * identify and skip "non-splittable" blocks (strings, comments, dollar-quotes) in a single pass.
- * This approach is $O(n)$, leverages native regex speed, and is trivially easy to audit.
- *
- * Handles:
- * - Single quotes: '...' (standard SQL, respects '' and \')
- * - Double quotes: "..." (identifiers or MySQL strings)
- * - Backticks: `...` (MySQL identifiers)
- * - Postgres Dollar quotes: $tag$...$tag$ or $$...$$
- * - Comments: -- and /* ... *\/
- */
+/** Splits SQL on semicolons, skipping strings, quoted identifiers, dollar-quoted blocks and comments in one regex pass. */
 export function splitSqlStatements(sql: string): string[] {
   const statements: string[] = [];
   let lastIndex = 0;
 
-  // This regex matches:
-  // 1. Single quoted strings: '(?:''|\\['\\]|[^'])*(?:'|(?=$))
-  // 2. Double quoted identifiers: "(?:""|\\["\\]|[^"])*(?:"|(?=$))
-  // 3. Backticked identifiers: `(?:``|\\[`\\]|[^`])*(?:`|(?=$))
-  // 4. Postgres Dollar quoted blocks: \$(?<tag>[a-zA-Z0-9_]*)\$[\s\S]*?(?:\$\k<tag>|(?=$))
-  // 5. Single-line comments: --.*
-  // 6. Multi-line comments: \/\*[\s\S]*?(?:\*\/|(?=$))
-  // 7. Statement terminator: ;
+  // Quoted strings and identifiers, dollar quotes, comments, or a `;`: the one regex scanning them all.
   const masterRegex =
     /'(?:''|\\['\\]|[^'])*(?:'|(?=$))|"(?:""|\\["\\]|[^"])*(?:"|(?=$))|`(?:``|\\[`\\]|[^`])*(?:`|(?=$))|\$(?<tag>[a-zA-Z0-9_]*)\$[\s\S]*?(?:\$\k<tag>|(?=$))|--.*|\/\*[\s\S]*?(?:\*\/|(?=$))|;/g;
 

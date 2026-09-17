@@ -264,7 +264,7 @@ class Author {
   @Field({ type: String })
   name?: string;
 
-  @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author })
+  @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author, cascade: 'persist' })
   tomes?: Tome[];
 
   @AfterLoad()
@@ -451,6 +451,15 @@ describe('lifecycle hooks', () => {
 
       expect(log).toEqual(['afterLoad:a', 'afterLoad:b', 'afterLoad:Ann']);
     });
+  });
+
+  it('should not run @AfterLoad for the rows an update cascades from', async () => {
+    const authorId = await querier.insertOne(Author, { name: 'Ann' });
+    log = [];
+
+    await querier.updateOneById(Author, authorId, { tomes: [{ title: 'c' }] });
+
+    expect(log).toEqual([]);
   });
 
   it('should run inherited hooks first, then each own hook in declaration order', async () => {

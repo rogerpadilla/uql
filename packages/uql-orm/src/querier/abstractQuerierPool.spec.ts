@@ -2,25 +2,17 @@ import { expect, it, vi } from 'vitest';
 import { getContext, withContext } from '../context/context.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, User } from '../test/index.js';
-import type { Querier, QueryUpdateResult, SqlQuerier, Type, UqlContext } from '../type/index.js';
+import type { Querier, SqlQuerier, UqlContext } from '../type/index.js';
 import { AbstractQuerierPool } from './abstractQuerierPool.js';
 import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
 
-/** Minimal stub: only the members `withQuerier`/`transaction` touch. */
-function createStubQuerier() {
-  return {
-    transaction: vi.fn((callback: () => Promise<unknown>) => callback()),
-    release: vi.fn(async () => {}),
-  } as unknown as Querier;
-}
-
 /** Pool that hands out a fresh querier per acquisition and records how many it acquired. */
-class CountingPool extends AbstractQuerierPool<Querier, PostgresDialect> {
-  readonly acquired: Querier[] = [];
-  constructor(private readonly make: () => Querier) {
+class CountingPool<Q extends Querier> extends AbstractQuerierPool<Q, PostgresDialect> {
+  readonly acquired: Q[] = [];
+  constructor(private readonly make: () => Q) {
     super(new PostgresDialect());
   }
-  override getQuerier(): Promise<Querier> {
+  override getQuerier(): Promise<Q> {
     const querier = this.make();
     this.acquired.push(querier);
     return Promise.resolve(querier);
@@ -30,8 +22,8 @@ class CountingPool extends AbstractQuerierPool<Querier, PostgresDialect> {
   }
 }
 
-it('withQuerier runs the callback under the given context and releases the querier', async () => {
-  const querier = createStubQuerier();
+it('should run the callback under the given context and release the querier', async () => {
+  const querier = createMockQuerier();
   const pool = new CountingPool(() => querier);
   let seen: UqlContext | undefined;
 
@@ -49,8 +41,8 @@ it('withQuerier runs the callback under the given context and releases the queri
   expect(querier.release).toHaveBeenCalledTimes(1);
 });
 
-it('withQuerier without a context leaves the ambient context untouched', async () => {
-  const pool = new CountingPool(createStubQuerier);
+it('should leave the ambient context untouched given no context', async () => {
+  const pool = new CountingPool(() => createMockQuerier());
   let seen: UqlContext | undefined = { sentinel: true };
   await pool.withQuerier(async () => {
     seen = getContext();
@@ -58,8 +50,8 @@ it('withQuerier without a context leaves the ambient context untouched', async (
   expect(seen).toBeUndefined();
 });
 
-it('withQuerier releases the querier even when the callback throws under a context', async () => {
-  const querier = createStubQuerier();
+it('should release the querier when the callback throws under a context', async () => {
+  const querier = createMockQuerier();
   const pool = new CountingPool(() => querier);
   await expect(
     pool.withQuerier(
@@ -72,8 +64,9 @@ it('withQuerier releases the querier even when the callback throws under a conte
   expect(querier.release).toHaveBeenCalledTimes(1);
 });
 
-it('transaction runs the callback under the given context', async () => {
-  const querier = createStubQuerier();
+it('should run a transaction under the given context', async () => {
+  const querier = createMockQuerier();
+  const transaction = vi.spyOn(querier, 'transaction');
   const pool = new CountingPool(() => querier);
   let seen: UqlContext | undefined;
 
@@ -86,7 +79,7 @@ it('transaction runs the callback under the given context', async () => {
   );
 
   expect(seen).toEqual({ tenantId: 3 });
-  expect(querier.transaction).toHaveBeenCalledTimes(1);
+  expect(transaction).toHaveBeenCalledTimes(1);
   expect(getContext()).toBeUndefined();
 });
 
@@ -94,32 +87,31 @@ class Item {
   id?: number;
 }
 
-/** Stub querier exposing the read methods the pool convenience layer delegates to. */
+/** A querier whose reads answer canned rows. */
 function createReadStubQuerier() {
-  return {
-    findOneById: vi.fn(async () => ({ id: 1 })),
-    findOne: vi.fn(async () => ({ id: 1 })),
-    findMany: vi.fn(async () => [{ id: 1 }]),
-    findManyAndCount: vi.fn(async () => [[{ id: 1 }], 1]),
-    count: vi.fn(async () => 7),
-    aggregate: vi.fn(async () => [{ total: 3 }]),
-    release: vi.fn(async () => {}),
-  } as unknown as Querier;
+  const querier = createMockQuerier();
+  querier.findOneById.mockResolvedValue({ id: 1 });
+  querier.findOne.mockResolvedValue({ id: 1 });
+  querier.findMany.mockResolvedValue([{ id: 1 }]);
+  querier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 1]);
+  querier.count.mockResolvedValue(7);
+  querier.aggregate.mockResolvedValue([{ total: 3 }]);
+  return querier;
 }
 
-it('findMany delegates to a per-call querier and releases it', async () => {
+it('should delegate findMany to a querier of its own, and release it', async () => {
   const querier = createReadStubQuerier();
   const pool = new CountingPool(() => querier);
-  const result = await pool.findMany(Item as Type<Item>, { $where: { id: 1 } });
+  const result = await pool.findMany(Item, { $where: { id: 1 } });
   expect(result).toEqual([{ id: 1 }]);
   expect(querier.findMany).toHaveBeenCalledWith(Item, { $where: { id: 1 } }, undefined);
   expect(pool.acquired).toHaveLength(1);
   expect(querier.release).toHaveBeenCalledTimes(1);
 });
 
-it('concurrent pool reads each acquire their own connection (parallel, not serialized)', async () => {
+it('should acquire a connection per concurrent read, in parallel', async () => {
   const pool = new CountingPool(createReadStubQuerier);
-  const [rows, total] = await Promise.all([pool.findMany(Item as Type<Item>, {}), pool.count(Item as Type<Item>, {})]);
+  const [rows, total] = await Promise.all([pool.findMany(Item, {}), pool.count(Item, {})]);
   expect(rows).toEqual([{ id: 1 }]);
   expect(total).toBe(7);
   // Two separate connections were acquired - the basis for genuine parallelism.
@@ -129,9 +121,9 @@ it('concurrent pool reads each acquire their own connection (parallel, not seria
   }
 });
 
-it('every read helper delegates to a fresh querier and releases it', async () => {
+it('should delegate every read to a fresh querier, and release it', async () => {
   const pool = new CountingPool(createReadStubQuerier);
-  const entity = Item as Type<Item>;
+  const entity = Item;
 
   expect(await pool.findOneById(entity, 1)).toEqual({ id: 1 });
   expect(await pool.findOne(entity, {})).toEqual({ id: 1 });
@@ -150,15 +142,13 @@ it('every read helper delegates to a fresh querier and releases it', async () =>
   }
 });
 
-it('exists and estimatedCount delegate to a fresh querier and release it', async () => {
-  const pool = new CountingPool(
-    () =>
-      ({
-        exists: vi.fn(async () => true),
-        estimatedCount: vi.fn(async () => 7),
-        release: vi.fn(async () => {}),
-      }) as unknown as Querier,
-  );
+it('should delegate exists and estimatedCount to a fresh querier, and release it', async () => {
+  const pool = new CountingPool(() => {
+    const querier = createMockQuerier();
+    querier.exists.mockResolvedValue(true);
+    querier.estimatedCount.mockResolvedValue(7);
+    return querier;
+  });
 
   expect(await pool.exists(User, { $where: { name: 'a' } })).toBe(true);
   expect(await pool.estimatedCount(User)).toBe(7);
@@ -170,34 +160,31 @@ it('exists and estimatedCount delegate to a fresh querier and release it', async
   expect(estimated.release).toHaveBeenCalledTimes(1);
 });
 
-/** Stub querier exposing the write methods the pool delegates to, plus a stream. */
+/** A querier whose writes answer canned results, and whose stream yields two rows. */
 function createWriteStubQuerier() {
-  const querier = {
-    insertOne: vi.fn(async () => 1),
-    insertMany: vi.fn(async () => [1, 2]),
-    updateOneById: vi.fn(async () => 1),
-    updateMany: vi.fn(async () => 2),
-    upsertOne: vi.fn(async (): Promise<QueryUpdateResult> => ({ changes: 1 })),
-    upsertMany: vi.fn(async (): Promise<QueryUpdateResult> => ({ changes: 2 })),
-    saveOne: vi.fn(async () => 1),
-    saveMany: vi.fn(async () => [1, 2]),
-    deleteOneById: vi.fn(async () => 1),
-    deleteMany: vi.fn(async () => 2),
-    restoreOneById: vi.fn(async () => 1),
-    restoreMany: vi.fn(async () => 2),
-    findManyStream: vi.fn(async function* () {
-      yield { id: 1 };
-      yield { id: 2 };
-    }),
-    release: vi.fn(async () => {}),
-    [Symbol.asyncDispose]: vi.fn(async () => {}),
-  };
-  return querier as unknown as Querier;
+  const querier = createMockQuerier();
+  querier.insertOne.mockResolvedValue(1);
+  querier.insertMany.mockResolvedValue([1, 2]);
+  querier.updateOneById.mockResolvedValue(1);
+  querier.updateMany.mockResolvedValue(2);
+  querier.upsertOne.mockResolvedValue({ changes: 1 });
+  querier.upsertMany.mockResolvedValue({ changes: 2 });
+  querier.saveOne.mockResolvedValue(1);
+  querier.saveMany.mockResolvedValue([1, 2]);
+  querier.deleteOneById.mockResolvedValue(1);
+  querier.deleteMany.mockResolvedValue(2);
+  querier.restoreOneById.mockResolvedValue(1);
+  querier.restoreMany.mockResolvedValue(2);
+  querier.findManyStream.mockImplementation(async function* () {
+    yield { id: 1 };
+    yield { id: 2 };
+  });
+  return querier;
 }
 
-it('every write delegates to a fresh querier and releases it', async () => {
+it('should delegate every write to a fresh querier, and release it', async () => {
   const pool = new CountingPool(createWriteStubQuerier);
-  const entity = Item as Type<Item>;
+  const entity = Item;
 
   expect(await pool.insertOne(entity, { id: 1 })).toBe(1);
   expect(await pool.insertMany(entity, [{ id: 1 }])).toEqual([1, 2]);
@@ -219,21 +206,21 @@ it('every write delegates to a fresh querier and releases it', async () => {
   }
 });
 
-it('a pool write releases the connection when the operation throws', async () => {
+it('should release the connection when a write throws', async () => {
   const querier = createWriteStubQuerier();
-  (querier.insertOne as ReturnType<typeof vi.fn>).mockRejectedValue(new Error('constraint'));
+  querier.insertOne.mockRejectedValue(new Error('constraint'));
   const pool = new CountingPool(() => querier);
 
-  await expect(pool.insertOne(Item as Type<Item>, { id: 1 })).rejects.toThrow('constraint');
+  await expect(pool.insertOne(Item, { id: 1 })).rejects.toThrow('constraint');
   expect(querier.release).toHaveBeenCalledTimes(1);
 });
 
-it('findManyStream holds one connection for the whole iteration and disposes it at the end', async () => {
+it('should hold one connection for a whole stream, and dispose of it at the end', async () => {
   const querier = createWriteStubQuerier();
   const pool = new CountingPool(() => querier);
   const seen: unknown[] = [];
 
-  for await (const row of pool.findManyStream(Item as Type<Item>, {})) {
+  for await (const row of pool.findManyStream(Item, {})) {
     seen.push(row);
   }
 
@@ -242,44 +229,44 @@ it('findManyStream holds one connection for the whole iteration and disposes it 
   expect(querier[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
 });
 
-it('findManyStream disposes the connection when the consumer stops early', async () => {
+it("should dispose of a stream's connection when the consumer stops early", async () => {
   const querier = createWriteStubQuerier();
   const pool = new CountingPool(() => querier);
 
-  for await (const _row of pool.findManyStream(Item as Type<Item>, {})) {
+  for await (const _row of pool.findManyStream(Item, {})) {
     break;
   }
 
   expect(querier[Symbol.asyncDispose]).toHaveBeenCalledTimes(1);
 });
 
-it('pool reads run under the ambient context', async () => {
+it('should run pool reads under the ambient context', async () => {
   const querier = createReadStubQuerier();
   const pool = new CountingPool(() => querier);
   let seen: UqlContext | undefined;
-  (querier.count as ReturnType<typeof vi.fn>).mockImplementation(async () => {
+  querier.count.mockImplementation(async () => {
     seen = getContext();
     return 0;
   });
-  await withContext({ tenantId: 9 }, () => pool.count(Item as Type<Item>, {}));
+  await withContext({ tenantId: 9 }, () => pool.count(Item, {}));
   expect(seen).toEqual({ tenantId: 9 });
 });
 
-/** Stub SQL querier exposing raw all/run. */
+/** A SQL querier whose raw reads and writes answer canned results. */
 function createSqlStubQuerier() {
-  return {
-    all: vi.fn(async () => [{ n: 1 }]),
-    run: vi.fn(async (): Promise<QueryUpdateResult> => ({ changes: 1 })),
-    release: vi.fn(async () => {}),
-  } as unknown as SqlQuerier;
+  return createMockQuerier({
+    all: vi.fn().mockResolvedValue([{ n: 1 }]),
+    run: vi.fn().mockResolvedValue({ changes: 1 }),
+    dialect: new PostgresDialect(),
+  });
 }
 
-class CountingSqlPool extends AbstractSqlQuerierPool<SqlQuerier, PostgresDialect> {
-  readonly acquired: SqlQuerier[] = [];
-  constructor(private readonly make: () => SqlQuerier) {
+class CountingSqlPool<Q extends SqlQuerier> extends AbstractSqlQuerierPool<Q, PostgresDialect> {
+  readonly acquired: Q[] = [];
+  constructor(private readonly make: () => Q) {
     super(new PostgresDialect());
   }
-  override getQuerier(): Promise<SqlQuerier> {
+  override getQuerier(): Promise<Q> {
     const querier = this.make();
     this.acquired.push(querier);
     return Promise.resolve(querier);
@@ -289,7 +276,7 @@ class CountingSqlPool extends AbstractSqlQuerierPool<SqlQuerier, PostgresDialect
   }
 }
 
-it('all/run delegate to a per-call querier and release it', async () => {
+it('should delegate all and run to a querier of their own, and release it', async () => {
   const pool = new CountingSqlPool(createSqlStubQuerier);
   const rows = await pool.all('SELECT 1', []);
   const res = await pool.run('DELETE FROM x', []);
@@ -301,18 +288,17 @@ it('all/run delegate to a per-call querier and release it', async () => {
   }
 });
 
-it('concurrent all() calls each acquire their own connection', async () => {
+it('should acquire a connection per concurrent all()', async () => {
   const pool = new CountingSqlPool(createSqlStubQuerier);
   await Promise.all([pool.all('SELECT 1'), pool.all('SELECT 2')]);
   expect(pool.acquired).toHaveLength(2);
 });
 
 /**
- * The pattern the docs recommend, and the one the implementation broke: `querier.transaction` used to
- * release inside the callback, so `withQuerier` released a second time and any work after the
- * transactional section ran on a connection already back in the pool.
+ * The pattern the docs recommend: a transaction inside `withQuerier` leaves the release to `withQuerier`,
+ * so work after the transaction still runs on the caller's connection.
  */
-it('releases exactly once when a transaction runs inside withQuerier', async () => {
+it('should release exactly once when a transaction runs inside withQuerier', async () => {
   const querier = createMockQuerier();
   const pool = createMockQuerierPool(new PostgresDialect(), async () => querier);
 

@@ -1,16 +1,19 @@
 import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
+import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
+import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
+import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import type { ColumnNode, IndexNode, TableNode } from '../schema/types.js';
+import { SchemaAST } from '../schema/schemaAST.js';
+import type { IndexNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { mockTableNode } from '../test/index.js';
-import type { ColumnSchema, VectorDistance } from '../type/index.js';
+import { assertDefined, mockSqlTableNode, mockTableNode } from '../test/index.js';
+import type { ColumnSchema } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
-import { SqlSchemaGenerator } from './schemaGenerator.js';
+import { buildEntityAST, SqlSchemaGenerator } from './schemaGenerator.js';
 
 // Test entities
 @Entity()
@@ -89,52 +92,21 @@ describe('SqlSchemaGenerator (Postgres)', () => {
 
     expect(sql).toBe('DROP TABLE IF EXISTS "TestUser";');
   });
-  /** Build a minimal TableNode mock with an id + embedding column and the given vector indexes. */
+  /** An `embeddings` table of an id and an embedding, with the vector indexes given. */
   function buildVectorTableNode(indexes: Partial<IndexNode>[]): TableNode {
-    const table = {
-      name: 'embeddings',
-      primaryKey: [],
-      indexes: [],
-      outgoingRelations: [],
-      incomingRelations: [],
-    } as unknown as TableNode;
-    (table as { columns: Map<string, ColumnNode> }).columns = new Map<string, ColumnNode>([
-      [
-        'id',
-        {
-          name: 'id',
-          type: { category: 'integer' },
-          nullable: false,
-          isPrimaryKey: true,
-          isAutoIncrement: true,
-          isUnique: false,
-          table,
-        } as ColumnNode,
-      ],
-      [
-        'embedding',
-        {
-          name: 'embedding',
-          type: { category: 'vector', length: 1536 },
-          nullable: false,
-          isPrimaryKey: false,
-          isAutoIncrement: false,
-          isUnique: false,
-          table,
-        } as ColumnNode,
-      ],
+    const table = mockTableNode('embeddings', [
+      { name: 'id', type: { category: 'integer' }, nullable: false, isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'embedding', type: { category: 'vector', length: 1536 }, nullable: false },
     ]);
-    (table as { indexes: IndexNode[] }).indexes = indexes.map(
-      (idx) =>
-        ({
-          name: 'vec_idx',
-          table,
-          columns: [{ name: 'embedding' }],
-          entries: [{ column: 'embedding' }],
-          unique: false,
-          type: 'vector',
-          ...idx,
-        }) as IndexNode,
+    table.indexes.push(
+      ...indexes.map((idx) => ({
+        name: 'vec_idx',
+        table,
+        entries: [{ column: 'embedding' }],
+        unique: false,
+        type: 'vector' as const,
+        ...idx,
+      })),
     );
     return table;
   }
@@ -192,7 +164,8 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   it('should not resolve a vector distance keyword via the prototype chain for an unvalidated distance value', () => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());
     expect(() =>
-      mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' as VectorDistance }])),
+      // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
+      mariaGenerator.generateCreateTableFromNode(buildVectorTableNode([{ distance: 'toString' }])),
     ).toThrow('mariadb does not support vector distance metric: toString');
   });
 
@@ -380,7 +353,7 @@ describe('SqlSchemaGenerator (SQLite)', () => {
     expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
   });
 
-  it('generateCreateSchema splits non-inline indexes for separate querier.run', () => {
+  it('should split non-inline indexes into statements of their own', () => {
     const stmts = generator.generateCreateSchema([SqliteIndexedEntity]);
     expect(stmts).toHaveLength(2);
     expect(stmts[0]).toMatch(/^CREATE TABLE `SqliteIndexedEntity`/);
@@ -392,29 +365,16 @@ describe('SqlSchemaGenerator Integration', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should generate CREATE TABLE from TableNode', () => {
-    const table = {
-      name: 'users',
-      columns: new Map<string, ColumnNode>(),
-      primaryKey: [],
-      indexes: [],
-      incomingRelations: [],
-      outgoingRelations: [],
-    } as unknown as TableNode;
-    (table as { columns: Map<string, ColumnNode> }).columns = new Map<string, ColumnNode>([
-      [
-        'id',
-        {
-          name: 'id',
-          type: { category: 'integer', size: 'big' },
-          isPrimaryKey: true,
-          isAutoIncrement: true,
-          nullable: false,
-          table,
-        } as ColumnNode,
-      ],
-      ['name', { name: 'name', type: { category: 'string', length: 100 }, nullable: true, table } as ColumnNode],
+    const table = mockTableNode('users', [
+      {
+        name: 'id',
+        type: { category: 'integer', size: 'big' },
+        isPrimaryKey: true,
+        isAutoIncrement: true,
+        nullable: false,
+      },
+      { name: 'name', type: { category: 'string', length: 100 } },
     ]);
-    (table as { primaryKey: ColumnNode[] }).primaryKey = [table.columns.get('id')!];
 
     const sql = generator.generateCreateTableFromNode(table).join('\n');
     expect(sql).toContain('CREATE TABLE "users"');
@@ -434,8 +394,7 @@ describe('SqlSchemaGenerator Integration', () => {
     expect(sql).toBe('CREATE UNIQUE INDEX "name_idx" ON "users" ("name");');
   });
 
-  // The predicate used to be dropped between IndexNode and IndexSchema, turning the soft-delete
-  // pattern (unique among live rows) into a unique index over every row.
+  // The predicate reaches the index, so the soft-delete pattern stays unique among live rows only.
   it('should carry a partial index predicate from IndexNode', () => {
     const table = mockTableNode('users', [{ name: 'email' }]);
     const index: IndexNode = {
@@ -450,13 +409,13 @@ describe('SqlSchemaGenerator Integration', () => {
   });
 
   it('should generate DROP TABLE from TableNode', () => {
-    const table = { name: 'users' } as TableNode;
+    const table = mockTableNode('users', []);
     const sql = generator.generateDropTable(table.name, { ifExists: true });
     expect(sql).toBe('DROP TABLE IF EXISTS "users";');
   });
 
   it('should generate DROP TABLE without IF EXISTS by default', () => {
-    const table = { name: 'users' } as TableNode;
+    const table = mockTableNode('users', []);
     expect(generator.generateDropTable(table.name)).toBe('DROP TABLE "users";');
   });
 });
@@ -660,8 +619,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     const definition = tableDefinition();
     definition.columns[0] = column({ name: 'userId', isPrimaryKey: true, isAutoIncrement: true });
     const sql = generator.generateCreateTableFromDefinition(definition).join('\n');
-    // The column declares a plain integer, and the key is spelled from that - it used to be a
-    // hardcoded BIGINT whatever the column said, which no foreign key could then match.
+    // The column declares a plain integer, and the key is spelled from it, so a foreign key can match it.
     expect(sql).toContain('"userId" INTEGER GENERATED BY DEFAULT AS IDENTITY');
   });
 
@@ -788,7 +746,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     );
   });
   describe('generateCreateSchema', () => {
-    it('emits cross-entity foreign keys, which the per-entity path dropped', () => {
+    it('should emit cross-entity foreign keys, which the per-entity path dropped', () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const sql = generator.generateCreateSchema([TestUser, TestPost]);
 
@@ -801,7 +759,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       expect(fks.some((s) => s.includes('ALTER TABLE "blog_posts"') && s.includes('"TestUser"'))).toBe(true);
     });
 
-    it('keeps constraints inline on SQLite, which cannot ALTER one in', () => {
+    it('should keep constraints inline on SQLite, which cannot ALTER one in', () => {
       const generator = new SqlSchemaGenerator(new SqliteDialect());
       const sql = generator.generateCreateSchema([TestUser, TestPost]);
 
@@ -811,7 +769,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       expect(sql.some((s) => s.startsWith('CREATE TABLE') && s.includes('FOREIGN KEY'))).toBe(true);
     });
 
-    it('narrows creation with `only` while still resolving constraints against the full graph', () => {
+    it('should narrow creation with `only` while still resolving constraints against the full graph', () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const sql = generator.generateCreateSchema([TestUser, TestPost], { only: ['blog_posts'] });
 
@@ -819,7 +777,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       expect(sql.some((s) => s.includes('ALTER TABLE "blog_posts"') && s.includes('"TestUser"'))).toBe(true);
     });
 
-    it('emits no foreign keys at all when asked for none', () => {
+    it('should emit no foreign keys at all when asked for none', () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const sql = generator.generateCreateSchema([TestUser, TestPost], { foreignKeys: false });
 
@@ -829,7 +787,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
   });
 
   describe('generateDropSchema', () => {
-    it('drops dependents before the tables they reference', () => {
+    it('should drop dependents before the tables they reference', () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const sql = generator.generateDropSchema([TestUser, TestPost]);
 
@@ -838,7 +796,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       expect(sql).toEqual(['DROP TABLE "blog_posts";', 'DROP TABLE "TestUser";']);
     });
 
-    it('adds CASCADE only where the dialect has it, since a cycle has no valid order', () => {
+    it('should add CASCADE only where the dialect has it, since a cycle has no valid order', () => {
       const options = { ifExists: true, cascade: true };
 
       expect(new SqlSchemaGenerator(new PostgresDialect()).generateDropSchema([TestUser], options)).toEqual([
@@ -849,4 +807,431 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       ]);
     });
   });
+});
+
+/** Exposes the default comparison a diff runs, which is protected. */
+class DefaultsProbe extends SqlSchemaGenerator {
+  defaultsMatch(current: unknown, desired: unknown): boolean {
+    return this.isDefaultValueEqual(current, desired);
+  }
+}
+
+@Entity()
+class DiffUser {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
+  @Field({ type: String, columnType: 'varchar', length: 100 }) email?: string;
+  @Field({ type: String, columnType: 'varchar', length: 255, index: true }) status?: string;
+}
+
+@Entity()
+class DefaultsEntity {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string;
+  @Field({ type: Number, columnType: 'int', defaultValue: 0 }) attempts?: number;
+}
+
+@Entity()
+class EnumAltered {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
+  status?: 'draft' | 'paid';
+}
+
+@Entity()
+class ComputedEntity {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number, computed: raw`1 + 1` }) total?: number;
+}
+
+describe('SqlSchemaGenerator diffs (Postgres)', () => {
+  const generator = new DefaultsProbe(new PostgresDialect());
+
+  it('should refuse to drop a key whose constraint introspection did not name', () => {
+    expect(() => generator.generateDropPrimaryKeySql('users')).toThrow(
+      'Cannot drop the primary key of "users": postgres names the constraint',
+    );
+  });
+
+  it('should expose the naming strategy of its dialect', () => {
+    const namingStrategy = new SnakeCaseNamingStrategy();
+    expect(new SqlSchemaGenerator(new PostgresDialect({ namingStrategy })).namingStrategy).toBe(namingStrategy);
+  });
+
+  it('should type a foreign key as the key it points at', () => {
+    @Entity()
+    class RefTarget {
+      @Id({ type: String, columnType: 'uuid' }) id?: string;
+    }
+    @Entity()
+    class RefSource {
+      @Id({ type: Number }) id?: number;
+      @Field({ references: () => RefTarget }) ownerId?: string;
+    }
+    const { ownerId } = getMeta(RefSource).fields;
+    assertDefined(ownerId);
+    expect(generator.getSqlType(ownerId)).toBe('UUID');
+  });
+
+  /** One resolution for the column a table gets and the type this reports, so the two cannot disagree. */
+  it('should type a foreign key as its create statement does, its own columnType first, and a shared key never serial', () => {
+    @Entity()
+    class Account {
+      @Id({ type: Number }) id?: number;
+    }
+    @Entity()
+    class AccountProfile {
+      @Id({ type: Number, references: () => Account }) id?: number;
+      @Field({ references: () => Account, columnType: 'int' }) backupId?: number;
+    }
+    const { id, backupId } = getMeta(AccountProfile).fields;
+    assertDefined(id);
+    assertDefined(backupId);
+    const ddl = generator.generateCreateSchema([Account, AccountProfile]).join('\n');
+
+    expect(generator.getSqlType(id)).toBe('BIGINT');
+    expect(generator.getSqlType(backupId)).toBe('INTEGER');
+    expect(ddl).toContain('CREATE TABLE "AccountProfile" (\n  "id" BIGINT NOT NULL,\n  "backupId" INTEGER,');
+  });
+
+  it('should comment a column of a table that has no comment of its own', () => {
+    @Entity()
+    class Commented {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String, comment: 'Shown to users' }) label?: string;
+    }
+    const statements = generator.generateCreateSchema([Commented]);
+    expect(statements).toContainEqual(expect.stringContaining('COMMENT ON COLUMN'));
+    expect(statements.filter((statement) => statement.startsWith('COMMENT ON TABLE'))).toEqual([]);
+  });
+
+  /** Reversing a key change restores only the side that had one: a key added from none drops, one removed adds back. */
+  it('should reverse a primary key change that added a key, or removed one', () => {
+    const added = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      primaryKey: { from: [], to: ['id'] },
+    });
+    expect(added).toEqual([expect.stringContaining('DROP CONSTRAINT')]);
+
+    const removed = generator.generateAlterTableDown({
+      tableName: 'users',
+      type: 'alter',
+      primaryKey: { from: ['id'], to: [] },
+    });
+    expect(removed).toEqual([expect.stringContaining('ADD CONSTRAINT')]);
+  });
+
+  it('should diff nothing where the desired schema has no table for the entity', () => {
+    const current = buildEntityAST(generator, [DiffUser]).getTable('DiffUser');
+    expect(generator.diffSchema(DiffUser, current, new SchemaAST())).toBeUndefined();
+  });
+
+  it('should read a cast NULL as no default, whichever side spells it', () => {
+    expect(generator.defaultsMatch('NULL::character varying', 'NULL')).toBe(true);
+  });
+
+  it('should detect new columns', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+    ]);
+
+    const diff = generator.diffSchema(DiffUser, currentSchema);
+
+    expect(diff).toBeDefined();
+    expect(diff?.type).toBe('alter');
+    expect(diff?.columnsToAdd).toHaveLength(2);
+    expect(diff?.columnsToAdd?.[0].name).toBe('email');
+    expect(diff?.columnsToAdd?.[1].name).toBe('status');
+  });
+
+  it('should detect a column whose type changed', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'BIGINT', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'TEXT' },
+      { name: 'email', sql: 'VARCHAR', length: 50 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+
+    const diff = generator.diffSchema(DiffUser, currentSchema);
+
+    expect(diff).toBeDefined();
+    expect(diff?.type).toBe('alter');
+    expect(diff?.columnsToAlter).toHaveLength(2);
+    expect(diff?.columnsToAlter?.map((c) => c.to.name)).toContain('name');
+    expect(diff?.columnsToAlter?.map((c) => c.to.name)).toContain('email');
+  });
+
+  /**
+   * An altered column carries no values to restate: MySQL answers a restated `CHECK` by adding a
+   * second constraint rather than replacing the first. They reach the database with the column, which
+   * is also why changing an enum is a hand-written migration.
+   */
+  it('should leave an enum off a column it alters', () => {
+    const currentSchema = mockSqlTableNode('EnumAltered', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'status', sql: 'VARCHAR', length: 10 },
+    ]);
+
+    const diff = generator.diffSchema(EnumAltered, currentSchema, generator.buildAST([EnumAltered]));
+
+    expect(diff?.columnsToAlter?.[0].to.name).toBe('status');
+    expect(diff?.columnsToAlter?.[0].to.enum).toBeUndefined();
+  });
+
+  it('should detect columns to drop', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+      { name: 'old_col', sql: 'VARCHAR' },
+    ]);
+
+    const diff = generator.diffSchema(DiffUser, currentSchema);
+
+    expect(diff).toBeDefined();
+    expect(diff?.type).toBe('alter');
+    expect(diff?.columnsToDrop).toEqual(['old_col']);
+  });
+
+  it('should add an index the entity declares and the table has not got', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+
+    const diff = generator.diffSchema(DiffUser, currentSchema);
+
+    expect(diff?.columnsToAdd).toBeUndefined();
+    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['DiffUser__status_idx']);
+  });
+
+  it('should leave alone an index the entity never declared', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    // With their real entries, as an introspector reports them: an index is recognised by the
+    // columns it covers, so the one the entity declares is already present under any name.
+    currentSchema.indexes.push(
+      { name: 'DiffUser__status_idx', table: currentSchema, entries: [{ column: 'status' }], unique: false },
+      { name: 'made_by_a_dba_idx', table: currentSchema, entries: [{ column: 'email' }], unique: false },
+    );
+
+    expect(generator.diffSchema(DiffUser, currentSchema)).toBeUndefined();
+  });
+
+  /**
+   * The reason an index is recognised by its shape. Renaming the convention, an engine truncating a
+   * name past its identifier limit, and SQLite reporting a name it made up all produce the same
+   * thing: an index that is already there under a name we did not choose. Keying on the name
+   * re-created it on every migration, forever.
+   */
+  it('should leave alone an index it would have named differently', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    currentSchema.indexes.push({
+      name: 'whatever_the_dba_called_it',
+      table: currentSchema,
+      entries: [{ column: 'status' }],
+      unique: false,
+    });
+
+    expect(generator.diffSchema(DiffUser, currentSchema)).toBeUndefined();
+  });
+
+  /** Same columns, different uniqueness: a different index, which no engine can alter into the other. */
+  it('should still create an index whose uniqueness differs', () => {
+    const currentSchema = mockSqlTableNode('DiffUser', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'name', sql: 'VARCHAR', length: 255 },
+      { name: 'email', sql: 'VARCHAR', length: 100 },
+      { name: 'status', sql: 'VARCHAR', length: 255 },
+    ]);
+    currentSchema.indexes.push({
+      name: 'DiffUser__status_idx',
+      table: currentSchema,
+      entries: [{ column: 'status' }],
+      unique: true,
+    });
+
+    expect(generator.diffSchema(DiffUser, currentSchema)?.indexesToAdd).toHaveLength(1);
+  });
+
+  /**
+   * Engines disagree on how they report "no default": MariaDB says `null` where MySQL says nothing at
+   * all. Read as different values, that asked to `MODIFY` every nullable column on every sync.
+   */
+  it('should read a reported null default and an absent one as the same', () => {
+    expect(generator.defaultsMatch(null, undefined)).toBe(true);
+    expect(generator.defaultsMatch(undefined, null)).toBe(true);
+    expect(generator.defaultsMatch(null, null)).toBe(true);
+    expect(generator.defaultsMatch(null, 'active')).toBe(false);
+    expect(generator.defaultsMatch(undefined, 0)).toBe(false);
+  });
+
+  /** A default comes back in the engine's own spelling, quoted and cast, and still reads as the entity's. */
+  it('should treat engine-spelled defaults as unchanged', () => {
+    const currentSchema = defaultsTableNode("'active'::character varying");
+
+    expect(generator.diffSchema(DefaultsEntity, currentSchema)).toBeUndefined();
+  });
+
+  it('should detect a genuinely changed default', () => {
+    const currentSchema = defaultsTableNode("'inactive'::character varying");
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].from.defaultValue).toBe("'inactive'::character varying");
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  it('should detect a default replacing an existing NULL default', () => {
+    const currentSchema = defaultsTableNode(null);
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  it('should detect a default added to a column that had none', () => {
+    const currentSchema = defaultsTableNode(undefined);
+
+    const diff = generator.diffSchema(DefaultsEntity, currentSchema);
+
+    expect(diff?.columnsToAlter).toHaveLength(1);
+    expect(diff?.columnsToAlter?.[0].to.defaultValue).toBe('active');
+  });
+
+  /** An inlined computed field is a query-time expression, never a column, so it must not show up as a diff. */
+  it('should skip inlined computed fields', () => {
+    const currentSchema = mockSqlTableNode('ComputedEntity', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+    ]);
+
+    expect(generator.diffSchema(ComputedEntity, currentSchema)).toBeUndefined();
+  });
+
+  /** `DefaultsEntity` as it stands in the database, with `status`'s stored default under test. */
+  function defaultsTableNode(statusDefault: unknown) {
+    return mockSqlTableNode('DefaultsEntity', [
+      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
+      { name: 'status', sql: 'VARCHAR', length: 20, defaultValue: statusDefault },
+      { name: 'attempts', sql: 'INTEGER', defaultValue: '0' },
+    ]);
+  }
+
+  it('should produce the SQL of an alter', () => {
+    const sql = generator.generateAlterTable({
+      tableName: 'users',
+      type: 'alter',
+      columnsToAdd: [
+        {
+          name: 'age',
+          type: 'INTEGER',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+        },
+      ],
+      columnsToDrop: ['old_name'],
+      indexesToAdd: [{ name: 'age_idx', entries: [{ column: 'age' }], unique: false }],
+      indexesToDrop: ['old_idx'],
+    });
+
+    expect(sql).toContain('ALTER TABLE "users" ADD COLUMN "age" INTEGER;');
+    expect(sql).toContain('ALTER TABLE "users" DROP COLUMN "old_name";');
+    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "age_idx" ON "users" ("age");');
+    expect(sql).toContain('DROP INDEX IF EXISTS "old_idx";');
+  });
+});
+
+@Entity({ name: 'users' })
+class UsersTable {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) name?: string;
+}
+
+/** A row per dialect, so a new dialect is a row rather than a branch in each test. */
+const everyDialect = [
+  {
+    dialect: new PostgresDialect(),
+    serialId: 'BIGINT GENERATED BY DEFAULT AS IDENTITY',
+    tableOptions: '',
+    booleanType: 'BOOLEAN',
+    comment: '',
+  },
+  {
+    dialect: new CockroachDialect(),
+    serialId: 'BIGINT GENERATED BY DEFAULT AS IDENTITY',
+    tableOptions: '',
+    booleanType: 'BOOLEAN',
+    comment: '',
+  },
+  {
+    dialect: new MySqlDialect(),
+    serialId: 'BIGINT AUTO_INCREMENT',
+    tableOptions: 'ENGINE=InnoDB',
+    booleanType: 'TINYINT(1)',
+    comment: " COMMENT 'Testing'",
+  },
+  {
+    dialect: new MariaDialect(),
+    serialId: 'BIGINT AUTO_INCREMENT',
+    tableOptions: 'ENGINE=InnoDB',
+    booleanType: 'TINYINT(1)',
+    comment: " COMMENT 'Testing'",
+  },
+  {
+    dialect: new SqliteDialect(),
+    serialId: 'INTEGER PRIMARY KEY AUTOINCREMENT',
+    tableOptions: '',
+    booleanType: 'INTEGER',
+    comment: '',
+  },
+];
+
+describe('SqlSchemaGenerator on every dialect', () => {
+  describe.each(everyDialect)(
+    'Dialect: $dialect.dialectName',
+    ({ dialect, serialId, tableOptions, booleanType, comment }) => {
+      const generator = new SqlSchemaGenerator(dialect);
+
+      it('should generate correct CREATE TABLE SQL', () => {
+        const sql = generator.generateCreateSchema([UsersTable]).join('\n');
+
+        expect(sql).toContain('CREATE TABLE');
+        expect(sql).toContain('users');
+        expect(sql).toContain('name');
+        expect(sql).toContain(serialId);
+        expect(sql).toContain(tableOptions);
+      });
+
+      it('should generate correct DROP TABLE SQL', () => {
+        expect(generator.generateDropTable('users', { ifExists: true })).toContain('DROP TABLE IF EXISTS');
+        expect(generator.generateDropTable('users', { ifExists: true })).toContain('users');
+      });
+
+      it('should generate correct SQL type for Boolean', () => {
+        expect(generator.getSqlType({ type: Boolean })).toBe(booleanType);
+      });
+
+      it('should generate correct column comments', () => {
+        expect(generator.generateColumnComment('Testing')).toBe(comment);
+      });
+    },
+  );
 });

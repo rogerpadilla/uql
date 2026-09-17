@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { SchemaAST } from './schemaAST.js';
+import { createTableNode, SchemaAST } from './schemaAST.js';
 import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from './types.js';
 
 describe('SchemaAST', () => {
@@ -9,569 +9,60 @@ describe('SchemaAST', () => {
     ast = new SchemaAST();
   });
 
-  describe('Table Operations', () => {
-    it('should add and retrieve tables', () => {
-      const table = createTable('users');
-      ast.addTable(table);
+  it('should key a table by its schema-qualified name', () => {
+    const users = createTable('users');
+    const accounts = createTableNode('accounts', 'crm');
+    ast.addTable(users);
+    ast.addTable(accounts);
 
-      expect(ast.getTable('users')).toBe(table);
-      expect(ast.getTableNames()).toEqual(['users']);
-    });
-
-    it('should remove tables and their relationships', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      expect(ast.relationships.length).toBe(1);
-
-      ast.removeTable('posts');
-
-      expect(ast.getTable('posts')).toBeUndefined();
-      expect(ast.relationships.length).toBe(0);
-    });
-
-    it('should remove tables and their indexes', () => {
-      const users = createTable('users');
-      ast.addTable(users);
-
-      const idx: IndexNode = {
-        name: 'users__email_idx',
-        table: users,
-        entries: [],
-        unique: false,
-      };
-      ast.addIndex(idx);
-
-      expect(ast.indexes.length).toBe(1);
-
-      ast.removeTable('users');
-
-      expect(ast.getTable('users')).toBeUndefined();
-      expect(ast.indexes.length).toBe(0);
-    });
-
-    it('should return undefined for non-existent table', () => {
-      expect(ast.getTable('nonexistent')).toBeUndefined();
-    });
-
-    it('should return false when removing non-existent table', () => {
-      expect(ast.removeTable('nonexistent')).toBe(false);
-    });
-
-    it('should keep the relationships and indexes of the tables it does not remove', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      const tags = createTable('tags');
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addTable(tags);
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-      ast.addIndex({ name: 'users__col1_idx', table: users, entries: [], unique: false });
-      ast.addIndex({ name: 'tags__col1_idx', table: tags, entries: [], unique: false });
-
-      ast.removeTable('tags');
-
-      expect(ast.relationships.map((rel) => rel.name)).toEqual(['posts_user_fk']);
-      expect(ast.indexes.map((index) => index.name)).toEqual(['users__col1_idx']);
-    });
-
-    it('should return empty indexes for non-existent table', () => {
-      expect(ast.getTableIndexes('nonexistent')).toEqual([]);
-    });
+    expect(ast.getTable('users')).toBe(users);
+    expect(ast.getTable('crm.accounts')).toBe(accounts);
+    expect(ast.getTable('accounts')).toBeUndefined();
+    expect(ast.getTables()).toEqual([users, accounts]);
   });
 
-  describe('Graph Navigation', () => {
-    it('should get referenced column', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addRelationship(rel);
+  it('should link a relationship from both tables and both column sets', () => {
+    const users = createTable('users');
+    const posts = createTable('posts');
+    const rel = createRelationship('posts_user_fk', posts, users);
+    ast.addRelationship(rel);
 
-      const authorCol = posts.columns.get('col1');
-      expect(ast.getReferencedColumn(authorCol!)).toBe(users.columns.get('col0'));
-    });
-    it('should get dependent tables', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      const dependents = ast.getDependentTables(users);
-      expect(dependents).toContain(posts);
-    });
-
-    it('should get dependencies', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      const deps = ast.getDependencies(posts);
-      expect(deps).toContain(users);
-    });
-
-    it('should get relationship between tables', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      expect(ast.getRelationship(posts, users)).toBe(rel);
-      expect(ast.getRelationship(users, posts)).toBeUndefined();
-    });
-
-    it('should get all table relationships', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      const comments = createTable('comments');
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addTable(comments);
-
-      const rel1 = createRelationship('posts_user_fk', posts, users);
-      const rel2 = createRelationship('comments_user_fk', comments, users);
-      ast.addRelationship(rel1);
-      ast.addRelationship(rel2);
-
-      const userRels = ast.getTableRelationships(users);
-      expect(userRels.length).toBe(2);
-    });
+    expect(ast.relationships).toEqual([rel]);
+    expect(posts.outgoingRelations).toEqual([rel]);
+    expect(users.incomingRelations).toEqual([rel]);
+    expect(rel.from.columns[0].references).toBe(rel);
+    expect(rel.to.columns[0].referencedBy).toEqual([rel]);
   });
 
-  describe('Circular Dependency Detection', () => {
-    it('should detect no circular dependencies in linear graph', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      const comments = createTable('comments');
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addTable(comments);
+  it('should order tables for CREATE after what they reference, and for DROP before it', () => {
+    const users = createTable('users');
+    const posts = createTable('posts');
+    const comments = createTable('comments');
+    ast.addTable(comments);
+    ast.addTable(posts);
+    ast.addTable(users);
+    ast.addRelationship(createRelationship('posts_user_fk', posts, users));
+    ast.addRelationship(createRelationship('comments_post_fk', comments, posts));
 
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-      ast.addRelationship(createRelationship('comments_post_fk', comments, posts));
-
-      expect(ast.hasCircularDependencies()).toBe(false);
-      expect(ast.detectCircularDependencies()).toEqual([]);
-    });
-
-    it('should detect circular dependencies', () => {
-      const tableA = createTable('table_a');
-      const tableB = createTable('table_b');
-      ast.addTable(tableA);
-      ast.addTable(tableB);
-
-      // A -> B and B -> A creates a cycle
-      ast.addRelationship(createRelationship('a_b_fk', tableA, tableB));
-      ast.addRelationship(createRelationship('b_a_fk', tableB, tableA));
-
-      expect(ast.hasCircularDependencies()).toBe(true);
-      const cycles = ast.detectCircularDependencies();
-      expect(cycles.length).toBeGreaterThan(0);
-    });
+    expect(ast.getCreateOrder().map((table) => table.name)).toEqual(['users', 'posts', 'comments']);
+    expect(ast.getDropOrder().map((table) => table.name)).toEqual(['comments', 'posts', 'users']);
   });
 
-  describe('Topological Sort', () => {
-    it('should return tables in correct CREATE order', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      const comments = createTable('comments');
-      ast.addTable(comments);
-      ast.addTable(posts);
-      ast.addTable(users);
-
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-      ast.addRelationship(createRelationship('comments_post_fk', comments, posts));
-
-      const order = ast.getCreateOrder();
-      const names = order.map((t) => t.name);
-
-      // users must come before posts, posts must come before comments
-      expect(names.indexOf('users')).toBeLessThan(names.indexOf('posts'));
-      expect(names.indexOf('posts')).toBeLessThan(names.indexOf('comments'));
-    });
-
-    it('should return tables in correct DROP order', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-
-      const order = ast.getDropOrder();
-      const names = order.map((t) => t.name);
-
-      // posts must be dropped before users
-      expect(names.indexOf('posts')).toBeLessThan(names.indexOf('users'));
-    });
-  });
-
-  describe('Validation', () => {
-    it('should pass validation for valid schema', () => {
-      const users = createTable('users');
-      ast.addTable(users);
-
-      const errors = ast.validate();
-      expect(errors).toEqual([]);
-      expect(ast.isValid()).toBe(true);
-    });
-
-    it('should detect duplicate index names', () => {
-      const users = createTable('users');
-      ast.addTable(users);
-
-      const idx1: IndexNode = {
-        name: 'duplicate_idx',
-        table: users,
-        entries: [],
-        unique: false,
-      };
-      const idx2: IndexNode = {
-        name: 'duplicate_idx',
-        table: users,
-        entries: [],
-        unique: false,
-      };
-
-      ast.addIndex(idx1);
-      ast.addIndex(idx2);
-
-      const errors = ast.validate();
-      expect(errors.some((e) => e.type === 'duplicate_index')).toBe(true);
-    });
-
-    it('should detect missing FK target', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(posts);
-      // users is NOT added to ast
-
-      const rel = createRelationship('posts_users_fk', posts, users);
-      ast.relationships.push(rel);
-
-      const errors = ast.validate();
-      expect(errors.some((e) => e.type === 'missing_fk_target')).toBe(true);
-    });
-
-    it('should detect circular dependencies in validate', () => {
-      const a = createTable('a');
-      const b = createTable('b');
-      ast.addTable(a);
-      ast.addTable(b);
-      ast.addRelationship(createRelationship('a_b_fk', a, b));
-      ast.addRelationship(createRelationship('b_a_fk', b, a));
-
-      const errors = ast.validate();
-      expect(errors.some((e) => e.type === 'circular_dependency')).toBe(true);
-    });
-  });
-
-  describe('Junction Table Detection', () => {
-    it('should detect junction tables', () => {
-      const users = createTable('users');
-      const roles = createTable('roles');
-      const userRoles = createTable('user_roles', 3); // id, user_id, role_id
-      ast.addTable(users);
-      ast.addTable(roles);
-      ast.addTable(userRoles);
-
-      ast.addRelationship(createRelationship('user_fk', userRoles, users));
-      ast.addRelationship(createRelationship('role_fk', userRoles, roles));
-
-      expect(ast.isJunctionTable(userRoles)).toBe(true);
-      expect(ast.isJunctionTable(users)).toBe(false);
-    });
-
-    it('should not detect as junction if too many columns', () => {
-      const users = createTable('users');
-      const roles = createTable('roles');
-      const userRoles = createTable('user_roles', 10); // Too many columns
-      ast.addTable(users);
-      ast.addTable(roles);
-      ast.addTable(userRoles);
-
-      ast.addRelationship(createRelationship('user_fk', userRoles, users));
-      ast.addRelationship(createRelationship('role_fk', userRoles, roles));
-
-      expect(ast.isJunctionTable(userRoles)).toBe(false);
-    });
-
-    it('should detect junction table with ≤5 columns even if name does not match', () => {
-      const users = createTable('users');
-      const roles = createTable('roles');
-      const assignments = createTable('assignments', 4); // name doesn't contain 'users' or 'roles'
-      ast.addTable(users);
-      ast.addTable(roles);
-      ast.addTable(assignments);
-
-      ast.addRelationship(createRelationship('user_fk', assignments, users));
-      ast.addRelationship(createRelationship('role_fk', assignments, roles));
-
-      // columnCount ≤ 5, so still detected as junction
-      expect(ast.isJunctionTable(assignments)).toBe(true);
-    });
-
-    it('should not detect junction table with only 1 FK', () => {
-      const users = createTable('users');
-      const posts = createTable('posts', 3);
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      ast.addRelationship(createRelationship('user_fk', posts, users));
-
-      expect(ast.isJunctionTable(posts)).toBe(false);
-    });
-  });
-
-  describe('Relation Type Inference', () => {
-    it('should infer ManyToOne for non-unique FK', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      expect(ast.inferRelationType(rel)).toBe('ManyToOne');
-    });
-
-    it('should infer OneToOne for unique FK', () => {
-      const users = createTable('users');
-      const profiles = createTable('profiles');
-      ast.addTable(users);
-      ast.addTable(profiles);
-
-      const rel = createRelationship('profiles_user_fk', profiles, users, true);
-      ast.addRelationship(rel);
-
-      expect(ast.inferRelationType(rel)).toBe('OneToOne');
-    });
-
-    it('should infer ManyToMany for junction table', () => {
-      const posts = createTable('posts');
-      const tags = createTable('tags');
-      const postTags = createTable('post_tags', 3);
-      ast.addTable(posts);
-      ast.addTable(tags);
-      ast.addTable(postTags);
-
-      const rel1 = createRelationship('pt_posts_fk', postTags, posts);
-      const rel2 = createRelationship('pt_tags_fk', postTags, tags);
-      ast.addRelationship(rel1);
-      ast.addRelationship(rel2);
-
-      expect(ast.inferRelationType(rel1)).toBe('ManyToMany');
-    });
-
-    it('should get inverse relation type', () => {
-      expect(ast.getInverseRelationType('OneToMany')).toBe('ManyToOne');
-      expect(ast.getInverseRelationType('ManyToOne')).toBe('OneToMany');
-      expect(ast.getInverseRelationType('OneToOne')).toBe('OneToOne');
-      expect(ast.getInverseRelationType('ManyToMany')).toBe('ManyToMany');
-    });
-  });
-
-  describe('Index Operations', () => {
-    it('should add and find indexes', () => {
-      const users = createTable('users');
-      ast.addTable(users);
-
-      const idx: IndexNode = {
-        name: 'users__email_idx',
-        table: users,
-        entries: [],
-        unique: true,
-      };
-
-      ast.addIndex(idx);
-
-      expect(ast.getIndex('users__email_idx')).toBe(idx);
-      expect(ast.getTableIndexes('users')).toContain(idx);
-    });
-  });
-
-  describe('Relationship Operations', () => {
-    it('should add and remove relationships', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      expect(ast.relationships.length).toBe(1);
-
-      ast.removeRelationship('posts_user_fk');
-
-      expect(ast.relationships.length).toBe(0);
-    });
-
-    it('should return false when removing non-existent relationship', () => {
-      expect(ast.removeRelationship('nonexistent')).toBe(false);
-    });
-  });
-
-  describe('Clone', () => {
-    it('should clone the AST deeply', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-      ast.addIndex({
-        name: 'users__name_idx',
-        table: users,
-        entries: [{ column: 'col1' }],
-        unique: false,
-      });
-
-      const clone = ast.clone();
-
-      expect(clone.tables.size).toBe(2);
-      expect(clone.relationships.length).toBe(1);
-      expect(clone.indexes.length).toBe(1);
-      expect(clone.getTable('users') === users).toBe(false);
-      expect(clone.getTable('users')?.name).toBe('users');
-      expect(clone.getIndex('users__name_idx')).toBeDefined();
-      expect(clone.getIndex('users__name_idx')?.table.name).toBe('users');
-    });
-
-    it('should point a cloned relationship at the clone of its junction', () => {
-      const users = createTable('users');
-      const tags = createTable('tags');
-      const junction = createTable('user_tags');
-      ast.addTable(users);
-      ast.addTable(tags);
-      ast.addTable(junction);
-      ast.addRelationship({ ...createRelationship('user_tags_fk', users, tags), through: junction });
-
-      const clone = ast.clone();
-
-      expect(clone.relationships[0].through).toBe(clone.getTable('user_tags'));
-    });
-
-    it('should handle cloning relationships with missing tables defensively', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users)); // 'posts' is not added to ast.tables!
-      const clone = ast.clone();
-      expect(clone.relationships.length).toBe(0); // The relationship is skipped because fromTable doesn't exist
-    });
-  });
-
-  describe('Edge cases in Relationship Operations', () => {
-    it('should handle removing an already removed relation gracefully', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-      const rel = createRelationship('posts_user_fk', posts, users);
-      ast.addRelationship(rel);
-
-      // Corrupt the relationships manually to test the defense branch
-      posts.outgoingRelations = [];
-      users.incomingRelations = [];
-      rel.from.columns.forEach((c) => (c.references = undefined));
-      rel.to.columns.forEach((c) => (c.referencedBy = []));
-
-      expect(ast.removeRelationship('posts_user_fk')).toBe(true);
-    });
-  });
-
-  describe('Edge cases in Index Operations', () => {
-    it('should ignore duplicate addIndex calls on table.indexes', () => {
-      const users = createTable('users');
-      ast.addTable(users);
-      const idx: IndexNode = { name: 'users__email_idx', table: users, entries: [], unique: false };
-      ast.addIndex(idx);
-      // add the identical object again
-      ast.addIndex(idx);
-      expect(users.indexes.length).toBe(1); // Not duplicated
-      expect(ast.indexes.length).toBe(2); // The global array pushes unconditionally
-    });
-  });
-
-  describe('Statistics', () => {
-    it('should return correct stats', () => {
-      const users = createTable('users', 3);
-      const posts = createTable('posts', 4);
-      ast.addTable(users);
-      ast.addTable(posts);
-
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-
-      const stats = ast.getStats();
-
-      expect(stats.tableCount).toBe(2);
-      expect(stats.columnCount).toBe(7);
-      expect(stats.relationshipCount).toBe(1);
-    });
-  });
-
-  describe('toJSON', () => {
-    it('should serialize to JSON', () => {
-      const users = createTable('users');
-      const posts = createTable('posts');
-      ast.addTable(users);
-      ast.addTable(posts);
-      ast.addRelationship(createRelationship('posts_user_fk', posts, users));
-      ast.addIndex({
-        name: 'users__name_idx',
-        table: users,
-        entries: [{ column: 'col1' }],
-        unique: false,
-      });
-
-      const json = ast.toJSON();
-
-      expect(json.tables.map((table) => table.name)).toEqual(['users', 'posts']);
-      expect(json.tables[0].indexes.map((index) => index.name)).toEqual(['users__name_idx']);
-      expect(json.relationships.map((relationship) => relationship.name)).toEqual(['posts_user_fk']);
-      // Everything but the graph links, so a column option cannot go missing from a dump.
-      expect(json.tables[0].columns[0]).toEqual({
-        name: 'col0',
-        type: { category: 'string' },
-        nullable: true,
-        isPrimaryKey: true,
-        isAutoIncrement: true,
-        isUnique: false,
-      });
-    });
+  it('should add an index to its table once, however often it is added', () => {
+    const users = createTable('users');
+    ast.addTable(users);
+    const idx: IndexNode = { name: 'users__email_idx', table: users, entries: [], unique: false };
+
+    ast.addIndex(idx);
+    ast.addIndex(idx);
+
+    expect(users.indexes).toEqual([idx]);
+    expect(ast.indexes).toEqual([idx, idx]);
   });
 });
 
-// Helper functions
-
 function createTable(name: string, columnCount = 2): TableNode {
-  const columns = new Map<string, ColumnNode>();
-  const table: TableNode = {
-    name,
-    columns,
-    primaryKey: [],
-    indexes: [],
-    incomingRelations: [],
-    outgoingRelations: [],
-  };
-
+  const table = createTableNode(name);
   for (let i = 0; i < columnCount; i++) {
     const col: ColumnNode = {
       name: `col${i}`,
@@ -583,23 +74,14 @@ function createTable(name: string, columnCount = 2): TableNode {
       table,
       referencedBy: [],
     };
-    columns.set(col.name, col);
-    if (i === 0) {
-      (table as { primaryKey: ColumnNode[] }).primaryKey = [col];
-    }
+    table.columns.set(col.name, col);
   }
-
   return table;
 }
 
-function createRelationship(name: string, from: TableNode, to: TableNode, isUnique = false): RelationshipNode {
-  const fromCol = Array.from(from.columns.values())[1] ?? Array.from(from.columns.values())[0];
-  const toCol = Array.from(to.columns.values())[0];
-
-  if (isUnique) {
-    (fromCol as { isUnique: boolean }).isUnique = true;
-  }
-
+function createRelationship(name: string, from: TableNode, to: TableNode): RelationshipNode {
+  const [fromCol] = [...from.columns.values()].slice(1);
+  const [toCol] = to.columns.values();
   return {
     name,
     type: 'ManyToOne',

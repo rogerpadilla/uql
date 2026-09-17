@@ -1,6 +1,5 @@
 import { expect } from 'vitest';
 import { MeasureUnit, MeasureUnitCategory } from '../test/index.js';
-import type { PrimaryKey } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 

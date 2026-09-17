@@ -1,10 +1,8 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
-import { getMeta } from '../entity/index.js';
 import { Company, ItemTag, MeasureUnitCategory, VectorItem } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
-import type { Type } from '../type/index.js';
 import { MariaDialect } from './mariaDialect.js';
 
 export class MariaDialectSpec extends MySqlFamilySpec {
@@ -14,10 +12,6 @@ export class MariaDialectSpec extends MySqlFamilySpec {
 
   protected override jsonCastText(operand: string): string {
     return `JSON_EXTRACT(${operand}, '$')`;
-  }
-
-  protected override returningClause<E>(entity: Type<E>): string {
-    return ' ' + this.dialect.returningId(getMeta(entity));
   }
 
   shouldFilterByJsonDotNotation() {
@@ -38,7 +32,7 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       $select: { id: true },
       $sort: {
         'kind.theme.color': -1,
-      } as any,
+      },
     });
     expect(ctx.sql).toBe("SELECT `id` FROM `Company` ORDER BY JSON_VALUE(`kind`, '$.theme.color') DESC");
   }
@@ -49,7 +43,7 @@ export class MariaDialectSpec extends MySqlFamilySpec {
       $select: { id: true },
       $where: {
         'kind.theme.color': 'red',
-      } as any,
+      },
     });
     expect(ctx.sql).toBe("SELECT `id` FROM `Company` WHERE JSON_VALUE(`kind`, '$.theme.color') = ?");
     expect(ctx.values).toEqual(['red']);

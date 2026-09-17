@@ -44,13 +44,8 @@ export type UqlModuleAsyncOptions<Req = unknown> = UqlModuleCommon<Req> & {
 };
 
 /**
- * Ends the pool when Nest shuts down.
- *
- * @remarks A provider rather than a hook on the module class, and built through `useFactory` with an
- * `inject` list rather than constructor injection: Nest injects constructor parameters with a parameter
- * decorator, and the TC39 decorator spec has none, so `@Inject()` cannot appear in a file compiled
- * against it. Nest runs lifecycle hooks on providers too, so this keeps the pool that *this* module was
- * configured with instead of reaching for the global default.
+ * Ends the pool this module was configured with when Nest shuts down: a provider built by `useFactory`,
+ * since TC39 decorators have no parameter decorator for `@Inject()`.
  */
 class UqlPoolLifecycle implements OnApplicationShutdown {
   constructor(private readonly pool: QuerierPool) {}

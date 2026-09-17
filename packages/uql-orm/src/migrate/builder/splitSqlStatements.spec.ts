@@ -2,37 +2,37 @@ import { describe, expect, it } from 'vitest';
 import { splitSqlStatements } from './splitSqlStatements.js';
 
 describe('splitSqlStatements', () => {
-  it('trims and drops empty segments', () => {
+  it('should trim and drop empty segments', () => {
     expect(splitSqlStatements('  SELECT 1; SELECT 2  ;')).toEqual(['SELECT 1', 'SELECT 2']);
   });
 
-  it('returns single statement without trailing semicolon', () => {
+  it('should return single statement without trailing semicolon', () => {
     expect(splitSqlStatements('ALTER TABLE t ADD c INT')).toEqual(['ALTER TABLE t ADD c INT']);
   });
 
-  it('handles semicolons inside single-quoted strings', () => {
+  it('should handle semicolons inside single-quoted strings', () => {
     expect(splitSqlStatements("INSERT INTO t VALUES ('hello;world'); SELECT 1")).toEqual([
       "INSERT INTO t VALUES ('hello;world')",
       'SELECT 1',
     ]);
   });
 
-  it('handles escaped single quotes', () => {
+  it('should handle escaped single quotes', () => {
     expect(splitSqlStatements("INSERT INTO t VALUES ('it''s a trap; or is it?'); SELECT 2")).toEqual([
       "INSERT INTO t VALUES ('it''s a trap; or is it?')",
       'SELECT 2',
     ]);
   });
 
-  it('handles semicolons inside double-quoted identifiers', () => {
+  it('should handle semicolons inside double-quoted identifiers', () => {
     expect(splitSqlStatements('SELECT "col;name" FROM t; SELECT 3')).toEqual(['SELECT "col;name" FROM t', 'SELECT 3']);
   });
 
-  it('handles backticks (MySQL)', () => {
+  it('should handle backticks (MySQL)', () => {
     expect(splitSqlStatements('SELECT `col;name` FROM t; SELECT 4')).toEqual(['SELECT `col;name` FROM t', 'SELECT 4']);
   });
 
-  it('handles semicolons inside comments', () => {
+  it('should handle semicolons inside comments', () => {
     const sql = `
       -- first; comment
       SELECT 1;
@@ -48,7 +48,7 @@ describe('splitSqlStatements', () => {
     expect(result[1]).toContain('/* second;\n         block; comment */');
   });
 
-  it('handles Postgres dollar quoting', () => {
+  it('should handle Postgres dollar quoting', () => {
     const sql = `
       CREATE FUNCTION foo() RETURNS void AS $$
       BEGIN
@@ -63,7 +63,7 @@ describe('splitSqlStatements', () => {
     expect(result[1]).toBe('SELECT 5');
   });
 
-  it('handles Postgres tagged dollar quoting', () => {
+  it('should handle Postgres tagged dollar quoting', () => {
     const sql = `
       CREATE FUNCTION bar() RETURNS void AS $body$
       BEGIN
@@ -78,7 +78,7 @@ describe('splitSqlStatements', () => {
     expect(result[1]).toBe('SELECT 6');
   });
 
-  it('handles escaped backslashes', () => {
+  it('should handle escaped backslashes', () => {
     // 'string\\' -> The second backslash is escaped by the first, so the closing quote should terminate.
     expect(splitSqlStatements("INSERT INTO t VALUES ('string\\\\'); SELECT 1")).toEqual([
       "INSERT INTO t VALUES ('string\\\\')",
@@ -86,17 +86,17 @@ describe('splitSqlStatements', () => {
     ]);
   });
 
-  it('handles unterminated blocks gracefully', () => {
+  it('should handle unterminated blocks gracefully', () => {
     expect(splitSqlStatements("SELECT 'unterminated; string")).toEqual(["SELECT 'unterminated; string"]);
     expect(splitSqlStatements('CREATE FUNCTION AS $$ BEGIN ;')).toEqual(['CREATE FUNCTION AS $$ BEGIN ;']);
   });
 
-  it('handles empty or redundant semicolons', () => {
+  it('should handle empty or redundant semicolons', () => {
     expect(splitSqlStatements(';;;')).toEqual([]);
     expect(splitSqlStatements('  ;  SELECT 1;  ;  ')).toEqual(['SELECT 1']);
   });
 
-  it('handles complex multi-dialect scripts', () => {
+  it('should handle complex multi-dialect scripts', () => {
     const sql = `
       -- Postgres function with mixed quotes
       CREATE FUNCTION func() AS $$

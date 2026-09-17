@@ -1,12 +1,7 @@
 /**
- * Type-level regression tests for `QueryWhereRootOperator`: `$and`/`$or`/`$not`/`$nor` (clause
- * arrays), `$text` (full-text search), `$exists`/`$nexists` (raw subqueries), a bare `raw()` as a
- * field's value, and `refs()` naming fields inside one. Complements `queryWhereOperator.test-d.ts`,
- * which covers per-field operator gating rather than these root-level clauses.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * The root-level `$where` clauses: `$and`/`$or`/`$not`/`$nor`, `$text`, `$exists`/`$nexists`, a bare
+ * `raw()` value, and `refs()` inside one. `queryWhereOperator.test-d.ts` covers per-field operators.
+ * Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 import { raw, refs } from '../util/index.js';

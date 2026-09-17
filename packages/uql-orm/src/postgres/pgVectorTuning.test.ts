@@ -41,7 +41,7 @@ describe('pgvector query-time tuning', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('runs a tuned vector search inside a transaction', async () => {
+  it('should run a tuned vector search inside a transaction', async () => {
     const rows = await pool.transaction((querier) =>
       querier.findMany(TunedItem, {
         $select: { name: true },
@@ -55,7 +55,7 @@ describe('pgvector query-time tuning', () => {
   });
 
   /** The predicate adds `hnsw.iterative_scan`, so this is the statement pair, not just the one. */
-  it('runs a tuned vector search that also filters by distance', async () => {
+  it('should run a tuned vector search that also filters by distance', async () => {
     const rows = await pool.transaction((querier) =>
       querier.findMany(TunedItem, {
         $select: { name: true },
@@ -73,7 +73,7 @@ describe('pgvector query-time tuning', () => {
    * `SET LOCAL` outside a transaction is accepted by the server and applies to nothing, so the query
    * would run at the default recall while looking tuned. Refused rather than emitted.
    */
-  it('refuses to tune outside a transaction', async () => {
+  it('should refuse to tune outside a transaction', async () => {
     await expect(
       pool.findMany(TunedItem, {
         $sort: { vec: { $vector: [0, 1, 0] } },
@@ -84,7 +84,7 @@ describe('pgvector query-time tuning', () => {
   });
 
   /** No ANN index on the column means no knob to turn, so the query runs untuned rather than failing. */
-  it('ignores $candidates on a field with no vector index', async () => {
+  it('should ignore $candidates on a field with no vector index', async () => {
     const rows = await pool.findMany(TunedItem, {
       $select: { name: true },
       $sort: { name: 'asc' },

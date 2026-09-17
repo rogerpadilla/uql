@@ -2,8 +2,10 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { raw } from '../util/index.js';
 import type { Json } from './utility.js';
 
-/** A typo'd option used to compile and be silently ignored: the decorators capture a naked type
- * parameter, and TypeScript skips excess-property checking on one of those. */
+/**
+ * A typo'd option is a compile error, although the decorators capture a naked type parameter, on which
+ * TypeScript skips excess-property checking.
+ */
 @Entity()
 class TypoRejected {
   @Id({ type: Number }) id?: number;

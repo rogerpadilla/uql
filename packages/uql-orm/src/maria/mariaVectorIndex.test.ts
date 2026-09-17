@@ -27,10 +27,8 @@ class MariaVectorUnindexed {
 }
 
 /**
- * MariaDB declares a vector index two ways - inside `CREATE TABLE`, and as `CREATE VECTOR INDEX`
- * (11.7+) - and taking the first for the only one is what used to keep `autoSync` from ever adding
- * one to a table that already existed. Only the server can say the statement is right, and nothing
- * here executed one before: the vector suite queries distances, which need no index at all.
+ * MariaDB declares a vector index inside `CREATE TABLE` and, from 11.7, as `CREATE VECTOR INDEX`, the
+ * one `autoSync` can add to a table that exists. Only the server can say either statement is right.
  */
 describe('MariaDB vector index', () => {
   const pool = new MariadbQuerierPool(mariadbConnection());
@@ -53,7 +51,7 @@ describe('MariaDB vector index', () => {
     await pool.end();
   }, provisioningTimeout);
 
-  it('creates the index with the table it belongs to', async () => {
+  it('should create the index with the table it belongs to', async () => {
     await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
@@ -64,7 +62,7 @@ describe('MariaDB vector index', () => {
    * declares it so: the statement adds an index, never a column's nullability, and MariaDB answers
    * "All parts of a VECTOR index must be NOT NULL".
    */
-  it('adds the index to a table that already exists', async () => {
+  it('should add the index to a table that already exists', async () => {
     await drop();
     await new Migrator(pool, { entities: [MariaVectorUnindexed] }).sync({ logging: false });
     expect(await indexesOf()).toEqual([]);
@@ -75,7 +73,7 @@ describe('MariaDB vector index', () => {
   });
 
   /** `IF NOT EXISTS` is MariaDB's, and it is what keeps a second `autoSync` from failing on it. */
-  it('leaves the index alone on a second sync', async () => {
+  it('should leave the index alone on a second sync', async () => {
     await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
 
     expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
@@ -86,7 +84,7 @@ describe('MariaDB vector index', () => {
    * transaction and cannot leak to the next query on this pooled connection. Only the server can say
    * the variable exists and that the prefix parses ahead of a SELECT this shape.
    */
-  it('runs a tuned vector search through SET STATEMENT', async () => {
+  it('should run a tuned vector search through SET STATEMENT', async () => {
     await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
     await pool.insertMany(MariaVectorIndexed, [{ vec: [0, 1, 0] }, { vec: [1, 0, 0] }]);
 

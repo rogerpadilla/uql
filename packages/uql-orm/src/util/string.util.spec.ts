@@ -63,11 +63,6 @@ describe('string.util', () => {
     it('should handle empty string', () => {
       expect(snakeCase('')).toBe('');
     });
-
-    it('should handle null/undefined', () => {
-      expect(snakeCase(null as unknown as string)).toBe(null);
-      expect(snakeCase(undefined as unknown as string)).toBe(undefined);
-    });
   });
 
   describe('pascalCase', () => {

@@ -9,13 +9,7 @@ import { TursoLocalDialect } from './tursoLocalDialect.js';
 /** The engine's own options: `readonly`, `timeout`, `encryption`, `experimental` and the rest. */
 export type TursoLocalOptions = NonNullable<Parameters<typeof connect>[1]>;
 
-/**
- * Pool for the embedded Turso engine (`@tursodatabase/database`), the Rust rewrite of SQLite.
- *
- * @remarks Kept on the `uql-orm/turso/local` entry point rather than `uql-orm/turso`, because this
- * package ships native binaries that do not resolve on edge runtimes. Separating them guarantees a
- * bundle targeting Workers never reaches the native import.
- */
+/** A pool for the embedded Turso engine, on `uql-orm/turso/local` so its native binaries stay out of edge bundles. */
 export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
   SqliteDatabase,
   SqliteQuerier,

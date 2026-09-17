@@ -81,14 +81,7 @@ export interface VectorColumnOptions extends BaseColumnOptions {
   dimensions?: number;
 }
 
-/**
- * A column as the builder describes one: {@link ColumnNode} without the graph links a DTO cannot carry.
- *
- * Derived rather than restated, so the two cannot drift. A column gained `enum` and this shape was
- * simply missing it, which is why a hand-written `createTable` could never constrain one. A field
- * added to the node now reaches here, and failing to render it is a compile error rather than a
- * column that quietly loses half its declaration.
- */
+/** A column as the builder describes one: a {@link ColumnNode} without its graph links. */
 export type ColumnDefinition = Omit<ColumnNode, 'table' | 'referencedBy' | 'references'>;
 
 /**
@@ -306,13 +299,7 @@ export interface IForeignKeyBuilder extends IColumnBuilder {
   onUpdate(action: ForeignKeyAction): this;
 }
 
-/**
- * The column vocabulary: every column type the builder can declare, name first.
- *
- * Split out of {@link ITableBuilder} so `addColumn`/`alterColumn` can hand it to their callback. They
- * used to take an {@link IColumnBuilder}, which has no way to say what type a column is - so the
- * builder hard-coded `VARCHAR`, and every column a generated migration added or altered was a string.
- */
+/** Every column type the builder can declare, name first, handed to `addColumn`/`alterColumn` callbacks too. */
 export interface IColumnFactory {
   // === Numeric Types ===
   /** Add an auto-incrementing primary key */

@@ -20,26 +20,26 @@ describe('MariadbQuerierPool', () => {
     vi.clearAllMocks();
   });
 
-  it('getQuerier', async () => {
+  it('should hand out a querier', async () => {
     const pool = new MariadbQuerierPool({ host: '0.0.0.0' });
     const querier = await pool.getQuerier();
     expect(querier).toBeInstanceOf(MariadbQuerier);
   });
 
-  it('end', async () => {
+  it('should end the pool', async () => {
     const pool = new MariadbQuerierPool({ host: '0.0.0.0' });
     await pool.end();
     expect(mockPoolInstance.end).toHaveBeenCalled();
   });
 
   /** `bigIntAsNumber` rounds past 2^53; the querier decodes exactly instead. */
-  it('leaves BIGINT for the querier to decode', () => {
+  it('should leave BIGINT for the querier to decode', () => {
     new MariadbQuerierPool({ host: '0.0.0.0' });
 
     expect(createPool).toHaveBeenCalledWith({ host: '0.0.0.0' });
   });
 
-  it('wires the pool error handler', () => {
+  it('should wire the pool error handler', () => {
     new MariadbQuerierPool({ host: '0.0.0.0' });
 
     expect(mockPoolInstance.on).toHaveBeenCalledWith('error', expect.any(Function));

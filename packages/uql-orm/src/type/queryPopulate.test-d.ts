@@ -1,12 +1,6 @@
 /**
- * Type-level regression tests for `$populate`: a to-one relation is restricted to `QueryUnique`
- * (`$select`/`$exclude`/`$populate`/`$where` - it resolves to at most one row already, so pagination
- * and sorting make no sense on it), while a to-many relation gets the full `Query<E>` shape. `$required`
- * is available on either cardinality.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * `$populate`: a to-one takes `QueryUnique`, being one row already, and a to-many the full `Query<E>`;
+ * `$required` goes on either. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 
@@ -60,9 +54,8 @@ export async function populateCardinalityShapes() {
 }
 
 /**
- * Every clause of a populated relation, checked against the relation's own fields. The populate value
- * used to distribute over the `undefined` an optional relation carries, into an arm that accepted any
- * key at all - so `$select` with a misspelling in it compiled clean.
+ * Every clause of a populated relation is checked against the relation's own fields, an optional
+ * relation's included.
  */
 export async function populatedRelationFieldsAreChecked() {
   await querier.findMany(Story, { $populate: { comments: { $select: { body: true } } } });

@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
-import { isSqlQuerier, type MigrationDefinition, type QuerierPool, type SqlQuerier } from '../../type/index.js';
+import type { MigrationDefinition, SqlQuerier, SqlQuerierPool } from '../../type/index.js';
 import { buildMigrationModule, emitSqlRunCalls } from './migrationFile.js';
 
 /**
@@ -29,7 +29,7 @@ async function assertArticleTableAndIndex(querier: SqlQuerier): Promise<void> {
 
 const backends: {
   name: string;
-  createPool: () => QuerierPool;
+  createPool: () => SqlQuerierPool;
 }[] = [
   { name: 'SQLite (better-sqlite3)', createPool: () => new Sqlite3QuerierPool(':memory:') },
   { name: 'LibSQL', createPool: () => new LibsqlQuerierPool({ url: ':memory:' }) },
@@ -37,19 +37,16 @@ const backends: {
 
 describe('generated SQL migration module (integration)', () => {
   /**
-   * `Migrator.loadMigration` is a plain `import()`, so a generated migration has to survive the
-   * strictest runtime it can land on: plain `node`, which strips types but compiles nothing. Also
-   * guards the `server.deps.external` entry in `vitest.config.ts` - without it esbuild transpiles the
-   * temp file and the cases below prove only that esbuild can compile the output.
-   *
-   * Vitest-only, and cannot move to a shared suite: bun compiles an enum happily.
+   * A generated migration loads through a plain `import()`, so it has to run on plain `node`, which
+   * strips types and compiles nothing. Relies on `server.deps.external` in `vitest.config.ts` keeping
+   * esbuild off the temp file. Vitest-only: bun compiles an enum happily.
    */
-  it('rejects syntax plain node cannot strip, so generated migrations stay loadable', async () => {
+  it('should reject syntax plain node cannot strip, so generated migrations stay loadable', async () => {
     await expect(loadTsDefaultExport('enum E { A }\nexport default { e: E.A };')).rejects.toThrow();
   });
 
   it.each(backends)(
-    '$name: generated migration with backticks runs; split run() calls apply table + index (#86, #87)',
+    'should run a generated migration with backticks, its split run() calls applying table and index: $name',
     async ({ createPool }) => {
       const upInner = emitSqlRunCalls([createTableSql, createIndexSql]);
       const downInner = emitSqlRunCalls([
@@ -68,11 +65,6 @@ describe('generated SQL migration module (integration)', () => {
       const migration = await loadTsDefaultExport<MigrationDefinition>(source);
       const pool = createPool();
       const querier = await pool.getQuerier();
-      if (!isSqlQuerier(querier)) {
-        await querier.release();
-        await pool.end();
-        expect.fail('expected SqlQuerier');
-      }
       try {
         await migration.up(querier);
         await assertArticleTableAndIndex(querier);

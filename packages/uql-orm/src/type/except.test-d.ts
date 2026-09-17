@@ -16,12 +16,12 @@ type Src = { readonly a: string; b?: number; c: boolean };
 type _typo = Except<Src, 'typoo'>;
 
 // `readonly` and `?` survive.
-type _modifiers = Expect<IsEqual<Except<Src, 'c'>, { readonly a: string; b?: number }>>;
+export type _modifiers = Expect<IsEqual<Except<Src, 'c'>, { readonly a: string; b?: number }>>;
 
 // Unions distribute instead of collapsing to their common keys, so a discriminant keeps narrowing.
 type Union = { type: 'a'; a: number; drop: 1 } | { type: 'b'; b: string; drop: 1 };
-type _union = Expect<IsEqual<Except<Union, 'drop'>, { type: 'a'; a: number } | { type: 'b'; b: string }>>;
-type _omitCollapses = Expect<IsEqual<Omit<Union, 'drop'>, { type: 'a' | 'b' }>>;
+export type _union = Expect<IsEqual<Except<Union, 'drop'>, { type: 'a'; a: number } | { type: 'b'; b: string }>>;
+export type _omitCollapses = Expect<IsEqual<Omit<Union, 'drop'>, { type: 'a' | 'b' }>>;
 
 // The real case the above protects: omitting `columns` must not flatten the vector index variants.
 declare const index: IndexOptions;
@@ -29,7 +29,7 @@ const distance: string | undefined = index.type === 'vector' ? index.distance : 
 
 // An index signature does not widen the excluded key back into existence.
 type Indexed = { [k: string]: unknown; known: string };
-type _indexed = Expect<IsEqual<Except<Indexed, 'known'>, { [k: string]: unknown }>>;
-type _omitKeepsIt = Expect<IsEqual<Omit<Indexed, 'known'>, { [x: string]: unknown; [x: number]: unknown }>>;
+export type _indexed = Expect<IsEqual<Except<Indexed, 'known'>, { [k: string]: unknown }>>;
+export type _omitKeepsIt = Expect<IsEqual<Omit<Indexed, 'known'>, { [x: string]: unknown; [x: number]: unknown }>>;
 
 export { distance };

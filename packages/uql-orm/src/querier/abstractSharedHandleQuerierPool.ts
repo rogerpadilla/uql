@@ -3,23 +3,9 @@ import type { SqlQuerier } from '../type/index.js';
 import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
 
 /**
- * Base pool for a handle opened once and kept for the pool's lifetime: the one connection every local
- * SQLite driver, the embedded Turso engine and PGlite give per database, or libSQL's client.
- *
- * The handle is shared, but each acquisition gets its own querier, so transaction state stays per unit
- * of work. On a single connection that state is not *isolated*, which is the one way these differ from
- * a real pool: two queriers cannot hold independent transactions, and a unit of work that needs one needs
- * its own pool and therefore its own database. libSQL's client opens a session per transaction instead.
- *
- * What a second `BEGIN` then does is the engine's, not this class's: SQLite and the embedded Turso
- * engine both refuse it ("cannot start a transaction within a transaction"), while PGlite accepts it
- * into the transaction already open - see {@link PgliteQuerierPool}, which is why that one is worth
- * saying out loud.
- *
- * Subclasses supply only how to open the handle and how to wrap it.
- *
- * @remarks Deliberately not re-exported from `querier/index.ts`, which the root entry point re-exports:
- * only the driver entries that open a single handle need this, and each imports it by path.
+ * A pool over one handle kept for its lifetime: a local SQLite file, the embedded Turso engine, PGlite, or a
+ * libSQL client. Each acquisition gets its own querier, but on one connection two cannot hold separate
+ * transactions: a unit of work needing its own needs its own pool. Imported by path, not from `querier/index.ts`.
  */
 export abstract class AbstractSharedHandleQuerierPool<
   DB extends { close(): unknown },

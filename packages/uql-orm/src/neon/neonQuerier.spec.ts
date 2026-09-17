@@ -2,10 +2,11 @@ import type { PoolClient, QueryResult } from '@neondatabase/serverless';
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { PostgresDialect } from '../postgres/index.js';
 import { PgQuerier } from '../postgres/pgQuerier.js';
+import type { RawRow } from '../type/index.js';
 
 describe('PgQuerier over a Neon client', () => {
   let mockConn: {
-    query: Mock<(sql: string, params?: any[]) => Promise<QueryResult<any>>>;
+    query: Mock<(sql: string, params?: unknown[]) => Promise<QueryResult<RawRow>>>;
     release: Mock<() => void>;
   };
   let connect: Mock<() => Promise<PoolClient>>;
@@ -16,7 +17,7 @@ describe('PgQuerier over a Neon client', () => {
       query: vi.fn().mockResolvedValue({ rowCount: 0, rows: [], command: '', oid: 0, fields: [] }),
       release: vi.fn(),
     };
-    connect = vi.fn().mockResolvedValue(mockConn as unknown as PoolClient);
+    connect = vi.fn().mockResolvedValue(mockConn);
     querier = new PgQuerier(connect, new PostgresDialect());
   });
 
@@ -27,7 +28,7 @@ describe('PgQuerier over a Neon client', () => {
       command: 'SELECT',
       oid: 0,
       fields: [],
-    } satisfies QueryResult<any>);
+    } satisfies QueryResult<RawRow>);
 
     await querier.all('SELECT * FROM users');
 
@@ -42,7 +43,7 @@ describe('PgQuerier over a Neon client', () => {
       command: 'INSERT',
       oid: 0,
       fields: [],
-    } satisfies QueryResult<any>);
+    } satisfies QueryResult<RawRow>);
 
     const res = await querier.run('INSERT INTO users ...');
 
@@ -89,7 +90,7 @@ describe('PgQuerier over a Neon client', () => {
 
   it('should handle null rowCount gracefully', async () => {
     mockConn.query.mockResolvedValue({
-      rowCount: null as unknown as number,
+      rowCount: null,
       rows: [{ id: 1 }],
       command: 'INSERT',
       oid: 0,
@@ -102,24 +103,6 @@ describe('PgQuerier over a Neon client', () => {
       changes: 0, // Falls back to 0 when rowCount is null
       ids: [1],
       firstId: 1,
-    });
-  });
-
-  it('should handle undefined rowCount gracefully', async () => {
-    mockConn.query.mockResolvedValue({
-      rowCount: undefined as unknown as number,
-      rows: [],
-      command: 'DELETE',
-      oid: 0,
-      fields: [],
-    });
-
-    const res = await querier.run('DELETE FROM users');
-
-    expect(res).toEqual({
-      changes: 0, // Falls back to 0 when rowCount is undefined
-      ids: [],
-      firstId: undefined,
     });
   });
 });

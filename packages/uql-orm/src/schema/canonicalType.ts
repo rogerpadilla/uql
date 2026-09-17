@@ -1,11 +1,4 @@
-/**
- * Canonical Type System
- *
- * Provides bidirectional mapping between:
- * - SQL types (dialect-specific)
- * - Canonical types (dialect-agnostic)
- * - TypeScript types (for entity generation)
- */
+// Canonical types, between an engine's SQL types and TypeScript's.
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
@@ -23,7 +16,7 @@ export function isVectorCategory(category: TypeCategory | undefined): category i
  * Maps SQL type strings to canonical type categories.
  * Handles variations across dialects (PostgreSQL, MySQL, SQLite).
  */
-const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
+const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   // === Integers ===
   int: { category: 'integer' },
   int4: { category: 'integer' },
@@ -111,13 +104,7 @@ const SQL_TO_CANONICAL: Record<string, Partial<CanonicalType>> = {
 /** The scalar half of an engine's type map; the vector categories are added per engine below. */
 type ScalarTypeMap = Record<Exclude<TypeCategory, VectorCast>, string>;
 
-/**
- * How one engine spells the canonical types: the base name per category, the variants a `size` picks
- * instead, and the precision a `decimal` falls back to where the engine insists on one.
- *
- * One table per engine rather than one table per question, so every answer for an engine is stated
- * once and in one place.
- */
+/** How one engine spells the canonical types: a base name per category, size variants, and a default decimal precision. */
 type EngineTypes = {
   readonly scalars: Record<TypeCategory, string>;
   readonly sizes?: Partial<Record<TypeCategory, Record<SizeVariant, string>>>;
@@ -126,7 +113,7 @@ type EngineTypes = {
 
 /**
  * pgvector is the only engine with three vector column types, so every other engine maps all three
- * canonical categories onto the single type it does have (see `hasNarrowVectorTypes` on the dialect,
+ * canonical categories onto the single type it does have (see `SqlDialectFeatures.narrowVectorTypes`,
  * the dialect-side half of the same fact).
  */
 function withVectorType(scalars: ScalarTypeMap, vector: string): Record<TypeCategory, string> {
@@ -287,66 +274,34 @@ const CANONICAL_TO_TS: Record<TypeCategory, string> = {
  */
 export function sqlToCanonical(sqlType: string): CanonicalType {
   const normalized = sqlType.toLowerCase().trim();
-
-  // Check for UNSIGNED modifier before extracting base type
-  const hasUnsigned = normalized.includes('unsigned');
+  const unsigned = normalized.includes('unsigned');
   const withoutUnsigned = normalized.replace(/\s*unsigned\s*/i, ' ').trim();
 
   // Extract base type and parameters: "VARCHAR(255)" -> ["varchar", "255"]
   const match = withoutUnsigned.match(/^([a-z][a-z0-9 ]*?)(?:\(([^)]+)\))?$/);
-  if (!match) {
+  const base = match ? SQL_TO_CANONICAL[match[1]] : undefined;
+  if (!match || !base) {
     return { category: 'string', raw: sqlType };
   }
 
-  const [, baseType, params] = match;
-  const base = SQL_TO_CANONICAL[baseType];
+  const params = match[2]?.split(',').map((param) => param.trim()) ?? [];
+  const [first, second] = params
+    .map((param) => Number.parseInt(param, 10))
+    .map((n) => (Number.isNaN(n) ? undefined : n));
+  // A length for a string or a blob, the dimensions for a vector: `VARCHAR(255)`, `VECTOR(1536)`.
+  const measured = base.category === 'string' || base.category === 'blob' || isVectorCategory(base.category);
+  const decimal = base.category === 'decimal';
 
-  if (!base) {
-    // Unknown type - pass through as raw
-    return { category: 'string', raw: sqlType };
-  }
-
-  const result: CanonicalType = {
-    category: base.category!,
-    size: base.size,
+  return {
+    category: base.category,
+    // SQL Server's unbounded `(MAX)` is what it creates for a `TEXT`.
+    size: measured && params[0] === 'max' ? 'small' : base.size,
     withTimezone: base.withTimezone,
+    length: measured ? first : undefined,
+    precision: decimal ? first : undefined,
+    scale: decimal ? second : undefined,
+    unsigned: unsigned || undefined,
   };
-
-  // Parse parameters
-  if (params) {
-    const paramParts = params.split(',').map((p) => p.trim());
-
-    if (result.category === 'string' || result.category === 'blob') {
-      // VARCHAR(255) -> length
-      const length = Number.parseInt(paramParts[0], 10);
-      if (!Number.isNaN(length)) {
-        (result as { length: number }).length = length;
-      }
-    } else if (result.category === 'decimal') {
-      // DECIMAL(10,2) -> precision, scale
-      const precision = Number.parseInt(paramParts[0], 10);
-      const scale = paramParts[1] ? Number.parseInt(paramParts[1], 10) : undefined;
-      if (!Number.isNaN(precision)) {
-        (result as { precision: number }).precision = precision;
-      }
-      if (scale !== undefined && !Number.isNaN(scale)) {
-        (result as { scale: number }).scale = scale;
-      }
-    } else if (isVectorCategory(result.category)) {
-      // VECTOR(1536), HALFVEC(1536), SPARSEVEC(4000) -> length (dimensions)
-      const dimensions = Number.parseInt(paramParts[0], 10);
-      if (!Number.isNaN(dimensions)) {
-        (result as { length: number }).length = dimensions;
-      }
-    }
-  }
-
-  // Check for UNSIGNED modifier
-  if (hasUnsigned) {
-    (result as { unsigned: boolean }).unsigned = true;
-  }
-
-  return result;
 }
 
 /**
@@ -425,12 +380,8 @@ export function canonicalToTypeScript(type: CanonicalType): string {
 }
 
 /**
- * A type as `dialect` would actually store it: rendered to that engine's SQL and read back.
- *
- * Several canonical types share one storage type per engine - a `boolean` is `TINYINT(1)` on MySQL and
- * `INTEGER` on SQLite - and only the engine settles an unstated bound, since `VARCHAR` is 255 on MySQL
- * and `TEXT` on Postgres. Both paths that diff a schema compare through this, so a migration and a
- * drift report cannot disagree about what changed.
+ * A type as `dialect` stores it, rendered and read back: several types share one storage type, and only
+ * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
   return (type) => sqlToCanonical(canonicalToSql(type, dialect));
@@ -474,13 +425,7 @@ export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
   }
 }
 
-/**
- * Compare two canonical types for equality. Used for schema diffing.
- *
- * Nothing here guesses an engine's own default for an unstated bound: `VARCHAR` is 255 on MySQL and
- * `TEXT` on Postgres, and a comparison that assumed either was blind to that difference on the other.
- * `DiffOptions.normalizeType` is what settles it, by putting both sides through the engine first.
- */
+/** Whether two canonical types are equal, guessing no engine default: `DiffOptions.normalizeType` settles those. */
 export function areTypesEqual(a: CanonicalType, b: CanonicalType): boolean {
   return (
     a.category === b.category &&

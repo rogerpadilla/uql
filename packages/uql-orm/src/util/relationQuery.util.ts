@@ -41,13 +41,8 @@ export function isToManyRelation(relation: Pick<RelationMeta, 'cardinality'>): b
 export type ParentJoin = { readonly parent: string; readonly joined: string };
 
 /**
- * How a relation joins to its parent: `parent` is a column of the parent's own table, `joined` the
- * column matching it on the table the relation reads - a junction's own column for a relation that
- * goes through one, the child's foreign key otherwise.
- *
- * The two are spelled from opposite ends of `references` (`local` names a column of the table the
- * relation is declared on, `foreign` a column of the other one), and getting that backwards reads a
- * real column of the wrong table, so it is answered once here. One pair per key of the parent.
+ * How a relation joins its parent, one pair per key: `parent` a column of the parent's table, `joined` the
+ * matching one on the table the relation reads, a junction's or the child's.
  */
 export function parentJoins(
   relOpts: Pick<RelationMeta, 'references' | 'through'>,
@@ -61,13 +56,7 @@ export function parentJoins(
   return relOpts.references.slice(0, parentKeyCount).map(({ local, foreign }) => ({ parent: foreign, joined: local }));
 }
 
-/**
- * The junction columns holding the target's key, the other half of {@link parentJoins}.
- *
- * `parentKeyCount` is required: the target's columns start after the parent's, so guessing the
- * boundary returned the parent's *second* column as the target's - a real column of the wrong side,
- * which is the mistake this module exists to prevent.
- */
+/** The junction columns holding the target's key, after the parent's `parentKeyCount` ones. */
 export function targetKeyColumns(relOpts: Pick<RelationMeta, 'references'>, parentKeyCount: number): string[] {
   return relOpts.references.slice(parentKeyCount).map(({ local }) => local);
 }

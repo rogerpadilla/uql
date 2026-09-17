@@ -23,7 +23,7 @@ describe('LibsqlQuerierPool', () => {
     vi.mocked(createClient).mockClear();
   });
 
-  it('builds no client until a querier is acquired', async () => {
+  it('should build no client until a querier is acquired', async () => {
     const config = { url: ':memory:' };
     const pool = new LibsqlQuerierPool(config);
     expect(createClient).not.toHaveBeenCalled();
@@ -34,7 +34,7 @@ describe('LibsqlQuerierPool', () => {
     expect(createClient).toHaveBeenCalledWith({ ...config, intMode: 'bigint' });
   });
 
-  it('reads integers as bigints even when the config asks for numbers', async () => {
+  it('should read integers as bigints even when the config asks for numbers', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:', intMode: 'number' });
 
     await pool.getQuerier();
@@ -42,7 +42,7 @@ describe('LibsqlQuerierPool', () => {
     expect(createClient).toHaveBeenCalledWith({ url: ':memory:', intMode: 'bigint' });
   });
 
-  it('opens one client when acquisitions race', async () => {
+  it('should open one client when acquisitions race', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:' });
 
     const [first, second] = await Promise.all([pool.getQuerier(), pool.getQuerier()]);
@@ -51,7 +51,7 @@ describe('LibsqlQuerierPool', () => {
     expect(first.client).toBe(second.client);
   });
 
-  it('shares a client it was given with every querier, and leaves it open on end', async () => {
+  it('should share a client it was given with every querier, and leave it open on end', async () => {
     const client = buildClient();
     const pool = new LibsqlQuerierPool(client);
 
@@ -65,7 +65,7 @@ describe('LibsqlQuerierPool', () => {
     expect(client.close).not.toHaveBeenCalled();
   });
 
-  it('migrates through the shared client when the database is no embedded replica', async () => {
+  it('should migrate through the shared client when the database is no embedded replica', async () => {
     const pool = new LibsqlQuerierPool({ url: 'libsql://only.test', syncUrl: 'libsql://remote.test' });
 
     const querier = await pool.getQuerier();
@@ -75,7 +75,7 @@ describe('LibsqlQuerierPool', () => {
     expect(createClient).toHaveBeenCalledTimes(1);
   });
 
-  it('migrates an embedded replica on its sync url, closing that client with its querier', async () => {
+  it('should migrate an embedded replica on its sync url, closing that client with its querier', async () => {
     const pool = new LibsqlQuerierPool({ url: 'file:./local.db', syncUrl: 'libsql://remote.test', authToken: 't' });
 
     const migration = await pool.getMigrationQuerier();
@@ -86,7 +86,7 @@ describe('LibsqlQuerierPool', () => {
     expect(migration.client.close).toHaveBeenCalled();
   });
 
-  it('closes the client on end', async () => {
+  it('should close the client on end', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:' });
     const querier = await pool.getQuerier();
 
@@ -95,7 +95,7 @@ describe('LibsqlQuerierPool', () => {
     expect(querier.client.close).toHaveBeenCalled();
   });
 
-  it('closes nothing on end when no querier was acquired', async () => {
+  it('should close nothing on end when no querier was acquired', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:' });
     await expect(pool.end()).resolves.toBeUndefined();
     expect(createClient).not.toHaveBeenCalled();

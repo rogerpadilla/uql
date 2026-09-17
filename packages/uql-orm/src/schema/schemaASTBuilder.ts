@@ -1,11 +1,3 @@
-/**
- * SchemaAST Builder
- *
- * Constructs a SchemaAST from:
- * - Entity metadata (decorator-based entities)
- * - Database introspection results (TableSchema[])
- */
-
 import { fieldOf, foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
@@ -23,7 +15,6 @@ import {
   type ColumnNode,
   DEFAULT_FOREIGN_KEY_ACTION,
   type ForeignKeyAction,
-  type RelationshipNode,
   type TableNode,
 } from './types.js';
 
@@ -99,23 +90,8 @@ function refuseDdl(): string {
 }
 
 /**
- * Resolve the canonical type for a field, inheriting from the referenced
- * entity's primary key when the field is a foreign-key reference
- * (`@Field({ references: () => SomeEntity })`) with no explicit type of its
- * own.
- *
- * Without this, a field like `creatorId?: UUID` (a bare TypeScript alias for
- * `string`, erased at runtime) falls back to the generic string inference in
- * {@link fieldOptionsToCanonical} and gets typed as TEXT/VARCHAR - producing a
- * foreign key column whose type doesn't match the UUID primary key it
- * references, which Postgres (and most databases) reject outright.
- *
- * `field.typeFromReference` (set by `defineField`, see entity/metadata/definition.ts)
- * is what distinguishes "no type was given" from "the decorator explicitly set
- * a type" - including explicit constructor overrides like `type: BigInt`, which
- * a value-based check (e.g. `typeof field.type === 'string'`) would miss since
- * reflection also produces constructor values like `String`/`Number`.
- * `columnType` remains the unambiguous, always-respected explicit override.
+ * A field's canonical type, taken from the referenced key where the field gave `references` and no
+ * `type` (`typeFromReference`), so a foreign key matches the key it points at; `columnType` always wins.
  */
 export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
   const hasExplicitType = !!field.columnType || !field.typeFromReference;
@@ -227,8 +203,6 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>)
       onDelete:
         foreignKey.onDelete ?? meta.fields[foreignKey.references[0].local]?.onDelete ?? ctx.defaultForeignKeyAction,
       onUpdate: foreignKey.onUpdate ?? ctx.defaultForeignKeyAction,
-      confidence: 1.0,
-      inferredFrom: 'entity_decorator',
     });
   }
 }
@@ -267,8 +241,6 @@ function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<object>, table
       table,
       entries: columns.map((column) => ({ column })),
       unique: false,
-      source: 'entity',
-      syncStatus: 'entity_only',
     });
   }
 }
@@ -329,7 +301,5 @@ function addCompositeIndex(
     m: idxMeta.m,
     efConstruction: idxMeta.efConstruction,
     lists: idxMeta.lists,
-    source: 'entity',
-    syncStatus: 'entity_only',
   });
 }

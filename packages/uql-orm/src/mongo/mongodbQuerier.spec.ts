@@ -1,11 +1,11 @@
-import { describe, expect, it, vi } from 'vitest';
+import { AbstractCursor, Collection, type Document, MongoClient } from 'mongodb';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import { COUNT_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
-import { Item } from '../test/entityMock.js';
+import { assertDefined, Item } from '../test/index.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
-// --- Test entity ---
 @Entity({ name: 'Article' })
 @Index((article) => [article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })
 class Article {
@@ -48,30 +48,32 @@ class Chunk {
   @Field({ type: 'vector' }) embedding?: number[];
 }
 
-function createMockedQuerier(aggregateResults: unknown[] = []) {
-  const toArray = vi.fn().mockResolvedValue(aggregateResults);
-  // Every cursor method chains, so one self-returning stub stands in for the whole builder, and for
-  // the aggregation cursor too.
-  const cursor: Record<string | symbol, unknown> = {
-    toArray,
-    async *[Symbol.asyncIterator]() {
-      yield* aggregateResults;
-    },
-  };
-  for (const method of ['filter', 'project', 'sort', 'skip', 'limit', 'map']) {
-    cursor[method] = () => cursor;
-  }
-  const aggregate = vi.fn().mockReturnValue(cursor);
-  const find = vi.fn().mockReturnValue(cursor);
-  const estimatedDocumentCount = vi.fn().mockResolvedValue(0);
-
-  const dialect = new MongoDialect();
-  const querier = new MongodbQuerier(dialect, {} as any);
-
-  vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, find, estimatedDocumentCount } as any);
-
-  return { querier, aggregate, find, cursor, estimatedDocumentCount };
+/**
+ * A querier over a client that never connects: every cursor answers `rows`, and the calls reaching a
+ * collection are recorded. `$vectorSearch` runs on Atlas alone, which is why these pipelines are
+ * asserted as sent rather than run.
+ */
+function createRecordingQuerier(rows: Document[] = []) {
+  const querier = new MongodbQuerier(new MongoDialect(), new MongoClient('mongodb://127.0.0.1:1'));
+  const aggregate = vi.spyOn(Collection.prototype, 'aggregate');
+  const find = vi.spyOn(Collection.prototype, 'find');
+  const toArray = vi.spyOn(AbstractCursor.prototype, 'toArray').mockResolvedValue(rows);
+  const iterate = vi.spyOn(AbstractCursor.prototype, Symbol.asyncIterator).mockImplementation(async function* () {
+    yield* rows;
+  });
+  return { querier, aggregate, find, toArray, iterate };
 }
+
+/** The pipeline of the `call`th aggregation a querier sent. */
+function pipelineOf(calls: readonly (readonly [Document[]?, ...unknown[]])[], call = 0): Document[] {
+  const [pipeline] = calls[call];
+  assertDefined(pipeline);
+  return pipeline;
+}
+
+afterEach(() => {
+  vi.restoreAllMocks();
+});
 
 /**
  * Which of the two read paths a query takes: the cheap plain `find` cursor, or the aggregation
@@ -81,29 +83,29 @@ function createMockedQuerier(aggregateResults: unknown[] = []) {
  */
 describe('MongodbQuerier counts', () => {
   /** A `$distinct` read counts through the pipeline, whose `$count` stage emits no row for no match. */
-  it('reports a page and a total of zero where a pipeline read matches nothing', async () => {
-    const { querier } = createMockedQuerier();
+  it('should report a page and a total of zero where a pipeline read matches nothing', async () => {
+    const { querier } = createRecordingQuerier();
     expect(await querier.findManyAndCount(Item, { $distinct: true })).toEqual([[], 0]);
   });
 
   /** The collection's metadata count, which takes no filter. */
-  it('reads the estimated count off the collection', async () => {
-    const { querier, estimatedDocumentCount } = createMockedQuerier();
-    estimatedDocumentCount.mockResolvedValue(7);
+  it('should read the estimated count off the collection', async () => {
+    const { querier } = createRecordingQuerier();
+    vi.spyOn(Collection.prototype, 'estimatedDocumentCount').mockResolvedValue(7);
     expect(await querier.estimatedCount(Item)).toBe(7);
   });
 });
 
 describe('MongodbQuerier read routing', () => {
-  it('serves a plain query from the find cursor', async () => {
-    const { querier, aggregate, find } = createMockedQuerier();
+  it('should serve a plain query from the find cursor', async () => {
+    const { querier, aggregate, find } = createRecordingQuerier();
     await querier.findMany(Item, { $select: { name: true }, $where: { name: 'x' }, $limit: 2 });
     expect(find).toHaveBeenCalled();
     expect(aggregate).not.toHaveBeenCalled();
   });
 
-  it('sends a clause the cursor cannot express to the pipeline', async () => {
-    const { querier, aggregate, find } = createMockedQuerier();
+  it('should send a clause the cursor cannot express to the pipeline', async () => {
+    const { querier, aggregate, find } = createRecordingQuerier();
     await querier.findMany(Item, { $select: { name: true }, $distinct: true });
     expect(aggregate).toHaveBeenCalled();
     expect(find).not.toHaveBeenCalled();
@@ -112,7 +114,7 @@ describe('MongodbQuerier read routing', () => {
 
 describe('MongodbQuerier vector search', () => {
   it('should route vector sort through $vectorSearch pipeline', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $sort: { embedding: { $vector: [1, 2, 3] } },
@@ -120,16 +122,13 @@ describe('MongodbQuerier vector search', () => {
     });
 
     expect(aggregate).toHaveBeenCalled();
-    const pipeline = aggregate.mock.calls[0][0];
-    expect(pipeline[0]).toHaveProperty('$vectorSearch');
-    expect(pipeline[0].$vectorSearch.index).toBe('embedding_vs');
-    expect(pipeline[0].$vectorSearch.queryVector).toEqual([1, 2, 3]);
-    expect(pipeline[0].$vectorSearch.limit).toBe(10);
-    expect(pipeline[0].$vectorSearch.numCandidates).toBe(100);
+    expect(pipelineOf(aggregate.mock.calls)[0]).toMatchObject({
+      $vectorSearch: { index: 'embedding_vs', queryVector: [1, 2, 3], limit: 10, numCandidates: 100 },
+    });
   });
 
-  it('loads relations under a vector sort, capturing the score before the lookups', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+  it('should load relations under a vector sort, capturing the score before the lookups', async () => {
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Chunk, {
       $sort: { embedding: { $vector: [1, 2, 3], $project: 'score' } },
@@ -137,7 +136,7 @@ describe('MongodbQuerier vector search', () => {
       $limit: 5,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
+    const pipeline = pipelineOf(aggregate.mock.calls);
     expect(pipeline[0]).toHaveProperty('$vectorSearch');
     // `$addFields` rather than `$project`: projecting here would drop the join key and the joined doc
     expect(pipeline[1]).toEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
@@ -145,11 +144,11 @@ describe('MongodbQuerier vector search', () => {
       $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
     });
     expect(pipeline[3]).toEqual({ $unwind: { path: '$author', preserveNullAndEmptyArrays: true } });
-    expect(pipeline.some((s: Record<string, unknown>) => '$project' in s)).toBe(false);
+    expect(pipeline.some((stage) => '$project' in stage)).toBe(false);
   });
 
-  it('projects after the lookups when a vector query narrows its columns', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+  it('should project after the lookups when a vector query narrows its columns', async () => {
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Chunk, {
       $select: { text: true },
@@ -158,33 +157,32 @@ describe('MongodbQuerier vector search', () => {
       $limit: 5,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const unwindIndex = pipeline.findIndex((s: Record<string, unknown>) => '$unwind' in s);
-    const projectIndex = pipeline.findIndex((s: Record<string, unknown>) => '$project' in s);
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    const unwindIndex = pipeline.findIndex((stage) => '$unwind' in stage);
+    const projectIndex = pipeline.findIndex((stage) => '$project' in stage);
     expect(projectIndex).toBeGreaterThan(unwindIndex);
-    expect(pipeline[projectIndex].$project).toEqual({ text: 1, author: 1, score: 1 });
+    expect(pipeline[projectIndex]).toEqual({ $project: { text: 1, author: 1, score: 1 } });
   });
 
   /**
    * The score is added to the document, not projected in place of it: a query that named no columns
    * asked for the whole document plus a score, and `$project` would have narrowed it to the score.
    */
-  it('adds the score as a field, leaving a query with no projection unnarrowed', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+  it('should add the score as a field, leaving a query with no projection unnarrowed', async () => {
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $sort: { embedding: { $vector: [1, 2, 3], $project: 'similarity' } },
       $limit: 5,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const addFields = pipeline.find((s: Record<string, unknown>) => '$addFields' in s);
-    expect(addFields.$addFields.similarity).toEqual({ $meta: 'vectorSearchScore' });
-    expect(pipeline.find((s: Record<string, unknown>) => '$project' in s)).toBeUndefined();
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $addFields: { similarity: { $meta: 'vectorSearchScore' } } });
+    expect(pipeline.some((stage) => '$project' in stage)).toBe(false);
   });
 
   it('should add $project with $select and score projection combined', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $select: { id: true, title: true },
@@ -192,16 +190,14 @@ describe('MongodbQuerier vector search', () => {
       $limit: 5,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const addFields = pipeline.find((s: Record<string, unknown>) => '$addFields' in s);
-    expect(addFields.$addFields.score).toEqual({ $meta: 'vectorSearchScore' });
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $addFields: { score: { $meta: 'vectorSearchScore' } } });
     // Already a real field by then, so the query's own projection just keeps it.
-    const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
-    expect(projectStage.$project).toEqual({ _id: 1, title: 1, score: 1 });
+    expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1, score: 1 } });
   });
 
   it('should add $project for $select without score projection', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $select: { id: true, title: true },
@@ -209,14 +205,12 @@ describe('MongodbQuerier vector search', () => {
       $limit: 10,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
-    expect(projectStage).toBeDefined();
-    expect(projectStage.$project).toEqual({ _id: 1, title: 1 });
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1 } });
   });
 
   it('should add $project for $exclude only without score projection in vector pipeline', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $exclude: { category: true },
@@ -224,28 +218,24 @@ describe('MongodbQuerier vector search', () => {
       $limit: 10,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const projectStage = pipeline.find((s: Record<string, unknown>) => '$project' in s);
-    expect(projectStage).toBeDefined();
-    expect(projectStage.$project).toEqual({ _id: 1, title: 1, embedding: 1 });
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $project: { _id: 1, title: 1, embedding: 1 } });
   });
 
   it('should add secondary $sort for regular sort fields', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $sort: { embedding: { $vector: [1, 2, 3] }, title: -1 },
       $limit: 10,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    const sortStage = pipeline.find((s: Record<string, unknown>) => '$sort' in s);
-    expect(sortStage).toBeDefined();
-    expect(sortStage.$sort).toEqual({ title: -1 });
+    const pipeline = pipelineOf(aggregate.mock.calls);
+    expect(pipeline).toContainEqual({ $sort: { title: -1 } });
   });
 
   it('should merge $where into $vectorSearch.filter for pre-filtering', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $where: { category: 'science' },
@@ -253,121 +243,77 @@ describe('MongodbQuerier vector search', () => {
       $limit: 10,
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    expect(pipeline[0].$vectorSearch.filter).toEqual({ category: 'science' });
+    expect(pipelineOf(aggregate.mock.calls)[0]).toMatchObject({ $vectorSearch: { filter: { category: 'science' } } });
   });
 
   it('should default $limit to 10 when omitted', async () => {
-    const { querier, aggregate } = createMockedQuerier([]);
+    const { querier, aggregate } = createRecordingQuerier([]);
 
     await querier.findMany(Article, {
       $sort: { embedding: { $vector: [1, 2, 3] } },
     });
 
-    const pipeline = aggregate.mock.calls[0][0];
-    expect(pipeline[0].$vectorSearch.limit).toBe(10);
-    expect(pipeline[0].$vectorSearch.numCandidates).toBe(100);
+    expect(pipelineOf(aggregate.mock.calls)[0]).toMatchObject({ $vectorSearch: { limit: 10, numCandidates: 100 } });
   });
 });
 
 describe('MongodbQuerier relation conditions', () => {
   /** `countDocuments` takes a plain filter, so a relation condition has to count through a pipeline. */
-  it('counts through an aggregation when the $where constrains a relation', async () => {
-    const toArray = vi.fn().mockResolvedValue([{ [COUNT_ALIAS]: 3 }]);
-    const aggregate = vi.fn().mockReturnValue({ toArray });
-    const countDocuments = vi.fn();
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, countDocuments } as any);
+  it('should count through an aggregation when the $where constrains a relation', async () => {
+    const { querier, aggregate } = createRecordingQuerier([{ [COUNT_ALIAS]: 3 }]);
+    const countDocuments = vi.spyOn(Collection.prototype, 'countDocuments');
 
     expect(await querier.count(Post, { $where: { author: { name: 'ada' } } })).toBe(3);
     expect(countDocuments).not.toHaveBeenCalled();
-    const [pipeline] = aggregate.mock.calls[0];
+    const pipeline = pipelineOf(aggregate.mock.calls);
     expect(pipeline[0]).toHaveProperty('$lookup');
     expect(pipeline.at(-1)).toEqual({ $count: COUNT_ALIAS });
   });
 
-  it('reports zero when the aggregation matches nothing', async () => {
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({
-      aggregate: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([]) }),
-    } as any);
+  it('should report zero when the aggregation matches nothing', async () => {
+    const { querier } = createRecordingQuerier();
 
     expect(await querier.count(Post, { $where: { author: { name: 'nobody' } } })).toBe(0);
   });
 
-  /** The cheap shape on Mongo too: one capped `find`, never `countDocuments` or an aggregation. */
-  it('checks existence with a capped find rather than a count', async () => {
-    const cursor = {
-      filter: vi.fn(),
-      project: vi.fn(),
-      sort: vi.fn(),
-      skip: vi.fn(),
-      limit: vi.fn(),
-      toArray: vi.fn().mockResolvedValue([{ _id: 1 }]),
-    };
-    const find = vi.fn().mockReturnValue(cursor);
-    const countDocuments = vi.fn();
-    const aggregate = vi.fn();
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({ find, countDocuments, aggregate } as any);
+  /** The cheap shape on Mongo too: a count of one capped match, which stops at the first. */
+  it('should check existence with a count capped at one', async () => {
+    const { querier, aggregate } = createRecordingQuerier([{ [COUNT_ALIAS]: 1 }]);
 
     expect(await querier.exists(Post, { $where: { authorId: 9 } })).toBe(true);
-    expect(countDocuments).not.toHaveBeenCalled();
-    expect(aggregate).not.toHaveBeenCalled();
-    expect(cursor.filter).toHaveBeenCalledWith({ authorId: 9 });
-    expect(cursor.project).toHaveBeenCalledWith({ _id: 1 });
-    expect(cursor.limit).toHaveBeenCalledWith(1);
-    expect(cursor.skip).not.toHaveBeenCalled();
+    expect(pipelineOf(aggregate.mock.calls)).toEqual([
+      { $match: { authorId: 9 } },
+      { $limit: 1 },
+      { $count: COUNT_ALIAS },
+    ]);
   });
 
-  /** No matching row means the capped find comes back empty, which is a false rather than a throw. */
-  it('reports false when the capped find matches nothing', async () => {
-    const cursor = {
-      filter: vi.fn(),
-      project: vi.fn(),
-      sort: vi.fn(),
-      skip: vi.fn(),
-      limit: vi.fn(),
-      toArray: vi.fn().mockResolvedValue([]),
-    };
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({ find: vi.fn().mockReturnValue(cursor) } as any);
+  /** No matching row means the capped count comes back empty, which is a false rather than a throw. */
+  it('should report false when the capped count matches nothing', async () => {
+    const { querier } = createRecordingQuerier();
 
     expect(await querier.exists(Post, { $where: { authorId: 9 } })).toBe(false);
   });
 
-  /** An `updateMany` filter cannot host a `$lookup`, so the ids are resolved first. */
-  /**
-   * The total has to be counted past the stages that collapse rows, which only the read pipeline
-   * builds - so a `$distinct` read counts through the pipeline rather than through `countDocuments`.
-   */
-  it('counts a $distinct read past the stages that collapse it', async () => {
-    // both reads run against the same collection: the page first, then the count
-    const aggregate = vi
-      .fn()
-      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ name: 'a' }]) })
-      .mockReturnValueOnce({ toArray: vi.fn().mockResolvedValue([{ _uql_count: 2 }]) });
-    const countDocuments = vi.fn();
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({ aggregate, countDocuments } as any);
+  /** A `$distinct` read counts past the stages that collapse it, which only the read pipeline builds. */
+  it('should count a $distinct read past the stages that collapse it', async () => {
+    const { querier, aggregate, toArray } = createRecordingQuerier();
+    toArray.mockResolvedValueOnce([{ name: 'a' }]).mockResolvedValueOnce([{ [COUNT_ALIAS]: 2 }]);
+    const countDocuments = vi.spyOn(Collection.prototype, 'countDocuments');
 
     const [, total] = await querier.findManyAndCount(Item, { $select: { name: true }, $distinct: true });
 
     expect(countDocuments).not.toHaveBeenCalled();
-    const [pipeline] = aggregate.mock.calls.at(-1) as [Record<string, unknown>[]];
-    expect(pipeline.at(-1)).toEqual({ $count: '_uql_count' });
-    // the grouping that deduplicates has to run before the count, or it counts the rows it collapses
+    const pipeline = pipelineOf(aggregate.mock.calls, 1);
+    expect(pipeline.at(-1)).toEqual({ $count: COUNT_ALIAS });
     expect(pipeline.some((stage) => stage['$group'])).toBe(true);
     expect(total).toBe(2);
   });
 
-  it('resolves ids before updating when the $where constrains a relation', async () => {
-    const updateMany = vi.fn().mockResolvedValue({ matchedCount: 2 });
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({
-      aggregate: vi.fn().mockReturnValue({ toArray: vi.fn().mockResolvedValue([{ _id: 1 }, { _id: 2 }]) }),
-      updateMany,
-    } as any);
+  /** An `updateMany` filter cannot host a `$lookup`, so the ids are resolved first. */
+  it('should resolve ids before updating when the $where constrains a relation', async () => {
+    const { querier } = createRecordingQuerier([{ _id: 1 }, { _id: 2 }]);
+    const updateMany = vi.spyOn(Collection.prototype, 'updateMany').mockResolvedValue(updateResult(2));
 
     expect(await querier.updateMany(Post, { $where: { author: { name: 'ada' } } }, { authorId: 9 })).toBe(2);
     expect(updateMany.mock.calls[0][0]).toEqual({ _id: { $in: [1, 2] } });
@@ -379,25 +325,19 @@ describe('MongodbQuerier soft delete', () => {
    * Reads filter on the mapped column, so the stamp has to write that same one - stamping the property
    * key reported a successful delete and left the document visible forever.
    */
-  it('stamps the mapped soft-delete column', async () => {
-    const updateMany = vi.fn().mockResolvedValue({ matchedCount: 1 });
-    const toArray = vi.fn().mockResolvedValue([{ _id: 7 }]);
-    const querier = new MongodbQuerier(new MongoDialect(), {} as any);
-    vi.spyOn(querier, 'collection').mockReturnValue({
-      aggregate: vi.fn().mockReturnValue({ toArray }),
-      updateMany,
-    } as any);
+  it('should stamp the mapped soft-delete column', async () => {
+    const { querier } = createRecordingQuerier([{ _id: 7 }]);
+    const updateMany = vi.spyOn(Collection.prototype, 'updateMany').mockResolvedValue(updateResult(1));
 
     await querier.deleteOneById(SoftDoc, 7);
 
-    const [, update] = updateMany.mock.calls[0];
-    expect(Object.keys(update.$set)).toEqual(['deleted_at']);
+    expect(updateMany.mock.calls[0][1]).toEqual({ $set: { deleted_at: expect.any(Date) } });
   });
 });
 
 describe('MongodbQuerier findManyStream', () => {
-  it('yields nothing, and opens no cursor, for a page of no rows', async () => {
-    const { querier, find } = createMockedQuerier([{ _id: 1 }]);
+  it('should yield nothing, and open no cursor, for a page of no rows', async () => {
+    const { querier, find } = createRecordingQuerier([{ _id: 1 }]);
     const rows: unknown[] = [];
     for await (const row of querier.findManyStream(Item, { $limit: 0 })) {
       rows.push(row);
@@ -407,8 +347,8 @@ describe('MongodbQuerier findManyStream', () => {
   });
 
   /** A stream runs the pipeline `findMany` does, so it loads what `findMany` loads. */
-  it('streams the relations a query populates through the pipeline', async () => {
-    const { querier, aggregate, find } = createMockedQuerier([{ _id: 1, author: { _id: 2, name: 'ada' } }]);
+  it('should stream the relations a query populates through the pipeline', async () => {
+    const { querier, aggregate, find } = createRecordingQuerier([{ _id: 1, author: { _id: 2, name: 'ada' } }]);
     const rows: unknown[] = [];
     for await (const row of querier.findManyStream(Post, { $populate: { author: true } })) {
       rows.push(row);
@@ -416,17 +356,17 @@ describe('MongodbQuerier findManyStream', () => {
 
     expect(rows).toEqual([{ id: 1, author: { id: 2, name: 'ada' } }]);
     expect(find).not.toHaveBeenCalled();
-    expect(aggregate.mock.calls[0][0]).toContainEqual({
+    expect(pipelineOf(aggregate.mock.calls)).toContainEqual({
       $lookup: { from: 'Author', localField: 'authorId', foreignField: '_id', as: 'author' },
     });
   });
 
-  it('surfaces a failure the cursor meets while iterating', async () => {
-    const { querier, cursor } = createMockedQuerier();
-    cursor[Symbol.asyncIterator] = async function* () {
+  it('should surface a failure the cursor meets while iterating', async () => {
+    const { querier, iterate } = createRecordingQuerier();
+    iterate.mockImplementation(async function* () {
       yield* [];
       throw new Error('connection reset');
-    };
+    });
     const drain = async () => {
       for await (const _ of querier.findManyStream(Item, {}));
     };
@@ -434,12 +374,17 @@ describe('MongodbQuerier findManyStream', () => {
   });
 
   /** An ordering by a relation reads a field only a lookup adds, so the stream orders it in the pipeline. */
-  it('orders a stream by a relation through the pipeline', async () => {
-    const { querier, aggregate, find } = createMockedQuerier();
-    for await (const _ of querier.findManyStream(Post, { $sort: { author: { name: 1 } } } as never)) {
+  it('should order a stream by a relation through the pipeline', async () => {
+    const { querier, aggregate, find } = createRecordingQuerier();
+    for await (const _ of querier.findManyStream(Post, { $sort: { author: { name: 1 } } })) {
     }
 
     expect(find).not.toHaveBeenCalled();
-    expect(aggregate.mock.calls[0][0]).toContainEqual({ $sort: { 'author.name': 1 } });
+    expect(pipelineOf(aggregate.mock.calls)).toContainEqual({ $sort: { 'author.name': 1 } });
   });
 });
+
+/** What a driver reports for an `updateMany` that matched `matchedCount` documents. */
+function updateResult(matchedCount: number) {
+  return { acknowledged: true, matchedCount, modifiedCount: matchedCount, upsertedCount: 0, upsertedId: null };
+}

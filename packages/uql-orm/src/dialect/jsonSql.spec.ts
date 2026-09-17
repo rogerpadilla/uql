@@ -11,13 +11,13 @@ import {
 
 describe('jsonCompareMode', () => {
   /** `every` holds over nothing, so an empty set would otherwise read as all-boolean and compare as JSON. */
-  it('compares an empty set as text', () => {
+  it('should compare an empty set as text', () => {
     expect(jsonCompareMode([])).toBe('text');
   });
 });
 
 describe('jsonTypeMode', () => {
-  it('reads a boolean path as JSON and anything else unnumeric as text', () => {
+  it('should read a boolean path as JSON and anything else unnumeric as text', () => {
     expect(jsonTypeMode(Boolean)).toBe('json');
     expect(jsonTypeMode(String)).toBe('text');
   });

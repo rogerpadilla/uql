@@ -54,11 +54,8 @@ export function assertIndexFeatures(
 }
 
 /**
- * `CREATE INDEX` for SQL dialects: the statement and the fragments each engine spells differently.
- * The migrator's rather than the dialect's, since {@link SqlSchemaGenerator} is the only thing that
- * emits DDL - which is what keeps a `CAST(... ARRAY)` table out of every runtime consumer's entry.
- * The form here is the portable one, which SQLite (and so libSQL, Turso and D1) takes verbatim: no
- * access-method clause, no operator classes, no tuning parameters.
+ * `CREATE INDEX` in its portable form, which the SQLite family takes as is; the engines with more override
+ * the fragments. The migrator's own, so no runtime entry carries it.
  */
 export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
   constructor(protected readonly dialect: D) {}

@@ -1,55 +1,51 @@
 import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { createMockQuerierPool } from '../../test/mockQuerierPool.js';
-import type { QuerierPool, SqlQuerier } from '../../type/index.js';
+import { createMockQuerier, createMockQuerierPool } from '../../test/index.js';
+import type { Querier, QuerierPool } from '../../type/index.js';
 import { DatabaseMigrationStorage } from './databaseStorage.js';
+
+const createSqlQuerier = () =>
+  createMockQuerier({
+    all: vi.fn().mockResolvedValue([]),
+    run: vi.fn().mockResolvedValue({}),
+    dialect: new PostgresDialect(),
+  });
 
 describe('DatabaseMigrationStorage', () => {
   let storage: DatabaseMigrationStorage;
   let pool: QuerierPool;
-  let querier: SqlQuerier;
-  let mockAll: Mock<SqlQuerier['all']>;
-  let mockRun: Mock<SqlQuerier['run']>;
+  let querier: ReturnType<typeof createSqlQuerier>;
+  let getQuerier: Mock<() => Promise<Querier>>;
 
   beforeEach(() => {
-    mockAll = vi.fn().mockResolvedValue([]);
-    mockRun = vi.fn().mockResolvedValue({});
-    querier = {
-      all: mockAll,
-      run: mockRun,
-      release: vi.fn().mockResolvedValue(undefined),
-      dialect: new PostgresDialect(),
-    } as unknown as SqlQuerier;
-
-    pool = createMockQuerierPool(new PostgresDialect(), vi.fn().mockResolvedValue(querier));
+    querier = createSqlQuerier();
+    getQuerier = vi.fn(async (): Promise<Querier> => querier);
+    pool = createMockQuerierPool(new PostgresDialect(), getQuerier);
 
     storage = new DatabaseMigrationStorage(pool);
   });
 
-  it('ensureStorage should create table', async () => {
+  it('should create the storage table', async () => {
     await storage.ensureStorage();
 
     expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS "uql_migrations"'));
     expect(querier.release).toHaveBeenCalled();
   });
 
-  it('ensureStorage should return early if already initialized', async () => {
+  it('should create the storage table once', async () => {
     await storage.ensureStorage();
     expect(pool.getQuerier).toHaveBeenCalledTimes(1);
     await storage.ensureStorage();
     expect(pool.getQuerier).toHaveBeenCalledTimes(1);
   });
 
-  it('ensureStorage should throw if not SQL querier', async () => {
-    (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
+  it('should refuse to create storage on a querier that is not SQL', async () => {
+    getQuerier.mockResolvedValue(createMockQuerier());
     await expect(storage.ensureStorage()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
   });
 
-  it('executed should return migration names', async () => {
-    // 1. ensureStorage
-    mockRun.mockResolvedValueOnce({} as any);
-    // 2. executed query
-    mockAll.mockResolvedValueOnce([{ name: 'm1' }, { name: 'm2' }]);
+  it('should return executed migration names', async () => {
+    querier.all.mockResolvedValueOnce([{ name: 'm1' }, { name: 'm2' }]);
 
     const executed = await storage.executed();
 
@@ -57,16 +53,14 @@ describe('DatabaseMigrationStorage', () => {
     expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('SELECT "name" FROM "uql_migrations"'));
   });
 
-  it('executed should throw if not SQL querier', async () => {
-    // Force initialization first
-    (pool.getQuerier as Mock).mockResolvedValueOnce(querier);
+  it('should refuse to read executed migrations on a querier that is not SQL', async () => {
     await storage.ensureStorage();
 
-    (pool.getQuerier as Mock).mockResolvedValue({ release: vi.fn() });
+    getQuerier.mockResolvedValue(createMockQuerier());
     await expect(storage.executed()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
   });
 
-  it('logWithQuerier should insert record', async () => {
+  it('should insert a record of a migration', async () => {
     await storage.logWithQuerier(querier, 'm3');
 
     expect(querier.run).toHaveBeenCalledWith(
@@ -75,7 +69,7 @@ describe('DatabaseMigrationStorage', () => {
     );
   });
 
-  it('unlogWithQuerier should delete record', async () => {
+  it('should delete the record of a migration', async () => {
     await storage.unlogWithQuerier(querier, 'm3');
 
     expect(querier.run).toHaveBeenCalledWith(

@@ -46,11 +46,8 @@ export class PgIndexDdl extends IndexDdl {
   }
 
   /**
-   * A vector index's operator class is named `{type}_{metric}_ops`: an index on a `halfvec` column
-   * needs `halfvec_cosine_ops`, and `vector_cosine_ops` there is rejected outright. An unsupported
-   * distance throws rather than being omitted, since a bare `USING hnsw ("embedding")` would build
-   * with the dialect's default metric instead of the one requested, with nothing signalling it.
-   * Everything else takes the operator class the entry declares, e.g. `jsonb_path_ops` for GIN.
+   * A vector index's operator class, `{type}_{metric}_ops` (`halfvec_cosine_ops`), refusing a metric it
+   * lacks rather than build with the default; any other entry takes the class it declares.
    */
   protected override indexColumnOpsClass(entry: IndexColumnSchema, index: IndexSchema): string {
     if (!this.isVectorIndex(index) || !index.distance) {
@@ -87,14 +84,7 @@ export class PgIndexDdl extends IndexDdl {
   }
 }
 
-/**
- * CockroachDB's vector index is native and has its own syntax: `CREATE VECTOR INDEX ... ("col"
- * vector_cosine_ops)`, with no access-method keyword, and tuning knobs of its own names that UQL
- * does not map. `type: 'vector'` is its trigger, the same generic value MariaDB's index uses.
- *
- * `NULLS FIRST/LAST` answers "unimplemented: this syntax" and `jsonb_path_ops` "operator class is
- * not supported" (both verified on v26.2), so neither is offered here.
- */
+/** CockroachDB's native `CREATE VECTOR INDEX`, for `type: 'vector'`; it has neither `NULLS FIRST/LAST` nor `jsonb_path_ops`. */
 export class CockroachIndexDdl extends PgIndexDdl {
   protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include', 'jsonPath']);
 

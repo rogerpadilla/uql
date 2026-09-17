@@ -24,19 +24,9 @@ export type QueryTextSearchOptions<E> = {
 };
 
 /**
- * Field comparison, JSON dot-path access, and relation filtering - all fully typed.
- * JSON dot-paths are restricted to real JSON fields, and typed payloads type each path's value
- * (untyped `Json` payloads accept any `field.suffix` path with a permissive value). Relations are
- * filtered via nested typed objects; dotted relation paths are not supported (the dialects throw
- * for non-JSON dotted keys).
- *
- * Fields and relations share one mapped type over `K extends keyof E`, which keeps each key linked to
- * its property (see {@link QuerySelect}). JSON paths are not keys of `E`, so they are a second member,
- * and only where the entity has one: an empty member would switch off the weak-type check that
- * rejects `$where: 1`.
- *
- * An object and nothing else: in a union with ids or lists, TypeScript reports a wrong value against
- * the whole `$where` instead of the key holding it. Ids are `{ id: 1 }`, or the by-id methods.
+ * A filter by fields, JSON paths (typed by their payload) and relations, one mapped type over the
+ * entity's keys so each stays linked for rename. An object and nothing else, so a wrong value is
+ * reported on its key: ids go through `{ id: 1 }` or the by-id methods.
  */
 export type QueryWhere<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = QueryWhereRootOperator<E> & {
   [P in K]?: P extends FieldKey<E>
@@ -114,29 +104,9 @@ export type QuerySizeComparisonOps = {
 };
 
 /**
- * Filter by distance to a query vector: `$where`'s counterpart to `$sort`'s ranking, so "the closest
- * ten" and "everything closer than 0.35" stay separate asks.
- *
- * Bounded by {@link QueryOrderedOp} - what {@link QuerySizeComparisonOps} ranges over, minus
- * `$eq`/`$ne`. A distance is a float, so exact equality against one is a bug every time, where
- * `$size` compares an integer `COUNT`. No `$project` either: naming the distance is `$sort`'s job,
- * since the `SELECT` list is built from `$sort` alone and a `$near` nested inside an `$or` has no
- * business projecting a column.
- *
- * `$distance` is here for the same reason `$sort` has it: each clause states its own search
- * completely, so neither depends on the other. Omitted, it falls back to the field's declared metric,
- * which is where the metric belongs - beside the index it has to match. Naming a different one per
- * query mostly buys a full scan, since an ANN index is built for exactly one operator class.
- *
- * `$vector` is required, and repeating it beside a `$sort` that ranks by the same field is the point:
- * every other `$where` operator means the same thing wherever it appears, and inheriting one from a
- * sibling clause would make this the first whose validity depends on what else the query contains -
- * unfixable in the type, and carried into merged entity filters and `/http` payloads alike. Naming
- * the vector in a `const` is what removes the repetition, at the call site where it belongs.
- *
- * A `$near` carrying no bound is a `WHERE` that is always true. The dialect rejects that rather than
- * the type: `/http` casts client JSON straight to `Query`, so the check has to exist there anyway,
- * and an "at least one of these five" union would cost every caller worse errors for a second copy.
+ * Filter by distance to a vector, `{ $near: { $vector: v, $lt: 0.35 } }`: ordered bounds only, since a
+ * distance is a float. Each clause names its own `$vector`, and `$distance` falls back to the field's.
+ * One with no bound is refused at run time, where `/http` input is checked anyway.
  */
 export type QueryVectorNear = QueryVectorQuery & {
   [K in QueryOrderedOp]?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
@@ -236,13 +206,7 @@ export type QueryWhereFieldOperatorMap<T> = {
    * @example { tags: { $all: ['typescript', 'orm'] } }
    */
   $all?: unknown extends T ? unknown[] : NonNullable<T> extends readonly (infer U)[] ? ExpandScalar<U>[] : never;
-  /**
-   * whether an array has the specified length.
-   * Accepts a number for exact match, or a comparison operator object for range queries.
-   * @example { roles: { $size: 3 } }
-   * @example { roles: { $size: { $gte: 2 } } }
-   * @example { roles: { $size: { $gt: 0, $lte: 5 } } }
-   */
+  /** whether an array has the given length, or one in range: `{ roles: { $size: { $gte: 2 } } }`. */
   $size?: number | QuerySizeComparisonOps;
   /**
    * whether an array contains at least one element matching all specified conditions.
@@ -320,11 +284,8 @@ type QueryOrderedOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<unk
 type QueryVectorOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$near'>;
 
 /**
- * Operators applicable to every field type: equality, membership, negation, and null checks.
- *
- * @remarks This is a subtraction, not a list, so an operator added to
- * {@link QueryWhereFieldOperatorMap} without also being classified above lands here and is offered
- * on every field - `$near` on a `boolean`, say. Classify first, then add.
+ * The operators every field takes. A subtraction, so an operator added to the map without being
+ * classified above is offered on every field: classify it first.
  */
 type QueryCommonOp = Exclude<
   keyof QueryWhereFieldOperatorMap<unknown>,
@@ -343,13 +304,8 @@ type QueryAllowedOp<T> =
   | (IsMany<T> extends true ? QueryArrayOp : never);
 
 /**
- * Operators applicable to a field of type `T`: string operators require string fields, ordering
- * operators comparable fields, array operators array fields.
- *
- * Two shapes stay fully permissive, because neither says anything to check against: `unknown`
- * (untyped JSON dot-paths, erased dialect shapes), and a field typed as every scalar at once - the
- * column of a content type defined at runtime. Narrowing to what they share would leave a dynamic
- * row with equality alone, since no operator applies to a boolean and a blob both.
+ * The operators a field of type `T` takes. `unknown`, and a column typed as every scalar at once (a
+ * runtime-defined entity), take all of them, since nothing narrows what they hold.
  */
 export type QueryWhereFieldOperators<T> = unknown extends T
   ? QueryWhereFieldOperatorMap<T>
@@ -365,12 +321,8 @@ export type QueryWhereFieldOperators<T> = unknown extends T
 type IsUntypedColumn<T> = [Scalar] extends [NonNullable<T>] ? true : false;
 
 /**
- * Value for a field comparison. A bare array is an implicit `$in` for scalar fields only:
- * on array-typed fields (e.g. a vector `number[]`) an array of arrays is ambiguous, so
- * membership there requires an explicit operator.
- *
- * `null` is accepted on a nullable field (an optional property is a nullable column), matching what
- * `$eq: null` already took.
+ * A field's filter value: the value, `null` where it is optional, a list as an implicit `$in` (not on
+ * an array field, where it would be ambiguous), or an operator map.
  */
 export type QueryWhereFieldValue<T> =
   | T

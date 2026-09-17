@@ -1,5 +1,6 @@
 import { expect, it } from 'vitest';
 import {
+  assertDefined,
   Company,
   InventoryAdjustment,
   Item,
@@ -16,7 +17,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey } from '../../type/index.js';
+import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey, type Type } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import {
@@ -34,7 +35,7 @@ import {
   relationOf,
 } from './definition.js';
 
-it('defineEntity passes over a member given as undefined', () => {
+it('should pass over a member given as undefined', () => {
   class Sparse {
     id?: number;
     note?: string;
@@ -48,13 +49,13 @@ it('defineEntity passes over a member given as undefined', () => {
   expect(meta.relations).toEqual({});
 });
 
-it('assertSoleId names an entity that declares no primary key', () => {
+it('should name an entity that declares no primary key', () => {
   class Keyless {}
   const meta = defineField(Keyless, 'name', { type: String });
   expect(() => assertSoleId(meta, 'a key lookup')).toThrow("'Keyless' has no primary key, which a key lookup needs.");
 });
 
-it('assertSoleId names the columns of a composite key, and idOf names its row by every one', () => {
+it('should name the columns of a composite key, and name its row by every one', () => {
   @Entity()
   class Seat {
     [idKey]?: 'row' | 'number';
@@ -69,21 +70,22 @@ it('assertSoleId names the columns of a composite key, and idOf names its row by
   expect(idOf(meta, { row: 'F', number: 12, holder: 'Ada' })).toEqual({ row: 'F', number: 12 });
 });
 
-it('fieldOf names the field it reads, and refuses one the entity does not declare', () => {
+it('should name the field it reads, and refuse one the entity does not declare', () => {
   const meta = getMeta(User);
   expect(fieldOf(meta, 'name')).toBe(meta.fields.name);
   // Outside the types, which name a field; the throw is for a key that reached it untyped.
-  expect(() => fieldOf(meta, 'nope' as never)).toThrow("'User' has no field 'nope'");
+  expect(() => fieldOf(meta, 'nope')).toThrow("'User' has no field 'nope'");
 });
 
-it('relationOf names the relation it reads, and refuses one the entity does not declare', () => {
+it('should name the relation it reads, and refuse one the entity does not declare', () => {
   const meta = getMeta(User);
   expect(relationOf(meta, 'company')).toBe(meta.relations.company);
   // Outside the types, which name a relation; the throw is for a key that reached it untyped.
-  expect(() => relationOf(meta, 'name' as never)).toThrow("'User' has no relation 'name'");
+  // @ts-expect-error: `name` is a field
+  expect(() => relationOf(meta, 'name')).toThrow("'User' has no relation 'name'");
 });
 
-it('defineEntity keeps a check constraint as authored, for the schema build to render', () => {
+it('should keep a check constraint as authored, for the schema build to render', () => {
   class Stocked {
     id?: number;
     quantity?: number;
@@ -96,21 +98,21 @@ it('defineEntity keeps a check constraint as authored, for the schema build to r
   expect(meta.checks).toEqual(checks);
 });
 
-it('defineField refuses an option the column type does not take', () => {
+it('should refuse a field option the column type does not take', () => {
   class Conflicted {}
   expect(() => defineField(Conflicted, 'amount', { type: Number, length: 10 })).toThrow(
     "'Conflicted.amount' cannot use 'length': it applies to a string column, not to a numeric one.",
   );
 });
 
-it('defineEntity refuses a dotted name, pointing at the schema option', () => {
+it('should refuse a dotted entity name, pointing at the schema option', () => {
   class Dotted {}
   expect(() => defineEntity(Dotted, { name: 'crm.users', fields: { id: { type: Number, isId: true } } })).toThrow(
     "'Dotted' has a dotted name 'crm.users'. Name the schema separately as { schema: 'crm', name: 'users' }.",
   );
 });
 
-it('an inverse side keeps the columns it names itself', () => {
+it('should keep the columns an inverse side names itself', () => {
   @Entity()
   class Shelf {
     @Id({ type: Number }) id?: number;
@@ -131,7 +133,7 @@ it('an inverse side keeps the columns it names itself', () => {
   expect(getMeta(Shelf).relations.books?.references).toEqual([{ local: 'id', foreign: 'shelfRef' }]);
 });
 
-it('a foreign key column is a column, with no relation it did not declare', () => {
+it('should keep a foreign key column a column, with no relation it did not declare', () => {
   @Entity()
   class Warehouse {
     @Id({ type: Number }) id?: number;
@@ -143,10 +145,10 @@ it('a foreign key column is a column, with no relation it did not declare', () =
   }
   const meta = getMeta(Pallet);
   expect(meta.relations).toEqual({});
-  expect(meta.fields.warehouseId!.references!()).toBe(Warehouse);
+  expect(meta.fields.warehouseId?.references?.()).toBe(Warehouse);
 });
 
-it('a junction column is the one referencing its side, whatever either is called', () => {
+it('should take a junction column as the one referencing its side, whatever either is called', () => {
   @Entity()
   class Course {
     @Id({ type: Number, name: 'course_pk' }) id?: number;
@@ -168,16 +170,16 @@ it('a junction column is the one referencing its side, whatever either is called
   ]);
 });
 
-it('User', () => {
+it('should register the User metadata', () => {
   const meta = getMeta(User);
 
-  expect(meta.fields.companyId!.references!()).toBe(Company);
-  expect(meta.relations.company!.entity!()).toBe(Company);
-  expect(meta.relations.company!.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
+  expect(meta.fields.companyId?.references?.()).toBe(Company);
+  expect(meta.relations.company?.entity?.()).toBe(Company);
+  expect(meta.relations.company?.references).toEqual([{ local: 'companyId', foreign: 'id' }]);
 
-  expect(meta.fields.creatorId!.references!()).toBe(User);
-  expect(meta.relations.creator!.entity!()).toBe(User);
-  expect(meta.relations.creator!.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
+  expect(meta.fields.creatorId?.references?.()).toBe(User);
+  expect(meta.relations.creator?.entity?.()).toBe(User);
+  expect(meta.relations.creator?.references).toEqual([{ local: 'creatorId', foreign: 'id' }]);
 
   const expectedMeta = {
     entity: User,
@@ -230,7 +232,7 @@ it('User', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('Profile', () => {
+it('should register the Profile metadata', () => {
   const meta = getMeta(Profile);
   const expectedMeta = {
     entity: Profile,
@@ -267,7 +269,7 @@ it('Profile', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('Item', () => {
+it('should register the Item metadata', () => {
   const meta = getMeta(Item);
   const expectedMeta = {
     entity: Item,
@@ -359,7 +361,7 @@ it('Item', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('Tag', () => {
+it('should register the Tag metadata', () => {
   const meta = getMeta(Tag);
   const expectedMeta = {
     entity: Tag,
@@ -429,7 +431,7 @@ it('Tag', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('ItemTag', () => {
+it('should register the ItemTag metadata', () => {
   const meta = getMeta(ItemTag);
   const expectedMeta = {
     entity: ItemTag,
@@ -452,7 +454,7 @@ it('ItemTag', () => {
   expect(meta.relations).toEqual({});
 });
 
-it('TaxCategory', () => {
+it('should register the TaxCategory metadata', () => {
   const meta = getMeta(TaxCategory);
   const expectedMeta = {
     entity: TaxCategory,
@@ -490,7 +492,7 @@ it('TaxCategory', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('Tax', () => {
+it('should register the Tax metadata', () => {
   const meta = getMeta(Tax);
   const expectedMeta = {
     entity: Tax,
@@ -546,7 +548,7 @@ it('Tax', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('ItemAdjustment', () => {
+it('should register the ItemAdjustment metadata', () => {
   const meta = getMeta(ItemAdjustment);
   const expectedMeta = {
     entity: ItemAdjustment,
@@ -622,7 +624,7 @@ it('ItemAdjustment', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('InventoryAdjustment', () => {
+it('should register the InventoryAdjustment metadata', () => {
   const meta = getMeta(InventoryAdjustment);
   const expectedMeta = {
     entity: InventoryAdjustment,
@@ -667,7 +669,7 @@ it('InventoryAdjustment', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('MeasureUnitCategory', () => {
+it('should register the MeasureUnitCategory metadata', () => {
   const meta = getMeta(MeasureUnitCategory);
   const expectedMeta = {
     entity: MeasureUnitCategory,
@@ -712,7 +714,7 @@ it('MeasureUnitCategory', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('MeasureUnit', () => {
+it('should register the MeasureUnit metadata', () => {
   const meta = getMeta(MeasureUnit);
   const expectedMeta = {
     entity: MeasureUnit,
@@ -761,7 +763,7 @@ it('MeasureUnit', () => {
   expect(meta).toMatchObject(expectedMeta);
 });
 
-it('not an @Entity', () => {
+it('should refuse metadata for a class that is no entity', () => {
   class SomeClass {}
 
   expect(() => {
@@ -775,7 +777,7 @@ it('not an @Entity', () => {
   expect(() => getMeta(AnotherClass)).toThrow(`'AnotherClass' is not an entity`);
 });
 
-it('getEntities', () => {
+it('should list every registered entity', () => {
   const entities = getEntities();
   expect(entities.length).toBeGreaterThanOrEqual(15);
   expect(entities).toEqual(
@@ -799,28 +801,30 @@ it('getEntities', () => {
   );
 });
 
-it('no @Id', () => {
+it('should refuse an entity with no @Id', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
       @Field({ type: String })
       id!: string;
     }
+    return SomeEntity;
   }).toThrow(
     `'SomeEntity' must have at least one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
   );
 });
 
-it('no fields', () => {
+it('should refuse an entity with no fields', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
       id!: string;
     }
+    return SomeEntity;
   }).toThrow(`'SomeEntity' must have fields`);
 });
 
-it('one-to-many through a junction joins by the junction columns', () => {
+it("should join a one-to-many through a junction by the junction's columns", () => {
   @Entity()
   class Author {
     @Field({ type: Number, isId: true })
@@ -847,13 +851,13 @@ it('one-to-many through a junction joins by the junction columns', () => {
 
   const meta = getMeta(Book);
 
-  expect(meta.relations.authors!.references).toEqual([
+  expect(meta.relations.authors?.references).toEqual([
     { local: 'bookId', foreign: 'id' },
     { local: 'authorId', foreign: 'id' },
   ]);
 });
 
-it('to-many relation with no way to join', () => {
+it('should refuse a to-many relation with no way to join', () => {
   @Entity()
   class Chapter {
     @Field({ type: Number, isId: true })
@@ -875,7 +879,7 @@ it('to-many relation with no way to join', () => {
   );
 });
 
-it('mappedBy naming neither a field nor a relation', () => {
+it('should refuse a mappedBy naming neither a field nor a relation', () => {
   @Entity()
   class Track {
     @Field({ type: Number, isId: true })
@@ -897,7 +901,7 @@ it('mappedBy naming neither a field nor a relation', () => {
   );
 });
 
-it('a junction with no column referencing a side says which to declare', () => {
+it('should say which column to declare for a junction referencing no side', () => {
   @Entity()
   class Colour {
     @Field({ type: Number, isId: true })
@@ -925,7 +929,7 @@ it('a junction with no column referencing a side says which to declare', () => {
   );
 });
 
-it('refuses a junction where two columns reference the same key', () => {
+it('should refuse a junction where two columns reference the same key', () => {
   @Entity()
   class Person {
     @Id({ type: Number }) id?: number;
@@ -943,7 +947,7 @@ it('refuses a junction where two columns reference the same key', () => {
   );
 });
 
-it('a junction resolves when read first, even with an inverse side leading back through it', () => {
+it('should resolve a junction read first, even with an inverse side leading back through it', () => {
   @Entity()
   class Film {
     @Id({ type: Number }) id?: number;
@@ -972,7 +976,7 @@ it('a junction resolves when read first, even with an inverse side leading back 
   ]);
 });
 
-it('an inverse side of a relation through a junction resolves whichever side is read first', () => {
+it('should resolve an inverse side through a junction whichever side is read first', () => {
   @Entity()
   class Genre {
     @Id({ type: Number }) id?: number;
@@ -1001,7 +1005,7 @@ it('an inverse side of a relation through a junction resolves whichever side is 
   ]);
 });
 
-it('at most one softDelete field', () => {
+it('should refuse a second softDelete field', () => {
   expect(() => {
     @Entity()
     class SomeEntity {
@@ -1012,10 +1016,11 @@ it('at most one softDelete field', () => {
       @Field({ type: Date, softDelete: () => new Date() })
       archivedAt?: Date;
     }
+    return SomeEntity;
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
 });
 
-it('a to-one joins on the foreign key its references names, whatever either is called', () => {
+it('should join a to-one on the foreign key its references name, whatever either is called', () => {
   @Entity()
   class Author {
     @Id({ type: Number }) id?: number;
@@ -1033,7 +1038,7 @@ it('a to-one joins on the foreign key its references names, whatever either is c
   expect(getKeys(getMeta(Essay).fields)).toEqual(['id', 'writtenById']);
 });
 
-it('refuses a to-one naming no foreign key, on every read rather than handing back a half-resolved one', () => {
+it('should refuse a to-one naming no foreign key, on every read rather than handing back a half-resolved one', () => {
   @Entity()
   class Quay {
     @Id({ type: Number }) id?: number;
@@ -1053,7 +1058,7 @@ it('refuses a to-one naming no foreign key, on every read rather than handing ba
   expect(() => getMeta(Barge)).toThrow(refusal);
 });
 
-it('refuses a join on a member that is not a column of its entity', () => {
+it('should refuse a join on a member that is not a column of its entity', () => {
   @Entity()
   class Pier {
     @Id({ type: Number }) id?: number;
@@ -1084,7 +1089,7 @@ it('refuses a join on a member that is not a column of its entity', () => {
   );
 });
 
-it('refuses a to-one whose foreign key references another entity', () => {
+it('should refuse a to-one whose foreign key references another entity', () => {
   @Entity()
   class Harbour {
     @Id({ type: Number }) id?: number;
@@ -1105,7 +1110,7 @@ it('refuses a to-one whose foreign key references another entity', () => {
   );
 });
 
-it('refuses references naming one column for a composite key, which needs a column per key', () => {
+it('should refuse references naming one column for a composite key, which needs a column per key', () => {
   @Entity()
   class Locker {
     [idKey]?: 'row' | 'slot';
@@ -1127,7 +1132,7 @@ it('refuses references naming one column for a composite key, which needs a colu
 });
 
 /** Types keep one column to the side of a to-one holding the key; this is the guard for a caller they cannot see. */
-it('refuses references naming one column on a relation that holds no foreign key', () => {
+it('should refuse references naming one column on a relation that holds no foreign key', () => {
   class Dock {
     id?: number;
   }
@@ -1137,7 +1142,8 @@ it('refuses references naming one column on a relation that holds no foreign key
     dockId?: number;
   }
   defineEntity(Ship, { fields: { id: { type: Number, isId: true }, dockId: { type: Number } } });
-  const options = { cardinality: '1m', entity: () => Dock, references: () => 'dockId' } as never;
+  const options = { cardinality: '1m', entity: () => Dock, references: () => 'dockId' };
+  // @ts-expect-error: plain JavaScript
   defineRelation(Ship, 'docks', options);
 
   expect(() => getMeta(Ship)).toThrow(
@@ -1146,7 +1152,7 @@ it('refuses references naming one column on a relation that holds no foreign key
   );
 });
 
-it('a relation a base class declares joins on its foreign key in every entity extending it', () => {
+it('should join a relation a base class declares on its foreign key in every entity extending it', () => {
   @Entity()
   class Region {
     @Id({ type: Number }) id?: number;
@@ -1168,12 +1174,12 @@ it('a relation a base class declares joins on its foreign key in every entity ex
   expect(getMeta(Depot).relations.region?.references).toEqual([{ local: 'regionId', foreign: 'id' }]);
 });
 
-it('auto-registers the built-in softDelete filter from @Field({ softDelete })', () => {
+it('should register the built-in softDelete filter from @Field({ softDelete })', () => {
   const meta = getMeta(MeasureUnit);
   expect(meta.filters?.['softDelete']).toEqual({ where: { deletedAt: null }, default: true });
 });
 
-it('registers @Filter and bulk filters', () => {
+it('should register @Filter and bulk filters', () => {
   @Filter('active', { where: { status: 'active' }, default: false })
   @Entity({ filters: { recent: { where: { status: 'new' } } } })
   class FilteredEntity {
@@ -1187,7 +1193,7 @@ it('registers @Filter and bulk filters', () => {
   expect(meta.filters?.['recent']).toEqual({ where: { status: 'new' } });
 });
 
-it('softDelete is a reserved filter name', () => {
+it('should refuse softDelete as a filter name', () => {
   expect(() => {
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Filter('softDelete', { where: { status: 'bogus' } })
@@ -1207,7 +1213,7 @@ it('softDelete is a reserved filter name', () => {
  * can't resolve (no context, missing tenant id), returning every row instead of none. It has to
  * fail closed, so the combination is rejected at registration rather than at query time.
  */
-it('a security filter cannot opt into skipping when its condition is unresolved', () => {
+it('should refuse a security filter that skips when its condition is unresolved', () => {
   expect(() => {
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @Filter('tenant', { where: () => undefined, security: true, onMissing: 'skip' })
@@ -1221,7 +1227,7 @@ it('a security filter cannot opt into skipping when its condition is unresolved'
 });
 
 /** The last `@Id` wins, and the one it replaces stops being a field altogether. */
-it('a second @Id makes the primary key composite', () => {
+it('should make the primary key composite on a second @Id', () => {
   @Entity()
   class Membership {
     [idKey]?: 'userId' | 'groupId';
@@ -1245,7 +1251,7 @@ it('a second @Id makes the primary key composite', () => {
  * Both sides of a junction contribute one column per key, in their own order. The inverse side swaps
  * the two groups whole; reversing the array would pair a composite's columns crosswise.
  */
-it('a junction pairs every key of both sides, and the inverse side swaps the groups', () => {
+it('should pair every key of both sides in a junction, the inverse side swapping the groups', () => {
   @Entity()
   class Enrolment {
     [idKey]?: 'studentId' | 'courseId';
@@ -1289,7 +1295,7 @@ it('a junction pairs every key of both sides, and the inverse side swaps the gro
 });
 
 /** `mappedBy` names one column, which one key fits: guessing which of several would join wrong rows. */
-it('refuses an inverse relation mapped by a field when the key is composite', () => {
+it('should refuse an inverse relation mapped by a field when the key is composite', () => {
   @Entity()
   class Note {
     @Id({ type: Number }) id?: number;
@@ -1311,7 +1317,7 @@ it('refuses an inverse relation mapped by a field when the key is composite', ()
 });
 
 /** The pair reads the same way round as every other: the parent's own key on the left. */
-it('pairs an inverse relation mapped by a field from the parent side', () => {
+it('should pair an inverse relation mapped by a field from the parent side', () => {
   @Entity()
   class Note {
     @Id({ type: Number }) id?: number;
@@ -1328,7 +1334,7 @@ it('pairs an inverse relation mapped by a field from the parent side', () => {
 });
 
 /** A foreign key to another entity would join this key against that one's, returning unrelated rows. */
-it('refuses an inverse relation mapped by a field referencing another entity', () => {
+it('should refuse an inverse relation mapped by a field referencing another entity', () => {
   @Entity()
   class Reader {
     @Id({ type: Number }) id?: number;
@@ -1350,7 +1356,7 @@ it('refuses an inverse relation mapped by a field referencing another entity', (
   );
 });
 
-it('refuses a to-many joining columns whose foreign key, on the other side, references another entity', () => {
+it('should refuse a to-many joining columns whose foreign key, on the other side, references another entity', () => {
   @Entity()
   class Crew {
     @Id({ type: Number }) id?: number;
@@ -1375,7 +1381,7 @@ it('refuses a to-many joining columns whose foreign key, on the other side, refe
   );
 });
 
-it('refuses an inverse relation mapped by a relation to another entity', () => {
+it('should refuse an inverse relation mapped by a relation to another entity', () => {
   @Entity()
   class Editor {
     @Id({ type: Number }) id?: number;
@@ -1397,7 +1403,7 @@ it('refuses an inverse relation mapped by a relation to another entity', () => {
   );
 });
 
-it('accepts an inverse relation mapped by a field referencing the entity it inherits it from', () => {
+it('should accept an inverse relation mapped by a field referencing the entity it inherits it from', () => {
   @Entity()
   class Shelf {
     @Id({ type: Number }) id?: number;
@@ -1422,13 +1428,13 @@ function getError(run: () => unknown): string {
   try {
     run();
   } catch (error) {
-    return (error as Error).message;
+    return String(error);
   }
   throw new Error('expected a registration error');
 }
 
 /** One column cannot reference a two-column key; the relation decorators make one column per key. */
-it('refuses a plain foreign key pointing at a composite key', () => {
+it('should refuse a plain foreign key pointing at a composite key', () => {
   @Entity()
   class Enrolment {
     [idKey]?: 'studentId' | 'courseId';
@@ -1450,7 +1456,7 @@ it('refuses a plain foreign key pointing at a composite key', () => {
 });
 
 /** Every column of the parent's key, or the ones it did not replace would widen the child's. */
-it('a subclass declaring its own key drops every key of a composite parent', () => {
+it('should drop every key of a composite parent from a subclass declaring its own', () => {
   @Entity()
   class Pair {
     [idKey]?: 'left' | 'right';
@@ -1468,7 +1474,7 @@ it('a subclass declaring its own key drops every key of a composite parent', () 
   expect(getKeys(meta.fields).sort()).toEqual(['id', 'label']);
 });
 
-it('subclass declaring the only @Id inherits the parent fields', () => {
+it('should inherit the parent fields in a subclass declaring the only @Id', () => {
   class IdlessBase {
     @Field({ type: String })
     name?: string;
@@ -1485,7 +1491,7 @@ it('subclass declaring the only @Id inherits the parent fields', () => {
   expect(getKeys(meta.fields).sort()).toEqual(['id', 'name']);
 });
 
-it('subclass inherits parent softDelete field key and filters', () => {
+it("should inherit the parent's softDelete field key and filters in a subclass", () => {
   @Filter('active', { where: { status: 'active' }, default: false })
   @Entity()
   class SoftBase {
@@ -1513,7 +1519,7 @@ it('subclass inherits parent softDelete field key and filters', () => {
  * `extends` is what a minted class cannot say by extending: the base is named in the options, and the
  * merge is the prototype chain's, ancestors included.
  */
-it('extends inherits the fields, relations, hooks and filters of a base and its own base', () => {
+it('should inherit through `extends` the fields, relations, hooks and filters of a base and its own base', () => {
   class Timestamped {
     createdAt?: Date;
     stamp(): void {}
@@ -1550,7 +1556,7 @@ it('extends inherits the fields, relations, hooks and filters of a base and its 
   expect(meta.ids).toEqual(['id']);
 });
 
-it('a base named by extends keeps its own table, and the child what it declares itself', () => {
+it('should keep a base named by extends in its own table, and the child what it declares itself', () => {
   class Auditable {
     id?: number;
     label?: string;
@@ -1580,7 +1586,7 @@ it('a base named by extends keeps its own table, and the child what it declares 
   expect(getMeta(Auditable).name).toBe('auditable');
 });
 
-it('a class that both extends and names a base takes the nearer one', () => {
+it('should take the nearer base for a class that both extends and names one', () => {
   class Named {
     label?: string;
   }
@@ -1604,7 +1610,7 @@ it('a class that both extends and names a base takes the nearer one', () => {
   expect(meta.fields['note']).toMatchObject({ type: String });
 });
 
-it('a junction keeps the relations it declares itself', () => {
+it('should keep the relations a junction declares itself', () => {
   @Entity()
   class Screening {
     @Field({ type: Number, isId: true })
@@ -1641,16 +1647,16 @@ it('a junction keeps the relations it declares itself', () => {
     screenings?: Screening[];
   }
 
-  expect(getMeta(Film).relations.screenings!.references).toEqual([
+  expect(getMeta(Film).relations.screenings?.references).toEqual([
     { local: 'filmId', foreign: 'id' },
     { local: 'screeningId', foreign: 'id' },
   ]);
   const junction = getMeta(FilmScreening);
-  expect(junction.relations.film!.cascade).toBe('delete');
-  expect(junction.relations.notes!.references).toEqual([{ local: 'id', foreign: 'filmScreeningId' }]);
+  expect(junction.relations.film?.cascade).toBe('delete');
+  expect(junction.relations.notes?.references).toEqual([{ local: 'id', foreign: 'filmScreeningId' }]);
 });
 
-it('mappedBy naming an inverse side, so neither side owns the foreign key', () => {
+it('should refuse a mappedBy naming an inverse side, since neither side owns the foreign key', () => {
   @Entity()
   class Passport {
     @Field({ type: Number, isId: true })
@@ -1673,15 +1679,16 @@ it('mappedBy naming an inverse side, so neither side owns the foreign key', () =
 });
 
 /** Types keep the two apart; this is the guard for a caller they cannot see, such as plain JavaScript. */
-it('refuses references on a relation through a junction, whose own columns say how it joins', () => {
+it('should refuse references on a relation through a junction, whose own columns say how it joins', () => {
   class Shelf {}
-  const options = { cardinality: 'mm', entity: () => Shelf, through: () => Shelf, references: () => [] } as never;
+  const options = { cardinality: 'mm', entity: () => Shelf, through: () => Shelf, references: () => [] };
+  // @ts-expect-error: plain JavaScript
   expect(() => defineRelation(Shelf, 'shelves', options)).toThrow(
     "'Shelf.shelves' joins through a junction, whose column referencing each side is the join; 'references' pairs the declaring entity's columns with the target's instead.",
   );
 });
 
-it('a relation with no columns to join on says so', () => {
+it('should say so for a relation with no columns to join on', () => {
   class Terminal {
     id?: number;
   }
@@ -1696,4 +1703,278 @@ it('a relation with no columns to join on says so', () => {
   defineRelation(Gate, 'terminal', { cardinality: 'm1', entity: () => Terminal, references: (gate, terminal) => [] });
 
   expect(() => getMeta(Gate)).toThrow("'Gate.terminal' has no columns to join on.");
+});
+
+/** Stable projection for parity assertions (drops `entity` and the revision counters). */
+function metaCore<E>(
+  entity: Type<E>,
+): Pick<EntityMeta<E>, 'ids' | 'name' | 'fields' | 'relations' | 'indexes' | 'hooks' | 'softDelete' | 'filters'> {
+  const m = getMeta(entity);
+  return {
+    ids: m.ids,
+    name: m.name,
+    fields: m.fields,
+    relations: m.relations,
+    indexes: m.indexes,
+    hooks: m.hooks,
+    softDelete: m.softDelete,
+    filters: m.filters,
+  };
+}
+
+it('should register bulk fields as incremental defineField and defineEntity do', () => {
+  class Incremental {
+    id?: number;
+    title?: string;
+  }
+  defineField(Incremental, 'id', { type: Number, isId: true });
+  defineField(Incremental, 'title', { type: String, nullable: false });
+  defineEntity(Incremental, { name: 'ArticleIncr' });
+
+  class Bulk {
+    id?: number;
+    title?: string;
+  }
+  defineEntity(Bulk, {
+    name: 'ArticleBulk',
+    fields: {
+      id: { type: Number, isId: true },
+      title: { type: String, nullable: false },
+    },
+  });
+
+  expect(metaCore(Incremental).fields).toEqual(metaCore(Bulk).fields);
+  expect(metaCore(Incremental).ids).toEqual(metaCore(Bulk).ids);
+});
+
+it('should register bulk relations and their foreign keys as incremental registration does', () => {
+  class Target {
+    id?: number;
+  }
+  defineEntity(Target, {
+    fields: { id: { type: Number, isId: true } },
+  });
+
+  class Incremental {
+    id?: number;
+    targetId?: number;
+    target?: Target;
+  }
+  defineField(Incremental, 'id', { type: Number, isId: true });
+  defineField(Incremental, 'targetId', { type: Number, references: () => Target });
+  defineRelation(Incremental, 'target', {
+    cardinality: 'm1',
+    entity: () => Target,
+    references: (incremental) => incremental.targetId,
+  });
+  defineEntity(Incremental, { name: 'LinkedRow' });
+
+  class Bulk {
+    id?: number;
+    targetId?: number;
+    target?: Target;
+  }
+  defineEntity(Bulk, {
+    name: 'LinkedRow',
+    fields: {
+      id: { type: Number, isId: true },
+      targetId: { type: Number, references: () => Target },
+    },
+    relations: {
+      target: { cardinality: 'm1', entity: () => Target, references: (bulk) => bulk.targetId },
+    },
+  });
+
+  const a = metaCore(Incremental);
+  const b = metaCore(Bulk);
+
+  const [aId, bId] = [a.fields['id'], b.fields['id']];
+  assertDefined(aId);
+  assertDefined(bId);
+  expect(aId.type).toBe(bId.type);
+  expect(aId.isId).toBe(bId.isId);
+  expect(aId.references).toBeUndefined();
+  expect(bId.references).toBeUndefined();
+
+  expect(a.fields['targetId']?.type).toBe(b.fields['targetId']?.type);
+  expect(a.fields['targetId']?.isId).toBe(b.fields['targetId']?.isId);
+  expect(a.fields['targetId']?.references?.()).toBe(Target);
+  expect(b.fields['targetId']?.references?.()).toBe(Target);
+
+  expect(a.relations['target']?.cardinality).toBe(b.relations['target']?.cardinality);
+  expect(a.relations['target']?.references).toEqual(b.relations['target']?.references);
+  expect(a.relations['target']?.entity?.()).toBe(Target);
+  expect(b.relations['target']?.entity?.()).toBe(Target);
+});
+
+it('should let bulk relations point at an entity shaped differently from the owner', () => {
+  // Each relation's `entity` returns its own target, so one whose fields differ from the owner's
+  // (`id: string` against `id: number`) type-checks.
+  class Author {
+    id?: string;
+  }
+  defineEntity(Author, { fields: { id: { type: String, isId: true } } });
+
+  class Book {
+    id?: number;
+    authorId?: string;
+    author?: Author;
+  }
+  defineEntity(Book, {
+    fields: {
+      id: { type: Number, isId: true },
+      authorId: { references: () => Author },
+    },
+    relations: {
+      author: { cardinality: 'm1', entity: () => Author, references: (book) => book.authorId },
+    },
+  });
+
+  expect(getMeta(Book).relations['author']?.entity?.()).toBe(Author);
+});
+
+it('should register bulk indexes and hooks', () => {
+  class Indexed {
+    id?: number;
+    email?: string;
+    status?: string;
+
+    stampCreatedAt() {}
+    hydrate() {}
+  }
+  defineEntity(Indexed, {
+    fields: {
+      id: { type: Number, isId: true },
+      email: { type: String },
+      status: { type: String },
+    },
+    indexes: [
+      { columns: (indexed) => [indexed.email, indexed.status], name: 'email_status_idx', unique: false },
+      { columns: (indexed) => [indexed.email], include: (indexed) => [indexed.status], unique: true },
+    ],
+    hooks: {
+      beforeInsert: (indexed) => [indexed.stampCreatedAt],
+      afterLoad: (indexed) => [indexed.hydrate],
+    },
+  });
+
+  const m = getMeta(Indexed);
+  expect(m.indexes).toHaveLength(2);
+  expect(m.indexes?.[0]).toMatchObject({
+    columns: [{ column: 'email' }, { column: 'status' }],
+    name: 'email_status_idx',
+    unique: false,
+  });
+  expect(m.indexes?.[1]).toMatchObject({ columns: [{ column: 'email' }], include: ['status'], unique: true });
+  expect(m.hooks?.beforeInsert).toEqual([{ methodName: 'stampCreatedAt' }]);
+  expect(m.hooks?.afterLoad).toEqual([{ methodName: 'hydrate' }]);
+});
+
+it("should inherit a parent's fields when the parent was finalized first", () => {
+  class ParentEntity {
+    id?: number;
+    baseCol?: string;
+  }
+  defineEntity(ParentEntity, {
+    fields: {
+      id: { type: Number, isId: true },
+      baseCol: { type: String },
+    },
+  });
+
+  class ChildEntity extends ParentEntity {
+    childCol?: boolean;
+  }
+  defineEntity(ChildEntity, {
+    fields: {
+      childCol: { type: Boolean },
+    },
+  });
+
+  const m = getMeta(ChildEntity);
+  expect(m.fields['id']?.isId).toBe(true);
+  expect(m.fields['baseCol']?.type).toBe(String);
+  expect(m.fields['childCol']?.type).toBe(Boolean);
+  expect(m.ids).toEqual(['id']);
+});
+
+it('should refuse bulk fields that declare no id', () => {
+  class MissingId {
+    title?: string;
+  }
+  expect(() =>
+    defineEntity(MissingId, {
+      fields: { title: { type: String } },
+    }),
+  ).toThrow(/at least one id field/);
+});
+
+it('should register a bulk isId as defineId does', () => {
+  class A {
+    pk?: string;
+    x?: number;
+  }
+  defineEntity(A, {
+    fields: { pk: { type: String, isId: true }, x: { type: Number } },
+  });
+  class B {
+    pk?: string;
+    x?: number;
+  }
+  defineId(B, 'pk', { type: String });
+  defineField(B, 'x', { type: Number });
+  defineEntity(B, {});
+
+  expect(getMeta(A).ids[0]).toBe('pk');
+  expect(getMeta(B).ids[0]).toBe('pk');
+  expect(getMeta(A).fields).toEqual(getMeta(B).fields);
+});
+
+it('should register bulk filters as incremental defineFilter does', () => {
+  class Incremental {
+    id?: number;
+    status?: string;
+  }
+  defineId(Incremental, 'id', { type: Number });
+  defineField(Incremental, 'status', { type: String });
+  defineFilter(Incremental, 'active', { where: { status: 'active' }, default: false });
+  defineEntity(Incremental, { name: 'TaskIncr' });
+
+  class Bulk {
+    id?: number;
+    status?: string;
+  }
+  defineEntity(Bulk, {
+    name: 'TaskBulk',
+    fields: {
+      id: { type: Number, isId: true },
+      status: { type: String },
+    },
+    filters: {
+      active: { where: { status: 'active' }, default: false },
+    },
+  });
+
+  expect(metaCore(Incremental).filters).toEqual(metaCore(Bulk).filters);
+});
+
+it('should keep the name and schema a first defineEntity set', () => {
+  class Composed {
+    id?: number;
+    title?: string;
+    extra?: string;
+  }
+  defineEntity(Composed, {
+    name: 'composed_rows',
+    schema: 'cms',
+    fields: { id: { type: Number, isId: true }, title: { type: String } },
+  });
+
+  // A later registration adds to the entity; it says nothing about the table, so it retracts nothing.
+  defineEntity(Composed, { fields: { extra: { type: String } } });
+
+  const meta = getMeta(Composed);
+  expect(meta.name).toBe('composed_rows');
+  expect(meta.schema).toBe('cms');
+  expect(Object.keys(meta.fields)).toEqual(['id', 'title', 'extra']);
 });

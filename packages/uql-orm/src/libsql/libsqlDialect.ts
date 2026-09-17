@@ -8,14 +8,7 @@ import type { VectorDistance, VectorMetric } from '../type/index.js';
  * functions, which `TursoDialect` inherits.
  */
 export class LibsqlDialect extends SqliteDialect {
-  /**
-   * libSQL has vector search built in, under its own names, so the sqlite-vec `vec_distance_*`
-   * functions this dialect would otherwise inherit are never present.
-   *
-   * @remarks `inner` and `l1` are left out: `vector_distance_dot` only exists in the newer Rust
-   * engine (see `TursoLocalDialect`) and no libSQL build has an L1 metric. Both raise the same
-   * "does not support vector distance metric" error as any other unsupported metric.
-   */
+  /** libSQL's built-in vector functions; no `inner` (only the Rust engine has it) and no `l1`. */
   override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([
     ['cosine', { fn: 'vector_distance_cos' }],
     ['l2', { fn: 'vector_distance_l2' }],

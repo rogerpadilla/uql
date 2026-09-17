@@ -15,7 +15,6 @@ export function lowerFirst(text: string): string {
 }
 
 export function snakeCase(val: string): string {
-  if (val === null || val === undefined) return val as string;
   if (!val) return '';
   let resp = val.charAt(0).toLowerCase();
   for (let i = 1; i < val.length; ++i) {

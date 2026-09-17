@@ -2,17 +2,12 @@ import { expect } from 'vitest';
 import { PgLikeQuerierIt } from './pgLikeQuerier-test.js';
 
 /**
- * Shared expectations for PostgreSQL proper, whichever driver reaches it: node-`pg`, Bun SQL, and
- * PGlite in process. Everything else Postgres-wire is {@link PgLikeQuerierIt}, which CockroachDB
- * also runs.
- *
- * A driver-specific suite is expected to add nothing but its pool. Postgres is Postgres, so a
- * divergence between two drivers on any of this is a bug in one of them rather than a hook either
- * gets - which is only enforceable while it lives here instead of being restated per driver, as both
- * the `xmax` expectations and the `CREATE EXTENSION` below were, three times each.
+ * Shared expectations for PostgreSQL proper, whichever driver reaches it (node-`pg`, Bun SQL, PGlite);
+ * {@link PgLikeQuerierIt} holds what CockroachDB shares. A driver suite adds its pool and nothing else,
+ * since two drivers disagreeing here is a bug in one of them.
  */
 export abstract class PostgresQuerierIt extends PgLikeQuerierIt {
-  /** pgvector's extension has to exist before the fixture DDL can declare a vector column. */
+  /** pgvector's extension exists before the fixture DDL declares a vector column. */
   override async beforeAll() {
     const querier = await this.pool.getQuerier();
     try {

@@ -28,11 +28,9 @@ export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
   }
 
   async shouldWithQuerierReleaseOnSuccess() {
-    let capturedQuerier: Q | undefined;
-    await this.pool.withQuerier(async (querier) => {
-      capturedQuerier = querier;
-    });
-    // After withQuerier completes, requesting a new querier should work (pool not exhausted)
+    const used = await this.pool.withQuerier(async (querier) => querier);
+    expect(used).toBeInstanceOf(AbstractQuerier);
+    // The pool is not exhausted: another querier is still there to take.
     const nextQuerier = await this.pool.getQuerier();
     expect(nextQuerier).toBeInstanceOf(AbstractQuerier);
     await nextQuerier.release();

@@ -11,6 +11,8 @@ import { MsSqlDialect } from './mssqlDialect.js';
  * differently - the lock, the returning clause, the upsert and the JSON operators - which is the
  * same shape `PgFamilySpec` has for the Postgres family.
  */
+const MSSQL_LOCK_WAITS: Readonly<Record<QueryLockWait, string>> = { block: '', skip: ', READPAST', nowait: ', NOWAIT' };
+
 class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** `N'...'` quoting, and a `BIT` written as an integer. */
   protected override inlineLiterals() {
@@ -60,13 +62,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     },
   };
 
-  /**
-   * A lock is a hint on the table rather than a clause after the page. `of` is unused: the hint
-   * already binds to the table it follows, which is the narrowing `FOR UPDATE OF` spells out.
-   */
-  protected override lockClause(wait: QueryLockWait = 'block', _of?: string): string | undefined {
-    const extra = wait === 'skip' ? ', READPAST' : wait === 'nowait' ? ', NOWAIT' : '';
-    return ` WITH (UPDLOCK, ROWLOCK${extra})`;
+  /** A table hint rather than a clause after the page, already bound to the table it follows, so no target. */
+  protected override lockClause(wait: QueryLockWait = 'block'): string {
+    return ` WITH (UPDLOCK, ROWLOCK${MSSQL_LOCK_WAITS[wait]})`;
   }
 
   override shouldBeValidEscapeCharacter() {
@@ -210,7 +208,8 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   shouldRefuseAJsonSetOfNull() {
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: { $set: { private: null } } } as never),
+        // @ts-expect-error: a JSON key takes no `null`
+        this.dialect.update(ctx, Company, { $where: { id: '1' } }, { kind: { $set: { private: null } } }),
       ),
     ).toThrow('cannot $set');
   }
@@ -332,9 +331,15 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** Outside the types, which give a JSON key no `raw()`: rendered in place rather than bound as an object. */
   shouldSetAJsonKeyToARawExpression() {
     const res = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
-        kind: { $set: { private: raw`1 + ${1}` } },
-      } as never),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        {
+          // @ts-expect-error: a JSON key takes no `raw`
+          kind: { $set: { private: raw`1 + ${1}` } },
+        },
+      ),
     );
     expect(res.sql).toContain("'$.private', 1 + @p1)");
     expect(res.values).toEqual([1, expect.any(Number), '1']);

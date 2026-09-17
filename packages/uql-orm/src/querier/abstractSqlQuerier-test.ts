@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
   Coupon,
@@ -8,11 +9,13 @@ import {
   Invoice,
   ItemAdjustment,
   LedgerAccount,
+  type SpecRequirements,
   TaxCategory,
   TypedGroup,
   TypedRow,
   violateConstraints,
 } from '../test/index.js';
+import type { QuerierPool } from '../type/index.js';
 import { raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
@@ -33,16 +36,29 @@ const EXACT_DECIMAL = '12345678901234500000.99';
 export const FLOATED_DECIMAL = 12345678901234500000;
 
 export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
-  /**
-   * Locking outside a transaction is accepted by every engine and then released as the statement
-   * commits, so it silently does nothing. Only the querier can catch it, and this is the one test
-   * that proves the guard fires against a live connection rather than a mocked dialect.
-   */
+  declare protected pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>;
+
+  requirements(): SpecRequirements<this> {
+    const { rowLocks } = this.pool.dialect.features;
+    // A held lock is only visible to another connection, which a shared-handle pool has not got.
+    const connections = !(this.pool instanceof AbstractSharedHandleQuerierPool);
+    return {
+      shouldRejectLockOutsideTransaction: rowLocks,
+      shouldRejectALockTheEngineLacks: !rowLocks,
+      shouldFindManyAndCountUnderALock: rowLocks,
+      shouldSkipOrRefuseLockedRows: rowLocks && connections,
+    };
+  }
+
+  /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
   async shouldRejectLockOutsideTransaction() {
-    const expected = this.querier.dialect.supportsRowLocks
-      ? 'requires an open transaction'
-      : 'does not support row-level locking';
-    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow(expected);
+    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow('requires an open transaction');
+  }
+
+  async shouldRejectALockTheEngineLacks() {
+    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow(
+      'does not support row-level locking',
+    );
   }
 
   /**
@@ -50,31 +66,22 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    * column, and the Postgres family rejects `FOR UPDATE` alongside a window function outright.
    */
   async shouldFindManyAndCountUnderALock() {
-    if (!this.querier.dialect.supportsRowLocks) {
-      return;
-    }
-    await this.querier.insertOne(LedgerAccount, { name: 'locked-count' });
+    await this.querier.insertMany(LedgerAccount, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
 
     await this.querier.beginTransaction();
     try {
       const [rows, total] = await this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true });
-      expect(rows.length).toBeLessThanOrEqual(2);
-      expect(total).toBeGreaterThanOrEqual(1);
+      expect([rows.length, total]).toEqual([2, 3]);
     } finally {
       await this.querier.rollbackTransaction();
     }
   }
 
   /**
-   * The case the feature exists for: two workers draw from one queue and must not get the same row,
-   * and one that will not wait for a held row is refused as `retryable`. Needs two real connections,
-   * since a lock is only visible to a different transaction: skipped on a shared-handle pool, see
-   * {@link AbstractSharedHandleQuerierPool} for what each engine does instead.
+   * Two workers drawing from one queue never get the same row, and one that will not wait is refused as
+   * `retryable`.
    */
   async shouldSkipOrRefuseLockedRows() {
-    if (!this.querier.dialect.supportsRowLocks || this.pool instanceof AbstractSharedHandleQuerierPool) {
-      return;
-    }
     for (let i = 0; i < 6; i++) {
       await this.querier.insertOne(LedgerAccount, { name: `job-${i}` });
     }
@@ -110,13 +117,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * A read returns the JS types the entity declared, for every dialect.
-   *
-   * The class of bug this exists for is invisible to the compiler and to any mocked test: an engine
-   * stores a declared type in whatever it has (SQLite has no boolean; node-postgres returns BIGINT
-   * as text) and the driver hands that back verbatim, so a field declared `boolean` arrives as `1`
-   * and one declared `number` as `'9'`. Every consumer then computes on it and is quietly wrong.
-   * Two shipped instances were found this way, so the contract is asserted rather than assumed.
+   * A read returns the JS types the entity declared, on every dialect: an engine stores a type in what it
+   * has (SQLite has no boolean, node-postgres returns BIGINT as text), and only a real read shows it.
    */
   async shouldReadBackDeclaredTypes() {
     const id = await this.querier.insertOne(TypedRow, { name: 'typed', count: 7, amount: 12.5, enabled: true });
@@ -125,14 +127,14 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
 
     // The id too: it is BIGINT on every engine here, and the one every consumer indexes by.
-    expect(typeof found!.id).toBe('number');
-    expect(typeof found!.name).toBe('string');
-    expect(typeof found!.count).toBe('number');
-    expect(found!.count).toBe(7);
-    expect(typeof found!.amount).toBe('number');
-    expect(found!.amount).toBe(12.5);
-    expect(typeof found!.enabled).toBe('boolean');
-    expect(found!.enabled).toBe(true);
+    expect(typeof found?.id).toBe('number');
+    expect(typeof found?.name).toBe('string');
+    expect(typeof found?.count).toBe('number');
+    expect(found?.count).toBe(7);
+    expect(typeof found?.amount).toBe('number');
+    expect(found?.amount).toBe(12.5);
+    expect(typeof found?.enabled).toBe('boolean');
+    expect(found?.enabled).toBe(true);
   }
 
   /**
@@ -186,18 +188,14 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * The opt-out from that numeric decoding, for a decimal wider than a JS number can hold.
-   *
-   * `columnType: 'decimal'` still builds a DECIMAL column, but the declared `String` keeps the field
-   * off the numeric path, so the driver's exact text survives. Drizzle and MikroORM both make this
-   * the *default* for a decimal and require opting in to a number; uql decodes by the declaration
-   * instead, which only works as a trade if this way out keeps working.
+   * The opt-out from numeric decoding, for a decimal wider than a JS number: `columnType: 'decimal'`
+   * builds the column, and the declared `String` keeps the driver's exact text.
    */
   async shouldKeepADecimalDeclaredAsStringExact() {
     const id = await this.querier.insertOne(TypedRow, { name: 'exact', exact: EXACT_DECIMAL });
     const found = await this.querier.findOneById(TypedRow, id, { $select: { exact: true } });
 
-    expect(found!.exact).toBe(this.expectedExactDecimal());
+    expect(found?.exact).toBe(this.expectedExactDecimal());
   }
 
   /**
@@ -318,15 +316,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * `firstId` is asserted defined by default (every `'returning'`-ish dialect reports one).
-   * {@link MySqlLikeQuerierIt} overrides to a no-op: MySQL has no `RETURNING`, so a manually
-   * specified (non-auto-increment) PK reports no `firstId` on upsert.
-   */
-  /**
-   * `created` is asserted `undefined` by default: most dialects (SQLite, MariaDB, CockroachDB)
-   * have no reliable insert-vs-update signal for a `RETURNING`-based upsert. Dialects that DO have
-   * one (Postgres's `xmax`, MySQL's `affectedRows` convention) override both of these to assert
-   * `true`/`false` instead.
+   * `created` is `undefined` where an upsert has no insert-or-update signal (SQLite, MariaDB,
+   * CockroachDB); an engine with one (Postgres's `xmax`, MySQL's `affectedRows`) overrides both.
    */
   protected assertUpsertCreatedOnInsert(created: boolean | undefined): void {
     expect(created).toBeUndefined();
@@ -350,7 +341,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(result.changes).toBeGreaterThanOrEqual(2);
 
     const inserted = await this.querier.findOne(Coupon, { $select: { id: true }, $where: { code: 'BRAND-NEW' } });
-    expect(result.ids.map(String)).toEqual([String(inserted!.id), String(existingId)]);
+    expect(result.ids.map(String)).toEqual([String(inserted?.id), String(existingId)]);
   }
 
   /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
@@ -431,7 +422,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
 
     expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
-    expect('number' in found.itemAdjustments![0]).toBe(false);
+    expect(found.itemAdjustments?.[0]).not.toHaveProperty('number');
   }
 
   /** A key left to the database is assigned by it: the shape only a SQL engine can offer. */

@@ -1,5 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { INDEX_TYPES } from '../../schema/types.js';
+import { type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexColumnSchema, IndexSchema, RawRow } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
@@ -41,8 +41,8 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: RawRow[]): boolean {
-    return (results[0]?.['exists'] as boolean) ?? false;
+  protected parseTableExistsResult([row]: RawRow[]): boolean {
+    return row['exists'] === true;
   }
 
   protected getColumnsQuery(_tableName: string): string {
@@ -58,28 +58,25 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.numeric_scale,
         c.is_identity,
         c.identity_generation,
-        COALESCE(
-          (SELECT TRUE FROM information_schema.table_constraints tc
-           JOIN information_schema.key_column_usage kcu
-             ON tc.constraint_name = kcu.constraint_name
-           WHERE tc.table_name = c.table_name
-             AND tc.constraint_type = 'PRIMARY KEY'
-             AND kcu.column_name = c.column_name
-           LIMIT 1),
-          FALSE
+        EXISTS (
+          SELECT 1 FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
+          WHERE tc.table_schema = c.table_schema
+            AND tc.table_name = c.table_name
+            AND tc.constraint_type = 'PRIMARY KEY'
+            AND kcu.column_name = c.column_name
         ) AS is_primary_key,
-        COALESCE(
-          (SELECT TRUE FROM information_schema.table_constraints tc
-           JOIN information_schema.key_column_usage kcu
-             ON tc.constraint_name = kcu.constraint_name
-           WHERE tc.table_name = c.table_name
-             AND tc.constraint_type = 'UNIQUE'
-             AND kcu.column_name = c.column_name
-           LIMIT 1),
-          FALSE
+        EXISTS (
+          SELECT 1 FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
+          WHERE tc.table_schema = c.table_schema
+            AND tc.table_name = c.table_name
+            AND tc.constraint_type = 'UNIQUE'
+          GROUP BY tc.constraint_name
+          HAVING COUNT(*) = 1 AND MIN(kcu.column_name) = c.column_name
         ) AS is_unique,
         pg_catalog.col_description(
-          (SELECT oid FROM pg_catalog.pg_class WHERE relname = c.table_name),
+          (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
           c.ordinal_position
         ) AS column_comment
       FROM information_schema.columns c
@@ -122,7 +119,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
       LEFT JOIN pg_opclass op ON op.oid = ix.indclass[k.n - 1]
       WHERE t.relname = $1
-        AND n.nspname = 'public'
+        AND n.nspname = ${this.schemaExpr}
         AND NOT ix.indisprimary
         AND NOT EXISTS (
           SELECT 1 FROM pg_constraint con
@@ -143,30 +140,29 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    */
   protected readonly constraintIndexTypes: readonly string[] = ['p', 'u', 'x'];
 
+  /** From `pg_constraint`, whose key arrays keep each column paired with the one it references. */
   protected getForeignKeysQuery(_tableName: string): string {
+    const columnsOf = (keys: string, table: string) => /*sql*/ `ARRAY_TO_JSON(ARRAY(
+      SELECT a.attname FROM UNNEST(${keys}) WITH ORDINALITY AS k(attnum, n)
+      JOIN pg_attribute a ON a.attrelid = ${table} AND a.attnum = k.attnum
+      ORDER BY k.n
+    ))`;
     return /*sql*/ `
       SELECT
-        tc.constraint_name,
-        ARRAY_TO_JSON(ARRAY_AGG(kcu.column_name ORDER BY kcu.ordinal_position)) AS columns,
-        ccu.table_name AS referenced_table,
-        ARRAY_TO_JSON(ARRAY_AGG(ccu.column_name ORDER BY kcu.ordinal_position)) AS referenced_columns,
-        rc.delete_rule,
-        rc.update_rule
-      FROM information_schema.table_constraints tc
-      JOIN information_schema.key_column_usage kcu
-        ON tc.constraint_name = kcu.constraint_name
-        AND tc.table_schema = kcu.table_schema
-      JOIN information_schema.constraint_column_usage ccu
-        ON ccu.constraint_name = tc.constraint_name
-        AND ccu.table_schema = tc.table_schema
-      JOIN information_schema.referential_constraints rc
-        ON rc.constraint_name = tc.constraint_name
-        AND rc.constraint_schema = tc.table_schema
-      WHERE tc.constraint_type = 'FOREIGN KEY'
-        AND tc.table_name = $1
-        AND tc.table_schema = ${this.schemaExpr}
-      GROUP BY tc.constraint_name, ccu.table_name, rc.delete_rule, rc.update_rule
-      ORDER BY tc.constraint_name
+        con.conname AS constraint_name,
+        ${columnsOf('con.conkey', 'con.conrelid')} AS columns,
+        ref.relname AS referenced_table,
+        ${columnsOf('con.confkey', 'con.confrelid')} AS referenced_columns,
+        con.confdeltype AS delete_rule,
+        con.confupdtype AS update_rule
+      FROM pg_constraint con
+      JOIN pg_class t ON t.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      JOIN pg_class ref ON ref.oid = con.confrelid
+      WHERE con.contype = 'f'
+        AND t.relname = $1
+        AND n.nspname = ${this.schemaExpr}
+      ORDER BY con.conname
     `;
   }
 
@@ -226,21 +222,14 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapForeignKeysResult(
     _read: TableRowReader,
     _tableName: string,
-    results: {
-      constraint_name: string;
-      columns: string[];
-      referenced_table: string;
-      referenced_columns: string[];
-      delete_rule: string;
-      update_rule: string;
-    }[],
+    results: PostgresForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
     return results.map((row) => ({
       name: row.constraint_name,
       columns: row.columns,
       references: { table: row.referenced_table, columns: row.referenced_columns },
-      onDelete: this.normalizeReferentialAction(row.delete_rule),
-      onUpdate: this.normalizeReferentialAction(row.update_rule),
+      onDelete: FOREIGN_KEY_ACTION_CODES[row.delete_rule],
+      onUpdate: FOREIGN_KEY_ACTION_CODES[row.update_rule],
     }));
   }
 
@@ -255,32 +244,32 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return dataType.toUpperCase();
   }
 
+  /**
+   * Postgres quotes a negative number (`'-3'::integer`); CockroachDB parenthesizes one (`(-3)`) and
+   * writes a quote-bearing string in escape syntax (`e'it\'s'`). Any other cast is dropped, and a
+   * function call (`now()`, `nextval(...)`) is returned as written.
+   */
   protected parseDefaultValue(defaultValue: string | null): unknown {
     if (!defaultValue) {
       return undefined;
     }
-
-    // Remove type casting (e.g., ::text, ::character varying, ::text[])
     const cleaned = defaultValue.replace(/::[a-z_]+(\s+[a-z_]+)?(\[\])?/gi, '').trim();
-
-    if (cleaned.startsWith("'") && cleaned.endsWith("'")) {
-      return cleaned.slice(1, -1);
+    const number = NUMBER_DEFAULT.exec(cleaned) ?? QUOTED_NUMBER_DEFAULT.exec(defaultValue);
+    if (number) {
+      return Number(number[1]);
+    }
+    const quoted = /^'(.*)'$/s.exec(cleaned);
+    if (quoted) {
+      return quoted[1].replaceAll("''", "'");
+    }
+    const escaped = /^e'(.*)'$/s.exec(cleaned);
+    if (escaped) {
+      return escaped[1].replace(/\\(.)/gs, '$1');
     }
     if (cleaned === 'true' || cleaned === 'false') {
       return cleaned === 'true';
     }
-    if (cleaned === 'NULL') {
-      return null;
-    }
-    if (/^-?\d+$/.test(cleaned)) {
-      return Number.parseInt(cleaned, 10);
-    }
-    if (/^-?\d+\.\d+$/.test(cleaned)) {
-      return Number.parseFloat(cleaned);
-    }
-
-    // Return cleaned value for functions like CURRENT_TIMESTAMP, nextval(), etc.
-    return cleaned;
+    return cleaned === 'NULL' ? null : cleaned;
   }
 
   protected isAutoIncrement(columnDefault: string | null, isIdentity: string): boolean {
@@ -292,6 +281,18 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return columnDefault?.includes('nextval(') ?? false;
   }
 }
+
+/** `pg_constraint`'s one-letter spelling of each action. */
+const FOREIGN_KEY_ACTION_CODES = {
+  a: 'NO ACTION',
+  r: 'RESTRICT',
+  c: 'CASCADE',
+  n: 'SET NULL',
+  d: 'SET DEFAULT',
+} as const satisfies Record<string, ForeignKeyAction>;
+
+const NUMBER_DEFAULT = /^\(?(-?\d+(?:\.\d+)?)\)?$/;
+const QUOTED_NUMBER_DEFAULT = /^'(-?\d+(?:\.\d+)?)'::(?:smallint|integer|bigint|numeric|real|double precision)$/;
 
 /**
  * Postgres states every entry in full: a plain column still reports `order: 'asc'`, and only a
@@ -326,6 +327,15 @@ export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
    */
   protected override readonly constraintIndexTypes: readonly string[] = ['p', 'x'];
 }
+
+type PostgresForeignKeyRow = {
+  constraint_name: string;
+  columns: string[];
+  referenced_table: string;
+  referenced_columns: string[];
+  delete_rule: keyof typeof FOREIGN_KEY_ACTION_CODES;
+  update_rule: keyof typeof FOREIGN_KEY_ACTION_CODES;
+};
 
 /** One entry of one index; what the index itself is repeats across its rows. */
 type PostgresIndexRow = {

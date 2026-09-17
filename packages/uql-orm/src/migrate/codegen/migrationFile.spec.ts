@@ -9,7 +9,7 @@ function assertEmittedRunCallParses(sql: string): void {
 }
 
 describe('emitMongoCommandCalls', () => {
-  it('awaits one driver call on the querier per command, as a parseable body', () => {
+  it('should await one driver call on the querier per command, as a parseable body', () => {
     const block = emitMongoCommandCalls([
       '{"action":"createCollection","name":"users"}',
       '{"action":"dropIndex","collection":"users","name":"users__email_idx"}',
@@ -26,7 +26,7 @@ describe('emitMongoCommandCalls', () => {
 });
 
 describe('buildMigrationModule', () => {
-  it('types the migration on the querier it is written against', () => {
+  it('should type the migration on the querier it is written against', () => {
     const source = buildMigrationModule({
       migrationName: 'seed',
       createdAt: new Date('2026-09-12T00:00:00.000Z'),
@@ -40,7 +40,7 @@ describe('buildMigrationModule', () => {
     expect(source).toContain('async down(querier: MongoQuerier): Promise<void> {');
   });
 
-  it('defaults to the SQL querier, with doc extras and emitted run calls', () => {
+  it('should default to the SQL querier, with doc extras and emitted run calls', () => {
     const src = buildMigrationModule({
       migrationName: 'add_foo',
       createdAt: new Date('2026-01-01T00:00:00.000Z'),
@@ -58,7 +58,7 @@ describe('buildMigrationModule', () => {
 });
 
 describe('emitSqlRunCall', () => {
-  it('LibSQL/SQLite backtick identifiers (invalid if embedded in unescaped template literal)', () => {
+  it('should escape LibSQL/SQLite backtick identifiers in the generated template', () => {
     const sql = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);';
     expect(emitSqlRunCall(sql)).toBe(
       '    await querier.run("CREATE TABLE `Article` (\\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\\n  `title` TEXT NOT NULL\\n);");',
@@ -66,13 +66,13 @@ describe('emitSqlRunCall', () => {
     assertEmittedRunCallParses(sql);
   });
 
-  it('emitSqlRunCalls joins one run() line per statement (#87)', () => {
+  it('should emit one run() line per statement', () => {
     expect(emitSqlRunCalls(['SELECT 1;', 'SELECT 2;'])).toBe(
       [emitSqlRunCall('SELECT 1;'), emitSqlRunCall('SELECT 2;')].join('\n'),
     );
   });
 
-  it('emitSqlRunCall per statement: index separate from table (#87 style)', () => {
+  it('should emit an index as a run() call of its own, apart from its table', () => {
     const table = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT\n);';
     const index = 'CREATE INDEX `Article_title_idx` ON `Article` (`title`);';
     const block = emitSqlRunCalls([table, index]);
@@ -81,19 +81,19 @@ describe('emitSqlRunCall', () => {
     expect(() => new vm.Script(`async function _up(querier) {\n${block}\n}`)).not.toThrow();
   });
 
-  it('Postgres-style double-quoted identifiers', () => {
+  it('should keep Postgres double-quoted identifiers', () => {
     const sql = 'ALTER TABLE "users" ADD COLUMN "age" INTEGER;';
     expect(emitSqlRunCall(sql)).toBe('    await querier.run("ALTER TABLE \\"users\\" ADD COLUMN \\"age\\" INTEGER;");');
     assertEmittedRunCallParses(sql);
   });
 
-  it('literal ${ in SQL must not break generated source', () => {
+  it('should keep a literal ${ in SQL from breaking the generated source', () => {
     const sql = "INSERT INTO t VALUES ('${not_template_literal}');";
     expect(emitSqlRunCall(sql)).toBe('    await querier.run("INSERT INTO t VALUES (\'${not_template_literal}\');");');
     assertEmittedRunCallParses(sql);
   });
 
-  it('backslashes and quotes', () => {
+  it('should escape backslashes and quotes', () => {
     const sql = String.raw`SELECT '\\' AS x, "'" AS y;`;
     // Two backslashes inside the JSON string literal -> four `\` in this template source.
     expect(emitSqlRunCall(sql)).toBe(`    await querier.run("SELECT '\\\\\\\\' AS x, \\"'\\" AS y;");`);

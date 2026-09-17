@@ -1,10 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { Entity, Field, Id, Index, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
-import { buildSchemaAST, resolveColumnCanonicalType } from './schemaASTBuilder.js';
+import { buildSchemaAST } from './schemaASTBuilder.js';
 
 // Test entities
 @Entity()
@@ -500,26 +501,104 @@ describe('SchemaASTBuilder', () => {
     it('should keep an include column that names no field as written', () => {
       @Entity()
       // Outside the types, which name a field; a column the entity does not model still reaches the DDL.
-      @Index((covering) => [covering.tenantId], { include: (covering) => [covering['legacy_total' as never]] })
+      // @ts-expect-error: a column the entity does not model
+      @Index((covering) => [covering.tenantId], { include: (covering) => [covering['legacy_total']] })
       class Covering {
         @Id({ type: Number }) id?: number;
         @Field({ type: Number }) tenantId?: number;
       }
-      const [index] = buildSchemaAST([Covering]).getTable('Covering')!.indexes;
+      const table = buildSchemaAST([Covering]).getTable('Covering');
+      assertDefined(table);
+      const [index] = table.indexes;
       expect(index.include).toEqual(['legacy_total']);
     });
 
-    it('should skip indexing non-existent columns from entity', () => {
+    /** A resolver answering differently on each call names a column the table has not got. */
+    it('should skip an index on a column the table has not got', () => {
       @Entity()
-      class BadIndex {
+      class RenamedColumn {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, index: true }) name?: string;
+      }
+
+      let callCount = 0;
+      const ast = buildSchemaAST([RenamedColumn], { resolveColumnName: () => `c${++callCount}` });
+
+      expect(ast.getTable('RenamedColumn')?.indexes).toEqual([]);
+    });
+
+    /** A resolver answering differently on each call looks the relation's table up under another name. */
+    it('should skip a relation whose table it cannot find', () => {
+      @Entity()
+      class Unstable {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => Unstable }) selfId?: number;
+        @ManyToOne({ entity: () => Unstable, references: (unstable) => unstable.selfId }) self?: Unstable;
+      }
+
+      let callCount = 0;
+      const ast = buildSchemaAST([Unstable], { resolveTableName: () => `T${++callCount}` });
+
+      expect(ast.tables.size).toBe(1);
+      expect(ast.relationships).toEqual([]);
+    });
+
+    it('should make an integer key auto-increment unless it says otherwise', () => {
+      @Entity()
+      class AutoInc {
         @Id({ type: Number }) id?: number;
       }
-      const meta = getMeta(BadIndex);
-      const noCol = 'no_col';
-      (meta.fields as Record<string, any>)[noCol] = { index: true, name: noCol, computed: true }; // Inject a field that wasn't properly added
+      @Entity()
+      class NoAutoInc {
+        @Id({ type: Number, autoIncrement: false }) id?: number;
+      }
 
-      const ast = buildSchemaAST([BadIndex]);
-      expect(ast.getTable('BadIndex')?.indexes.length).toBe(0);
+      const ast = buildSchemaAST([AutoInc, NoAutoInc]);
+
+      expect(ast.getTable('AutoInc')?.columns.get('id')?.isAutoIncrement).toBe(true);
+      expect(ast.getTable('NoAutoInc')?.columns.get('id')?.isAutoIncrement).toBe(false);
+    });
+
+    it('should name an index declared as `true` after its table and column', () => {
+      @Entity()
+      class DefaultIndex {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, index: true }) name?: string;
+      }
+
+      expect(buildSchemaAST([DefaultIndex]).getTable('DefaultIndex')?.indexes[0].name).toBe('DefaultIndex__name_idx');
+    });
+
+    it('should relate a to-one through the column its references name, to the key of its target', () => {
+      @Entity()
+      class Target {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class Source {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) targetId?: number;
+        @ManyToOne({ entity: () => Target, references: (source) => source.targetId }) target?: Target;
+      }
+      @Entity()
+      class Member {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) groupIdKey?: number;
+        @ManyToOne({
+          entity: () => Target,
+          references: (member, target) => [{ local: member.groupIdKey, foreign: target.id }],
+        })
+        group?: Target;
+      }
+
+      const ast = buildSchemaAST([Target, Source, Member]);
+      const columnsOf = (table: string) =>
+        ast.relationships
+          .filter((rel) => rel.from.table.name === table)
+          .map((rel) => [rel.from.columns[0].name, rel.to.columns[0].name]);
+
+      expect(columnsOf('Source')).toEqual([['targetId', 'id']]);
+      expect(columnsOf('Member')).toEqual([['groupIdKey', 'id']]);
     });
 
     it('should use custom index name from entity', () => {

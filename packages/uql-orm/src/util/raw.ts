@@ -14,29 +14,9 @@ import {
 import { isInlinedExpression } from './field.util.js';
 
 /**
- * Create a raw SQL expression.
- *
- * As a tagged template the literal text is emitted as written and every interpolation is resolved by
- * what it is, so a value cannot become SQL whatever it holds:
- *
- * | Interpolated        | Becomes                                |
- * | :------------------ | :------------------------------------- |
- * | any value           | a bound parameter; in DDL, its literal |
- * | a {@link ColumnRef} | its column, escaped and qualified      |
- * | a {@link QueryRaw}  | that fragment, in place                |
- *
- * ```ts
- * const user = refs(User);
- * raw`GREATEST(0, ${user.creditsAllowance} - ${amount})`
- * raw`CONCAT(${user.firstName}, ' ', ${user.lastName})`
- * raw`LOG10(${points})`.as('score')
- * ```
- *
- * The callback form remains for SQL a template cannot express, such as a sub-query generated through
- * `dialect.find(...)`.
- *
- * **⚠️ Security:** the tag is safe because it binds; a callback is not, since it emits whatever it
- * writes, so never build one from user input. Inside a callback, bind with `ctx.addValue()`.
+ * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `raw` renders
+ * in place: `raw`GREATEST(0, ${user.credits} - ${amount})``. A callback writes whatever it writes, so
+ * never build one from user input. See the Raw SQL guide.
  */
 export function raw(strings: TemplateStringsArray, ...values: readonly unknown[]): QueryRaw;
 export function raw(value: QueryRawFn): QueryRaw;

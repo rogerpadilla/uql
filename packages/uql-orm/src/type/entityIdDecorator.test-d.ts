@@ -1,51 +1,47 @@
 /**
- * Type-level regression tests for what `@Id` refuses: a key the type level cannot name. Where no
- * conventional name and no `idKey` brand applies, `IdKey` falls back to every field, and `IdValue`,
- * `EntityId` and every by-id method are then typed against a column that is not the key - silently,
- * until this check. The precedence itself is pinned in `entityId.test-d.ts`.
- *
- * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, left out of the build.
+ * What `@Id` refuses: a key the type level cannot name, since `IdKey` would fall back to every field and
+ * type every by-id method against the wrong column. The precedence is in `entityId.test-d.ts`.
  */
 import { Field, Id, idKey } from '../index.js';
 
 // A conventional name is enough: `id`, `_id` and `uuid` are the names `IdKey` reads without help.
-class WithId {
+export class WithId {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) name?: string;
 }
 
-class WithMongoId {
+export class WithMongoId {
   @Id({ type: String }) _id?: string;
   @Field({ type: String }) name?: string;
 }
 
-class WithUuid {
+export class WithUuid {
   @Id({ type: String }) uuid?: string;
   @Field({ type: String }) name?: string;
 }
 
 // Any other name is named by the brand.
-class Branded {
+export class Branded {
   [idKey]?: 'pk';
   @Id({ type: Number }) pk?: number;
   @Field({ type: String }) name?: string;
 }
 
-class Unbranded {
+export class Unbranded {
   // @ts-expect-error `pk` is not a name `IdKey` reads, so the key needs the `idKey` brand
   @Id({ type: Number }) pk?: number;
   @Field({ type: String }) name?: string;
 }
 
 // A composite is never conventional: two keys can only be named by the brand.
-class CompositeBranded {
+export class CompositeBranded {
   [idKey]?: 'studentId' | 'courseId';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: String }) courseId?: string;
   @Field({ type: String }) grade?: string;
 }
 
-class CompositeUnbranded {
+export class CompositeUnbranded {
   // @ts-expect-error the brand has to name both keys
   @Id({ type: Number }) studentId?: number;
   // @ts-expect-error the brand has to name both keys
@@ -58,7 +54,7 @@ class Base {
   @Id({ type: String }) id?: string;
 }
 
-class Replaced extends Base {
+export class Replaced extends Base {
   [idKey]?: 'pk';
   @Id({ type: String }) pk?: string;
 }

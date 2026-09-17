@@ -52,18 +52,21 @@ const cases: ProjectionCase[] = [
   },
 ];
 
-it.each(cases)('projection parity: $name', ({ query, sqlIncludes, sqlExcludes, mongoProjection }) => {
-  const pg = new PostgresDialect();
-  const ctx = pg.createContext();
-  pg.find(ctx, User, query);
-  for (const token of sqlIncludes) {
-    expect(ctx.sql).toContain(token);
-  }
-  for (const token of sqlExcludes) {
-    expect(ctx.sql).not.toContain(token);
-  }
+it.each(cases)(
+  'should project the same on both engines: $name',
+  ({ query, sqlIncludes, sqlExcludes, mongoProjection }) => {
+    const pg = new PostgresDialect();
+    const ctx = pg.createContext();
+    pg.find(ctx, User, query);
+    for (const token of sqlIncludes) {
+      expect(ctx.sql).toContain(token);
+    }
+    for (const token of sqlExcludes) {
+      expect(ctx.sql).not.toContain(token);
+    }
 
-  const mongo = new MongoDialect();
-  const select = mongo.select(User, query.$select, query.$exclude);
-  expect(select).toEqual(mongoProjection);
-});
+    const mongo = new MongoDialect();
+    const select = mongo.select(User, query.$select, query.$exclude);
+    expect(select).toEqual(mongoProjection);
+  },
+);

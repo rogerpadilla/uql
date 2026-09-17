@@ -12,14 +12,14 @@ describe('cli-config', () => {
     } catch {}
   });
 
-  it('loadConfig should load config from uql.config.js', async () => {
+  it('should load config from uql.config.js', async () => {
     const configContent = 'export default { pool: { dialect: { dialectName: "sqlite" } } }';
     await fs.writeFile(configPath, configContent);
     const config = await loadConfig();
     expect(config.pool.dialect.dialectName).toBe('sqlite');
   });
 
-  it('loadConfig should load a TypeScript config when the runtime can transpile it', async () => {
+  it('should load a TypeScript config when the runtime can transpile it', async () => {
     const tsConfigPath = path.resolve(process.cwd(), 'uql.config.ts');
     const configContent = /** ts */ `
       export default {
@@ -36,7 +36,7 @@ describe('cli-config', () => {
     }
   });
 
-  it('loadConfig should load config from custom path', async () => {
+  it('should load config from a custom path', async () => {
     const customConfigPath = path.resolve(process.cwd(), 'custom-uql.config.js');
     const configContent = 'export default { pool: { dialect: { dialectName: "mysql" } } }';
     try {
@@ -48,7 +48,7 @@ describe('cli-config', () => {
     }
   });
 
-  it('loadConfig should throw if no config found', async () => {
+  it('should throw where no config is found', async () => {
     // Ensure no config file exists
     const configFiles = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
     for (const file of configFiles) {
@@ -60,7 +60,7 @@ describe('cli-config', () => {
     await expect(loadConfig()).rejects.toThrow('Could not find uql configuration file');
   });
 
-  it('loadConfig should name a config that fails to import', async () => {
+  it('should name a config that fails to import', async () => {
     const brokenPath = path.resolve(process.cwd(), 'broken-uql.config.js');
     try {
       await fs.writeFile(brokenPath, 'export default {');
@@ -72,7 +72,7 @@ describe('cli-config', () => {
     }
   });
 
-  it('loadConfig should read a config with no default export as the module itself', async () => {
+  it('should read a config with no default export as the module itself', async () => {
     const namedPath = path.resolve(process.cwd(), 'named-uql.config.js');
     try {
       await fs.writeFile(namedPath, 'export const pool = { dialect: { dialectName: "sqlite" } };');
@@ -83,7 +83,7 @@ describe('cli-config', () => {
     }
   });
 
-  it('loadConfig should throw if custom config path not found', async () => {
+  it('should throw where a custom config path is not found', async () => {
     await expect(loadConfig('non-existent.config.js')).rejects.toThrow(
       'Could not find uql configuration file at non-existent.config.js',
     );

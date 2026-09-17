@@ -1,7 +1,7 @@
-import { expect } from 'vitest';
+import { expect, vi } from 'vitest';
 import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { createMockQuerierPool, createSpec } from '../../test/index.js';
+import { createMockQuerier, createMockQuerierPool, createSpec } from '../../test/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -25,9 +25,8 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   }
 
   /**
-   * `PRAGMA index_info` names an expression entry `null`, which used to reach the diff as a column
-   * called `null`. SQLite reports no expression text (only `sqlite_master.sql` has it), so such an
-   * index is left out rather than described wrongly.
+   * `PRAGMA index_info` names an expression entry `null`, and only `sqlite_master.sql` holds its text,
+   * so such an index is left out rather than reported over a column called `null`.
    */
   async shouldSkipAnExpressionIndexRatherThanNameItNull() {
     const querier = await this.pool.getQuerier();
@@ -46,30 +45,24 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     }
   }
 
-  /**
-   * Describing one table needs `table_info` for its columns, `table_info` again for its primary key, and
-   * `index_list`/`index_info` for both its indexes and its single-column unique constraints. Each of
-   * those statements is sent once - on D1 and Turso every one is an HTTP round trip.
-   */
+  /** Columns and key both read `table_info`, indexes and uniqueness both walk `index_list`: each is sent once. */
   async shouldSendEachIntrospectionStatementOnce() {
     const querier = await this.pool.getQuerier();
-    const sent: string[] = [];
-    const all = querier.all.bind(querier);
-    querier.all = ((sql: string, params?: unknown[]) => {
-      sent.push(sql);
-      return all(sql, params);
-    }) as typeof querier.all;
+    const all = vi.spyOn(querier, 'all');
+    const pool = createMockQuerierPool(this.pool.dialect, async () => querier);
 
-    try {
-      // A real pool over the instrumented querier: spreading `this.pool` dropped the prototype, so the
-      // introspector's `withQuerier` was not there. The pool releases what it hands out.
-      const pool = createMockQuerierPool(this.pool.dialect, async () => querier);
-      await new SqliteSchemaIntrospector(pool).getTableSchema(INTROSPECT_TABLES.A);
+    await new SqliteSchemaIntrospector(pool).getTableSchema(INTROSPECT_TABLES.A);
 
-      expect(sent.length).toBe(new Set(sent).size);
-    } finally {
-      querier.all = all;
-    }
+    const sent = all.mock.calls.map(([sql]) => sql);
+    expect(sent.length).toBe(new Set(sent).size);
+  }
+
+  async shouldRefuseAPoolWhoseQuerierIsNotSql() {
+    const pool = createMockQuerierPool(this.pool.dialect, async () => createMockQuerier());
+
+    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(
+      'SqliteSchemaIntrospector requires a SQL-based querier',
+    );
   }
 
   async shouldIntrospectTextDefault() {
@@ -96,10 +89,74 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     expect(createdAtCol.defaultValue).toBe('CURRENT_TIMESTAMP');
   }
 
-  async shouldHandleTableWithNoForeignKeys() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
+  /** A boolean is stored as 0/1, so `TRUE`/`FALSE` read back as those numbers. */
+  async shouldReadEveryDefaultSpelling() {
+    const schema = await this.probe('probe_defaults', (querier, table) =>
+      querier.run(/*sql*/ `
+        CREATE TABLE ${table} (
+          blank TEXT DEFAULT NULL, today TEXT DEFAULT CURRENT_DATE, word TEXT DEFAULT 'x',
+          quoted TEXT DEFAULT 'it''s', negative INTEGER DEFAULT -3, fraction REAL DEFAULT 1.5,
+          truthy INTEGER DEFAULT TRUE, falsy INTEGER DEFAULT false, computed TEXT DEFAULT (lower('Y')), bare TEXT
+        )
+      `),
+    );
 
-    expect(schema.foreignKeys).toEqual([]);
+    expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
+      blank: null,
+      today: 'CURRENT_DATE',
+      word: 'x',
+      quoted: "it's",
+      negative: -3,
+      fraction: 1.5,
+      truthy: 1,
+      falsy: 0,
+      computed: "lower('Y')",
+      bare: undefined,
+    });
+  }
+
+  async shouldReadADeclaredTypeWithoutItsLength() {
+    const schema = await this.probe('probe_types', (querier, table) =>
+      querier.run(`CREATE TABLE ${table} (untyped, code VARCHAR(12))`),
+    );
+
+    expect(schema.columns.map(({ name, type, length }) => ({ name, type, length }))).toEqual([
+      { name: 'untyped', type: '', length: undefined },
+      { name: 'code', type: 'VARCHAR', length: 12 },
+    ]);
+  }
+
+  /** The key's own index is not reported, a composite `UNIQUE` is, and only a sole column is `isUnique`. */
+  async shouldReportTheIndexesATableDeclares() {
+    const schema = await this.probe('probe_indexes', async (querier, table) => {
+      await querier.run(`CREATE TABLE ${table} (code TEXT PRIMARY KEY, v TEXT, w TEXT UNIQUE, UNIQUE (v, w))`);
+      await querier.run(`CREATE INDEX probe_indexes_v_idx ON ${table} (v)`);
+    });
+
+    expect(schema.indexes).toEqual([
+      { name: 'probe_indexes_v_idx', entries: [{ column: 'v' }], unique: false },
+      { name: 'sqlite_autoindex_probe_indexes_3', entries: [{ column: 'v' }, { column: 'w' }], unique: true },
+    ]);
+    expect(schema.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
+      { name: 'code', isUnique: false },
+      { name: 'v', isUnique: false },
+      { name: 'w', isUnique: true },
+    ]);
+  }
+
+  async shouldDeriveAForeignKeyNameFromItsColumns() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
+
+    expect(this.getForeignKey(schema, 'a_id').name).toBe(`${INTROSPECT_TABLES.B}__a_id_fk`);
+  }
+
+  async shouldReadATableWhoseNameNeedsEscaping() {
+    const table = 'probe`quoted';
+    const schema = await this.probe(table, (querier, escapedTable) =>
+      querier.run(`CREATE TABLE ${escapedTable} (id INTEGER PRIMARY KEY)`),
+    );
+
+    expect(schema).toMatchObject({ name: table, primaryKey: ['id'] });
   }
 }
 

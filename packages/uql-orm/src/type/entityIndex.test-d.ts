@@ -1,13 +1,7 @@
 /**
- * Type-level regression tests for `@Index` options.
- *
- * Vector index types must declare their `distance`: omitting it silently changes the generated DDL
- * (MariaDB's `DISTANCE=` defaults to euclidean, so a cosine query full-scans; pgvector has no
- * default operator class). MongoDB's `vectorSearch` is exempt - its generator emits no metric.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * `@Index` options: a vector index declares its `distance`, since the engines default it differently
+ * (MariaDB to euclidean, pgvector to none); MongoDB's `vectorSearch` emits no metric and is exempt.
+ * Type-checked by `bun run ts` only.
  */
 import { Entity, Field, Id, Index, type Json, ManyToOne } from '../index.js';
 import { raw } from '../util/index.js';

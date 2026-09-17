@@ -5,18 +5,18 @@ import { parseQueryParams, stringifyQuery } from './query.js';
 
 describe('parseQueryParams rejections', () => {
   /** A row lock outlives the request that asked for it over HTTP, so it is refused rather than dropped. */
-  it('refuses a $lock', () => {
+  it('should refuse a $lock', () => {
     expect(() => parseQueryParams({ $lock: 'true' })).toThrow("'$lock' is not supported over HTTP");
   });
 });
 
 describe('parseQueryParams', () => {
-  it('empty', () => {
+  it('should parse an empty query string', () => {
     expect(parseQueryParams()).toEqual({ $where: {} });
     expect(parseQueryParams({})).toEqual({ $where: {} });
   });
 
-  it('stringified', () => {
+  it('should parse stringified params', () => {
     const queryStr = {
       $select: '{ "id": true, "name": true }',
       $populate: '{ "measureUnit": true, "tax": true }',
@@ -44,7 +44,7 @@ describe('parseQueryParams', () => {
     expect(parseQueryParams(queryStr)).toEqual(query);
   });
 
-  it('already parsed', () => {
+  it('should keep params already parsed', () => {
     const query = {
       $select: { id: true, name: true },
       $where: { name: 'lorem' },
@@ -55,98 +55,98 @@ describe('parseQueryParams', () => {
     expect(parseQueryParams(query)).toEqual(query);
   });
 
-  it('does not mutate the input', () => {
+  it('should do not mutate the input', () => {
     const params = { $where: '{"name":"lorem"}' };
     parseQueryParams(params);
     expect(params.$where).toBe('{"name":"lorem"}');
   });
 
   describe('prototype pollution defense', () => {
-    it('rejects __proto__ pollution via $where', () => {
+    it('should reject __proto__ pollution via $where', () => {
       const query = parseQueryParams({ $where: '{"__proto__": {"polluted": true}}' });
-      expect({} as Record<string, unknown>).not.toHaveProperty('polluted');
+      expect({}).not.toHaveProperty('polluted');
       // __proto__ stays an own entry of the parsed object instead of poisoning the prototype
-      expect(Object.entries(query.$where as Record<string, unknown>)).toContainEqual(['__proto__', { polluted: true }]);
+      expect(Object.entries(query.$where ?? {})).toContainEqual(['__proto__', { polluted: true }]);
     });
 
-    it('rejects __proto__ pollution via $select', () => {
+    it('should reject __proto__ pollution via $select', () => {
       parseQueryParams({ $select: '{"__proto__": {"polluted2": true}}' });
-      expect({} as Record<string, unknown>).not.toHaveProperty('polluted2');
+      expect({}).not.toHaveProperty('polluted2');
     });
 
-    it('rejects __proto__ pollution via $exclude', () => {
+    it('should reject __proto__ pollution via $exclude', () => {
       parseQueryParams({ $exclude: '{"__proto__": {"polluted3": true}}' });
-      expect({} as Record<string, unknown>).not.toHaveProperty('polluted3');
+      expect({}).not.toHaveProperty('polluted3');
     });
 
-    it('rejects constructor.prototype pollution via $populate', () => {
+    it('should reject constructor.prototype pollution via $populate', () => {
       parseQueryParams({ $populate: '{"constructor": {"prototype": {"polluted4": true}}}' });
-      expect({} as Record<string, unknown>).not.toHaveProperty('polluted4');
+      expect({}).not.toHaveProperty('polluted4');
     });
   });
 
   describe('number coercion defense', () => {
-    it('coerces valid numeric strings for $skip', () => {
+    it('should coerce valid numeric strings for $skip', () => {
       expect(parseQueryParams({ $skip: '42' }).$skip).toBe(42);
     });
 
-    it('coerces NaN for non-numeric $skip', () => {
+    it('should coerce NaN for non-numeric $skip', () => {
       expect(parseQueryParams({ $skip: 'abc' }).$skip).toBeNaN();
     });
 
-    it('coerces valid numeric strings for $limit', () => {
+    it('should coerce valid numeric strings for $limit', () => {
       expect(parseQueryParams({ $limit: '100' }).$limit).toBe(100);
     });
 
-    it('coerces NaN for non-numeric $limit', () => {
+    it('should coerce NaN for non-numeric $limit', () => {
       expect(parseQueryParams({ $limit: 'DROP TABLE' }).$limit).toBeNaN();
     });
 
     // `$candidates` is spelled into a `SET`, not bound, so the wire has to hand the dialect a number
     // for its own check to mean anything. Unlike `$lock`, it is allowed over HTTP.
-    it('coerces valid numeric strings for $candidates', () => {
+    it('should coerce valid numeric strings for $candidates', () => {
       expect(parseQueryParams({ $candidates: '200' }).$candidates).toBe(200);
     });
 
-    it('coerces NaN for non-numeric $candidates', () => {
+    it('should coerce NaN for non-numeric $candidates', () => {
       expect(parseQueryParams({ $candidates: '1; DROP TABLE users' }).$candidates).toBeNaN();
     });
   });
 
   describe('boolean coercion defense', () => {
-    it('honors $distinct from the wire', () => {
+    it('should honor $distinct from the wire', () => {
       expect(parseQueryParams({ $distinct: 'true' })).toEqual({ $where: {}, $distinct: true });
       expect(parseQueryParams({ $distinct: true })).toEqual({ $where: {}, $distinct: true });
     });
 
-    it("reads 'false' as false, not as a non-empty string", () => {
+    it("should read 'false' as false, not as a non-empty string", () => {
       expect(parseQueryParams({ $distinct: 'false' })).toEqual({ $where: {}, $distinct: false });
     });
   });
 
-  it('throws a 400-status error on malformed JSON', () => {
+  it('should throw a 400-status error on malformed JSON', () => {
     expect(() => parseQueryParams({ $where: '{bad' })).toThrow(
       expect.objectContaining({ message: "invalid JSON in '$where'", status: 400 }),
     );
   });
 
-  it('throws a 400-status error on a $where that is not a map', () => {
+  it('should throw a 400-status error on a $where that is not a map', () => {
     expect(() => parseQueryParams({ $where: '[1, 2]' })).toThrow(
       expect.objectContaining({ message: "'$where' must be a JSON object", status: 400 }),
     );
     expect(() => parseQueryParams({ $where: '5' })).toThrow(expect.objectContaining({ status: 400 }));
   });
 
-  it('drops unknown query keys (allowlist) so clients cannot inject filters/context', () => {
-    const query = parseQueryParams({ $customKey: 'value', filters: 'false', context: '{}' }) as Record<string, unknown>;
-    expect(query['$customKey']).toBeUndefined();
-    expect(query['filters']).toBeUndefined();
-    expect(query['context']).toBeUndefined();
+  it('should drop unknown query keys (allowlist) so clients cannot inject filters/context', () => {
+    const query = parseQueryParams({ $customKey: 'value', filters: 'false', context: '{}' });
+    expect(query).not.toHaveProperty('$customKey');
+    expect(query).not.toHaveProperty('filters');
+    expect(query).not.toHaveProperty('context');
   });
 });
 
 describe('stringifyQuery', () => {
-  it('empty', () => {
+  it('should stringify an empty query', () => {
     expect(stringifyQuery(undefined)).toBe('');
     expect(stringifyQuery({})).toBe('');
     expect(stringifyQuery({ $sort: undefined })).toBe('');
@@ -154,7 +154,7 @@ describe('stringifyQuery', () => {
     expect(stringifyQuery(source)).toBe('');
   });
 
-  it('serializes objects as JSON and scalars as-is, percent-encoded', () => {
+  it('should serialize objects as JSON and scalars as-is, percent-encoded', () => {
     const source: Query<Item> = {
       $select: { id: 1, name: 1 },
       $populate: { tax: true, measureUnit: { $select: { id: 1, name: 1, categoryId: 1 } } },
@@ -173,12 +173,12 @@ describe('stringifyQuery', () => {
     });
   });
 
-  it('stringifies null and numbers like the raw values', () => {
+  it('should stringify null and numbers like the raw values', () => {
     expect(stringifyQuery({ $limit: 10 })).toBe('?%24limit=10');
     expect(stringifyQuery({ key: null })).toBe('?key=null');
   });
 
-  it('encodes values containing querystring delimiters', () => {
+  it('should encode values containing querystring delimiters', () => {
     const source = { $where: { name: 'a&b=c?d' } };
     const qs = stringifyQuery(source);
     const entries = Object.fromEntries(new URLSearchParams(qs.slice(1)));
@@ -190,7 +190,7 @@ describe('round trip', () => {
   const roundTrip = (source: Record<string, unknown>) =>
     parseQueryParams(Object.fromEntries(new URLSearchParams(stringifyQuery(source).slice(1))));
 
-  it('parse(stringify(q)) preserves the query', () => {
+  it('should preserve a query through parse(stringify(q))', () => {
     const source = {
       $select: { id: true, name: true },
       $where: { name: 'lorem ipsum', companyId: '40' },
@@ -201,12 +201,12 @@ describe('round trip', () => {
     expect(roundTrip(source)).toEqual(source);
   });
 
-  it('survives special characters in values', () => {
+  it('should survive special characters in values', () => {
     const source = { $where: { name: 'a&b=c?d+e "quoted"' } };
     expect(roundTrip(source)).toEqual(source);
   });
 
-  it('defaults $where when absent', () => {
+  it('should default $where when absent', () => {
     expect(roundTrip({ $limit: 5 })).toEqual({ $limit: 5, $where: {} });
   });
 });

@@ -17,15 +17,12 @@ import { applyMembers } from '../metadata/definition.js';
 import { drainRegistrations, memberRegistrations } from './bag.js';
 
 /**
- * End-to-end checks for the TC39 decorator path, on the cases that would otherwise fail silently.
- *
- * The important one is inheritance. Member decorators get no class reference under the standard spec,
- * so members are recorded on `context.metadata` and drained by the class decorator. tsc and esbuild
- * prototype-chain a subclass's metadata to its parent's, SWC does not, so uql resolves inheritance by
- * walking the *class* prototype chain instead. These assertions are what keep it that way.
+ * The TC39 decorator path, on the cases that would fail silently. Member decorators record on
+ * `context.metadata` for the class decorator to drain, and inheritance is resolved through the class
+ * prototype chain, since SWC does not chain a subclass's metadata to its parent's.
  */
 describe('standard decorators', () => {
-  it('registers fields, the id and the entity name', () => {
+  it('should register fields, the id and the entity name', () => {
     @Entity()
     class Basic {
       @Id({ type: Number }) id?: number;
@@ -37,10 +34,10 @@ describe('standard decorators', () => {
     expect(meta.ids.length).toBe(1);
     expect(meta.ids[0]).toBe('id');
     expect(Object.keys(meta.fields)).toEqual(['id', 'title']);
-    expect(meta.fields['title']!.type).toBe(String);
+    expect(meta.fields['title']?.type).toBe(String);
   });
 
-  it('inherits fields from an undecorated abstract base, parent fields first', () => {
+  it('should inherit fields from an undecorated abstract base, parent fields first', () => {
     abstract class Base {
       @Id({ type: Number }) id?: number;
       @Field({ type: Date }) createdAt?: Date;
@@ -57,7 +54,7 @@ describe('standard decorators', () => {
     expect(meta.ids[0]).toBe('id');
   });
 
-  it('keeps sibling subclasses of one base independent', () => {
+  it('should keep sibling subclasses of one base independent', () => {
     abstract class Shared {
       @Id({ type: Number }) id?: number;
     }
@@ -77,7 +74,7 @@ describe('standard decorators', () => {
     expect(Object.keys(getMeta(Right).fields)).toEqual(['id', 'rightOnly']);
   });
 
-  it('registers an inherited hook exactly once', () => {
+  it('should register an inherited hook exactly once', () => {
     abstract class HookedBase {
       @Id({ type: Number }) id?: number;
 
@@ -94,7 +91,7 @@ describe('standard decorators', () => {
     expect(getMeta(HookedChild).hooks?.beforeInsert).toEqual([{ methodName: 'stamp' }]);
   });
 
-  it('registers relations from the entity getter', () => {
+  it('should register relations from the entity getter', () => {
     @Entity()
     class Owner {
       @Id({ type: Number }) id?: number;
@@ -108,12 +105,12 @@ describe('standard decorators', () => {
       @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
     }
 
-    expect(getMeta(Owned).relations['owner']!.entity!()).toBe(Owner);
-    expect(getMeta(Owned).relations['owner']!.cardinality).toBe('m1');
-    expect(getMeta(Owner).relations['owned']!.cardinality).toBe('1m');
+    expect(getMeta(Owned).relations['owner']?.entity?.()).toBe(Owner);
+    expect(getMeta(Owned).relations['owner']?.cardinality).toBe('m1');
+    expect(getMeta(Owner).relations['owned']?.cardinality).toBe('1m');
   });
 
-  it('applies @Index stacked above @Entity', () => {
+  it('should apply @Index stacked above @Entity', () => {
     @Index((indexed) => [indexed.title], { unique: true })
     @Entity()
     class Indexed {
@@ -126,20 +123,15 @@ describe('standard decorators', () => {
   });
 
   /**
-   * The portability guarantee, tested directly rather than through a transformer.
-   *
-   * tsc, esbuild, Babel and Bun all prototype-chain a subclass's `context.metadata` to its parent's;
-   * SWC alone does not. Both of this repo's suites run on chaining transformers, so an implementation
-   * that secretly read through the chain would still pass every other test here. This builds the
-   * unchained shape SWC emits and asserts inheritance resolves anyway, through the class prototype
-   * chain that every transformer agrees on.
+   * The unchained metadata SWC emits, built by hand: both suites here run on transformers that chain it,
+   * so this is the one case showing inheritance resolves through the class prototype chain alone.
    */
-  it('resolves inheritance with no metadata prototype chain', () => {
+  it('should resolve inheritance with no metadata prototype chain', () => {
     class Base {}
     class Child extends Base {}
 
-    const baseMetadata = Object.create(null) as DecoratorMetadata;
-    const childMetadata = Object.create(null) as DecoratorMetadata;
+    const baseMetadata: DecoratorMetadata = Object.create(null);
+    const childMetadata: DecoratorMetadata = Object.create(null);
     expect(Object.getPrototypeOf(childMetadata)).toBeNull();
 
     memberRegistrations(baseMetadata).fields['id'] = { type: Number, isId: true };
@@ -157,14 +149,14 @@ describe('standard decorators', () => {
 
   // The compile-time guard is covered by `type/entityOptions.test-d.ts`; this is the runtime backstop
   // for callers reaching `defineField` from plain JavaScript, where no such guard exists.
-  it('refuses a field with no type and nothing to resolve one from', () => {
+  it('should refuse a field with no type and nothing to resolve one from', () => {
     class Untyped {
       mystery?: string;
     }
     expect(() => defineField(Untyped, 'mystery', {})).toThrow(/needs a 'type'/);
   });
 
-  it('refuses a relation with no entity getter', () => {
+  it('should refuse a relation with no entity getter', () => {
     class NoTarget {
       other?: unknown;
     }

@@ -1,15 +1,8 @@
 import type { IndexType } from '../schema/types.js';
 
 /**
- * Distance metrics supported by vector similarity search.
- * - `cosine` - best for text/LLM embeddings (default)
- * - `l2` - Euclidean distance
- * - `inner` - inner (dot) product
- * - `l1` - Manhattan distance
- *
- * @remarks Hamming distance is absent because no engine can express it over a float vector column:
- * pgvector's `<~>`/`bit_hamming_ops` and sqlite-vec's `vec_distance_hamming` both require a *bit*
- * vector, which no field type maps to. It would be a value that compiles and always throws.
+ * A vector search's metric: `cosine` (the default), `l2`, `inner` product or `l1`. No hamming: every
+ * engine's takes a bit vector, which no field type maps to.
  */
 export type VectorDistance = 'cosine' | 'l2' | 'inner' | 'l1';
 
@@ -28,44 +21,21 @@ export interface QueryVectorQuery {
 /** The keys that describe the search rather than bound it, so `$near`'s bounds are what is left. */
 export const VECTOR_QUERY_KEYS = ['$vector', '$distance'] as const satisfies readonly (keyof QueryVectorQuery)[];
 
-/**
- * Vector similarity search options - used inside `$sort` on vector fields.
- *
- * @example
- * ```ts
- * querier.findMany(Article, {
- *   $sort: { embedding: { $vector: queryVec } },
- *   $limit: 10,
- * });
- * ```
- */
+/** A vector search in `$sort`: `{ $sort: { embedding: { $vector: queryVec } }, $limit: 10 }`. */
 export interface QueryVectorSearch extends QueryVectorQuery {
   /** Project the computed distance as a named field in the result. */
   readonly $project?: string;
 }
 
 /**
- * Augments a row with the distance a vector-search `$sort.$project` computes, which is not
- * inferred. Wrap whatever the query returns - the entity, or a projected row:
- * ```ts
- * const results = (await querier.findMany(Article, {
- *   $sort: { embedding: { $vector: queryVec, $project: 'similarity' } },
- * })) as WithDistance<Article, 'similarity'>[];
- * ```
+ * A row with the distance a `$sort` `$project` names, which is not inferred:
+ * `(await querier.findMany(Article, q)) as WithDistance<Article, 'similarity'>[]`.
  */
 export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
 
 /**
- * How one dialect spells one distance metric. Two shapes exist across engines - an infix operator
- * (`"col" <=> $1`, pgvector) or a function call (`VEC_DISTANCE_COSINE(col, ?)`, MariaDB and the
- * SQLite family) - so they are one discriminated map rather than two parallel ones. That is what
- * lets a single `appendVectorSort` serve every engine, and makes the map's key set the one answer
- * to "does this dialect have this metric".
- *
- * `opsSuffix` rides along on the operator form because pgvector's index operator class is named from
- * the same metric (`vector_cosine_ops`): keeping them together is what stops a dialect from having
- * the operator but not the class it indexes with. `metricArg` is for the engine with one function
- * taking the metric by name: SQL Server's `VECTOR_DISTANCE('cosine', a, b)`.
+ * How a dialect spells a metric: an operator with the operator class an index names from it, or a
+ * function, `metricArg` where it takes the metric by name. One map, so its keys say which metrics exist.
  */
 export type VectorMetric =
   | { readonly op: string; readonly opsSuffix: string }
@@ -74,7 +44,7 @@ export type VectorMetric =
 /** The operator form, for the pgvector-family dialects whose index DDL also needs `opsSuffix`. */
 export type VectorOperatorMetric = Extract<VectorMetric, { op: string }>;
 
-/** Every dialect words this the same, and one of them used to throw a bare `Error` for it. */
+/** The error every dialect throws for a metric it lacks. */
 export function unsupportedVectorMetric(dialectName: string, distance: VectorDistance, indexName?: string): TypeError {
   const where = indexName === undefined ? '' : ` (index "${indexName}")`;
   return new TypeError(`${dialectName} does not support vector distance metric: ${distance}${where}`);

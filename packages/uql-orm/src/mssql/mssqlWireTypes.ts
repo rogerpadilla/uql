@@ -5,20 +5,8 @@ import { decodeWideNumber } from '../util/wideNumber.js';
 type ColumnTypes = Record<string, { readonly type: unknown }>;
 
 /**
- * Decode `BIGINT` as a JS number, leaving every other type to the driver.
- *
- * uql owes this to the caller because uql picks the column: `type: Number` maps to BIGINT (see
- * `schema/canonicalType.ts`), and `tedious` hands that back as a string to protect the digits past
- * 2^53 - so without this a field declared `number` reads back as `'9'`, including every generated
- * primary key on every entity.
- *
- * At the wire, for the reason `pgNumericTypes` gives: everything crosses it exactly once - entity
- * reads, the ids an `OUTPUT` reports, raw SQL, counts, aggregates - where the ORM's own hydration
- * only ever sees entity reads.
- *
- * By the rule every driver here shares, `decodeWideNumber`: a number where one is exact, the driver's
- * exact text past 2^53. The lighter escape hatch for a column that big is the declaration -
- * `@Field({ type: String, columnType: 'bigint' })`.
+ * Decodes `BIGINT`, which `tedious` returns as text, by `decodeWideNumber`: `type: Number` maps to
+ * BIGINT, so otherwise every generated key reads back as a string. At the wire, which every result crosses.
  */
 export function decodeWireTypes<T>(rows: T[] | undefined, columns: ColumnTypes | undefined): T[] {
   if (!rows?.length || !columns) {

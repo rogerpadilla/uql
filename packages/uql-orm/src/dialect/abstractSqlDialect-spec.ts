@@ -1,15 +1,17 @@
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, Field, Filter, getMeta, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import {
   anyUuid,
   Company,
   InventoryAdjustment,
   Item,
   ItemAdjustment,
+  JsonRecord,
   MeasureUnit,
   Profile,
   type Spec,
+  type SpecRequirements,
   Tag,
   Tax,
   TaxCategory,
@@ -215,6 +217,9 @@ export const JSON_UPDATE_PAYLOADS: Record<JsonUpdateCaseName, UpdatePayload<Comp
   pushUnsetCombined: { $push: { tags: 'new-tag' }, $unset: ['public'] },
 };
 
+/** The suffix each wait policy adds to `FOR UPDATE`. */
+const LOCK_WAITS: Readonly<Record<QueryLockWait, string>> = { block: '', skip: ' SKIP LOCKED', nowait: ' NOWAIT' };
+
 export abstract class AbstractSqlDialectSpec implements Spec {
   constructor(readonly dialect: AbstractSqlDialect) {}
 
@@ -238,13 +243,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /**
-   * The pager clause this dialect emits, asked of the dialect rather than written out: `LIMIT`/
-   * `OFFSET` on most, `OFFSET ... ROWS FETCH NEXT ... ROWS ONLY` on SQL Server and Oracle. `sorted`
-   * says whether the statement under test already carries an `ORDER BY`, which is what decides
-   * whether those two have to synthesize one.
-   *
-   * Asked of the dialect rather than spelled out, so a second pager syntax needs no change to the
-   * 54 assertions that carry one.
+   * The pager clause this dialect emits: `LIMIT`/`OFFSET`, or `OFFSET ... FETCH NEXT` on SQL Server and
+   * Oracle, which need an `ORDER BY` (`sorted` says one is already there). Asked of the dialect, so a
+   * new pager syntax changes no assertion.
    */
   protected pgr(limit?: number, skip?: number, sorted = false): string {
     const ctx = this.dialect.createContext();
@@ -286,77 +287,70 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     }
   }
 
-  /**
-   * Suffix appended after INSERT/UPSERT statements that fetch the generated id via `RETURNING`
-   * (MariaDB, SQLite). Empty for dialects that read the id off the driver's own insert-id header instead.
-   */
-  protected returningClause<E>(_entity: Type<E>): string {
-    return '';
+  /** What ends an insert that reads its generated id back from the statement; nothing where the driver reports it. */
+  protected returningClause<E>(entity: Type<E>): string {
+    const { insertIdSource, returningPosition } = this.dialect;
+    return insertIdSource === 'returning' && returningPosition === 'suffix'
+      ? ` ${this.dialect.returningId(getMeta(entity))}`
+      : '';
   }
 
-  /**
-   * The lock fragment this dialect appends, or `undefined` when it has no row locks at all. Driven
-   * by `dialectName` like `neSql`/`likeOp` above, so every dialect spec inherits the same cases and
-   * asserts either the SQL or the rejection.
-   */
-  protected lockClause(wait: QueryLockWait = 'block', of?: string): string | undefined {
-    if (!this.dialect.supportsRowLocks) {
-      return undefined;
-    }
-    const suffix = wait === 'skip' ? ' SKIP LOCKED' : wait === 'nowait' ? ' NOWAIT' : '';
-    return ` FOR UPDATE${of ? ` OF ${of}` : ''}${suffix}`;
+  requirements(): SpecRequirements<this> {
+    const { rowLocks, rowLockOf } = this.dialect.features;
+    return {
+      shouldFindWithLock: rowLocks,
+      shouldFindWithLockSkipLocked: rowLocks,
+      shouldFindWithLockNoWait: rowLocks,
+      shouldPlaceLockAfterLimitAndOffset: rowLocks,
+      shouldRejectALockTheEngineLacks: !rowLocks,
+      shouldNarrowLockToRootTableWhenPopulating: rowLocks && rowLockOf,
+      shouldRefuseToNarrowALockItCannot: rowLocks && !rowLockOf,
+    };
   }
 
-  /** Whether this engine has row locks at all; the cases below split on it rather than on a name. */
-  protected get hasRowLocks(): boolean {
-    return this.lockClause() !== undefined;
+  /** The lock this dialect writes, `target` being the ` OF <table>` a joined read narrows it with. */
+  protected lockClause(wait: QueryLockWait = 'block', target = ''): string {
+    return ` FOR UPDATE${target}${LOCK_WAITS[wait]}`;
   }
 
-  /** Asserts the emitted lock fragment, or the rejection when the dialect has no row locks. */
-  private expectLock<E>(entity: Type<E>, q: Query<E>, expected: string | undefined) {
-    if (expected === undefined) {
-      expect(() => this.exec((ctx) => this.dialect.find(ctx, entity, q))).toThrow(
-        `${this.dialect.dialectName} does not support row-level locking`,
-      );
-      return;
-    }
-    expect(this.exec((ctx) => this.dialect.find(ctx, entity, q)).sql).toContain(expected);
+  private lockedSql(q: Query<User>): string {
+    return this.exec((ctx) => this.dialect.find(ctx, User, q)).sql;
   }
 
   shouldFindWithLock() {
-    this.expectLock(User, { $select: { id: true }, $lock: true }, this.lockClause());
+    expect(this.lockedSql({ $select: { id: true }, $lock: true })).toContain(this.lockClause());
   }
 
   shouldFindWithLockSkipLocked() {
-    this.expectLock(User, { $select: { id: true }, $lock: { $wait: 'skip' } }, this.lockClause('skip'));
+    expect(this.lockedSql({ $select: { id: true }, $lock: { $wait: 'skip' } })).toContain(this.lockClause('skip'));
   }
 
   shouldFindWithLockNoWait() {
-    this.expectLock(User, { $select: { id: true }, $lock: { $wait: 'nowait' } }, this.lockClause('nowait'));
+    expect(this.lockedSql({ $select: { id: true }, $lock: { $wait: 'nowait' } })).toContain(this.lockClause('nowait'));
+  }
+
+  shouldRejectALockTheEngineLacks() {
+    expect(() => this.lockedSql({ $select: { id: true }, $lock: true })).toThrow(
+      `${this.dialect.dialectName} does not support row-level locking`,
+    );
   }
 
   /** `false` is for queries built conditionally: it must emit nothing at all. */
   shouldEmitNoLockWhenFalse() {
-    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: false }));
-    expect(sql).not.toContain('FOR UPDATE');
+    expect(this.lockedSql({ $select: { id: true }, $lock: false })).not.toContain('FOR UPDATE');
   }
 
-  /** Regression: every engine wants the lock after LIMIT/OFFSET, which `pager` emits. */
+  /** Every engine wants the lock after `LIMIT`/`OFFSET`, which `pager` emits. */
   shouldPlaceLockAfterLimitAndOffset() {
-    const clause = this.lockClause();
-    if (!clause) {
-      return;
-    }
-    const { sql } = this.exec((ctx) =>
-      this.dialect.find(ctx, User, { $select: { id: true }, $limit: 10, $skip: 5, $lock: true }),
-    );
-    expect(sql.endsWith(clause)).toBe(true);
+    const sql = this.lockedSql({ $select: { id: true }, $limit: 10, $skip: 5, $lock: true });
+    expect(sql.endsWith(this.lockClause())).toBe(true);
     expect(sql.indexOf('LIMIT')).toBeLessThan(sql.indexOf('FOR UPDATE'));
   }
 
   /** A lock belongs to a SELECT: `search` is shared, so these must stay clean. */
   shouldNotEmitLockOnCount() {
-    const q = { $where: { id: 1 }, $lock: true } as never;
+    const q = { $where: { id: 1 }, $lock: true };
+    // @ts-expect-error: a count takes no lock
     expect(this.exec((ctx) => this.dialect.count(ctx, User, q)).sql).not.toContain('FOR UPDATE');
   }
 
@@ -372,39 +366,39 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   shouldNotEmitLockOnUpdate() {
-    const q = { $where: { id: 1 }, $lock: true } as never;
+    const q = { $where: { id: 1 }, $lock: true };
+    // @ts-expect-error: an update takes no lock
     expect(this.exec((ctx) => this.dialect.update(ctx, User, q, { name: 'x' })).sql).not.toContain('FOR UPDATE');
   }
 
   shouldNotEmitLockOnDelete() {
-    const q = { $where: { id: 1 }, $lock: true } as never;
+    const q = { $where: { id: 1 }, $lock: true };
+    // @ts-expect-error: a delete takes no lock
     expect(this.exec((ctx) => this.dialect.delete(ctx, User, q)).sql).not.toContain('FOR UPDATE');
   }
 
   shouldRejectUnknownLockWait() {
     expect(() =>
-      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: { $wait: 'soon' as never } })),
+      // @ts-expect-error: no such wait
+      this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $lock: { $wait: 'soon' } })),
     ).toThrow('unknown $lock wait policy: soon');
   }
 
   /**
-   * A bare lock over a join is an error on Postgres and over-locks elsewhere, so a joined query
-   * narrows to the root table. MariaDB has no `OF` and rejects the combination instead.
+   * A bare lock over a join is an error on Postgres and over-locks elsewhere, so a joined read narrows
+   * it to its own table.
    */
   shouldNarrowLockToRootTableWhenPopulating() {
     const e = this.dialect.escapeIdChar;
-    if (!this.hasRowLocks) {
-      return;
-    }
-    const run = () =>
-      this.exec((ctx) =>
-        this.dialect.find(ctx, User, { $select: { id: true }, $populate: { company: true }, $lock: true }),
-      );
-    if (!this.dialect.supportsLockOf) {
-      expect(run).toThrow('cannot narrow a row lock to one table');
-      return;
-    }
-    expect(run().sql).toContain(this.lockClause('block', `${e}User${e}`));
+    const sql = this.lockedSql({ $select: { id: true }, $populate: { company: true }, $lock: true });
+    expect(sql).toContain(this.lockClause('block', ` OF ${e}User${e}`));
+  }
+
+  /** MariaDB has no `OF`, so it refuses a lock over a join rather than lock the joined rows too. */
+  shouldRefuseToNarrowALockItCannot() {
+    expect(() => this.lockedSql({ $select: { id: true }, $populate: { company: true }, $lock: true })).toThrow(
+      'cannot narrow a row lock to one table',
+    );
   }
 
   shouldBeValidEscapeCharacter() {
@@ -756,12 +750,16 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
   shouldGenerateRestoreUpdate() {
     // Restore = UPDATE set the soft-delete field to null, with the soft-delete read filter disabled.
-    const field = 'deletedAt';
-    const payload = { [field]: null } as UpdatePayload<MeasureUnit>;
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, MeasureUnit, { $where: { id: '1', deletedAt: { $ne: null } } }, payload, {
-        filters: { softDelete: false },
-      }),
+      this.dialect.update(
+        ctx,
+        MeasureUnit,
+        { $where: { id: '1', deletedAt: { $ne: null } } },
+        { deletedAt: null },
+        {
+          filters: { softDelete: false },
+        },
+      ),
     );
     const deletedAt = this.dialect.escapeId('deletedAt');
     expect(sql).toContain(`SET ${deletedAt} = ${this.ph(1)}`);
@@ -824,32 +822,27 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['123']);
   }
 
+  /** Keys an entity does not declare, which client JSON can carry: left out of a write, escaped in a read. */
   shouldBeSecure() {
     const e = this.dialect.escapeIdChar;
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
-        $select: { id: true, something: true } as any,
-        $where: {
-          id: 1,
-          something: 1,
-        } as any,
-        $sort: {
-          id: 1,
-          something: 1,
-        } as any,
+        // @ts-expect-error: not a field of `User`
+        $select: { id: true, something: true },
+        // @ts-expect-error: not a field of `User`
+        $where: { id: '1', something: 1 },
+        // @ts-expect-error: not a field of `User`
+        $sort: { id: 1, something: 1 },
       }),
     );
     expect(res.sql).toBe(
       `SELECT ${e}id${e} FROM ${e}User${e} WHERE ${e}id${e} = ${this.ph(1)} AND ${e}something${e} = ${this.ph(2)} ORDER BY ${e}id${e}, ${e}something${e}`,
     );
-    expect(res.values).toEqual([1, 1]);
+    expect(res.values).toEqual(['1', 1]);
 
     res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        something: 'anything',
-        createdAt: 1,
-      } as any),
+      // @ts-expect-error: not a field of `User`
+      this.dialect.insert(ctx, User, { name: 'Some Name', something: 'anything', createdAt: 1 }),
     );
     expect(res.sql).toBe(
       `INSERT INTO ${e}User${e} (${e}name${e}, ${e}createdAt${e}, ${e}id${e}) VALUES (${this.ph(1)}, ${this.ph(2)}, ${this.ph(3)})` +
@@ -861,14 +854,9 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.update(
         ctx,
         User,
-        {
-          $where: { something: 'anything' } as any,
-        },
-        {
-          name: 'Some Name',
-          something: 'anything',
-          updatedAt: 1,
-        } as any,
+        // @ts-expect-error: not a field of `User`
+        { $where: { something: 'anything' } },
+        { name: 'Some Name', something: 'anything', updatedAt: 1 },
       ),
     );
     expect(res.sql).toBe(
@@ -876,11 +864,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(res.values).toEqual(['Some Name', 1, 'anything']);
 
-    res = this.exec((ctx) =>
-      this.dialect.delete(ctx, User, {
-        $where: { something: 'anything' } as any,
-      }),
-    );
+    // @ts-expect-error: not a field of `User`
+    res = this.exec((ctx) => this.dialect.delete(ctx, User, { $where: { something: 'anything' } }));
     expect(res.sql).toBe(`DELETE FROM ${e}User${e} WHERE ${e}something${e} = ${this.ph(1)}`);
     expect(res.values).toEqual(['anything']);
   }
@@ -1208,8 +1193,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.dialect.find(ctx, InventoryAdjustment, { $select: { id: true }, $where: { date } }),
     );
     expect(byDate.sql).toBe(`SELECT ${e}id${e} FROM ${e}InventoryAdjustment${e} WHERE ${e}date${e} = ${this.ph(1)}`);
-    // the bound representation is the dialect's own (SQLite stores epoch millis); that it bound at
-    // all is the point, since the condition used to vanish.
+    // The bound representation is the dialect's own (SQLite stores epoch millis); that it binds is the point.
     expect(byDate.values).toHaveLength(1);
 
     // and the same value under an explicit `$eq` renders identically
@@ -1267,7 +1251,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.exec((ctx) =>
         this.dialect.find(ctx, User, {
           $select: { id: true },
-          $where: { 'name.first': 'some' } as never,
+          // @ts-expect-error: `name` is no JSON field
+          $where: { 'name.first': 'some' },
         }),
       ),
     ).toThrow('path name.first does not exist in User');
@@ -1278,7 +1263,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.exec((ctx) =>
         this.dialect.find(ctx, User, {
           $select: { id: true },
-          $where: { 'nope.first': 'some' } as never,
+          // @ts-expect-error: no such field
+          $where: { 'nope.first': 'some' },
         }),
       ),
     ).toThrow('path nope.first does not exist in User');
@@ -1294,7 +1280,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.exec((ctx) =>
         this.dialect.find(ctx, Company, {
           $select: { id: true },
-          $where: { kind: { $elemMatch: { $eq: 5, name: 'some' } } } as never,
+          // @ts-expect-error: operators and field names mixed
+          $where: { kind: { $elemMatch: { $eq: 5, name: 'some' } } },
         }),
       ),
     ).toThrow('$elemMatch cannot mix operators with field names: $eq, name');
@@ -1320,7 +1307,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
         $select: { id: true },
-        $where: { creatorId: '123', companyId: null as any },
+        $where: { creatorId: '123', companyId: null },
         $limit: 5,
       }),
     );
@@ -1370,8 +1357,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /**
-   * A non-array `$in` used to coerce to `[]` and match nothing, which reads as a legitimately empty
-   * result. The types forbid it, but `/http` casts client JSON straight to `Query`, so it arrives untyped.
+   * A non-array `$in` throws rather than matching nothing, which would read as an empty result. The
+   * types forbid it, but `/http` passes client JSON on as a `Query`.
    */
   shouldRejectNonArray$in() {
     for (const operand of [undefined, null, 'abc', 5, {}]) {
@@ -1379,7 +1366,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         this.exec((ctx) =>
           this.dialect.find(ctx, User, {
             $select: { id: true },
-            $where: { companyId: { $in: operand } } as never,
+            // @ts-expect-error: `/http` passes client JSON on as it came
+            $where: { companyId: { $in: operand } },
           }),
         ),
       ).toThrow(/\$in expects an array/);
@@ -1389,7 +1377,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.exec((ctx) =>
         this.dialect.find(ctx, User, {
           $select: { id: true },
-          $where: { companyId: { $nin: 'abc' } } as never,
+          // @ts-expect-error: `$nin` takes a list
+          $where: { companyId: { $nin: 'abc' } },
         }),
       ),
     ).toThrow(/\$nin expects an array/);
@@ -1571,10 +1560,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
-  /**
-   * Regression for the JOIN/populate gap: a `security: true` filter on a joined (m1) relation
-   * must apply even to a bare `$populate: { related: true }` with no explicit `$where` on it.
-   */
+  /** A `security: true` filter on a joined to-one applies to a bare `$populate`, with no `$where` of its own. */
   shouldApplySecurityFilterToJoinedPopulateWithoutExplicitWhere() {
     const e = this.dialect.escapeIdChar;
     const { sql } = withContext({ secureTenantId: 5 }, () =>
@@ -1879,7 +1865,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRejectPagingAJoinedRelation() {
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $limit: 5 } } as never }),
+        // @ts-expect-error: a to-one takes no `$limit`
+        this.dialect.find(ctx, Item, { $select: { id: true }, $populate: { tax: { $limit: 5 } } }),
       ),
     ).toThrow("'$limit' is not supported inside $populate of the to-one relation 'tax'");
 
@@ -1888,7 +1875,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       this.exec((ctx) =>
         this.dialect.find(ctx, Item, {
           $select: { id: true },
-          $populate: { tax: { $populate: { category: { $sort: { name: 1 } } } } } as never,
+          // @ts-expect-error: a to-one takes no `$sort`
+          $populate: { tax: { $populate: { category: { $sort: { name: 1 } } } } },
         }),
       ),
     ).toThrow("'$sort' is not supported inside $populate of the to-one relation 'category'");
@@ -1914,7 +1902,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRejectAnUnorderableRelationSort() {
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { tags: { name: 1 } } as never }),
+        // @ts-expect-error: a to-many sorts by `$count` alone
+        this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { tags: { name: 1 } } }),
       ),
     ).toThrow("cannot $sort by 'tags'");
 
@@ -1931,7 +1920,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(
       () =>
         this.exec((ctx) =>
-          this.dialect.aggregate(ctx, Item, { $group: { taxId: true }, $sort: { tax: { name: 1 } } as never }),
+          // @ts-expect-error: an aggregate sorts by its own columns
+          this.dialect.aggregate(ctx, Item, { $group: { taxId: true }, $sort: { tax: { name: 1 } } }),
         ),
       // a relation is not a column the aggregate emits, so the general rule already covers it
     ).toThrow("cannot $sort by 'tax': it is neither a $group column nor a $select alias");
@@ -2160,7 +2150,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['something']);
   }
 
-  /** `/http` casts client JSON straight to `Query`, so a logical operator can arrive as any shape. */
+  /** `/http` casts client JSON straight to `Query`, so a logical operator can arrive shape. */
   shouldRejectANonArrayLogicalOperator() {
     for (const [where, got] of [
       [{ $and: 'foo' }, 'string'],
@@ -2168,7 +2158,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       [{ $not: null }, 'null'],
     ] as const) {
       expect(() =>
-        this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: where as never })),
+        // @ts-expect-error: `/http` passes client JSON on as it came
+        this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: where })),
       ).toThrow(`expects an array, got ${got}`);
     }
   }
@@ -2624,7 +2615,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         Company,
         { $where: { id: '1' } },
         {
-          kind: null as any,
+          kind: null,
           updatedAt: 123,
         },
       ),
@@ -2739,7 +2730,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRejectAggregateClausesNamingAColumnItDoesNotEmit() {
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.aggregate(ctx, User, { $select: { total: { $count: '*' } }, $having: { name: 'x' } as never }),
+        // @ts-expect-error: `$having` names an aggregate
+        this.dialect.aggregate(ctx, User, { $select: { total: { $count: '*' } }, $having: { name: 'x' } }),
       ),
     ).toThrow("cannot $having by 'name': it is neither a $group column nor a $select alias");
 
@@ -2748,7 +2740,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         this.dialect.aggregate(ctx, User, {
           $group: { name: true },
           $select: { total: { $count: '*' } },
-          $sort: { createdAt: -1 } as never,
+          // @ts-expect-error: an aggregate sorts by its own columns
+          $sort: { createdAt: -1 },
         }),
       ),
     ).toThrow("cannot $sort by 'createdAt': it is neither a $group column nor a $select alias");
@@ -2922,11 +2915,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([5]);
   }
 
-  /**
-   * `$having` accepts the full operator vocabulary its type advertises. It used to carry its own
-   * partial copy of the WHERE operator dispatch, so a text operator on a `$min`/`$max` type-checked
-   * and then threw `unsupported HAVING operator` at runtime.
-   */
+  /** `$having` takes every operator its type offers, a text one on a `$min`/`$max` included. */
   shouldAggregateWithHavingTextOperator() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.aggregate(ctx, User, {
@@ -3027,7 +3016,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         $having: { count: { $in: [] } },
       }),
     );
-    expect(sql).toContain('HAVING COUNT(*) IN (NULL)');
+    expect(sql).toContain('HAVING 1 = 0');
   }
 
   shouldAggregateWithHavingIsNull() {
@@ -3128,7 +3117,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         this.dialect.aggregate(ctx, User, {
           $group: { name: true },
           $select: { count: { $count: '*' } },
-          $having: { count: { $bogus: 5 } } as never,
+          // @ts-expect-error: no such operator
+          $having: { count: { $bogus: 5 } },
         }),
       ),
     ).toThrow('unsupported HAVING operator: $bogus');
@@ -3183,20 +3173,14 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   /**
-   * Regression: `jsonElemFrom`/`jsonElemRef` used to hardcode one fixed alias for the derived table
-   * a JSON array explodes into. A nested `$elemMatch` (matching an array-of-arrays, reachable today
-   * only by bypassing the type system) recurses into the same hook a second time within one query -
-   * confirmed live against SQLite and MySQL that reusing one literal alias at both nesting depths
-   * let the inner occurrence shadow the outer one it needed to correlate against, silently returning
-   * zero rows instead of the matching ones. Each nesting level must get its own alias, claimed
-   * with `ctx.claimAlias`, so this only asserts they're distinct - not full result correctness, which
-   * is a per-dialect SQL-generation concern already covered where reachable via the typed API.
+   * An array of arrays explodes into a derived table per level, each claiming its own alias: a shared
+   * one lets the inner level shadow the outer it correlates against, which matches no row.
    */
   shouldGenerateDistinctAliasesForNestedElemMatch() {
     const { sql } = this.exec((ctx) =>
-      this.dialect.find(ctx, Company, {
+      this.dialect.find(ctx, JsonRecord, {
         $select: { id: true },
-        $where: { kind: { $elemMatch: { $elemMatch: { $eq: 5 } } } } as any,
+        $where: { entries: { $elemMatch: { $elemMatch: { $eq: 5 } } } },
       }),
     );
     const aliases = new Set(sql.match(/_uql_elem(?:_\d+)?/g));

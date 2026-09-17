@@ -1,15 +1,3 @@
-/**
- * Entity Code Generator
- *
- * Generates TypeScript entity files from SchemaAST.
- * Supports:
- * - ES Module syntax
- * - TypeScript types
- * - Relations with proper decorators
- * - Indexes
- * - JSDoc comments for sync-added fields
- */
-
 import { canonicalToTypeScript } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import {
@@ -24,6 +12,14 @@ import { camelCase, lowerFirst, pascalCase, singularize } from '../../util/strin
 import { buildFieldOptionsSource, fieldNeedsRaw } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 import { memberSource } from './sourceLiteral.js';
+
+/** The decorator on the other side of a relation. */
+const INVERSE_RELATION: Readonly<Record<RelationshipType, RelationshipType>> = {
+  OneToOne: 'OneToOne',
+  OneToMany: 'ManyToOne',
+  ManyToOne: 'OneToMany',
+  ManyToMany: 'ManyToMany',
+};
 
 /**
  * Options for entity code generation.
@@ -143,7 +139,7 @@ export class EntityCodeGenerator {
     // Check for relation decorators
     if (this.options.includeRelations) {
       for (const rel of [...table.incomingRelations, ...table.outgoingRelations]) {
-        uqlImports.add(this.getRelationDecoratorName(rel.type));
+        uqlImports.add(rel.type);
 
         const relatedTable = rel.from.table === table ? rel.to.table : rel.from.table;
         const relatedClassName = this.options.classNameTransformer(relatedTable.name);
@@ -249,7 +245,7 @@ export class EntityCodeGenerator {
    * Build Field decorator options.
    */
   private buildFieldOptions(col: ColumnNode, propertyName: string): string {
-    const indexes = this.options.includeIndexes ? this.ast.getTableIndexes(col.table.name) : [];
+    const indexes = this.options.includeIndexes ? col.table.indexes : [];
     const fieldIndex = indexes.find((idx) => isPlainFieldIndex(idx) && idx.entries[0]?.column === col.name);
     return buildFieldOptionsSource(col, propertyName, fieldIndex?.name);
   }
@@ -259,7 +255,7 @@ export class EntityCodeGenerator {
    * carry on its own.
    */
   private declaredIndexes(table: TableNode) {
-    return this.ast.getTableIndexes(table.name).filter((index) => !isPlainFieldIndex(index));
+    return table.indexes.filter((index) => !isPlainFieldIndex(index));
   }
 
   /**
@@ -304,16 +300,11 @@ export class EntityCodeGenerator {
       propertyName = this.options.propertyNameTransformer(this.options.singularize(rel.to.table.name));
     }
 
-    const decoratorName = this.getRelationDecoratorName(rel.type);
-
     // JSDoc
     if (this.options.addSyncComments) {
       lines.push('  /**');
       lines.push(`   * @sync-added ${new Date().toISOString().split('T')[0]}`);
       lines.push(`   * Relation to ${rel.to.table.name} via ${rel.from.columns.map((c) => c.name).join(', ')}`);
-      if (rel.confidence !== undefined && rel.confidence < 1.0) {
-        lines.push(`   * Inferred (${(rel.confidence * 100).toFixed(0)}% confidence)`);
-      }
       lines.push('   */');
     }
 
@@ -324,7 +315,7 @@ export class EntityCodeGenerator {
     if (references) options.push(`references: ${references}`);
     if (rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onDelete: '${rel.onDelete}'`);
     if (rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onUpdate: '${rel.onUpdate}'`);
-    lines.push(`  @${decoratorName}({ ${options.join(', ')} })`);
+    lines.push(`  @${rel.type}({ ${options.join(', ')} })`);
 
     // Property
     lines.push(`  ${propertyName}?: ${relatedClassName};`);
@@ -362,8 +353,6 @@ export class EntityCodeGenerator {
     const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.from.table.name);
     const propertyName = this.options.propertyNameTransformer(rel.from.table.name);
-    const inverseType = this.ast.getInverseRelationType(rel.type);
-    const decoratorName = this.getRelationDecoratorName(inverseType);
 
     // JSDoc
     if (this.options.addSyncComments) {
@@ -376,32 +365,12 @@ export class EntityCodeGenerator {
     // The inverse side, mapped by the related class's property that points back at this one.
     const param = lowerFirst(relatedClassName);
     const inverse = memberSource(param, this.options.propertyNameTransformer(this.options.singularize(table.name)));
-    lines.push(`  @${decoratorName}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`);
-
-    // Property
-    if (inverseType === 'OneToMany' || inverseType === 'ManyToMany') {
-      lines.push(`  ${propertyName}?: ${relatedClassName}[];`);
-    } else {
-      lines.push(`  ${propertyName}?: ${relatedClassName};`);
-    }
+    const inverseType = INVERSE_RELATION[rel.type];
+    lines.push(`  @${inverseType}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`);
+    const many = inverseType === 'OneToMany' || inverseType === 'ManyToMany';
+    lines.push(`  ${propertyName}?: ${relatedClassName}${many ? '[]' : ''};`);
 
     return lines.join('\n');
-  }
-
-  /**
-   * Get decorator name for relation type.
-   */
-  private getRelationDecoratorName(type: RelationshipType): string {
-    switch (type) {
-      case 'OneToOne':
-        return 'OneToOne';
-      case 'OneToMany':
-        return 'OneToMany';
-      case 'ManyToOne':
-        return 'ManyToOne';
-      case 'ManyToMany':
-        return 'ManyToMany';
-    }
   }
 
   /**

@@ -14,13 +14,8 @@ import { drainRegistrations } from './bag.js';
 // into the registry with no bag in between.
 
 /**
- * Marks a class as an entity and finalizes its metadata.
- *
- * @remarks Takes the registrations from `context.metadata` rather than from the class. Member
- * decorators have already run by the time a class decorator does, but TypeScript defines
- * `Symbol.metadata` on the class *after* the class decorators return, so reading `entity[Symbol.metadata]`
- * here would find only what the base class left behind. `defineEntity` reads it off the class instead,
- * which is correct for the imperative path because it runs later still.
+ * Marks a class as an entity and finalizes its metadata, draining `context.metadata`: the class gets
+ * `Symbol.metadata` only after its decorators return.
  */
 export function Entity<E>(opts?: NoInfer<EntityOptions<E>>) {
   return (entity: Type<E>, context?: ClassDecoratorContext): void => {

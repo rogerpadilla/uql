@@ -4,15 +4,15 @@ import { DefaultNamingStrategy } from './defaultNamingStrategy.js';
 describe('DefaultNamingStrategy', () => {
   const strategy = new DefaultNamingStrategy();
 
-  it('tableName', () => {
+  it('should name a table as its class', () => {
     expect(strategy.tableName('UserProfile')).toBe('UserProfile');
   });
 
-  it('columnName', () => {
+  it('should name a column as its property', () => {
     expect(strategy.columnName('firstName')).toBe('firstName');
   });
 
-  it('joinTableName', () => {
+  it('should name a join table after both sides', () => {
     expect(strategy.joinTableName('User', 'Role')).toBe('User_Role');
   });
 });

@@ -6,6 +6,7 @@ import type {
   HookEvent,
   IdValue,
   NamedIdKey,
+  RejectKeys,
   RelationManyToManyOptions,
   RelationManyToOneOptions,
   RelationOneToManyOptions,
@@ -17,25 +18,11 @@ import type { RejectIncompatible } from '../../util/index.js';
 import { relationRegistration } from '../metadata/definition.js';
 import { memberRegistrations } from './bag.js';
 
-// The member decorators share one mechanism, which is why they share a file: the standard spec gives a
-// member decorator no reference to its class, so each records what it was told on `context.metadata` and
-// `@Entity()` drains it (see `bag.ts`). What they add on top is checking, by pinning the context's value
-// type: the `type`, `entity` or referenced key a decorator declares is compared against the property it is
-// written on.
+// The member decorators get no class under the standard spec, so each records on `context.metadata`
+// for `@Entity()` to drain (see `bag.ts`), and checks what it declares against the property's type.
 
 /** A member decorator that also constrains the property it may be applied to, on a class `O`. */
 type MemberDecorator<V, O = unknown> = (value: undefined, context: ClassFieldDecoratorContext<O, V>) => void;
-
-/**
- * Maps any option the type does not declare to `never`, turning a typo into a compile error.
- *
- * Needed because the decorators capture their options as a naked type parameter, and TypeScript
- * skips excess-property checking on one of those: `@Field({ nulable: true })` compiled and was
- * silently ignored. Resolves to `unknown` - an inert intersection member - when there are none.
- */
-type RejectUnknown<O, Known> = [Exclude<keyof O, keyof Known>] extends [never]
-  ? unknown
-  : Record<Exclude<keyof O, keyof Known> & string, never>;
 
 /**
  * The property type a set of field options describes: the declared `type`, narrowed by `enum` to the
@@ -52,30 +39,19 @@ type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
       : IdValue<E>
     : never;
 
-/**
- * The enum's members, or a named complaint when they widened.
- *
- * `['a', 'b']` without `as const` infers `string[]`, whose member type is the field's own type and
- * so narrows nothing - the check would be silently off. Resolving to a type no property can hold
- * makes that a compile error that says why, rather than a decoration.
- */
+/** The enum's members, or a named complaint where they widened for lack of `as const`, which would check nothing. */
 type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enumNeedsAsConst: true } : Members;
 
 /**
- * Declares a persisted field.
- *
- * `@Field({ type: String })` on a `number` property is a compile error rather than a silent TEXT column,
- * which is what makes the now-mandatory `type` worth stating.
- *
+ * Declares a persisted field, its `type` checked against the property's.
  * @example `@Field({ type: String }) name?: string;`
- * @example `@Field({ references: () => User }) userId?: string;` (where `User.id` is a `uuid`)
- * @example `@Field({ type: Number, computed: (line) => raw`${line.qty} * ${line.price}` }) total?: number;`
+ * @example `@Field({ references: () => User }) userId?: string;`
  */
 export function Field<
   This,
   O extends FieldOptions<DeclaredValue<O>, This> &
     ({ type: FieldType } | { references: EntityGetter }) &
-    RejectUnknown<O, FieldOptions> &
+    RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
     RejectIncompatible<O>,
 >(opts: O): MemberDecorator<DeclaredValue<O> | undefined, This> {
   return (_value, context) => {
@@ -94,15 +70,11 @@ type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNee
 type IdDecorator<V> = <This>(value: undefined, context: ClassFieldDecoratorContext<This, V> & KeyIsNamed<This>) => void;
 
 /**
- * Declares the primary key, checked the same way as `@Field` and additionally against the class:
- * a key not named `id`, `_id` or `uuid` has to be named by the `idKey` brand.
- *
- * @example `@Id({ type: Number }) id?: number;`
+ * Declares the primary key, checked like `@Field`; a key not named `id`, `_id` or `uuid` needs the `idKey` brand.
  * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
- * @example `[idKey]?: 'pk';` beside `@Id({ type: Number }) pk?: number;`
  */
 export function Id<
-  O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectUnknown<O, FieldOptions> &
+  O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
     RejectIncompatible<O> &
     // A key is NOT NULL in every engine, and the `isId` that says so is stamped on below rather than
     // authored, so this is the one contradiction the shared check cannot see from `O` alone.

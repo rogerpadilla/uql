@@ -4,16 +4,16 @@ import { HttpQuerier } from './querier/index.js';
 import type { ClientQuerierPool } from './type/clientQuerierPool.js';
 
 describe('options', () => {
-  it('default getQuerier', () => {
+  it('should hand out an HTTP querier by default', () => {
     const querier = getQuerier();
     expect(querier).toBeInstanceOf(HttpQuerier);
   });
 
-  it('default pool', () => {
+  it('should have a pool by default', () => {
     expect(getQuerierPool()).toBeDefined();
   });
 
-  it('custom pool', () => {
+  it('should hand out the querier of a pool that was set', () => {
     const querierMock = new HttpQuerier('/');
 
     const pool: ClientQuerierPool = {

@@ -9,12 +9,8 @@ import { TursoSessionQuerier } from './tursoSessionQuerier.js';
 export type TursoConfig = Config;
 
 /**
- * Pool for Turso Cloud, over `@tursodatabase/serverless`, which speaks HTTP through `fetch()`.
- *
- * @remarks Every querier opens a session of its own, one server stream, so queriers never wait on each
- * other and a transaction spans one stream. The driver is imported on first use, so a pool built at
- * module scope in a Worker loads nothing until a request needs it. A client built with
- * `@libsql/client/web` goes to `LibsqlQuerierPool` instead.
+ * A pool for Turso Cloud over `@tursodatabase/serverless`: a stream per querier, the driver imported on first
+ * use. A `@libsql/client/web` client goes to `LibsqlQuerierPool` instead.
  */
 export class TursoQuerierPool extends AbstractSqlQuerierPool<TursoSessionQuerier, TursoDialect> {
   constructor(

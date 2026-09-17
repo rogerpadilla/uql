@@ -6,7 +6,7 @@ import { hasKeys } from './object.util.js';
 const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
 
 export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
-  if (!Array.isArray(objects) || !objects.length) {
+  if (!objects.length) {
     return objects as T[];
   }
 
@@ -80,18 +80,8 @@ const MAX_IDENTIFIER_LENGTH = 63;
 const NAME_HASH_LENGTH = 6;
 
 /**
- * The name a derived index or constraint gets when nothing named it: `Order__total_idx`.
- *
- * One owner for all four kinds, because it is a rule two layers apply and a third has to match: the
- * entity AST derives it, the DDL generator falls back to it, and a `DROP` names what it drops.
- * `table` is the table's own name, never qualified - the result is a single identifier.
- *
- * The kind goes last, as Postgres spells its own (`users_pkey`, `users_email_idx`), so a table's
- * constraints sort together under the table they belong to.
- *
- * Not overridable, deliberately: a `NamingStrategy` hook would have to reach the eight call sites
- * these have, an introspector and two builders among them, to replace a name any declaration can
- * already set outright with `name:`. Worth revisiting only for a case that option cannot express.
+ * The name a derived index or constraint gets, `Order__total_idx`, kind last as Postgres names its own.
+ * One rule for the AST, the DDL and a `DROP`; not a naming strategy hook, since `name:` already overrides it.
  */
 export function derivedConstraintName(
   table: string,
@@ -102,27 +92,13 @@ export function derivedConstraintName(
   return clampIdentifier(`${body}_${kind}`);
 }
 
-/**
- * What separates the table from the columns, doubled where every other join is single.
- *
- * Postgres and SQLite keep index and constraint names in one flat namespace across the whole
- * database rather than scoping them to a table, so a single underscore lets two tables collide:
- * `user` + `profile_id` and `user_profile` + `id` both reduce to `user_profile_id_idx`. Doubling the
- * one ambiguous boundary settles it, on the same assumption Drupal made for the same engines - that
- * nothing sane carries `__` in a table or column name.
- */
+/** Between table and columns, doubled: index names share one namespace per database, where `a` + `b_c` and `a_b` + `c` would collide. */
 const TABLE_SEPARATOR = '__';
 
 /** The kinds of derived name, which is also what `indexNameStem` strips to compare them. */
 export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'ck' | 'uk';
 
-/**
- * A name the engine will store whole, shortened around a hash of the full one when it is too long.
- *
- * Truncating alone collides - two long names over the same table differ only in their tail - and a
- * collision means one constraint silently replacing another. The hash is of the *whole* name, so it
- * stays the same on every run, which is what lets a later migration still recognise what it made.
- */
+/** A name the engine stores whole, shortened around a hash of the full one, which stays stable across runs. */
 function clampIdentifier(name: string): string {
   if (name.length <= MAX_IDENTIFIER_LENGTH) {
     return name;
@@ -173,13 +149,7 @@ export function derivedForeignKeyName(table: string, columns: readonly string[])
   return derivedConstraintName(table, columns, 'fk');
 }
 
-/**
- * Escape a SQL identifier (table name, column name, etc.)
- * @param val the identifier to escape
- * @param escapeIdChar the escape character to use (e.g. ` or ")
- * @param forbidQualified whether to forbid qualified identifiers (containing dots)
- * @param addDot whether to add a dot suffix
- */
+/** Escapes an identifier with `escapeIdChar`, refusing a dotted one where `forbidQualified`, with a trailing dot where `addDot`. */
 export function escapeSqlId(
   val: string | undefined,
   escapeIdChar: '`' | '"' = '`',
@@ -231,42 +201,17 @@ export interface BuildUpdateResultPayload {
 }
 
 /**
- * Unified utility to build a QueryUpdateResult from driver-specific results.
- *
- * UQL's SQL dialects always alias the entity's ID column to `id` in RETURNING clauses,
- * so the result rows always contain an `id` property regardless of the entity's @Id() key name.
- *
- * The header-derived ID path assumes the database allocated consecutive values for the
- * statement, which holds for a single multi-row `INSERT ... VALUES` on auto-increment keys
- * (with the standard `auto_increment_increment = 1`); the querier only maps these IDs onto
- * payloads when that assumption is safe.
- *
- * Caveat (MySQL/MariaDB-compatible engines with no `RETURNING`, i.e. `insertIdSource: 'firstId'`):
- * contiguous allocation across a statement's rows is only guaranteed under
- * `innodb_autoinc_lock_mode` 0 (`traditional`) or 1 (`consecutive`). Under mode 2 (`interleaved`,
- * MySQL 8.0's default), other connections inserting into the same table concurrently with this
- * statement can interleave with its auto-increment allocation, so the inferred IDs may not be
- * contiguous. There is no code-level fix for this (MySQL has no `RETURNING`); avoid relying on
- * inferred multi-row IDs for a table under heavy concurrent insert load, or set
- * `innodb_autoinc_lock_mode` to 0 or 1.
+ * A driver's result as a {@link QueryUpdateResult}: `RETURNING` rows name their id `id`; a MySQL header's
+ * first id is extended by the increment, which holds only where auto-increment allocation is contiguous
+ * (`innodb_autoinc_lock_mode` 0 or 1).
  */
 export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
   const { rows, id, insertIdSource, upsertStatus } = payload;
   const changes = payload.changes ?? rows?.length ?? 0;
   const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
 
-  // ID mapping. RETURNING rows are exact. Otherwise the sequence is derived from the single id in
-  // the driver header: `firstId` dialects (MySQL) report the FIRST generated id, and the rest are
-  // inferred by incrementing it. A header id of `0`/`0n` means no id was generated (e.g. a
-  // non-auto-increment key), so we infer none.
-  //
-  // This arithmetic assumes `changes` equals the batch's row count, which always holds for a plain
-  // `insertMany` - but not for `upsertMany` on a `firstId` dialect (MySQL): its `ON DUPLICATE KEY
-  // UPDATE` convention makes `changes` a per-row weighted sum (1=insert, 2=update, 0=no-op), so a
-  // batch mixing an insert and an update would fabricate ids for rows that were never touched. This
-  // function has no way to tell the two call sites apart (`internalRun` reports the same header
-  // shape either way), so `AbstractSqlQuerier`'s `runUpsert` discards them for a multi-row `firstId`
-  // upsert and reads the ids back by the conflict columns instead.
+  // Ids from `RETURNING` are exact; otherwise from the header's first id onward, which assumes `changes`
+  // counts the rows (false for a MySQL upsert batch, whose querier reads ids back instead). `0` means none.
   let ids: PrimaryKey[] = [];
   if (rows?.length) {
     ids = rows.map((r) => r['id'] as PrimaryKey);
@@ -278,13 +223,8 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
     }
   }
 
-  // 2. Creation Status
-  // PostgreSQL: `(xmax = 0) AS "_created"` in the RETURNING clause provides a boolean per row.
-  // MySQL: `affectedRows` convention - 1 = insert, 2 = update, 0 = no-op. Gated on `!== 'returning'`
-  // since that convention is unreliable once RETURNING is in play (verified: MariaDB's affectedRows
-  // for an `ON DUPLICATE KEY UPDATE ... RETURNING` statement differs by driver and doesn't follow
-  // the 1/2/0 convention at all) - `insertIdSource === 'returning'` dialects without a `_created`
-  // column (MariaDB, SQLite, CockroachDB) correctly get `undefined` instead of a misleading guess.
+  // Whether the row was created: Postgres's `_created` column, or MySQL's 1/2/0 `affectedRows`,
+  // which is unreliable under `RETURNING`, so those dialects report nothing.
   const created =
     (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
     (insertIdSource !== 'returning' && typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2

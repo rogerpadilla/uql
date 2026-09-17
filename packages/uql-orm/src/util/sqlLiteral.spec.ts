@@ -1,20 +1,20 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { escapeAnsiSqlLiteral, escapeMysqlSqlLiteral } from './sqlLiteral.js';
+import { escapeAnsiSqlLiteral, escapeMysqlSqlLiteral, unescapeMysqlString } from './sqlLiteral.js';
 
 describe('escapeAnsiSqlLiteral', () => {
-  it('doubles single quotes (Postgres/SQLite string literal rules)', () => {
+  it('should double single quotes (Postgres/SQLite string literal rules)', () => {
     expect(escapeAnsiSqlLiteral("it's")).toBe("'it''s'");
     expect(escapeAnsiSqlLiteral("a'b'c")).toBe("'a''b''c'");
   });
 
-  it('nullish and booleans', () => {
+  it('should write nullish values and booleans', () => {
     expect(escapeAnsiSqlLiteral(null)).toBe('NULL');
     expect(escapeAnsiSqlLiteral(undefined)).toBe('NULL');
     expect(escapeAnsiSqlLiteral(true)).toBe('true');
     expect(escapeAnsiSqlLiteral(false)).toBe('false');
   });
 
-  it('numbers and bigint', () => {
+  it('should write numbers and bigints', () => {
     expect(escapeAnsiSqlLiteral(0)).toBe('0');
     expect(escapeAnsiSqlLiteral(-3.5)).toBe('-3.5');
     expect(escapeAnsiSqlLiteral(Number.NaN)).toBe('NULL');
@@ -22,16 +22,16 @@ describe('escapeAnsiSqlLiteral', () => {
     expect(escapeAnsiSqlLiteral(42n)).toBe('42');
   });
 
-  it('dates (UTC timestamp literal)', () => {
+  it('should write a date as a UTC timestamp literal', () => {
     const d = new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123));
     expect(escapeAnsiSqlLiteral(d)).toBe("'2024-01-15 12:30:45.123'");
   });
 
-  it('invalid date becomes NULL', () => {
+  it('should write an invalid date as NULL', () => {
     expect(escapeAnsiSqlLiteral(new Date('invalid'))).toBe('NULL');
   });
 
-  it('arrays as comma-separated literals', () => {
+  it('should write arrays as comma-separated literals', () => {
     expect(escapeAnsiSqlLiteral([1, "o'reilly"])).toBe("1, 'o''reilly'");
     expect(
       escapeAnsiSqlLiteral([
@@ -41,7 +41,7 @@ describe('escapeAnsiSqlLiteral', () => {
     ).toBe('(1, 2), (3, 4)');
   });
 
-  it('byte buffers as X-quoted hex', () => {
+  it('should write byte buffers as X-quoted hex', () => {
     expect(escapeAnsiSqlLiteral(Buffer.from([0x48, 0x69]))).toBe("X'4869'");
     expect(escapeAnsiSqlLiteral(new Uint8Array([0xff, 0]))).toBe("X'ff00'");
     expect(escapeAnsiSqlLiteral(Buffer.alloc(0))).toBe("X''");
@@ -49,7 +49,7 @@ describe('escapeAnsiSqlLiteral', () => {
 
   // Dropping either offset arg from `Buffer.from(bytes.buffer, byteOffset, byteLength)` would encode
   // the whole backing ArrayBuffer instead of this view.
-  it('encodes only the bytes a subarray view covers', () => {
+  it('should encode only the bytes a subarray view covers', () => {
     expect(escapeAnsiSqlLiteral(new Uint8Array([1, 2, 3, 4, 5]).subarray(1, 4))).toBe("X'020304'");
     expect(escapeAnsiSqlLiteral(Buffer.from([9, 8, 7, 6]).subarray(2))).toBe("X'0706'");
   });
@@ -62,31 +62,31 @@ describe('escapeAnsiSqlLiteral', () => {
       vi.unstubAllGlobals();
     });
 
-    it('encodes bytes through the lookup table', () => {
+    it('should encode bytes through the lookup table', () => {
       expect(escapeAnsiSqlLiteral(new Uint8Array([0x48, 0x69, 0xff, 0]).subarray(1))).toBe("X'69ff00'");
     });
   });
 
-  it('toSqlString raw hatch (caller must trust return value)', () => {
+  it('should write what toSqlString returns, as the caller trusts it', () => {
     expect(escapeAnsiSqlLiteral({ toSqlString: () => 'CURRENT_TIMESTAMP' })).toBe('CURRENT_TIMESTAMP');
   });
 
-  it('rejects plain objects, functions, and symbols', () => {
+  it('should reject plain objects, functions, and symbols', () => {
     expect(() => escapeAnsiSqlLiteral({ a: 1 })).toThrow(/plain objects/);
     expect(() => escapeAnsiSqlLiteral(() => {})).toThrow(/function/);
     expect(() => escapeAnsiSqlLiteral(Symbol('x'))).toThrow(/symbol/);
   });
 });
 
-// Verified byte-for-byte against the `sqlstring` package this replaced.
+// Byte-for-byte what the `sqlstring` package emits, where it is safe.
 describe('escapeMysqlSqlLiteral', () => {
-  it('backslash-escapes single quotes (MySQL/MariaDB string literal rules)', () => {
+  it('should backslash-escape single quotes, as MySQL and MariaDB read them', () => {
     expect(escapeMysqlSqlLiteral("it's")).toBe(String.raw`'it\'s'`);
     expect(escapeMysqlSqlLiteral('say "hi"')).toBe(String.raw`'say \"hi\"'`);
     expect(escapeMysqlSqlLiteral(String.raw`a\b`)).toBe(String.raw`'a\\b'`);
   });
 
-  it('escapes the MySQL control characters', () => {
+  it('should escape the MySQL control characters', () => {
     expect(escapeMysqlSqlLiteral('\0')).toBe(String.raw`'\0'`);
     expect(escapeMysqlSqlLiteral('\b')).toBe(String.raw`'\b'`);
     expect(escapeMysqlSqlLiteral('\t')).toBe(String.raw`'\t'`);
@@ -95,7 +95,7 @@ describe('escapeMysqlSqlLiteral', () => {
     expect(escapeMysqlSqlLiteral('\x1a')).toBe(String.raw`'\Z'`);
   });
 
-  it('dates, arrays and byte buffers match the ANSI shapes', () => {
+  it('should write dates, arrays and byte buffers as the ANSI escaper does', () => {
     expect(escapeMysqlSqlLiteral(new Date(Date.UTC(2024, 0, 15, 12, 30, 45, 123)))).toBe("'2024-01-15 12:30:45.123'");
     expect(escapeMysqlSqlLiteral(new Date('invalid'))).toBe('NULL');
     expect(escapeMysqlSqlLiteral([1, "o'reilly"])).toBe(String.raw`1, 'o\'reilly'`);
@@ -108,12 +108,12 @@ describe('escapeMysqlSqlLiteral', () => {
     expect(escapeMysqlSqlLiteral(Buffer.from([0x48, 0x69]))).toBe("X'4869'");
   });
 
-  it('toSqlString raw hatch (caller must trust return value)', () => {
+  it('should write what toSqlString returns, as the caller trusts it', () => {
     expect(escapeMysqlSqlLiteral({ toSqlString: () => 'CURRENT_TIMESTAMP' })).toBe('CURRENT_TIMESTAMP');
   });
 
   // `sqlstring` emitted invalid or unsafe SQL for these; MySQL now matches Postgres/SQLite.
-  it('is stricter than sqlstring on values it rendered unsafely', () => {
+  it('should be stricter than sqlstring on values it rendered unsafely', () => {
     expect(escapeMysqlSqlLiteral(Number.NaN)).toBe('NULL');
     expect(escapeMysqlSqlLiteral(Number.POSITIVE_INFINITY)).toBe('NULL');
     expect(escapeMysqlSqlLiteral(42n)).toBe('42');
@@ -121,6 +121,18 @@ describe('escapeMysqlSqlLiteral', () => {
     expect(() => escapeMysqlSqlLiteral({ a: 1 })).toThrow(/plain objects/);
     expect(() => escapeMysqlSqlLiteral(() => {})).toThrow(/function/);
     expect(() => escapeMysqlSqlLiteral(Symbol('x'))).toThrow(/symbol/);
+  });
+});
+
+describe('unescapeMysqlString', () => {
+  it('should undo every escape escapeMysqlSqlLiteral writes', () => {
+    const text = 'a\'b"c\\d\0e\bf\tg\nh\ri\x1aj';
+
+    expect(unescapeMysqlString(escapeMysqlSqlLiteral(text).slice(1, -1))).toBe(text);
+  });
+
+  it('should read a doubled quote as one, and any other escaped character as itself', () => {
+    expect(unescapeMysqlString("it''s \\q")).toBe("it's q");
   });
 });
 
@@ -133,22 +145,22 @@ describe('escapeMysqlSqlLiteral - SQL injection hardening (string literals)', ()
     [`％＇ＯＲ％＇１％＝％１`, `'％＇ＯＲ％＇１％＝％１'`],
   ];
 
-  it.each(payloads)('payload %s escapes to a single literal', (payload, expected) => {
+  it.each(payloads)('should escape payload %s into a single literal', (payload, expected) => {
     expect(escapeMysqlSqlLiteral(payload)).toBe(expected);
   });
 
-  it('concatenation with static SQL cannot inject OR 1=1 as syntax', () => {
+  it('should keep OR 1=1 out of the syntax when concatenated with static SQL', () => {
     const fragment = `WHERE name = ${escapeMysqlSqlLiteral(`x' OR '1'='1`)}`;
     expect(fragment).toBe(String.raw`WHERE name = 'x\' OR \'1\'=\'1'`);
   });
 
   // The historical `addslashes` bypass shape. We escape per code point, so the quote still escapes.
-  it('a multi-byte character before a quote does not consume the escape', () => {
+  it('should not let a multi-byte character before a quote consume the escape', () => {
     expect(escapeMysqlSqlLiteral(`¿'`)).toBe(String.raw`'¿\''`);
     expect(escapeMysqlSqlLiteral(`縺'`)).toBe(String.raw`'縺\''`);
   });
 
-  it('astral and lone-surrogate strings stay inside the literal', () => {
+  it('should keep astral and lone-surrogate strings inside the literal', () => {
     expect(escapeMysqlSqlLiteral('a\u{1F600}b')).toBe("'a\u{1F600}b'");
     expect(escapeMysqlSqlLiteral('a\uD800b')).toBe("'a\uD800b'");
     expect(escapeMysqlSqlLiteral('')).toBe("''");
@@ -171,12 +183,12 @@ describe.each([
   });
 
   // `sqlstring` escaped array elements with `stringifyObjects: true`, yielding `'[object Object]'`.
-  it('rejects an object nested inside an array', () => {
+  it('should reject an object nested inside an array', () => {
     expect(() => escapeLiteral([1, { a: 1 }])).toThrow(/plain objects/);
   });
 });
 
-it('escapes strings nested inside arrays, per dialect', () => {
+it('should escape strings nested inside arrays, per dialect', () => {
   expect(escapeAnsiSqlLiteral([["a'b"]])).toBe(`('a''b')`);
   expect(escapeMysqlSqlLiteral([["a'b"]])).toBe(String.raw`('a\'b')`);
 });
@@ -195,7 +207,7 @@ describe('escapeAnsiSqlLiteral - SQL injection hardening (string literals)', () 
     `multi''quote'break`,
   ];
 
-  it.each(payloads)('payload is fully wrapped as one literal: %s', (payload) => {
+  it.each(payloads)('should wrap payload %s as one literal', (payload) => {
     const out = escapeAnsiSqlLiteral(payload);
     expect(out.startsWith("'")).toBe(true);
     expect(out.endsWith("'")).toBe(true);
@@ -207,7 +219,7 @@ describe('escapeAnsiSqlLiteral - SQL injection hardening (string literals)', () 
     }
   });
 
-  it('concatenation with static SQL cannot inject OR 1=1 as syntax', () => {
+  it('should keep OR 1=1 out of the syntax when concatenated with static SQL', () => {
     const user = `x' OR '1'='1`;
     const fragment = `WHERE name = ${escapeAnsiSqlLiteral(user)}`;
     expect(fragment).toBe(`WHERE name = 'x'' OR ''1''=''1'`);

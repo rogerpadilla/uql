@@ -9,6 +9,7 @@ import {
   Invoice,
   Item,
   ItemAdjustment,
+  JsonRecord,
   MeasureUnitCategory,
   type Spec,
   Tax,
@@ -113,9 +114,12 @@ class MongoDialectSpec implements Spec {
    * Both backends share the guard, so both name the operator and the type they got.
    */
   shouldRejectANonArrayLogicalOperator() {
-    expect(() => this.dialect.where(Item, { $and: 'foo' } as never)).toThrow('$and expects an array, got string');
-    expect(() => this.dialect.where(Item, { $or: { name: 'a' } } as never)).toThrow('$or expects an array, got object');
-    expect(() => this.dialect.where(Item, { $nor: null } as never)).toThrow('$nor expects an array, got null');
+    // @ts-expect-error: `$and` takes a list
+    expect(() => this.dialect.where(Item, { $and: 'foo' })).toThrow('$and expects an array, got string');
+    // @ts-expect-error: `$or` takes a list
+    expect(() => this.dialect.where(Item, { $or: { name: 'a' } })).toThrow('$or expects an array, got object');
+    // @ts-expect-error: `$nor` takes a list
+    expect(() => this.dialect.where(Item, { $nor: null })).toThrow('$nor expects an array, got null');
   }
 
   shouldBuildWhere() {
@@ -141,11 +145,12 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(Item, { id: '507f191e810c19729de860ea' as any })).toEqual({
+    expect(this.dialect.where(Item, { id: '507f191e810c19729de860ea' })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(Item, { id: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    // @ts-expect-error: the driver's own id, where the entity declares a string
+    expect(this.dialect.where(Item, { id: new ObjectId('507f191e810c19729de860ea') })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
@@ -153,7 +158,8 @@ class MongoDialectSpec implements Spec {
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
 
-    expect(this.dialect.where(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') as any })).toEqual({
+    // @ts-expect-error: the driver's own id, where the entity declares a string
+    expect(this.dialect.where(TaxCategory, { pk: new ObjectId('507f191e810c19729de860ea') })).toEqual({
       _id: new ObjectId('507f191e810c19729de860ea'),
     });
   }
@@ -197,10 +203,7 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.where(RenamedDoc, {})).toEqual({ deleted_at: null });
   }
 
-  /**
-   * The inverse (11) side correlates per parent document. It used to build the lookup from the
-   * query's own `_id`, so it only worked for a query filtered by primary key.
-   */
+  /** The inverse (11) side correlates per parent document, not by the query's own `_id`. */
   shouldCorrelateInverseOneToOnePopulateWithoutAnIdFilter() {
     expect(
       this.dialect.aggregationPipeline(User, { $where: { email: 'a@b.c' }, $populate: { profile: true } }),
@@ -228,9 +231,8 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * A relation of a relation is looked up inside the outer lookup's own pipeline, before the
-   * projection that reads it. Regression: only the first level was ever looked up, while the
-   * projection still asked for the nested key, so it came back empty with no error.
+   * A relation of a relation is looked up inside the outer lookup's own pipeline, before the projection
+   * that reads it.
    */
   shouldNestLookupsForNestedPopulate() {
     expect(
@@ -291,7 +293,7 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Item, { $and: [raw`code IS NOT NULL`] })).toThrow(
       'raw() in $where is not supported on MongoDB',
     );
-    expect(() => this.dialect.where(Item, { name: raw`lower(code)` as never })).toThrow(
+    expect(() => this.dialect.where(Item, { name: raw`lower(code)` })).toThrow(
       'raw() in $where is not supported on MongoDB',
     );
   }
@@ -303,7 +305,8 @@ class MongoDialectSpec implements Spec {
    * `$near` through to the server as a bogus operator name.
    */
   shouldThrowOnNearInWhere() {
-    expect(() => this.dialect.where(Item, { name: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } as never)).toThrow(
+    // @ts-expect-error: `$near` is for a vector field
+    expect(() => this.dialect.where(Item, { name: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } })).toThrow(
       '$near is not supported on MongoDB',
     );
   }
@@ -365,7 +368,7 @@ class MongoDialectSpec implements Spec {
     const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${COUNT_ALIAS}`, 0] }, 0] };
 
     const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
-    expect(exact.stages[0]!.$lookup!.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_ALIAS }]);
+    expect(exact.stages[0]?.$lookup?.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_ALIAS }]);
     expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
 
     const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
@@ -412,35 +415,35 @@ class MongoDialectSpec implements Spec {
   shouldReportWhetherAWhereConstrainsRelations() {
     expect(this.dialect.constrainsRelations(Item, undefined)).toBe(false);
     expect(this.dialect.constrainsRelations(Item, { name: 'x' })).toBe(false);
-    expect(this.dialect.constrainsRelations(Item, { tags: { name: 'x' } } as never)).toBe(true);
-    expect(this.dialect.constrainsRelations(Item, { $or: [{ tags: { name: 'x' } }] } as never)).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { tags: { name: 'x' } })).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $or: [{ tags: { name: 'x' } }] })).toBe(true);
     // A negation groups clauses like `$and`/`$or` do, so a relation inside one needs the same
     // aggregation path - missing these was a relation filter throwing as unsupported.
-    expect(this.dialect.constrainsRelations(Item, { $not: [{ tags: { name: 'x' } }] } as never)).toBe(true);
-    expect(this.dialect.constrainsRelations(Item, { $nor: [{ tags: { name: 'x' } }] } as never)).toBe(true);
-    expect(this.dialect.constrainsRelations(Item, { $nor: [] } as never)).toBe(false);
+    expect(this.dialect.constrainsRelations(Item, { $not: [{ tags: { name: 'x' } }] })).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $nor: [{ tags: { name: 'x' } }] })).toBe(true);
+    expect(this.dialect.constrainsRelations(Item, { $nor: [] })).toBe(false);
     // Refused later by the render, rather than recursing forever on the way there.
     expect(this.dialect.constrainsRelations(Item, { $or: [raw`code IS NOT NULL`] })).toBe(false);
   }
 
   /** A plain filter (`find`, `updateMany`) has nowhere to put the lookups a relation condition needs. */
   shouldThrowOnRelationInPlainFilter() {
-    expect(() => this.dialect.where(Item, { tax: { name: 'VAT' } } as never)).toThrow(
+    expect(() => this.dialect.where(Item, { tax: { name: 'VAT' } })).toThrow(
       "filtering by relation 'tax' is not supported here on MongoDB",
     );
-    expect(() => this.dialect.where(Item, { tags: { $size: 2 } } as never)).toThrow(
+    expect(() => this.dialect.where(Item, { tags: { $size: 2 } })).toThrow(
       "filtering by relation 'tags' is not supported here on MongoDB",
     );
   }
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
   shouldSortByRelationField() {
-    expect(this.dialect.sort(Item, { tax: { name: -1 } } as never, { tax: true })).toEqual({ 'tax.name': -1 });
-    expect(this.dialect.sort(User, { profile: { picture: 1 } } as never, { profile: true })).toEqual({
+    expect(this.dialect.sort(Item, { tax: { name: -1 } }, { tax: true })).toEqual({ 'tax.name': -1 });
+    expect(this.dialect.sort(User, { profile: { picture: 1 } }, { profile: true })).toEqual({
       'profile.image': 1,
     });
     // As many of its fields as the caller asks for, and alongside the parent's own columns.
-    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 } as never, { tax: true })).toEqual({
+    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 }, { tax: true })).toEqual({
       'tax.name': 1,
       'tax.percentage': -1,
       code: -1,
@@ -454,9 +457,9 @@ class MongoDialectSpec implements Spec {
    * it asked for, in the order it asked for.
    */
   shouldSortByAnUnpopulatedRelation() {
-    expect(this.dialect.sort(Item, { tax: { name: 1 } } as never)).toEqual({ 'tax.name': 1 });
+    expect(this.dialect.sort(Item, { tax: { name: 1 } })).toEqual({ 'tax.name': 1 });
 
-    const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } } as never);
+    const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } });
     expect(pipeline.map((stage) => Object.keys(stage)[0])).toEqual(['$lookup', '$unwind', '$sort', '$unset']);
     expect(pipeline.at(-1)).toEqual({ $unset: ['tax'] });
   }
@@ -471,7 +474,7 @@ class MongoDialectSpec implements Spec {
         $select: { name: true },
         $distinct: true,
         $sort: { tax: { name: 1 } },
-      } as never),
+      }),
     ).toThrow("cannot $sort by relation 'tax' with $distinct unless 'tax' is populated");
   }
 
@@ -485,38 +488,42 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnUnjoinableRelationInSort() {
-    expect(() => this.dialect.sort(Item, { tags: { name: 1 } } as never, { tags: true })).toThrow(
-      "cannot $sort by 'tags'",
-    );
+    // @ts-expect-error: a to-many sorts by `$count` alone
+    expect(() => this.dialect.sort(Item, { tags: { name: 1 } }, { tags: true })).toThrow("cannot $sort by 'tags'");
     // Every level of the path gets its own lookup, so a nested ordering resolves without populating.
-    expect(this.dialect.sort(Item, { tax: { category: { name: 1 } } } as never)).toEqual({
+    expect(this.dialect.sort(Item, { tax: { category: { name: 1 } } })).toEqual({
       'tax.category.name': 1,
     });
     // Populating the whole path orders by the same nested alias the SQL dialects join to.
     expect(
-      this.dialect.sort(Item, { tax: { category: { name: -1 } } } as never, {
-        tax: { $populate: { category: true } },
-      }),
+      this.dialect.sort(
+        Item,
+        { tax: { category: { name: -1 } } },
+        {
+          tax: { $populate: { category: true } },
+        },
+      ),
     ).toEqual({ 'tax.category.name': -1 });
   }
 
   /** A `$lookup` for a to-one unwinds one document per parent, so it pages and orders no better than a join. */
   shouldRejectPagingALookedUpRelation() {
-    expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $limit: 5 } } } as never)).toThrow(
+    // @ts-expect-error: a to-one takes no `$limit`
+    expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $limit: 5 } } })).toThrow(
       "'$limit' is not supported inside $populate of the to-one relation 'tax'",
     );
     expect(() =>
-      this.dialect.aggregationPipeline(Item, { $populate: { tax: { $sort: { name: 1 } } } } as never),
+      // @ts-expect-error: a to-one takes no `$sort`
+      this.dialect.aggregationPipeline(Item, { $populate: { tax: { $sort: { name: 1 } } } }),
     ).toThrow("'$sort' is not supported inside $populate of the to-one relation 'tax'");
   }
 
   /** An unknown path root is a typo (or an injected key) that would otherwise match nothing. */
   shouldThrowOnUnknownPathRoot() {
-    expect(() => this.dialect.where(Company, { 'nope.city': 'NY' } as never)).toThrow(
-      'path nope.city does not exist in',
-    );
+    // @ts-expect-error: no such field
+    expect(() => this.dialect.where(Company, { 'nope.city': 'NY' })).toThrow('path nope.city does not exist in');
     // a declared JSON field may carry any embedded path
-    expect(this.dialect.where(Company, { 'kind.city': 'NY' } as never)).toEqual({ 'kind.city': 'NY' });
+    expect(this.dialect.where(Company, { 'kind.country': 'NY' })).toEqual({ 'kind.country': 'NY' });
   }
 
   shouldBuildSort() {
@@ -531,16 +538,12 @@ class MongoDialectSpec implements Spec {
 
   shouldNormalizeIds() {
     const meta = getMeta(User);
-    expect(
-      this.dialect.normalizeIds(meta, [
-        { _id: 'abc' } as Partial<User> as User,
-        { _id: 'def' } as Partial<User> as User,
-      ]),
-    ).toMatchObject([{ id: 'abc' }, { id: 'def' }]);
+    expect(this.dialect.normalizeIds(meta, [{ _id: 'abc' }, { _id: 'def' }])).toMatchObject([
+      { id: 'abc' },
+      { id: 'def' },
+    ]);
     expect(this.dialect.normalizeId(meta, undefined)).toBe(undefined);
-    expect(
-      this.dialect.normalizeId(meta, { _id: 'abc', company: {}, users: [] } as Partial<User> as User),
-    ).toMatchObject({
+    expect(this.dialect.normalizeId(meta, { _id: 'abc', company: {}, users: [] })).toMatchObject({
       id: 'abc',
       company: {},
       users: [],
@@ -644,8 +647,7 @@ class MongoDialectSpec implements Spec {
           _id: new ObjectId('65496146f8f7899f63768df1'),
         },
       },
-      // `$limit` used to be dropped whenever a relation was populated; nothing here is `$required`,
-      // so paging runs before the lookups
+      // Nothing here is `$required`, so paging runs before the lookups.
       { $limit: 1 },
       {
         $lookup: {
@@ -666,7 +668,7 @@ class MongoDialectSpec implements Spec {
     expect(
       this.dialect.aggregationPipeline(User, {
         $populate: { profile: true },
-        $where: { id: '65496146f8f7899f63768df1' as any },
+        $where: { id: '65496146f8f7899f63768df1' },
         $limit: 1,
       }),
     ).toEqual([
@@ -675,8 +677,7 @@ class MongoDialectSpec implements Spec {
           _id: new ObjectId('65496146f8f7899f63768df1'),
         },
       },
-      // `$limit` used to be dropped whenever a relation was populated; nothing here is `$required`,
-      // so paging runs before the lookups
+      // Nothing here is `$required`, so paging runs before the lookups.
       { $limit: 1 },
       {
         $lookup: {
@@ -698,7 +699,7 @@ class MongoDialectSpec implements Spec {
     expect(
       this.dialect.aggregationPipeline(User, {
         $populate: { profile: true },
-        $where: { id: '65496146f8f7899f63768df1' as any },
+        $where: { id: '65496146f8f7899f63768df1' },
         $sort: { name: 1 },
         $limit: 1,
       }),
@@ -732,9 +733,8 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * Regression for the $lookup/populate gap: a `security: true` filter on a joined (m1) relation
-   * must apply even to a bare `$populate: { related: true }` with no explicit `$where` on it -
-   * matching the SQL dialects' equivalent JOIN-ON-clause fix.
+   * A `security: true` filter on a joined to-one applies to a bare `$populate`, with no `$where` of its
+   * own, as it does on the SQL dialects.
    */
   shouldApplySecurityFilterToLookupPopulateWithoutExplicitWhere() {
     const pipeline = withContext({ secureTenantId: 5 }, () =>
@@ -772,8 +772,6 @@ class MongoDialectSpec implements Spec {
       }),
     ).toThrow(UqlSecurityError);
   }
-
-  // New operator tests
   shouldTransformBetweenOperator() {
     const result = this.dialect.where(Item, { createdAt: { $between: [100, 200] } });
     expect(result).toEqual({
@@ -800,23 +798,18 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldPassThroughAllOperator() {
-    const result = this.dialect.where(Item, { name: { $all: ['a', 'b', 'c'] } } as any);
-    expect(result).toEqual({
-      name: { $all: ['a', 'b', 'c'] },
+    expect(this.dialect.where(JsonRecord, { entries: { $all: ['a', 'b', 'c'] } })).toEqual({
+      entries: { $all: ['a', 'b', 'c'] },
     });
   }
 
   shouldPassThroughSizeOperator() {
-    const result = this.dialect.where(Item, { name: { $size: 3 } } as any);
-    expect(result).toEqual({
-      name: { $size: 3 },
-    });
+    expect(this.dialect.where(JsonRecord, { entries: { $size: 3 } })).toEqual({ entries: { $size: 3 } });
   }
 
   shouldPassThroughElemMatchOperator() {
-    const result = this.dialect.where(Item, { name: { $elemMatch: { foo: 'bar' } } } as any);
-    expect(result).toEqual({
-      name: { $elemMatch: { foo: 'bar' } },
+    expect(this.dialect.where(JsonRecord, { entries: { $elemMatch: { foo: 'bar' } } })).toEqual({
+      entries: { $elemMatch: { foo: 'bar' } },
     });
   }
 
@@ -855,24 +848,17 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldNotResolveStringOperatorViaThePrototypeChain() {
-    // 'toString' only exists via Object.prototype, not REGEX_OP_MAP's own keys - alongside a real
-    // operator ($gt) so the object still qualifies as an operator map (hasOperatorKeys) and reaches
-    // transformOperators. Before the fix this crashed with "regexEntry.wrap is not a function".
-    expect(this.dialect.where(Item, { name: { $gt: 'a', toString: 'x' } } as any)).toEqual({
+    // @ts-expect-error: an inherited property, beside a real operator so the map is read as operators
+    expect(this.dialect.where(Item, { name: { $gt: 'a', toString: 'x' } })).toEqual({
       name: { $gt: 'a', toString: 'x' },
     });
   }
 
   shouldNotResolveAggregateOperatorViaThePrototypeChain() {
     expect(() =>
-      this.dialect.buildAggregateStages(Item, { $select: { total: { toString: 'salePrice' } } } as any),
+      // @ts-expect-error: an inherited property, not an aggregate function
+      this.dialect.buildAggregateStages(Item, { $select: { total: { toString: 'salePrice' } } }),
     ).toThrow('unsupported aggregate operator: toString');
-  }
-
-  shouldTransformTextOperator() {
-    expect(this.dialect.where(Item, { name: { $text: 'search' } } as any)).toEqual({
-      name: { $text: { $search: 'search' } },
-    });
   }
 
   shouldBuildAggregateStagesBasicCount() {
@@ -891,14 +877,14 @@ class MongoDialectSpec implements Spec {
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
       $select: { n: { $count: '*' } },
-      $having: { code: 'abc' } as never,
+      $having: { code: 'abc' },
     });
     expect(stages.at(-1)).toEqual({ $match: { code: 'abc' } });
 
     const byList = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
       $select: { n: { $count: '*' } },
-      $having: { code: ['a', 'b'] } as never,
+      $having: { code: ['a', 'b'] },
     });
     expect(byList.at(-1)).toEqual({ $match: { code: { $in: ['a', 'b'] } } });
   }
@@ -1124,8 +1110,9 @@ class MongoDialectSpec implements Spec {
     expect(() =>
       this.dialect.aggregationPipeline(Shelf, {
         $populate: { vectorItem: true },
+        // @ts-expect-error: a relation sorts by no vector
         $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
-      } as never),
+      }),
     ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
   }
 
@@ -1154,13 +1141,15 @@ class MongoDialectSpec implements Spec {
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
         $select: { count: { $count: '*' } },
-        $having: { conut: 1 } as never,
+        // @ts-expect-error: a misspelt alias
+        $having: { conut: 1 },
       }),
     ).toThrow(`cannot $having by 'conut': ${cause}`);
     expect(() =>
       this.dialect.buildAggregateStages(Item, {
         $select: { count: { $count: '*' } },
-        $sort: { conut: 1 } as never,
+        // @ts-expect-error: a misspelt alias
+        $sort: { conut: 1 },
       }),
     ).toThrow(`cannot $sort by 'conut': ${cause}`);
   }
@@ -1218,12 +1207,6 @@ class MongoDialectSpec implements Spec {
     const sortStage = stages.find((s) => '$sort' in s);
     expect(sortStage).toEqual({ $sort: { code: 1, count: -1 } });
   }
-
-  shouldMapTableNameRow() {
-    expect((this.dialect as any).mapTableNameRow({ table_name: 'users' })).toBe('users');
-  }
-  // --- Vector Search ---
-
   shouldBuildBasicVectorSearchStage() {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
@@ -1261,9 +1244,9 @@ class MongoDialectSpec implements Spec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const r5 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
-    expect((r5['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(50);
+    expect(r5).toMatchObject({ $vectorSearch: { numCandidates: 50 } });
     const r20 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 20);
-    expect((r20['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(200);
+    expect(r20).toMatchObject({ $vectorSearch: { numCandidates: 200 } });
   }
 
   /** Atlas rejects a `numCandidates` above 10000, which `limit * 10` reaches at a limit of 1001. */
@@ -1274,10 +1257,10 @@ class MongoDialectSpec implements Spec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const stage = this.dialect.buildVectorSearchStage(VectorCap, 'vec', { $vector: [1, 2, 3] }, undefined, 5000);
-    expect((stage['$vectorSearch'] as Record<string, unknown>)['numCandidates']).toBe(10_000);
+    expect(stage).toMatchObject({ $vectorSearch: { numCandidates: 10_000 } });
   }
 
-  /** Atlas requires `limit`; without it the stage used to carry `numCandidates: null` and no limit. */
+  /** Atlas requires `limit`, so a vector search without one is refused rather than sent without it. */
   shouldRejectVectorSearchWithoutALimit() {
     @Entity({ name: 'VectorNoLimit' })
     class VectorNoLimit {
@@ -1290,9 +1273,8 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * MongoDB's own `$text` takes only the search string: its text index declares which fields it
-   * covers, so `$fields` cannot narrow it. Before this, `$text` fell through to path validation and
-   * failed with "path $text does not exist".
+   * MongoDB's `$text` takes only the search string: its text index declares the fields it covers, so
+   * `$fields` cannot narrow it.
    */
   shouldTranslateTextSearchToMongoTextOperator() {
     const filter = this.dialect.where(Item, {
@@ -1423,41 +1405,35 @@ class MongoDialectSpec implements Spec {
       @Field({ type: 'vector' }) vec!: number[];
     }
     const result = this.dialect.buildVectorSearchStage(VectorCustomIdx, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
-    expect((result['$vectorSearch'] as Record<string, unknown>)['index']).toBe('my_custom_idx');
+    expect(result).toMatchObject({ $vectorSearch: { index: 'my_custom_idx' } });
   }
-
-  // --- extractVectorSort ---
-
   shouldExtractVectorSortFromMixed() {
     const result = this.dialect.extractVectorSort({
       vec: { $vector: [1, 2, 3] },
       name: -1,
       createdAt: 'desc',
-    } as any);
+    });
     expect(result).toBeDefined();
-    expect(result!.vectorKey).toBe('vec');
-    expect(result!.vectorSearch).toEqual({ $vector: [1, 2, 3] });
-    expect(result!.regularSort).toEqual({ name: -1, createdAt: 'desc' });
+    expect(result?.vectorKey).toBe('vec');
+    expect(result?.vectorSearch).toEqual({ $vector: [1, 2, 3] });
+    expect(result?.regularSort).toEqual({ name: -1, createdAt: 'desc' });
   }
 
   shouldExtractVectorOnlySort() {
-    const result = this.dialect.extractVectorSort({ vec: { $vector: [4, 5, 6] } } as any);
+    const result = this.dialect.extractVectorSort({ vec: { $vector: [4, 5, 6] } });
     expect(result).toBeDefined();
-    expect(result!.vectorKey).toBe('vec');
-    expect(result!.vectorSearch).toEqual({ $vector: [4, 5, 6] });
-    expect(result!.regularSort).toEqual({});
+    expect(result?.vectorKey).toBe('vec');
+    expect(result?.vectorSearch).toEqual({ $vector: [4, 5, 6] });
+    expect(result?.regularSort).toEqual({});
   }
 
   shouldReturnUndefinedForNonVectorSort() {
-    expect(this.dialect.extractVectorSort({ name: -1, createdAt: 'desc' } as any)).toBeUndefined();
+    expect(this.dialect.extractVectorSort({ name: -1, createdAt: 'desc' })).toBeUndefined();
   }
 
   shouldReturnUndefinedForUndefinedSort() {
     expect(this.dialect.extractVectorSort(undefined)).toBeUndefined();
   }
-
-  // ─── JSON update operators mapped onto native MongoDB operators ───────────
-
   shouldMapJsonOperatorsToNativeOperators() {
     expect(
       this.dialect.getUpdateFilter({
@@ -1623,9 +1599,8 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
-   * The seam out of the driver. An `ObjectId` in `_id` or in a reference becomes its hex string:
-   * the "string in your code" the docs promise. The object itself used to leak, typed as a string
-   * it was not, so `doc.id === someId` was false and a reference written back missed the join.
+   * The seam out of the driver: an `ObjectId` in `_id` or a reference becomes its hex string, the
+   * "string in your code" the docs promise, so `doc.id === someId` holds and a reference joins.
    */
   shouldHandBackHexStringsFromTheWire() {
     const meta = getMeta(Doc);

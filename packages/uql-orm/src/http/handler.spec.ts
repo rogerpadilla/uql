@@ -22,7 +22,7 @@ describe('createRequestHandler', () => {
   });
 
   /** The route is one path segment, which a composite key has no spelling for on either side yet. */
-  it('refuses a by-id route on a composite key, naming the handler', async () => {
+  it('should refuse a by-id route on a composite key, naming the handler', async () => {
     class Enrolment {
       studentId?: number;
       courseId?: string;
@@ -37,7 +37,7 @@ describe('createRequestHandler', () => {
     );
   });
 
-  it('runs on the pool it is given', async () => {
+  it('should run on the pool it is given', async () => {
     const ownQuerier = createMockQuerier();
     const handle = createRequestHandler({
       include: [User],
@@ -50,7 +50,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
-  it('picks the pool per request, after the context it resolved', async () => {
+  it('should pick the pool per request, after the context it resolved', async () => {
     const tenantQuerier = createMockQuerier();
     const seen: unknown[] = [];
     const handle = createRequestHandler<{ tenantId: number }>({
@@ -68,13 +68,13 @@ describe('createRequestHandler', () => {
     expect(tenantQuerier.findMany).toHaveBeenCalled();
   });
 
-  it('throws if no entities are provided', () => {
+  it('should throw if no entities are provided', () => {
     expect(() => createRequestHandler({ pool, include: [] })).toThrow('no entities for the uql middleware');
   });
 
-  // The path comes from the class name, so two entities mapping the same table in different schemas
-  // land on it together. Before this the second silently replaced the first and one was unreachable.
-  it('throws when two entities claim the same path', () => {
+  // The path comes from the class name, so two entities on the same table in different schemas would
+  // land on one path, the second unreachable.
+  it('should throw when two entities claim the same path', () => {
     class Company {
       id?: number;
     }
@@ -99,20 +99,20 @@ describe('createRequestHandler', () => {
     expect(handle(req({ method: 'GET', entityPath: 'billing-company', subPath: 'one' }))).toBeDefined();
   });
 
-  it('returns undefined for unknown entity or route', () => {
+  it('should return undefined for unknown entity or route', () => {
     const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'unknown-entity' }))).toBeUndefined();
     expect(handle(req({ method: 'OPTIONS', entityPath: 'user' }))).toBeUndefined();
     expect(handle(req({ method: 'POST', entityPath: 'user', subPath: 'one' }))).toBeUndefined();
   });
 
-  it('respects exclude', () => {
+  it('should respect exclude', () => {
     class OtherEntity {}
     const handle = createRequestHandler({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
     expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
   });
 
-  it('findOne', async () => {
+  it('should find one row', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 1, name: 'John' });
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
@@ -123,7 +123,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('wires getContext into the ambient context for the whole request', async () => {
+  it('should wire getContext into the ambient context for the whole request', async () => {
     let seen: unknown;
     mockQuerier.findOne.mockImplementation(async () => {
       seen = getContext();
@@ -142,14 +142,14 @@ describe('createRequestHandler', () => {
     expect(seen).toEqual({ tenantId: 7 });
   });
 
-  it('findOne returns null', async () => {
+  it('should answer null where findOne finds none', async () => {
     mockQuerier.findOne.mockResolvedValue(null);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }));
     expect(resp).toEqual({ status: 200, body: { data: null, count: 0 } });
   });
 
-  it('count', async () => {
+  it('should count rows', async () => {
     mockQuerier.count.mockResolvedValue(5);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count' }));
@@ -157,7 +157,7 @@ describe('createRequestHandler', () => {
   });
 
   /** What the client's `exists` sends: the cap has to reach the querier, or it counts every match. */
-  it('count honors a $limit from the wire', async () => {
+  it('should honor a $limit from the wire on count', async () => {
     mockQuerier.count.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: 'count', query: { $limit: '1' } }));
@@ -165,7 +165,7 @@ describe('createRequestHandler', () => {
     expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
   });
 
-  it('findOneById', async () => {
+  it('should find one row by id', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
@@ -173,14 +173,14 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '123' } }));
   });
 
-  it('findOneById answers a count of zero where no row matches', async () => {
+  it('should answer a count of zero where no row has the id', async () => {
     mockQuerier.findOne.mockResolvedValue(undefined);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user', subPath: '123' }));
     expect(resp).toEqual({ status: 200, body: { data: undefined, count: 0 } });
   });
 
-  it('findOneById merges an object $where', async () => {
+  it('should merge an object $where into a read by id', async () => {
     mockQuerier.findOne.mockResolvedValue({ id: 123 });
     const handle = createRequestHandler({ pool, include: [User] });
     await handle(req({ method: 'GET', entityPath: 'user', subPath: '123', query: { $where: '{"name":"John"}' } }));
@@ -190,7 +190,7 @@ describe('createRequestHandler', () => {
     );
   });
 
-  it('findMany', async () => {
+  it('should find rows', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'GET', entityPath: 'user' }));
@@ -198,7 +198,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.count).not.toHaveBeenCalled();
   });
 
-  it('findMany with count', async () => {
+  it('should find rows with their count', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     mockQuerier.count.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
@@ -206,7 +206,7 @@ describe('createRequestHandler', () => {
     expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
   });
 
-  it('QUERY (RFC 10008) reads take the query from the body and hit preFilter', async () => {
+  it("should take a QUERY read's query from the body, through preFilter", async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     mockQuerier.count.mockResolvedValue(1);
     const preFilter = vi.fn();
@@ -226,7 +226,7 @@ describe('createRequestHandler', () => {
     expect(preSave).not.toHaveBeenCalled();
   });
 
-  it('insertOne runs in a transaction', async () => {
+  it('should insert one row in a transaction', async () => {
     mockQuerier.insertOne.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'John' } }));
@@ -237,7 +237,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('insertMany', async () => {
+  it('should insert rows', async () => {
     mockQuerier.insertMany.mockResolvedValue([1, 2]);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
@@ -247,7 +247,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.insertMany).toHaveBeenCalledWith(User, [{ name: 'a' }, { name: 'b' }]);
   });
 
-  it('saveOne', async () => {
+  it('should save one row', async () => {
     mockQuerier.saveOne.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'PUT', entityPath: 'user', body: { id: 1, name: 'John' } }));
@@ -255,7 +255,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.saveOne).toHaveBeenCalledWith(User, { id: 1, name: 'John' });
   });
 
-  it('saveMany', async () => {
+  it('should save rows', async () => {
     mockQuerier.saveMany.mockResolvedValue([1, 2]);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
@@ -264,7 +264,7 @@ describe('createRequestHandler', () => {
     expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
   });
 
-  it('updateOneById', async () => {
+  it('should update one row by id', async () => {
     mockQuerier.updateMany.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'PATCH', entityPath: 'user', subPath: '1', body: { name: 'John' } }));
@@ -274,7 +274,7 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('updateMany (bulk)', async () => {
+  it('should update the rows a query matches', async () => {
     mockQuerier.updateMany.mockResolvedValue(3);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
@@ -286,7 +286,7 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('deleteOneById with ?hardDelete', async () => {
+  it('should delete one row by id, hard with ?hardDelete', async () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(
@@ -298,7 +298,7 @@ describe('createRequestHandler', () => {
     });
   });
 
-  it('deleteMany deletes by found ids (soft by default)', async () => {
+  it('should delete by the ids it found, softly by default', async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
     mockQuerier.deleteMany.mockResolvedValue(2);
     const handle = createRequestHandler({ pool, include: [User] });
@@ -307,7 +307,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: { id: [1, 2] } }, { hardDelete: false });
   });
 
-  it('deleteMany when nothing found', async () => {
+  it('should delete nothing where nothing is found', async () => {
     mockQuerier.findMany.mockResolvedValue([]);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
@@ -315,14 +315,14 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
   });
 
-  it('read errors release the querier and propagate', async () => {
+  it('should release the querier and propagate a read error', async () => {
     mockQuerier.findOne.mockRejectedValue(new Error('One error'));
     const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'GET', entityPath: 'user', subPath: 'one' }))).rejects.toThrow('One error');
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('write errors rollback, release, and propagate', async () => {
+  it('should roll back, release and propagate a write error', async () => {
     mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
     const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
@@ -331,7 +331,7 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('swallows rollback errors and keeps the original one', async () => {
+  it('should swallow rollback errors and keep the original one', async () => {
     mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
     mockQuerier.rollbackTransaction.mockRejectedValue(new Error('Rollback error'));
     const handle = createRequestHandler({ pool, include: [User] });
@@ -340,7 +340,7 @@ describe('createRequestHandler', () => {
   });
 
   describe('hooks', () => {
-    it('runs pre on every request and preFilter on reads', async () => {
+    it('should run pre on every request and preFilter on reads', async () => {
       mockQuerier.findMany.mockResolvedValue([]);
       const pre = vi.fn();
       const preFilter = vi.fn();
@@ -356,7 +356,7 @@ describe('createRequestHandler', () => {
       expect(ctx.meta.entity).toBe(User);
     });
 
-    it('runs preSave on writes', async () => {
+    it('should run preSave on writes', async () => {
       mockQuerier.insertOne.mockResolvedValue(1);
       const preFilter = vi.fn();
       const preSave = vi.fn();
@@ -367,15 +367,10 @@ describe('createRequestHandler', () => {
     });
 
     /**
-     * This shows `preFilter` CAN mutate the outgoing query - it is not a tenant-scoping mechanism
-     * in its own right. Unlike `@Filter(..., { security: true })`, a hook mutation is not
-     * AND-merged (a client `$where` on the same key can simply be overwritten either way, with no
-     * guarantee which value wins), does not fail closed when its own context is missing, and does
-     * not reach joined (m1/11) relations populated without an explicit `$where`. Use
-     * `@Filter(name, { condition, security: true })` for real tenant scoping; reach for a hook
-     * only for non-security query shaping.
+     * A hook can rewrite the outgoing query, but it scopes no tenant: unlike a `security: true` filter it
+     * is not AND-merged, does not fail closed, and misses a relation populated without a `$where`.
      */
-    it('hook mutations of the query reach the querier', async () => {
+    it("should let a hook's query mutation reach the querier", async () => {
       mockQuerier.findMany.mockResolvedValue([]);
       const handle = createRequestHandler<{ companyId: number }>({
         pool,
@@ -389,7 +384,7 @@ describe('createRequestHandler', () => {
       expect(mockQuerier.findMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { companyId: 40 } }));
     });
 
-    it('hook reassignment of the body reaches the querier', async () => {
+    it("should let a hook's reassigned body reach the querier", async () => {
       mockQuerier.insertOne.mockResolvedValue(1);
       const handle = createRequestHandler({
         pool,
@@ -402,7 +397,7 @@ describe('createRequestHandler', () => {
       expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'a', creatorId: 7 });
     });
 
-    it('post can strip and derive response fields (SafeIntegration pattern)', async () => {
+    it('should let post strip and derive response fields', async () => {
       mockQuerier.findMany.mockResolvedValue([{ id: 1, name: 'slack', accessToken: 'secret' }]);
       const handle = createRequestHandler({
         pool,
@@ -421,7 +416,7 @@ describe('createRequestHandler', () => {
       });
     });
 
-    it('post can coerce null data and runs after commit on writes', async () => {
+    it('should let post coerce null data, after the commit on a write', async () => {
       mockQuerier.findOne.mockResolvedValue(null);
       const events: string[] = [];
       const handle = createRequestHandler({
@@ -441,7 +436,7 @@ describe('createRequestHandler', () => {
       expect(mockQuerier.commitTransaction).toHaveBeenCalled();
     });
 
-    it('hooks can enforce hardDelete (flags are resolved after hooks run)', async () => {
+    it('should let hooks enforce hardDelete, the flags being resolved after them', async () => {
       mockQuerier.deleteMany.mockResolvedValue(1);
       const handle = createRequestHandler({
         pool,
@@ -454,7 +449,7 @@ describe('createRequestHandler', () => {
       expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.anything(), { hardDelete: true });
     });
 
-    it('an async hook that throws aborts before touching the pool', async () => {
+    it('should abort before touching the pool when an async hook throws', async () => {
       const err = Object.assign(new Error('forbidden'), { status: 403 });
       const handle = createRequestHandler({
         pool,

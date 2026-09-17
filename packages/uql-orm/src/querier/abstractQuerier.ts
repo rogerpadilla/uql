@@ -1,4 +1,4 @@
-import { assertSoleId, getMeta, idOf, namesKey, relationOf, soleIdOf } from '../entity/index.js';
+import { assertSoleId, getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
 
 import type {
   EntityData,
@@ -7,7 +7,6 @@ import type {
   ExtraOptions,
   FieldKey,
   HookEvent,
-  IdValue,
   Querier,
   Query,
   QueryAggMap,
@@ -38,15 +37,18 @@ import type {
   WrittenId,
 } from '../type/index.js';
 import {
+  cascadesOnDelete,
   childrenOf,
   clone,
   entityName,
   fillOnFields,
+  filterFieldKeys,
   filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
   getRelationRequestSummary,
   idOnlyQuery,
+  isPagedQuery,
   isScalarId,
   LoggerWrapper,
   parentJoins,
@@ -63,14 +65,8 @@ import {
 import { enrichError } from './queryError.js';
 
 /**
- * Rejects a nullish primary key before it reaches a statement. The by-id methods reduce to
- * `{ $where: { id } }`, and a key compared to `undefined` is *no filter*, so an unchecked one
- * addresses the whole table. An entity declares its id optional, which puts `undefined` inside
- * `IdValue<E>`, and the HTTP layer reaches these methods with parsed JSON regardless, so the guard
- * belongs at runtime.
- *
- * Its callers are all `async` so this surfaces as a rejection on every one of them: a guard that
- * threw synchronously from some and rejected from others would escape a caller's `.catch()`.
+ * Refuses a nullish id, which would reduce to no filter at all, and a composite id missing a column,
+ * which would address every row agreeing on the rest. Callers are `async`, so it always rejects.
  */
 function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   if (id === undefined || id === null) {
@@ -93,13 +89,7 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   }
 }
 
-/**
- * The one column a write path matches a parent's key against.
- *
- * Every caller reaches its parents through a sole id - `soleIdOf` refused a composite before any of
- * them - so the parent contributes exactly one column here, whether the relation goes through a
- * junction or straight to the child.
- */
+/** The column a write matches a parent's sole key against, on the junction or the child. */
 function soleParentColumn(relOpts: RelationMeta): string {
   return parentJoins(relOpts, 1)[0].joined;
 }
@@ -130,6 +120,9 @@ function adoptReportedIds<E>(
     rows[index][idKey] ??= reported[index] as E[typeof idKey];
   }
 }
+
+/** A parent's id and the value it writes into one of its relations. */
+type RelationWrite = { readonly id: unknown; readonly value: unknown };
 
 /** Base class for all database queriers. */
 export abstract class AbstractQuerier implements Querier {
@@ -181,12 +174,7 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  /**
-   * Resolves `[entity, query, opts]` for the dual call pattern: `(entity, q, opts)` (entity argument)
-   * vs `(query, opts)` (entity via the query's `$entity` field). Generic in the query `Q` because it
-   * only ever reads `$entity`: pinning it to one statement's shape made every caller launder its own
-   * through a cast, which is how a read query's `$sort` used to reach a write's.
-   */
+  /** `[entity, query, opts]` from either call form, `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
   protected resolveEntityQuery<E extends object, Q extends object>(
     entityOrQuery: Type<E> | (Q & { $entity: Type<E> }),
     maybeQueryOrOpts?: Q | QueryOptions,
@@ -226,10 +214,7 @@ export abstract class AbstractQuerier implements Querier {
     return this.findOne(entity, { ...q, $where: { ...q.$where, ...whereIds(getMeta(entity), id) } }, opts);
   }
 
-  /**
-   * Find a single record matching the query.
-   * Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Find one record, the entity passed first or as the query's `$entity`. */
   async findOne<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -263,10 +248,7 @@ export abstract class AbstractQuerier implements Querier {
     return rows[0];
   }
 
-  /**
-   * Find multiple records matching the query.
-   * Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Find many records, the entity passed first or as the query's `$entity`. */
   findMany<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -316,11 +298,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<E[]>;
 
-  /**
-   * Stream records as an async iterable, in both the entity-as-argument and entity-as-field patterns.
-   * Each row streams with its populated relations and counts, read by the same statement or pipeline
-   * `findMany` runs. No `afterLoad` hooks on streamed rows.
-   */
+  /** Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`. No hooks fire. */
   findManyStream<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -360,10 +338,7 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): AsyncIterable<E>;
 
-  /**
-   * Find multiple records and return both the records and total count.
-   * Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Find many records and count every match, the entity passed first or as the query's `$entity`. */
   findManyAndCount<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -416,11 +391,7 @@ export abstract class AbstractQuerier implements Querier {
     ]);
   }
 
-  /**
-   * Count records matching the query, in both the entity-as-argument and entity-as-field patterns.
-   * A `$skip`/`$limit` settles the matching ids and counts those, rather than scanning every match;
-   * `$sort` never reaches that SELECT, since it changes which rows a page holds, never how many.
-   */
+  /** Count records matching the query, the entity passed first or as the query's `$entity`. */
   count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
   count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   async count<E extends object>(
@@ -429,28 +400,17 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<number> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
-    if (q.$skip !== undefined || q.$limit !== undefined) {
-      const meta = getMeta(entity);
-      const rows = await this.internalFindMany(
-        entity,
-        idOnlyQuery(meta, { $where: q.$where, $skip: q.$skip, $limit: q.$limit }),
-        opts,
-      );
-      return rows.length;
-    }
     return this.internalCount(entity, q, opts);
   }
 
+  /** How many rows match, or how many of them a page takes: counted where they are, never read. */
   protected abstract internalCount<E extends object>(
     entity: Type<E>,
-    q: QueryFilter<E>,
+    q: QueryPage<E>,
     opts?: QueryOptions,
   ): Promise<number>;
 
-  /**
-   * Whether anything matches, in both the entity-as-argument and entity-as-field patterns. A count
-   * capped at one row, so the engine stops at the first match instead of scanning every other one.
-   */
+  /** Whether anything matches, the entity passed first or as `$entity`: a count capped at one row. */
   exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
   exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
   async exists<E extends object>(
@@ -459,7 +419,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<boolean> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
-    return (await this.count(entity, { $where: q.$where, $limit: 1 }, opts)) > 0;
+    return (await this.internalCount(entity, { $where: q.$where, $limit: 1 }, opts)) > 0;
   }
 
   /**
@@ -516,18 +476,66 @@ export abstract class AbstractQuerier implements Querier {
     return this.updateMany(entity, { $where: whereIds(getMeta(entity), id) }, payload, opts);
   }
 
+  /** Settles the rows first where the update cascades, so a payload changing what `$where` reads still names them. */
   async updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ): Promise<number> {
-    return this.hooked(entity, 'Update', [payload], ([row]) => {
-      fillOnFields(getMeta(entity), [row], 'onUpdate');
-      return this.internalUpdateMany(entity, q, row, opts);
+    const meta = getMeta(entity);
+    return this.hooked(entity, 'Update', [payload], async ([row]) => {
+      fillOnFields(meta, [row], 'onUpdate');
+      const relKeys = filterPersistableRelationKeys(meta, row, 'persist');
+      if (!relKeys.length && !this.settlesWrite(entity, q)) {
+        return this.updateColumns(entity, q, row, opts, 0);
+      }
+      const ids = await this.settleIds(entity, q, opts);
+      if (!ids.length) {
+        return 0;
+      }
+      const changes = await this.updateColumns(entity, { $where: whereIds(meta, ids) }, row, opts, ids.length);
+      for (const relKey of relKeys) {
+        await this.saveRelation(
+          entity,
+          relKey,
+          ids.map((id) => ({ id, value: row[relKey] })),
+          true,
+        );
+      }
+      return changes;
     });
   }
 
+  /** The UPDATE, skipped where the payload writes no column, reporting `unwritten` instead. */
+  private async updateColumns<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    row: UpdatePayload<E>,
+    opts: QueryOptions | undefined,
+    unwritten: number,
+  ): Promise<number> {
+    const writes = filterFieldKeys(getMeta(entity), row, 'onUpdate').length > 0;
+    return writes ? this.internalUpdateMany(entity, q, row, opts) : unwritten;
+  }
+
+  /** Whether a write has to name the rows `q` matches by their ids: no engine pages or orders an update or delete. */
+  protected settlesWrite<E extends object>(_entity: Type<E>, q: QuerySearch<E>): boolean {
+    return isPagedQuery(q);
+  }
+
+  /** The ids `q` matches, in its own order and page. */
+  protected async settleIds<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions,
+  ): Promise<EntityId<E>[]> {
+    const meta = getMeta(entity);
+    const rows = await this.internalFindMany(entity, idOnlyQuery(meta, q), opts);
+    return rows.map((row) => idOf(meta, row));
+  }
+
+  /** Runs one UPDATE over `q`, which names its rows by id wherever {@link updateMany} settled them. */
   protected abstract internalUpdateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
@@ -551,12 +559,7 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  /**
-   * `beforeUpsert`/`afterUpsert` rather than the insert's or the update's pair: the database decides
-   * which branch each row takes as the statement runs, so neither of those could be fired honestly -
-   * but the upsert itself is a fact known before and after, and a row written with no hook at all
-   * was how an `@Id({ onInsert })` or an audit trail silently skipped this path.
-   */
+  /** Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither the insert's nor the update's pair fits. */
   async upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
@@ -601,10 +604,7 @@ export abstract class AbstractQuerier implements Querier {
     return this.deleteMany(entity, { $where: whereIds(getMeta(entity), id) }, opts);
   }
 
-  /**
-   * Delete records matching the query. Soft-deletes when the entity has a soft-delete field (unless
-   * `opts.hardDelete`), otherwise removes the rows. Supports both entity-as-argument and entity-as-field patterns.
-   */
+  /** Delete records matching the query, the entity passed first or as `$entity`; soft-deletes unless `opts.hardDelete`. */
   deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
   async deleteMany<E extends object>(
@@ -613,47 +613,31 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<number> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, qOrOpts, maybeOpts);
-    const doomed = await this.findDoomed(entity, q, opts);
-    if (doomed?.length === 0) {
+    const meta = getMeta(entity);
+    const cascades = cascadesOnDelete(meta);
+    const watched = this.hasHook(entity, 'beforeDelete') || this.hasHook(entity, 'afterDelete');
+    if (!watched && !cascades && !this.settlesWrite(entity, q)) {
+      return this.internalDeleteMany(entity, q, opts);
+    }
+    // A hard delete takes already-soft-deleted rows too, so reading them back has to see them.
+    const readOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
+    // A hook receives the rows themselves; the ids read off them name the same rows a second read might not.
+    const doomed = watched ? await this.internalFindMany(entity, q, readOpts) : [];
+    const ids = watched ? doomed.map((row) => idOf(meta, row)) : await this.settleIds(entity, q, readOpts);
+    if (!ids.length) {
       return 0;
     }
-
-    // Where a snapshot was taken, the statement names those rows rather than resolving `q` a second
-    // time. Two reads of one `$limit` with no total order are free to disagree, which would fire the
-    // hooks for one row and delete another; naming them also spares the second read.
-    let target: QuerySearch<E> = q;
-    if (doomed) {
-      const meta = getMeta(entity);
-      const ids = doomed.map((it) => idOf(meta, it));
-      target = { $where: whereIds(meta, ids) };
+    await this.emitHook(entity, 'beforeDelete', doomed);
+    // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
+    if (cascades) {
+      await this.deleteRelations(entity, ids, opts);
     }
-    await this.emitHook(entity, 'beforeDelete', doomed ?? []);
-    const changes = await this.internalDeleteMany(entity, target, opts);
-    await this.emitHook(entity, 'afterDelete', doomed ?? []);
+    const changes = await this.internalDeleteMany(entity, { $where: whereIds(meta, ids) }, opts);
+    await this.emitHook(entity, 'afterDelete', doomed);
     return changes;
   }
 
-  /**
-   * The rows a delete is about to take, loaded only when a hook or listener is there to receive
-   * them: the round trip is pure overhead for the (common) delete nobody is watching, and
-   * `internalDeleteMany` has its own fast path that never reads the rows at all.
-   *
-   * `undefined` means nobody was watching, which is not the same as the empty array meaning nothing
-   * matched - the caller deletes by `q` for the first and skips the statement entirely for the second.
-   */
-  private async findDoomed<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    opts?: QueryOptions,
-  ): Promise<E[] | undefined> {
-    if (!this.hasHook(entity, 'beforeDelete') && !this.hasHook(entity, 'afterDelete')) {
-      return undefined;
-    }
-    // A hard delete takes already-soft-deleted rows too, so reading them back has to see them.
-    const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
-    return this.internalFindMany(entity, q, findOpts);
-  }
-
+  /** Runs one DELETE (or soft-delete stamp) over `q`, which names its rows by id wherever {@link deleteMany} settled them. */
   protected abstract internalDeleteMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
@@ -726,53 +710,20 @@ export abstract class AbstractQuerier implements Querier {
     return ids;
   }
 
-  protected async insertRelations<E extends object>(entity: Type<E>, payload: E[]) {
+  /** Writes each inserted row's relations, one set of statements per relation whatever the number of rows. */
+  protected async insertRelations<E extends object>(entity: Type<E>, rows: E[]) {
     const meta = getMeta(entity);
-    const entries = payload.reduce<{ it: E; relKeys: RelationKey<E>[] }[]>((acc, it) => {
-      const relKeys = filterPersistableRelationKeys(meta, it, 'persist');
-      if (relKeys.length > 0) acc.push({ it, relKeys });
-      return acc;
-    }, []);
-    if (!entries.length) return;
-    const idKey = soleIdOf(meta, 'saving a relation');
-    await Promise.all(
-      entries.map(({ it, relKeys }) =>
-        Promise.all(relKeys.map((relKey) => this.saveRelation(entity, [it[idKey]], it[relKey], relKey))),
-      ),
-    );
-  }
-
-  protected async updateRelations<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: UpdatePayload<E>,
-    opts?: QueryOptions,
-  ) {
-    const meta = getMeta(entity);
-    const relKeys = filterPersistableRelationKeys(meta, payload, 'persist');
-
-    if (!relKeys.length) {
-      return;
-    }
-
-    const idKey = soleIdOf(meta, 'saving a relation');
-    const founds = await this.findMany(entity, idOnlyQuery(meta, q), opts);
-    const ids = founds.map((found) => found[idKey]);
-
-    if (!ids.length) {
-      return;
-    }
-
-    for (const relKey of relKeys) {
-      await this.saveRelation(entity, ids, payload[relKey], relKey, true);
+    const [idKey] = meta.ids;
+    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'persist')) {
+      const writes = rows.flatMap((row) => (row[relKey] == null ? [] : [{ id: row[idKey], value: row[relKey] }]));
+      if (writes.length) {
+        await this.saveRelation(entity, relKey, writes, false);
+      }
     }
   }
 
-  /**
-   * `EntityId` because a settled set names composite rows as objects, which is also what the parent's
-   * own delete takes - and what {@link childrenOf} reads each child's foreign key columns out of.
-   */
-  protected async deleteRelations<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
+  /** `EntityId` because a settled composite row is an object, which {@link childrenOf} reads each foreign key column out of. */
+  private async deleteRelations<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
     const relKeys = filterPersistableRelationKeys(meta, meta.relations, 'delete');
     // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
@@ -786,142 +737,81 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * Persists `relValue` against every id in `ids`, which an update hands the whole page of rows it
-   * settled: the value is the same for all of them, so the statements are per relation rather than per
-   * row wherever the cardinality allows it.
+   * Writes each parent's value into one relation. The parent owns what it points at: an update replaces
+   * it, and a `null` only clears it.
    */
-  protected async saveRelation<E extends object>(
+  private async saveRelation<E extends object>(
     entity: Type<E>,
-    ids: IdValue<E>[],
-    relValue: unknown,
     relKey: RelationKey<E>,
-    isUpdate?: boolean,
+    writes: readonly RelationWrite[],
+    isUpdate: boolean,
   ) {
     const meta = getMeta(entity);
-    const relOpts = relationOf(meta, relKey);
-    // Here rather than only in the callers below: writing the parent's key into a child is one column
-    // per key, so a composite takes a statement per parent. `soleParentColumn` and the sole
-    // `targetKeyColumns` under it read the *first* pair, which is a real column of a wrong pairing
-    // unless this has run - and this method is `protected`, so a caller can arrive without them.
+    // Writing the parent's key into a child is one column per key, and the helpers below read the first pair.
     assertSoleId(meta, 'saving a relation');
+    const relOpts = relationOf(meta, relKey);
     const relEntity = relOpts.entity();
-
-    switch (relOpts.cardinality) {
-      case '1m':
-      case 'mm':
-        return this.saveToMany(relOpts, relEntity, ids, relValue as object[], isUpdate);
-      case '11':
-        return this.saveOneToOne(relEntity, relOpts, ids, relValue as object, isUpdate);
-      case 'm1':
-        if (relValue) return this.saveManyToOne(entity, relEntity, relOpts, ids, relValue as object);
+    if (relOpts.cardinality === 'm1') {
+      return this.saveManyToOne(entity, relEntity, relOpts.references[0].local, writes);
     }
-  }
-
-  private async saveToMany(
-    relOpts: RelationMeta,
-    relEntity: Type<object>,
-    ids: unknown[],
-    relPayload: object[],
-    isUpdate?: boolean,
-  ) {
-    const { through } = relOpts;
-    if (through) {
-      const localField = soleParentColumn(relOpts);
-      const [targetColumn] = targetKeyColumns(relOpts, 1);
-      const throughEntity = through();
-      if (isUpdate) {
-        await this.deleteMany(throughEntity, { $where: { [localField]: ids } as QueryWhere<object> });
-      }
-      if (relPayload) {
-        // Saved per parent on purpose: each one owns its copies of the children, and saving them once
-        // would link every parent to a single shared row instead.
-        for (const id of ids) {
-          const savedIds = await this.saveMany(relEntity, relPayload);
-          // A link needs the target's id, and a driver that cannot report one (a MySQL batch mixing
-          // supplied and generated keys) would otherwise write a row pointing at `undefined`.
-          if (savedIds.some((relId) => relId === undefined)) {
-            throw new TypeError(
-              `'${relEntity.name}' rows saved through '${throughEntity.name}' reported no id, so they cannot be linked. ` +
-                'Insert them with their own ids, or save the relation in its own statement.',
-            );
-          }
-          await this.insertMany(
-            throughEntity,
-            savedIds.map((relId) => ({ [localField]: id, [targetColumn]: relId })),
-          );
-        }
-      }
+    const holder = relOpts.through ? relOpts.through() : relEntity;
+    const parentColumn = soleParentColumn(relOpts);
+    if (isUpdate) {
+      const ids = writes.map(({ id }) => id);
+      await this.deleteMany(holder, { $where: { [parentColumn]: ids } as QueryWhere<object> });
+    }
+    // Each parent gets its own copies, so a row listed for two parents is written twice.
+    const children = writes.flatMap(({ id, value }) => [value ?? []].flat().map((row: object) => ({ id, row })));
+    if (!children.length) {
       return;
     }
-    const foreignField = soleParentColumn(relOpts);
-    if (isUpdate) {
-      await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
-    }
-    if (relPayload) {
+    if (!relOpts.through) {
       await this.saveMany(
         relEntity,
-        ids.flatMap((id) => relPayload.map((it) => ({ ...it, [foreignField]: id }))),
+        children.map(({ id, row }) => ({ ...row, [parentColumn]: id })),
+      );
+      return;
+    }
+    const savedIds = await this.saveMany(
+      relEntity,
+      children.map(({ row }) => row),
+    );
+    // A link needs the target's id, which a MySQL batch mixing supplied and generated keys cannot report.
+    if (savedIds.includes(undefined)) {
+      throw new TypeError(
+        `'${relEntity.name}' rows saved through '${holder.name}' reported no id, so they cannot be linked. ` +
+          'Insert them with their own ids, or save the relation in its own statement.',
       );
     }
-  }
-
-  private async saveOneToOne(
-    relEntity: Type<object>,
-    relOpts: RelationMeta,
-    ids: unknown[],
-    relPayload: object,
-    isUpdate?: boolean,
-  ) {
-    const foreignField = soleParentColumn(relOpts);
-    // The same rule a to-many follows: the parent owns its child, so an update replaces it. Without
-    // this the old row stayed behind and a one-to-one `$populate` had two rows to choose from.
-    if (relPayload === null || isUpdate) {
-      await this.deleteMany(relEntity, { $where: { [foreignField]: ids } as QueryWhere<object> });
-      if (relPayload === null) {
-        return;
-      }
-    }
-    await this.saveMany(
-      relEntity,
-      ids.map((id) => ({ ...relPayload, [foreignField]: id })),
+    const [targetColumn] = targetKeyColumns(relOpts, 1);
+    await this.insertMany(
+      holder,
+      children.map(({ id }, index) => ({ [parentColumn]: id, [targetColumn]: savedIds[index] })),
     );
   }
 
+  /** Each parent gets its own referenced row, and its own column pointing at it. */
   private async saveManyToOne<E extends object>(
     entity: Type<E>,
     relEntity: Type<object>,
-    relOpts: RelationMeta,
-    ids: IdValue<E>[],
-    relPayload: object,
+    localColumn: string,
+    writes: readonly RelationWrite[],
   ) {
-    // Not `soleParentColumn`: a many-to-one points the other way, so this is the *parent's* own column
-    // holding the child's id - the one place `references[0].local` does not name a key of the parent.
-    const localField = relOpts.references[0].local;
-    // Per parent: each gets its own reference row, so each `SET` carries a different value.
-    for (const id of ids) {
-      const referenceId = await this.insertOne(relEntity, relPayload);
-      await this.updateOneById(entity, id, { [localField]: referenceId } as UpdatePayload<E>);
+    const pointing = writes.filter(({ value }) => value);
+    const referenceIds = await this.insertMany(
+      relEntity,
+      pointing.map(({ value }) => value as object),
+    );
+    for (const [index, { id }] of pointing.entries()) {
+      await this.updateOneById(entity, id as EntityId<E>, { [localColumn]: referenceIds[index] } as UpdatePayload<E>);
     }
   }
 
   abstract readonly hasOpenTransaction: boolean;
 
   /**
-   * Runs `callback` in a transaction: begin, commit on success, roll back on failure.
-   *
-   * The single place that sequence is written; everything else delegates here, because both subtleties
-   * below were got wrong by code that hand-rolled it:
-   *
-   * - `beginTransaction` connects before it begins, so a refused connection lands in the catch with no
-   *   transaction open. `rollbackTransaction` is a no-op there rather than an error, which is why a
-   *   wrong password no longer surfaces as a transaction-state error.
-   * - A rollback that fails too is a consequence of the original failure, not news, so it must not
-   *   replace it either.
-   *
-   * The connection is **not** released here: whoever took it from the pool gives it back, through
-   * {@link QuerierPool.transaction}, {@link QuerierPool.withQuerier} or `await using`. Releasing a
-   * connection this method never acquired is what forced every caller to know whether it still owned
-   * one afterwards.
+   * Runs `callback` in a transaction, joining one already open. A rollback that fails is logged, never
+   * thrown over the original error, and the connection stays with whoever acquired it.
    */
   async transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions) {
     if (this.hasOpenTransaction) {
@@ -1043,28 +933,14 @@ export abstract class AbstractQuerier implements Querier {
     await runHooks(entity, event, payloads, { querier: this });
   }
 
-  /**
-   * Runs `task` after everything already queued on this querier, one at a time.
-   *
-   * @remarks Not re-entrant: only one task runs at a time, so a serialized method awaited from inside
-   * another one would wait for a task queued behind itself. Callers below keep their `serialize` calls
-   * sequential rather than nested.
-   */
+  /** Runs `task` after everything already queued, one at a time. Not re-entrant: never nest `serialize` calls. */
   protected serialize<T>(task: () => Promise<T>): Promise<T> {
     const res = this.taskQueue.then(task);
     this.taskQueue = res.catch(() => {});
     return res;
   }
 
-  /**
-   * Runs `task`, logs `query` with how long it took, and tags any error it throws with that query.
-   *
-   * A method rather than the `@Log()` decorator it replaces. A standard-spec method decorator works by
-   * returning a replacement function, and a replacement cannot carry the original's type parameters, so
-   * decorating `internalFindMany<E extends Document>` made its signature unresolvable. Most of the query
-   * surface is generic like that, and wrapping at the call site costs one line while keeping the
-   * signature intact.
-   */
+  /** Runs `task`, logs `query` with its duration, and tags a failure with it: a method, since a decorator would lose the generics. */
   protected async timed<T>(query: string, values: unknown[] | undefined, task: () => Promise<T>): Promise<T> {
     const startTime = performance.now();
     try {
@@ -1088,12 +964,8 @@ export abstract class AbstractQuerier implements Querier {
   abstract rollbackTransaction(): Promise<void>;
 
   /**
-   * Rolls back an unfinished transaction, then hands the connection back.
-   *
-   * @remarks Refusing to release was the opposite of safe: the throw came *before* the connection went
-   * back, so it destroyed the error that got here and cost the pool a connection with a live `BEGIN` on
-   * it. It is also the only option `await using` can reach, which calls `Symbol.asyncDispose` with no
-   * arguments and discards what it returns.
+   * Rolls back an unfinished transaction, then hands the connection back, discarding it if the rollback
+   * failed. Never throws first, since `await using` has no other way to release.
    */
   async release(): Promise<void> {
     let discard = false;

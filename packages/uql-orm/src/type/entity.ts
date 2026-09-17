@@ -5,17 +5,10 @@ import type { QueryWhere } from './queryWhere.js';
 import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
-/**
- * Allow to customize the name of the property that identifies an entity
- */
+/** Brands the property an entity is identified by, where it is not `id`, `_id` or `uuid`. */
 export const idKey = Symbol('idKey');
 
-/**
- * The one filter name uql registers itself, from `@Field({ softDelete })`. Four ends have to agree on
- * it and none would fail if they drifted: the field that registers it, the decorator that reserves
- * the name against a user's own filter, the hard delete that switches it off, and the bypass check
- * that lets it through on an entity which never declared one.
- */
+/** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
 
 /** A filter name an entity may declare: any but {@link SOFT_DELETE_FILTER}, which a refusal names. */
@@ -23,25 +16,13 @@ export type FilterName<N extends string> = N extends typeof SOFT_DELETE_FILTER
   ? `'${N}' is reserved for the filter @Field({ softDelete }) registers`
   : N;
 
-/**
- * Infers the key names of an entity
- */
+/** The key names of an entity. */
 export type Key<E> = keyof E & string;
 
 /**
- * Infers the field names of an entity.
- * Includes scalar fields, JSON fields, scalar arrays (e.g. vector `number[]`) and arrays of JSON.
- * The `-?` modifier strips optionality so the indexed access yields clean key unions
- * (without it, optional properties leak `undefined` into the union).
- *
- * `readonly Json[]` is its own arm because the brand sits on the element, so the `Json` arm cannot
- * see it. What keeps a to-many relation out of that arm is the weak-type check: `Json<unknown>` is
- * all-optional, which a class with named properties is not assignable to.
- *
- * The check is bracketed so `any` resolves once rather than matching both this and
- * {@link RelationKey}: an unbracketed `any extends X` satisfies either branch. It reads
- * `readonly Scalar[]`, which every mutable one satisfies too, so declaring a vector or a scalar
- * array `readonly` does not push the field over into {@link RelationKey}.
+ * The field names of an entity: scalars, scalar arrays (a vector) and JSON, including a list of JSON
+ * documents, whose brand sits on the element. The check is bracketed so `any` lands on one side, and a
+ * class is kept off the `Json` arm by the weak-type check.
  */
 export type FieldKey<E> = {
   readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | Json | readonly Json[]]
@@ -49,52 +30,35 @@ export type FieldKey<E> = {
     : never;
 }[Key<E>];
 
-/**
- * Infers the relation names of an entity: whatever is left once its fields and its methods are
- * taken out. Stated as the complement rather than as {@link FieldKey}'s test negated, so the two
- * cannot drift; methods are subtracted because one is not a `Scalar` and would otherwise read as a
- * relation.
- */
+/** The relation names of an entity: every key but its fields and its methods, so the two sets cannot drift. */
 export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
 
-/**
- * Whether `T` carries the `Json` brand. Checks for the `__json` marker key explicitly:
- * a bare `extends Json<infer T>` is not discriminating in check position (primitives match it,
- * inferring junk like `T = string`), while the marker key only exists on branded types.
- */
+/** Whether `T` carries the `Json` brand, read off its marker key: a primitive matches `Json<infer P>` too. */
 type IsJson<T> = '__json' extends keyof T ? true : false;
 
-/** Whether `T` is what a JSON column holds: the branded payload, or an array of them. */
-type IsJsonColumn<T> = IsJson<T> extends true ? true : IsJson<NonNullable<Unpacked<T>>>;
-
-/** The payload `P` of a branded `Json<P>`, or `never` for any non-JSON type. */
+/** The payload `P` of a branded `Json<P>`, or `never` for any other type. */
 type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
 
-/**
- * The one branded value a field value `V` holds: `Json<T>` for both `Json<T>` and `Json<T>[]`, via
- * `Unpacked`, a no-op for the non-array case.
- */
-type JsonElement<V> = NonNullable<Unpacked<NonNullable<V>>>;
+/** What a JSON column declared as `V` holds, `Json<P>` or `Json<P>[]` alike; `never` on any other column. */
+type JsonPayload<V, T = NonNullable<V>> = IsJson<T> extends true ? UnwrapJson<T> : UnwrapJson<NonNullable<Unpacked<T>>>;
 
-/** The `Json` payload of a field value `V`; `never` when `V` is not a JSON field. */
-type JsonPayload<V> = UnwrapJson<JsonElement<V>>;
+/** Whether `V` is what a JSON column holds. */
+type IsJsonColumn<V> = [JsonPayload<V>] extends [never] ? false : true;
+
+/** The JSON columns of `E`, which an index can address. */
+type JsonColumnKey<E> = { readonly [K in keyof E]-?: IsJsonColumn<E[K]> extends true ? K : never }[Key<E>];
 
 /**
- * The fields carrying the `Json` brand, `never` on an entity with none - which is most of them, and
- * what makes {@link JsonFieldPaths} collapse to `never` without deriving a path for anything. Tests
- * the brand rather than the payload, whose extra `Json<infer P>` inference is only worth doing once
- * a field is known to be JSON.
+ * The JSON columns a dot-path reads into: all but one holding an array (`Json<string[]>`), which has
+ * no path. `never` on an entity with none, which is most of them.
  */
 type JsonFieldKey<E> = {
-  readonly [K in keyof E]-?: IsJson<JsonElement<E[K]>> extends true ? K : never;
-}[Key<E>];
+  readonly [K in JsonColumnKey<E>]: IsMany<JsonPayload<E[K]>> extends true ? never : K;
+}[JsonColumnKey<E>];
 
 /**
- * Recursively derives dot-notation key paths from a JSON payload type. Handles every shape at
- * entry: an untyped (`unknown`) payload accepts any suffix via a `string` pattern, scalars are
- * leaves (they contribute no deeper path and self-prune through `` `${K}.${never}` ``), arrays
- * contribute their element type's paths, and objects recurse per key up to 5 levels deep
- * (deeper suffixes stay accepted via the `string` pattern at the cutoff).
+ * The dot-paths into a JSON payload: any suffix on an untyped one, none past a scalar, an array's
+ * element's, and an object's keys five levels deep, below which any suffix is accepted.
  */
 type DeepJsonKeys<T, D extends unknown[] = []> = unknown extends T
   ? string
@@ -109,12 +73,9 @@ type DeepJsonKeys<T, D extends unknown[] = []> = unknown extends T
           }[keyof NonNullable<T> & string];
 
 /**
- * Extracts dot-notation paths from `Json<T>` values, handling both scalar JSON
- * and arrays of JSON (`Json<{foo: string}>[]`, a column holding a list of documents).
- * For `kind?: Json<{ public: number; theme: { color: string } }>`,
- * produces `'kind.public' | 'kind.theme' | 'kind.theme.color'`.
- * For `items?: Json<{id: string}>[]`, produces `'items.id'`.
- * An untyped `Json<unknown>` field yields the scoped pattern `` `${K}.${string}` ``.
+ * The dot-paths into an entity's JSON columns: `kind?: Json<{ theme: { color: string } }>` gives
+ * `'kind.theme' | 'kind.theme.color'`, `items?: Json<{ id: string }>[]` gives `'items.id'`, and an
+ * untyped `Json` gives `` `kind.${string}` ``.
  */
 export type JsonFieldPaths<E> = {
   readonly [K in JsonFieldKey<E>]: `${K & string}.${DeepJsonKeys<JsonPayload<E[K]>>}`;
@@ -136,47 +97,22 @@ type PathValue<T, P extends string> = unknown extends T
         ? NonNullable<T>[P]
         : unknown;
 
-/**
- * The value type at a JSON dot-path `P` of entity `E`; `unknown` when unresolvable, which keeps
- * untyped paths fully permissive in `$where`. Gated on {@link JsonFieldKey}, the same predicate
- * {@link JsonFieldPaths} derives its keys from, so a path that is offered always resolves a value.
- */
+/** The value at a JSON dot-path of `E`, `unknown` where it cannot be resolved, which keeps an untyped path permissive. */
 export type JsonFieldPathValue<E, P extends string> = P extends `${infer F}.${infer Rest}`
   ? F extends JsonFieldKey<E>
     ? PathValue<JsonPayload<E[F]>, Rest>
     : unknown
   : unknown;
 
-/**
- * Extracts only the array-typed keys from `T`, mapping each to its element type via `Unpacked`.
- * Used by `$push` and `$pull` to provide type-safe element targets.
- */
+/** The array keys of `T`, each mapped to its element type: what `$push` and `$pull` address. */
 export type JsonArrayFields<T> = {
   [K in keyof T as IsMany<T[K]> extends true ? K & string : never]?: Unpacked<NonNullable<T[K]>>;
 };
 
 /**
- * Operator shape accepted by JSON/JSONB fields in update payloads: `$set`/`$unset` target object
- * keys, `$push`/`$pull` target array elements. All four are type-safe with IDE autocomplete.
- *
- * `$set` is shallow: it assigns the given top-level keys and leaves the rest untouched (it is not
- * an RFC 7396 recursive merge). `$pull` removes *every* element equal to the given value.
- *
- * Operators are applied `$pull` -> `$set` -> `$push` -> `$unset`, so any combination - including
- * `$pull` and `$push` on the same key - yields the same result on every dialect.
- *
- * @example
- * ```ts
- * // set only - autocompletes keys from the JSON field's inner type
- * querier.updateOneById(Company, id, { kind: { $set: { public: 1 } } });
- * // unset only - autocompletes keys from the JSON field's inner type
- * querier.updateOneById(Company, id, { kind: { $unset: ['private'] } });
- * // append to / remove from an array - autocompletes array keys, value matches element type
- * querier.updateOneById(Company, id, { kind: { $push: { tags: 'new-tag' } } });
- * querier.updateOneById(Company, id, { kind: { $pull: { tags: 'stale-tag' } } });
- * // combine
- * querier.updateOneById(Company, id, { kind: { $set: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } });
- * ```
+ * A JSON field's update operators, applied `$pull`, `$set`, `$push`, `$unset` on every engine: `$set`
+ * assigns top-level keys (no deep merge), `$pull` removes every equal element. See the JSON guide.
+ * @example `{ kind: { $set: { public: 1 }, $push: { tags: 'x' }, $unset: ['private'] } }`
  */
 export type JsonUpdateOp<T = unknown> = {
   readonly $set?: Partial<T>;
@@ -186,13 +122,8 @@ export type JsonUpdateOp<T = unknown> = {
 };
 
 /**
- * The {@link JsonUpdateOp} a field accepts, or `never` where the operators do not apply:
- * - Non-JSON fields. {@link UnwrapJson}'s {@link IsJson} guard avoids the non-discriminating bare
- *   `Json<infer T>` match that would otherwise offer `$set`/`$unset` on plain scalar fields.
- * - `Json<T[]>` payloads. All four operators address object keys of the JSON document, so on an
- *   array column none is meaningful: PostgreSQL's `||` would concatenate arrays while
- *   `JSON_SET(arr, '$.k', v)` is a no-op on MySQL and SQLite. Replace the whole value instead.
- *   `Json<unknown>` stays permissive, since `unknown` is not an array.
+ * The {@link JsonUpdateOp} a field takes: `never` on a non-JSON field, and on a JSON array, whose
+ * operators would address keys it does not have (engines disagree on what that does).
  */
 type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
   ? never
@@ -200,48 +131,30 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
     ? never
     : JsonUpdateOp<T>;
 
-/**
- * Accepted value for a single field in an update payload: the value itself, `null` where the column
- * is nullable, `QueryRaw` for a raw SQL expression (e.g. ``raw`NOW()` ``), and - for JSON object
- * fields - the JSON operators.
- *
- * An optional property is a nullable column, and clearing one is what an update is for, so `null`
- * belongs in the declared type rather than behind a cast.
- */
-type UpdateFieldValue<V> = V | (undefined extends V ? null : never) | QueryRaw | JsonUpdateOpFor<V>;
+/** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and JSON operators. */
+type UpdateExtra<V> = (undefined extends V ? null : never) | QueryRaw | JsonUpdateOpFor<V>;
 
 /**
- * An entity's fields and relations, each keeping its declared optionality: what the whole-record
- * writes (`insertOne`, `saveOne`, `upsertOne`, and their `*Many`) persist.
- *
- * Not `E`: that *demands* back every method the class declares, so on an entity carrying a
- * lifecycle hook - `@BeforeInsert() generateSlug()` - a plain `{ title: 'Hello' }` was rejected as
- * "missing the following properties". Method-free entities were unaffected, which is why the other
- * examples worked. No runtime filter can help; the call never gets that far. `Pick` because it
- * stays indexable by `IdKey<E>`, which the write path needs.
+ * What a whole-record write persists: the fields and relations with their declared optionality, a
+ * related row's alike, and no methods. Two mapped types, since asking each key costs a conditional.
  */
-export type EntityData<E> = Pick<E, FieldKey<E> | RelationKey<E>>;
-
-/**
- * Payload type for update operations: {@link EntityData} made partial, and widened per field to
- * accept `QueryRaw` or `JsonUpdateOp` (for JSON fields), which gives IDE autocomplete for
- * `$set`/`$push`/`$pull` keys via `Json<infer T>`.
- */
-export type UpdatePayload<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
-  [K in F]?: UpdateFieldValue<E[K]>;
+export type EntityData<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
+  [P in F]: E[P];
 } & {
-  [K in R]?: E[K];
+  [P in R]: E[P] | RelationData<E[P]>;
 };
 
-/**
- * Infers the field values of an entity
- */
-export type FieldValue<E> = E[FieldKey<E>];
+/** A relation's value as its rows' {@link EntityData}. */
+type RelationData<V> = V extends readonly (infer T)[] ? EntityData<T>[] : V extends object ? EntityData<V> : never;
 
-/**
- * The key's name where the entity states it: the `idKey` brand first, then the conventional names.
- * `never` when nothing does, which is the case {@link IdKey} falls back on and `@Id` refuses.
- */
+/** {@link EntityData} made partial, each member also taking its {@link UpdateExtra}. */
+export type UpdatePayload<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
+  [P in F]?: E[P] | UpdateExtra<E[P]>;
+} & {
+  [P in R]?: E[P] | RelationData<E[P]> | UpdateExtra<E[P]>;
+};
+
+/** The key's name where the entity states it, by the `idKey` brand or a conventional name; `never` otherwise. */
 export type NamedIdKey<E> = E extends { [idKey]?: infer K }
   ? K & FieldKey<E>
   : E extends { _id?: unknown }
@@ -252,26 +165,10 @@ export type NamedIdKey<E> = E extends { [idKey]?: infer K }
         ? 'uuid' & FieldKey<E>
         : never;
 
-/**
- * Infers the name of the key identifier on an entity
- */
-export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdKey<E>) &
-  // Every arm resolves through `FieldKey`, which is already `keyof E & string` - but a generic `E`
-  // leaves that unresolved, so a key could not be used where a string was wanted without a cast.
-  string;
+/** The primary key's name, every field where the entity names none. `& string` for a generic `E`. */
+export type IdKey<E> = ([NamedIdKey<E>] extends [never] ? FieldKey<E> : NamedIdKey<E>) & string;
 
-/**
- * Infers the value of the key identifier on an entity.
- *
- * A composite key is addressed by an object carrying every key, which is also the `$where` map it
- * reduces to - so both spellings are one type. Completeness is checked at run time by
- * `assertIdValue`: TypeScript cannot accumulate `@Id` across properties into the class type, so it
- * cannot know how many keys there are.
- *
- * Nullable, because an entity declares its id optional - nothing has assigned one before the
- * insert. That puts `undefined` inside every by-id method's parameter, where it would mean "no
- * filter"; `assertIdValue` is what rejects it.
- */
+/** The primary key's value, optional as the entity declares it: a by-id method refuses a nullish one at run time. */
 export type IdValue<E> = E[IdKey<E>];
 
 /** Whether `E`'s primary key spans several columns, which no single column can reference. */
@@ -281,14 +178,8 @@ export type HasCompositeKey<E> = true extends IsUnion<IdKey<E>> ? true : false;
 type IdMap<E> = Partial<Pick<E, IdKey<E>>>;
 
 /**
- * How a row is addressed by its primary key: the value for a single key, an object carrying every
- * key for a composite - which is also the `$where` map it reduces to, so both spellings are one type.
- *
- * A union rather than a choice between the two, because a caller holding one column's value has to
- * reach the same parameter as one holding a map. {@link WrittenId} is where a shape is committed to.
- *
- * The keys stay optional, and completeness is checked at run time by `assertIdValue`: requiring them
- * would refuse a `$where` map that names one row while it is still being built up.
+ * How a row is addressed by its primary key: the value, or a map carrying every key of a composite,
+ * which is also the `$where` it reduces to. Completeness is checked at run time.
  */
 export type EntityId<E> = IdValue<E> | IdMap<E>;
 
@@ -296,15 +187,8 @@ export type EntityId<E> = IdValue<E> | IdMap<E>;
 type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : never;
 
 /**
- * The id a write reports: the column's value for a single key, the key map for a composite.
- *
- * Exact where {@link EntityId} is a union, and that is the difference between them - a by-id method
- * *accepts* either spelling, a write *commits* to one.
- *
- * Falls back to `EntityId` where {@link NamedIdKey} names nothing, because there `IdKey` is every
- * field and a composite cannot be told from a single key: reporting a map for a scalar would be a
- * lie. `@Id` refuses an unnamed key, so a decorated entity is always exact, and `defineEntity` is
- * the path where this fallback is still reachable.
+ * The id a write reports: the value for a single key, the map for a composite. {@link EntityId} where
+ * the entity names no key, since a composite cannot then be told from a single one.
  */
 export type WrittenId<E> = [NamedIdKey<E>] extends [never]
   ? EntityId<E>
@@ -312,74 +196,63 @@ export type WrittenId<E> = [NamedIdKey<E>] extends [never]
     ? IdMap<E>
     : IdValue<E>;
 
-/**
- * Infers the values of the relations on an entity
- */
-export type RelationValue<E> = E[RelationKey<E>];
+/** Every SQL column type a field may declare, by family: the unions below and `columnFamily` both read it. */
+export const COLUMN_TYPES = {
+  numeric: [
+    'int',
+    'integer',
+    'tinyint',
+    'smallint',
+    'bigint',
+    'float',
+    'float4',
+    'float8',
+    'double',
+    'double precision',
+    'decimal',
+    'numeric',
+    'real',
+  ],
+  string: ['char', 'varchar', 'text', 'uuid'],
+  date: ['date', 'time', 'datetime', 'timestamp', 'timestamptz'],
+  json: ['json', 'jsonb'],
+  blob: ['blob', 'bytea'],
+  boolean: ['bool', 'boolean'],
+  vector: ['vector', 'halfvec', 'sparsevec'],
+} as const;
 
-/**
- * SQL numeric column types
- */
-export type NumericColumnType =
-  | 'int'
-  | 'integer'
-  | 'tinyint'
-  | 'smallint'
-  | 'bigint'
-  | 'float'
-  | 'float4'
-  | 'float8'
-  | 'double'
-  | 'double precision'
-  | 'decimal'
-  | 'numeric'
-  | 'real';
+/** The kind of column a field lands on, which decides whether an option means anything on it. */
+export type ColumnFamily = keyof typeof COLUMN_TYPES;
 
-/**
- * SQL string column types
- */
-export type StringColumnType = 'char' | 'varchar' | 'text' | 'uuid';
+type ColumnTypeOf<F extends ColumnFamily> = (typeof COLUMN_TYPES)[F][number];
 
-/**
- * SQL date/time column types
- */
-export type DateColumnType = 'date' | 'time' | 'datetime' | 'timestamp' | 'timestamptz';
+export type NumericColumnType = ColumnTypeOf<'numeric'>;
+export type StringColumnType = ColumnTypeOf<'string'>;
+export type DateColumnType = ColumnTypeOf<'date'>;
+export type JsonColumnType = ColumnTypeOf<'json'>;
+export type BlobColumnType = ColumnTypeOf<'blob'>;
+export type BooleanColumnType = ColumnTypeOf<'boolean'>;
+export type VectorColumnType = ColumnTypeOf<'vector'>;
 
-/**
- * SQL JSON column types
- */
-export type JsonColumnType = 'json' | 'jsonb';
+/** SQL column types supported by uql migrations. */
+export type ColumnType = ColumnTypeOf<ColumnFamily>;
 
-/**
- * SQL binary/blob column types
- */
-export type BlobColumnType = 'blob' | 'bytea';
+type ColumnTypeFamily<T> = { [F in ColumnFamily]: T extends ColumnTypeOf<F> ? F : never }[ColumnFamily];
 
-/**
- * SQL boolean column types
- */
-export type BooleanColumnType = 'bool' | 'boolean';
+/** The family a declared `type` puts a column in, or every family where it names none. */
+export type FamilyOf<T> = T extends ColumnType
+  ? ColumnTypeFamily<T>
+  : T extends NumberConstructor | BigIntConstructor
+    ? 'numeric'
+    : T extends StringConstructor
+      ? 'string'
+      : T extends DateConstructor
+        ? 'date'
+        : T extends BooleanConstructor
+          ? 'boolean'
+          : ColumnFamily;
 
-/**
- * SQL vector column types
- */
-export type VectorColumnType = 'vector' | 'halfvec' | 'sparsevec';
-
-/**
- * SQL column types supported by uql migrations
- */
-export type ColumnType =
-  | NumericColumnType
-  | StringColumnType
-  | DateColumnType
-  | JsonColumnType
-  | BlobColumnType
-  | BooleanColumnType
-  | VectorColumnType;
-
-/**
- * Logical types for a field
- */
+/** What a field declares its `type` as: a constructor, or a column type. */
 export type FieldType =
   | StringConstructor
   | NumberConstructor
@@ -389,17 +262,9 @@ export type FieldType =
   | ColumnType;
 
 /**
- * The {@link FieldType} values legal for a field declared as `V`.
- *
- * This is what makes an explicit `type` an improvement over the reflected one it replaces: the
- * annotation is checked against the property's real TypeScript type, so `@Field({ type: String })` on
- * a `number` no longer compiles into a silent TEXT column. `unknown` shapes fall through to the full
- * {@link FieldType}, keeping genuinely untyped fields usable.
- *
- * JSON is matched on the `__json` brand rather than structurally, because {@link Json} intersects its
- * payload (`Json<string>` really does extend `string`) and would otherwise land on the string arm.
- * Both `Json<T>` and `Json<T>[]` have to be recognised, and the array check has to precede the scalar
- * arms so a `number[]` vector is not read as a `number`.
+ * The {@link FieldType}s legal for a field declared as `V`, so `type: String` on a `number` does not
+ * compile. JSON is matched on its brand, which a `Json<string>` shares with `string`, and arrays before
+ * scalars, so a vector is not read as a `number`.
  */
 export type TypeFor<V, T = NonNullable<V>> =
   IsJsonColumn<T> extends true
@@ -420,156 +285,80 @@ export type TypeFor<V, T = NonNullable<V>> =
                   ? BlobColumnType
                   : FieldType;
 
-/**
- * A field as the registry holds it: what the user authored, plus what registration worked out.
- *
- * Separate from {@link FieldOptions} so neither of these can be written in a decorator. They used to
- * live there behind an `@internal` tag and a "do not set this" note, which is a comment standing in
- * for a type boundary.
- */
+/** A field as the registry holds it: what was authored, plus what registration worked out, which no decorator can write. */
 export type FieldMeta<V = TsTypeOf<FieldType>> = Except<FieldOptions<V>, 'computed'> & {
   /** {@link FieldOptions.computed}, a callback resolved to the SQL it returns. */
   readonly computed?: QueryRaw;
-  /**
-   * Set by `defineField` when the field gave `references` but no `type`, so schema generation resolves
-   * the column from the referenced primary key rather than from whatever ended up in `type`. That is
-   * what keeps a `uuid` primary key from becoming TEXT on every foreign key pointing at it.
-   */
+  /** Whether the column type comes from the referenced key, where the field gave `references` but no `type`. */
   readonly typeFromReference?: boolean;
 };
 
-/**
- * Configurable options for a field, carrying `V`, the value the column holds: what a generator returns
- * and what a default is has to be that value, checked the same way the declared `type` is. `Scalar` by
- * default, for the places that handle a field without knowing which one it is.
- */
+/** A field's options, checked against `V`, the value the column holds: every scalar where the field is unknown. */
 export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly name?: string;
   readonly isId?: true;
   readonly type?: FieldType;
-  /**
-   * Dimensions for vector fields. Used in schema generation.
-   * @example `@Field({ type: 'vector', dimensions: 1536 })`
-   */
+  /** A vector column's dimensions: `@Field({ type: 'vector', dimensions: 1536 })`. */
   readonly dimensions?: number;
-  /**
-   * Default distance metric for vector similarity queries on this field.
-   * Queries can override via `$distance`. Defaults to `'cosine'` if omitted.
-   * @example `@Field({ type: 'vector', dimensions: 1536, distance: 'cosine' })`
-   */
+  /** The metric a vector search on this field uses unless it names its own `$distance`; `'cosine'` by default. */
   readonly distance?: VectorDistance;
-  /**
-   * Entity that this field references (for foreign keys).
-   */
+  /** The entity this column is a foreign key to. */
   readonly references?: EntityGetter;
   /**
-   * Referential action for the generated foreign key. Delete side only: `onUpdate` below already means
-   * a value callback. Reach for `@ManyToOne({ onDelete, onUpdate })` when the update side matters too, or
-   * when this disagrees with a relation also declared on the same column (the relation wins).
-   * @example `@Field({ references: () => Company, onDelete: 'CASCADE' }) companyId?: string;`
+   * The foreign key's delete action, `@Field({ references: () => Company, onDelete: 'CASCADE' })`. A
+   * relation over the column wins, and is where the update action goes: `onUpdate` here is a value callback.
    */
   readonly onDelete?: ForeignKeyAction;
   /**
-   * The values the column accepts, enforced by the database as well as by TypeScript.
-   *
-   * Emitted as a column `CHECK (col IN (...))` on every SQL dialect rather than a native enum type:
-   * one code path, no separate schema object to order, and adding a value stays an ordinary column
-   * change instead of Postgres's irreversible `ALTER TYPE ... ADD VALUE`.
-   *
-   * Not constrained against the field's own type here: the decorator narrows the property to these
-   * values instead, which reports a mismatch where the mistake is rather than as an unrelated
-   * `never`. `as const` is what makes them literal, and so what makes any of it check.
-   *
-   * @example `@Field({ type: String, enum: ['draft', 'paid'] as const })`
+   * The values the column accepts, `enum: ['draft', 'paid'] as const`: a `CHECK (col IN (...))` on every
+   * SQL engine, and the property's type through the decorator, which is why they have to be `as const`.
    */
   readonly enum?: EnumValues;
   /**
-   * An expression the database computes, rather than a value the caller writes. Never part of an
-   * insert or update either way.
-   *
-   * Unstored, it is spliced into each statement that reads the field, so nothing is persisted and any
-   * expression will do. With `stored`, it becomes a real column - `GENERATED ALWAYS AS (...) STORED` -
-   * which the engine keeps up to date, so it can be indexed and read like any other.
-   *
-   * @example `@Field({ type: String, computed: (user) => raw`${user.first} || ' ' || ${user.last}`, stored: true })`
+   * An expression the database computes, never written: spliced into each read, or with `stored` a
+   * generated column, `computed: (user) => raw`${user.first} || ' ' || ${user.last}``.
    */
   readonly computed?: EntitySql<E>;
-  /**
-   * Whether {@link FieldOptions.computed} is a column the database keeps, rather than an expression
-   * spliced into each statement. The dial to flip after profiling: `$select`, `$where` and `$sort`
-   * read the field the same way either side of it, so no call site changes.
-   */
+  /** Whether {@link FieldOptions.computed} is a generated column rather than spliced into each read; no query changes either way. */
   readonly stored?: boolean;
   readonly updatable?: boolean;
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback<V>;
   readonly onUpdate?: OnFieldCallback<V>;
   /**
-   * Marks this field as the soft-delete field. Its presence makes the entity "soft deletable":
-   * a `delete` becomes an `UPDATE` that stamps this field instead of removing the row, and reads
-   * filter it out (`<field> IS NULL`). An entity may have at most one soft-delete field.
-   *
-   * The value controls what is stamped on delete: `true` stamps the current timestamp
-   * (`new Date()`); any other `Scalar`/`QueryRaw` or `() => Scalar | QueryRaw` callback stamps
-   * that value (e.g. `() => Date.now()` for an epoch-millis column).
-   * @example `@Field({ softDelete: true }) deletedAt?: Date;`
-   * @example `@Field({ softDelete: () => Date.now() }) deletedAt?: number;`
+   * Makes a delete stamp this field instead of removing the row, and reads skip stamped rows. `true`
+   * stamps `new Date()`, anything else is the value or callback stamped, `softDelete: () => Date.now()`.
    */
   readonly softDelete?: true | OnFieldCallback<V>;
 
-  // Schema/migration properties
-  /**
-   * SQL column type for migrations. If not specified, inferred from TypeScript type.
-   */
+  /** The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`. */
   readonly columnType?: ColumnType;
-  /**
-   * Field length (e.g. for varchar)
-   */
+  /** A string column's length. */
   readonly length?: number;
-  /**
-   * Field precision (e.g. for decimal)
-   */
+  /** A decimal column's precision. */
   readonly precision?: number;
-  /**
-   * Field scale (e.g. for decimal)
-   */
+  /** A decimal column's scale. */
   readonly scale?: number;
-  /**
-   * Whether the field is nullable
-   */
   readonly nullable?: boolean;
-  /**
-   * Whether the field is unique
-   */
   readonly unique?: boolean;
-  /**
-   * The column's DDL default, rendered into `CREATE TABLE` by `formatDefaultValue`.
-   */
+  /** The column's DDL default. */
   readonly defaultValue?: DdlDefault<V>;
-  /**
-   * Whether the column is auto-incrementing (for integer IDs).
-   */
+  /** Whether the database generates the value; a numeric sole key does unless something else fills it. */
   readonly autoIncrement?: boolean;
   /**
    * `true` for an index over the column, a string to name it. A foreign key column is indexed unless
    * this is `false`.
    */
   readonly index?: boolean | string;
-  /**
-   * Column comment/description for database documentation.
-   */
+  /** The column's comment in the database. */
   readonly comment?: string;
 };
 
 export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V | QueryRaw);
 
 /**
- * What a column may default to: the value it holds, except on a JSON column, which defaults with the
- * SQL literal it stores (`defaultValue: '{}'`) whatever the property's TypeScript type is. Opening
- * that exception to every field is what let `@Field({ type: Number, defaultValue: 'hello' })` compile.
- *
- * The erased shape - `FieldOptions` with no field in mind - admits every column's default at once, or
- * no `FieldOptions<V>` would be assignable to the one the registry and the dialects read.
+ * What a column may default to: its value, or on a JSON column the SQL literal it stores, `'{}'`. The
+ * erased `FieldOptions` takes both, so every field's options stay assignable to it.
  */
 type DdlDefault<V, T = NonNullable<V>> =
   IsJsonColumn<T> extends true ? JsonDdlDefault : [TsTypeOf<FieldType>] extends [T] ? JsonDdlDefault | T : T;
@@ -578,15 +367,8 @@ type DdlDefault<V, T = NonNullable<V>> =
 type JsonDdlDefault = Scalar | Record<string, unknown>;
 
 /**
- * The TypeScript types a field may be declared as, given the `type` it registers: the inverse of
- * {@link TypeFor}.
- *
- * Both directions are needed because they are consumed at opposite ends. `defineEntity` keys its bulk
- * `fields` by property name, so the property's type is already known and {@link TypeFor} narrows the
- * `type` allowed. A decorator has it the other way round: `@Field({ type: String })` is checked before
- * the class exists, so the only way to reach the property is to state what `type: String` implies and
- * let the decorator's context position compare it against the real field. Neither can be derived from
- * the other by inference, so `entityOptions.test-d.ts` asserts they agree instead.
+ * The TypeScript type a declared `type` implies, the inverse of {@link TypeFor}: a decorator checks the
+ * property against it, `defineEntity` the other way round. `entityOptions.test-d.ts` keeps them agreeing.
  */
 export type TsTypeOf<T> = T extends StringConstructor
   ? string
@@ -615,29 +397,19 @@ export type TsTypeOf<T> = T extends StringConstructor
                         : unknown;
 
 /**
- * {@link FieldOptions} for a field declared as `V`, with `type` required and checked by
- * {@link TypeFor}.
- *
- * The second arm is load-bearing rather than a convenience: a foreign-key column may omit `type` so
- * that schema generation resolves it from the referenced primary key instead, picking up that key's
- * `columnType`, length and chained references. Forcing `type: Number` onto
- * `@Field({ references: () => Company })` would silently downgrade a `uuid` key to TEXT on every
- * column pointing at it.
+ * {@link FieldOptions} for a field declared as `V`, `type` checked by {@link TypeFor}. A foreign key may
+ * omit it, taking the referenced key's column type instead.
  */
 export type FieldOptionsFor<V, E = unknown> =
   | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> })
   | (FieldOptions<NonNullable<V>, E> & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
 
-/**
- * The entity a relation field points at: `Company` for both `company?: Company` and
- * `companies?: Company[]`.
- */
+/** The entity a relation points at: `Company` for `company?: Company` and `companies?: Company[]` alike. */
 export type RelationTarget<V> = Extract<Unpacked<V>, object>;
 
 /**
- * {@link RelationOptions} for a relation field declared as `V`: what each cardinality's decorator takes,
- * keyed on the `cardinality` written and restricted to the ones the field's shape holds. A key, not a
- * conditional on `IsMany<V>`, which left a `mappedBy` callback untyped inside `defineEntity`.
+ * {@link RelationOptions} for a relation declared as `V`, keyed on the `cardinality` its shape allows: a
+ * key rather than a conditional, which is what types a `mappedBy` callback inside `defineEntity`.
  */
 export type RelationOptionsFor<V, O = unknown> = {
   readonly cardinality: IsMany<V> extends true ? '1m' | 'mm' : '11' | 'm1';
@@ -648,21 +420,14 @@ export type RelationOptionsFor<V, O = unknown> = {
   | ({ readonly cardinality: 'mm' } & RelationManyToManyOptions<RelationTarget<V>, O>)
 );
 
-/**
- * The method names of an entity, so hook registrations name a method that exists.
- */
+/** The method names of an entity, which a hook registration names. */
 export type MethodKey<E> = {
   readonly [K in keyof E]-?: NonNullable<E[K]> extends (...args: never[]) => unknown ? K : never;
 }[Key<E>];
 
 /**
- * A deferred reference to an entity class, e.g. `() => Company`.
- *
- * A getter rather than the class itself because decorator expressions are evaluated while the class is
- * being defined, before its binding is initialized, so naming the class directly is a `ReferenceError`
- * for a self-reference and for whichever side of a circular import is evaluated first - the two shapes an
- * entity graph almost always has. Nothing about the standard decorator spec changes that; it only removed
- * the reflected `design:type` that used to make `entity` optional.
+ * An entity class read later, `() => Company`: a decorator runs before its class is bound, so a
+ * self-reference or a circular import would otherwise throw.
  */
 export type EntityGetter<E = object> = () => Type<E>;
 
@@ -677,26 +442,18 @@ export type RelationOptions<E, O = unknown> = {
   cardinality: RelationCardinality;
   readonly cascade?: boolean | CascadeType;
   /**
-   * Referential actions for the generated foreign key, letting the database cascade instead of the ORM's
-   * `cascade` (pick one; declaring both leaves the FK nothing to do). Read from the owning side
-   * (`@ManyToOne`, or a `@OneToOne` without `mappedBy`). `onDelete` falls back to the FK field's own
-   * `@Field({ onDelete })` when unset here; `onUpdate` has no such fallback since that key already means
-   * a value callback on `FieldOptions`.
+   * The foreign key's delete action, the database's alternative to `cascade`, read on the owning side;
+   * unset, the column's own `@Field({ onDelete })` applies.
    */
   readonly onDelete?: ForeignKeyAction;
   readonly onUpdate?: ForeignKeyAction;
   /** The inverse side: the member of the target holding the foreign key or the owning relation, `(post) => post.author`. */
   mappedBy?: (keys: KeyMap<E>) => RelationKey<E> | ForeignKey<E, O>;
-  /**
-   * The pivot entity of a many-to-many. Unconstrained by `E`: a pivot holds foreign keys to both
-   * sides and is not a relation value of the target, so nothing about it is derivable from `E`.
-   */
+  /** The junction entity of a many-to-many, holding a foreign key to each side. */
   through?: EntityGetter;
   /**
-   * The join columns: the foreign key a to-one declares, `(post) => post.authorId`, which points at the
-   * target's primary key, or pairs where no key fits, `(order, customer) => [{ local: order.customerCode,
-   * foreign: customer.code }]`. A `through` relation takes none: it joins by the junction's column
-   * referencing each side.
+   * The join columns: a to-one's foreign key, `(post) => post.authorId`, or pairs where no key fits,
+   * `(order, customer) => [{ local: order.customerCode, foreign: customer.code }]`. Not with `through`.
    */
   references?: (local: KeyMap<O>, foreign: KeyMap<E>) => ForeignKey<O, E> | readonly RelationReference<O, E>[];
 };
@@ -717,22 +474,12 @@ type FieldKeyHolding<O, V> = {
 /** {@link RelationOptions.references} as pairs alone, for a to-many, which holds no foreign key of its own to name. */
 type RelationReferencePairs<E, O> = (local: KeyMap<O>, foreign: KeyMap<E>) => readonly RelationReference<O, E>[];
 
-/**
- * A relation once `getMeta` has resolved it: `references` is filled in and `mappedBy` is the key its
- * callback named. Consumers read this shape rather than {@link RelationOptions}, so they need no
- * assertions - `fillRelations` establishes the invariant once, and throws where it cannot.
- *
- * `entity` and `through` stay {@link EntityGetter}s. Resolution could call them once and store the class,
- * but only by keeping the authored relations in a second map: it settles them in place, reading them across
- * entities not resolved yet, so the authored and the settled shape have to be one object. A phase-split
- * metadata map costs more than the call parentheses it saves.
- */
+/** A relation once `getMeta` resolved it: `references` settled into pairs and `mappedBy` a name. */
 export type RelationMeta = Omit<RelationRegistration, 'references'> & { references: RelationReferences };
 
 /**
- * A relation as the registry takes it, whichever entity it targets: `mappedBy` and `references` read
- * off their key maps down to the names they give. `references` stays unset, or the one column a to-one
- * names, until `getMeta` pairs it with the target's key, which registration may run before the target has.
+ * A relation as the registry takes it: `mappedBy` and `references` read down to names, `references` a
+ * single column until `getMeta` pairs it with the target's key.
  */
 export type RelationRegistration = Omit<RelationOptions<object>, 'mappedBy' | 'references'> & {
   mappedBy?: string;
@@ -744,40 +491,23 @@ type RelationOwnerJoin<E, O> =
   | (Required<Pick<RelationOptions<E, O>, 'through'>> & { readonly references?: never })
   | { readonly references: RelationReferencePairs<E, O>; readonly through?: never };
 
-// `onDelete`/`onUpdate` only here: the owning side is the one that holds the foreign key, so the inverse
-// side (`mappedBy`) has no constraint to attach an action to. `references` is required: it names that key.
+/** The side holding the foreign key, which `references` names and the actions attach to. */
 type RelationOptionsOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade' | 'onDelete' | 'onUpdate'> &
   Required<Pick<RelationOptions<E, O>, 'references'>>;
 type RelationOptionsInverseSide<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> &
   Required<Pick<RelationOptions<E, O>, 'mappedBy'>>;
 type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> & RelationOwnerJoin<E, O>;
 
-/**
- * The key names of `E` as values, so a definition reads a member off it - `(post) => post.author` -
- * and follows a rename. Homomorphic in `E`, which is what keeps that link, and `-?` so an optional
- * member still names itself. At runtime one `Proxy` answering its own key serves every entity.
- */
+/** The key names of `E` as values, so a definition reads a member off it, `(post) => post.author`, and follows a rename. */
 export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 
-/**
- * The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)` in a statement, the
- * callback's parameter in a definition. Keyed over a type parameter constrained to `keyof E`, as
- * {@link KeyMap} is over `keyof E`, which keeps each ref linked to its field for rename.
- */
+/** The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)`, or a definition's callback. */
 export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string> };
 
-/**
- * SQL a definition writes: `raw`, or a callback reading the entity's fields off its refs. The callback is
- * declared as a method, bivariant in its refs, so one typed for its entity still fits where the entity is
- * erased: the registry, which resolves it.
- */
+/** SQL a definition writes: `raw`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
 export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
 
-/**
- * A predicate DDL carries, over the entity's own fields: a relation, full-text search and a sub-query
- * have nothing a `CHECK` or a partial index can hold. An intersection rather than `Except`, which would
- * remap the keys and lose each one's link to its field.
- */
+/** A predicate DDL can hold: the entity's own fields, without a relation, `$text` or a sub-query. */
 export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>]?: never } & {
   readonly $text?: never;
   readonly $exists?: never;
@@ -806,65 +536,41 @@ export type RelationManyToManyOptions<E, O = unknown> =
   | RelationOptionsThroughOwner<E, O>
   | RelationOptionsInverseSide<E, O>;
 
-/**
- * Lifecycle hook event names.
- */
+/** The lifecycle events. An upsert has its own pair: which branch a row takes is the database's to decide. */
 export type HookEvent =
   | 'beforeInsert'
   | 'afterInsert'
   | 'beforeUpdate'
   | 'afterUpdate'
-  // An upsert has its own pair rather than borrowing the insert's or the update's: which branch a
-  // row takes is decided by the database as the statement runs, so there is no honest moment to
-  // fire one of those - but there is an honest moment to fire this.
   | 'beforeUpsert'
   | 'afterUpsert'
   | 'beforeDelete'
   | 'afterDelete'
   | 'afterLoad';
 
-/**
- * A registered hook: the method name on the entity class to call.
- */
+/** A registered hook: the entity's method to call. */
 export type HookRegistration = {
   readonly methodName: string;
 };
 
 /**
- * Index type paired with the metric it needs. `distance` is required for {@link VectorIndexType}
- * because omitting it changes the DDL semantics silently: MariaDB's `DISTANCE=` defaults to
- * euclidean (so a cosine query full-scans instead of using the index) and pgvector has no default
- * operator class. MongoDB's `vectorSearch` is excluded - its generator emits no metric at all, so
- * requiring one would demand a value that is dropped.
- *
- * The non-vector arm forbids `distance` (rather than just omitting it) because `VectorIndexOptions`
- * - intersected in below by {@link EntityIndexMeta} - already declares `distance` as optional, for
- * the sake of the migration/introspection schema types that reuse it without this discriminated
- * `type`/`distance` pairing. Without the explicit `never` here, that optional `distance` would
- * survive the intersection and silently typecheck `{ type: 'btree', distance: 'cosine' }`.
+ * An index type with the metric it needs: a vector index has to name one, since engines default to
+ * a different one than the queries use, and any other index names none.
  */
 export type IndexTypeOptions =
   | { type: VectorIndexType; distance: VectorDistance }
   | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
 
-/**
- * One index entry as the migration builder takes it: a column name, `raw` for an expression, or an object
- * when the entry needs more. An entity's entries are this too, which is what `normalizeIndexColumn` reads.
- */
+/** One index entry as the migration builder takes it: a column name, `raw`, or an object when it needs more. */
 export type IndexColumnInput = string | QueryRaw | EntityIndexColumn;
 
 /**
- * One entry of an entity's index, read off its refs: a column, `raw` for an expression, or an object when
- * the entry needs more, a JSON entry's path checked against its column.
+ * One entry of an entity's index, read off its refs: a column, `raw`, or an object when it needs more.
  * @example `@Index((post) => [post.tenantId, { column: post.createdAt, order: 'desc' }, raw`lower(${post.email})`])`
  */
 export type EntityIndexColumnInput<E> = QueryRaw | IndexColumnOptions | IndexJsonColumnOptions<E>;
 
-/**
- * The JSON entries, one arm per JSON field, each `path` checked against the payload of the column its own
- * entry names: a misspelled path still builds a valid index that no query matches. On a column that is
- * the array (`Json<string[]>`), `jsonArray`'s path resolves to `never`, so it can only be omitted.
- */
+/** A JSON entry, its `path` checked against its own column's payload: a misspelled one builds an index nothing uses. */
 type IndexJsonColumnOptions<E> = {
   [K in JsonColumnKey<E>]: IndexColumnPlainModifiers & { readonly column: ColumnRef<K & string> } & (
       | { readonly jsonPath: WithCheckedPath<IndexJsonPath, E, K>; readonly jsonArray?: never }
@@ -872,38 +578,14 @@ type IndexJsonColumnOptions<E> = {
     );
 }[JsonColumnKey<E>];
 
-/**
- * The JSON columns an index can address, which is a wider set than {@link JsonFieldKey}: that one
- * unwraps arrays to find the brand, so a column that *is* an array (`Json<string[]>`) reads as a
- * plain one - right for `$where`, which has no path into it, and wrong for `jsonArray`, whose whole
- * subject is that column.
- */
-type JsonColumnKey<E> = {
-  readonly [K in keyof E]-?: IsJsonColumn<NonNullable<E[K]>> extends true ? K : never;
-}[Key<E>];
-
-/** The payload a path is checked against: the column's own brand, or that of the documents it holds. */
-type JsonColumnPayload<V> = IsJson<NonNullable<V>> extends true ? UnwrapJson<NonNullable<V>> : JsonPayload<V>;
-
-/**
- * A JSON modifier with its `path` narrowed to the ones that column's payload actually has. Everything
- * else - and `path`'s own optionality, which `jsonArray` needs and `jsonPath` does not - is taken
- * from the declared type rather than restated, so a property added to either cannot miss the checked
- * form.
- */
+/** A JSON modifier with its `path` narrowed to the column's payload, everything else taken from `T` as declared. */
 type WithCheckedPath<T extends { path?: string }, E, K extends Key<E>> = Except<T, 'path' & keyof T> & {
-  [P in keyof Pick<T, Extract<keyof T, 'path'>>]: DeepJsonKeys<JsonColumnPayload<E[K]>>;
+  [P in keyof Pick<T, Extract<keyof T, 'path'>>]: DeepJsonKeys<JsonPayload<E[K]>>;
 };
 
-/**
- * What an index entry can carry besides the thing being indexed. Shared with the normalized
- * `IndexColumnSchema`, so the authored and internal shapes cannot drift apart.
- */
+/** What an index entry carries besides its column, shared by the authored and the normalized entry. */
 export type IndexColumnModifiers = {
-  /**
-   * Index only the first `n` characters. MySQL and MariaDB *require* this to index a `TEXT`/`BLOB`
-   * column at all ("used in key specification without a key length"); no other engine accepts it.
-   */
+  /** Index only the first `n` characters, which the MySQL family requires on a `TEXT` or `BLOB` column. */
   readonly length?: number;
   /** Stored sort order, which lets `ORDER BY ... DESC` pagination use the index. */
   readonly order?: 'asc' | 'desc';
@@ -918,18 +600,9 @@ export type IndexColumnModifiers = {
 };
 
 /**
- * An index over one path inside a JSON column, compiled by the same code a `$where` on that path is:
- * an expression index is matched by its own text, so an index spelled even slightly differently is
- * one the planner never reaches for.
- *
- * `type` picks the reading the way an operand's own type does (`jsonCompareMode`): compared as a
- * number, indexed as a number. Which engines have it is `IndexFeature`'s `jsonPath`.
- *
- * @example
- * ```ts
- * @Index((user) => [{ column: user.kind, jsonPath: { path: 'theme.color', type: String } }]) // 'kind.theme.color': 'red'
- * @Index((user) => [{ column: user.kind, jsonPath: { path: 'rating', type: Number } }])      // 'kind.rating': { $gte: 4 }
- * ```
+ * An index over a path inside a JSON column, spelled as the `$where` on it compiles, which is how the
+ * planner matches the two. `type` is how the queries compare it.
+ * @example `@Index((user) => [{ column: user.kind, jsonPath: { path: 'rating', type: Number } }])`
  */
 export type IndexJsonPath = {
   /** The path inside the column, spelled as a `$where` key spells it: `'theme.color'`. */
@@ -939,18 +612,9 @@ export type IndexJsonPath = {
 };
 
 /**
- * MySQL's multi-valued index: one key per *element* of the JSON array at `path` (the column itself
- * when there is none), which is the only index `$all`/`$elemMatch` containment can use. `type` is
- * the element's, and a string or binary one needs a `length`, since the cast is what sizes the key.
- *
- * MySQL is alone in having it - `IndexFeature`'s `jsonArray` - and an index asking for it elsewhere
- * is refused rather than silently built.
- *
- * @example
- * ```ts
- * @Index((user) => [{ column: user.tags, jsonArray: { type: String, length: 64 } }]) // tags: { $all: [...] }
- * @Index((user) => [{ column: user.kind, jsonArray: { path: 'ids', type: Number } }]) // 'kind.ids': { $all: [...] }
- * ```
+ * MySQL's multi-valued index, one key per element of the JSON array at `path`, what `$all` and
+ * `$elemMatch` containment use; refused on any other engine.
+ * @example `@Index((user) => [{ column: user.tags, jsonArray: { type: String, length: 64 } }])`
  */
 export type IndexJsonArray = {
   /** The array's path inside the column, spelled as a `$where` key spells it; omit for the column. */
@@ -964,10 +628,7 @@ export type IndexJsonArray = {
 /** The modifiers that do not name a JSON path, and so need no entity to be checked against. */
 type IndexColumnPlainModifiers = Except<IndexColumnModifiers, 'jsonPath' | 'jsonArray'>;
 
-/**
- * An entity's entry with plain modifiers. `jsonPath` and `jsonArray` are `never` here, since a JSON entry
- * would otherwise match this shape too, its path unchecked.
- */
+/** An entity's entry with plain modifiers, never a JSON one, whose path would then go unchecked. */
 type IndexColumnOptions = IndexColumnPlainModifiers & {
   /** A column read off the refs, or `raw` for an expression. */
   readonly column: QueryRaw;
@@ -975,10 +636,7 @@ type IndexColumnOptions = IndexColumnPlainModifiers & {
   readonly jsonArray?: never;
 };
 
-/**
- * One index entry, normalized: every authored shape reduces to this before any dialect or generator sees
- * it, so rendering never re-parses the sugar.
- */
+/** One index entry, normalized, as every dialect and generator reads it. */
 export type IndexColumnSchema = IndexColumnModifiers & {
   /** A column name, or raw SQL when {@link expression} is set. */
   readonly column: string;
@@ -986,16 +644,10 @@ export type IndexColumnSchema = IndexColumnModifiers & {
   readonly expression?: boolean;
 };
 
-/**
- * One index entry as entity metadata keeps it: a member, or an expression left unrendered until the
- * schema is built, where the dialect and the naming strategy resolve what it references. Rendered, it
- * is an {@link IndexColumnSchema}.
- */
+/** One index entry as metadata keeps it: a member, or an expression rendered when the schema is built. */
 export type EntityIndexColumn = IndexColumnModifiers & { readonly column: string | QueryRaw };
 
-/**
- * An index as stored in entity metadata: authored options with the columns normalized.
- */
+/** An index as metadata keeps it. */
 export type EntityIndexMeta<E = object> = {
   /** The indexed columns, in order. */
   columns: readonly EntityIndexColumn[];
@@ -1005,10 +657,7 @@ export type EntityIndexMeta<E = object> = {
   unique?: boolean;
   /** Partial index predicate, compiled when the schema is built. */
   where?: EntityWhereMeta<E>;
-  /**
-   * Extra columns stored in the index but not part of its key, so a query reading only these is
-   * answered from the index alone. Postgres-wire only (`INCLUDE`).
-   */
+  /** Columns stored in the index beyond its key, so a query reading only these needs no row. Postgres-wire only. */
   include?: readonly string[];
 } & VectorIndexOptions &
   IndexTypeOptions;
@@ -1021,13 +670,7 @@ export type EntityMeta<E> = {
   derivedName?: boolean;
   /** Set only when the entity named one; unset defers to the pool where it is used. See `AbstractDialect.resolveSchema`. */
   schema?: string;
-  /**
-   * Every key of the primary key, in declaration order. One unless the entity declares a composite.
-   *
-   * The only stored form: a single `id` beside it could only ever be right for a single-key entity,
-   * so every reader had to know whether it was safe. Asking whether *this* field is part of the key
-   * is `fields[key].isId`, which is O(1) and the source this list is derived from.
-   */
+  /** Every column of the primary key, in declaration order. */
   ids: readonly IdKey<E>[];
   softDelete?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
@@ -1044,21 +687,15 @@ export type EntityMeta<E> = {
   checks?: EntityCheckMeta<E>[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
-  /**
-   * Bumped by every `define*` call, so anything derived from this metadata can tell that it changed.
-   * A content type registered at runtime keeps adding to an entity that has already been read.
-   */
+  /** Bumped by every `define*` call, so what is derived from the metadata can tell it changed. */
   revision: number;
   /** The revision `getMeta` last finalized, which is what makes finalizing idempotent and re-entrant. */
   processedAt?: number;
 };
 
 /**
- * A table-level `CHECK`: a predicate over the entity's fields, or SQL reading them off refs. A value in
- * either is written as its literal, since DDL has no placeholder to bind one into.
- *
- * @example `{ where: { balance: { $gte: 0 } } }`
- * @example `{ where: (wallet) => raw`${wallet.spent} <= ${wallet.balance}` }`
+ * A table's `CHECK`, `{ where: { balance: { $gte: 0 } } }`, or SQL off the refs,
+ * `{ where: (wallet) => raw`${wallet.spent} <= ${wallet.balance}` }`.
  */
 export type CheckOptions<E = unknown> = {
   /** Derived from the table and the constraint's position when absent. */
@@ -1072,11 +709,7 @@ export type EntityCheckMeta<E = object> = {
   readonly where: EntityWhereMeta<E>;
 };
 
-/**
- * An entity's members as the registry takes them, keyed by plain strings - what a decorator bag, an
- * {@link EntityOptions} and a decorator bag both reduce to before anything is registered: a member
- * decorator has no class to key against, so by then the keys are plain strings either way.
- */
+/** An entity's members as the registry takes them, keyed by name: what decorators and `defineEntity` both reduce to. */
 export type EntityMembers = {
   readonly fields?: Readonly<Record<string, FieldOptions | undefined>>;
   readonly relations?: Readonly<Record<string, RelationRegistration | undefined>>;
@@ -1086,32 +719,15 @@ export type EntityMembers = {
 /** An entity's fields as `defineEntity` takes them, keyed like every entity map (see `QuerySelect`). */
 type EntityFieldOptions<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]?: FieldOptionsFor<E[K], E> };
 
-/**
- * An entity's relations as `defineEntity` takes them. Keyed over every member rather than `RelationKey<E>`:
- * inside the generic call, only a map over `keyof E` gives a `mappedBy` callback its contextual type. A
- * field named here still fails, on its options, since its value is no entity.
- */
+/** An entity's relations as `defineEntity` takes them, keyed over every member: only that types a `mappedBy` callback. */
 type EntityRelationOptions<E> = { readonly [K in keyof E]?: RelationOptionsFor<E[K], E> };
 
-/**
- * Configurable options for an entity (`@Entity()` / `defineEntity`).
- *
- * Optional `fields`, `relations`, `indexes`, and `hooks` register metadata in one call for
- * decorator-free setups. Omit them when using `@Field` / `@ManyToOne` / etc.
- */
+/** An entity's options, `@Entity()` or `defineEntity`; the members too where no decorator declares them. */
 export type EntityOptions<E = unknown> = {
   readonly name?: string;
-  /**
-   * The base to inherit fields, relations, hooks and filters from, for a class that cannot extend one
-   * (minted at runtime, or its base chosen from data): the merge `class Child extends Base` does, with
-   * the class's real base nearer, so it wins. Checked against whatever properties the entity declares,
-   * which a class behind an index signature has none of. See the Inheritance guide.
-   */
+  /** A base to inherit members from, for a class that cannot extend it; its real base, if any, wins. See the Inheritance guide. */
   readonly extends?: string extends keyof E ? Type<object> : Type<Partial<E>>;
-  /**
-   * The schema (in MySQL terms, database) this table lives in, pinning it whichever pool reads it;
-   * unset follows the pool's own. Not in `name`: a dotted `name` is rejected.
-   */
+  /** The schema (a MySQL database) the table lives in; unset follows the pool's. */
   readonly schema?: string;
   /** Named, default-on `$where` filters (soft-delete is auto-registered from `@Field({ softDelete })`). */
   readonly filters?: Record<string, FilterOptions<E>> & { readonly [SOFT_DELETE_FILTER]?: never };

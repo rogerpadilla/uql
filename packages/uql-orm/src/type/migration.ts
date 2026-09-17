@@ -2,7 +2,7 @@ import type { VectorCast } from '../dialect/vectorCast.js';
 import type { AnyMigrationOperation } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import type { CanonicalType, ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
+import type { ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
   EntityWhereMeta,
@@ -121,21 +121,11 @@ export interface MigrationResult {
   readonly error?: Error;
 }
 
-/**
- * A column as a statement describes one: {@link ColumnNode} with the engine's type spelling in place
- * of the canonical one, and without the graph links.
- *
- * Derived so a field the node gains reaches every path that renders a column. Listed field by field,
- * this dropped `enum` and then `generatedAs`, and a column added to an existing table arrived without
- * the constraint or the expression the entity declared.
- */
+/** A column as a statement renders one: a {@link ColumnNode} with the engine's type spelling and no graph links. */
 export interface ColumnSchema extends Omit<ColumnNode, 'type' | 'table' | 'referencedBy' | 'references'> {
   /**
-   * The engine's own type spelling, as introspection read it (`tinyint(1)`, `DATETIME`, `VARCHAR`).
-   * Deliberately not a {@link CanonicalType}: the diff has to compare what the engine would *store*,
-   * and several canonical types share one storage type per engine - an entity `boolean` is `TINYINT(1)`
-   * on MySQL and `INTEGER` on SQLite. Comparing canonical categories instead reports an alteration on
-   * every sync for those columns. Use `sqlToCanonical` to interpret it.
+   * The engine's own type spelling, `TINYINT(1)`, compared as stored: canonical types would differ where
+   * the engine stores them alike. `sqlToCanonical` reads it.
    */
   readonly type: string;
   /** Bounds introspection reports beside the type, where the engine states them separately. */
@@ -221,11 +211,8 @@ export interface SchemaDiff {
   readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
   /**
-   * The key the table has against the key the entity declares, set only when they differ.
-   *
-   * Compared by columns, never by name: the engine named the existing one, so requiring a derived
-   * name to match would rewrite the primary key of every table on the first migration after
-   * upgrading. `fromName` is what the database reported, and the only name a `DROP` can use.
+   * The table's key against the entity's, where their columns differ; `fromName` is the name the
+   * database reported, which is what a `DROP` needs.
    */
   readonly primaryKey?: { readonly from: string[]; readonly to: string[]; readonly fromName?: string };
   readonly columnsToAdd?: ColumnSchema[];
@@ -281,13 +268,7 @@ export interface DropSchemaOptions {
  * Interface for generating DDL statements from entity metadata
  */
 export interface SchemaGenerator {
-  /**
-   * The whole schema for `entities`: every table, then the foreign keys between them.
-   *
-   * There is deliberately no per-entity counterpart. One entity means an AST holding one table, so every
-   * cross-entity foreign key has nothing to resolve against and is dropped: all three call sites that
-   * used to work that way emitted schemas with no referential integrity.
-   */
+  /** The whole schema for `entities`, tables then the foreign keys between them, which need every entity at once. */
   generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[];
 
   /**
@@ -339,22 +320,12 @@ export interface SchemaGenerator {
   compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string;
 
   /**
-   * Compare an entity with a database table node and return the differences.
-   *
-   * `desiredAst` is the entity side, from {@link buildAST}, and must span every entity a foreign key
-   * on this table points at: a relation whose target is absent resolves to nothing, so the constraint
-   * reads as missing from both sides, which is a match and no statement. Defaults to this entity
-   * alone, which is right only where it has no relations.
+   * An entity's differences from its table. `desiredAst`, from {@link buildAST}, has to span every entity
+   * a foreign key here points at, or those keys read as matching.
    */
   diffSchema(entity: Type<object>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined;
 
-  /**
-   * The entity side as an AST, to hand to every {@link diffSchema} of one run - building it per
-   * entity instead is quadratic in the number of entities.
-   *
-   * Optional because not every generator compares one: MongoDB has no foreign keys and diffs only
-   * indexes, so it neither implements this nor reads the argument.
-   */
+  /** The entities as one AST, built once per run for every {@link diffSchema}. Absent on MongoDB, which diffs only indexes. */
   buildAST?(entities: readonly Type<object>[]): SchemaAST;
 
   /**

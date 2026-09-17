@@ -6,8 +6,10 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { assertDefined, columnsOf } from '../test/index.js';
+import type { SchemaDiff, Type } from '../type/index.js';
 import { idKey } from '../type/index.js';
-import { raw, whereIds } from '../util/index.js';
+import { whereIds } from '../util/index.js';
 
 @Entity()
 class Enrolment {
@@ -162,7 +164,7 @@ describe('writing composite rows', () => {
    * No column holds a composite key, so no statement reports one. `insertMany` names the rows as
    * written instead - the same map `saveMany` reports, so the two write methods answer in one shape.
    */
-  it('inserts rows whose key it did not generate, and reports that key', async () => {
+  it('should insert rows whose key it did not generate, and report that key', async () => {
     const [autumn, winter] = await pool.insertMany(Term, [
       { year: 2027, season: 'autumn' },
       { year: 2027, season: 'winter' },
@@ -175,19 +177,17 @@ describe('writing composite rows', () => {
     });
   });
 
-  it('reports a key column the ORM filled, which the payload never carried', async () => {
+  it('should report a key column the ORM filled, which the payload never carried', async () => {
     const [id] = await pool.insertMany(Ticket, [{ tenant: 'acme', title: 'x' }]);
 
     expect(id).toEqual({ tenant: 'acme', code: 'minted' });
   });
 
   /**
-   * A composite key is supplied by the caller on an insert too, so an id proves nothing about
-   * whether the row exists - which is why `save` used to refuse one outright. It no longer has to
-   * guess: a row naming its key upserts on that key, so it is written either way, and the id it
-   * reports is the map {@link idOf} builds from the payload the caller already held.
+   * A composite key is supplied on an insert too, so a row naming its key upserts on it, and the id it
+   * reports is the map {@link idOf} builds from the payload.
    */
-  it('saves a composite row, inserting what is new and updating what is not', async () => {
+  it('should save a composite row, inserting what is new and updating what is not', async () => {
     const [inserted] = await pool.saveMany(Enrolment, [{ studentId: 9, courseId: 'maths', grade: 'A' }]);
     expect(inserted).toEqual({ studentId: 9, courseId: 'maths' });
     expect(await pool.findOneById(Enrolment, { studentId: 9, courseId: 'maths' })).toMatchObject({ grade: 'A' });
@@ -205,7 +205,7 @@ describe('writing composite rows', () => {
    * reading an id as proof. The statement wants no id back - every column of the key was supplied -
    * so `RETURNING` is dropped rather than the whole upsert refused.
    */
-  it('upserts on the whole key, inserting what is new and updating what is not', async () => {
+  it('should upsert on the whole key, inserting what is new and updating what is not', async () => {
     await pool.insertMany(Attempt, [{ studentId: 1, task: 'essay', score: 'B' }]);
 
     await pool.upsertMany(Attempt, { studentId: true, task: true }, [
@@ -220,7 +220,7 @@ describe('writing composite rows', () => {
     ]);
   });
 
-  it('updates one row by its whole key, and nothing that only shares a column', async () => {
+  it('should update one row by its whole key, and nothing that only shares a column', async () => {
     await pool.insertMany(Attempt, [
       { studentId: 2, task: 'oral', score: 'D' },
       { studentId: 2, task: 'written', score: 'D' },
@@ -236,7 +236,7 @@ describe('writing composite rows', () => {
   });
 
   /** A paged update settles its rows first, and names them by every key, as a paged delete does. */
-  it('updates the page it settled on', async () => {
+  it('should update the page it settled on', async () => {
     await pool.insertMany(Attempt, [
       { studentId: 4, task: 'lab', score: 'D' },
       { studentId: 5, task: 'lab', score: 'D' },
@@ -258,28 +258,27 @@ describe('writing composite rows', () => {
 });
 
 describe('addressing a composite primary key', () => {
-  it('refuses an id naming only some of the keys', async () => {
+  it('should refuse an id naming only some of the keys', async () => {
     await expect(pool.deleteOneById(Enrolment, { studentId: 1 })).rejects.toThrow(
       /every key of its primary key \(studentId, courseId\); missing courseId/,
     );
   });
 
-  it('refuses a bare value, which can only name one column', async () => {
+  it('should refuse a bare value, which can only name one column', async () => {
     await expect(pool.deleteOneById(Enrolment, 1)).rejects.toThrow(/composite primary key \(studentId, courseId\)/);
   });
 
   /** The type rejects this too; the guard is for an untyped caller, such as parsed JSON over HTTP. */
-  it('refuses a nullish key inside an otherwise complete id', async () => {
-    await expect(pool.deleteOneById(Enrolment, { studentId: 1, courseId: null } as never)).rejects.toThrow(
-      /missing courseId/,
-    );
+  it('should refuse a nullish key inside an otherwise complete id', async () => {
+    // @ts-expect-error: a key part cannot be null
+    await expect(pool.deleteOneById(Enrolment, { studentId: 1, courseId: null })).rejects.toThrow(/missing courseId/);
   });
 
   /**
    * An empty object satisfies the id type - every key of it is optional, because `IdKey` cannot be
    * made precise - and reaches `deleteMany` as `$where: {}`, which is no filter at all.
    */
-  it('refuses an id naming no key at all, on one key as much as on several', async () => {
+  it('should refuse an id naming no key at all, on one key as much as on several', async () => {
     await expect(pool.deleteOneById(Enrolment, {})).rejects.toThrow(/missing studentId, courseId/);
     await expect(pool.deleteOneById(Note, {})).rejects.toThrow(/every key of its primary key \(id\); missing id/);
   });
@@ -288,12 +287,12 @@ describe('addressing a composite primary key', () => {
 describe('a composite primary key in DDL', () => {
   const ddl = new SqlSchemaGenerator(new PostgresDialect()).generateCreateSchema([Enrolment]).join('\n');
 
-  it('declares every key in one named table-level PRIMARY KEY', () => {
+  it('should declare every key in one named table-level PRIMARY KEY', () => {
     expect(ddl).toContain('CONSTRAINT "Enrolment__studentId_courseId_pk" PRIMARY KEY ("studentId", "courseId")');
   });
 
   /** Auto-increment defaults on a sole integer key; on a composite it would make each column serial. */
-  it('leaves the columns alone rather than making each one serial', () => {
+  it('should leave the columns alone rather than making each one serial', () => {
     expect(ddl).toContain('"studentId" BIGINT NOT NULL,');
     expect(ddl).not.toContain('IDENTITY');
   });
@@ -303,15 +302,15 @@ describe('a composite primary key in DDL', () => {
    * for a sole key only - one per column would make each of them a generated key - and the key itself
    * is the table's, declared as its own constraint rather than on a column.
    */
-  it('adds a key column as a plain one, leaving the key to the table', () => {
+  it('should add a key column as a plain one, leaving the key to the table', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
-    const existing = buildSchemaAST([Enrolment]).getTable('Enrolment')!;
+    const existing = tableOf(Enrolment, 'Enrolment');
     existing.columns.delete('courseId');
     existing.primaryKey.length = 0;
-    existing.primaryKey.push(existing.columns.get('studentId')!);
+    existing.primaryKey.push(...columnsOf(existing, 'studentId'));
     existing.primaryKeyName = 'Enrolment_pkey'; // as introspection reports it
 
-    const statements = generator.generateAlterTable(generator.diffSchema(Enrolment, existing)!);
+    const statements = generator.generateAlterTable(diffOf(generator, Enrolment, existing));
 
     expect(statements).toContain('ALTER TABLE "Enrolment" ADD COLUMN "courseId" TEXT NOT NULL;');
     expect(statements).toContain(
@@ -320,13 +319,13 @@ describe('a composite primary key in DDL', () => {
   });
 
   /** A sole key still gets the serial type, and still does not declare the key on the column. */
-  it('adds a sole integer key as a serial, without declaring the key on it', () => {
+  it('should add a sole integer key as a serial, without declaring the key on it', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
-    const existing = buildSchemaAST([Note]).getTable('Note')!;
+    const existing = tableOf(Note, 'Note');
     existing.columns.delete('id');
     existing.primaryKey.length = 0;
 
-    const statements = generator.generateAlterTable(generator.diffSchema(Note, existing)!);
+    const statements = generator.generateAlterTable(diffOf(generator, Note, existing));
 
     expect(statements).toContain(
       'ALTER TABLE "Note" ADD COLUMN "id" BIGINT GENERATED BY DEFAULT AS IDENTITY NOT NULL;',
@@ -334,11 +333,7 @@ describe('a composite primary key in DDL', () => {
   });
 });
 
-/**
- * Adding a second `@Id` to an entity already in the database - the upgrade the 0.42.0 guide
- * documents. The column used to be added and the key left alone, so the table went on enforcing
- * uniqueness on one column while uql addressed rows by two.
- */
+/** Adding a second `@Id` to an entity already in the database changes the key, not only the columns. */
 describe('changing the primary key of an existing table', () => {
   @Entity({ name: 'Member' })
   class MemberBefore {
@@ -356,14 +351,14 @@ describe('changing the primary key of an existing table', () => {
 
   /** As introspection reports it: the columns it has, under the name the engine gave the constraint. */
   const existingTable = () => {
-    const table = buildSchemaAST([MemberBefore]).getTable('Member')!;
+    const table = tableOf(MemberBefore, 'Member');
     table.primaryKeyName = 'Member_pkey';
     return table;
   };
 
-  it('drops the old key, adds the column, then declares the new key', () => {
+  it('should drop the old key, add the column, then declare the new key', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
-    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+    const diff = diffOf(generator, MemberAfter, existingTable());
 
     expect(diff.primaryKey).toEqual({ from: ['userId'], to: ['userId', 'groupId'], fromName: 'Member_pkey' });
     expect(generator.generateAlterTable(diff)).toEqual([
@@ -376,9 +371,9 @@ describe('changing the primary key of an existing table', () => {
   });
 
   /** MySQL names every table's key `PRIMARY`, so its drop takes no name at all. */
-  it('drops by shape rather than by name where the engine has no name to give', () => {
+  it('should drop by shape rather than by name where the engine has no name to give', () => {
     const generator = new SqlSchemaGenerator(new MySqlDialect());
-    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+    const diff = diffOf(generator, MemberAfter, existingTable());
     expect(generator.generateAlterTable(diff)[0]).toBe('ALTER TABLE `Member` DROP PRIMARY KEY;');
   });
 
@@ -387,17 +382,17 @@ describe('changing the primary key of an existing table', () => {
    * that already exists, so matching on names would rewrite every one of them on the first migration
    * after upgrading.
    */
-  it('says nothing about a key whose columns are unchanged, whatever it is called', () => {
+  it('should say nothing about a key whose columns are unchanged, whatever it is called', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
-    const table = buildSchemaAST([MemberBefore]).getTable('Member')!;
+    const table = tableOf(MemberBefore, 'Member');
     table.primaryKeyName = 'some_legacy_name';
 
     expect(generator.diffSchema(MemberBefore, table)).toBeUndefined();
   });
 
-  it('reverses itself, restoring the key under the name the database had for it', () => {
+  it('should reverse itself, restoring the key under the name the database had for it', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
-    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+    const diff = diffOf(generator, MemberAfter, existingTable());
 
     expect(generator.generateAlterTableDown(diff)).toEqual([
       'ALTER TABLE "Member" DROP CONSTRAINT "Member__userId_groupId_pk";',
@@ -407,9 +402,9 @@ describe('changing the primary key of an existing table', () => {
   });
 
   /** SQLite's only route is rebuilding the table, so it refuses by name rather than emitting DDL. */
-  it('refuses on an engine that cannot alter a key at all', () => {
+  it('should refuse on an engine that cannot alter a key at all', () => {
     const generator = new SqlSchemaGenerator(new SqliteDialect());
-    const diff = generator.diffSchema(MemberAfter, existingTable())!;
+    const diff = diffOf(generator, MemberAfter, existingTable());
 
     expect(() => generator.generateAlterTable(diff)).toThrow(
       /Cannot change the primary key of "Member" - this database has no ALTER for it/,
@@ -436,7 +431,7 @@ describe('a composite key across a relation', () => {
   }
   const ddl = new SqlSchemaGenerator(dialect).generateCreateSchema([Enrolment, Attendance]).join('\n');
 
-  it('names one foreign key over every column, not one per column', () => {
+  it('should name one foreign key over every column, not one per column', () => {
     expect(ddl).toContain(
       'FOREIGN KEY ("enrolmentStudentId", "enrolmentCourseId") REFERENCES "Enrolment" ("studentId", "courseId")',
     );
@@ -444,9 +439,9 @@ describe('a composite key across a relation', () => {
     expect(ddl).not.toContain('FOREIGN KEY ("enrolmentStudentId") REFERENCES');
   });
 
-  it('correlates a relation filter on every key of the parent', () => {
+  it('should correlate a relation filter on every key of the parent', () => {
     const ctx = dialect.createContext();
-    dialect.find(ctx, Enrolment, { $where: { notes: { body: 'x' } } } as never);
+    dialect.find(ctx, Enrolment, { $where: { notes: { body: 'x' } } });
     // Both keys correlated, anded: matching on one alone would find another parent's notes.
     expect(ctx.sql).toContain('"enrolmentStudentId" = "Enrolment"."studentId"');
     expect(ctx.sql).toContain('"enrolmentCourseId" = "Enrolment"."courseId"');
@@ -458,7 +453,7 @@ describe('naming settled rows', () => {
    * A list of ids is an `IN` over the one key column, which a composite has no single column for.
    * Each of its id objects is a `$where` already, so the list is an OR of them.
    */
-  it('names a list of composite rows by an OR of their keys', () => {
+  it('should name a list of composite rows by an OR of their keys', () => {
     const ctx = new PostgresDialect().createContext();
     new PostgresDialect().delete(ctx, Enrolment, {
       $where: whereIds(getMeta(Enrolment), [
@@ -477,24 +472,24 @@ describe('naming settled rows', () => {
    * UPDATE is MySQL's alone. Naming them by one column of a composite would address every row
    * agreeing on it, so the settled set is a list of id objects.
    */
-  it('names a settled composite row by every key', () => {
+  it('should name a settled composite row by every key', () => {
     const meta = getMeta(Enrolment);
     expect(idOf(meta, { studentId: 1, courseId: 'c2', grade: 'A' })).toEqual({ studentId: 1, courseId: 'c2' });
   });
 
-  it('names a single-key row by the value itself, which is what a `$where` takes', () => {
+  it('should name a single-key row by the value itself, which is what a `$where` takes', () => {
     expect(idOf(getMeta(Note), { id: 7, body: 'x' })).toBe(7);
   });
 });
 
 describe('reading composite rows', () => {
-  it('finds one row by its whole key', async () => {
+  it('should find one row by its whole key', async () => {
     const found = await pool.findOneById(Enrolment, { studentId: 1, courseId: 'maths' });
     expect(found?.grade).toBe('A');
   });
 
   /** Each key alone matches three rows and two rows; only the pair names one. */
-  it('populates a to-many by every key, not by whichever column comes first', async () => {
+  it('should populate a to-many by every key, not by whichever column comes first', async () => {
     const [found] = await pool.findMany(Enrolment, {
       $where: { studentId: 1, courseId: 'maths' },
       $populate: { notes: true },
@@ -502,7 +497,7 @@ describe('reading composite rows', () => {
     expect(found?.notes?.map((note) => note.body)).toEqual(['first', 'second']);
   });
 
-  it('counts a to-many by every key', async () => {
+  it('should count a to-many by every key', async () => {
     const founds = await pool.findMany(Enrolment, { $count: { notes: true }, $sort: { courseId: 1, studentId: 1 } });
     expect(founds.map((it) => [it.studentId, it.courseId, it._count.notes])).toEqual([
       [1, 'maths', 2],
@@ -516,7 +511,7 @@ describe('reading composite rows', () => {
    * The other direction: a join over both foreign key columns, not just the first. Every key column
    * survives the projection on both sides, which is what lets the rows be grouped and addressed.
    */
-  it('joins a to-one whose target key is composite', async () => {
+  it('should join a to-one whose target key is composite', async () => {
     const founds = await pool.findMany(Note, {
       $select: { body: true },
       $populate: { enrolment: { $select: { grade: true } } },
@@ -530,7 +525,7 @@ describe('reading composite rows', () => {
    * target's - so where the parent's end is decides which columns correlate and which identify the
    * target. Both enrolments below share a student and a course respectively.
    */
-  it('reads a many-to-many through a junction keyed by every column', async () => {
+  it('should read a many-to-many through a junction keyed by every column', async () => {
     const founds = await pool.findMany(Enrolment, {
       $select: { studentId: true, courseId: true },
       $populate: { badges: { $select: { label: true } } },
@@ -545,7 +540,7 @@ describe('reading composite rows', () => {
     ]);
   });
 
-  it('filters by a many-to-many on every key of the parent', async () => {
+  it('should filter by a many-to-many on every key of the parent', async () => {
     const founds = await pool.findMany(Enrolment, {
       $select: { studentId: true, courseId: true },
       $where: { badges: { label: 'merit' } },
@@ -553,13 +548,13 @@ describe('reading composite rows', () => {
     expect(founds).toEqual([{ studentId: 1, courseId: 'maths' }]);
   });
 
-  it('filters by a relation on every key', async () => {
+  it('should filter by a relation on every key', async () => {
     const founds = await pool.findMany(Enrolment, { $where: { notes: { body: 'first' } } });
     expect(founds).toEqual([{ studentId: 1, courseId: 'maths', grade: 'A' }]);
   });
 
   /** A paged write names the rows it settled on, which for a composite is a list of id objects. */
-  it('deletes the page it settled on, and nothing that only shares a column', async () => {
+  it('should delete the page it settled on, and nothing that only shares a column', async () => {
     await pool.insertMany(Enrolment, [
       { studentId: 8, courseId: 'latin' },
       { studentId: 9, courseId: 'latin' },
@@ -585,7 +580,7 @@ describe('reading composite rows', () => {
  * column; several take an OR of key maps, because independent `IN`s would also match a pairing no
  * parent has - which a read absorbs by regrouping and a delete cannot.
  */
-it('cascades to the children of the whole key, not of one column of it', async () => {
+it('should cascade to the children of the whole key, not of one column of it', async () => {
   await pool.insertMany(Term, [
     { year: 2030, season: 'spring' },
     { year: 2030, season: 'autumn' },
@@ -601,3 +596,17 @@ it('cascades to the children of the whole key, not of one column of it', async (
   expect(await pool.findMany(Session, { $select: { id: true } })).toEqual([{ id: 2 }]);
   expect(await pool.findOneById(Term, { year: 2030, season: 'autumn' })).toBeDefined();
 });
+
+/** The table `entity` builds, failing the test where it builds none. */
+function tableOf(entity: Type<object>, name: string) {
+  const table = buildSchemaAST([entity]).getTable(name);
+  assertDefined(table);
+  return table;
+}
+
+/** The change `generator` plans from `table` to `entity`, failing the test where it plans none. */
+function diffOf(generator: SqlSchemaGenerator, entity: Type<object>, table: ReturnType<typeof tableOf>): SchemaDiff {
+  const diff = generator.diffSchema(entity, table);
+  assertDefined(diff);
+  return diff;
+}

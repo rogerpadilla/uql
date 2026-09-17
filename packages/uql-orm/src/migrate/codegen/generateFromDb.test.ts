@@ -1,18 +1,15 @@
 import { transform } from 'esbuild';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
-import { postgresConnection, provisioningTimeout } from '../../test/index.js';
+import { assertDefined, postgresConnection, provisioningTimeout } from '../../test/index.js';
 import { PostgresSchemaIntrospector } from '../introspection/postgresIntrospector.js';
 import { EntityCodeGenerator } from './entityCodeGenerator.js';
 
 const TABLE = 'codegen_from_db';
 
 /**
- * `generate:from-db` against a real catalogue, which is the only way this is worth testing: every
- * fixture-built `IndexNode` in the unit specs is one someone wrote by hand, and three bugs lived in
- * exactly the gap between those and what Postgres actually reports - an expression clipped to 63
- * characters, a reprint whose newlines broke the string literal it was written into, and an access
- * method reported on every index, which stopped any of them being written on the field.
+ * `generate:from-db` against a real catalogue, whose reports hand-built `IndexNode`s do not reproduce:
+ * an expression past 63 characters, a reprint with newlines, an access method on every index.
  */
 describe('generate:from-db (PostgreSQL)', () => {
   const pool = new PgQuerierPool(postgresConnection());
@@ -35,7 +32,9 @@ describe('generate:from-db (PostgreSQL)', () => {
     // Only this table: the suites share one database, and scanning every relation while another
     // drops one is how Postgres comes back with "could not open relation with OID".
     const ast = await new PostgresSchemaIntrospector(pool).introspect([TABLE]);
-    code = new EntityCodeGenerator(ast).generateForTable(TABLE)!.code;
+    const generated = new EntityCodeGenerator(ast).generateForTable(TABLE);
+    assertDefined(generated);
+    code = generated.code;
   }, provisioningTimeout);
 
   afterAll(async () => {

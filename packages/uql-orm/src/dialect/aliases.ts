@@ -1,13 +1,5 @@
-/**
- * Every identifier UQL invents for itself: a column a statement answers in, a derived table it wraps
- * a set in, a temporary field a pipeline parks a value on.
- *
- * All of them share the `_uql` prefix, which is what keeps them off a user's own column or field, and
- * all of them are declared here rather than beside the code that emits them: the end that writes one
- * and the end that reads it back are usually in different modules, and a drift between the two fails
- * silently - a count of zero, or an ordering that ranks everything equal. Collected in one file so
- * the whole reserved namespace can be read at a glance before a new name is added to it.
- */
+// Every identifier UQL invents, `_uql`-prefixed to stay off a user's own, collected in one place:
+// the ends writing and reading one sit in different modules, and a drift between them fails silently.
 
 /** The column every internally-built count answers in: `COUNT(*)`, a grouped tally, a `$count` stage. */
 export const COUNT_ALIAS = '_uql_count';
@@ -15,8 +7,8 @@ export const COUNT_ALIAS = '_uql_count';
 /** The column a paged read carries its own unpaged total in, from `COUNT(*) OVER ()`. */
 export const TOTAL_ALIAS = '_uql_total';
 
-/** The derived table a `$distinct` count wraps its deduplicated set in. MySQL requires the alias. */
-export const DISTINCT_DERIVED_ALIAS = '_uql_distinct';
+/** The derived table a count wraps the rows it counts in: a page, or a `$distinct` set. MySQL requires the alias. */
+export const COUNTED_ROWS_ALIAS = '_uql_rows';
 
 /** The row a Postgres relation aggregates whole: a LATERAL projection of the columns it answers under. */
 export const RELATION_ROW_ALIAS = '_uql_row';

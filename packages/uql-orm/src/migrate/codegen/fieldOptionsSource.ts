@@ -12,15 +12,7 @@ interface FieldSourceContext {
 
 type OptionSource = (col: ColumnNode, context: FieldSourceContext) => readonly string[];
 
-/**
- * What each field of a {@link ColumnNode} contributes to `@Field({ ... })`, in emit order, and `null`
- * where nothing does.
- *
- * The `satisfies` is the point: a field the node gains cannot reach here without someone answering
- * whether an entity generated from a database keeps it. Written as a hand-rolled `if` chain, this had
- * already dropped `comment` - introspection reads one on Postgres and MySQL, and regenerating an
- * entity threw it away.
- */
+/** What each field of a {@link ColumnNode} contributes to `@Field({ ... })`, in emit order; `satisfies` makes a new field answer. */
 const OPTION_SOURCE = {
   // Without this the entity maps to a column named after the property, which for anything the
   // transformer rewrote - every `user_id` - is a column the database does not have.
@@ -52,14 +44,7 @@ const OPTION_SOURCE = {
   referencedBy: null,
 } as const satisfies Record<keyof ColumnNode, OptionSource | null>;
 
-/**
- * A column's `@Field({ ... })` options as source, or `''` when it needs none.
- *
- * Shared by the entity generator and the merger because they emit the same decorator. They each had
- * their own copy, and the copies had drifted: the merger's dropped `unique` and `defaultValue`, so
- * merging a column into an existing entity file quietly produced a weaker field than generating the
- * file from scratch.
- */
+/** A column's `@Field({ ... })` options as source, `''` where it needs none: shared by the generator and the merger. */
 export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, indexName?: string): string {
   const context = { propertyName, indexName };
   const options = [
@@ -76,11 +61,7 @@ export function fieldNeedsRaw(col: ColumnNode): boolean {
   return col.generatedAs !== undefined;
 }
 
-/**
- * A default value as source. Strings stay single-quoted, expressions included: `defaultValue: 'now()'`
- * is what reaches the DDL. The generator used to branch on `CURRENT_TIMESTAMP`/`NEXTVAL`/`(` first, but
- * both branches emitted a quoted string and only the fallthrough escaped embedded quotes.
- */
+/** A default value as source, a string single-quoted and escaped, an expression included: `defaultValue: 'now()'`. */
 function defaultValueSource(value: unknown): string {
   if (typeof value === 'string') {
     return quoted(value);

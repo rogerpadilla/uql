@@ -2,9 +2,17 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
-## [Unreleased]
+## [0.67.0] - 2026-09-16
 
-- **Fixed (codemod): a to-one whose `<relation>Id` is not a declared column is reported**, instead of rewritten into a relation that throws on first read.
+- **Breaking: the `uql-orm` root exports only the documented helpers, `raw`, `refs`, `withDeleted` and `DefaultLogger`**; import the rest from `uql-orm/util`. `COLUMN_TYPES_BY_FAMILY` is now `COLUMN_TYPES`.
+- **Breaking (types): `FieldValue` and `RelationValue` are gone**; use `E[FieldKey<E>]` and `E[RelationKey<E>]`.
+- **Breaking (custom dialects): capability flags live in `features`**, so `supportsRowLocks` is `features.rowLocks`; `featureDefaults` and `featureOverrides` are gone.
+- **`sync` and `generate:entities` read only your entities' tables**, so they are faster on a large database and leave other tables, and foreign keys to them, alone.
+- **A cascaded write sends one statement per relation**, not one per parent.
+- **Fixed (Postgres, CockroachDB): reading the schema handles a table name used in two schemas**, composite foreign keys and composite unique constraints.
+- **Fixed (MongoDB): views are no longer read as collections.**
+- **Fixed: `updateMany` cascades to the right rows when it changes a column its `$where` filters on**, without firing `afterLoad`.
+- **Fixed (codemod): a to-one without a declared `<relation>Id` column is reported** instead of rewritten into a broken relation.
 
 ## [0.66.0] - 2026-09-16
 

@@ -1,9 +1,4 @@
-/**
- * Schema AST Types
- *
- * A unified graph representation of database schema with relationships as first-class citizens.
- * Enables reliable diffing, smart relation detection, and dialect-agnostic schema operations.
- */
+// A database schema as a graph, whichever side it came from: the entities or the database itself.
 
 import type { IndexSchema } from '../type/migration.js';
 
@@ -55,10 +50,10 @@ export interface CanonicalType {
   readonly withTimezone?: boolean;
 }
 
-/**
- * Actions for foreign key ON DELETE and ON UPDATE clauses.
- */
-export type ForeignKeyAction = 'CASCADE' | 'SET NULL' | 'SET DEFAULT' | 'RESTRICT' | 'NO ACTION';
+/** Actions for foreign key ON DELETE and ON UPDATE clauses. */
+export const FOREIGN_KEY_ACTIONS = ['CASCADE', 'SET NULL', 'SET DEFAULT', 'RESTRICT', 'NO ACTION'] as const;
+
+export type ForeignKeyAction = (typeof FOREIGN_KEY_ACTIONS)[number];
 
 /**
  * The values a column accepts, rendered as `CHECK (col IN (...))`.
@@ -68,14 +63,7 @@ export type ForeignKeyAction = 'CASCADE' | 'SET NULL' | 'SET DEFAULT' | 'RESTRIC
  */
 export type EnumValues = readonly (string | number)[];
 
-/**
- * A `CHECK` constraint as the schema holds it, its expression already text. Declared here rather
- * than beside the entity types because a table node also comes from introspection, where there is
- * no entity to have authored one.
- *
- * Only ever compared by presence, never by content: a check is SQL text, and a database reprints
- * text from its parse tree, so `CHECK ("balance" >= 0)` reads back as `CHECK ((balance >= (0)::numeric))`.
- */
+/** A `CHECK` as the schema holds it, compared by presence only: the database reprints its expression. */
 export interface CheckSchema {
   /** Absent when nothing named it, which the generator fills in with `derivedCheckName`. */
   readonly name?: string;
@@ -91,16 +79,6 @@ export const DEFAULT_FOREIGN_KEY_ACTION: ForeignKeyAction = 'NO ACTION';
  * Relationship cardinality types.
  */
 export type RelationshipType = 'OneToOne' | 'OneToMany' | 'ManyToOne' | 'ManyToMany';
-
-/**
- * Source of how a relationship was detected.
- */
-export type RelationshipSource =
-  | 'explicit_fk' // From actual FK constraint
-  | 'entity_decorator' // From @Relation decorator
-  | 'naming_pattern' // Inferred from column naming (user_id -> users)
-  | 'junction_table' // Inferred from junction table structure
-  | 'unique_fk'; // Inferred from unique FK (OneToOne)
 
 /**
  * Index algorithm/type supported by various databases.
@@ -119,16 +97,6 @@ export const INDEX_TYPES = [
 ] as const;
 
 export type IndexType = (typeof INDEX_TYPES)[number];
-
-/**
- * Source of where an index was defined.
- */
-export type IndexSource = 'entity' | 'database' | 'both';
-
-/**
- * Sync status for indexes.
- */
-export type IndexSyncStatus = 'in_sync' | 'entity_only' | 'db_only' | 'mismatch';
 
 /**
  * Column node in the schema graph.
@@ -234,12 +202,6 @@ export interface RelationshipNode {
   readonly onDelete?: ForeignKeyAction;
   /** Action on update of referenced row */
   readonly onUpdate?: ForeignKeyAction;
-
-  // === Metadata for Smart Detection ===
-  /** Confidence level (0-1) for inferred relationships */
-  readonly confidence?: number;
-  /** How this relationship was detected */
-  readonly inferredFrom?: RelationshipSource;
 }
 
 /**
@@ -249,12 +211,6 @@ export interface RelationshipNode {
 export type IndexNode = IndexSchema & {
   /** Reference to the table this index belongs to */
   readonly table: TableNode;
-
-  // === Sync Metadata ===
-  /** Where this index was defined */
-  readonly source?: IndexSource;
-  /** Current sync status */
-  readonly syncStatus?: IndexSyncStatus;
 };
 
 /**
@@ -270,14 +226,7 @@ export interface SchemaAST {
   readonly indexes: IndexNode[];
 }
 
-/**
- * Difference between two column definitions.
- *
- * A union rather than one shape with two optional sides, so which node is present follows from the
- * kind of difference: an added column has only the `expected` one, a dropped column only the
- * `actual` one, and an altered column both. Stated as optionals, every reader had to assert its way
- * past a `undefined` the kind had already ruled out.
- */
+/** How two columns differ, a union so which side is present follows from the kind of difference. */
 export type ColumnDiff = ColumnDiffBase &
   (
     | { readonly type: 'add'; readonly expected: ColumnNode; readonly actual?: undefined }
@@ -376,28 +325,6 @@ export interface SchemaDiffResult {
   readonly hasDifferences: boolean;
   /** Whether any changes are breaking (could cause data loss) */
   readonly hasBreakingChanges: boolean;
-}
-
-/**
- * Type of schema validation error.
- */
-export type ValidationErrorType =
-  | 'missing_fk_target'
-  | 'circular_dependency'
-  | 'orphan_column'
-  | 'duplicate_index'
-  | 'invalid_type';
-
-/**
- * Schema validation error.
- */
-export interface ValidationError {
-  readonly type: ValidationErrorType;
-  readonly message: string;
-  readonly table?: TableNode;
-  readonly column?: ColumnNode;
-  readonly relationship?: RelationshipNode;
-  readonly tables?: TableNode[];
 }
 
 /**

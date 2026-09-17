@@ -1,11 +1,7 @@
 /**
- * Type-level regression tests for `$count`: which relations it accepts, what each may be given, the
- * `_count` a read comes back with, and the `$sort` that ranks parents by one of those tallies. `$count` captures its relation names as a key set the way
- * `$select`/`$populate` do, so both halves need pinning - that the names shape `_count`, and that
- * capturing them did not cost the typo'd-key errors TypeScript skips on a naked type parameter.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
+ * `$count`: the relations it takes, their values, the `_count` a read returns, and the `$sort` ranking by
+ * a tally. Its names are captured as a key set, so a typo'd name still fails. Type-checked by
+ * `bun run ts` only.
  */
 import type { Querier } from '../index.js';
 

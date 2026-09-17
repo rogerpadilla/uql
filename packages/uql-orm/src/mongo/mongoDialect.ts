@@ -9,8 +9,6 @@ import type {
   EntityMeta,
   FieldKey,
   FieldOptions,
-  FieldValue,
-  JsonUpdateOp,
   Query,
   QueryAggMap,
   QueryAggregate,
@@ -19,6 +17,7 @@ import type {
   QueryGroupOp,
   QueryLikeOp,
   QueryOptions,
+  QueryPager,
   QueryPopulate,
   QuerySelect,
   QuerySelectValue,
@@ -117,7 +116,7 @@ function declaredTypeName(type: unknown): string {
 }
 
 export class MongoDialect extends AbstractDialect {
-  protected override readonly featureDefaults = mongoDialectFeatures;
+  override readonly features: DialectFeatures = mongoDialectFeatures;
 
   readonly dialectName = 'mongodb';
 
@@ -154,11 +153,8 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * A `$where` that may constrain relations, split into the `$lookup` stages it needs and the `$match`
-   * filter that consumes them. Each relation condition becomes one correlated lookup into a temporary
-   * field plus an ordinary condition on that field, so the caller's boolean structure survives intact
-   * (a relation inside `$or` still means what it says) and nothing depends on materializing ids.
-   * `unset` names the temporary fields, which the caller drops once the match is done.
+   * A `$where` that may constrain relations, as the `$lookup` stages it needs and the `$match` reading
+   * them: each condition a lookup into a temporary field (`unset` names them), so `$or` keeps its meaning.
    */
   public whereWithRelations<E extends Document>(
     entity: Type<E>,
@@ -239,13 +235,8 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * Renders `$and`/`$or`/`$not`/`$nor` into `filter`. MongoDB has no root-level `$not`, so both
-   * negating operators become its `$nor`, which is exactly `NOT (a OR b)` - and by De Morgan that
-   * makes a `$nor` list its clauses directly while a `$not` wraps them in one `$and` first.
-   *
-   * Clauses that render to nothing are dropped and an empty operator emits no key at all: MongoDB
-   * rejects an empty `$and`/`$or`/`$nor` outright, where the SQL dialects contribute no term.
-   * Negations accumulate into the one `$nor`, since `NOT a AND NOT b` is `$nor: [a, b]`.
+   * Renders `$and`/`$or`/`$not`/`$nor` into `filter`, both negations as MongoDB's `$nor` (a `$not`'s clauses
+   * wrapped in one `$and`), dropping empty clauses, since MongoDB refuses an empty operator.
    */
   private appendLogicalOperator<E extends Document>(
     filter: Record<string, unknown>,
@@ -427,10 +418,6 @@ export class MongoDialect extends AbstractDialect {
     throw new TypeError(`path ${key} does not exist in ${entityName(meta)}`);
   }
 
-  protected mapTableNameRow(row: { table_name: string }): string {
-    return row.table_name;
-  }
-
   /** String operators -> { pattern: (v) => regex, caseInsensitive } */
   private static readonly REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: boolean }>([
     ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
@@ -499,17 +486,9 @@ export class MongoDialect extends AbstractDialect {
         case '$isNotNull':
           result[val ? '$ne' : '$eq'] = null;
           break;
-        case '$text':
-          result['$text'] = { $search: val };
-          break;
         case '$near':
-          // Atlas has no distance operator. The only threshold it offers is a `$match` on
-          // `{$meta:'vectorSearchScore'}`, which is a *similarity* on a scale set by the index's own
-          // `similarity` - and that lives in the Atlas index definition, which UQL neither emits nor
-          // reads (the same reason `$distance` is index-defined for `$text` above). Converting a
-          // distance to that scale would mean guessing which metric produced the score, and guessing
-          // wrong filters the wrong rows silently. So this refuses, the way an unsupported
-          // `DISTANCE=` does rather than defaulting.
+          // Atlas offers only a similarity threshold, on the index's own scale, which UQL neither emits nor
+          // reads: converting a distance would mean guessing the metric, so this refuses.
           throw new TypeError(
             '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
               "Project the score with $sort's $project and filter on it instead.",
@@ -786,21 +765,22 @@ export class MongoDialect extends AbstractDialect {
       ...(unset.length ? [{ $unset: unset }] : []),
       ...this.readStages(entity, q, {
         sort: this.sort(entity, q.$sort, q.$populate),
-        pager: [
-          ...(q.$skip === undefined ? [] : [{ $skip: assertNonNegativeInteger(q.$skip, '$skip') }]),
-          ...(q.$limit === undefined ? [] : [{ $limit: assertNonNegativeInteger(q.$limit, '$limit') }]),
-        ],
+        pager: this.pagerStages(q),
       }),
     ];
   }
 
+  /** The `$skip`/`$limit` stages of a page, each checked: `/http` hands a page over untyped. */
+  public pagerStages(q: QueryPager): MongoAggregationPipelineEntry<Document>[] {
+    return [
+      ...(q.$skip === undefined ? [] : [{ $skip: assertNonNegativeInteger(q.$skip, '$skip') }]),
+      ...(q.$limit === undefined ? [] : [{ $limit: assertNonNegativeInteger(q.$limit, '$limit') }]),
+    ];
+  }
+
   /**
-   * What a read runs after its entry stage, in the one order that works: the lookups its relations
-   * need, the ordering and paging that may read them, and the projection last of all - it names the
-   * fields the lookups add, and no stage after it could read what it dropped.
-   *
-   * Shared by the plain pipeline and the `$vectorSearch` one, which each used to spell the order out
-   * for themselves and each got a different part of it wrong.
+   * What a read runs after its entry stage, in the one order that works: the lookups, then the sort and
+   * page that may read them, then the projection. Shared with the `$vectorSearch` pipeline.
    */
   public readStages<E extends Document>(
     entity: Type<E>,
@@ -886,10 +866,8 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * The scalar projection a narrowing query asks for, widened by what the pipeline itself produced:
-   * each populated relation and the tallies. It goes last, after the lookups have read the join keys -
-   * projecting any earlier is what used to leave `$populate` empty, and is why the pipeline emitted no
-   * projection at all and returned every column.
+   * The projection a narrowing query asks for, widened by what the pipeline produced (each populated
+   * relation and the tallies); last, once the lookups have read the join keys.
    */
   public pipelineProjection<E extends Document>(entity: Type<E>, q: Query<E>): Record<string, 0 | 1> | undefined {
     if (!q.$select && !q.$exclude) {
@@ -1053,11 +1031,8 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * The seam into the driver: a key, or a reference to one, as MongoDB stores it. A 24-hex string
-   * becomes an `ObjectId`, so a write agrees with the filter that will later look for it; anything
-   * else - a UUID, a number, an `ObjectId` already - is stored as given, which is how those keys keep
-   * their value. Strictly 24-hex: the driver also accepts any 12-byte string, and coercing one of
-   * those turned an ordinary short key into a foreign `ObjectId`. Arrays convert element-wise.
+   * A key as MongoDB stores it: a 24-hex string as an `ObjectId`, so a write matches the filter looking for
+   * it, and anything else as given. Only 24-hex, not any 12-byte string. Arrays convert element-wise.
    */
   public toWireId(value: unknown): unknown {
     if (Array.isArray(value)) {
@@ -1133,15 +1108,8 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * MongoDB rejects two operators targeting one path in a single update document, so any path shared
-   * across operator groups is expressed as one aggregation-pipeline update instead.
-   *
-   * Each path's expression is composed in the same order stated on {@link JsonUpdateOp} (`$pull` ->
-   * `$set` -> `$push` -> `$unset`), so every combination yields the identical result: a `$pull`
-   * filters the stored array, a `$set` on the same path then replaces it outright, and a `$push`
-   * appends to whatever those produced. `$unset` is a later stage, so it wins over a `$set` on the
-   * same path - again matching SQL, where it is the outermost wrapper. Values are wrapped in
-   * `$literal` so a string starting with `$` stays data rather than becoming a field reference.
+   * A JSON update as one pipeline, since MongoDB refuses two operators on one path: each path composed as
+   * `$pull`, `$set`, `$push`, then `$unset`, as SQL does, with values as `$literal` so `$x` stays data.
    */
   private getUpdatePipeline(
     { set, push, pull, unset }: { set: Document; push: Document; pull: Document; unset: ReadonlySet<string> },
@@ -1166,15 +1134,7 @@ export class MongoDialect extends AbstractDialect {
     return [{ $set: assignments }, ...(unset.size > 0 ? [{ $unset: [...unset] }] : [])];
   }
 
-  /**
-   * Refuses a key the caller left to MongoDB that MongoDB cannot mint one of.
-   *
-   * The only key a server generates is an `ObjectId`, which {@link fromWireId} hands back as its hex
-   * string - so a key declared `String` is satisfiable and one declared `Number` is not. Answering a
-   * numeric declaration with a string is the lie this exists to refuse: the field says `number`, the
-   * value is not one, and every consumer that indexes or compares by it is quietly wrong. Prisma
-   * refuses the same shape at its schema, and this is the first moment uql can.
-   */
+  /** Refuses a key left to MongoDB that it cannot mint: only an `ObjectId`, read back as a string, so not a `Number`. */
   private assertMintableKey<E>(meta: EntityMeta<E>, field: FieldOptions): void {
     if (columnFamily(field.type) === 'string') {
       return;
@@ -1278,14 +1238,7 @@ export class MongoDialect extends AbstractDialect {
       }
     }
 
-    // $skip and $limit stages
-    if (q.$skip !== undefined) {
-      pipeline.push({ $skip: assertNonNegativeInteger(q.$skip, '$skip') });
-    }
-    if (q.$limit !== undefined) {
-      pipeline.push({ $limit: assertNonNegativeInteger(q.$limit, '$limit') });
-    }
-
+    pipeline.push(...this.pagerStages(q));
     return pipeline;
   }
 
@@ -1420,7 +1373,7 @@ export class MongoDialect extends AbstractDialect {
 }
 
 export type MongoAggregationPipelineEntry<E extends Document> = {
-  $lookup?: MongoAggregationLookup<E>;
+  $lookup?: MongoAggregationLookup;
   $match?: Filter<E> | Record<string, unknown>;
   $sort?: Sort;
   $unwind?: MongoAggregationUnwind;
@@ -1435,11 +1388,12 @@ export type MongoAggregationPipelineEntry<E extends Document> = {
   $limit?: number;
 };
 
-type MongoAggregationLookup<E extends Document> = {
+/** A `$lookup`, whose pipeline runs over the collection it reads. */
+type MongoAggregationLookup = {
   readonly from?: string;
   readonly foreignField?: string;
   readonly localField?: string;
-  readonly pipeline?: MongoAggregationPipelineEntry<FieldValue<E>>[];
+  readonly pipeline?: MongoAggregationPipelineEntry<Document>[];
   /** A relation key when populating, a temporary field when a relation condition is being tested. */
   readonly as?: string;
 };

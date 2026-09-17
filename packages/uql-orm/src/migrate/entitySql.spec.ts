@@ -59,33 +59,33 @@ const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
 describe('SQL an entity declares', () => {
-  it('compiles a check to the predicate it states, quoting each column the way its engine does', () => {
+  it('should compile a check to the predicate it states, quoting each column the way its engine does', () => {
     expect(ddl(new PostgresDialect(), Ledger)).toContain('CHECK ("balance" >= 0)');
     expect(ddl(new PostgresDialect(), Ledger)).toContain('CHECK ("spent" >= "refunded")');
     expect(ddl(new MariaDialect(), Ledger)).toContain('CHECK (`balance` >= 0)');
     expect(ddl(new SqliteDialect(), Ledger)).toContain('CHECK (`spent` >= `refunded`)');
   });
 
-  it("compiles a partial index's predicate without the entity's own filters", () => {
+  it("should compile a partial index's predicate without the entity's own filters", () => {
     expect(ddl(new PostgresDialect(), Account)).toContain('("emailAddress") WHERE "deletedAt" IS NULL;');
   });
 
-  it('renders an index expression and its predicate from the fields they read', () => {
+  it('should render an index expression and its predicate from the fields they read', () => {
     expect(ddl(new PostgresDialect(), Account)).toContain('((lower("emailAddress"))) WHERE "deletedAt" IS NULL;');
   });
 
-  it('resolves every reference through the naming strategy, from a decorator and from defineEntity alike', () => {
+  it('should resolve every reference through the naming strategy, from a decorator and from defineEntity alike', () => {
     const snake = new PostgresDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
     expect(ddl(snake, Account)).toContain('((lower("email_address"))) WHERE "deleted_at" IS NULL;');
     expect(ddl(snake, Scored)).toContain('GENERATED ALWAYS AS ("raw_score" + 1) STORED');
     expect(ddl(snake, Line)).toContain('GENERATED ALWAYS AS ("unit_price" * "qty") STORED');
   });
 
-  it('refuses a partial index on an engine that has none', () => {
+  it('should refuse a partial index on an engine that has none', () => {
     expect(() => ddl(new MySqlDialect(), Account)).toThrow(/partial/);
   });
 
-  it('writes the vector a predicate compares against as its literal, like any other value', () => {
+  it('should write the vector a predicate compares against as its literal, like any other value', () => {
     @Entity({ checks: [{ where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 0.5 } } } }] })
     class Near {
       @Id({ type: Number }) id?: number;
@@ -94,10 +94,9 @@ describe('SQL an entity declares', () => {
     expect(ddl(new PostgresDialect(), Near)).toContain(`CHECK ("embedding" <=> '[1,2,3]'::vector < 0.5)`);
   });
 
-  it('refuses a predicate given no entity to read it against', () => {
-    expect(() => new PostgresDialect().compileDdl({ id: 1 } as never)).toThrow(
-      'a predicate compiles against the entity',
-    );
+  it('should refuse a predicate given no entity to read it against', () => {
+    // @ts-expect-error: not a `raw` statement
+    expect(() => new PostgresDialect().compileDdl({ id: 1 })).toThrow('a predicate compiles against the entity');
   });
 });
 
@@ -106,7 +105,7 @@ describe('a date SQL an entity declares compares against', () => {
     vi.unstubAllEnvs();
   });
 
-  it('is written in UTC, so the DDL does not depend on the machine generating it', () => {
+  it('should be written in UTC, so the DDL does not depend on the machine generating it', () => {
     vi.stubEnv('TZ', 'America/New_York');
     const epoch = new Date(0);
     @Entity({ checks: [{ where: { closedAt: { $gte: epoch } } }, { where: { closedAt: { $in: [epoch] } } }] })
@@ -152,13 +151,13 @@ describe('a SQL Server filtered index', () => {
     ['a JSON path', { 'data.theme': 'dark' }],
   ];
 
-  it.each(refused)('refuses %s, which its filter grammar has no room for', (operator, where) => {
+  it.each(refused)('should refuse %s, which its filter grammar has no room for', (operator, where) => {
     expect(() => ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toThrow(
       `mssql does not support ${operator} in a partial index predicate (index "ticket_idx")`,
     );
   });
 
-  it('takes comparisons, IN and IS NULL, joined by AND', () => {
+  it('should take comparisons, IN and IS NULL, joined by AND', () => {
     const where: EntityWhere<TicketShape> = {
       closedAt: null,
       priority: { $gte: 1, $ne: 3 },
@@ -169,7 +168,7 @@ describe('a SQL Server filtered index', () => {
     );
   });
 
-  it('leaves a raw predicate to the server', () => {
+  it('should leave a raw predicate to the server', () => {
     const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.closedAt} IS NOT NULL`;
     expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "closedAt" IS NOT NULL;`);
   });

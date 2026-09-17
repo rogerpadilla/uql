@@ -1,7 +1,7 @@
 import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { getMeta, idOf, namesKey } from '../entity/index.js';
+import { getMeta, namesKey } from '../entity/index.js';
 import { COUNT_RESULT_KEY } from '../type/index.js';
 import type {
   EntityData,
@@ -14,7 +14,7 @@ import type {
   QueryAggregateResult,
   QueryBuildFn,
   QueryConflictPaths,
-  QueryFilter,
+  QueryPage,
   QueryGroupMap,
   PrimaryKey,
   QueryOptions,
@@ -28,21 +28,16 @@ import type {
 } from '../type/index.js';
 import {
   buildUpdateResult,
-  cascadesOnDelete,
   clone,
   getInsertFieldKeys,
   insertShapeOf,
-  idOnlyQuery,
   isAutoIncrement,
-  isPagedQuery,
   isRecord,
   obtainAttrsPaths,
   throwNoPendingTransaction,
   throwPendingTransaction,
   unflatObject,
   unflatObjects,
-  whereIds,
-  withoutSoftDeleteFilter,
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { AbstractQuerier } from './abstractQuerier.js';
@@ -50,13 +45,8 @@ import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
 
 /**
- * Row indexes grouped by whether the caller supplied the key, payload order kept within each group.
- * One group when the batch agrees on it, which is the single statement it has always been.
- *
- * Deliberately coarser than {@link groupByInsertShape}, and the two must not be merged: an insert's
- * `VALUES` list takes the union of the batch's columns and fills the rest with `DEFAULT`, so the
- * key's presence is the only thing that changes what the statement can report. Splitting an insert
- * by full shape instead would turn a batch of optional fields into a statement per combination.
+ * Row indexes split by whether the row names its key, the one thing that changes what an insert can
+ * report; coarser than {@link groupByInsertShape} on purpose, since an insert fills a missing column with `DEFAULT`.
  */
 function partitionBySuppliedId<E extends object>(payload: EntityData<E>[], idKey: IdKey<E>): number[][] {
   const supplied: number[] = [];
@@ -179,15 +169,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     });
   }
 
+  /** The rows of a statement the dialect builds. */
+  private query<T>(build: QueryBuildFn): Promise<T[]> {
+    const ctx = this.dialect.createContext();
+    build(ctx);
+    return this.all<T>(ctx.sql, ctx.values);
+  }
+
+  /** Runs a statement the dialect builds. */
+  private exec(build: QueryBuildFn): Promise<QueryUpdateResult> {
+    const ctx = this.dialect.createContext();
+    build(ctx);
+    return this.run(ctx.sql, ctx.values);
+  }
+
   /**
-   * `$lock` outside a transaction is always a bug, and a silent one. Every engine accepts
-   * `SELECT ... FOR UPDATE` in autocommit and then releases the lock as the statement commits,
-   * before the caller has seen a row: the SQL is correct, nothing is omitted, and no layer below
-   * this one can tell. The dialect cannot check it either, being stateless and shared by every
-   * connection of the pool, so this is the only place it can be caught.
-   *
-   * The capability check runs first on purpose: "this engine has no row locks" is the more
-   * actionable answer, and on SQLite it is the answer either way.
+   * Refuses a `$lock` the engine lacks, then one outside a transaction, where the lock would drop as the
+   * statement commits; only the querier knows whether one is open.
    */
   protected assertLockable<E>(entity: Type<E>, q: Query<E>): void {
     if (!q.$lock) {
@@ -200,14 +198,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Run the `SET`s that tune an ANN index for this query, and refuse the ones that would not apply.
-   *
-   * Same shape as {@link assertLockable} and for the same reason: a `SET LOCAL` outside a transaction
-   * is accepted, applies to nothing, and leaves the query running at the engine's default recall -
-   * correct SQL, silently untuned. Only the querier knows whether a transaction is open.
-   *
-   * The statements go through `internalRun`, sharing this querier's single connection with the query
-   * they precede; `SET LOCAL` then expires with the transaction, so nothing is left behind.
+   * Runs the `SET`s tuning an ANN index for the query on its connection, refusing where they would apply to
+   * nothing: a `SET LOCAL` outside a transaction.
    */
   private async applyVectorTuning<E>(entity: Type<E>, q: Query<E>): Promise<void> {
     // Resolved before the transaction check, so the refusal fires only where the tuning would have
@@ -217,7 +209,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (!statements.length) {
       return;
     }
-    if (this.dialect.vectorTuningNeedsTransaction && !this.hasOpenTransaction) {
+    if (this.dialect.features.vectorTuningNeedsTransaction && !this.hasOpenTransaction) {
       throw new TypeError(
         `$candidates requires an open transaction on ${this.dialect.dialectName}; run the query inside pool.transaction(...)`,
       );
@@ -231,48 +223,28 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.hydrateRows(entity, await this.selectRows(entity, q, opts));
   }
 
-  /**
-   * How to count when the total cannot ride along in the read's own `COUNT(*) OVER ()` column, or
-   * `undefined` when it can. Two clauses rule the window out: `$distinct`, because a window counts
-   * before the deduplication and so overstates the page, and `$lock` on an engine that refuses the
-   * pair outright. Both then cost a second statement; only the counting differs.
-   */
-  private countedSeparately<E extends object>(
-    entity: Type<E>,
-    q: Query<E>,
-    opts?: QueryOptions,
-  ): QueryBuildFn | undefined {
-    if (q.$distinct) {
-      return (ctx) => this.dialect.countDistinct(ctx, entity, q, opts);
-    }
-    if (q.$lock && !this.dialect.supportsWindowWithRowLock) {
-      return (ctx) => this.dialect.count(ctx, entity, q, opts);
-    }
-    return undefined;
+  /** Every row `q` matches past its page, deduplicated where it reads `$distinct`. */
+  private countUnpaged<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions): Promise<number> {
+    return q.$distinct
+      ? this.runCount((ctx) => this.dialect.countDistinct(ctx, entity, q, opts))
+      : this.internalCount(entity, { $where: q.$where }, opts);
   }
 
   /**
-   * One statement for both: the page carries its own unpaged total in an extra column. An empty page
-   * has no row to carry it, which is the one case still needing a count of its own - a `$skip` past
-   * the end, or a filter nothing matched.
-   *
-   * A `$required` relation needs no special case: the window counts what the INNER JOIN left, which
-   * is exactly the total a caller of a filtered read is asking for. A `$lock` is the one clause an
-   * engine may refuse to have in the same statement, which {@link AbstractSqlDialect.supportsWindowWithRowLock}
-   * answers; where it does, the total comes from a count of its own. A `$distinct` read needs one
-   * too, and a deduplicating one: see {@link AbstractSqlDialect.countDistinct}.
+   * The page and its unpaged total in one statement, a window column on each row, and a count of its own for
+   * an empty page. A window counts before `DISTINCT`, and the Postgres family refuses one beside a `$lock`,
+   * so those count apart.
    */
   protected override async internalFindManyAndCount<E extends object>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ): Promise<[E[], number]> {
-    const separately = this.countedSeparately(entity, q, opts);
-    if (separately) {
-      return Promise.all([this.internalFindMany(entity, q, opts), this.runCount(separately)]);
+    if (q.$distinct || (q.$lock && !this.dialect.features.rowLockWithWindow)) {
+      return Promise.all([this.internalFindMany(entity, q, opts), this.countUnpaged(entity, q, opts)]);
     }
     const rows = await this.selectRows(entity, q, opts, TOTAL_ALIAS);
-    const total = rows.length ? Number(rows[0][TOTAL_ALIAS]) : await this.internalCount(entity, q, opts);
+    const total = rows.length ? Number(rows[0][TOTAL_ALIAS]) : await this.countUnpaged(entity, q, opts);
     for (const row of rows) {
       delete row[TOTAL_ALIAS];
     }
@@ -292,9 +264,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (q.$candidates !== undefined) {
       await this.applyVectorTuning(entity, q);
     }
-    const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q, opts, totalAlias);
-    return this.all<RawRow>(ctx.sql, ctx.values);
+    return this.query<RawRow>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias));
   }
 
   private hydrateRows<E extends object>(entity: Type<E>, rows: RawRow[]): E[] {
@@ -314,8 +284,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       await this.applyVectorTuning(entity, q);
     }
     const meta = getMeta(entity);
-    // The one path that does not go through `all`/`run`, so it connects on its own: streaming first on
-    // a freshly acquired querier used to reach `getConn()` with nothing acquired.
+    // The one path not going through `all`/`run`, so it connects on its own.
     await this.lazyConnect();
     // No `normalizeValues` here, unlike `all`/`run`: those also take raw SQL, while every value a
     // context holds was normalized as it was bound.
@@ -423,17 +392,11 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * a catalog that does not know the table answers with no row, which is nothing counted.
    */
   private async runCount(build: QueryBuildFn): Promise<number> {
-    const ctx = this.dialect.createContext();
-    build(ctx);
-    const res = await this.all<Record<typeof COUNT_ALIAS, number | null>>(ctx.sql, ctx.values);
-    return Number(res[0]?.[COUNT_ALIAS] ?? 0);
+    const [row] = await this.query<Record<typeof COUNT_ALIAS, number | null>>(build);
+    return Number(row?.[COUNT_ALIAS] ?? 0);
   }
 
-  protected override async internalCount<E extends object>(
-    entity: Type<E>,
-    q: QueryFilter<E> = {},
-    opts?: QueryOptions,
-  ) {
+  protected override async internalCount<E extends object>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {
     return this.runCount((ctx) => this.dialect.count(ctx, entity, q, opts));
   }
 
@@ -446,9 +409,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]> {
-    const ctx = this.dialect.createContext();
-    this.dialect.aggregate(ctx, entity, q, opts);
-    const rows = await this.all<QueryAggregateResult<E, G, A>>(ctx.sql, ctx.values);
+    const rows = await this.query<QueryAggregateResult<E, G, A>>((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
     const hydratable = this.dialect.hydratableAggregates(entity, q);
     for (const row of rows) {
       const cells: Record<string, unknown> = row;
@@ -471,12 +432,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const generatedKey = !!idField && isAutoIncrement(idField, true);
 
     for (const group of partitionBySuppliedId(rows, idKey)) {
-      // RETURNING-based ids are exact per row. Header-derived ones (LAST_INSERT_ID / lastInsertRowid
-      // arithmetic) are only sound when the key is database-generated and every row *in this
-      // statement* left it to the database. That is a property of the statement, not of the batch:
-      // asking it of the whole batch meant one supplied id made every id `undefined`, which a
-      // cascade then wrote into a child as a null foreign key. Splitting on that one axis costs at
-      // most one extra statement and keeps each of them inferable.
+      // Header ids are only sound where every row of this statement left its key to the database, so
+      // the batch is split on that alone, and a supplied id cannot void the others.
       const idsReliable =
         sole &&
         (this.dialect.insertIdSource === 'returning' ||
@@ -489,13 +446,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       // Per group, not per batch: the two carry different columns - one names the key, one does not -
       // so a budget taken over their union would under-fill the statement that is missing one.
       for (const indexes of chunkByBindBudget(meta, rows, group, this.dialect.maxBindValues)) {
-        const ctx = this.dialect.createContext();
-        this.dialect.insert(
-          ctx,
-          entity,
-          indexes.map((index) => rows[index]),
-        );
-        const { ids = [] } = await this.run(ctx.sql, ctx.values);
+        const chunk = indexes.map((index) => rows[index]);
+        const { ids = [] } = await this.exec((ctx) => this.dialect.insert(ctx, entity, chunk));
         if (idsReliable) {
           for (let position = 0; position < indexes.length; position++) {
             rows[indexes[position]][idKey] ??= ids[position] as E[typeof idKey];
@@ -512,31 +464,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ) {
-    payload = clone(payload);
-    // Settled first for the reason `internalDeleteMany` settles: `ORDER BY`/`LIMIT` on an UPDATE is
-    // MySQL's alone, so a paged update has to name the rows it picked.
-    let target = q;
-    if (isPagedQuery(q)) {
-      const ids = await this.settleIds(entity, q, opts);
-      if (!ids.length) {
-        return 0;
-      }
-      target = { $where: whereIds(getMeta(entity), ids) };
-    }
-    const ctx = this.dialect.createContext();
-    this.dialect.update(ctx, entity, target, payload, opts);
-    const { changes = 0 } = await this.run(ctx.sql, ctx.values);
-    await this.updateRelations(entity, target, payload, opts);
+    const { changes = 0 } = await this.exec((ctx) => this.dialect.update(ctx, entity, q, payload, opts));
     return changes;
-  }
-
-  /** The ids matching `q`, in `q`'s own order and page, so a write can name the rows it settled on. */
-  private async settleIds<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions) {
-    const meta = getMeta(entity);
-    const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, idOnlyQuery(meta, q), opts);
-    const founds = await this.all<E>(ctx.sql, ctx.values);
-    return founds.map((found) => idOf(meta, found));
   }
 
   protected override async internalUpsertOne<E extends object>(
@@ -566,12 +495,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (statements.length === 1) {
       return this.runUpsert(entity, conflictPaths, payload);
     }
-    // `ON CONFLICT DO UPDATE SET` carries one assignment list for the whole statement, so rows of
-    // different shapes cannot share one. Neither obvious single-statement form works: taking the
-    // union writes the omitting row's `DEFAULT` (null) over a column it never mentioned, and
-    // sampling one row drops every column that row happens to lack. One statement per shape is the
-    // only form that writes exactly what each row asked for. Transactional because it is now more
-    // than one statement; `transaction` is re-entrant, so this is free inside a caller's own.
+    // An upsert's assignment list is the statement's, so rows of different shapes go in statements
+    // of their own, together in a transaction (`transaction` is re-entrant).
     return this.transaction(async () => {
       let changes = 0;
       // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
@@ -603,11 +528,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const meta = getMeta(entity);
     // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
     const unnamed = meta.ids.length === 1 && payload.some((row) => !namesKey(meta, row));
-    const ctx = this.dialect.createContext();
-    this.dialect.upsert(ctx, entity, conflictPaths, payload);
-    const result = await this.run(ctx.sql, ctx.values);
+    const result = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload));
     const ordered =
-      payload.length === 1 || (this.dialect.insertIdSource === 'returning' && this.dialect.upsertReturningOrdered);
+      payload.length === 1 ||
+      (this.dialect.insertIdSource === 'returning' && this.dialect.features.orderedUpsertReturning);
     if (ordered && result.ids?.length === payload.length) {
       return result;
     }
@@ -626,31 +550,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: QuerySearch<E>,
     opts?: QueryOptions,
   ) {
-    const meta = getMeta(entity);
-
-    // Resolving the ids first is what makes the two hard cases work at all: a cascade needs its
-    // parents' ids to find their children, and no engine but MySQL accepts `ORDER BY`/`LIMIT` on a
-    // DELETE, so a paged delete has to name the rows it settled on. A plain predicate needs neither,
-    // and there the round trip buys nothing: the statement can say what the caller already said.
-    if (!isPagedQuery(q) && !cascadesOnDelete(meta)) {
-      const ctx = this.dialect.createContext();
-      this.dialect.delete(ctx, entity, q, opts);
-      const { changes = 0 } = await this.run(ctx.sql, ctx.values);
-      return changes;
-    }
-
-    // A hard delete also targets already-soft-deleted rows, so drop the soft-delete filter when finding ids.
-    const findOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
-    const ids = await this.settleIds(entity, q, findOpts);
-    if (!ids.length) {
-      return 0;
-    }
-    // Children first: they hold the foreign key, so deleting the parent ahead of them is rejected
-    // outright by any schema that declares the constraint without `ON DELETE CASCADE`.
-    await this.deleteRelations(entity, ids, opts);
-    const deleteCtx = this.dialect.createContext();
-    this.dialect.delete(deleteCtx, entity, { $where: whereIds(meta, ids) }, opts);
-    const { changes = 0 } = await this.run(deleteCtx.sql, deleteCtx.values);
+    const { changes = 0 } = await this.exec((ctx) => this.dialect.delete(ctx, entity, q, opts));
     return changes;
   }
 

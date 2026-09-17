@@ -15,7 +15,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     return { pool, querier };
   }
 
-  it('enforces foreign keys, which bun:sqlite leaves off by default', async () => {
+  it('should enforce foreign keys, which bun:sqlite leaves off by default', async () => {
     const pool = new Sqlite3QuerierPool(':memory:');
     const querier = await pool.getQuerier();
 
@@ -26,7 +26,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     await pool.end();
   });
 
-  it('reports inserted ids from a RETURNING statement', async () => {
+  it('should report inserted ids from a RETURNING statement', async () => {
     const { pool, querier } = await seed();
 
     // `bun:sqlite` statements carry no `reader`, so before the pool derived one from `columnNames`
@@ -39,7 +39,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     await pool.end();
   });
 
-  it('reports changes for a statement without RETURNING', async () => {
+  it('should report changes for a statement without RETURNING', async () => {
     const { pool, querier } = await seed();
     await querier.run("INSERT INTO t (s) VALUES ('a')");
 
@@ -49,7 +49,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     await pool.end();
   });
 
-  it('binds values and reads rows back', async () => {
+  it('should bind values and read rows back', async () => {
     const { pool, querier } = await seed();
     await querier.run('INSERT INTO t (s) VALUES (?)', ['bound']);
 
@@ -59,7 +59,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     await pool.end();
   });
 
-  it('reads an integer past 2^53 exactly', async () => {
+  it('should read an integer past 2^53 exactly', async () => {
     const { pool, querier } = await seed();
 
     const rows = await querier.all<{ big: unknown }>('SELECT 9007199254740993 AS big');
@@ -69,7 +69,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
   });
 
   /** `bun:sqlite` opens only a path, so a serialized database has to go through `Database.deserialize`. */
-  it('opens a serialized database from a Buffer', async () => {
+  it('should open a serialized database from a Buffer', async () => {
     const { Database } = await import('bun:sqlite');
     const source = new Database(':memory:');
     source.run('CREATE TABLE t (s TEXT)');

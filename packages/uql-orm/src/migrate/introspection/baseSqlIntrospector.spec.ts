@@ -133,21 +133,21 @@ describe('BaseSqlIntrospector primary keys', () => {
    * composite is addressed. Rebuilding it from the per-column flags took whatever order the columns
    * happened to arrive in.
    */
-  it('keeps the key in the order the database reported, not the column order', async () => {
+  it('should keep the key in the order the database reported, not the column order', async () => {
     const ast = await introspect([composite]);
 
     expect(ast.getTable('enrolments')?.primaryKey.map((column) => column.name)).toEqual(['studentId', 'courseId']);
   });
 
   /** Only the name the engine gave the constraint can drop it; a derived one names nothing. */
-  it('carries the constraint name the database reported', async () => {
+  it('should carry the constraint name the database reported', async () => {
     const ast = await introspect([composite]);
 
     expect(ast.getTable('enrolments')?.primaryKeyName).toBe('enrolments_pkey');
   });
 
   /** SQLite reports no key of its own, so the per-column flags are all there is to read. */
-  it('falls back to the flagged columns where no key is reported', async () => {
+  it('should fall back to the flagged columns where no key is reported', async () => {
     const ast = await introspect([{ ...composite, primaryKey: undefined, primaryKeyName: undefined }]);
 
     expect(ast.getTable('enrolments')?.primaryKey.map((column) => column.name)).toEqual(['courseId', 'studentId']);
@@ -168,15 +168,15 @@ describe('BaseSqlIntrospector indexes', () => {
   it('should read indexes over known columns and attach them to their table', async () => {
     const ast = await introspect([indexed]);
 
-    expect(ast.getTableIndexes('users').map((i) => i.name)).toEqual(['users__email_uk']);
-    expect(ast.getIndex('users__email_uk')?.unique).toBe(true);
-    expect(ast.getIndex('users__email_uk')?.entries.map((entry) => entry.column)).toEqual(['email']);
+    const [index] = ast.indexes;
+    expect(ast.getTable('users')?.indexes).toEqual([index]);
+    expect(index).toMatchObject({ name: 'users__email_uk', unique: true, entries: [{ column: 'email' }] });
   });
 
   it('should skip an index over a column that does not exist', async () => {
     const ast = await introspect([indexed]);
 
-    expect(ast.getIndex('users_ghost_idx')).toBeUndefined();
+    expect(ast.indexes.map((index) => index.name)).toEqual(['users__email_uk']);
   });
 });
 

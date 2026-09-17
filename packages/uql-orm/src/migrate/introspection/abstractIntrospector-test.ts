@@ -1,7 +1,7 @@
 import { expect } from 'vitest';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
 import type { ForeignKeyAction, TypeCategory } from '../../schema/types.js';
-import type { Spec } from '../../test/index.js';
+import { assertDefined, type Spec, type SpecRequirements } from '../../test/index.js';
 import type {
   ColumnSchema,
   IndexSchema,
@@ -36,6 +36,13 @@ export abstract class AbstractIntrospectorIt implements Spec {
     protected readonly pool: QuerierPool<SqlQuerier>,
     protected readonly introspector: SchemaIntrospector,
   ) {}
+
+  /** Whether the engine keeps an `ON DELETE SET DEFAULT`, which InnoDB parses and refuses. */
+  protected readonly setDefaultAction: boolean = true;
+
+  requirements(): SpecRequirements<this> {
+    return { shouldIntrospectSetDefaultForeignKey: this.setDefaultAction };
+  }
 
   async beforeAll() {
     const querier = await this.pool.getQuerier();
@@ -231,7 +238,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectForeignKeys() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
 
-    expect(schema.foreignKeys!.length).toBeGreaterThanOrEqual(1);
+    expect(schema.foreignKeys?.length).toBeGreaterThanOrEqual(1);
 
     const fk = this.getForeignKey(schema, 'a_id');
     expect(fk.references.table).toBe(INTROSPECT_TABLES.A);
@@ -306,10 +313,6 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(scoreCol.defaultValue).toBe(0);
   }
 
-  /**
-   * `addColumn` declares its own type. It used to take a callback that could only set nullability, so
-   * the builder created every added column as a `VARCHAR` whatever the migration said.
-   */
   async shouldAddColumnWithTheDeclaredType() {
     const querier = await this.pool.getQuerier();
     try {
@@ -327,14 +330,12 @@ export abstract class AbstractIntrospectorIt implements Spec {
   }
 
   /**
-   * Every literal default kind, executed rather than string-compared. Each of these was once DDL that
-   * read fine and the engine rejected: MySQL answers `Invalid default value` to `toISOString`'s `T`
-   * and `Z`, demands `DEFAULT ('x')` on a `TEXT` column, and reads `'a\b'` as a backspace.
+   * Every literal default kind, run rather than string-compared: MySQL rejects `toISOString`'s `T` and
+   * `Z`, wants `DEFAULT ('x')` on a `TEXT` column, and reads `'a\b'` as a backspace.
    */
   async shouldCreateATableWithEveryLiteralDefault() {
-    const querier = await this.pool.getQuerier();
     const table = 'introspect_defaults';
-    try {
+    const schema = await this.probe(table, async (querier) => {
       const builder = await migrationBuilderFor(querier);
       await builder.createTable(table, (t) => {
         t.id();
@@ -345,15 +346,37 @@ export abstract class AbstractIntrospectorIt implements Spec {
         t.integer('score').defaultValue(0);
         t.boolean('enabled').defaultValue(true);
       });
+    });
 
-      const schema = await this.getTableSchema(table);
-      expect(schema.columns.map((column) => column.name)).toEqual(
-        expect.arrayContaining(['note', 'escaped', 'at', 'label', 'score', 'enabled']),
-      );
-    } finally {
-      await querier.run(`DROP TABLE ${querier.dialect.escapeId(table)}`);
-      await querier.release();
-    }
+    expect(schema.columns.map((column) => column.name)).toEqual(
+      expect.arrayContaining(['note', 'escaped', 'at', 'label', 'score', 'enabled']),
+    );
+  }
+
+  async shouldReportNoPrimaryKeyOnATableWithoutOne() {
+    const schema = await this.probe('introspect_keyless', (querier, table) =>
+      querier.run(`CREATE TABLE ${table} (${querier.dialect.escapeId('x')} INTEGER)`),
+    );
+
+    expect(schema.primaryKey).toBeUndefined();
+    expect(this.getColumn(schema, 'x').isPrimaryKey).toBe(false);
+  }
+
+  /** The key's own index makes a sole key column unique already, which the entity side never states. */
+  async shouldNotMarkAKeyColumnAsUnique() {
+    const table = 'introspect_string_key';
+    const schema = await this.probe(table, async (querier) => {
+      const builder = await migrationBuilderFor(querier);
+      await builder.createTable(table, (t) => {
+        t.string('code', { length: 36 }).primaryKey();
+      });
+    });
+
+    expect(this.getColumn(schema, 'code')).toMatchObject({
+      isPrimaryKey: true,
+      isUnique: false,
+      isAutoIncrement: false,
+    });
   }
 
   async shouldIntrospectAutoIncrement() {
@@ -389,6 +412,30 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(dataCol.isPrimaryKey).toBe(false);
   }
 
+  async shouldNotMarkACompositeKeyAsAutoIncrement() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_PK);
+
+    expect(this.getColumn(schema, 'tenant_id').isAutoIncrement).toBe(false);
+    expect(this.getColumn(schema, 'entity_id').isAutoIncrement).toBe(false);
+  }
+
+  /** Declared out of table order, so only a key read in its own order pairs each column right. */
+  async shouldPairTheColumnsOfACompositeForeignKey() {
+    const schema = await this.probe('introspect_composite_fk', (querier, table) =>
+      querier.run(
+        `CREATE TABLE ${table} (pb INTEGER, pa INTEGER, FOREIGN KEY (pa, pb) REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.COMPOSITE_PK)} (tenant_id, entity_id) ON DELETE CASCADE)`,
+      ),
+    );
+
+    expect(schema.foreignKeys).toMatchObject([
+      {
+        columns: ['pa', 'pb'],
+        references: { table: INTROSPECT_TABLES.COMPOSITE_PK, columns: ['tenant_id', 'entity_id'] },
+        onDelete: 'CASCADE',
+      },
+    ]);
+  }
+
   async shouldIntrospectSelfReferencingForeignKey() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.SELF_REF);
 
@@ -405,10 +452,20 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(parentCol.nullable).toBe(true);
   }
 
+  async shouldIntrospectSetDefaultForeignKey() {
+    const schema = await this.probe('introspect_set_default', (querier, table) =>
+      querier.run(
+        `CREATE TABLE ${table} (parent_id BIGINT DEFAULT 0 REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.NO_FK)} (id) ON DELETE SET DEFAULT)`,
+      ),
+    );
+
+    expect(this.getForeignKey(schema, 'parent_id')).toMatchObject({ onDelete: 'SET DEFAULT', onUpdate: 'NO ACTION' });
+  }
+
   async shouldIntrospectMultipleForeignKeysToSameTable() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.MULTI_FK);
 
-    expect(schema.foreignKeys!.length).toBe(2);
+    expect(schema.foreignKeys?.length).toBe(2);
 
     const createdByFK = this.getForeignKey(schema, 'created_by');
     expect(createdByFK.references.table).toBe(INTROSPECT_TABLES.A);
@@ -429,11 +486,22 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     // Find composite unique constraint - stored as unique index
     const covers = (index: IndexSchema, column: string) => index.entries.some((entry) => entry.column === column);
-    const uniqueIndex = schema.indexes!.find((i) => i.unique && covers(i, 'code') && covers(i, 'region'));
-    this.assertDefined(uniqueIndex, 'Composite unique index on (code, region) not found');
+    const uniqueIndex = schema.indexes?.find((i) => i.unique && covers(i, 'code') && covers(i, 'region'));
+    assertDefined(uniqueIndex, 'Composite unique index on (code, region) not found');
 
     expect(uniqueIndex.entries).toHaveLength(2);
     expect(uniqueIndex.unique).toBe(true);
+  }
+
+  async shouldNotMarkTheColumnsOfACompositeUniqueAsUnique() {
+    const schema = await this.probe('introspect_unique_pair', (querier, table) =>
+      querier.run(`CREATE TABLE ${table} (v INTEGER, w INTEGER, UNIQUE (v, w))`),
+    );
+
+    expect(schema.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
+      { name: 'v', isUnique: false },
+      { name: 'w', isUnique: false },
+    ]);
   }
 
   async shouldIntrospectTableWithNoForeignKeys() {
@@ -446,9 +514,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectTableWithNoIndexes() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.NO_FK);
 
-    // Primary key index might still exist, but no user-defined indexes
-    const nonPkIndexes = schema.indexes!.filter((i) => i.name !== 'PRIMARY');
-    expect(nonPkIndexes.filter((i) => i.name.includes(INTROSPECT_TABLES.NO_FK))).toEqual([]);
+    expect(schema.indexes).toEqual([]);
   }
 
   async shouldPreserveColumnOrder() {
@@ -515,31 +581,43 @@ export abstract class AbstractIntrospectorIt implements Spec {
     expect(idxCPriority?.entries.map((entry) => entry.column)).toEqual(['priority']);
   }
 
+  /** The schema of the table `create` makes, which is dropped again whether or not that worked. */
+  protected async probe(
+    table: string,
+    create: (querier: SqlQuerier, escapedTable: string) => Promise<unknown>,
+  ): Promise<TableSchema> {
+    const querier = await this.pool.getQuerier();
+    const escapedTable = querier.dialect.escapeId(table);
+    try {
+      await create(querier, escapedTable);
+      return await this.getTableSchema(table);
+    } finally {
+      await querier.run(`DROP TABLE IF EXISTS ${escapedTable}`);
+      await querier.release();
+    }
+  }
+
   protected async getTableSchema(tableName: string): Promise<TableSchema> {
     const schema = await this.introspector.getTableSchema(tableName);
-    this.assertDefined(schema, `Table ${tableName} not found`);
+    assertDefined(schema, `Table ${tableName} not found`);
     return schema;
   }
 
   protected getColumn(schema: TableSchema, columnName: string) {
     const col = schema.columns.find((c) => c.name === columnName);
-    this.assertDefined(col, `Column ${columnName} not found in ${schema.name}`);
+    assertDefined(col, `Column ${columnName} not found in ${schema.name}`);
     return col;
   }
 
   protected getForeignKey(schema: TableSchema, columnName: string) {
-    const fk = schema.foreignKeys!.find((f) => f.columns.includes(columnName));
-    this.assertDefined(fk, `Foreign key on ${columnName} not found in ${schema.name}`);
+    const fk = schema.foreignKeys?.find((f) => f.columns.includes(columnName));
+    assertDefined(fk, `Foreign key on ${columnName} not found in ${schema.name}`);
     return fk;
   }
 
   protected getIndex(schema: TableSchema, indexName: string) {
-    const index = schema.indexes!.find((i) => i.name === indexName);
-    this.assertDefined(index, `Index ${indexName} not found in ${schema.name}`);
+    const index = schema.indexes?.find((i) => i.name === indexName);
+    assertDefined(index, `Index ${indexName} not found in ${schema.name}`);
     return index;
-  }
-
-  private assertDefined<T>(value: T | undefined, message: string): asserts value is T {
-    expect(value, message).toBeDefined();
   }
 }

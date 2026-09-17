@@ -25,9 +25,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected parseTableExistsResult(results: SqliteCountRow[]): boolean {
-    // No row, or no count in it, reads as `NaN`, which is not above zero.
-    return Number(results[0]?.count) > 0;
+  protected parseTableExistsResult([row]: SqliteCountRow[]): boolean {
+    return Number(row.count) > 0;
   }
 
   /**
@@ -77,8 +76,9 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     tableName: string,
     results: SqliteColumnRow[],
   ): Promise<ColumnSchema[]> {
-    // Get unique columns from indexes
     const uniqueColumns = await this.getUniqueColumns(read, tableName);
+    // Only a sole `INTEGER PRIMARY KEY` is the rowid, which is what numbers itself.
+    const soleKey = results.filter((row) => row.pk > 0).length === 1;
 
     return results.map((row): ColumnSchema => ({
       name: row.name,
@@ -86,7 +86,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       nullable: row.notnull === 0,
       defaultValue: this.parseDefaultValue(row.dflt_value),
       isPrimaryKey: row.pk > 0,
-      isAutoIncrement: row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
+      isAutoIncrement: soleKey && row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
       isUnique: uniqueColumns.has(row.name),
       length: this.extractLength(row.type),
       precision: undefined,
@@ -170,8 +170,9 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     const indexes = await read<SqliteIndexRow>(this.getIndexesQuery(tableName));
     const uniqueColumns = new Set<string>();
 
+    // The key's own index is left out: a key column is unique already, which the entity side never states.
     for (const index of indexes) {
-      if (index.unique) {
+      if (index.unique && index.origin !== 'pk') {
         const columns = await this.getIndexColumns(read, index.name);
         // Only single-column unique constraints, and only over a real column (not an expression)
         const [column] = columns;
@@ -211,15 +212,11 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       return defaultValue;
     }
     if (/^'.*'$/.test(defaultValue)) {
-      return defaultValue.slice(1, -1);
+      return defaultValue.slice(1, -1).replaceAll("''", "'");
     }
     if (/^-?\d+$/.test(defaultValue)) {
       return Number.parseInt(defaultValue, 10);
     }
-    if (typeof defaultValue !== 'string') {
-      return defaultValue;
-    }
-
     if (/^-?\d+\.\d+$/.test(defaultValue)) {
       return Number.parseFloat(defaultValue);
     }

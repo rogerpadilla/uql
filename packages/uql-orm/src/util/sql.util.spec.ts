@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Item, ItemAdjustment, Storehouse } from '../test/index.js';
+import type { Item } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
@@ -15,23 +15,20 @@ import {
   unflatObjects,
 } from './sql.util.js';
 
-it('derivedConstraintName names a constraint over no parts after its table alone', () => {
+it('should name a constraint over no parts after its table alone', () => {
   expect(derivedConstraintName('users', [], 'ck')).toBe('users_ck');
 });
 
 /** A string key has no successor to infer, so only a single-row write can be named by it. */
-it('buildUpdateResult infers no ids from a string key reported for several rows', () => {
+it('should infer no ids from a string key reported for several rows', () => {
   expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
 });
 
-it('unflatObjects - empty', () => {
-  const res1 = unflatObjects(undefined as any);
-  expect(res1).toBe(undefined);
-  const res2 = unflatObjects([]);
-  expect(res2).toEqual([]);
+it('should leave an empty list of rows as it is', () => {
+  expect(unflatObjects([])).toEqual([]);
 });
 
-it('unflatObjects', () => {
+it('should unflatten dotted columns into nested objects', () => {
   const source: RawRow[] = [
     {
       id: '1',
@@ -55,14 +52,14 @@ it('unflatObjects', () => {
     },
   ];
   const result = unflatObjects(source);
-  const expected: Storehouse[] = [
+  const expected = [
     {
       id: '1',
       name: 'Auxiliar',
-      address: null as any,
-      description: null as any,
+      address: null,
+      description: null,
       createdAt: 1,
-      updatedAt: null as any,
+      updatedAt: null,
       creatorId: '1',
       companyId: '1',
     },
@@ -80,7 +77,7 @@ it('unflatObjects', () => {
   expect(result).toEqual(expected);
 });
 
-it('unflatObjects deep', () => {
+it('should unflatten deeply nested dotted columns', () => {
   const source = [
     {
       id: '9',
@@ -107,9 +104,9 @@ it('unflatObjects deep', () => {
       'item.tax.category.description': 'Nacionales',
       'item.measureUnit.id': '1',
       'item.measureUnit.name': 'Unidad',
-      'item.creatorId': null as unknown as string,
-      'item.creator.id': null as unknown as string,
-      'item.creator.name': null as unknown as string,
+      'item.creatorId': null,
+      'item.creator.id': null,
+      'item.creator.name': null,
     },
     {
       id: '15',
@@ -125,7 +122,7 @@ it('unflatObjects deep', () => {
     },
   ];
   const result = unflatObjects<Item>(source);
-  const expected: ItemAdjustment[] = [
+  const expected = [
     {
       id: '9',
       buyPrice: 1000,
@@ -157,7 +154,7 @@ it('unflatObjects deep', () => {
           id: '1',
           name: 'Unidad',
         },
-        inventoryable: 1 as any as boolean,
+        inventoryable: 1,
       },
     },
     {
@@ -180,25 +177,23 @@ it('unflatObjects deep', () => {
   expect(result).toEqual(expected);
 });
 
-it('obtainAttrsPaths - empty', () => {
-  const res1 = obtainAttrsPaths(undefined as any);
-  expect(res1).toEqual({});
-  const res2 = obtainAttrsPaths({});
-  expect(res2).toEqual({});
+it('should find no paths in an empty row', () => {
+  expect(obtainAttrsPaths({})).toEqual({});
 });
 
-it('obtainAttrsPaths - object', () => {
+it('should split dotted keys into paths, skipping the rest', () => {
   const res1 = obtainAttrsPaths({
     'prop1.a.b': 1,
-    'prop2.c.d': 2,
+    'prop2.c': 2,
+    prop_3: 3,
   });
   expect(res1).toEqual({
     'prop1.a.b': ['prop1', 'a', 'b'],
-    'prop2.c.d': ['prop2', 'c', 'd'],
+    'prop2.c': ['prop2', 'c'],
   });
 });
 
-it('escapeSqlId', () => {
+it('should escape an identifier with the quote character given', () => {
   expect(escapeSqlId('table')).toBe('`table`');
   expect(escapeSqlId('table', '"')).toBe('"table"');
   expect(escapeSqlId('table', '`')).toBe('`table`');
@@ -210,11 +205,11 @@ it('escapeSqlId', () => {
   expect(escapeSqlId('table', '`', false, true)).toBe('`table`.');
   expect(escapeSqlId('schema.table', '`', false, true)).toBe('`schema`.`table`.');
   expect(escapeSqlId('')).toBe('');
-  expect(escapeSqlId(undefined as any)).toBe('');
+  expect(escapeSqlId(undefined)).toBe('');
 });
 
 describe('derived constraint names', () => {
-  it('names each kind after the table and its columns, kind last', () => {
+  it('should name each kind after the table and its columns, kind last', () => {
     expect(derivedIndexName('Order', ['total'])).toBe('Order__total_idx');
     expect(derivedIndexName('User', ['email'], true)).toBe('User__email_uk');
     expect(derivedForeignKeyName('Order', ['customerId'])).toBe('Order__customerId_fk');
@@ -227,14 +222,14 @@ describe('derived constraint names', () => {
    * table, so the boundary between the table and its columns is the one that has to be unambiguous.
    * A single underscore let two different tables reduce to the same name.
    */
-  it('keeps two tables apart where one name is a prefix of another plus a column', () => {
+  it('should keep two tables apart where one name is a prefix of another plus a column', () => {
     expect(derivedIndexName('user_profile', ['id'])).toBe('user_profile__id_idx');
     expect(derivedIndexName('user', ['profile_id'])).toBe('user__profile_id_idx');
     expect(derivedIndexName('user_profile', ['id'])).not.toBe(derivedIndexName('user', ['profile_id']));
   });
 
   /** Postgres truncates at 63 bytes and MySQL errors at 64, so nothing may reach them longer. */
-  it('keeps a name within the length every engine accepts', () => {
+  it('should keep a name within the length every engine accepts', () => {
     const name = derivedPrimaryKeyName('ProductVariantInventory', [
       'warehouseIdentifier',
       'variantIdentifier',
@@ -243,7 +238,7 @@ describe('derived constraint names', () => {
     expect(name.length).toBeLessThanOrEqual(63);
   });
 
-  it('derives the same shortened name every time, so a later run still recognises it', () => {
+  it('should derive the same shortened name every time, so a later run still recognises it', () => {
     const columns = ['warehouseIdentifier', 'variantIdentifier', 'locationIdentifier'];
     expect(derivedPrimaryKeyName('ProductVariantInventory', columns)).toBe(
       derivedPrimaryKeyName('ProductVariantInventory', columns),
@@ -254,7 +249,7 @@ describe('derived constraint names', () => {
    * Truncating alone would collide here - the two differ only past the cut - and a collision means
    * one constraint silently replacing another.
    */
-  it('keeps two long names apart where a plain truncation would merge them', () => {
+  it('should keep two long names apart where a plain truncation would merge them', () => {
     const table = 'ProductVariantInventoryAllocation';
     const first = derivedIndexName(table, ['warehouseIdentifier', 'variantIdentifierAlpha']);
     const second = derivedIndexName(table, ['warehouseIdentifier', 'variantIdentifierOmega']);
@@ -264,29 +259,29 @@ describe('derived constraint names', () => {
     expect(second.length).toBeLessThanOrEqual(63);
   });
 
-  it('leaves a name that already fits exactly as it is', () => {
+  it('should leave a name that already fits exactly as it is', () => {
     expect(derivedIndexName('Order', ['total'])).not.toMatch(/[0-9a-f]{6}$/);
   });
 });
 
 describe('escapeSqlId - identifier injection hardening', () => {
-  it('cannot break out of double-quoted identifier with embedded quotes', () => {
+  it('should not break out of a double-quoted identifier with embedded quotes', () => {
     const evil = 'u"; SELECT 1; --';
     expect(escapeSqlId(evil, '"')).toBe('"u""; SELECT 1; --"');
   });
 
-  it('cannot break out of backtick-quoted identifier', () => {
+  it('should not break out of a backtick-quoted identifier', () => {
     const evil = 't`; DROP TABLE x; --';
     expect(escapeSqlId(evil, '`')).toBe('`t``; DROP TABLE x; --`');
   });
 
-  it('qualifies each segment so dots in malicious names stay inside quotes', () => {
+  it('should qualify each segment so dots in malicious names stay inside quotes', () => {
     const evil = 'a.b"; --';
     expect(escapeSqlId(evil, '"')).toBe('"a"."b""; --"');
   });
 });
 
-it('obtainAttrsPaths - underscore', () => {
+it('should leave underscored keys out of the paths', () => {
   const res1 = obtainAttrsPaths({
     prop1_a_b: 1,
     USER_ID: 2,
@@ -296,7 +291,7 @@ it('obtainAttrsPaths - underscore', () => {
   expect(res1).toEqual({});
 });
 
-it('unflatObjects - underscore', () => {
+it('should leave underscored keys flat', () => {
   const source = [
     {
       user_id: 1,
@@ -315,13 +310,13 @@ it('unflatObjects - underscore', () => {
   ]);
 });
 
-it('unflatObject - flat row (no nested paths)', () => {
+it('should leave a flat row as it is', () => {
   const attrsPaths = obtainAttrsPaths({ id: 1, name: 'John' });
   const result = unflatObject<{ id: number; name: string }>({ id: 1, name: 'John' }, attrsPaths);
   expect(result).toEqual({ id: 1, name: 'John' });
 });
 
-it('unflatObject - deep nested row', () => {
+it('should unflatten a deeply nested row', () => {
   const row = {
     id: '1',
     'item.id': '10',
@@ -340,14 +335,14 @@ it('unflatObject - deep nested row', () => {
   });
 });
 
-it('unflatObject - skips null values', () => {
+it('should skip null values', () => {
   const row = { id: 1, name: null, 'item.id': null };
   const attrsPaths = obtainAttrsPaths(row);
   const result = unflatObject(row, attrsPaths);
   expect(result).toEqual({ id: 1 });
 });
 
-it('unflatObject - produces same result as unflatObjects for single row', () => {
+it('should unflatten a single row as unflatObjects does', () => {
   const row = {
     id: '5',
     'item.id': '2',

@@ -1,6 +1,16 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
 import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
-import type { Query, QueryAggregate, QueryOptions, QuerySearch, Type } from '../type/index.js';
+import type {
+  Query,
+  QueryAggMap,
+  QueryAggregate,
+  QueryAggregateResult,
+  QueryGroupMap,
+  QueryOptions,
+  QuerySearch,
+  QueryUpdateResult,
+  Type,
+} from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 
 /**
@@ -29,20 +39,18 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  override internalInsertMany(): any {
-    return Promise.resolve([]);
+  override async internalInsertMany(): Promise<void> {}
+
+  override async internalUpdateMany(): Promise<number> {
+    return 0;
   }
 
-  override internalUpdateMany(): any {
-    return Promise.resolve(0);
+  protected override async internalUpsertOne(): Promise<QueryUpdateResult> {
+    return { changes: 0 };
   }
 
-  protected override internalUpsertOne(): any {
-    return Promise.resolve({ firstId: null, changes: 0 });
-  }
-
-  protected override internalUpsertMany(): any {
-    return Promise.resolve({ changes: 0 });
+  protected override async internalUpsertMany(): Promise<QueryUpdateResult> {
+    return { changes: 0 };
   }
 
   protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
@@ -50,8 +58,11 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  protected override internalAggregate<E extends object, Q extends QueryAggregate<E>>(): any {
-    return Promise.resolve([]);
+  protected override async internalAggregate<E extends object, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
+    _entity: Type<E>,
+    _q: QueryAggregate<E, G, A>,
+  ): Promise<QueryAggregateResult<E, G, A>[]> {
+    return [];
   }
 
   override estimatedCount(): Promise<number> {
@@ -73,7 +84,7 @@ describe('Dual API Pattern: $entity field support', () => {
   });
 
   describe('findOneById', () => {
-    it('does not mutate the query when reading with a vector sort', async () => {
+    it('should do not mutate the query when reading with a vector sort', async () => {
       const query = {
         $where: { name: 'north' },
         $sort: { vec: { $vector: [1, 2, 3], $project: 'distance' } },
@@ -182,27 +193,35 @@ describe('Dual API Pattern: $entity field support', () => {
 
   describe('deleteMany', () => {
     it('should work with entity-as-argument (classic pattern)', async () => {
-      await querier.deleteMany(User, { $where: { id: '1' } });
+      await querier.deleteMany(MeasureUnitCategory, { $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(MeasureUnitCategory, { $where: { id: '1' } }, undefined);
     });
 
     it('should work with entity-as-field ($entity pattern)', async () => {
-      await querier.deleteMany({ $entity: User, $where: { id: '1' } });
+      await querier.deleteMany({ $entity: MeasureUnitCategory, $where: { id: '1' } });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, undefined);
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(MeasureUnitCategory, { $where: { id: '1' } }, undefined);
     });
 
     it('should pass options correctly with entity-as-argument pattern', async () => {
-      await querier.deleteMany(User, { $where: { id: '1' } }, { hardDelete: true });
+      await querier.deleteMany(MeasureUnitCategory, { $where: { id: '1' } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, { hardDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        { $where: { id: '1' } },
+        { hardDelete: true },
+      );
     });
 
     it('should pass options correctly with entity-as-field pattern', async () => {
-      await querier.deleteMany({ $entity: User, $where: { id: '1' } }, { hardDelete: true });
+      await querier.deleteMany({ $entity: MeasureUnitCategory, $where: { id: '1' } }, { hardDelete: true });
 
-      expect(querier.deleteManyMock).toHaveBeenCalledWith(User, { $where: { id: '1' } }, { hardDelete: true });
+      expect(querier.deleteManyMock).toHaveBeenCalledWith(
+        MeasureUnitCategory,
+        { $where: { id: '1' } },
+        { hardDelete: true },
+      );
     });
   });
 
@@ -249,13 +268,13 @@ describe('Dual API Pattern: $entity field support', () => {
 
     it('should yield rows in order', async () => {
       const rows = [
-        { id: '1', name: 'Alice', companyId: '1' } as User,
-        { id: '2', name: 'Bob', companyId: '1' } as User,
-        { id: '3', name: 'Charlie', companyId: '1' } as User,
-      ];
+        { id: '1', name: 'Alice', companyId: '1' },
+        { id: '2', name: 'Bob', companyId: '1' },
+        { id: '3', name: 'Charlie', companyId: '1' },
+      ] satisfies User[];
 
       // Override the mock to yield actual data
-      vi.spyOn(querier as any, 'internalFindManyStream').mockReturnValue(
+      vi.spyOn(querier, 'internalFindManyStream').mockReturnValue(
         (async function* () {
           yield* rows;
         })(),
@@ -272,7 +291,7 @@ describe('Dual API Pattern: $entity field support', () => {
   });
 
   describe('restore', () => {
-    it('restoreMany updates the soft-delete field to null with the filter disabled', async () => {
+    it('should restore by setting the soft-delete field to null, with its filter off', async () => {
       const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
       await querier.restoreMany(MeasureUnitCategory, { $where: { id: '1' } });
       expect(updateSpy).toHaveBeenCalledWith(
@@ -283,7 +302,7 @@ describe('Dual API Pattern: $entity field support', () => {
       );
     });
 
-    it('restoreOneById delegates to restoreMany', async () => {
+    it('should restore one row through restoreMany', async () => {
       const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
       await querier.restoreOneById(MeasureUnitCategory, '7');
       expect(updateSpy).toHaveBeenCalledWith(
@@ -294,7 +313,7 @@ describe('Dual API Pattern: $entity field support', () => {
       );
     });
 
-    it('restoreMany throws when the entity has no soft-delete field', async () => {
+    it('should refuse to restore an entity with no soft-delete field', async () => {
       await expect(querier.restoreMany(User, { $where: { id: '1' } })).rejects.toThrow(
         "'User' has not enabled 'softDelete'",
       );

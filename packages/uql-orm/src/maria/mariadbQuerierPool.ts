@@ -16,12 +16,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
     // BIGINT stays the driver's `bigint`, which `MariadbQuerier` decodes by the rule every driver here
     // shares (`decodeWideNumber`) - not `bigIntAsNumber`, which rounds past 2^53 without a word.
     this.pool = createPool(opts);
-    // `mariadb`'s own `createPool` already attaches a silent no-op 'error'
-    // listener (so a dropped connection can't crash the process), but its
-    // `Pool` type only declares `on` for 'acquire' | 'connection' | 'enqueue'
-    // | 'release' - 'error' genuinely fires at runtime (see `lib/pool.js`)
-    // but isn't in the declaration, hence the cast. Re-attaching our own
-    // listener here just makes the error visible instead of a silent no-op.
+    // `mariadb` fires 'error' at runtime without declaring it, hence the cast; this makes it visible.
     attachPoolErrorHandler(
       this.pool as unknown as ErrorEmittingPool,
       'Idle MariaDB pool connection encountered an error',

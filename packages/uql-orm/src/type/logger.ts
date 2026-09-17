@@ -14,13 +14,7 @@ export interface Logger {
    * @param duration - The time it took to execute the query in milliseconds.
    */
   logQuery?(query: string, values?: unknown[], duration?: number): void;
-  /**
-   * Logs a slow query.
-   * @param query - The SQL query string.
-   * @param values - The parameters passed to the query (already redacted to `undefined`
-   * upstream, per `ExtraOptions.logValues`, when values shouldn't be logged).
-   * @param duration - The time it took to execute the query in milliseconds.
-   */
+  /** Logs a query that took longer than the threshold, its values `undefined` unless `logValues` is on. */
   logSlowQuery?(query: string, values?: unknown[], duration?: number): void;
   /**
    * Logs a warning.
@@ -53,11 +47,5 @@ export interface Logger {
  */
 export type LoggerFunction = (message: unknown, ...args: unknown[]) => void;
 
-/**
- * Options for configuring ORM logging.
- * - boolean: true to enable all logs with DefaultLogger, false to disable.
- * - LogLevel[]: enable specific log levels with DefaultLogger.
- * - Logger: use a custom logger implementation.
- * - LoggerFunction: use a custom function (backward compatibility).
- */
+/** How logging is configured: on or off, the levels to log, or a logger of your own. */
 export type LoggingOptions = boolean | LogLevel[] | Logger | LoggerFunction;

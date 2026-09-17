@@ -1,26 +1,14 @@
 import type { QueryContext, SqlQueryDialect } from '../type/index.js';
 
-/**
- * SqlQueryContext is an implementation of the QueryContext interface specifically for SQL-based dialects.
- * It follows the "Accumulator" or "Builder" pattern to construct SQL queries and their corresponding parameters.
- *
- * This pattern solves the problem of building complex SQL strings while safely managing parameterized values,
- * preventing SQL injection and handling dialect-specific parameter placeholders (e.g., '?' for MySQL, '$n' for PostgreSQL).
- */
+/** A SQL statement being built: its text, and the values it binds, placeholders numbered by the dialect. */
 export class SqlQueryContext implements QueryContext {
   private readonly sqlChunks: string[] = [];
   private readonly params: unknown[];
   private readonly tableAliases = new Set<string>();
 
   /**
-   * @param dialect The SQL dialect used to determine how values should be formatted as placeholders.
-   * @param params An existing values array to bind into instead of a fresh one - shared by a
-   * fragment context built via {@link AbstractSqlDialect.buildFragment}, so a bound value's
-   * placeholder is numbered correctly against the real query from the moment it's added, rather
-   * than needing to be reconciled after the fact.
-   * @param statement The context this one renders a fragment of, which owns the claimed aliases: a
-   * fragment is part of one statement, so its aliases have to be unique across the whole of it.
-   * @param inlineValues See {@link QueryContext.inlineValues}; a fragment takes its statement's.
+   * `params` and `statement` are a fragment's parent's, so a value numbers against the whole statement and
+   * an alias is unique across it; a fragment inlines values where its statement does.
    */
   constructor(
     readonly dialect: SqlQueryDialect,
@@ -57,13 +45,7 @@ export class SqlQueryContext implements QueryContext {
     return this;
   }
 
-  /**
-   * Pushes values to the parameters list without appending placeholders to the SQL.
-   * This is useful when the placeholder is already present in the SQL string or handled elsewhere.
-   *
-   * @param values The values to be added to the parameters.
-   * @returns The current context instance for method chaining.
-   */
+  /** Binds values whose placeholders the SQL already carries. */
   pushValue(...values: unknown[]): this {
     this.params.push(...values.map((v) => this.dialect.normalizeValue(v)));
     return this;

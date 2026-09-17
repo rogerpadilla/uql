@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
-import { mockTableNode } from '../../test/index.js';
+import { columnsOf, mockTableNode } from '../../test/index.js';
 import { detectDrift } from './driftDetector.js';
 
 describe('DriftDetector', () => {
@@ -342,8 +342,8 @@ describe('DriftDetector', () => {
       expected.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')!] },
-        to: { table: users, columns: [users.columns.get('id')!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -367,8 +367,8 @@ describe('DriftDetector', () => {
         ast.addRelationship({
           name: 'posts_users_fk',
           type: 'ManyToOne',
-          from: { table: posts, columns: [posts.columns.get('author_id')!] },
-          to: { table: users, columns: [users.columns.get('id')!] },
+          from: { table: posts, columns: columnsOf(posts, 'author_id') },
+          to: { table: users, columns: columnsOf(users, 'id') },
           onDelete,
         });
         return ast;
@@ -454,8 +454,8 @@ describe('DriftDetector', () => {
       actual.addRelationship({
         name: 'posts_users_fk',
         type: 'ManyToOne',
-        from: { table: posts, columns: [posts.columns.get('author_id')!] },
-        to: { table: users, columns: [users.columns.get('id')!] },
+        from: { table: posts, columns: columnsOf(posts, 'author_id') },
+        to: { table: users, columns: columnsOf(users, 'id') },
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
@@ -582,8 +582,8 @@ describe('DriftDetector', () => {
       expected.addRelationship({
         name: '1_fk',
         type: 'ManyToOne',
-        from: { table: t1, columns: [t1.columns.get('role_id')!] },
-        to: { table: t1, columns: [t1.columns.get('id')!] },
+        from: { table: t1, columns: columnsOf(t1, 'role_id') },
+        to: { table: t1, columns: columnsOf(t1, 'id') },
       });
 
       const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'dept_id' }]);
@@ -591,8 +591,8 @@ describe('DriftDetector', () => {
       actual.addRelationship({
         name: '2_fk',
         type: 'ManyToOne',
-        from: { table: t2, columns: [t2.columns.get('dept_id')!] },
-        to: { table: t2, columns: [t2.columns.get('id')!] },
+        from: { table: t2, columns: columnsOf(t2, 'dept_id') },
+        to: { table: t2, columns: columnsOf(t2, 'id') },
       });
 
       const report = detectDrift(expected, actual);
@@ -621,8 +621,8 @@ describe('DriftDetector', () => {
       expected.addRelationship({
         name: '1_fk',
         type: 'ManyToOne',
-        from: { table: t1, columns: [t1.columns.get('role_id')!] },
-        to: { table: t1, columns: [t1.columns.get('id')!] },
+        from: { table: t1, columns: columnsOf(t1, 'role_id') },
+        to: { table: t1, columns: columnsOf(t1, 'id') },
       });
 
       actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]));

@@ -1,13 +1,8 @@
+import type { CrudOperation } from '../../http/contract.js';
 /**
- * Type-level regression tests keeping {@link ClientQuerier} in sync with {@link UniversalQuerier}.
- *
- * Both take their shared operations from one `SharedQuerier` declaration, so those cannot drift.
- * What is still hand-written per side, and so still checked here: the key coverage each way against
- * an explicit reviewed server-only list, and the writes the server declares without options
- * (`insertOne`/`insertMany`/`saveOne`/`saveMany`), passed the same payload literals on both.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
+ * Keeps {@link ClientQuerier} in step with {@link UniversalQuerier} where each side is still written by
+ * hand: the key coverage against a reviewed server-only list, and the option-less writes. Type-checked
+ * by `bun run ts` only.
  */
 import { idKey } from '../../type/index.js';
 import type { Json, UniversalQuerier } from '../../type/index.js';
@@ -58,6 +53,9 @@ export type MissingOnClient = AssertEmpty<Exclude<keyof UniversalQuerier, Server
 
 /** The client declares a method the server contract does not have. */
 export type ExtraOnClient = AssertEmpty<Exclude<keyof ClientQuerier, keyof UniversalQuerier>>;
+
+/** Every wire operation in `CRUD_ROUTES` has a client method. */
+export type CoversEveryCrudOperation = AssertEmpty<Exclude<CrudOperation, keyof ClientQuerier>>;
 
 declare const server: UniversalQuerier;
 declare const client: ClientQuerier;
@@ -115,9 +113,8 @@ export async function clientServerParity() {
 }
 
 /**
- * Every write reports the same shape on both sides. Written on a composite key, because that is the
- * only place `WrittenId` and `IdValue` differ: a single key reads alike either way, which is how
- * `insertOne` stayed on the old type here while the three around it moved.
+ * Every write reports the same shape on both sides. On a composite key, the one place `WrittenId` and
+ * `IdValue` differ: a single key reads alike either way.
  */
 export async function writesReportOneShapeOnBothSides(server: UniversalQuerier, client: ClientQuerier) {
   type Id = { studentId?: number; courseId?: string } | undefined;

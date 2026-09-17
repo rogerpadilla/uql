@@ -46,14 +46,7 @@ export class QueryRaw {
     return new QueryRaw(this[RAW_VALUE], alias);
   }
 
-  /**
-   * Emit this expression into `opts.ctx`. How a raw value becomes SQL is the raw value's own
-   * business, which is what lets a `raw` tagged template resolve an interpolated fragment without
-   * the dialect having to expose a method for it.
-   *
-   * The alias is not emitted here: it names a `$select` projection, which writes it after the term,
-   * and anywhere else it would land mid-expression.
-   */
+  /** Writes the expression into `opts.ctx`. The alias is the projection's to write, after the term. */
   render(opts: QueryRawRenderOptions): void {
     const emitted = this[RAW_VALUE](opts);
     if (typeof emitted === 'string' || (typeof emitted === 'number' && !Number.isNaN(emitted))) {

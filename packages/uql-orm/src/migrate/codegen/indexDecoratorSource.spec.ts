@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import type { IndexNode, TableNode } from '../../schema/types.js';
+import { createTableNode } from '../../schema/schemaAST.js';
+import type { IndexNode } from '../../schema/types.js';
 import type { IndexColumnSchema } from '../../type/index.js';
 import { buildIndexDecoratorSource, isPlainFieldIndex } from './indexDecoratorSource.js';
 
 const asIs = (column: string) => column;
 
 function indexNode(entries: IndexColumnSchema[], rest: Partial<IndexNode> = {}): IndexNode {
-  return { name: 'idx', table: { name: 't' } as TableNode, entries, unique: false, ...rest };
+  return { name: 'idx', table: createTableNode('t'), entries, unique: false, ...rest };
 }
 
 /**

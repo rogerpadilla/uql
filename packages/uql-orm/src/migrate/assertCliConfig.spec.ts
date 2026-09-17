@@ -11,32 +11,32 @@ const minimalPool = {
 };
 
 describe('assertCliConfig', () => {
-  it('accepts a valid config', () => {
+  it('should accept a valid config', () => {
     const config = { pool: minimalPool };
     expect(() => assertCliConfig(config)).not.toThrow();
   });
 
-  it('throws when config is not an object', () => {
+  it('should throw when config is not an object', () => {
     expect(() => assertCliConfig(null)).toThrow(/non-null object/);
   });
 
-  it('throws when pool is missing', () => {
+  it('should throw when pool is missing', () => {
     expect(() => assertCliConfig({})).toThrow(/Config\.pool/);
   });
 
-  it('throws when a pool method is not a function', () => {
+  it('should throw when a pool method is not a function', () => {
     expect(() => assertCliConfig({ pool: { ...minimalPool, transaction: undefined } })).toThrow(
       'Config.pool.transaction must be a function',
     );
   });
 
-  it('throws when the dialect is missing', () => {
+  it('should throw when the dialect is missing', () => {
     expect(() => assertCliConfig({ pool: { ...minimalPool, dialect: undefined } })).toThrow(
       'Config.pool.dialect is required and must be an object',
     );
   });
 
-  it('throws when dialect.dialectName is not a string', () => {
+  it('should throw when dialect.dialectName is not a string', () => {
     expect(() =>
       assertCliConfig({
         pool: {
@@ -47,10 +47,10 @@ describe('assertCliConfig', () => {
     ).toThrow(/dialect\.dialectName/);
   });
 
-  it('throws when end is present but not a function', () => {
+  it('should throw when end is present but not a function', () => {
     expect(() =>
       assertCliConfig({
-        pool: { ...minimalPool, end: 'nope' as any },
+        pool: { ...minimalPool, end: 'nope' },
       }),
     ).toThrow(/pool\.end/);
   });

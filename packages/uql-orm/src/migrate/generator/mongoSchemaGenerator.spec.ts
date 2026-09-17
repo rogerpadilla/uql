@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
+import { createTableNode } from '../../schema/schemaAST.js';
 import type { TableNode } from '../../schema/types.js';
+import { assertDefined } from '../../test/index.js';
 import type { EntityWhere, Type } from '../../type/index.js';
 import { raw } from '../../util/index.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
@@ -63,9 +65,8 @@ describe('MongoSchemaGenerator', () => {
   });
 
   /**
-   * A collection plus one `createIndex` command per index, mirroring the SQL generator's
-   * `[CREATE TABLE, ...CREATE INDEX]`. The key spec used to be re-derived in the migrator instead,
-   * which is why a descending or text index could not be expressed at all.
+   * A collection plus one `createIndex` per index, as the SQL generator emits `CREATE TABLE` and then
+   * each `CREATE INDEX`; the key spec carries a descending or a text entry as declared.
    */
   it('should generate createCollection followed by a createIndex per index', () => {
     const statements = generator.generateCreateTable(MongoUser).map((json) => JSON.parse(json));
@@ -168,17 +169,9 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should add each @Index a collection lacks, its filter included', () => {
-    const collection: TableNode = {
-      name: 'MongoTicket',
-      columns: new Map(),
-      indexes: [],
-      primaryKey: [],
-      incomingRelations: [],
-      outgoingRelations: [],
-    };
-    const statements = generator
-      .generateAlterTable(generator.diffSchema(MongoTicket, collection)!)
-      .map((json) => JSON.parse(json));
+    const diff = generator.diffSchema(MongoTicket, collectionWith('MongoTicket'));
+    assertDefined(diff);
+    const statements = generator.generateAlterTable(diff).map((json) => JSON.parse(json));
 
     expect(statements.map((statement) => statement.options)).toEqual([urgentAssigneeOptions, statusCreatedAtOptions]);
   });
@@ -229,7 +222,7 @@ describe('MongoSchemaGenerator', () => {
     });
   });
 
-  it('diffSchema should return create if currentSchema is undefined', () => {
+  it('should plan a create where the collection does not exist', () => {
     const diff = generator.diffSchema(MongoUser, undefined);
     expect(diff).toMatchObject({
       tableName: 'MongoUser',
@@ -237,43 +230,24 @@ describe('MongoSchemaGenerator', () => {
     });
   });
 
-  it('diffSchema should return alter if indexes are missing', () => {
-    const currentSchema: TableNode = {
-      name: 'MongoUser',
-      columns: new Map(),
-      indexes: [{ name: 'MongoUser__username_idx', table: {} as any, entries: [], unique: false }],
-      schema: undefined as any,
-      incomingRelations: [],
-      outgoingRelations: [],
-      primaryKey: [],
-    };
+  it('should plan an alter where indexes are missing', () => {
+    const diff = generator.diffSchema(
+      MongoUser,
+      collectionWith('MongoUser', { name: 'MongoUser__username_idx', unique: false }),
+    );
 
-    const diff = generator.diffSchema(MongoUser, currentSchema);
-    expect(diff).toMatchObject({
-      tableName: 'MongoUser',
-      type: 'alter',
-    });
-    expect(diff).toBeDefined();
-    expect(diff!.indexesToAdd).toHaveLength(1);
-    expect(diff!.indexesToAdd![0].name).toBe('email_idx');
+    expect(diff).toMatchObject({ tableName: 'MongoUser', type: 'alter' });
+    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['email_idx']);
   });
 
-  it('diffSchema should return undefined if in sync', () => {
-    const currentSchema: TableNode = {
-      name: 'MongoUser',
-      columns: new Map(),
-      indexes: [
-        { name: 'MongoUser__username_idx', table: {} as any, entries: [], unique: false },
-        { name: 'email_idx', table: {} as any, entries: [], unique: true },
-      ],
-      schema: undefined as any,
-      incomingRelations: [],
-      outgoingRelations: [],
-      primaryKey: [],
-    };
+  it('should plan nothing where the collection is in sync', () => {
+    const current = collectionWith(
+      'MongoUser',
+      { name: 'MongoUser__username_idx', unique: false },
+      { name: 'email_idx', unique: true },
+    );
 
-    const diff = generator.diffSchema(MongoUser, currentSchema);
-    expect(diff).toBeUndefined();
+    expect(generator.diffSchema(MongoUser, current)).toBeUndefined();
   });
 
   it('should generate alter statements', () => {
@@ -298,3 +272,10 @@ describe('MongoSchemaGenerator', () => {
     expect(statements[0]).toContain('"action":"dropIndex"');
   });
 });
+
+/** A collection as the database holds it: the indexes named, over no columns it could report. */
+function collectionWith(name: string, ...indexes: { name: string; unique: boolean }[]): TableNode {
+  const table = createTableNode(name);
+  table.indexes.push(...indexes.map((index) => ({ ...index, table, entries: [] })));
+  return table;
+}

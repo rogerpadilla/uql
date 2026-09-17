@@ -3,7 +3,16 @@ import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import { createSpec, Item, MeasureUnitCategory, Profile, TaxCategory, User, uuidPattern } from '../test/index.js';
+import {
+  assertDefined,
+  createSpec,
+  Item,
+  MeasureUnitCategory,
+  Profile,
+  TaxCategory,
+  User,
+  uuidPattern,
+} from '../test/index.js';
 import { raw } from '../util/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
@@ -53,8 +62,9 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     const entities = getEntities();
     await Promise.all(
       entities.map((entity) => {
-        const meta = getMeta(entity);
-        return this.querier.conn.db().createCollection(meta.name!);
+        const { name } = getMeta(entity);
+        assertDefined(name);
+        return this.querier.conn.db().createCollection(name);
       }),
     );
   }
@@ -66,14 +76,13 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   /** A raw projection is SQL, which MongoDB refuses before it could count anything beside one. */
   override async shouldCountBesideARawSelect() {
     await expect(
-      this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } } as never),
+      this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } }),
     ).rejects.toThrow('raw $select is not supported on MongoDB');
   }
 
   /**
-   * `$text` against a real text index, which is what makes MongoDB's full-text search work: the index
-   * declares the fields, so `$fields` is accepted for API consistency and ignored (as `$distance` is).
-   * Before this, `$text` never reached MongoDB at all - path validation rejected it as a field name.
+   * `$text` against a real text index, which declares the fields: `$fields` is accepted for API
+   * consistency and ignored, as `$distance` is.
    */
   async shouldFindByTextSearch() {
     await this.querier.conn.db().collection('Item').createIndex({ name: 'text', description: 'text' });
@@ -149,13 +158,10 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
     const inserted = await this.querier.findOne(User, { $select: { id: true }, $where: { email: newEmail } });
     expect(inserted).toBeDefined();
-    expect(result.ids.map(String)).toContain(String(inserted!.id));
+    expect(result.ids.map(String)).toContain(String(inserted?.id));
   }
 
-  /**
-   * A supplied key is the row's `_id`. It used to land under its own name beside an `_id` the driver
-   * minted, so the row was written and unreachable by the value the caller held.
-   */
+  /** A supplied key is the row's `_id`, so the row is reachable by the value the caller holds. */
   async shouldKeepASuppliedKey() {
     const id = await this.querier.insertOne(User, { id: 'supplied-key', name: 'supplied', createdAt: 1 });
 
@@ -209,7 +215,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     ]);
 
     const fresh = await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'fresh' } });
-    expect(ids).toEqual([existingId, fresh!.id]);
+    expect(ids).toEqual([existingId, fresh?.id]);
   }
 
   /**

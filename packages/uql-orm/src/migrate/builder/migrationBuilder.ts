@@ -42,13 +42,7 @@ function createIndexOperation(
 type ForeignKeyTarget = { table: string; columns: string[] };
 type ForeignKeyOptions = { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction };
 
-/**
- * The one shape of an `addForeignKey` operation, `NO ACTION` defaults included.
- *
- * Three callers build it and differ only in what they do with the result: the table builder records
- * it through its parent, the recorder records it directly, and the executing builder also runs it.
- * Spelled out three times, a changed default would have had to be found in all three.
- */
+/** An `addForeignKey` operation, `NO ACTION` defaults included, for the three builders that record one. */
 function addForeignKeyOperation(
   tableName: string,
   columns: string[],
@@ -68,22 +62,12 @@ function addForeignKeyOperation(
   };
 }
 
-/**
- * Declare one column through the same vocabulary `createTable` uses. A throwaway {@link TableBuilder}
- * is that vocabulary: `addColumn`/`alterColumn` used to take a bare {@link IColumnBuilder}, which
- * cannot express a type, so every column they recorded was hard-coded `VARCHAR`.
- */
+/** One column declared through `createTable`'s vocabulary, a throwaway {@link TableBuilder}, so its type is stated. */
 function buildOneColumn(callback: (columns: IColumnFactory) => IColumnBuilder): FullColumnDefinition {
   return callback(new TableBuilder('')).build();
 }
 
-/**
- * Collects the operations one `alterTable` callback declares, in the order it declared them.
- *
- * Collected rather than dispatched to the parent as they are made: the chaining methods are
- * synchronous by contract, so a builder that executes could only fire and forget, which returned from
- * `alterTable` with the statements still in flight and turned a failure into an unhandled rejection.
- */
+/** The operations one `alterTable` callback declares, collected in order, since its methods are synchronous. */
 class AlterTableBuilder implements IAlterTableBuilder {
   readonly operations: AnyMigrationOperation[] = [];
 

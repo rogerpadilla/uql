@@ -1,15 +1,5 @@
-import type {
-  BlobColumnType,
-  BooleanColumnType,
-  DateColumnType,
-  FieldOptions,
-  JsonColumnType,
-  NumericColumnType,
-  QueryRaw,
-  StringColumnType,
-  VectorColumnType,
-} from '../type/index.js';
-import { type ColumnFamily, columnFamily, isInlinedExpression } from './field.util.js';
+import type { ColumnFamily, FamilyOf, FieldOptions, QueryRaw } from '../type/index.js';
+import { columnFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
 
 /**
@@ -99,7 +89,7 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
 export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   const family = columnFamily(opts.columnType ?? opts.type);
   // Walked in table order, not in the order the field happened to be written, so a field with two
-  // conflicts always reports the same one. An option no rule knows is a typo, which `RejectUnknown`
+  // conflicts always reports the same one. An option no rule knows is a typo, which `@Field`'s own check
   // reports where it can still be spelled right.
   for (const key of getKeys(FIELD_OPTION_FAMILY)) {
     const applies: ColumnFamily | '*' = FIELD_OPTION_FAMILY[key];
@@ -116,28 +106,11 @@ export function fieldOptionConflict(opts: FieldOptions): string | undefined {
 }
 
 /** The family the options put the column in; every family where they name no type to put it in. */
-type FamilyOf<O> = O extends { readonly columnType: infer C }
-  ? FamilyOfType<C>
+type OptionsFamily<O> = O extends { readonly columnType: infer C }
+  ? FamilyOf<C>
   : O extends { readonly type: infer T }
-    ? FamilyOfType<T>
+    ? FamilyOf<T>
     : ColumnFamily;
-
-/** Read off the column-type unions themselves, which is what `COLUMN_TYPES_BY_FAMILY` is checked against. */
-type FamilyOfType<T> = T extends NumericColumnType | NumberConstructor | BigIntConstructor
-  ? 'numeric'
-  : T extends StringColumnType | StringConstructor
-    ? 'string'
-    : T extends VectorColumnType
-      ? 'vector'
-      : T extends JsonColumnType
-        ? 'json'
-        : T extends DateColumnType | DateConstructor
-          ? 'date'
-          : T extends BooleanColumnType | BooleanConstructor
-            ? 'boolean'
-            : T extends BlobColumnType
-              ? 'blob'
-              : ColumnFamily;
 
 /** What the field's own values leave unread, matching {@link deadOn} line for line. */
 type DeadOptions<O> =
@@ -152,7 +125,7 @@ type DeadOptions<O> =
 type Given<O> = Extract<keyof O, keyof FieldOptions>;
 
 type Offending<O> = {
-  [K in Given<O>]: (typeof FIELD_OPTION_FAMILY)[K] extends FamilyOf<O> | '*'
+  [K in Given<O>]: (typeof FIELD_OPTION_FAMILY)[K] extends OptionsFamily<O> | '*'
     ? K extends DeadOptions<O>
       ? K
       : never
@@ -160,12 +133,7 @@ type Offending<O> = {
 }[Given<O>];
 
 /**
- * Maps every option `O` states but cannot use to `never`, the way `RejectUnknown` maps a typo'd one,
- * so an option that would be silently ignored reads as the same compile error. Resolves to `unknown`
- * - an inert intersection member - when there are none.
- *
- * `@Id` adds `{ nullable?: false }` of its own rather than passing the `isId` it stamps on, which
- * would have to reach `O` as an intersection - and a non-naked `O` in its own constraint stops it
- * inferring from the options at all.
+ * Every option `O` states but cannot use, mapped to `never`, so one that would be ignored does not compile.
+ * `@Id` states `{ nullable?: false }` itself, since `O` has to stay naked to be inferred.
  */
 export type RejectIncompatible<O> = [Offending<O>] extends [never] ? unknown : Record<Offending<O> & string, never>;

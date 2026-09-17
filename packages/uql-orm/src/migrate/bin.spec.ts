@@ -10,30 +10,20 @@ vi.mock('./cli.js', () => ({
 
 describe('bin', () => {
   const originalArgv = process.argv;
-  const originalExit = process.exit;
-  const originalConsoleError = console.error;
 
   beforeEach(() => {
     vi.resetModules();
-    process.argv = [...originalArgv];
-    // Mock argv[1] to match the file path so the script runs
-    process.argv[1] = new URL('./bin.ts', import.meta.url).pathname;
-    // Mock process.exit to prevent test process termination
-    process.exit = vi.fn() as any;
-    console.error = vi.fn();
+    process.argv = ['node', '/any/path/bin.ts', 'arg1', 'arg2'];
+    vi.spyOn(process, 'exit').mockImplementation(vi.fn<typeof process.exit>());
+    vi.spyOn(console, 'error').mockImplementation(() => {});
   });
 
   afterEach(() => {
     process.argv = originalArgv;
-    process.exit = originalExit;
-    console.error = originalConsoleError;
-    vi.clearAllMocks();
+    vi.restoreAllMocks();
   });
 
   it('should call main with arguments', async () => {
-    // Arbitrary path, doesn't matter now that we don't check for isMain
-    const binPath = '/any/path/bin.ts';
-    process.argv = ['node', binPath, 'arg1', 'arg2'];
     mocks.main.mockResolvedValue(undefined);
 
     await import('./bin.js');
@@ -46,11 +36,8 @@ describe('bin', () => {
     mocks.main.mockRejectedValue(error);
 
     await import('./bin.js');
-
-    // Wait for the promise chain to settle
-    await new Promise((resolve) => setTimeout(resolve, 10));
+    await vi.waitFor(() => expect(process.exit).toHaveBeenCalledWith(1));
 
     expect(console.error).toHaveBeenCalledWith(error);
-    expect(process.exit).toHaveBeenCalledWith(1);
   });
 });

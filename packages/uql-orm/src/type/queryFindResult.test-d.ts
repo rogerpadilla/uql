@@ -1,12 +1,7 @@
 /**
- * Type-level regression tests for the shape a find comes back with, once the query's projection
- * shapes it. The other half of that bargain - that capturing the projection did not cost the
- * typo'd-key errors, which TypeScript skips on a naked type parameter - is pinned where those
- * checks already live: `queryInput.test-d.ts` per clause, `queryPopulate.test-d.ts` for a
- * relation's own query.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests).
+ * The shape a find comes back with, narrowed by its projection. That capturing it keeps the typo'd-key
+ * errors is pinned in `queryInput.test-d.ts` and `queryPopulate.test-d.ts`. Type-checked by `bun run ts`
+ * only.
  */
 import type { Querier, Query } from '../index.js';
 import { raw } from '../util/index.js';

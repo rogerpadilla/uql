@@ -407,7 +407,7 @@ describe('TableBuilder', () => {
 });
 
 describe('partial-index predicate', () => {
-  it('is rendered for the engine the migration runs on, a value written as its literal', () => {
+  it('should be rendered for the engine the migration runs on, a value written as its literal', () => {
     const table = new TableBuilder('Item');
     table.index(['name'], { where: raw`"stock" > ${0}` });
     const index = renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql));

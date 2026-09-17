@@ -25,14 +25,14 @@ describe('insert shapes', () => {
     return { sql: ctx.sql, values: ctx.values };
   };
 
-  it('single row binds one placeholder per column', () => {
+  it('should bind one placeholder per column for a single row', () => {
     expect(sqlFor({ name: 'solo' })).toEqual({
       sql: 'INSERT INTO "Shaped" ("name") VALUES ($1) RETURNING "id" "id"',
       values: ['solo'],
     });
   });
 
-  it('homogeneous batch reuses one column list', () => {
+  it('should reuse one column list for a homogeneous batch', () => {
     expect(
       sqlFor([
         { name: 'a', email: 'a@x' },
@@ -44,7 +44,7 @@ describe('insert shapes', () => {
     });
   });
 
-  it('ragged batch unions columns in first-seen order and fills gaps with DEFAULT', () => {
+  it("should union a ragged batch's columns in first-seen order and fill the gaps with DEFAULT", () => {
     expect(sqlFor([{ name: 'a' }, { email: 'b@x' }, { name: 'c', email: 'c@x' }])).toEqual({
       sql:
         'INSERT INTO "Shaped" ("name", "email") VALUES ($1, DEFAULT), (DEFAULT, $2), ($3, $4) ' + 'RETURNING "id" "id"',
@@ -52,21 +52,21 @@ describe('insert shapes', () => {
     });
   });
 
-  it('an explicit undefined is treated as absent', () => {
+  it('should treat an explicit undefined as absent', () => {
     expect(sqlFor({ name: 'a', email: undefined })).toEqual({
       sql: 'INSERT INTO "Shaped" ("name") VALUES ($1) RETURNING "id" "id"',
       values: ['a'],
     });
   });
 
-  it('json columns go through the dialect json hook', () => {
+  it("should send json columns through the dialect's json hook", () => {
     expect(sqlFor({ name: 'a', settings: { dark: true } })).toEqual({
       sql: 'INSERT INTO "Shaped" ("name", "settings") VALUES ($1, $2::json) RETURNING "id" "id"',
       values: ['a', '{"dark":true}'],
     });
   });
 
-  it('vector columns go through the dialect vector hook', () => {
+  it("should send vector columns through the dialect's vector hook", () => {
     expect(sqlFor({ name: 'a', embedding: [0.1, 0.2] })).toEqual({
       sql: 'INSERT INTO "Shaped" ("name", "embedding") VALUES ($1, $2::vector) RETURNING "id" "id"',
       values: ['a', '[0.1,0.2]'],

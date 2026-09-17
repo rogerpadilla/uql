@@ -2,8 +2,10 @@ import * as fs from 'node:fs';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
 import { runGenerateFromDb } from './cli.js';
-import type { Migrator } from './migrator.js';
+import { Migrator } from './migrator.js';
 
 vi.mock('node:fs', () => ({
   mkdirSync: vi.fn(),
@@ -18,11 +20,9 @@ class Shop {
 
 /** Migrator whose introspection reports the `shops` table. */
 function createMigrator(): Migrator {
-  return {
-    schemaIntrospector: {
-      introspect: vi.fn().mockResolvedValue(buildSchemaAST([Shop])),
-    },
-  } as unknown as Migrator;
+  const migrator = new Migrator(createMockQuerierPool(new SqliteDialect(), async () => createMockQuerier()));
+  vi.spyOn(migrator.schemaIntrospector, 'introspect').mockResolvedValue(buildSchemaAST([Shop]));
+  return migrator;
 }
 
 describe('runGenerateFromDb', () => {

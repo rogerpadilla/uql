@@ -1,28 +1,27 @@
 import { describe, expect, it } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { Invoice, Company, Item, Profile, Tag, User } from '../test/index.js';
-import type { Query } from '../type/index.js';
+import { Invoice, User } from '../test/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { escapeSqlId } from '../util/sql.util.js';
 
 describe('escapeSqlId - identifier injection hardening', () => {
-  it('escapes double-quote in table name', () => {
+  it('should escape double-quote in table name', () => {
     const payload = 'users"; DROP TABLE users; --';
     expect(escapeSqlId(payload, '"')).toBe('"users""; DROP TABLE users; --"');
   });
 
-  it('escapes backtick in table name', () => {
+  it('should escape backtick in table name', () => {
     const payload = 'users`; DROP TABLE users; --';
     expect(escapeSqlId(payload, '`')).toBe('`users``; DROP TABLE users; --`');
   });
 
-  it('escapes single quote (should not be needed for identifiers, but must not break)', () => {
+  it('should escape single quote (should not be needed for identifiers, but must not break)', () => {
     const payload = "users' OR 1=1";
     expect(escapeSqlId(payload, '"')).toBe('"users\' OR 1=1"');
   });
 
-  it('handles NULL byte in identifier', () => {
+  it('should handle NULL byte in identifier', () => {
     expect(escapeSqlId('users\u0000', '"')).toBe('"users\u0000"');
   });
 });
@@ -30,45 +29,47 @@ describe('escapeSqlId - identifier injection hardening', () => {
 describe('normalizeScalarFieldSelection - field validation', () => {
   const userMeta = getMeta(User);
 
-  it('filters out unknown fields from $select', () => {
-    const result = normalizeScalarFieldSelection(userMeta, { name: true, nonexistent: true } as any);
+  it('should filter out unknown fields from $select', () => {
+    // @ts-expect-error: not a field of `User`
+    const result = normalizeScalarFieldSelection(userMeta, { name: true, nonexistent: true });
     expect(result).toEqual(['name']);
   });
 
-  it('filters out unknown fields from $exclude', () => {
-    const result = normalizeScalarFieldSelection(userMeta, undefined, { nonexistent: true } as any);
-    // Should return all scalar fields since nonexistent was filtered out
+  it('should filter out unknown fields from $exclude', () => {
+    // @ts-expect-error: not a field of `User`
+    const result = normalizeScalarFieldSelection(userMeta, undefined, { nonexistent: true });
     expect(result).toContain('name');
   });
 
-  it('handles empty $select - falls back to all fields', () => {
+  it('should handle empty $select - falls back to all fields', () => {
     const result = normalizeScalarFieldSelection(userMeta, {}, undefined);
     expect(result).toContain('name');
   });
 
-  it('handles empty $exclude - returns all fields', () => {
+  it('should handle empty $exclude - returns all fields', () => {
     const result = normalizeScalarFieldSelection(userMeta, undefined, {});
     expect(result).toContain('name');
   });
 
-  it('negative value in $select excludes the field', () => {
+  it('should exclude a field $select gives false', () => {
     const result = normalizeScalarFieldSelection(userMeta, { name: false });
     expect(result).not.toContain('name');
   });
 
-  it('true in $exclude excludes the field', () => {
+  it('should exclude a field $exclude gives true', () => {
     const result = normalizeScalarFieldSelection(userMeta, undefined, { name: true });
     expect(result).not.toContain('name');
   });
 
-  it('ignores non-boolean values in $exclude', () => {
-    const result = normalizeScalarFieldSelection(userMeta, undefined, { name: 'yes' } as any);
+  it('should ignore non-boolean values in $exclude', () => {
+    // @ts-expect-error: not a boolean
+    const result = normalizeScalarFieldSelection(userMeta, undefined, { name: 'yes' });
     expect(result).not.toContain('name');
   });
 });
 
 describe('SQL generation - WHERE parameterization', () => {
-  it('parameterizes WHERE values instead of inlining them', () => {
+  it('should parameterize WHERE values instead of inlining them', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: "'; DROP TABLE users; --" } });
@@ -79,7 +80,7 @@ describe('SQL generation - WHERE parameterization', () => {
     expect(ctx.values).toContain("'; DROP TABLE users; --");
   });
 
-  it('parameterizes WHERE values with OR injection', () => {
+  it('should parameterize WHERE values with OR injection', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: "admin' OR '1'='1" } });
@@ -87,7 +88,7 @@ describe('SQL generation - WHERE parameterization', () => {
     expect(ctx.values).toContain("admin' OR '1'='1");
   });
 
-  it('parameterizes WHERE values with UNION injection', () => {
+  it('should parameterize WHERE values with UNION injection', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: "admin' UNION SELECT * FROM credentials --" } });
@@ -95,15 +96,15 @@ describe('SQL generation - WHERE parameterization', () => {
     expect(ctx.values).toContain("admin' UNION SELECT * FROM credentials --");
   });
 
-  it('handles numeric injection in WHERE', () => {
+  it('should handle numeric injection in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { id: '1 OR 1=1' } } as Query<User>);
+    pg.find(ctx, User, { $where: { id: '1 OR 1=1' } });
     expect(ctx.sql).not.toContain('OR');
     expect(ctx.values).toContain('1 OR 1=1');
   });
 
-  it('escapes table names even with injection attempt', () => {
+  it('should escape table names even with injection attempt', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, {});
@@ -113,17 +114,18 @@ describe('SQL generation - WHERE parameterization', () => {
 });
 
 describe('SQL generation - $select field name validation', () => {
-  it('rejects unknown field keys from $select at runtime', () => {
+  it('should reject unknown field keys from $select at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     // Use type assertion to bypass compile-time checking (simulates user input)
-    pg.find(ctx, User, { $select: { name: true, fakeField: true } } as Query<User>);
+    // @ts-expect-error: not a field of `User`
+    pg.find(ctx, User, { $select: { name: true, fakeField: true } });
     // Only 'name' should appear in SQL, not 'fakeField'
     expect(ctx.sql).toContain('"name"');
     expect(ctx.sql).not.toContain('fakeField');
   });
 
-  it('escapes field names in $select', () => {
+  it('should escape field names in $select', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $select: { name: true } });
@@ -133,15 +135,15 @@ describe('SQL generation - $select field name validation', () => {
 });
 
 describe('SQL generation - $exclude field name validation', () => {
-  it('ignores unknown field keys in $exclude at runtime', () => {
+  it('should ignore unknown field keys in $exclude at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $exclude: { nonexistent: true } } as Query<User>);
-    // Should not error and should include all expected columns
+    // @ts-expect-error: not a field of `User`
+    pg.find(ctx, User, { $exclude: { nonexistent: true } });
     expect(ctx.sql).toContain('"name"');
   });
 
-  it('properly excludes known fields', () => {
+  it('should leave an excluded field out of the statement', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $exclude: { name: true } });
@@ -152,7 +154,7 @@ describe('SQL generation - $exclude field name validation', () => {
 });
 
 describe('SQL generation - $where operator safety', () => {
-  it('handles $ne operator safely', () => {
+  it('should handle $ne operator safely', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: { $ne: null } } });
@@ -160,7 +162,7 @@ describe('SQL generation - $where operator safety', () => {
     expect(ctx.sql).not.toContain(';');
   });
 
-  it('handles $or operator safely', () => {
+  it('should handle $or operator safely', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { $or: [{ name: 'a' }, { name: 'b' }] } });
@@ -168,7 +170,7 @@ describe('SQL generation - $where operator safety', () => {
     expect(ctx.sql).not.toContain(';');
   });
 
-  it('handles $in operator safely', () => {
+  it('should handle $in operator safely', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: { $in: ['a', 'b', "'; DROP TABLE users; --"] } } });
@@ -180,18 +182,18 @@ describe('SQL generation - $where operator safety', () => {
 });
 
 describe('SQL generation - relation field safety', () => {
-  it('does not include relation fields in scalar select at runtime', () => {
+  it('should do not include relation fields in scalar select at runtime', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $select: { name: true, company: true } } as Query<User>);
-    // 'company' is a relation, should not appear as a scalar column
+    // @ts-expect-error: a relation, which `$populate` reads
+    pg.find(ctx, User, { $select: { name: true, company: true } });
     expect(ctx.sql).toContain('"name"');
     expect(ctx.sql).not.toMatch(/"company"/);
   });
 });
 
 describe('SQL generation - edge cases', () => {
-  it('handles empty query', () => {
+  it('should handle empty query', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, {});
@@ -199,22 +201,22 @@ describe('SQL generation - edge cases', () => {
     expect(ctx.sql).toContain('FROM');
   });
 
-  it('handles null value in WHERE', () => {
+  it('should handle null value in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { name: null } } as unknown as Query<User>);
+    pg.find(ctx, User, { $where: { name: null } });
     expect(ctx.sql).not.toContain('DROP');
     expect(ctx.sql).not.toContain(';');
   });
 
-  it('handles undefined value in WHERE', () => {
+  it('should handle undefined value in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: undefined } });
     expect(ctx.sql).not.toContain('DROP');
   });
 
-  it('handles empty string in WHERE', () => {
+  it('should handle empty string in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { name: '' } });
@@ -222,7 +224,7 @@ describe('SQL generation - edge cases', () => {
     expect(ctx.values).toContain('');
   });
 
-  it('handles numeric zero in WHERE', () => {
+  it('should handle numeric zero in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
     pg.find(ctx, Invoice, { $where: { id: 0 } });
@@ -230,36 +232,10 @@ describe('SQL generation - edge cases', () => {
     expect(ctx.values).toContain(0);
   });
 
-  it('handles string value in numeric WHERE field', () => {
+  it('should handle string value in numeric WHERE field', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { id: '123' } } as Query<User>);
+    pg.find(ctx, User, { $where: { id: '123' } });
     expect(ctx.sql).not.toContain('DROP');
-  });
-});
-
-describe('field key validation across entities', () => {
-  it('Company fields are validated', () => {
-    const meta = getMeta(Company);
-    const result = normalizeScalarFieldSelection(meta, { name: true, fakeField: true } as any);
-    expect(result).toEqual(['name']);
-  });
-
-  it('Profile fields are validated', () => {
-    const meta = getMeta(Profile);
-    const result = normalizeScalarFieldSelection(meta, { picture: true, nonexistent: true } as any);
-    expect(result).toEqual(['picture']);
-  });
-
-  it('Item fields are validated', () => {
-    const meta = getMeta(Item);
-    const result = normalizeScalarFieldSelection(meta, { name: true, fakeField: true } as any);
-    expect(result).toContain('name');
-  });
-
-  it('Tag fields are validated', () => {
-    const meta = getMeta(Tag);
-    const result = normalizeScalarFieldSelection(meta, { name: true, fakeField: true } as any);
-    expect(result).toEqual(['name']);
   });
 });

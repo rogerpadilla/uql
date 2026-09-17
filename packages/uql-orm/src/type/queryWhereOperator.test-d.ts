@@ -1,11 +1,6 @@
 /**
- * Type-level regression tests for the type-gated `$where` operators: string operators require
- * string fields, ordering operators comparable fields (string/number/bigint/Date), array operators
- * array fields. Untyped (`unknown`) values stay fully permissive.
- *
- * Not a runtime test: it is type-checked by `bun run ts`, skipped by vitest, and left out of the
- * build (excluded by the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests). Each `@ts-expect-error` fails the type-check if the
- * error it guards ever stops happening, keeping the negatives locked in.
+ * Type-gated `$where` operators: string ones on string fields, ordering ones on comparable fields,
+ * array ones on array fields; `unknown` stays permissive. Type-checked by `bun run ts` only.
  */
 import type { Json, Querier } from '../index.js';
 

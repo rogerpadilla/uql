@@ -7,17 +7,17 @@ class Note {
 }
 
 describe('normalizeIndexColumn', () => {
-  it('keeps a column, named or read off the refs, as its key', () => {
+  it('should keep a column, named or read off the refs, as its key', () => {
     expect(normalizeIndexColumn('email')).toEqual({ column: 'email' });
     expect(normalizeIndexColumn(refs(Note).email)).toEqual({ column: 'email' });
   });
 
-  it('keeps any other raw as the expression it is', () => {
+  it('should keep any other raw as the expression it is', () => {
     const sql = raw`lower(email)`;
     expect(normalizeIndexColumn(sql)).toEqual({ column: sql });
   });
 
-  it("resolves an options entry's column the same way, keeping its options", () => {
+  it("should resolve an options entry's column the same way, keeping its options", () => {
     const sql = raw`lower(email)`;
     expect(normalizeIndexColumn({ column: refs(Note).email, order: 'desc' })).toEqual({
       column: 'email',
@@ -28,7 +28,7 @@ describe('normalizeIndexColumn', () => {
 });
 
 describe('renderIndexColumn', () => {
-  it('renders an expression entry to text, keeping its options', () => {
+  it('should render an expression entry to text, keeping its options', () => {
     expect(renderIndexColumn({ column: raw`lower(email)`, order: 'desc' }, () => 'lower(email)')).toEqual({
       column: 'lower(email)',
       order: 'desc',
@@ -36,13 +36,13 @@ describe('renderIndexColumn', () => {
     });
   });
 
-  it('keeps a column entry as it is', () => {
+  it('should keep a column entry as it is', () => {
     expect(renderIndexColumn({ column: 'email' }, () => 'unused')).toEqual({ column: 'email' });
   });
 });
 
 describe('indexNameParts', () => {
-  it('names an expression by its position, having no column to name it by', () => {
+  it('should name an expression by its position, having no column to name it by', () => {
     expect(indexNameParts([{ column: 'tenantId' }, { column: raw`lower(email)` }])).toEqual(['tenantId', 'expr1']);
   });
 });

@@ -3,15 +3,9 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 
 /**
- * The two ways a cascade can happen, each asserted on the statements issued *and* the rows left behind.
- *
- * Its own entities and its own tables: the shared fixtures build without foreign keys, so a database
- * cascade would silently do nothing there and the test would pass for the wrong reason.
- *
- * The pair exists to pin how the two mechanisms divide the work, since nothing in the code inspects
- * `onDelete` at delete time. Declaring the constraint and leaving `cascade: 'delete'` off means the
- * querier never touches the children; declaring `cascade: 'delete'` and no constraint means it deletes
- * them itself. Declaring both would simply do the JS walk and leave the constraint nothing to cascade.
+ * The two ways a cascade happens, asserted on the statements and the rows left: a declared constraint
+ * with no `cascade: 'delete'` leaves the children to the database, and `cascade: 'delete'` with no
+ * constraint deletes them itself. Its own tables, since the shared fixtures carry no foreign keys.
  */
 
 /** Only the constraint: the database removes the children, so the querier does nothing about them. */
@@ -192,7 +186,7 @@ describe('cascade delegation', () => {
       { id: 1, name: 'p' },
       { id: 2, name: 'p' },
     ]);
-    const nothing = undefined as unknown as number;
+    const nothing = undefined;
 
     await expect(querier.deleteOneById(DelegatedParent, nothing)).rejects.toThrow(
       "'DelegatedParent' was addressed by id, but the id is undefined",

@@ -22,12 +22,8 @@ export type BunSqlConn = Pick<SQL, 'unsafe'> & { release(): void };
 export type BunSqlDialectName = 'postgres' | 'cockroachdb' | 'mysql' | 'mariadb';
 
 /**
- * Rows a statement read or wrote, from whichever field this adapter fills: Postgres and CockroachDB
- * report `count` and leave `affectedRows` null, MySQL and MariaDB the other way around - and `count`
- * is 0 on a MySQL write, so the two are read in that order rather than coalesced.
- *
- * `undefined` when the header carries neither, which leaves the returned rows to answer for it -
- * `buildUpdateResult` already falls back to their count, and it is the only one that should.
+ * The rows a statement touched: `count` on Postgres, `affectedRows` on MySQL (whose `count` is 0 on a
+ * write), in that order; `undefined` to leave it to the returned rows.
  */
 export function getAffectedRows(res: BunSqlResult): number | undefined {
   return res.affectedRows || res.count || undefined;

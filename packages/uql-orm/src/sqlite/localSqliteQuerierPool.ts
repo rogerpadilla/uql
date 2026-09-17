@@ -48,13 +48,7 @@ export function adaptSqlite<S extends Omit<SqlitePreparedStatement, 'reader'>>(
   };
 }
 
-/**
- * Pool for a SQLite database opened in this process, whichever driver provides it. SQLite gives one
- * connection per file, so the shared-handle lifecycle is {@link AbstractSharedHandleQuerierPool}'s.
- *
- * Subclasses supply only {@link createDb}: configuring the connection on the way up - the pragmas,
- * then the extensions - is the same for `better-sqlite3`, `bun:sqlite` and `node:sqlite`.
- */
+/** A pool for a SQLite file opened in this process, configured the same way whichever driver's {@link createDb} opens it. */
 export abstract class AbstractLocalSqliteQuerierPool<
   O extends LocalSqlitePoolOptions,
 > extends AbstractSharedHandleQuerierPool<LocalSqliteDatabase, SqliteQuerier, SqliteDialect> {

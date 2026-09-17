@@ -1,12 +1,6 @@
 /**
- * Type-level regression tests for the entity options family.
- *
- * These lock in the payoff of making `type` explicit: it is now checked against the property's real
- * TypeScript type, so a mismatch that used to compile into a wrong column is a compile error. Every
- * `@ts-expect-error` fails the type-check if the error it guards stops happening.
- *
- * Not a runtime test: type-checked by `bun run ts`, skipped by vitest, and excluded from the build by
- * the `.test-d.ts` suffix, Vitest's and `tsd`'s own convention for type-only tests.
+ * The entity options family: a declared `type` is checked against the property's TypeScript type, so a
+ * mismatch is a compile error rather than a wrong column. Type-checked by `bun run ts` only.
  */
 import { defineEntity, defineIndex, Entity, Field, Id } from '../entity/index.js';
 import type {
@@ -92,7 +86,7 @@ expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'int' });
 // ─── @Field({ references }): a foreign key holds the referenced key's own type ───
 // Only where the column is resolved from that key. An explicit `type` opts out of the resolution, so
 // it is checked on its own - the case `schemaASTBuilder.spec` pins, a BIGINT column over a uuid key.
-class Referrer {
+export class Referrer {
   @Id({ type: Number }) id?: number;
   @Field({ references: () => Company }) companyId?: number;
   @Field({ type: BigInt, references: () => Company }) wideCompanyId?: bigint;
@@ -217,7 +211,7 @@ class EmployeeProject {
   employeeId?: number;
   projectId?: number;
 }
-// `Company` declares no relation of its own, which used to collapse `through` to `never`.
+// `Company` declares no relation of its own, and `through` still takes one.
 expectType<RelationOptionsFor<Company[]>>({
   entity: () => Company,
   cardinality: 'mm',

@@ -5,11 +5,8 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { Item } from '../test/entityMock.js';
 
 /**
- * Key->column mapping has to hold on *every* read path, not just `$where`. Every fixture in the
- * dialect suites happens to name its columns after its properties, so a path that addressed the
- * property name looked correct until an entity renamed something - which is how MongoDB shipped a
- * `$select` that returned `undefined`, a `$sort` that did not order, a `$group` that collapsed every
- * row into one bucket, and a soft delete that never hid the row.
+ * Key-to-column mapping holds on every read path, not just `$where`: the other fixtures name columns
+ * after their properties, so only a renamed column shows a path addressing the property instead.
  */
 @Entity({ name: 'renamed_row' })
 class Renamed {
@@ -30,22 +27,22 @@ const pgSql = (build: (dialect: PostgresDialect, ctx: ReturnType<PostgresDialect
 
 const mongo = new MongoDialect();
 
-it('projects the stored column, never the property key', () => {
+it('should project the stored column, never the property key', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, { $select: { label: true } }))).toContain('"the_label"');
   expect(mongo.select(Renamed, { label: true })).toEqual({ the_label: 1 });
 });
 
-it('sorts by the stored column', () => {
+it('should sort by the stored column', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, { $sort: { label: 'desc' } }))).toContain('ORDER BY "the_label" DESC');
   expect(mongo.sort(Renamed, { label: 'desc' })).toEqual({ the_label: -1 });
 });
 
-it('filters by the stored column', () => {
+it('should filter by the stored column', () => {
   expect(pgSql((d, ctx) => d.where(ctx, Renamed, { label: 'x' }))).toContain('"the_label" = ');
   expect(mongo.where(Renamed, { label: 'x' })).toMatchObject({ the_label: 'x' });
 });
 
-it('groups by the stored column while returning the caller key', () => {
+it('should group by the stored column while returning the caller key', () => {
   expect(pgSql((d, ctx) => d.aggregate(ctx, Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } }))) //
     .toContain('"the_label" "label"');
   expect(mongo.buildAggregateStages(Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } })).toEqual([
@@ -54,23 +51,22 @@ it('groups by the stored column while returning the caller key', () => {
   ]);
 });
 
-it('applies the soft-delete filter on the stored column', () => {
+it('should apply the soft-delete filter on the stored column', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, {}))).toContain('"deleted_at" IS NULL');
   expect(mongo.where(Renamed, {})).toEqual({ deleted_at: null });
 });
 
-it('rejects a relation $size mixed with other conditions on both engines', () => {
-  // it used to fall through to field filtering and emit a condition on a `$size` *column*
+it('should reject a relation $size mixed with other conditions on both engines', () => {
   const mixed = { tags: { $size: 2, name: 'x' } };
-  expect(() => pgSql((d, ctx) => d.where(ctx, Item, mixed as never))).toThrow(
+  expect(() => pgSql((d, ctx) => d.where(ctx, Item, mixed))).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );
-  expect(() => mongo.whereWithRelations(Item, mixed as never)).toThrow(
+  expect(() => mongo.whereWithRelations(Item, mixed)).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );
 });
 
-it('addresses the primary key as each engine stores it', () => {
+it('should address the primary key as each engine stores it', () => {
   expect(pgSql((d, ctx) => d.where(ctx, Renamed, { id: 1 }))).toContain('"row_pk" = ');
   // MongoDB always stores it as `_id`, whatever the column is named
   expect(mongo.where(Renamed, { id: 1 })).toMatchObject({ _id: 1 });

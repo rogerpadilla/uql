@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
-import { Entity, Field, getMeta, Id, Index } from '../entity/index.js';
+import { Entity, Field, Id, Index } from '../entity/index.js';
 import {
   anyUuid,
   Company,
@@ -14,9 +14,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
-import type { Type } from '../type/index.js';
 import { raw } from '../util/index.js';
-
 import { SqliteDialect } from './sqliteDialect.js';
 
 class SqliteDialectSpec extends AbstractSqlDialectSpec {
@@ -27,10 +25,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
 
   constructor() {
     super(new SqliteDialect({}));
-  }
-
-  protected override returningClause<E>(entity: Type<E>): string {
-    return ' ' + this.dialect.returningId(getMeta(entity));
   }
 
   override shouldBeginTransaction() {
@@ -253,8 +247,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   shouldEscape() {
     expect(this.dialect.escape("it's")).toBe("'it''s'");
   }
-
-  // JSON array operator tests
   shouldFind$elemMatch() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, JsonRecord, {
@@ -410,8 +402,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     );
     expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.code') REGEXP ?");
   }
-
-  // ─── JSONB dot-notation (SQLite-specific JSON_EXTRACT syntax) ──────
   shouldFindByJsonDotNotation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Company, {
@@ -467,8 +457,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.country') LIKE ?");
     expect(values).toEqual(['%land%']);
   }
-
-  // ─── Relation filtering (SQLite-specific) ──────────────────────────
   shouldFindByManyToManyRelation() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -562,9 +550,15 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
   /** Outside the types, which give a JSON key no `raw()`: rendered in place rather than bound as an object. */
   shouldSetAJsonKeyToARawExpression() {
     const { sql, values } = this.exec((ctx) =>
-      this.dialect.update(ctx, Company, { $where: { id: '1' } }, {
-        kind: { $set: { private: raw`1 + ${1}` } },
-      } as never),
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        {
+          // @ts-expect-error: a JSON key takes no `raw`
+          kind: { $set: { private: raw`1 + ${1}` } },
+        },
+      ),
     );
     expect(sql).toBe(
       "UPDATE `Company` SET `kind` = JSON_SET(COALESCE(`kind`, '{}'), '$.private', 1 + ?), `updatedAt` = ? WHERE `id` = ?",

@@ -10,6 +10,11 @@ export const uuidPattern = /^[0-9a-f-]{36}$/;
  */
 export const anyUuid: string = expect.stringMatching(uuidPattern);
 
+/** Fails the test where `value` is missing, and narrows it where it is not. */
+export function assertDefined<T>(value: T | undefined, message?: string): asserts value is T {
+  expect(value, message).toBeDefined();
+}
+
 export function createSpec<T extends Spec>(spec: T) {
   const proto: FunctionConstructor = Object.getPrototypeOf(spec);
   let describeFn: typeof describe | typeof describe.only | typeof describe.skip;
@@ -26,8 +31,9 @@ export function createSpec<T extends Spec>(spec: T) {
   describeFn(specName, () => createTestCases(spec));
 }
 
-function createTestCases(spec: Record<string, unknown>) {
+function createTestCases(spec: Spec) {
   let proto: FunctionConstructor = Object.getPrototypeOf(spec);
+  const requirements: Readonly<Record<string, boolean | undefined>> = spec.requirements?.() ?? {};
 
   const processedMethodsMap: { [k: string]: true } = {};
 
@@ -44,7 +50,7 @@ function createTestCases(spec: Record<string, unknown>) {
       if (hookFn) {
         hookFn(callback);
       } else if (key.startsWith('should')) {
-        it(key, callback);
+        (requirements[key] === false ? it.skip : it)(key, callback);
       } else if (key.startsWith('fffShould')) {
         it.only(key, callback);
       } else if (key.startsWith('xxxShould')) {
@@ -73,7 +79,17 @@ const hooks = {
 
 type SpecHook = () => void | Promise<void>;
 
+/** A suite's test cases by name. */
+export type SpecCase<T> = Extract<keyof T, `should${string}`>;
+
+/**
+ * Which cases a suite's engine can run, `false` reporting one as skipped: a case never branches on the
+ * engine inside its body, where a missing capability would pass having asserted nothing.
+ */
+export type SpecRequirements<T> = { readonly [K in SpecCase<T>]?: boolean };
+
 export type Spec = Partial<typeof hooks> & {
+  readonly requirements?: () => Readonly<Record<string, boolean | undefined>>;
   // oxlint-disable-next-line typescript/no-explicit-any -- `any` is required - `unknown` makes index signature incompatible with concrete spec classes
   readonly [k: string]: SpecHook | any;
 };

@@ -2,15 +2,7 @@ import type { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
 
-/**
- * Structural subset of the `@electric-sql/pglite` API actually used here, declared locally so this
- * package does not couple its published types to a pre-1.0 dependency.
- *
- * @remarks This is what uql *consumes* from the driver, so it is two methods and stating them costs
- * nothing. `PglitePoolOptions` is the opposite case and imports PGlite's own type: those options are
- * the caller's input to the driver, so restating them would mean re-deriving its whole option surface
- * and then casting at the `PGlite.create` call.
- */
+/** The two methods uql uses of `@electric-sql/pglite`, stated so its published types do not depend on a pre-1.0 package. */
 export type PgliteDatabase = {
   query<T>(query: string, params?: unknown[]): Promise<{ rows: T[]; affectedRows?: number }>;
   close(): Promise<void>;

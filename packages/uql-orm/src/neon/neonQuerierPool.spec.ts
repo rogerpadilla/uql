@@ -12,7 +12,7 @@ const mockPoolInstance = {
 
 vi.mock('@neondatabase/serverless', () => {
   return {
-    Pool: vi.fn().mockImplementation(function (this: any) {
+    Pool: vi.fn().mockImplementation(function () {
       return mockPoolInstance;
     }),
     // Neon ships its own copy of node-postgres's type registry, and the pool passes it to
@@ -22,14 +22,14 @@ vi.mock('@neondatabase/serverless', () => {
 });
 
 describe('NeonQuerierPool', () => {
-  it('getQuerier', async () => {
+  it('should hand out a querier', async () => {
     const config = { connectionString: 'postgres://' };
     const pool = new NeonQuerierPool(config);
     const querier = await pool.getQuerier();
     expect(querier).toBeInstanceOf(PgQuerier);
   });
 
-  it('decodes wide integers with Neon’s own type registry, not `pg`’s', () => {
+  it('should decode wide integers with Neon’s own type registry, not `pg`’s', () => {
     new NeonQuerierPool({ connectionString: 'postgres://' });
     const [{ types }] = vi.mocked(Pool).mock.calls[0] as [{ types: CustomTypesConfig }];
     const int8 = types.getTypeParser(20, 'text');
@@ -42,7 +42,7 @@ describe('NeonQuerierPool', () => {
     expect(types.getTypeParser(20, 'binary')).toBe(String);
   });
 
-  it('end', async () => {
+  it('should end the pool', async () => {
     const config = { connectionString: 'postgres://' };
     const pool = new NeonQuerierPool(config);
     await pool.end();

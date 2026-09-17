@@ -90,7 +90,7 @@ describe('schema against postgres', () => {
     await pool.end();
   });
 
-  it('joins two schemas in one statement', async () => {
+  it('should join two schemas in one statement', async () => {
     await expect(
       querier.findMany(Order, {
         $select: { id: true, total: true },
@@ -99,13 +99,13 @@ describe('schema against postgres', () => {
     ).resolves.toEqual([{ id: 1, total: 42, customer: { id: 1, name: 'acme' } }]);
   });
 
-  it('filters a parent by a relation living in another schema', async () => {
+  it('should filter a parent by a relation living in another schema', async () => {
     await expect(
       querier.findMany(Order, { $select: { id: true }, $where: { customer: { name: 'acme' } } }),
     ).resolves.toEqual([{ id: 1 }]);
   });
 
-  it('counts, updates and aggregates a qualified table', async () => {
+  it('should count, update and aggregate a qualified table', async () => {
     await expect(querier.count(Order, { $where: { total: { $gte: 1 } } })).resolves.toBe(1);
     await expect(querier.updateMany(Order, { $where: { id: 1 } }, { total: 43 })).resolves.toBe(1);
     await expect(querier.aggregate(Order, { $select: { total: { $sum: { total: true } } } })).resolves.toEqual([
@@ -116,7 +116,7 @@ describe('schema against postgres', () => {
   // The point of the pool-level default: one entity class, no annotation, and each pool sees only
   // its own tenant. Each PGlite pool is its own in-memory database, so both schemas are created in
   // each one and only the pool's default decides which is read.
-  it.each(TENANTS)('reads %s from the unannotated entity', async (schema, expected) => {
+  it.each(TENANTS)('should read %s from the unannotated entity', async (schema, expected) => {
     const scoped = new PgliteQuerierPool('memory://', undefined, { schema });
     const tenant = await scoped.getQuerier();
     for (const [other, total] of TENANTS) {
@@ -153,19 +153,24 @@ describe('schema against postgres', () => {
       await driftPool.end();
     });
 
-    it('reports no drift for a table it just created', async () => {
+    it('should report no drift for a table it just created', async () => {
       await expect(new Migrator(driftPool, { entities: [Customer] }).getDiffs()).resolves.toEqual([]);
     });
 
-    it('alters a qualified table rather than creating it again', async () => {
+    it('should alter a qualified table rather than creating it again', async () => {
       const [diff] = await new Migrator(driftPool, { entities: [Drifted] }).getDiffs();
       expect(diff?.type).toBe('alter');
       expect(diff?.tableName).toBe('crm.Customer');
       expect(diff?.columnsToAdd?.map((column) => column.name)).toEqual(['age']);
     });
 
-    it('emits the ALTER against the qualified table', async () => {
+    it('should emit the ALTER against the qualified table', async () => {
       const sql = await new Migrator(driftPool, { entities: [Drifted] }).planSync();
+      expect(sql).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
+    });
+
+    it('should emit the ALTER against the qualified table when syncing that entity alone', async () => {
+      const sql = await new Migrator(driftPool, { entities: [Drifted] }).planSync({ entity: Drifted });
       expect(sql).toEqual(['ALTER TABLE "crm"."Customer" ADD COLUMN "age" BIGINT;']);
     });
   });

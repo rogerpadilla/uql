@@ -8,7 +8,7 @@ const stripAnsi = (str: string) => str.replace(/\x1b\[[0-9;]*m/g, '');
 
 describe('DefaultLogger', () => {
   /** `JSON.stringify` refuses a `bigint`, so a query binding one would fail for having been logged. */
-  it('renders a bigint value by its digits rather than failing to serialize it', () => {
+  it('should render a bigint value by its digits rather than failing to serialize it', () => {
     const log = vi.spyOn(console, 'log').mockImplementation(() => {});
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
 
@@ -234,21 +234,21 @@ describe('LoggerWrapper', () => {
     expect(customFunc).toHaveBeenCalledWith('SELECT 1', undefined, 5);
   });
 
-  it('DefaultLogger should log slow queries with values and duration', () => {
+  it('should log a slow query with its values and duration', () => {
     const logger = new DefaultLogger();
     logger.logSlowQuery('SELECT 1', [1], 500);
     const call = stripAnsi(spyWarn.mock.calls[0][0]);
     expect(call).toContain('slow query: SELECT 1 -- [1] [500ms]');
   });
 
-  it('LoggerWrapper should fall back to logQuery if logSlowQuery is missing', () => {
-    const customLogger = { logQuery: vi.fn() } as any;
+  it('should fall back to logQuery where logSlowQuery is missing', () => {
+    const customLogger = { logQuery: vi.fn() };
     const wrapper = new LoggerWrapper(customLogger, { slowQuery: 100 });
     wrapper.logQuery('SELECT 1', [], 150);
     expect(customLogger.logQuery).toHaveBeenCalled();
   });
 
-  it('LoggerWrapper should use loggerFunction for other levels if logger method is missing', () => {
+  it('should use the logger function for a level the logger has no method for', () => {
     const customFunc = vi.fn();
     const wrapper = new LoggerWrapper(customFunc);
     wrapper.logInfo('test info');
@@ -257,47 +257,47 @@ describe('LoggerWrapper', () => {
     expect(customFunc).toHaveBeenCalledWith('test error', expect.any(Error));
   });
 
-  it('DefaultLogger should log slow queries without duration', () => {
+  it('should log a slow query without its duration', () => {
     const logger = new DefaultLogger();
     logger.logSlowQuery('SELECT 1', [1]);
     const call = stripAnsi(spyWarn.mock.calls[0][0]);
     expect(call).not.toContain('ms]');
   });
 
-  it('LoggerWrapper should do nothing if both logger and loggerFunction are missing', () => {
-    const wrapper = new LoggerWrapper({} as any);
+  it('should do nothing with neither a logger nor a logger function', () => {
+    const wrapper = new LoggerWrapper({});
     wrapper.logInfo('test');
     wrapper.logQuery('SELECT 1');
     expect(spyInfo).not.toHaveBeenCalled();
     expect(spyLog).not.toHaveBeenCalled();
   });
 
-  it('willLogValues should be false with no options and no slowQuery', () => {
+  it('should log no values with no options and no slowQuery', () => {
     const wrapper = new LoggerWrapper(false);
     expect(wrapper.willLogValues()).toBe(false);
   });
 
-  it('willLogValues should be true when query level is enabled', () => {
+  it('should log values where the query level is on', () => {
     const wrapper = new LoggerWrapper(true, { logValues: true });
     expect(wrapper.willLogValues()).toBe(true);
   });
 
-  it('willLogValues should be false when only non-query levels are enabled', () => {
+  it('should log no values where only other levels are on', () => {
     const wrapper = new LoggerWrapper(['warn'], { logValues: true });
     expect(wrapper.willLogValues()).toBe(false);
   });
 
-  it('willLogValues should be true when slowQuery is configured, even without query level', () => {
+  it('should log values where slowQuery is set, even without the query level', () => {
     const wrapper = new LoggerWrapper(false, { logValues: true, slowQuery: 100 });
     expect(wrapper.willLogValues()).toBe(true);
   });
 
-  it('willLogValues should be false when logValues explicitly disables params', () => {
+  it('should log no values where logValues turns them off', () => {
     const wrapper = new LoggerWrapper(false, { logValues: false, slowQuery: 100 });
     expect(wrapper.willLogValues()).toBe(false);
   });
 
-  it('willLogValues should be false when logValues is false, even with the query level enabled', () => {
+  it('should log no values where logValues is false, even with the query level on', () => {
     const wrapper = new LoggerWrapper(true, { logValues: false });
     expect(wrapper.willLogValues()).toBe(false);
   });
@@ -308,7 +308,7 @@ describe('attachPoolErrorHandler', () => {
     vi.restoreAllMocks();
   });
 
-  it('registers an error listener that logs instead of throwing', () => {
+  it('should register an error listener that logs instead of throwing', () => {
     let errorListener: ((err: Error) => void) | undefined;
     const pool = {
       on: vi.fn((event: string, listener: (err: Error) => void) => {
@@ -330,7 +330,7 @@ describe('attachPoolErrorHandler', () => {
     );
   });
 
-  it("routes the error to the pool's own logger when it has one", () => {
+  it("should route the error to the pool's own logger when it has one", () => {
     const pool = new EventEmitter();
     const logger = { logError: vi.fn() };
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -343,7 +343,7 @@ describe('attachPoolErrorHandler', () => {
     expect(consoleSpy).not.toHaveBeenCalled();
   });
 
-  it('still reports the error when the pool turned its logging off', () => {
+  it('should still report the error where the pool turned its logging off', () => {
     const pool = new EventEmitter();
     const consoleSpy = vi.spyOn(console, 'error').mockImplementation(() => {});
 

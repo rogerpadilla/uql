@@ -15,25 +15,9 @@ export interface PoolRunOptions {
 }
 
 /**
- * Querier pool. Read the dialect id via `pool.dialect.dialectName` (see {@link AbstractDialect.dialectName}); queriers expose the same on `querier.dialect`.
- *
- * A pool is a {@link UniversalQuerier} too, so a function that runs queries takes that type and the
- * caller passes its own querier or the pool. `pool.op(...)` is exactly
- * `pool.withQuerier((querier) => querier.op(...))`, so two pool calls are two units of work; when they
- * must commit together, that is `transaction`.
- *
- * Acquiring per call is also what makes `Promise.all([pool.findMany(A, {}), pool.count(B, {})])` run on
- * separate connections, while the same calls inside one `withQuerier`/`transaction` share a pinned
- * connection and serialize. Single-connection backends (better-sqlite3, Bun sqlite, D1) stay correct
- * but always serialize.
- *
- * An enclosing `withContext` scopes pool calls (`security` filters apply), which is why they take no
- * per-call `context` option (unlike `withQuerier`/`transaction`).
- *
- * Pool calls take the entity-as-argument form only; the `{ $entity }` form needs a querier.
- *
- * @typeParam Q - Querier implementation returned from the pool.
- * @typeParam D - Concrete dialect class held by the pool.
+ * A pool of queriers, and a {@link UniversalQuerier} itself: each call runs on a querier of its own, so
+ * two calls are two units of work (use `transaction` to join them) and run in parallel where the backend
+ * has more than one connection. An enclosing `withContext` scopes its calls. The `{ $entity }` form needs a querier.
  */
 export interface QuerierPool<
   Q extends Querier = Querier,
@@ -78,13 +62,7 @@ export interface QuerierPool<
   end(): Promise<void>;
 }
 
-/**
- * SQL pool surface: adds the raw-SQL executors of {@link SqlQuerier} (`all`/`run`), with the same
- * connection-per-call semantics as the {@link QuerierPool} read helpers (see that doc for the
- * parallelism model and its single-connection caveat).
- *
- * Raw `all`/`run` bypass query generation, so they are **not** scoped by `security` filters/context.
- */
+/** A SQL pool, adding raw `all`/`run`, which no `security` filter scopes. */
 export interface SqlQuerierPool<Q extends SqlQuerier = SqlQuerier, D extends AbstractSqlDialect = AbstractSqlDialect>
   extends QuerierPool<Q, D>, Pick<SqlQuerier, 'all' | 'run'> {}
 

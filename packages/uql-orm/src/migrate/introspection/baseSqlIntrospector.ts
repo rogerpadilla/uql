@@ -137,7 +137,6 @@ export abstract class BaseSqlIntrospector {
           type: idx.type,
           where: idx.where,
           include: idx.include,
-          source: 'database',
         };
         ast.addIndex(index);
       }

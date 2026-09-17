@@ -207,9 +207,8 @@ describe('AbstractSqlQuerier error context', () => {
   });
 
   /**
-   * The rollback failure is a consequence of the original error, so it must neither replace it nor
-   * strand the connection. It used to do both: the flag stayed set, so `withQuerier`'s `finally` hit
-   * `release()`, which threw `pending transaction` over the real error and returned nothing to the pool.
+   * A failing rollback is a consequence of the original error: that error surfaces, and the connection
+   * still goes back to the pool.
    */
   it('should keep the original error and still release when the ROLLBACK fails too', async () => {
     const querier = new StubSqlQuerier();
