@@ -14,7 +14,7 @@ const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const read = (path: string): string => readFileSync(resolve(root, path), 'utf8');
 const succeeds = async (cmd: ReturnType<typeof $>): Promise<boolean> => (await cmd.quiet().nothrow()).exitCode === 0;
 
-const { version } = JSON.parse(read('packages/uql-orm/package.json')) as { version: string };
+const { version } = JSON.parse(read('packages/orm/package.json')) as { version: string };
 const tag = `uql-orm@${version}`;
 
 /** Hand-written before the bump, so a missing entry would otherwise publish empty release notes. */

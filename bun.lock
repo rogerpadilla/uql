@@ -22,7 +22,7 @@
         "vitest": "^5.0.1",
       },
     },
-    "packages/uql-codemod": {
+    "packages/codemod": {
       "name": "uql-codemod",
       "version": "0.39.1",
       "bin": {
@@ -32,7 +32,7 @@
         "typescript": "^6.0.3",
       },
     },
-    "packages/uql-orm": {
+    "packages/orm": {
       "name": "uql-orm",
       "version": "0.68.0",
       "bin": {
@@ -1628,9 +1628,9 @@
 
     "unpipe": ["unpipe@1.0.0", "", {}, "sha512-pjy2bYhSsufwWlKwPc+l3cN7+wuJlK6uz0YdJEOlQDbl6jo/YlPi4mb8agUkVC8BF7V8NuzeyPNqRksA3hztKQ=="],
 
-    "uql-codemod": ["uql-codemod@workspace:packages/uql-codemod"],
+    "uql-codemod": ["uql-codemod@workspace:packages/codemod"],
 
-    "uql-orm": ["uql-orm@workspace:packages/uql-orm"],
+    "uql-orm": ["uql-orm@workspace:packages/orm"],
 
     "util-deprecate": ["util-deprecate@1.0.2", "", {}, "sha512-EPD5q1uXyFxJpCrLnCc1nHnq3gOa6DZBocAIiI2TaSCA7VCJ1UJDMagCzIkXNsUYfD1daK//LTEQ8xiIbrHtcw=="],
 

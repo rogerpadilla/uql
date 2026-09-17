@@ -29,8 +29,8 @@
     "skipLibCheck": true,
     "noImplicitOverride": true,
     "paths": {
-      "uql-orm": ["./packages/uql-orm/src/index.ts"],
-      "uql-orm/*": ["./packages/uql-orm/src/*"]
+      "uql-orm": ["./packages/orm/src/index.ts"],
+      "uql-orm/*": ["./packages/orm/src/*"]
     }
   },
   "exclude": ["node_modules", "data", "dist", "coverage", "**/*/dist"]

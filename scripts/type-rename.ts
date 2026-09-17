@@ -16,7 +16,7 @@ type RenameResult = { readonly changes?: Readonly<Record<string, readonly TextEd
 type Message = { readonly id?: number; readonly method?: string; readonly result?: unknown; readonly error?: unknown };
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
-const fixture = resolve(root, 'packages/uql-orm/src/type/rename.test-d.ts');
+const fixture = resolve(root, 'packages/orm/src/type/rename.test-d.ts');
 const uri = pathToFileURL(fixture).href;
 const source = readFileSync(fixture, 'utf8');
 const lines = source.split('\n');

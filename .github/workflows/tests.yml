@@ -59,11 +59,11 @@ jobs:
         run: bun run build
       - name: Lint package manifest
         run: bunx publint --strict
-        working-directory: packages/uql-orm
+        working-directory: packages/orm
       # ESM-only by design, so node10 and require-from-CJS failures are expected.
       - name: Check type resolution
         run: bunx --bun @arethetypeswrong/cli --pack --ignore-rules cjs-resolves-to-esm no-resolution
-        working-directory: packages/uql-orm
+        working-directory: packages/orm
       - uses: denoland/setup-deno@v2
         with:
           deno-version: v2.x
@@ -82,7 +82,7 @@ jobs:
           node smoke.mjs
           deno run smoke.mjs
           bun smoke.mjs
-        working-directory: packages/uql-orm
+        working-directory: packages/orm
 
   tests:
     runs-on: ubuntu-latest

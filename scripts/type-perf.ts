@@ -22,7 +22,7 @@ import { $ } from 'bun';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const calls = Number(process.argv[2] ?? 200);
-const declarations = resolve(root, 'packages/uql-orm/dist/index.d.ts');
+const declarations = resolve(root, 'packages/orm/dist/index.d.ts');
 
 if (!existsSync(declarations)) {
   throw new Error(`no declarations at ${declarations} - run 'bun run build' first.`);

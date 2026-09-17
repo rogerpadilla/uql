@@ -53,7 +53,7 @@ export default defineConfig({
     hookTimeout: 10_000,
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
     // `*.bun.test.ts` files assert Bun-only driver behavior and import `bun:test`; see `test:bun`.
-    exclude: ['packages/uql-orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],
+    exclude: ['packages/orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],
     setupFiles: ['./vitest.setup.ts'],
     server: {
       // `loadTsDefaultExport` writes generated migrations to a temp dir to prove they run on a real

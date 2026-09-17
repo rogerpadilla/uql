@@ -161,7 +161,7 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/rogerpadilla/uql.git",
-    "directory": "packages/uql-orm"
+    "directory": "packages/orm"
   },
   "bugs": {
     "url": "https://github.com/rogerpadilla/uql/issues"
