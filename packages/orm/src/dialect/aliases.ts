@@ -10,6 +10,16 @@ export const TOTAL_ALIAS = '_uql_total';
 /** The derived table a count wraps the rows it counts in: a page, or a `$distinct` set. MySQL requires the alias. */
 export const COUNTED_ROWS_ALIAS = '_uql_rows';
 
+/** The derived table a capped relation aggregate reads: the page is taken first, then aggregated over. */
+export const AGGREGATE_PAGE_ALIAS = '_uql_page';
+
+/**
+ * What an aggregate answers under: the column a capped page carries out for the aggregate wrapping it,
+ * and the field a MongoDB `$group` or `$count` leaves its value in. One name, since both ends of each
+ * are written and read here.
+ */
+export const AGGREGATE_VALUE_ALIAS = '_uql_value';
+
 /** The row a Postgres relation aggregates whole: a LATERAL projection of the columns it answers under. */
 export const RELATION_ROW_ALIAS = '_uql_row';
 

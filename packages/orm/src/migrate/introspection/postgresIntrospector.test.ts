@@ -1,9 +1,23 @@
 import { expect } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { createSpec, postgresConnection } from '../../test/index.js';
-import type { SqlQuerier } from '../../type/index.js';
+import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
+
+/** An introspector reading on one given connection, so a test can drive what its snapshot sees. */
+class PinnedIntrospector extends PostgresSchemaIntrospector {
+  constructor(
+    pool: QuerierPool,
+    private readonly pinned: SqlQuerier,
+  ) {
+    super(pool);
+  }
+
+  protected override withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
+    return task(this.pinned);
+  }
+}
 
 class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   constructor() {
@@ -199,6 +213,32 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     } finally {
       await querier.run('DROP SCHEMA uql_probe CASCADE');
       await querier.release();
+    }
+  }
+
+  /**
+   * A table another connection dropped is read out of the snapshot that still lists it, never raised:
+   * `introspect()` scans a database other things are changing. A repeatable read transaction is that
+   * race made deterministic - `information_schema` still answers from its snapshot while name
+   * resolution answers from the live catalogue.
+   */
+  async shouldReadATableDroppedAfterTheSnapshotThatLeftIt() {
+    const reader = await this.pool.getQuerier();
+    const writer = await this.pool.getQuerier();
+    try {
+      await writer.run('CREATE TABLE probe_vanishing (id INTEGER PRIMARY KEY, note TEXT)');
+      await reader.beginTransaction({ isolationLevel: 'repeatable read' });
+      await reader.all('SELECT 1');
+      await writer.run('DROP TABLE probe_vanishing');
+
+      const schema = await new PinnedIntrospector(this.pool, reader).getTableSchema('probe_vanishing');
+
+      expect(schema?.columns.map((column) => column.name)).toEqual(['id', 'note']);
+    } finally {
+      await reader.rollbackTransaction();
+      await writer.run('DROP TABLE IF EXISTS probe_vanishing');
+      await reader.release();
+      await writer.release();
     }
   }
 

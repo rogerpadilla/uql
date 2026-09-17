@@ -1,4 +1,4 @@
-import type { EntityMeta, FieldKey, FieldOptions } from '../type/index.js';
+import type { EntityMeta } from '../type/index.js';
 
 export function throwPendingTransaction(): never {
   throw TypeError('pending transaction');
@@ -67,12 +67,6 @@ export function definedEntries<K extends string, V>(record: Partial<Record<K, V>
  */
 export function entityName<E>(meta: EntityMeta<E>): string {
   return meta.name ?? meta.entity.name;
-}
-
-export function getFieldKeys<E>(fields: {
-  [K in FieldKey<E>]?: FieldOptions;
-}): FieldKey<E>[] {
-  return getKeys(fields).filter((field) => fields[field]!.eager ?? true);
 }
 
 /**

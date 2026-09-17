@@ -1,9 +1,12 @@
 import { type Document, type Filter, ObjectId, type Sort, type UpdateFilter } from 'mongodb';
 import { AbstractDialect } from '../dialect/abstractDialect.js';
-import { COUNT_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, sortCountField } from '../dialect/aliases.js';
 import { type QueryJoin, type QueryJoins, resolveQueryJoins, resolveSortableJoin } from '../dialect/queryJoins.js';
 import { assertSoleId, fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import type {
+  FieldMeta,
+  RelationAggregateOp,
+  RelationAggregateSpec,
   DialectFeatures,
   EntityData,
   EntityMeta,
@@ -33,7 +36,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { COUNT_RESULT_KEY } from '../type/query.js';
-import { QueryRaw } from '../type/queryRaw.js';
+import { QueryRaw, RelationAggregate } from '../type/queryRaw.js';
 import {
   asSelectMap,
   assertAggregateColumns,
@@ -290,7 +293,7 @@ export class MongoDialect extends AbstractDialect {
   ): void {
     const temp = `${REL_TEMP_PREFIX}${lookups.temps.length}`;
     const sizeVal = parseRelationSize(val);
-    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: COUNT_ALIAS }];
+    const tail = sizeVal === undefined ? [{ $limit: 1 }] : [{ $count: AGGREGATE_VALUE_ALIAS }];
     const where = (sizeVal === undefined ? val : {}) as QueryWhere<object>;
     lookups.temps.push(temp);
     lookups.stages.push(this.relationLookup(meta, meta.relations[relKey]!, where, temp, tail));
@@ -587,6 +590,19 @@ export class MongoDialect extends AbstractDialect {
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
     const projection = normalizeScalarFieldSelection(meta, selectMap, exclude).reduce<Record<string, 0 | 1>>(
       (acc, key) => {
+        // Swept in with the rest of the entity's fields, a computed one is skipped; asked for by name
+        // it is refused, since the document holds nothing to project under it.
+        const field = meta.fields[key];
+        if (field?.computed) {
+          // An aggregate is on the document by the time this projects, under the field's own name; SQL
+          // is refused where it was asked for by name, and skipped where it was swept in with the rest.
+          if (aggregateOf(field)) {
+            acc[key] = 1;
+          } else if (selectMap && key in selectMap) {
+            assertReadable(meta, key);
+          }
+          return acc;
+        }
         acc[this.columnOf(meta, key)] = 1;
         return acc;
       },
@@ -685,26 +701,95 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
       const temp = sortCountField(key);
-      stages.push(this.tallyLookup(meta, relOpts, {}, temp), { $addFields: { [temp]: this.tally(temp) } });
+      stages.push(...this.aggregateStages(meta, { relation: key, op: '$count' }, `${REL_TEMP_PREFIX}${temp}`, temp));
       fields.push(temp);
     }
 
     return { stages, fields };
   }
 
-  /** The correlated lookup counting a relation's rows, which `where` narrows, into `temp`. */
-  private tallyLookup<E>(
-    meta: EntityMeta<E>,
-    relOpts: RelationMeta,
-    where: QueryWhere<object>,
-    temp: string,
-  ): MongoAggregationPipelineEntry<Document> {
-    return this.relationLookup(meta, relOpts, where, temp, [{ $count: COUNT_ALIAS }]);
+  /** Whether a read answers with a relation aggregate, which only the pipeline can build. */
+  public readsAggregates<E extends Document>(entity: Type<E>, q: Query<E>): boolean {
+    return this.aggregateKeys(entity, q).length > 0;
   }
 
-  /** The tally a lookup left in `temp`, which holds no row at all where nothing matched: a zero. */
-  private tally(temp: string): Record<string, unknown> {
-    return { $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_ALIAS}`, 0] }, 0] };
+  /**
+   * The relation aggregates one query reads: the ones its projection carries, plus any its `$where` or
+   * `$sort` names, which a read materializes whether or not it answers with them.
+   */
+  private aggregateKeys<E extends Document>(entity: Type<E>, q: Query<E>): [string, RelationAggregateSpec][] {
+    const meta = getMeta(entity);
+    const projected = normalizeScalarFieldSelection(meta, asSelectMap(q.$select), q.$exclude);
+    const named = [...Object.keys(q.$where ?? {}), ...Object.keys(q.$sort ?? {})];
+    return [...new Set([...projected, ...named])].flatMap((key) => {
+      const spec = aggregateOf(meta.fields[key]);
+      return spec ? [[key, spec] as [string, RelationAggregateSpec]] : [];
+    });
+  }
+
+  /**
+   * The stages a relation aggregate a query names needs: the correlated lookup that reads the related
+   * rows - narrowed, ordered and capped as the field declared - ending in the tally or total it wants,
+   * and the `$addFields` that puts the value on the document under the field's own name.
+   *
+   * The same spec the SQL dialects render as a correlated subquery: a relation aggregate is data, so a
+   * document engine builds it out of stages rather than being refused a language it does not speak.
+   */
+  private aggregateFieldStages<E>(
+    meta: EntityMeta<E>,
+    aggregates: readonly [string, RelationAggregateSpec][],
+  ): { readonly stages: MongoAggregationPipelineEntry<Document>[]; readonly temps: string[] } {
+    const stages: MongoAggregationPipelineEntry<Document>[] = [];
+    const temps: string[] = [];
+    for (const [key, spec] of aggregates) {
+      const temp = `${REL_TEMP_PREFIX}${key}`;
+      stages.push(...this.aggregateStages(meta, spec, temp, key));
+      temps.push(temp);
+    }
+    return { stages, temps };
+  }
+
+  /**
+   * One relation aggregate on the document under `field`: the correlated lookup that reads the related
+   * rows - narrowed, ordered and capped as the spec says - ending in the tally or total it wants, and
+   * the `$addFields` reading that back, `0` or `null` where the lookup matched nothing.
+   *
+   * Every aggregate MongoDB answers is built here: a `$count` a query asks for, an ordering by one, and
+   * a field a `computed` declares, which is the same spec the SQL dialects render as one subquery.
+   */
+  private aggregateStages<E>(
+    meta: EntityMeta<E>,
+    spec: RelationAggregateSpec,
+    temp: string,
+    field: string,
+  ): MongoAggregationPipelineEntry<Document>[] {
+    const relOpts = relationOf(meta, spec.relation as RelationKey<E>);
+    const query = spec.query ?? {};
+    const tail = [
+      ...(query.$sort ? [{ $sort: this.sort(relOpts.entity(), query.$sort) }] : []),
+      ...this.pagerStages(query),
+      spec.field
+        ? {
+            $group: {
+              _id: null,
+              [AGGREGATE_VALUE_ALIAS]: { [spec.op]: `$${this.columnOf(getMeta(relOpts.entity()), spec.field)}` },
+            },
+          }
+        : { $count: AGGREGATE_VALUE_ALIAS },
+    ];
+    return [
+      this.relationLookup(meta, relOpts, query.$where ?? {}, temp, tail),
+      { $addFields: { [field]: this.tally(temp, spec.op) } },
+    ];
+  }
+
+  /**
+   * The value a lookup left in `temp`, which holds no row at all where nothing matched: `0` for the
+   * aggregates that count something, and `null` for the ones with no value to report.
+   */
+  private tally(temp: string, op: RelationAggregateOp = '$count'): Record<string, unknown> {
+    const empty = op === '$count' || op === '$sum' ? 0 : null;
+    return { $ifNull: [{ $arrayElemAt: [`$${temp}.${AGGREGATE_VALUE_ALIAS}`, 0] }, empty] };
   }
 
   /**
@@ -722,12 +807,11 @@ export class MongoDialect extends AbstractDialect {
     for (const relKey of getRelationRequestSummary(meta, q.$populate).toManyKeys) {
       stages.push(...this.toManyLookup(meta, relKey, parseRelationAtKey(relKey, q.$populate).query, temps));
     }
-    for (const { relKey, relation, where } of countedRelations(meta, q.$count)) {
+    for (const { relKey, where } of countedRelations(meta, q.$count)) {
       const temp = `${REL_TEMP_PREFIX}count_${relKey}`;
       temps.push(temp);
-      stages.push(this.tallyLookup(meta, relation, where, temp), {
-        $addFields: { [`${COUNT_RESULT_KEY}.${relKey}`]: this.tally(temp) },
-      });
+      const spec: RelationAggregateSpec = { relation: relKey, op: '$count', query: { $where: where } };
+      stages.push(...this.aggregateStages(meta, spec, temp, `${COUNT_RESULT_KEY}.${relKey}`));
     }
     return temps.length ? [...stages, { $unset: temps }] : stages;
   }
@@ -803,6 +887,7 @@ export class MongoDialect extends AbstractDialect {
   private pathOf<E>(meta: EntityMeta<E>, key: string): string {
     const dot = key.indexOf('.');
     if (dot < 0) {
+      assertReadable(meta, key);
       return this.columnOf(meta, key);
     }
     return this.columnOf(meta, key.slice(0, dot)) + key.slice(dot);
@@ -815,8 +900,12 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<E>[] {
     // Lookups that a relation condition needs come first, then the match that reads them, then the
     // temporary fields are dropped so they never reach the caller.
+    // Every relation aggregate the query reads comes first: a `$match`, a `$sort` and the projection all
+    // name it as a field of the document, which is what these stages make true.
+    const aggregates = this.aggregateFieldStages(getMeta(entity), this.aggregateKeys(entity, q));
     const { stages, filter, unset } = this.whereWithRelations(entity, q.$where, opts);
     return [
+      ...aggregates.stages,
       ...stages,
       ...(hasKeys(filter) ? [{ $match: filter }] : []),
       ...(unset.length ? [{ $unset: unset }] : []),
@@ -824,6 +913,7 @@ export class MongoDialect extends AbstractDialect {
         sort: this.sort(entity, q.$sort, q.$populate),
         pager: this.pagerStages(q),
       }),
+      ...(aggregates.temps.length ? [{ $unset: aggregates.temps }] : []),
     ];
   }
 
@@ -1468,4 +1558,23 @@ export type ExtractedVectorSort<E> = {
 /** `-1` for the two descending spellings, `1` for everything else - MongoDB knows no other value. */
 function sortDirection(value: unknown): 1 | -1 {
   return value === 'desc' || value === -1 ? -1 : 1;
+}
+
+/** The relation aggregate a field computes, where it computes one rather than writing SQL. */
+function aggregateOf(field: FieldMeta | undefined): RelationAggregateSpec | undefined {
+  return field?.computed instanceof RelationAggregate ? field.computed.spec : undefined;
+}
+
+/**
+ * A `computed` field writing SQL is refused wherever a query names it, since no document engine
+ * evaluates SQL and answering with the property name would hand back `undefined` for every row. One
+ * computing a relation aggregate is read: `aggregateFieldStages` builds it.
+ */
+function assertReadable<E>(meta: EntityMeta<E>, key: string): void {
+  const field = meta.fields[key];
+  if (field?.computed && !aggregateOf(field)) {
+    throw new TypeError(
+      `cannot read '${meta.entity.name}.${key}' on MongoDB: a 'computed' field writing SQL is not something a document engine evaluates`,
+    );
+  }
 }

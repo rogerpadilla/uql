@@ -121,8 +121,8 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   /**
-   * Whether a read needs stages a `find` cursor cannot express: a lookup to populate, count, filter
-   * or order by a relation, and the grouping `$distinct` is.
+   * Whether a read needs stages a `find` cursor cannot express: a lookup to populate, count, filter or
+   * order by a relation, one to build a relation aggregate, and the grouping `$distinct` is.
    */
   private readsThroughPipeline<E extends Document>(entity: Type<E>, q: Query<E>): boolean {
     return (
@@ -130,7 +130,8 @@ export class MongodbQuerier extends AbstractQuerier {
       hasKeys(q.$count) ||
       populatesRelations(getMeta(entity), q.$populate) ||
       this.dialect.constrainsRelations(entity, q.$where) ||
-      this.dialect.sortsRelations(entity, q.$sort)
+      this.dialect.sortsRelations(entity, q.$sort) ||
+      this.dialect.readsAggregates(entity, q)
     );
   }
 

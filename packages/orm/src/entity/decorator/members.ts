@@ -1,5 +1,9 @@
 import type {
+  AggregateValue,
+  ComputedRefs,
+  EntityAggregate,
   EntityGetter,
+  Except,
   FieldOptions,
   FieldType,
   HasCompositeKey,
@@ -11,6 +15,7 @@ import type {
   RelationManyToOneOptions,
   RelationOneToManyOptions,
   RelationOneToOneOptions,
+  RelationAggregate,
   RelationOptions,
   TsTypeOf,
 } from '../../type/index.js';
@@ -53,11 +58,47 @@ export function Field<
     ({ type: FieldType } | { references: EntityGetter }) &
     RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
     RejectIncompatible<O>,
->(opts: O): MemberDecorator<DeclaredValue<O> | undefined, This> {
+>(opts: O): MemberDecorator<DeclaredValue<O> | undefined, This>;
+
+/**
+ * Declares a field a relation aggregate computes, `@Field({ computed: (user) => user.resources.count() })`.
+ * The aggregate says what the field holds, so it takes no `type`, and only `count` and `sum` - the two a
+ * row change turns into a delta - may be `stored`.
+ * @example `@Field({ computed: (user) => user.resources.count() }) readonly resourceCount?: number;`
+ */
+export function Field<This, O extends AggregateOptions<This> & RejectKeys<Exclude<keyof O, keyof FieldOptions>>>(
+  opts: O,
+): AggregateDecorator<AggregateValue<O>, This>;
+
+export function Field(opts: FieldOptions<never, unknown>): MemberDecorator<unknown, unknown> {
   return (_value, context) => {
     memberRegistrations(context.metadata).fields[String(context.name)] = opts;
   };
 }
+
+/**
+ * A field the aggregate itself types: `stored: true` only where a trigger could keep it, and every other
+ * option as a column takes it.
+ */
+type AggregateOptions<E> =
+  | (Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
+      readonly computed: EntityAggregate<E>;
+      readonly stored?: false;
+    })
+  | (Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
+      readonly computed: { agg(refs: ComputedRefs<E>): RelationAggregate<unknown, true> }['agg'];
+      readonly stored: true;
+    });
+
+/**
+ * {@link MemberDecorator} for a field an aggregate types, which the property has to hold *exactly*: a
+ * decorator context takes a property narrower than its value, so nothing else would stop a `number`
+ * from holding what `max()` reads, which is `number | null` on a parent with no rows.
+ */
+type AggregateDecorator<V, O> = <P extends V | undefined>(
+  value: undefined,
+  context: ClassFieldDecoratorContext<O, P> & ([V] extends [P] ? unknown : { readonly __propertyMustAdmit: V }),
+) => void;
 
 /**
  * A key the type level cannot name, reported on each `@Id` that leaves it unnamed. Where no `idKey`

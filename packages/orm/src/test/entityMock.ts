@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { idKey, type Json } from '../type/index.js';
-import { raw } from '../util/index.js';
 
 /**
  * an `abstract` class can (optionally) be used as the base "template" for the entities
@@ -210,6 +209,10 @@ export class MeasureUnitCategory extends BaseEntity {
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
 
+  /** A relation aggregate, read only where a query names it, and never counting a soft-deleted unit. */
+  @Field({ computed: (category) => category.measureUnits.count() })
+  readonly unitCount?: number;
+
   @Field({ type: Number, softDelete: () => Date.now() })
   deletedAt?: number;
 }
@@ -289,30 +292,12 @@ export class Item extends BaseEntity {
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
 
-  @Field({
-    /**
-     * An unstored `computed` field: the expression is spliced into each statement that reads it, so it
-     * is never a column and works in `$select`, `$where` and `$sort` like any other field.
-     */
-    type: Number,
-    computed: raw(({ ctx, escapedPrefix, dialect }) => {
-      ctx.append('(');
-      dialect.count(
-        ctx,
-        ItemTag,
-        {
-          $where: {
-            itemId: raw(({ ctx: innerCtx }) => {
-              innerCtx.append(escapedPrefix + dialect.escapeId('id'));
-            }),
-          },
-        },
-        { autoPrefix: true },
-      );
-      ctx.append(')');
-    }),
-  })
-  tagsCount?: number;
+  /**
+   * An unstored relation aggregate: the subquery is spliced into each statement that reads it, so it is
+   * never a column and works in `$select`, `$where` and `$sort` like any other field.
+   */
+  @Field({ computed: (item) => item.tags.count() })
+  readonly tagsCount?: number;
 }
 
 @Entity()
@@ -323,26 +308,9 @@ export class Tag extends BaseEntity {
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
 
-  @Field({
-    type: Number,
-    computed: raw(({ ctx, escapedPrefix, dialect }) => {
-      ctx.append('(');
-      dialect.count(
-        ctx,
-        ItemTag,
-        {
-          $where: {
-            tagId: raw(({ ctx: innerCtx }) => {
-              innerCtx.append(escapedPrefix + dialect.escapeId('id'));
-            }),
-          },
-        },
-        { autoPrefix: true },
-      );
-      ctx.append(')');
-    }),
-  })
-  itemsCount?: number;
+  /** The same aggregate from the inverse side of the many-to-many, counting the junction's rows. */
+  @Field({ computed: (tag) => tag.items.count() })
+  readonly itemsCount?: number;
 }
 
 @Entity()

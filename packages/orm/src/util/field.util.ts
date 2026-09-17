@@ -2,8 +2,11 @@ import {
   type ColumnFamily,
   COLUMN_TYPES,
   type EntityMeta,
+  type FieldKey,
   type FieldOptions,
   type NumericColumnType,
+  RelationAggregate,
+  type RelationAggregateSpec,
 } from '../type/index.js';
 import { getKeys } from './object.util.js';
 
@@ -54,6 +57,16 @@ export function isInlinedExpression<F extends FieldOptions>(field: F): field is 
 }
 
 /**
+ * The relation aggregate a field computes, where it computes one rather than writing SQL: what it
+ * reads, off which relation, narrowed and capped how. Every engine renders it from this - a correlated
+ * subquery on SQL, a lookup on MongoDB - so both read the same declaration rather than parsing SQL.
+ */
+export function aggregateOf(field: FieldOptions | undefined): RelationAggregateSpec | undefined {
+  const computed = field?.computed;
+  return computed instanceof RelationAggregate ? computed.spec : undefined;
+}
+
+/**
  * Whether the database supplies this field's value, so no insert or update may write it: a stored
  * computed column *is* a real column, read like one, but writing to it is an error on every engine.
  */
@@ -74,4 +87,15 @@ export function isSoleIdField<E>(meta: EntityMeta<E>, field: FieldOptions): bool
 export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boolean {
   if (field.autoIncrement !== undefined) return field.autoIncrement;
   return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.references;
+}
+
+/**
+ * The fields a read answers with where it names none. A relation aggregate is left out unless it asks
+ * for `eager: true`: it reads the related rows, which is what a relation does, and a relation is loaded
+ * only when a query asks for it. Naming one in `$select` reads it, whatever the default.
+ */
+export function getFieldKeys<E>(fields: {
+  [K in FieldKey<E>]?: FieldOptions;
+}): FieldKey<E>[] {
+  return getKeys(fields).filter((field) => fields[field]!.eager ?? !aggregateOf(fields[field]));
 }

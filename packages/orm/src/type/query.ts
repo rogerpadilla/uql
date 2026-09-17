@@ -1,4 +1,4 @@
-import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget, WrittenId } from './entity.js';
+import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget, ToManyRelationKey, WrittenId } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -135,15 +135,6 @@ export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
  * Accepted value for a field in `$sort` - either a direction or a vector similarity search.
  */
 export type QuerySortValue = QuerySortDirection | QueryVectorSearch;
-
-/**
- * To-one relations only: a parent holds many rows of a to-many, so there is no single value to order
- * it by, and joining one in would duplicate the parent instead. Order those inside `$populate`.
- */
-type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends true ? never : K }[RelationKey<E>];
-
-/** The relation names a parent holds many rows of, which a populated query fills with a list. */
-type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
 
 /**
  * Ordering parents by how many rows a to-many relation holds - "the ten users with the most posts".

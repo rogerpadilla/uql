@@ -17,7 +17,7 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, QueryRaw, RAW_VALUE, idKey, type Type } from '../../type/index.js';
+import { type EntityMeta, type IdKey, RAW_VALUE, RelationAggregate, idKey, type Type } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import {
@@ -311,8 +311,8 @@ it('should register the Item metadata', () => {
       inventoryable: { name: 'inventoryable', type: Boolean },
       tagsCount: {
         name: 'tagsCount',
-        type: Number,
-        computed: expect.any(QueryRaw),
+        // The aggregate is what types the field, so it declares none of its own.
+        computed: expect.any(RelationAggregate),
       },
     },
     relations: {
@@ -390,9 +390,9 @@ it('should register the Tag metadata', () => {
       },
       itemsCount: {
         name: 'itemsCount',
-        type: Number,
         computed: expect.objectContaining({
           [RAW_VALUE]: expect.any(Function),
+          spec: { relation: 'items', op: '$count' },
         }),
       },
       updatedAt: {

@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { COUNT_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, REL_TEMP_PREFIX } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import {
   Company,
@@ -76,6 +76,43 @@ class RenamedDoc {
   label?: string;
   @Field({ type: Date, name: 'deleted_at', softDelete: true })
   deletedAt?: Date;
+}
+
+@Entity()
+class AggregateLine {
+  @Id({ type: Number })
+  id?: number;
+  @Field({ references: () => AggregateDoc, type: Number })
+  docId?: number;
+  @Field({ type: Number })
+  price?: number;
+}
+
+/** Relation aggregates a document engine builds out of stages: one over a page, one over a filtered page. */
+@Entity()
+class AggregateDoc {
+  @Id({ type: Number })
+  id?: number;
+  @OneToMany({ entity: () => AggregateLine, mappedBy: (line) => line.docId })
+  lines?: AggregateLine[];
+  @Field({ computed: (doc) => doc.lines.max((line) => line.price, { $sort: { price: -1 }, $limit: 2 }) })
+  readonly topPrice?: number | null;
+  @Field({
+    computed: (doc) =>
+      doc.lines.sum((line) => line.price, { $where: { price: { $gt: 0 } }, $sort: { price: 1 }, $limit: 5, $skip: 1 }),
+  })
+  readonly laterTotal?: number;
+}
+
+/** The other arm of `computed`: SQL, which no document engine evaluates. */
+@Entity()
+class SqlComputedDoc {
+  @Id({ type: Number })
+  id?: number;
+  @Field({ type: Number })
+  price?: number;
+  @Field({ type: Number, computed: (doc) => raw`${doc.price} * 2` })
+  readonly doubled?: number;
 }
 
 class MongoDialectSpec implements Spec {
@@ -289,6 +326,79 @@ class MongoDialectSpec implements Spec {
     expect(projections[0].$project).toMatchObject({ _id: 0, tax: 1, tags: 1 });
   }
 
+  /**
+   * A relation aggregate is data, not SQL, so MongoDB builds it: the lookup that reads the related rows
+   * and the `$addFields` putting its value on the document, under the field's own name.
+   */
+  shouldReadARelationAggregateAsALookup() {
+    const [lookup, added] = this.dialect.aggregationPipeline(Item, { $select: { tagsCount: true } });
+    expect(lookup).toMatchObject({ $lookup: { from: 'ItemTag', as: `${REL_TEMP_PREFIX}tagsCount` } });
+    expect(added).toEqual({
+      $addFields: {
+        tagsCount: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}tagsCount.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] },
+      },
+    });
+  }
+
+  /** ...and only where a query names it: an aggregate reads the related rows, as a relation does. */
+  shouldLeaveARelationAggregateOutOfAReadThatDoesNotNameIt() {
+    const pipeline = this.dialect.aggregationPipeline(Item, { $populate: { tax: true } });
+    expect(pipeline.some((stage) => '$addFields' in stage)).toBe(false);
+    expect(this.dialect.select(Item, undefined, { id: true })).not.toHaveProperty('tagsCount');
+  }
+
+  /**
+   * A value aggregate groups the related rows; a page reads them ordered first, since the order is what
+   * picks which ones it reads. `null` where nothing matched, which is what the field's type says.
+   */
+  shouldReadAValueAggregateOverAPage() {
+    const [lookup, added] = this.dialect.aggregationPipeline(AggregateDoc, { $select: { topPrice: true } });
+    expect(lookup).toMatchObject({
+      $lookup: {
+        from: 'AggregateLine',
+        pipeline: [
+          { $sort: { price: -1 } },
+          { $limit: 2 },
+          { $group: { _id: null, [AGGREGATE_VALUE_ALIAS]: { $max: '$price' } } },
+        ],
+      },
+    });
+    expect(added).toEqual({
+      $addFields: {
+        topPrice: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}topPrice.${AGGREGATE_VALUE_ALIAS}`, 0] }, null] },
+      },
+    });
+  }
+
+  /** A total skips as well as limits, and answers `0` over no rows, as its type says. */
+  shouldReadATotalOverAPageThatSkips() {
+    const [lookup, added] = this.dialect.aggregationPipeline(AggregateDoc, { $select: { laterTotal: true } });
+    expect(lookup).toMatchObject({
+      $lookup: {
+        pipeline: [
+          { $match: { price: { $gt: 0 } } },
+          { $sort: { price: 1 } },
+          { $skip: 1 },
+          { $limit: 5 },
+          { $group: { _id: null, [AGGREGATE_VALUE_ALIAS]: { $sum: '$price' } } },
+        ],
+      },
+    });
+    expect(added).toEqual({
+      $addFields: {
+        laterTotal: { $ifNull: [{ $arrayElemAt: [`$${REL_TEMP_PREFIX}laterTotal.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] },
+      },
+    });
+  }
+
+  /** The other arm stays refused: projecting the property name would answer `undefined` for every row. */
+  shouldRefuseASqlComputedFieldAQueryNames() {
+    const message = "cannot read 'SqlComputedDoc.doubled' on MongoDB";
+    expect(() => this.dialect.select(SqlComputedDoc, { doubled: true })).toThrow(message);
+    expect(() => this.dialect.where(SqlComputedDoc, { doubled: { $gt: 1 } })).toThrow(message);
+    expect(() => this.dialect.aggregationPipeline(SqlComputedDoc, { $sort: { doubled: -1 } })).toThrow(message);
+  }
+
   shouldThrowOnRawInWhere() {
     expect(() => this.dialect.where(Item, { $and: [raw`code IS NOT NULL`] })).toThrow(
       'raw() in $where is not supported on MongoDB',
@@ -365,10 +475,13 @@ class MongoDialectSpec implements Spec {
 
   /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
   shouldCompareRelationSize() {
-    const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${COUNT_ALIAS}`, 0] }, 0] };
+    const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] };
 
     const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
-    expect(exact.stages[0]?.$lookup?.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: COUNT_ALIAS }]);
+    expect(exact.stages[0]?.$lookup?.pipeline).toEqual([
+      { $match: { deletedAt: null } },
+      { $count: AGGREGATE_VALUE_ALIAS },
+    ]);
     expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
 
     const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
@@ -415,7 +528,7 @@ class MongoDialectSpec implements Spec {
       @Id({ type: String }) id?: string;
       @Field({ references: () => Shelf }) shelfId?: string;
     }
-    const tally = (temp: string) => ({ $ifNull: [{ $arrayElemAt: [`$${temp}.${COUNT_ALIAS}`, 0] }, 0] });
+    const tally = (temp: string) => ({ $ifNull: [{ $arrayElemAt: [`$${temp}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] });
 
     const { stages, filter } = this.dialect.whereWithRelations(Shelf, { books: { $size: 1 }, lamps: { $size: 2 } });
 

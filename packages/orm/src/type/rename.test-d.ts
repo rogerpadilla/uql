@@ -35,6 +35,8 @@ class Cinema {
   city?: string;
   label?: string;
   films?: Movie[];
+  readonly filmCount?: number;
+  readonly topRating?: number | null;
   touch(): void {}
 }
 
@@ -43,6 +45,8 @@ defineEntity(Cinema, {
     id: { type: Number, isId: true },
     city: { type: String },
     label: { type: String, computed: (cinema) => raw`upper(${cinema.city})` },
+    filmCount: { computed: (cinema) => cinema.films.count({ $where: { rating: { $gt: 0 } } }) },
+    topRating: { computed: (cinema) => cinema.films.max((movie) => movie.rating) },
   },
   relations: { films: { cardinality: '1m', entity: () => Movie, mappedBy: (movie) => movie.cinemaId } },
   indexes: [

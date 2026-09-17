@@ -1,6 +1,6 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
-import type { FilterOptions } from './query.js';
-import type { ColumnRef, QueryRaw } from './queryRaw.js';
+import type { FilterOptions, RelationQuery } from './query.js';
+import type { ColumnRef, QueryRaw, RelationAggregate } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
@@ -32,6 +32,15 @@ export type FieldKey<E> = {
 
 /** The relation names of an entity: every key but its fields and its methods, so the two sets cannot drift. */
 export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
+
+/**
+ * To-one relations only: a parent holds many rows of a to-many, so there is no single value to order it
+ * by, and joining one in would duplicate the parent instead. Order those inside `$populate`.
+ */
+export type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends true ? never : K }[RelationKey<E>];
+
+/** The relation names a parent holds many rows of: what a populated query fills, and what an aggregate reads. */
+export type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
 
 /** Whether `T` carries the `Json` brand, read off its marker key: a primitive matches `Json<infer P>` too. */
 type IsJson<T> = '__json' extends keyof T ? true : false;
@@ -320,8 +329,11 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   /**
    * An expression the database computes, never written: spliced into each read, or with `stored` a
    * generated column, `computed: (user) => raw`${user.first} || ' ' || ${user.last}``.
+   *
+   * A relation aggregate is the other form, `computed: (user) => user.resources.count()`, read as the
+   * subquery a `$count` reads. Both resolve to SQL at registration, so everything downstream sees one.
    */
-  readonly computed?: EntitySql<E>;
+  readonly computed?: ComputedSql<E>;
   /** Whether {@link FieldOptions.computed} is a generated column rather than spliced into each read; no query changes either way. */
   readonly stored?: boolean;
   readonly updatable?: boolean;
@@ -405,7 +417,23 @@ export type TsTypeOf<T> = T extends StringConstructor
  */
 export type FieldOptionsFor<V, E = unknown> =
   | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> })
-  | (FieldOptions<NonNullable<V>, E> & { readonly references: EntityGetter; readonly type?: TypeFor<V> });
+  | (FieldOptions<NonNullable<V>, E> & { readonly references: EntityGetter; readonly type?: TypeFor<V> })
+  | AggregateOptionsFor<V, E>;
+
+/**
+ * A field a relation aggregate computes: the aggregate types it, so it declares no `type`, and only the
+ * two a row change turns into a delta - `count` and `sum` - may be `stored`.
+ */
+type AggregateOptionsFor<V, E> = Except<FieldOptions<NonNullable<V>, E>, 'computed' | 'stored' | 'type'> &
+  (
+    | { readonly computed: AggregateReading<E, V, boolean>; readonly stored?: false }
+    | { readonly computed: AggregateReading<E, V, true>; readonly stored: true }
+  );
+
+/** An aggregate reading what the property holds, bivariant the way {@link EntitySql} is. */
+type AggregateReading<E, V, S extends boolean> = {
+  agg(refs: ComputedRefs<E>): RelationAggregate<null extends V ? NonNullable<V> | null : NonNullable<V>, S>;
+}['agg'];
 
 /** The entity a relation points at: `Company` for `company?: Company` and `companies?: Company[]` alike. */
 export type RelationTarget<V> = Extract<Unpacked<V>, object>;
@@ -509,6 +537,85 @@ export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: 
 
 /** SQL a definition writes: `raw`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
 export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
+
+/** The fields of `C` a `sum` or an `avg` can add up. */
+type NumericKey<C> = {
+  readonly [K in FieldKey<C>]-?: [NonNullable<C[K]>] extends [number | bigint] ? K : never;
+}[FieldKey<C>];
+
+/** One field of `C`, read off its refs: `(item) => item.amount`. */
+type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
+
+/**
+ * A relation as a `computed` field reads it, its aggregates typed against the related entity. `count`
+ * and `sum` are the two a row change turns into a delta, so they alone may be `stored`; the rest read
+ * as a subquery and are `null` where the relation holds no row.
+ */
+export type RelationRef<C> = {
+  count(q?: AggregateFilter<C>): RelationAggregate<number, true>;
+  count(q: AggregatePage<C>): RelationAggregate<number, false>;
+  sum<K extends NumericKey<C>>(pick: PickRef<C, K>, q?: AggregateFilter<C>): RelationAggregate<NonNullable<C[K]>, true>;
+  sum<K extends NumericKey<C>>(
+    pick: PickRef<C, K>,
+    q: AggregateTopRows<C>,
+  ): RelationAggregate<NonNullable<C[K]>, false>;
+  min<K extends FieldKey<C>>(
+    pick: PickRef<C, K>,
+    q?: AggregateRows<C>,
+  ): RelationAggregate<NonNullable<C[K]> | null, false>;
+  max<K extends FieldKey<C>>(
+    pick: PickRef<C, K>,
+    q?: AggregateRows<C>,
+  ): RelationAggregate<NonNullable<C[K]> | null, false>;
+  avg<K extends NumericKey<C>>(pick: PickRef<C, K>, q?: AggregateRows<C>): RelationAggregate<number | null, false>;
+};
+
+/**
+ * What an aggregate reads of the related rows. The predicate is an {@link EntityPredicate} rather than a
+ * full `$where` so that `stored: true` changes no call site: a trigger sees one row, and can evaluate
+ * nothing that traverses a relation or opens a subquery.
+ */
+export type AggregateFilter<C> = { readonly $where?: EntityPredicate<C> };
+
+/**
+ * A tally capped to a page of the related rows, as `count` itself takes one. It needs no `$sort` and
+ * accepts none: an order picks *which* rows a page holds, never how many.
+ */
+export type AggregatePage<C> = AggregateFilter<C> & Pick<RelationQuery<C>, '$limit' | '$skip'>;
+
+/**
+ * The rows a value aggregate reads where it reads only some of them - "the five largest" - which only
+ * an order defines, so `$sort` and `$limit` come together. Keyed off the relation read they are, so
+ * the page an aggregate takes and the page a `$populate` takes cannot drift apart.
+ */
+export type AggregateTopRows<C> = AggregateFilter<C> &
+  Required<Pick<RelationQuery<C>, '$sort' | '$limit'>> &
+  Pick<RelationQuery<C>, '$skip'>;
+
+/** Either of those, for the aggregates that are never `stored` and so need no second signature. */
+export type AggregateRows<C> = AggregateFilter<C> | AggregateTopRows<C>;
+
+/** What a `computed` callback reads: the entity's fields as columns, its to-many relations as aggregates. */
+export type ComputedRefs<E, F extends keyof E = FieldKey<E>, R extends keyof E = ToManyRelationKey<E>> = RefMap<
+  E,
+  F
+> & {
+  readonly [K in R]-?: RelationRef<RelationTarget<E[K]>>;
+};
+
+/** A relation aggregate a definition writes, bivariant the way {@link EntitySql} is. */
+export type EntityAggregate<E> = { agg(refs: ComputedRefs<E>): RelationAggregate }['agg'];
+
+/**
+ * SQL a `computed` field writes. One callback shape for every arm, aggregate or not: overload
+ * resolution picks a contextual parameter type per arm only while they agree on one.
+ */
+export type ComputedSql<E> = QueryRaw | { sql(refs: ComputedRefs<E>): QueryRaw }['sql'];
+
+/** The value a field's options declare it holds, where an aggregate is what declares it. */
+export type AggregateValue<O> = O extends { readonly computed: (...args: never[]) => RelationAggregate<infer V> }
+  ? V
+  : never;
 
 /** A predicate DDL can hold: the entity's own fields, without a relation, `$text` or a sub-query. */
 export type EntityPredicate<E> = QueryWhere<E> & { readonly [K in RelationKey<E>]?: never } & {

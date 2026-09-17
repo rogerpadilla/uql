@@ -45,6 +45,12 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return row['exists'] === true;
   }
 
+  /**
+   * The comment reads through `to_regclass` rather than a `::regclass` cast: a name resolves against
+   * the live catalogue while `information_schema` answers from this statement's snapshot, so a table
+   * another connection has just dropped is still listed here and the cast would raise on it. Whole
+   * database scans meet that table every time something else is migrating.
+   */
   protected getColumnsQuery(_tableName: string): string {
     return /*sql*/ `
       SELECT
@@ -76,7 +82,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
           HAVING COUNT(*) = 1 AND MIN(kcu.column_name) = c.column_name
         ) AS is_unique,
         pg_catalog.col_description(
-          (quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))::regclass,
+          to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name)),
           c.ordinal_position
         ) AS column_comment
       FROM information_schema.columns c

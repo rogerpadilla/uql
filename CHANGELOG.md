@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
 
+## [0.69.0] - 2026-09-17
+
+- **A relation aggregate is a field**: `@Field({ computed: (user) => user.resources.count() })` reads the correlated subquery `$count` emits, so `$select`, `$where` and `$sort` name it like any other. `sum`, `min`, `max` and `avg` read one of the target's columns, typed from it; `{ $where }` narrows the rows, and a value aggregate over only some of them takes the `$sort` and `$limit` that pick which.
+- **One is read only where a query names it**, as a relation is, unless it asks for `eager: true`. `uql-orm/postgres` grows 0.7 KB gzipped.
+- **Every engine reads one**, MongoDB included, where it renders as a `$lookup` ending in a `$count` or a `$group`: the declaration is data, not SQL.
+- **A `computed` field writing SQL is refused on MongoDB by name**, where selecting or filtering by one silently answered `undefined`.
+- **Fixed: a `$sum` reads as the column it totals**, so one over a BIGINT keeps every digit instead of rounding through a float; a `$count` and an `$avg` stay numbers.
+- **Fixed (Postgres, CockroachDB): introspecting a live database no longer fails on a table someone else just dropped**, where reading a column comment raised `relation "..." does not exist` mid-scan.
+
 ## [0.68.1] - 2026-09-17
 
 - **Fixed: what JSON cannot carry no longer leaves the browser silently**: a `raw` fragment travelled as `{}` and a `Uint8Array` as an object keyed by index. The client's types refuse a fragment, and either one throws rather than reach the server. A `Date` still travels, as ISO 8601.

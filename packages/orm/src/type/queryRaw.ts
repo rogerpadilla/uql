@@ -1,4 +1,4 @@
-import type { QueryContext, SqlQueryDialect } from './dialect.js';
+import type { QueryContext, RelationAggregateSpec, SqlQueryDialect } from './dialect.js';
 import type { Type } from './utility.js';
 
 /** What a `raw` callback receives. See {@link QueryRawFn}. */
@@ -62,6 +62,28 @@ export class QueryRaw {
 export class ColumnRef<K extends string = string> extends QueryRaw {
   constructor(
     readonly key: K,
+    value: QueryRawFn,
+  ) {
+    super(value);
+  }
+}
+
+/**
+ * A relation aggregate as SQL, read off a `computed` field's refs: `(user) => user.resources.count()`.
+ * It renders as the correlated subquery a `$count` reads, so a field holding one is read, filtered and
+ * sorted like any other.
+ *
+ * `V` is the value it reads and `Storable` whether a trigger could keep it, both carried in phantom
+ * fields so the aggregate a field declares decides the property's type and refuses `stored: true` on
+ * one no delta can maintain.
+ */
+export class RelationAggregate<V = unknown, Storable extends boolean = boolean> extends QueryRaw {
+  declare private readonly __value: V;
+  declare private readonly __storable: Storable;
+
+  constructor(
+    /** What it reads, kept beside the SQL so a read decodes the value the way the target's field does. */
+    readonly spec: RelationAggregateSpec,
     value: QueryRawFn,
   ) {
     super(value);

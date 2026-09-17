@@ -142,7 +142,9 @@ await pool.findMany(User, { $select: { id: true }, $count: { posts: true }, $max
 // { id, _count: { posts }, _max: { posts: { createdAt } } }
 ```
 
-R6. `$count` over a relation is the one aggregate a read carries; `$sum`/`$avg`/`$min`/`$max` are the same correlated subquery with another function, and each lands under its own `_`-key. The unstored `computed` aggregate of [triggers](triggers.md) is the same compile path under a field's name. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
+R6, and most of it is built. The unstored `computed` aggregate of [triggers](triggers.md) put a `RelationAggregateSpec` - a relation, an operator, the rows it reads - behind one renderer per engine: a correlated subquery on SQL, a `$lookup` ending in a `$count` or a `$group` on MongoDB. `$count` already lowers to that spec, the operators are the query language's own (`$sum`, `$min`, `$max`, `$avg`), and one rule decodes every value they answer with.
+
+What is left is the clause, not the machinery: parse `$max: { posts: { createdAt: true } }` into the spec the engines render, and land each under its own `_`-key, which is the projection-alias rule R6 exists to settle - the reason it still gates this rather than the SQL. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
 
 ## Smaller items
 

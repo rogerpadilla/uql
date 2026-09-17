@@ -1,6 +1,6 @@
 import type { EntityMeta, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOptions, QueryPage, QuerySearch } from './query.js';
-import type { QueryAggMap, QueryAggregate, QueryGroupMap } from './queryAggregate.js';
+import type { Query, QueryConflictPaths, QueryOptions, QueryPage, QuerySearch, RelationQuery } from './query.js';
+import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
 
 /**
@@ -245,7 +245,40 @@ export interface SqlQueryDialect {
    * Default: '?' for MySQL/MariaDB/SQLite, '$n' for PostgreSQL.
    */
   placeholder(index: number): string;
+
+  /**
+   * A relation aggregate as a correlated subquery, correlated to the row under `prefix`: what a field
+   * declaring `computed: (user) => user.resources.count()` renders as, wherever a clause names it.
+   */
+  appendRelationAggregate<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    aggregate: RelationAggregateSpec,
+    prefix: string,
+  ): void;
 }
+
+/**
+ * The aggregates a relation reads, spelled as the query language spells them, so a `computed` field, an
+ * aggregate query and MongoDB's own `$group` all name one the same way. `$count` and `$sum` are the two
+ * a row change turns into a delta.
+ */
+export type RelationAggregateOp = QueryAggregateOp;
+
+/** What a relation aggregate reads: how many rows, or one of the target's columns. */
+export type RelationAggregateProjection =
+  | { readonly op: '$count'; readonly field?: never }
+  | { readonly op: Exclude<RelationAggregateOp, '$count'>; readonly field: string };
+
+/** A relation aggregate as a `computed` field holds it: what it reads, off which relation, filtered how. */
+export type RelationAggregateSpec = RelationAggregateProjection & {
+  readonly relation: string;
+  /** Which of the related rows it reads, and the page it caps them to, as the field declared them. */
+  readonly query?: RelationSubqueryQuery;
+};
+
+/** The rows a relation subquery reads: which ones, in what order, and the page capping them. */
+export type RelationSubqueryQuery = Pick<RelationQuery, '$where' | '$sort' | '$limit' | '$skip'>;
 
 /**
  * Supported SQL dialect identifiers.

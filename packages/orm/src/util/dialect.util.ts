@@ -33,10 +33,9 @@ import {
   type UpdatePayload,
 } from '../type/index.js';
 import { VECTOR_INDEX_TYPES } from '../type/vector.js';
-import { isDatabaseWritten } from './field.util.js';
+import { getFieldKeys, isDatabaseWritten } from './field.util.js';
 import {
   entityName,
-  getFieldKeys,
   getKeys,
   hasKeys,
   isOperatorObject,

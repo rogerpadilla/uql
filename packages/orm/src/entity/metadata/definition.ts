@@ -23,7 +23,7 @@ import type {
   Type,
   WrittenId,
 } from '../../type/index.js';
-import { SOFT_DELETE_FILTER } from '../../type/index.js';
+import { RelationAggregate, SOFT_DELETE_FILTER } from '../../type/index.js';
 import { isInlinedExpression } from '../../util/field.util.js';
 import {
   entitySql,
@@ -57,6 +57,16 @@ const metas: Meta = globalMap('uql-orm/entity/metadata/v1');
 
 export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions = {}): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
+  const { computed, ...rest } = opts;
+  const sql = computed === undefined ? undefined : entitySql(computed);
+  // A relation aggregate reads as a correlated subquery, which no engine accepts in a generated column:
+  // keeping one on the row takes the triggers a write fires, which are not built yet.
+  if (opts.stored && sql instanceof RelationAggregate) {
+    throw new TypeError(
+      `'${entity.name}.${key}' cannot be 'stored': a relation aggregate reads as a subquery, which no ` +
+        "engine keeps in a generated column. Drop 'stored' to have it read on each query.",
+    );
+  }
   // A stored computed column is a real column and still needs a type; only an inlined one is exempt,
   // its expression being spliced in rather than declared.
   if (!opts.type && !opts.references && !isInlinedExpression(opts)) {
@@ -73,13 +83,12 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
   // column from the referenced primary key (picking up its `columnType`, length and chained keys)
   // instead of treating whatever ends up in `type` as deliberate.
-  const { computed, ...rest } = opts;
   const resolved = rest.type ? rest : { ...rest, typeFromReference: true as const };
   meta.fields[fieldKey] = {
     ...meta.fields[fieldKey],
     name: key,
     ...resolved,
-    ...(computed && { computed: entitySql(computed) }),
+    ...(sql && { computed: sql }),
   };
   return meta;
 }

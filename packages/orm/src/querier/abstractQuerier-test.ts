@@ -1038,6 +1038,45 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
+   * A relation aggregate is a field: the same tally `$count` answers with, under a name every clause
+   * takes. Read only where a query names it, and narrowed by the target's own filters, so a
+   * soft-deleted row is as invisible here as it is to `$count`.
+   */
+  async shouldReadARelationAggregateAsAField() {
+    const [alpha, beta] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'aggregate alpha' },
+      { name: 'aggregate beta' },
+    ]);
+    const [, , third] = await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId: alpha },
+      { name: 'two', categoryId: alpha },
+      { name: 'three', categoryId: beta },
+    ]);
+
+    const read = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { name: true, unitCount: true },
+      $where: { name: { $istartsWith: 'aggregate' } },
+      $sort: { name: 1 },
+    });
+    expect(read.map((it) => it.unitCount)).toEqual([2, 1]);
+
+    // A field, so it filters and orders like one - by the expression, which no read has to have selected.
+    const filtered = await this.querier.findMany(MeasureUnitCategory, {
+      $select: { name: true },
+      $where: { name: { $istartsWith: 'aggregate' }, unitCount: { $gte: 2 } },
+      $sort: { unitCount: -1 },
+    });
+    expect(filtered.map((it) => it.name)).toEqual(['aggregate alpha']);
+
+    await this.querier.deleteOneById(MeasureUnit, third);
+    const afterDelete = await this.querier.findOne(MeasureUnitCategory, {
+      $select: { unitCount: true },
+      $where: { id: beta },
+    });
+    expect(afterDelete?.unitCount).toBe(0);
+  }
+
+  /**
    * `$count` answers how many rows a relation holds without loading one, under `_count`. One grouped
    * aggregate per relation over every parent at once, so the cost does not grow with the page.
    */

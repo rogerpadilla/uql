@@ -48,6 +48,10 @@ import {
   type QueryWhereOptions,
   RAW_ALIAS,
   type RelationKey,
+  type RelationAggregateOp,
+  type RelationAggregateProjection,
+  type RelationAggregateSpec,
+  type RelationSubqueryQuery,
   type RelationMeta,
   type RelationQuery,
   type SqlDialectName,
@@ -84,12 +88,22 @@ import {
   parseRelationSize,
   parseSortByCount,
   populatesRelations,
+  aggregateOf,
   raw,
+  refs,
   throwUnknownAggregateColumn,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
-import { COUNT_ALIAS, COUNTED_ROWS_ALIAS, JSON_ELEM_ALIAS, JSON_PULL_ALIAS, relationSortColumn } from './aliases.js';
+import {
+  AGGREGATE_PAGE_ALIAS,
+  AGGREGATE_VALUE_ALIAS,
+  COUNT_ALIAS,
+  COUNTED_ROWS_ALIAS,
+  JSON_ELEM_ALIAS,
+  JSON_PULL_ALIAS,
+  relationSortColumn,
+} from './aliases.js';
 import type { HydrateKind } from './hydrateColumn.js';
 import {
   holdsOperator,
@@ -245,6 +259,19 @@ function inOperands(op: string, value: unknown): unknown[] {
   }
   return value;
 }
+
+/**
+ * What a relation subquery selects: `exists` for a relation operator that only asks whether a row is
+ * there, `value` for the column a capped aggregate carries out to the page wrapping it, and otherwise
+ * the aggregate itself.
+ */
+type RelationSubqueryProjection = { readonly op: 'exists'; readonly field?: never } | RelationAggregateProjection;
+
+/**
+ * One relation subquery as its caller states it: what to select, which rows to read, and the page to
+ * cap them to - the shape a {@link RelationAggregateSpec} already has, minus the relation it names.
+ */
+type RelationSubqueryRead = RelationSubqueryProjection & { readonly query?: RelationSubqueryQuery };
 
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
@@ -1251,7 +1278,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           columns.push({
             key: keyPath,
             expr: this.buildFragment(ctx, (fragmentCtx) =>
-              this.appendRelationSubquery(fragmentCtx, meta, key, relation, { prefix }, 'COUNT(*)', {}),
+              this.appendRelationSubquery(fragmentCtx, meta, key, relation, { prefix }, { op: '$count' }),
             ),
             direction: this.resolveSortDirection(countDirection),
             output: false,
@@ -1868,7 +1895,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const decoded: HydratableField[] = [];
     for (const [key, field] of Object.entries(meta.fields)) {
-      const kind = this.hydrateKind(field);
+      const kind = this.aggregateHydrateKind(meta, field) ?? this.hydrateKind(field);
       if (kind) {
         decoded.push([key, kind]);
       }
@@ -1877,10 +1904,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return decoded;
   }
 
-  /**
-   * The same for an aggregate's row, per query: a count or total is a number however the engine widened
-   * it, and `$min`/`$max` or a grouped column decodes as its field does.
-   */
+  /** The same for an aggregate's row, per query: each alias decodes by {@link aggregateKind}. */
   hydratableAggregates<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     entity: Type<E>,
     q: QueryAggregate<E, G, A>,
@@ -1888,19 +1912,37 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const { fields } = getMeta(entity);
     const decoded: HydratableField[] = [];
     for (const entry of parseGroupMap(q.$group, q.$select)) {
-      if (entry.kind === 'fn' && entry.op !== '$min' && entry.op !== '$max') {
-        decoded.push([entry.alias, 'number']);
-        continue;
-      }
-      // `$min`/`$max` read the field they aggregate; a `$group` column is that field. Only `$count`
-      // takes `'*'`, and it went down the numeric path above, so there is always a field to look up.
+      // A grouped column is the field itself; an aggregate reads the one it aggregates, `'*'` for a tally.
       const key = entry.kind === 'fn' ? entry.fieldRef : entry.alias;
-      const kind = this.hydrateKind(fields[key as FieldKey<E>]);
+      const field = fields[key as FieldKey<E>];
+      const kind = entry.kind === 'fn' ? this.aggregateKind(entry.op, field) : this.hydrateKind(field);
       if (kind) {
         decoded.push([entry.alias, kind]);
       }
     }
     return decoded;
+  }
+
+  /**
+   * What an aggregate's value decodes as, which the engine widens beyond the column it read: a tally
+   * (`COUNT` to Postgres's `bigint`) and a mean (`AVG` to `numeric`) are numbers whatever they counted,
+   * and the rest read as the column they aggregate - so a `SUM` over a wide integer stays exact rather
+   * than rounding through a float, which is what every driver's BIGINT decoding promises.
+   *
+   * One rule for both readers: a relation aggregate a field declares, and an aggregate a query names.
+   */
+  protected aggregateKind(op: QueryAggregateOp, field: FieldOptions | undefined): HydrateKind | undefined {
+    return op === '$count' || op === '$avg' ? 'number' : this.hydrateKind(field);
+  }
+
+  /** What a relation aggregate a field declares decodes as: {@link aggregateKind} over the target's column. */
+  private aggregateHydrateKind<E>(meta: EntityMeta<E>, field: FieldMeta | undefined): HydrateKind | undefined {
+    const spec = aggregateOf(field);
+    if (!spec) {
+      return undefined;
+    }
+    const target = getMeta(relationOf(meta, spec.relation as RelationKey<E>).entity());
+    return this.aggregateKind(spec.op, spec.field ? target.fields[spec.field] : undefined);
   }
 
   /** What one column decodes as, the inverse of {@link persistKind}. `BigInt` first, since it shares the numeric family. */
@@ -2148,18 +2190,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     relKey: string,
     rel: RelationMeta,
     opts: QueryComparisonOptions,
-    projection: '1' | 'COUNT(*)',
-    val: QueryWhere<object>,
+    read: RelationSubqueryRead,
   ): void {
     const relatedEntity = rel.entity();
     const relatedMeta = getMeta(relatedEntity);
     const parent = opts.prefix ?? this.resolveTableAlias(meta);
     // Resolved before any SQL is emitted: it also decides whether the junction form reaches the target.
-    const targetWhere = this.scopedWhere(relatedMeta, val);
-
-    ctx.append(`(SELECT ${projection} FROM `);
+    const targetWhere = this.scopedWhere(relatedMeta, read.query?.$where ?? {});
 
     if (rel.through) {
+      // The rows here are the junction's own, so a column of the far side is read as a page instead.
+      if (read.field) {
+        throw new TypeError(
+          `cannot read ${read.op}('${read.field}') over the many-to-many '${relKey}' without a page: its rows are the junction's, so name a '$sort' and a '$limit' to read the target's own`,
+        );
+      }
+      ctx.append(`(SELECT ${read.op === 'exists' ? '1' : 'COUNT(*)'} FROM `);
       const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
       ctx.append(junction.from);
       if (hasKeys(targetWhere)) {
@@ -2171,13 +2217,96 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ctx.append(')');
       }
     } else {
+      // The alias is claimed before the SELECT is written, since an aggregate names a column of it.
       const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey, parent));
+      ctx.append(`(SELECT ${this.aggregateProjection(read, related.alias, relatedMeta)} FROM `);
       ctx.append(related.ref);
       ctx.append(` WHERE ${this.correlation(meta, rel, parent, related.alias, relatedMeta)}`);
       this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'AND' });
     }
 
     ctx.append(')');
+  }
+
+  /**
+   * What a relation subquery selects: the literals a relation operator reads, or an aggregate over one
+   * of the target's columns. `count` and `sum` answer `0` on a parent with no rows, which is what makes
+   * them the two a trigger could keep; the rest answer `NULL`, and the field's type says so.
+   */
+  private aggregateProjection<E>(
+    projection: RelationSubqueryProjection,
+    alias: string,
+    relatedMeta: EntityMeta<E>,
+  ): string {
+    if (projection.op === 'exists') {
+      return '1';
+    }
+    return this.aggregateCall(
+      projection.op,
+      projection.field ? this.escapedColumn(alias, relatedMeta, projection.field) : '',
+    );
+  }
+
+  /**
+   * A relation aggregate as the correlated subquery a `computed` field reads, the same one `$count`
+   * emits: `(user) => user.resources.count()` renders here, wherever the field is named.
+   */
+  appendRelationAggregate<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    aggregate: RelationAggregateSpec,
+    prefix: string,
+  ): void {
+    const meta = getMeta(entity);
+    const rel = relationOf(meta, aggregate.relation as RelationKey<E>);
+    const parent = prefix || this.resolveTableAlias(meta);
+    if (!aggregate.query?.$limit && aggregate.query?.$skip === undefined) {
+      this.appendRelationSubquery(ctx, meta, aggregate.relation, rel, { prefix: parent }, aggregate);
+      return;
+    }
+    // Capped: the rows it reads are a page of the relation, so they are read first - ordered, since an
+    // order is what picks them - and the aggregate runs over that page.
+    const pageAlias = this.escapeId(AGGREGATE_PAGE_ALIAS);
+    const value = this.escapeId(AGGREGATE_VALUE_ALIAS);
+    ctx.append(`(SELECT ${this.aggregateCall(aggregate.op, `${pageAlias}.${value}`)} FROM (`);
+    this.appendRelationPage(ctx, meta, rel, aggregate, parent);
+    ctx.append(`) ${pageAlias})`);
+  }
+
+  /**
+   * The page a capped aggregate reads: an ordinary read of the related entity under its own alias,
+   * narrowed to the parent's rows, carrying out the one column the aggregate runs over. Its `$sort`,
+   * `$limit` and `$skip` are the relation's own, and its filters apply as they do to any read.
+   */
+  private appendRelationPage<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    rel: RelationMeta,
+    aggregate: RelationAggregateSpec,
+    parent: string,
+  ): void {
+    const entity = rel.entity();
+    const alias = ctx.claimAlias(aggregate.relation, parent);
+    const correlation = raw(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
+    const { $where, ...page } = aggregate.query ?? {};
+    // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
+    const read = aggregate.field ? refs(entity)[aggregate.field as FieldKey<object>] : raw`1`;
+    const query = {
+      ...page,
+      $select: [read.as(AGGREGATE_VALUE_ALIAS)],
+      $where: { ...$where, $and: [...($where?.$and ?? []), correlation] },
+    };
+    const joins = resolveQueryJoins(getMeta(entity), query, (path) => ctx.claimAlias(path));
+    this.read(ctx, entity, query, { alias }, joins);
+  }
+
+  /** One aggregate over an operand, `COALESCE`d where the aggregate answers `0` on no rows rather than null. */
+  private aggregateCall(op: RelationAggregateOp, operand: string): string {
+    if (op === '$count') {
+      return 'COUNT(*)';
+    }
+    const call = `${AbstractSqlDialect.AGGREGATE_FN[op]}(${operand})`;
+    return op === '$sum' ? `COALESCE(${call}, 0)` : call;
   }
 
   /**
@@ -2230,7 +2359,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): SelectTerm[] {
     return countedRelations(meta, count).map(({ relKey, relation, where }) => {
       const sql = this.buildFragment(ctx, (fragmentCtx) =>
-        this.appendRelationSubquery(fragmentCtx, meta, relKey, relation, { prefix: parent }, 'COUNT(*)', where),
+        this.appendRelationSubquery(
+          fragmentCtx,
+          meta,
+          relKey,
+          relation,
+          { prefix: parent },
+          { op: '$count', query: { $where: where } },
+        ),
       );
       return { sql, key: `${COUNT_RESULT_KEY}.${relKey}` };
     });
@@ -2374,7 +2510,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QueryComparisonOptions,
   ): void {
     ctx.append('EXISTS ');
-    this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, '1', val);
+    this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, { op: 'exists', query: { $where: val } });
   }
 
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */
@@ -2387,7 +2523,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QueryComparisonOptions,
   ): void {
     const count: QueryBuildFn = (fragmentCtx) =>
-      this.appendRelationSubquery(fragmentCtx, getMeta(entity), relKey, rel, opts, 'COUNT(*)', {});
+      this.appendRelationSubquery(fragmentCtx, getMeta(entity), relKey, rel, opts, { op: '$count' });
     ctx.append(this.sizeCondition(ctx, count, sizeVal));
   }
 

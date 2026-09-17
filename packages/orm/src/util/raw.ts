@@ -7,8 +7,13 @@ import {
   type EntityWhereMeta,
   QueryRaw,
   type QueryRawFn,
+  type AggregatePage,
+  type ComputedRefs,
   type QueryRawRenderOptions,
   type RefMap,
+  RelationAggregate,
+  type RelationAggregateOp,
+  type RelationAggregateSpec,
   type Type,
 } from '../type/index.js';
 import { isInlinedExpression } from './field.util.js';
@@ -47,14 +52,14 @@ export function refs<E>(entity: Type<E>): RefMap<E> {
   return new Proxy({}, { get: (_, key) => columnRef(entity, String(key)) }) as RefMap<E>;
 }
 
-const MEMBER_REFS = new Proxy({}, { get: (_, key) => columnRef(undefined, String(key)) });
+const MEMBER_REFS = new Proxy({}, { get: (_, key) => memberRef(String(key)) });
 
 /**
  * The refs a definition's callbacks read: an index's, a check's, a computed field's. A member decorator
  * sees no class, so these name no entity and resolve against the one rendering them.
  */
-export function memberRefs<E>(): RefMap<E> {
-  return MEMBER_REFS as RefMap<E>;
+export function memberRefs<E>(): ComputedRefs<E> {
+  return MEMBER_REFS as ComputedRefs<E>;
 }
 
 /** SQL a definition writes, a callback's refs read off {@link memberRefs}. */
@@ -65,6 +70,41 @@ export function entitySql<E>(sql: EntitySql<E>): QueryRaw {
 /** A definition's predicate, its callback resolved the way {@link entitySql} resolves one. */
 export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
   return typeof where === 'function' ? where(memberRefs<E>()) : where;
+}
+
+/**
+ * One member as a definition reads it: a {@link ColumnRef} where it names a field, and the same object
+ * answering `count`, `sum`, `min`, `max` and `avg` where it names a to-many. One runtime object, since
+ * a member decorator sees no class and so cannot know which the key is; the types keep them apart.
+ */
+function memberRef(relation: string): ColumnRef {
+  const over = (op: Exclude<RelationAggregateOp, '$count'>) => (pick: PickedRef, q?: AggregatePage<object>) =>
+    relationAggregate({ relation, op, field: pick(memberRefs<object>()).key, ...(q && { query: q }) });
+  return Object.assign(columnRef(undefined, relation), {
+    count: (q?: AggregatePage<object>) => relationAggregate({ relation, op: '$count', ...(q && { query: q }) }),
+    sum: over('$sum'),
+    min: over('$min'),
+    max: over('$max'),
+    avg: over('$avg'),
+  });
+}
+
+/** A to-many aggregate's column, named by reading it off the target's refs: `(item) => item.amount`. */
+type PickedRef = (refs: RefMap<object>) => ColumnRef;
+
+/**
+ * A relation aggregate as SQL: the dialect writes the same correlated subquery a `$count` reads,
+ * correlated to whichever alias the clause naming the field is rendering under.
+ */
+function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
+  return new RelationAggregate(spec, (opts) => {
+    if (!opts.entity) {
+      throw new TypeError(
+        `'${spec.relation}' was read off a definition's refs, so it renders only inside its entity's SQL`,
+      );
+    }
+    opts.dialect.appendRelationAggregate(opts.ctx, opts.entity, spec, opts.prefix);
+  });
 }
 
 /** One field as SQL, against its own entity or, read off a definition, the entity rendering it. */

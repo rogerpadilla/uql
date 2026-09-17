@@ -976,7 +976,7 @@ describe('AbstractSqlDialect', () => {
    * one you did not select failed on the server with `column "tagsCount" does not exist`.
    */
   describe('$sort on an inlined computed field', () => {
-    const tagsCountOperand = '(SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)';
+    const tagsCountOperand = '(SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)';
 
     it('should order by the expression, not by an alias that may not exist', () => {
       const ctx = dialect.createContext();

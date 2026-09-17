@@ -186,7 +186,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) >= ?',
+      'SELECT `id` FROM `Item` WHERE (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) >= ?',
       [10],
     );
 
@@ -212,7 +212,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
 
     expect(this.querier.all).toHaveBeenCalledWith(
       'SELECT `Item`.`id`, `Item`.`name`, `Item`.`code`' +
-        ', (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
+        ', (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`) `tagsCount`' +
         ', `measureUnit`.`id` `measureUnit.id`, `measureUnit`.`name` `measureUnit.name`, `measureUnit`.`categoryId` `measureUnit.categoryId`' +
         ', `measureUnit.category`.`id` `measureUnit.category.id`, `measureUnit.category`.`name` `measureUnit.category.name`' +
         ' FROM `Item` LEFT JOIN `MeasureUnit` `measureUnit` ON `measureUnit`.`id` = `Item`.`measureUnitId` AND `measureUnit`.`deletedAt` IS NULL' +
@@ -234,7 +234,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     });
 
     expect(this.querier.all).toHaveBeenCalledWith(
-      'SELECT `id`, (SELECT COUNT(*) `_uql_count` FROM `ItemTag` WHERE `ItemTag`.`tagId` = `Tag`.`id`) `itemsCount` FROM `Tag`',
+      'SELECT `id`, (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`tagId` = `Tag`.`id`) `itemsCount` FROM `Tag`',
       [],
     );
 

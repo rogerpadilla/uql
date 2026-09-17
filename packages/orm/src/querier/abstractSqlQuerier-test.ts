@@ -228,6 +228,30 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(row?.big).toBe('9007199254740993');
   }
 
+  /**
+   * A `$sum` reads as the column it totals, so a wide one keeps every digit rather than rounding through
+   * a float - the same rule a relation aggregate's `sum` reads by. A `$count` and an `$avg` are numbers
+   * whatever they read, since the engine widens one and floats the other.
+   */
+  async shouldTotalAWideIntegerExactly() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'wide totals' });
+    await this.querier.insertMany(TypedRow, [
+      { groupId, name: 'a', wide: 9007199254740993n },
+      { groupId, name: 'b', wide: 2n },
+    ]);
+
+    const [row] = await this.querier.aggregate(TypedRow, {
+      $where: { groupId },
+      $group: { groupId: true },
+      $select: { total: { $sum: { wide: true } }, rows: { $count: '*' } },
+    });
+
+    // Odd past 2^53, so a total that went through a float would print an even neighbour instead. Read
+    // as text, since an engine answers a wide integer as a `bigint` or as its digits, never as both.
+    expect(String(row?.total)).toBe('9007199254740995');
+    expect(row?.rows).toBe(2);
+  }
+
   /** Each engine's own constraint errors, which the unit table can only imitate: MSSQL's two 547s among them. */
   async shouldNameConstraintViolations() {
     const { foreignKey, notNull, check } = await violateConstraints(this.querier);
