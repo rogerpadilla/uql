@@ -18,6 +18,7 @@ import type {
   RelationAggregate,
   RelationOptions,
   TsTypeOf,
+  Writable,
 } from '../../type/index.js';
 import type { RejectIncompatible } from '../../util/index.js';
 import { relationRegistration } from '../metadata/definition.js';
@@ -28,6 +29,21 @@ import { memberRegistrations } from './bag.js';
 
 /** A member decorator that also constrains the property it may be applied to, on a class `O`. */
 type MemberDecorator<V, O = unknown> = (value: undefined, context: ClassFieldDecoratorContext<O, V>) => void;
+
+/**
+ * A {@link MemberDecorator} whose property has to admit `M` as well as hold `V`. A decorator context is
+ * covariant in its value, so on its own it takes a property narrower than the field reads: a `string`
+ * where a nullable column reads `string | null`, a `number` where `max()` reads `number | null`.
+ *
+ * `M` is what each arm insists on rather than the whole of `V`, because a column type that names a
+ * family - `jsonb`, whose document the property shapes, or `numeric`, either number kind - is meant to
+ * be narrowed. A column insists on its `null`; an aggregate, whose value is exact, insists on all of it.
+ */
+type AdmittingDecorator<V, M, O> = <P extends V | undefined>(
+  value: undefined,
+  context: ClassFieldDecoratorContext<O, P> &
+    ([Writable<M>] extends [Writable<P>] ? unknown : { readonly __propertyMustAdmit: M }),
+) => void;
 
 /**
  * The property type a set of field options describes: the declared `type`, narrowed by `enum` to the
@@ -44,6 +60,13 @@ type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
       : IdValue<E>
     : never;
 
+/**
+ * The `null` a column reads back: every one holds it unless `nullable: false` says otherwise, so the
+ * property admits it too. A key holds none, whether `@Id` or `@Field({ isId: true })` declares it, since
+ * it is NOT NULL on every engine.
+ */
+type NullOf<O> = O extends { readonly nullable: false } | { readonly isId: true } ? never : null;
+
 /** The enum's members, or a named complaint where they widened for lack of `as const`, which would check nothing. */
 type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enumNeedsAsConst: true } : Members;
 
@@ -58,7 +81,7 @@ export function Field<
     ({ type: FieldType } | { references: EntityGetter }) &
     RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
     RejectIncompatible<O>,
->(opts: O): MemberDecorator<DeclaredValue<O> | undefined, This>;
+>(opts: O): AdmittingDecorator<DeclaredValue<O> | NullOf<O>, NullOf<O>, This>;
 
 /**
  * Declares a field a relation aggregate computes, `@Field({ computed: (user) => user.resources.count() })`.
@@ -68,7 +91,7 @@ export function Field<
  */
 export function Field<This, O extends AggregateOptions<This> & RejectKeys<Exclude<keyof O, keyof FieldOptions>>>(
   opts: O,
-): AggregateDecorator<AggregateValue<O>, This>;
+): AdmittingDecorator<AggregateValue<O>, AggregateValue<O>, This>;
 
 export function Field(opts: FieldOptions<never, unknown>): MemberDecorator<unknown, unknown> {
   return (_value, context) => {
@@ -89,16 +112,6 @@ type AggregateOptions<E> =
       readonly computed: { agg(refs: ComputedRefs<E>): RelationAggregate<unknown, true> }['agg'];
       readonly stored: true;
     });
-
-/**
- * {@link MemberDecorator} for a field an aggregate types, which the property has to hold *exactly*: a
- * decorator context takes a property narrower than its value, so nothing else would stop a `number`
- * from holding what `max()` reads, which is `number | null` on a parent with no rows.
- */
-type AggregateDecorator<V, O> = <P extends V | undefined>(
-  value: undefined,
-  context: ClassFieldDecoratorContext<O, P> & ([V] extends [P] ? unknown : { readonly __propertyMustAdmit: V }),
-) => void;
 
 /**
  * A key the type level cannot name, reported on each `@Id` that leaves it unnamed. Where no `idKey`

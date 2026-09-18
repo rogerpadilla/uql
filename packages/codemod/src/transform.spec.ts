@@ -76,11 +76,11 @@ describe('codemod transforms', () => {
 
     expect(changed).toBe(true);
     expect(text).toContain('@Id({ type: Number }) id?: number;');
-    expect(text).toContain('@Field({ type: String }) name?: string;');
-    expect(text).toContain('@Field({ type: BigInt }) count?: bigint;');
-    expect(text).toContain('@Field({ type: Boolean }) active?: boolean;');
-    expect(text).toContain('@Field({ type: Date }) at?: Date;');
-    expect(text).toContain("@Field({ type: 'blob' }) avatar?: Uint8Array;");
+    expect(text).toContain('@Field({ type: String }) name?: string | null;');
+    expect(text).toContain('@Field({ type: BigInt }) count?: bigint | null;');
+    expect(text).toContain('@Field({ type: Boolean }) active?: boolean | null;');
+    expect(text).toContain('@Field({ type: Date }) at?: Date | null;');
+    expect(text).toContain("@Field({ type: 'blob' }) avatar?: Uint8Array | null;");
   });
 
   it('keeps existing options and puts the type first', () => {
@@ -90,7 +90,7 @@ describe('codemod transforms', () => {
       }
     `);
 
-    expect(text).toContain("@Field({ type: String, name: 'image', length: 150 }) picture?: string;");
+    expect(text).toContain("@Field({ type: String, name: 'image', length: 150 }) picture?: string | null;");
   });
 
   it('names an unconventional key with the idKey brand', () => {
@@ -226,7 +226,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number;');
+    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number | null;');
   });
 
   /** A shorthand has no value to keep, so the key alone would rebind it to a local that is not there. */
@@ -238,7 +238,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: Number, computed: virtual }) score?: number;');
+    expect(text).toContain('@Field({ type: Number, computed: virtual }) score?: number | null;');
     expect(unresolved).toEqual([]);
   });
 
@@ -249,7 +249,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: Number, computed: raw`1` }) score?: number;');
+    expect(text).toContain('@Field({ type: Number, computed: raw`1` }) score?: number | null;');
     expect(unresolved).toEqual([]);
   });
 
@@ -261,7 +261,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain("@Field({ 'type': String }) name?: string;");
+    expect(text).toContain("@Field({ 'type': String }) name?: string | null;");
   });
 
   it('reports a field giving both names rather than choosing one', () => {
@@ -282,7 +282,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number;');
+    expect(text).toContain('@Field({ type: Number, computed: raw`1 + 1` }) score?: number | null;');
   });
 
   /** An empty literal has no first property to insert before, so the whole object is rewritten instead. */
@@ -293,7 +293,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: String }) name?: string;');
+    expect(text).toContain('@Field({ type: String }) name?: string | null;');
   });
 
   it('treats a string-literal union as a string column', () => {
@@ -304,7 +304,7 @@ class Entity {
       }
     `);
 
-    expect(text).toContain('@Field({ type: String }) role?: Role;');
+    expect(text).toContain('@Field({ type: String }) role?: Role | null;');
   });
 
   it('leaves a nullable field alone once the null arm is dropped', () => {
@@ -325,7 +325,8 @@ class Entity {
       }
     `);
 
-    expect(changed).toBe(false);
+    // Changed, since the column holds `null` whatever its type turns out to be; the `type` is what is left.
+    expect(changed).toBe(true);
     expect(unresolved[0]).toContain("cannot infer 'type'");
   });
 
@@ -350,7 +351,7 @@ class Entity {
     expect(text).toContain('@Id({ type: String }) id?: UUID;');
     // `Uppercase<'abc'>` is evaluated eagerly to the literal `'ABC'`, so it resolves like any other
     // string literal and needs no note; only the genuinely unresolved template literal gets one.
-    expect(text).toContain("@Field({ type: String }) ref?: Uppercase<'abc'>;");
+    expect(text).toContain("@Field({ type: String }) ref?: Uppercase<'abc'> | null;");
     expect(notes).toHaveLength(1);
     expect(notes[0]).toContain("If the column should be 'uuid'");
   });
@@ -382,8 +383,8 @@ class Entity {
       }
     `);
 
-    expect(changed).toBe(false);
-    expect(text).toContain("@Field({ type: 'uuid' }) id?: string;");
+    expect(changed).toBe(true);
+    expect(text).toContain("@Field({ type: 'uuid' }) id?: string | null;");
   });
 
   it('leaves a reference field without a type, so the column resolves from the referenced key', () => {
@@ -394,8 +395,8 @@ class Entity {
       }
     `);
 
-    expect(changed).toBe(false);
-    expect(text).toContain('@Field({ references: () => Company }) companyId?: number;');
+    expect(changed).toBe(true);
+    expect(text).toContain('@Field({ references: () => Company }) companyId?: number | null;');
   });
 
   it('adds the entity getter relations can no longer infer, for one and for many', () => {
@@ -501,12 +502,12 @@ class Employee extends Base {
 
     expect(text).toContain(`import { Field, ManyToOne, OneToOne } from 'uql-orm';`);
     expect(text).toContain(
-      '  @Field({ references: () => Company }) companyId?: Uuid;\n' +
+      '  @Field({ references: () => Company }) companyId?: Uuid | null;\n' +
         '  @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId })\n' +
         '  company?: Company;',
     );
     expect(text).toContain(
-      '  @Field({ references: () => Employee }) managerId?: Uuid;\n' +
+      '  @Field({ references: () => Employee }) managerId?: Uuid | null;\n' +
         '  @OneToOne({ entity: () => Employee, references: (employee) => employee.managerId }) manager?: Employee;',
     );
     expect(text).toContain('  @ManyToOne({ entity: () => Pair }) pair?: Pair;');
@@ -1138,7 +1139,7 @@ buildMigrationModule(options);
       }
     `);
 
-    expect(changed).toBe(false);
+    expect(changed).toBe(true);
     expect(unresolved).toHaveLength(1);
     expect(unresolved[0]).toContain("cannot infer 'type'");
   });
@@ -1151,6 +1152,71 @@ buildMigrationModule(options);
     `);
 
     expect(unresolved[0]).toContain("cannot infer 'entity'");
+  });
+});
+
+describe('a nullable column admits null', () => {
+  it("adds '| null' to every property whose column can hold one", () => {
+    const { text } = codemod(`
+      class Entity {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string;
+        @Field({ references: () => Entity }) parentId?: string;
+        @Field({ type: String, nullable: false }) email?: string;
+        @Field({ type: Number, isId: true }) key?: number;
+        @Field({ type: String, nullable: true }) loud?: string;
+        @Field({ type: String }) already?: string | null;
+        @Field({ type: Number }) tags?: number[];
+      }
+    `);
+
+    // A key is NOT NULL on every engine, and one that says `nullable: false` already declared it.
+    expect(text).toContain('@Id({ type: Number }) id?: number;');
+    expect(text).toContain('@Field({ type: String, nullable: false }) email?: string;');
+    expect(text).toContain('@Field({ type: Number, isId: true }) key?: number;');
+    expect(text).toContain('@Field({ type: String }) already?: string | null;');
+
+    expect(text).toContain('@Field({ type: String }) name?: string | null;');
+    // `nullable: true` is the default said out loud, so it is a column that holds one like any other.
+    expect(text).toContain('@Field({ type: String, nullable: true }) loud?: string | null;');
+    expect(text).toContain('@Field({ references: () => Entity }) parentId?: string | null;');
+    expect(text).toContain('@Field({ type: Number }) tags?: number[] | null;');
+  });
+
+  it('reports a property it cannot read the type of, rather than guessing', () => {
+    const { text, notes } = codemod(`
+      class Entity {
+        @Field({ type: String }) name = 'x';
+      }
+    `);
+
+    expect(text).toContain("@Field({ type: String }) name = 'x';");
+    expect(notes.join('\n')).toContain("declare 'name' as");
+  });
+
+  it("adds '| null' where defineEntity names the field, on the class it takes", () => {
+    const { text } = codemod(`
+      class Line { id?: number; label?: string; qty?: number; }
+      defineEntity(Line, {
+        fields: {
+          id: { type: Number, isId: true },
+          label: { type: String },
+          qty: { type: Number, nullable: false },
+        },
+      });
+    `);
+
+    expect(text).toContain('class Line { id?: number; label?: string | null; qty?: number; }');
+  });
+
+  it('leaves a relation aggregate alone, since the aggregate types it', () => {
+    const { text } = codemod(`
+      class Entity {
+        @Field({ computed: (entity: any) => entity.children.count() }) readonly childCount?: number;
+      }
+    `);
+
+    expect(text).toContain('readonly childCount?: number;');
   });
 });
 
@@ -1385,7 +1451,7 @@ defineEntity(Line, { fields: { total: { type: Number, virtual: raw\`\${col('unit
 
     expect(text).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
     expect(text).toContain(
-      '@Field({ type: Number, computed: (product) => raw`${product.salePrice} - ${product.cost}` }) profit?: number;',
+      '@Field({ type: Number, computed: (product) => raw`${product.salePrice} - ${product.cost}` }) profit?: number | null;',
     );
     expect(text).toContain('fields: { total: { type: Number, computed: (line) => raw`${line.unitPrice} * 2` } }');
     expect(unresolved).toEqual([]);

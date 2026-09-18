@@ -25,11 +25,10 @@ await pool.insertOne(WorkspaceUsage, { total: 1 });
 const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
 ```
 
-**R6: one projection-alias concept.** A read's row type is assembled from pieces that each derive their own: `$select` through `QueryProjectedRow`, `$count` through `CountedRelations` under `_count`, an aggregate's `$select` through `QueryAggregateResult`. Cursor pagination adds a fourth - the sort keys it carries out of a row to mint a cursor from, whether or not `$select` asked for them - and `$window` a fifth. Unify the rule once, or every new projection re-derives it. _Unlocks cursor pagination, relation aggregates._
+**R6: one carried-out column rule.** A statement adds columns to its own select list that the caller never asked for and never sees: `_uql_sort_<path>`, a relation's sort terms carried out for the aggregate ordering its rows; `_uql_total`, a paged read's own unpaged count, which the querier `delete`s off each row; `_uql_value`, what a capped aggregate's page hands the aggregate wrapping it. Each writes and drops its own, in its own place. Cursor pagination adds the sort keys it mints a cursor from, whether or not `$select` asked for them, so settle the rule once. _Unlocks cursor pagination._
 
 ```ts
-{ $select: { id: true }, $count: { posts: true } } // a read: id from one rule, _count from another
-{ $group: { status: true }, $select: { total: { $sum: { amount: true } } } } // an aggregate: total from a third
+SELECT "id", "_uql_sort_createdAt", COUNT(*) OVER () "_uql_total" FROM ... // two carried out, both dropped
 ```
 
 **R7: schema objects as a dependency-ordered graph.** Ordering is already generic: `createOrder` in `schema/dependencyGraph.ts` takes any node and a function returning its dependencies. What is not is the diff - `SchemaDiffResult` has a field per kind (`tablesToCreate`, `tablesToDrop`, `columnDiffs`, `indexDiffs`), so a view or a trigger each add three more and every consumer grows a branch. A `SchemaObject` vocabulary flattens it. _Unlocks views, triggers._
@@ -43,36 +42,6 @@ indexDiffs: IndexDiff[]         drop: SchemaObject[]
 
 The second kind that R7 waited for has arrived - generated columns in 0.46.0 - so the shape can be derived now rather than guessed.
 
-## Correctness gaps
-
-Small, independent of everything above, and each a way to damage data today.
-
-**An unfiltered bulk write is refused.** `assertIdValue` guards the by-id methods only: `updateMany` and `deleteMany` take `{}`, or a `$where` untyped JSON left empty, and address the whole table. Check the caller's `$where` before filters add theirs (soft delete's would otherwise count as one), and make the whole table something asked for by name. Prisma 8 ships the same guard as its `deleteWithoutWhere`/`updateWithoutWhere` lints.
-
-```ts
-await pool.deleteMany(Session, {}); // throws: no $where
-await pool.deleteMany(Session, {}, { unfiltered: true }); // the whole table, on purpose
-```
-
-**A migration can run outside a transaction.** `Migrator.runMigration` wraps every one, and Postgres refuses `CREATE INDEX CONCURRENTLY` inside one - the index a busy table needs is the one a migration cannot build. A per-migration flag, as Kysely 0.30's `transactionMode` has. The cost is the one it names: a failure part-way leaves the statements before it applied and the migration unlogged.
-
-```ts
-export default {
-  transaction: false,
-  async up(querier: SqlQuerier) {
-    await querier.run('CREATE INDEX CONCURRENTLY idx_order_created ON "Order" ("createdAt")');
-  },
-};
-```
-
-**A nullable column's property admits `null`.** A column is nullable unless `nullable: false`, and a read hydrates `null` into it, yet `@Field({ type: String }) name?: string` compiles: the property says a read never returns what it does. Give the column overload of `Field` the exact check [triggers](triggers.md) gives aggregates, with `null` in the declared value unless `nullable: false`. Drizzle and Prisma type it that way because their types come from the schema. A decision rather than a fix: it changes most entities - 178 of Variability's 228 fields - and needs a codemod.
-
-```ts
-@Field({ type: String }) name?: string;                   // refused: the column can hold null
-@Field({ type: String }) name?: string | null;
-@Field({ type: String, nullable: false }) email?: string;
-```
-
 ## Views and materialized views
 
 ```ts
@@ -84,7 +53,7 @@ export const WorkspaceUsage = defineView({
 });
 ```
 
-R2, R7. A view is an entity, just read-only, which dissolves the "relation with no entity" problem that makes CTEs a poor fit. Field types fall out of `QueryAggregateResult`; the definition is the migration. `REFRESH ... CONCURRENTLY` on Postgres/CockroachDB, refused elsewhere.
+R2, R7, and [grouping across relations](aggregate-across-relations.md), without which a reporting view cannot join. A view is an entity, just read-only, which dissolves the "relation with no entity" problem that makes CTEs a poor fit. Field types fall out of `QueryAggregateResult`; the definition is the migration. `REFRESH ... CONCURRENTLY` on Postgres/CockroachDB, refused elsewhere.
 
 ## Cursor pagination
 
@@ -103,7 +72,7 @@ What gates it is nulls. A UQL column is nullable unless declared otherwise, the 
 @Field({ computed: (u) => u.resources.count(), stored: true }) readonly resourceCount?: number; // kept by triggers
 ```
 
-Two steps. The unstored aggregate needs no R7, runs on every engine, and shares its operators and compile path with the relation aggregates below. The stored arms - maintained aggregates, `stored: ['update']` stamps, then authored triggers - need R7 and ship on Postgres first. The maintained aggregate is the case worth declaring rather than authoring: it generates the reparent branch every hand-written counter forgets. [The design](triggers.md).
+Two steps. The unstored aggregate needs no R7, runs on every engine, and speaks the query language's own operators. The stored arms - maintained aggregates, `stored: ['update']` stamps, then authored triggers - need R7 and ship on Postgres first. The maintained aggregate is the case worth declaring rather than authoring: it generates the reparent branch every hand-written counter forgets. [The design](triggers.md).
 
 ## Batching
 
@@ -135,17 +104,6 @@ await pool.updateOneById(Post, id, { title, version: 3 }); // WHERE version = 3,
 
 No row matched throws a stale-version error rather than returning `0`, which a caller reads as "nothing to update"; no driver raises it, so it is not a `QueryErrorKind`. UQL tracks no entity state, so the version the caller read rides in the payload; a payload without one is refused on a versioned entity. A number increments; a timestamp is `onUpdate`'s `now()`. Lands beside `fillOnFields(..., 'onUpdate')`, and Mongo filters on the field the same way.
 
-## Relation aggregates
-
-```ts
-await pool.findMany(User, { $select: { id: true }, $count: { posts: true }, $max: { posts: { createdAt: true } } });
-// { id, _count: { posts }, _max: { posts: { createdAt } } }
-```
-
-R6, and most of it is built. The unstored `computed` aggregate of [triggers](triggers.md) put a `RelationAggregateSpec` - a relation, an operator, the rows it reads - behind one renderer per engine: a correlated subquery on SQL, a `$lookup` ending in a `$count` or a `$group` on MongoDB. `$count` already lowers to that spec, the operators are the query language's own (`$sum`, `$min`, `$max`, `$avg`), and one rule decodes every value they answer with.
-
-What is left is the clause, not the machinery: parse `$max: { posts: { createdAt: true } }` into the spec the engines render, and land each under its own `_`-key, which is the projection-alias rule R6 exists to settle - the reason it still gates this rather than the SQL. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the same feature.
-
 ## Smaller items
 
 - **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
@@ -174,5 +132,7 @@ TypeScript cannot accumulate `@Id` across properties, so the key is named in the
 - **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
 - **A relation's `$limit` is each parent's share, not a slice of one page.** [The design](relations-in-one-statement.md).
 - **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
+- **A relation aggregate is declared on the entity, never spelled in a query.** `$max: { posts: { createdAt: true } }` beside `$count` was designed and dropped: each op captures its own generic, and `C extends RelationKey<E>` already threads through 36 signatures, so four more would take every read overload from six type parameters to ten - charged to every consuming project, including the ones that never write one. A `computed` field answers the same question and is strictly more capable: `$where`, `$sort` and a property type exactly as wide as the value. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the feature not taken.
+- **A nullable column's property admits `null`, and only that.** The decorator asks for the `null` the column holds, never for the whole declared value: a family type - `jsonb`, whose document the property shapes, or `numeric`, either number kind - is meant to be narrowed, and demanding the whole of it broke every JSON field. A list's mutability is normalized for the same reason, so a `number[]` property still matches the `readonly number[]` a vector declares.
 - **An unstored `computed` is written out by every clause that names it.** `$sort` used the output alias, so ordering by one you had not selected failed on the server.
 - **Every field option states where it applies, in one table.** `FIELD_OPTION_FAMILY` pairs each option with its column family, `deadOn` with what makes it dead. A new option cannot be added without answering both. Only a contradiction is rejected, never a redundancy.

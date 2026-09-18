@@ -22,16 +22,16 @@ class TestUser {
   id?: number;
 
   @Field({ type: String, length: 100 })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String, unique: true })
-  email?: string;
+  email?: string | null;
 
   @Field({ type: String, nullable: false })
   password?: string;
 
   @Field({ type: Number, onInsert: Date.now })
-  createdAt?: number;
+  createdAt?: number | null;
 }
 
 @Entity({ name: 'blog_posts' })
@@ -40,16 +40,16 @@ class TestPost {
   id?: string;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ type: String, columnType: 'text' })
-  content?: string;
+  content?: string | null;
 
   @Field({ type: 'jsonb' })
-  metadata?: Record<string, unknown>;
+  metadata?: Record<string, unknown> | null;
 
   @Field({ references: () => TestUser })
-  authorId?: number;
+  authorId?: number | null;
 
   @ManyToOne({ entity: () => TestUser, references: (testPost) => testPost.authorId })
   author?: TestUser;
@@ -59,7 +59,7 @@ class TestPost {
 class SqliteIndexedEntity {
   @Id({ type: Number }) id?: number;
   @Field({ type: String, index: true })
-  slug?: string;
+  slug?: string | null;
 }
 
 describe('SqlSchemaGenerator (Postgres)', () => {
@@ -819,29 +819,29 @@ class DefaultsProbe extends SqlSchemaGenerator {
 @Entity()
 class DiffUser {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
-  @Field({ type: String, columnType: 'varchar', length: 100 }) email?: string;
-  @Field({ type: String, columnType: 'varchar', length: 255, index: true }) status?: string;
+  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
+  @Field({ type: String, columnType: 'varchar', length: 100 }) email?: string | null;
+  @Field({ type: String, columnType: 'varchar', length: 255, index: true }) status?: string | null;
 }
 
 @Entity()
 class DefaultsEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string;
-  @Field({ type: Number, columnType: 'int', defaultValue: 0 }) attempts?: number;
+  @Field({ type: String, columnType: 'varchar', length: 20, defaultValue: 'active' }) status?: string | null;
+  @Field({ type: Number, columnType: 'int', defaultValue: 0 }) attempts?: number | null;
 }
 
 @Entity()
 class EnumAltered {
   @Id({ type: Number }) id?: number;
   @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
-  status?: 'draft' | 'paid';
+  status?: 'draft' | 'paid' | null;
 }
 
 @Entity()
 class ComputedEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, computed: raw`1 + 1` }) total?: number;
+  @Field({ type: Number, computed: raw`1 + 1` }) total?: number | null;
 }
 
 describe('SqlSchemaGenerator diffs (Postgres)', () => {
@@ -866,7 +866,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     @Entity()
     class RefSource {
       @Id({ type: Number }) id?: number;
-      @Field({ references: () => RefTarget }) ownerId?: string;
+      @Field({ references: () => RefTarget }) ownerId?: string | null;
     }
     const { ownerId } = getMeta(RefSource).fields;
     assertDefined(ownerId);
@@ -882,7 +882,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     @Entity()
     class AccountProfile {
       @Id({ type: Number, references: () => Account }) id?: number;
-      @Field({ references: () => Account, columnType: 'int' }) backupId?: number;
+      @Field({ references: () => Account, columnType: 'int' }) backupId?: number | null;
     }
     const { id, backupId } = getMeta(AccountProfile).fields;
     assertDefined(id);
@@ -898,7 +898,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     @Entity()
     class Commented {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String, comment: 'Shown to users' }) label?: string;
+      @Field({ type: String, comment: 'Shown to users' }) label?: string | null;
     }
     const statements = generator.generateCreateSchema([Commented]);
     expect(statements).toContainEqual(expect.stringContaining('COMMENT ON COLUMN'));
@@ -1162,7 +1162,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
 @Entity({ name: 'users' })
 class UsersTable {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
 }
 
 /** A row per dialect, so a new dialect is a row rather than a branch in each test. */

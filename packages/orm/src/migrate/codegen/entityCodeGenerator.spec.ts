@@ -715,6 +715,9 @@ describe('EntityCodeGenerator', () => {
 
       expect(result.code).toContain('computed: raw`qty * 2`, stored: true');
       expect(result.code).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
+      // The database writes it, so a write payload leaves it out rather than dropping what it names.
+      expect(result.code).toContain('readonly total?: number;');
+      expect(result.code).toContain('  qty?: number;');
     });
 
     it('should escape what a database reprints inside the source it emits', () => {

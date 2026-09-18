@@ -3,6 +3,7 @@ import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
 import { AGGREGATE_VALUE_ALIAS, REL_TEMP_PREFIX } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
+import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
   Company,
   createSpec,
@@ -10,6 +11,7 @@ import {
   Item,
   ItemAdjustment,
   JsonRecord,
+  MeasureUnit,
   MeasureUnitCategory,
   type Spec,
   Tax,
@@ -17,7 +19,7 @@ import {
   User,
   VectorItem,
 } from '../test/index.js';
-import { idKey } from '../type/index.js';
+import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
 
@@ -37,9 +39,9 @@ class SecureRelated {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Number })
-  tenantId?: number;
+  tenantId?: number | null;
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 }
 
 /** A string key and a string reference: the shape the two wire seams convert. */
@@ -48,9 +50,9 @@ class Doc {
   @Id({ type: String })
   id?: string;
   @Field({ references: () => Doc })
-  parentId?: string;
+  parentId?: string | null;
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 }
 
 @Entity()
@@ -58,7 +60,7 @@ class SecureParent {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureRelated })
-  relatedId?: number;
+  relatedId?: number | null;
   @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
@@ -73,9 +75,9 @@ class RenamedDoc {
   @Id({ type: Number })
   id?: number;
   @Field({ type: String, name: 'the_label' })
-  label?: string;
+  label?: string | null;
   @Field({ type: Date, name: 'deleted_at', softDelete: true })
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 @Entity()
@@ -83,9 +85,9 @@ class AggregateLine {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => AggregateDoc, type: Number })
-  docId?: number;
+  docId?: number | null;
   @Field({ type: Number })
-  price?: number;
+  price?: number | null;
 }
 
 /** Relation aggregates a document engine builds out of stages: one over a page, one over a filtered page. */
@@ -110,9 +112,9 @@ class SqlComputedDoc {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Number })
-  price?: number;
+  price?: number | null;
   @Field({ type: Number, computed: (doc) => raw`${doc.price} * 2` })
-  readonly doubled?: number;
+  readonly doubled?: number | null;
 }
 
 class MongoDialectSpec implements Spec {
@@ -230,6 +232,7 @@ class MongoDialectSpec implements Spec {
     // group by the column, project back under the caller's key
     expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $select: { n: { $count: '*' } } })) //
       .toEqual([
+        { $match: { deleted_at: null } },
         { $group: { _id: { label: '$the_label' }, n: { $sum: 1 } } },
         { $project: { _id: 0, label: '$_id.label', n: 1 } },
       ]);
@@ -426,27 +429,24 @@ class MongoDialectSpec implements Spec {
    * it. `$limit: 1` is enough for existence, and the target's own filters scope the lookup.
    */
   shouldFilterByOneToManyRelation() {
-    expect(this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { name: 'kg' } })).toEqual({
-      stages: [
-        {
-          $lookup: {
-            from: 'MeasureUnit',
-            localField: '_id',
-            foreignField: 'categoryId',
-            pipeline: [{ $match: { name: 'kg', deletedAt: null } }, { $limit: 1 }],
-            as: '_uql_rel_0',
-          },
+    expect(this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { name: 'kg' } })).toEqual([
+      {
+        $lookup: {
+          from: 'MeasureUnit',
+          localField: '_id',
+          foreignField: 'categoryId',
+          pipeline: [{ $match: { name: 'kg', deletedAt: null } }, { $limit: 1 }],
+          as: '_uql_rel_0',
         },
-      ],
-      filter: { '_uql_rel_0.0': { $exists: true }, deletedAt: null },
-      unset: ['_uql_rel_0'],
-    });
+      },
+      { $match: { '_uql_rel_0.0': { $exists: true }, deletedAt: null } },
+      { $unset: ['_uql_rel_0'] },
+    ]);
   }
 
   /** ManyToMany reaches the target from inside the junction's lookup, so no ids are materialized. */
   shouldFilterByManyToManyRelationThroughTheJunction() {
-    const { stages, filter, unset } = this.dialect.whereWithRelations(Item, { tags: { name: 'urgent' } });
-    expect(stages).toEqual([
+    expect(this.dialect.matchStages(Item, { tags: { name: 'urgent' } })).toEqual([
       {
         $lookup: {
           from: 'ItemTag',
@@ -468,45 +468,36 @@ class MongoDialectSpec implements Spec {
           as: '_uql_rel_0',
         },
       },
+      { $match: { '_uql_rel_0.0': { $exists: true } } },
+      { $unset: ['_uql_rel_0'] },
     ]);
-    expect(filter).toEqual({ '_uql_rel_0.0': { $exists: true } });
-    expect(unset).toEqual(['_uql_rel_0']);
   }
 
   /** `$size` counts inside the lookup; `$ifNull` makes an empty result compare as 0. */
   shouldCompareRelationSize() {
     const count = { $ifNull: [{ $arrayElemAt: [`$_uql_rel_0.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] };
 
-    const exact = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: 0 } });
-    expect(exact.stages[0]?.$lookup?.pipeline).toEqual([
-      { $match: { deletedAt: null } },
-      { $count: AGGREGATE_VALUE_ALIAS },
-    ]);
-    expect(exact.filter).toEqual({ $expr: { $eq: [count, 0] }, deletedAt: null });
+    const exact = this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: 0 } });
+    expect(exact[0]?.$lookup?.pipeline).toEqual([{ $match: { deletedAt: null } }, { $count: AGGREGATE_VALUE_ALIAS }]);
+    expect(exact).toContainEqual({ $match: { $expr: { $eq: [count, 0] }, deletedAt: null } });
 
-    const single = this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
-    expect(single.filter).toEqual({ $expr: { $gte: [count, 2] }, deletedAt: null });
+    const single = this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: { $gte: 2 } } });
+    expect(single).toContainEqual({ $match: { $expr: { $gte: [count, 2] }, deletedAt: null } });
 
-    const between = this.dialect.whereWithRelations(MeasureUnitCategory, {
-      measureUnits: { $size: { $between: [2, 5] } },
-    });
-    expect(between.filter).toEqual({
-      $expr: { $and: [{ $gte: [count, 2] }, { $lte: [count, 5] }] },
-      deletedAt: null,
+    const between = this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: { $between: [2, 5] } } });
+    expect(between).toContainEqual({
+      $match: { $expr: { $and: [{ $gte: [count, 2] }, { $lte: [count, 5] }] }, deletedAt: null },
     });
 
-    const combined = this.dialect.whereWithRelations(MeasureUnitCategory, {
-      measureUnits: { $size: { $gt: 1, $lt: 9 } },
-    });
-    expect(combined.filter).toEqual({
-      $expr: { $and: [{ $gt: [count, 1] }, { $lt: [count, 9] }] },
-      deletedAt: null,
+    const combined = this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: { $gt: 1, $lt: 9 } } });
+    expect(combined).toContainEqual({
+      $match: { $expr: { $and: [{ $gt: [count, 1] }, { $lt: [count, 9] }] }, deletedAt: null },
     });
   }
 
   shouldThrowOnEmptyRelationSizeComparison() {
     expect(() =>
-      this.dialect.whereWithRelations(MeasureUnitCategory, { measureUnits: { $size: { $gte: undefined } } }),
+      this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: { $gte: undefined } } }),
     ).toThrow('$size needs at least one comparison');
   }
 
@@ -521,20 +512,20 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Book {
       @Id({ type: String }) id?: string;
-      @Field({ references: () => Shelf }) shelfId?: string;
+      @Field({ references: () => Shelf }) shelfId?: string | null;
     }
     @Entity()
     class Lamp {
       @Id({ type: String }) id?: string;
-      @Field({ references: () => Shelf }) shelfId?: string;
+      @Field({ references: () => Shelf }) shelfId?: string | null;
     }
     const tally = (temp: string) => ({ $ifNull: [{ $arrayElemAt: [`$${temp}.${AGGREGATE_VALUE_ALIAS}`, 0] }, 0] });
 
-    const { stages, filter } = this.dialect.whereWithRelations(Shelf, { books: { $size: 1 }, lamps: { $size: 2 } });
+    const stages = this.dialect.matchStages(Shelf, { books: { $size: 1 }, lamps: { $size: 2 } });
 
-    expect(stages).toHaveLength(2);
-    expect(filter).toEqual({
-      $expr: { $and: [{ $eq: [tally('_uql_rel_0'), 1] }, { $eq: [tally('_uql_rel_1'), 2] }] },
+    expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(2);
+    expect(stages).toContainEqual({
+      $match: { $expr: { $and: [{ $eq: [tally('_uql_rel_0'), 1] }, { $eq: [tally('_uql_rel_1'), 2] }] } },
     });
   }
 
@@ -552,13 +543,12 @@ class MongoDialectSpec implements Spec {
    * relation inside `$or` still means what it says.
    */
   shouldKeepRelationConditionInsideOr() {
-    const { stages, filter } = this.dialect.whereWithRelations(MeasureUnitCategory, {
+    const stages = this.dialect.matchStages(MeasureUnitCategory, {
       $or: [{ name: 'weight' }, { measureUnits: { name: 'kg' } }],
     });
-    expect(stages).toHaveLength(1);
-    expect(filter).toEqual({
-      $or: [{ name: 'weight' }, { '_uql_rel_0.0': { $exists: true } }],
-      deletedAt: null,
+    expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(1);
+    expect(stages).toContainEqual({
+      $match: { $or: [{ name: 'weight' }, { '_uql_rel_0.0': { $exists: true } }], deletedAt: null },
     });
   }
 
@@ -574,6 +564,8 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.constrainsRelations(Item, { $nor: [] })).toBe(false);
     // Refused later by the render, rather than recursing forever on the way there.
     expect(this.dialect.constrainsRelations(Item, { $or: [raw`code IS NOT NULL`] })).toBe(false);
+    // A relation aggregate reads the relation's rows too.
+    expect(this.dialect.constrainsRelations(Item, { $or: [{ tagsCount: { $gt: 1 } }] })).toBe(true);
   }
 
   /** A plain filter (`find`, `updateMany`) has nowhere to put the lookups a relation condition needs. */
@@ -584,6 +576,32 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Item, { tags: { $size: 2 } })).toThrow(
       "filtering by relation 'tags' is not supported here on MongoDB",
     );
+    expect(() => this.dialect.where(Item, { $or: [{ tagsCount: 2 }] })).toThrow(
+      "filtering by relation aggregate 'tagsCount' is not supported here on MongoDB",
+    );
+  }
+
+  /** A relation aggregate sits on the document under its column, like any field, which every clause reads. */
+  shouldPutARelationAggregateUnderItsColumn() {
+    const dialect = new MongoDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+    const stages = dialect.buildAggregateStages(MeasureUnitCategory, {
+      $where: { unitCount: { $gte: 1 } },
+      $group: { unitCount: true },
+      $select: { n: { $count: '*' } },
+    });
+    expect(Object.keys(stages[1]?.['$addFields'] ?? {})).toEqual(['unit_count']);
+    expect(stages[2]).toEqual({ $match: { deleted_at: null, unit_count: { $gte: 1 } } });
+    expect(stages[4]).toEqual({ $group: { _id: { unitCount: '$unit_count' }, n: { $sum: 1 } } });
+    expect(dialect.select(MeasureUnitCategory, { unitCount: true })).toEqual({ unit_count: 1 });
+  }
+
+  /** A relation aggregate read by several clauses is put on the document once. */
+  shouldLookUpARelationAggregateOnce() {
+    const stages = this.dialect.matchStages(Item, { $or: [{ tagsCount: 1 }, { tagsCount: { $gt: 3 } }] }, {}, [
+      'tagsCount',
+    ]);
+    expect(stages.filter((stage) => '$lookup' in stage)).toHaveLength(1);
+    expect(stages).toContainEqual({ $match: { $or: [{ tagsCount: 1 }, { tagsCount: { $gt: 3 } }] } });
   }
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
@@ -1029,7 +1047,118 @@ class MongoDialectSpec implements Spec {
     const stages = this.dialect.buildAggregateStages(Item, {
       $select: { count: { $count: '*' } },
     });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $project: { _id: 0, count: 1 } }]);
+  }
+
+  /**
+   * A group key reaches a to-one relation's field through its lookup, unwound keeping a row with no match,
+   * and an aggregate's own `$where` is the expression a `$cond` tests.
+   */
+  shouldBuildAggregateStagesAcrossARelationFilteringEachAggregate() {
+    const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
+    const sold = {
+      $and: [{ $eq: ['$code', 'a'] }, { $and: [{ $not: [isNull('$salePrice')] }, { $lt: ['$salePrice', 5] }] }],
+    };
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $group: { taxName: { tax: { name: true } } },
+      $select: {
+        sold: { $sum: { salePrice: true }, $where: { code: 'a', salePrice: { $lt: 5 } } },
+        n: { $count: '*', $where: { $or: [{ code: 'b' }, { code: null }] } },
+      },
+    });
+    expect(stages).toEqual([
+      { $lookup: { from: 'Tax', localField: 'taxId', foreignField: '_id', as: 'tax' } },
+      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
+      {
+        $group: {
+          _id: { taxName: '$tax.name' },
+          sold: { $sum: { $cond: [sold, '$salePrice', null] } },
+          _uql_count_sold: { $sum: { $cond: [sold, { $cond: [isNull('$salePrice'), 0, 1] }, 0] } },
+          n: { $sum: { $cond: [{ $or: [{ $eq: ['$code', 'b'] }, isNull('$code')] }, 1, 0] } },
+        },
+      },
+      {
+        $project: {
+          _id: 0,
+          taxName: '$_id.taxName',
+          sold: { $cond: [{ $eq: ['$_uql_count_sold', 0] }, null, '$sold'] },
+          n: 1,
+        },
+      },
+    ]);
+  }
+
+  /**
+   * Each comparison an aggregate's own `$where` takes, as the expression a `$cond` tests. A null or
+   * missing field compares below every value there, so an upper bound asks for one to be present.
+   */
+  shouldTranslateAnAggregateFilterIntoAnExpression() {
+    const counting = (where: QueryWhere<Item, QueryRaw, FieldKey<Item>>) =>
+      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: where } } })[0];
+    const counted = (test: unknown) => ({ $group: { _id: null, n: { $sum: { $cond: [test, 1, 0] } } } });
+    const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
+    const present = (ref: string) => ({ $not: [isNull(ref)] });
+
+    expect(counting({ code: { $ne: 'a' } })).toEqual(counted({ $not: [{ $eq: ['$code', 'a'] }] }));
+    expect(counting({ code: { $ne: null } })).toEqual(counted({ $not: [isNull('$code')] }));
+    expect(counting({ salePrice: { $gte: 1, $lt: 9 } })).toEqual(
+      counted({ $and: [{ $gte: ['$salePrice', 1] }, { $and: [present('$salePrice'), { $lt: ['$salePrice', 9] }] }] }),
+    );
+    expect(counting({ salePrice: { $between: [1, 9] } })).toEqual(
+      counted({ $and: [{ $gte: ['$salePrice', 1] }, { $lte: ['$salePrice', 9] }] }),
+    );
+    expect(counting({ code: ['a', 'b'] })).toEqual(counted({ $in: ['$code', ['a', 'b']] }));
+    expect(counting({ code: { $in: ['a'], $nin: ['b'] } })).toEqual(
+      counted({ $and: [{ $in: ['$code', ['a']] }, { $not: [{ $in: ['$code', ['b']] }] }] }),
+    );
+    expect(counting({ code: { $isNull: true } })).toEqual(counted(isNull('$code')));
+    expect(counting({ code: { $isNull: false } })).toEqual(counted(present('$code')));
+    expect(counting({ code: { $isNotNull: true } })).toEqual(counted(present('$code')));
+    expect(counting({ code: { $isNotNull: false } })).toEqual(counted(isNull('$code')));
+    expect(counting({ $not: [{ code: 'a' }], $nor: [{ code: 'b' }, { code: 'c' }] })).toEqual(
+      counted({
+        $and: [
+          { $not: [{ $and: [{ $eq: ['$code', 'a'] }] }] },
+          { $not: [{ $or: [{ $eq: ['$code', 'b'] }, { $eq: ['$code', 'c'] }] }] },
+        ],
+      }),
+    );
+    // A key holds an `ObjectId` on the document, so its hex spelling is converted as a query's is.
+    const taxId = '65f0c0ffee0000000000abcd';
+    expect(counting({ taxId })).toEqual(counted({ $eq: ['$taxId', new ObjectId(taxId)] }));
+  }
+
+  /** An aggregate's own `$where` translates the comparisons, and refuses by name what an expression has none of. */
+  shouldRefuseAnAggregateFilterItCannotTranslate() {
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $select: { n: { $count: '*', $where: { $text: { $fields: { name: true }, $value: 'a' } } } },
+      }),
+    ).toThrow("aggregate $where operator '$text' is not supported on MongoDB");
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: { $or: [raw`1 = 1`] } } } }),
+    ).toThrow('raw SQL is not supported in an aggregate $where on MongoDB');
+    expect(() =>
+      this.dialect.buildAggregateStages(MeasureUnit, { $group: { units: { category: { unitCount: true } } } }),
+    ).toThrow("cannot $group by 'category.unitCount' on MongoDB: a joined row's relation aggregate is not read");
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $select: { n: { $count: '*', $where: { name: { $startsWith: 'a' } } } },
+      }),
+    ).toThrow("aggregate $where operator '$startsWith' is not supported on MongoDB");
+  }
+
+  /** A relation aggregate the statement names is on the document before `$group` reads it. */
+  shouldBuildAggregateStagesOverARelationAggregate() {
+    const stages = this.dialect.buildAggregateStages(MeasureUnitCategory, {
+      $group: { unitCount: true },
+      $select: { n: { $count: '*' } },
+    });
+    expect(stages[0]).toHaveProperty('$lookup');
+    expect(stages.slice(-2)).toEqual([
+      { $group: { _id: { unitCount: '$unitCount' }, n: { $sum: 1 } } },
+      { $project: { _id: 0, unitCount: '$_id.unitCount', n: 1 } },
+    ]);
   }
 
   /**
@@ -1069,11 +1198,14 @@ class MongoDialectSpec implements Spec {
         max: { $max: { salePrice: true } },
       },
     });
+    // `$sum` answers 0 over no values where SQL answers null, so a count of what it read decides.
+    const isNull = { $eq: [{ $ifNull: ['$salePrice', null] }, null] };
     expect(stages).toEqual([
       {
         $group: {
           _id: { code: '$code' },
           total: { $sum: '$salePrice' },
+          _uql_count_total: { $sum: { $cond: [isNull, 0, 1] } },
           avg: { $avg: '$salePrice' },
           min: { $min: '$salePrice' },
           max: { $max: '$salePrice' },
@@ -1083,7 +1215,7 @@ class MongoDialectSpec implements Spec {
         $project: {
           _id: 0,
           code: '$_id.code',
-          total: 1,
+          total: { $cond: [{ $eq: ['$_uql_count_total', 0] }, null, '$total'] },
           avg: 1,
           min: 1,
           max: 1,
@@ -1127,36 +1259,16 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
-  shouldBuildAggregateStagesSumDistinct() {
-    const stages = this.dialect.buildAggregateStages(Item, {
-      $group: { code: true },
-      $select: { distinctTotal: { $sumDistinct: { salePrice: true } } },
-    });
-    expect(stages).toEqual([
-      { $group: { _id: { code: '$code' }, distinctTotal: { $addToSet: '$salePrice' } } },
-      { $project: { _id: 0, code: '$_id.code', distinctTotal: { $sum: '$distinctTotal' } } },
-    ]);
-  }
-
-  shouldBuildAggregateStagesAvgDistinct() {
-    const stages = this.dialect.buildAggregateStages(Item, {
-      $group: { code: true },
-      $select: { distinctAverage: { $avgDistinct: { salePrice: true } } },
-    });
-    expect(stages).toEqual([
-      { $group: { _id: { code: '$code' }, distinctAverage: { $addToSet: '$salePrice' } } },
-      { $project: { _id: 0, code: '$_id.code', distinctAverage: { $avg: '$distinctAverage' } } },
-    ]);
-  }
-
   shouldBuildAggregateStagesCountField() {
-    // COUNT(field) counts non-null values (matching SQL), unlike COUNT(*) which counts every row.
+    // COUNT(field) counts non-null values (matching SQL), unlike COUNT(*) which counts every row, and
+    // a missing field is as null as a null one, which an expression tells apart.
     const stages = this.dialect.buildAggregateStages(Item, {
       $group: { code: true },
       $select: { named: { $count: { name: true } } },
     });
+    const isNull = { $eq: [{ $ifNull: ['$name', null] }, null] };
     expect(stages).toEqual([
-      { $group: { _id: { code: '$code' }, named: { $sum: { $cond: [{ $ne: ['$name', null] }, 1, 0] } } } },
+      { $group: { _id: { code: '$code' }, named: { $sum: { $cond: [isNull, 0, 1] } } } },
       { $project: { _id: 0, code: '$_id.code', named: 1 } },
     ]);
   }
@@ -1166,7 +1278,11 @@ class MongoDialectSpec implements Spec {
       $select: { count: { $count: '*' } },
       $where: { code: '123' },
     });
-    expect(stages).toEqual([{ $match: { code: '123' } }, { $group: { _id: null, count: { $sum: 1 } } }]);
+    expect(stages).toEqual([
+      { $match: { code: '123' } },
+      { $group: { _id: null, count: { $sum: 1 } } },
+      { $project: { _id: 0, count: 1 } },
+    ]);
   }
 
   shouldBuildAggregateStagesWithHavingNumber() {
@@ -1196,7 +1312,11 @@ class MongoDialectSpec implements Spec {
       $select: { count: { $count: '*' } },
       $having: { count: { $gte: 3 } },
     });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $match: { count: { $gte: 3 } } }]);
+    expect(stages).toEqual([
+      { $group: { _id: null, count: { $sum: 1 } } },
+      { $project: { _id: 0, count: 1 } },
+      { $match: { count: { $gte: 3 } } },
+    ]);
   }
 
   shouldBuildAggregateStagesWithHavingUndefined() {
@@ -1205,7 +1325,7 @@ class MongoDialectSpec implements Spec {
       $having: { count: undefined },
     });
     // undefined conditions are skipped, so no HAVING $match stage
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $project: { _id: 0, count: 1 } }]);
   }
 
   shouldBuildAggregateStagesWithSort() {
@@ -1213,7 +1333,11 @@ class MongoDialectSpec implements Spec {
       $select: { count: { $count: '*' } },
       $sort: { count: -1 },
     });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $sort: { count: -1 } }]);
+    expect(stages).toEqual([
+      { $group: { _id: null, count: { $sum: 1 } } },
+      { $project: { _id: 0, count: 1 } },
+      { $sort: { count: -1 } },
+    ]);
   }
 
   shouldBuildAggregateStagesWithEmptySort() {
@@ -1221,12 +1345,12 @@ class MongoDialectSpec implements Spec {
       $select: { count: { $count: '*' } },
       $sort: {},
     });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $project: { _id: 0, count: 1 } }]);
   }
 
   shouldBuildAggregateStagesWithAnEmptyWhere() {
     const stages = this.dialect.buildAggregateStages(Item, { $select: { count: { $count: '*' } }, $where: {} });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }]);
+    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $project: { _id: 0, count: 1 } }]);
   }
 
   /** A key declared by a type name, not a class, reads as that name in the refusal. */
@@ -1234,7 +1358,7 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class BigKeyed {
       @Id({ type: 'bigint' }) id?: bigint;
-      @Field({ type: String }) title?: string;
+      @Field({ type: String }) title?: string | null;
     }
     expect(() => this.dialect.getPersistables(getMeta(BigKeyed), { title: 't' }, 'onInsert')).toThrow(
       "'BigKeyed.id' is declared 'bigint' and left to the database",
@@ -1268,7 +1392,7 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Shelf {
       @Id({ type: String }) id?: string;
-      @Field({ references: () => VectorItem }) vectorItemId?: number;
+      @Field({ references: () => VectorItem }) vectorItemId?: number | null;
       @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
     }
     expect(() =>
@@ -1295,7 +1419,7 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class RawDoc {
       @Id({ type: String }) _id?: string;
-      @Field({ type: String }) title?: string;
+      @Field({ type: String }) title?: string | null;
     }
     expect(this.dialect.normalizeId(getMeta(RawDoc), { _id: 'x', title: 't' })).toEqual({ _id: 'x', title: 't' });
   }
@@ -1324,7 +1448,12 @@ class MongoDialectSpec implements Spec {
       $skip: 10,
       $limit: 5,
     });
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $skip: 10 }, { $limit: 5 }]);
+    expect(stages).toEqual([
+      { $group: { _id: null, count: { $sum: 1 } } },
+      { $project: { _id: 0, count: 1 } },
+      { $skip: 10 },
+      { $limit: 5 },
+    ]);
   }
 
   shouldBuildAggregateStagesFullPipeline() {
@@ -1375,7 +1504,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(VectorItem, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
     expect(result).toEqual({
@@ -1394,7 +1523,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorUnknown' })
     class VectorUnknown {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     expect(() =>
       this.dialect.buildVectorSearchStage(VectorUnknown, 'nope', { $vector: [1, 2, 3] }, undefined, 10),
@@ -1405,7 +1534,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorNum' })
     class VectorNum {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const r5 = this.dialect.buildVectorSearchStage(VectorNum, 'vec', { $vector: [1, 2, 3] }, undefined, 5);
     expect(r5).toMatchObject({ $vectorSearch: { numCandidates: 50 } });
@@ -1418,7 +1547,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorCap' })
     class VectorCap {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const stage = this.dialect.buildVectorSearchStage(VectorCap, 'vec', { $vector: [1, 2, 3] }, undefined, 5000);
     expect(stage).toMatchObject({ $vectorSearch: { numCandidates: 10_000 } });
@@ -1429,7 +1558,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorNoLimit' })
     class VectorNoLimit {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     expect(() =>
       this.dialect.buildVectorSearchStage(VectorNoLimit, 'vec', { $vector: [1, 2, 3] }, undefined, 0),
@@ -1451,8 +1580,8 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorItem2' })
     class VectorItem2 {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) category!: string;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: String }) category!: string | null;
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(
       VectorItem2,
@@ -1477,9 +1606,9 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorComplex' })
     class VectorComplex {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) category!: string;
-      @Field({ type: String }) status!: string;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: String }) category!: string | null;
+      @Field({ type: String }) status!: string | null;
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(
       VectorComplex,
@@ -1504,7 +1633,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorItem3' })
     class VectorItem3 {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(VectorItem3, 'vec', { $vector: [1, 2, 3] }, {}, 10);
     expect(result).toEqual({
@@ -1522,7 +1651,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorProj' })
     class VectorProj {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(
       VectorProj,
@@ -1547,7 +1676,7 @@ class MongoDialectSpec implements Spec {
     @Entity({ name: 'VectorDist' })
     class VectorDist {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(
       VectorDist,
@@ -1566,7 +1695,7 @@ class MongoDialectSpec implements Spec {
     @Index((vectorCustomIdx) => [vectorCustomIdx.vec], { type: 'vectorSearch', name: 'my_custom_idx' })
     class VectorCustomIdx {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const result = this.dialect.buildVectorSearchStage(VectorCustomIdx, 'vec', { $vector: [1, 2, 3] }, undefined, 10);
     expect(result).toMatchObject({ $vectorSearch: { index: 'my_custom_idx' } });
@@ -1679,7 +1808,7 @@ class MongoDialectSpec implements Spec {
       [idKey]?: 'studentId' | 'courseId';
       @Id({ type: Number }) studentId?: number;
       @Id({ type: String }) courseId?: string;
-      @Field({ type: String }) grade?: string;
+      @Field({ type: String }) grade?: string | null;
     }
     const meta = getMeta(Enrolment);
     expect(() => this.dialect.columnOf(meta, 'studentId')).toThrow(
@@ -1707,8 +1836,8 @@ class MongoDialectSpec implements Spec {
     @Entity()
     class Attendance {
       @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) enrolmentStudentId?: number;
-      @Field({ type: String }) enrolmentCourseId?: string;
+      @Field({ type: Number }) enrolmentStudentId?: number | null;
+      @Field({ type: String }) enrolmentCourseId?: string | null;
       @ManyToOne({
         entity: () => Enrolment,
         references: (attendance, enrolment) => [

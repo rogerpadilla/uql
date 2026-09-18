@@ -20,6 +20,13 @@ import type {
  */
 export interface MigrationDefinition<Q extends Querier = SqlQuerier> {
   readonly name?: string;
+  /**
+   * `false` runs this migration outside a transaction, for a statement an engine refuses inside one -
+   * `CREATE INDEX CONCURRENTLY` on Postgres, the index a busy table needs. The cost is the rollback: a
+   * failure part-way leaves the statements before it applied and the migration unlogged. MongoDB
+   * creates collections outside any transaction already, so it changes nothing there.
+   */
+  readonly transaction?: boolean;
   up(querier: Q): Promise<void>;
   down(querier: Q): Promise<void>;
 }

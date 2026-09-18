@@ -14,10 +14,10 @@ class Preferences {
   id?: string;
 
   @Field({ type: 'json' })
-  values?: Json<Record<string, number>>;
+  values?: Json<Record<string, number>> | null;
 
   @Field({ type: 'json' })
-  lists?: Json<Record<string, number[]>>;
+  lists?: Json<Record<string, number[]>> | null;
 }
 
 const dialect = new D1SqliteDialect();

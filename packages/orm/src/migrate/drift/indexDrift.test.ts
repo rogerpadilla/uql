@@ -36,12 +36,12 @@ const TABLE = 'drift_index_user';
 @Entity({ name: TABLE })
 class DriftIndexUser {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) email?: string;
-  @Field({ type: String }) status?: string;
-  @Field({ type: Number }) tenantId?: number;
-  @Field({ type: Date }) createdAt?: Date;
-  @Field({ type: 'jsonb' }) data?: object;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: Number }) tenantId?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
+  @Field({ type: 'jsonb' }) data?: object | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
 }
 
 /** The same table, with one index not unique and one covering column dropped. */
@@ -53,12 +53,12 @@ class DriftIndexUser {
 @Entity({ name: TABLE })
 class DriftIndexUserEdited {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) email?: string;
-  @Field({ type: String }) status?: string;
-  @Field({ type: Number }) tenantId?: number;
-  @Field({ type: Date }) createdAt?: Date;
-  @Field({ type: 'jsonb' }) data?: object;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: Number }) tenantId?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
+  @Field({ type: 'jsonb' }) data?: object | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
 }
 
 /**
@@ -126,10 +126,10 @@ const CRDB_TABLE = 'drift_index_crdb';
 @Entity({ name: CRDB_TABLE })
 class CrdbIndexUser {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) email?: string;
-  @Field({ type: String }) status?: string;
-  @Field({ type: Number }) tenantId?: number;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: Number }) tenantId?: number | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
 }
 
 describe('index drift (CockroachDB)', () => {

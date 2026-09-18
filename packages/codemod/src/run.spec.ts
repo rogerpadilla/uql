@@ -14,7 +14,7 @@ describe('run', () => {
     expect(summary.changed).toContain(entity);
     expect(summary.changed).toContain(project);
     expect(summary.unresolved).toEqual([]);
-    expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string;');
+    expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string | null;');
     expect(await readFile(project, 'utf8')).not.toContain('experimentalDecorators');
     expect(await readFile(project, 'utf8')).toContain('"target": "es2024"');
   });

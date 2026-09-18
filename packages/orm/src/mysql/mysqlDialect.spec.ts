@@ -45,7 +45,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     expect(() =>
       this.exec((ctx) =>

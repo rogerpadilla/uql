@@ -17,10 +17,10 @@ class Article {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ type: String })
-  slug?: string;
+  slug?: string | null;
 
   @BeforeInsert()
   async slugify(this: Article) {
@@ -36,7 +36,7 @@ class Unhooked {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @BeforeInsert()
   reject() {

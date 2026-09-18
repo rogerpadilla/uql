@@ -35,10 +35,10 @@ class Book {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ type: String })
-  slug?: string;
+  slug?: string | null;
 
   @BeforeInsert()
   async slugify(this: Book) {
@@ -97,7 +97,7 @@ class Plain {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 }
 
 /** Masking on load, which is what `@AfterLoad` propagating its mutations is for. */
@@ -107,7 +107,7 @@ class Secret {
   id?: number;
 
   @Field({ type: String })
-  code?: string;
+  code?: string | null;
 
   @AfterLoad()
   mask(this: Secret) {
@@ -121,10 +121,10 @@ class Archived {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number;
+  deletedAt?: number | null;
 
   @BeforeDelete()
   recordBeforeDelete(this: Archived) {
@@ -145,7 +145,7 @@ class Timestamped {
 @Entity()
 class Note extends Timestamped {
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @BeforeInsert()
   first() {
@@ -164,7 +164,7 @@ class Guarded {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @BeforeInsert()
   reject() {
@@ -178,7 +178,7 @@ class Late {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @AfterInsert()
   reject() {
@@ -193,10 +193,10 @@ class Stamped {
   id?: number;
 
   @Field({ type: String, unique: true })
-  code?: string;
+  code?: string | null;
 
   @Field({ type: Number, onInsert: () => 7 })
-  createdAt?: number;
+  createdAt?: number | null;
 
   @AfterInsert()
   recordInsert(this: Stamped) {
@@ -216,7 +216,7 @@ class Unique {
   id?: number;
 
   @Field({ type: String })
-  email?: string;
+  email?: string | null;
 
   @BeforeInsert()
   async countTaken(this: Unique, ctx: HookContext) {
@@ -240,10 +240,10 @@ class ShelvedBook {
   id?: number;
 
   @Field({ type: Number })
-  shelfId?: number;
+  shelfId?: number | null;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @ManyToOne({
     entity: () => Shelf,
@@ -263,7 +263,7 @@ class Author {
   id?: number;
 
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @OneToMany({ entity: () => Tome, mappedBy: (tome) => tome.author, cascade: 'persist' })
   tomes?: Tome[];
@@ -280,10 +280,10 @@ class Tome {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ references: () => Author })
-  authorId?: number;
+  authorId?: number | null;
 
   @ManyToOne({ entity: () => Author, references: (tome) => tome.authorId })
   author?: Author;
@@ -487,7 +487,7 @@ describe('lifecycle hooks', () => {
       await querier.insertMany(Book, [{ title: 'One' }, { title: 'Two' }]);
       log = [];
 
-      await querier.deleteMany(Book, {});
+      await querier.deleteMany(Book, {}, { unfiltered: true });
 
       expect(log).toEqual(['beforeDelete:One', 'beforeDelete:Two', 'afterDelete:One', 'afterDelete:Two']);
     });

@@ -19,7 +19,7 @@ import { parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
 @Entity({ name: 'L2Item' })
 class L2Item {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', distance: 'l2' }) vec!: number[];
+  @Field({ type: 'vector', distance: 'l2' }) vec!: number[] | null;
 }
 
 /** A field with no metric of its own, whose index names one: an index only serves the metric it was built for. */
@@ -27,7 +27,7 @@ class L2Item {
 @Index((l2IndexedItem) => [l2IndexedItem.vec], { type: 'hnsw', distance: 'l2' })
 class L2IndexedItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector' }) vec!: number[];
+  @Field({ type: 'vector' }) vec!: number[] | null;
 }
 
 /**
@@ -423,14 +423,14 @@ describe('vector $project', () => {
 @Index((hnswItem) => [hnswItem.vec], { type: 'hnsw', distance: 'cosine' })
 class HnswItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
 }
 
 @Entity({ name: 'IvfflatItem' })
 @Index((ivfflatItem) => [ivfflatItem.vec], { type: 'ivfflat', distance: 'cosine' })
 class IvfflatItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
 }
 
 describe('vector query-time tuning', () => {
@@ -471,8 +471,8 @@ describe('vector query-time tuning', () => {
     @Index((twoVectorItem) => [twoVectorItem.a], { type: 'hnsw', distance: 'cosine' })
     class TwoVectorItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) a!: number[];
-      @Field({ type: 'vector', dimensions: 3 }) b!: number[];
+      @Field({ type: 'vector', dimensions: 3 }) a!: number[] | null;
+      @Field({ type: 'vector', dimensions: 3 }) b!: number[] | null;
     }
 
     const tuned = pg.vectorTuningStatements(getMeta(TwoVectorItem), {
@@ -529,7 +529,7 @@ describe('vector query-time tuning', () => {
     @Index((mariaVecItem) => [mariaVecItem.vec], { type: 'vector', distance: 'cosine' })
     class MariaVecItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
     }
     const maria = new MariaDialect();
     const ctx = maria.createContext();
@@ -545,13 +545,13 @@ describe('vector query-time tuning', () => {
     @Entity({ name: 'MariaVecChunk' })
     class MariaVecChunk {
       @Id({ type: Number }) id?: number;
-      @Field({ references: () => MariaVecDoc }) docId?: number;
+      @Field({ references: () => MariaVecDoc }) docId?: number | null;
     }
     @Entity({ name: 'MariaVecDoc' })
     @Index((mariaVecDoc) => [mariaVecDoc.vec], { type: 'vector', distance: 'cosine' })
     class MariaVecDoc {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
       @OneToMany({ entity: () => MariaVecChunk, mappedBy: (mariaVecChunk) => mariaVecChunk.docId })
       chunks?: MariaVecChunk[];
     }

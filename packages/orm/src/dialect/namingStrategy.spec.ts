@@ -8,9 +8,9 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 @Entity()
 class UserProfileDialect {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) firstName?: string;
-  @Field({ type: String }) lastName?: string;
-  @Field({ type: String, name: 'explicit_name' }) explicitField?: string;
+  @Field({ type: String }) firstName?: string | null;
+  @Field({ type: String }) lastName?: string | null;
+  @Field({ type: String, name: 'explicit_name' }) explicitField?: string | null;
 }
 
 describe('Naming Strategy SQL Generation', () => {

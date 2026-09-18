@@ -101,6 +101,6 @@ describe('cli', () => {
     expect(stderr).toContain("cannot infer 'type'");
     expect(stderr).toContain('1 property(ies) left untouched');
     expect(stdout).toContain('file(s) changed');
-    expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string;');
+    expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string | null;');
   }, 20_000);
 });

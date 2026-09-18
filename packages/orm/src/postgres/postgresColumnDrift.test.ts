@@ -24,7 +24,7 @@ describe('PostgreSQL column type drift', () => {
   const driftFor = async (length?: number) => {
     class Row {
       id?: number;
-      title?: string;
+      title?: string | null;
     }
     defineEntity(Row, {
       name: TABLE,

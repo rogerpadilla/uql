@@ -134,9 +134,9 @@ describe('Migrator on MongoDB (integration)', () => {
     @Entity()
     class UrgentTicket {
       @Id({ type: String }) id?: string;
-      @Field({ type: String }) assignee?: string;
-      @Field({ type: String }) status?: string;
-      @Field({ type: Number }) priority?: number;
+      @Field({ type: String }) assignee?: string | null;
+      @Field({ type: String }) status?: string | null;
+      @Field({ type: Number }) priority?: number | null;
     }
 
     await pool.withQuerier(async (querier) => {
@@ -163,12 +163,12 @@ describe('Migrator on MongoDB (integration)', () => {
     @Entity()
     class SyncMongoUser {
       @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) name?: string;
+      @Field({ type: String, index: true }) name?: string | null;
     }
     @Entity()
     class SyncMongoTag {
       @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) label?: string;
+      @Field({ type: String, index: true }) label?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [SyncMongoUser, SyncMongoTag] });
     const indexNames = (collection: string) =>
@@ -198,7 +198,7 @@ describe('Migrator on MongoDB (integration)', () => {
     @Entity()
     class DraftMongoUser {
       @Id({ type: String }) id?: string;
-      @Field({ type: String, index: true }) name?: string;
+      @Field({ type: String, index: true }) name?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [DraftMongoUser], migrationsPath: await migrationsDir() });
 

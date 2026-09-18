@@ -5,14 +5,14 @@ import { entityTypesSource } from './entityTypes.js';
 it('should write an interface per registered entity, relations included', () => {
   class Author {
     id?: number;
-    name?: string;
+    name?: string | null;
     posts?: Post[];
   }
   class Post {
     id?: number;
-    title?: string;
-    publishedAt?: Date;
-    authorId?: number;
+    title?: string | null;
+    publishedAt?: Date | null;
+    authorId?: number | null;
     author?: Author;
   }
   defineEntity(Author, {

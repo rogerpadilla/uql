@@ -1,38 +1,46 @@
 # Changelog
 
-Newest first, `[yyyy-mm-dd]`. One bullet per change, bold lead clause, ~20-25 words; `**Breaking:**` leads when it really breaks something for end-users. Only what a user can see and use - not internal refactors, tests.
+Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
+
+## [0.70.0] - 2026-09-18
+
+- **Breaking:** `deleteMany` and `updateMany` with an empty `$where` throw; pass `{ unfiltered: true }` to mean the whole table.
+- **Breaking (types):** a nullable column's property admits `null` (`name?: string | null`), or declares `nullable: false`. `npx uql-codemod` rewrites it.
+- **Breaking (types):** writes refuse `readonly` fields the database fills (relation aggregates, generated columns), which were silently dropped.
+- **Breaking:** `$sumDistinct` and `$avgDistinct` are removed; `$countDistinct` stays.
+- `aggregate` groups by a to-one relation's field, `$group: { orderId: { transaction: { orderId: true } } }`, and groups and totals relation-aggregate fields, on every engine.
+- An aggregate filters its own rows with `$where` beside its op, `{ $sum: { amount: true }, $where: { account: 'fee' } }`, so one statement pivots rows into columns.
+- Migrations take `transaction: false`, for statements like `CREATE INDEX CONCURRENTLY`.
+- Fixed: `$sum` over a `bigint` column is typed `bigint`.
+- Fixed (MongoDB): `count` and `aggregate` filter by relations and relation aggregates, skip soft-deleted rows, and return no `_id`.
+- Fixed (MongoDB): a `$sum` over no values is `null`, as on SQL, `$count: { field }` skips a document missing the field, and relation aggregates work under a naming strategy.
+- Fixed (Turso): writes filtered by a relation or relation aggregate run.
 
 ## [0.69.0] - 2026-09-17
 
-- **A relation aggregate is a field**: `@Field({ computed: (user) => user.resources.count() })` reads the correlated subquery `$count` emits, so `$select`, `$where` and `$sort` name it like any other. `sum`, `min`, `max` and `avg` read one of the target's columns, typed from it; `{ $where }` narrows the rows, and a value aggregate over only some of them takes the `$sort` and `$limit` that pick which.
-- **One is read only where a query names it**, as a relation is, unless it asks for `eager: true`. `uql-orm/postgres` grows 0.7 KB gzipped.
-- **Every engine reads one**, MongoDB included, where it renders as a `$lookup` ending in a `$count` or a `$group`: the declaration is data, not SQL.
-- **A `computed` field writing SQL is refused on MongoDB by name**, where selecting or filtering by one silently answered `undefined`.
-- **Fixed: a `$sum` reads as the column it totals**, so one over a BIGINT keeps every digit instead of rounding through a float; a `$count` and an `$avg` stay numbers.
-- **Fixed (Postgres, CockroachDB): introspecting a live database no longer fails on a table someone else just dropped**, where reading a column comment raised `relation "..." does not exist` mid-scan.
+- Relation aggregates as fields: `@Field({ computed: (user) => user.posts.count() })`, plus `sum`, `min`, `max` and `avg`, usable in `$select`, `$where` and `$sort` on every engine.
+- MongoDB refuses a SQL `computed` field by name instead of returning `undefined`.
+- Fixed: `$sum` over a BIGINT no longer rounds.
+- Fixed (Postgres, CockroachDB): introspection no longer fails when a table is dropped mid-scan.
 
 ## [0.68.1] - 2026-09-17
 
-- **Fixed: what JSON cannot carry no longer leaves the browser silently**: a `raw` fragment travelled as `{}` and a `Uint8Array` as an object keyed by index. The client's types refuse a fragment, and either one throws rather than reach the server. A `Date` still travels, as ISO 8601.
-- **`WireQuery<E>` is what an RPC contract declares as its input**: a `Query<E>` without the `raw` JSON cannot carry, so tRPC, oRPC and TanStack Start type it directly - Start with `strict.input` left on.
-- **Breaking (types): `D1Database` is now `D1Queryable`**, what uql calls on D1 rather than a name shadowing Cloudflare's own binding type; a pool still takes a binding or a `withSession()` session. The codemod renames it.
-- **Breaking (types): a query type names its transport's `raw` before its key set**, `QueryWhere<E, Raw, K>` and the same on `QueryPopulate`, `QueryCount` and `UpdatePayload`, so an explicit key set moves one place right.
+- `WireQuery<E>` types an RPC input (tRPC, oRPC, TanStack Start).
+- Fixed: the browser client refuses a `raw` fragment and a `Uint8Array`, which were sent broken.
+- **Breaking (types):** `D1Database` is renamed `D1Queryable`; the codemod renames it.
+- **Breaking (types):** query types take `Raw` before the key set: `QueryWhere<E, Raw, K>`.
 
 ## [0.68.0] - 2026-09-17
 
-- **Breaking: `$all` and `$elemMatch` match an element by what it holds, on every engine**: an object's keys, nested ones included, and an array's elements, beside an operator too. SQLite, SQL Server and MongoDB matched only an identical element. `uql-orm/postgres` grows 0.5 KB gzipped.
-- **Breaking: one `$eq` or `$in` in `$elemMatch` compares an element by JSON type**, as `$all` does, so `'5'` no longer matches `5`.
-- **Breaking (MongoDB): `$pull` compares an object element with its key order**, as SQLite and SQL Server do.
-- **Fixed: a JSON path holding no array matches no `$size`, `$all` or `$elemMatch`, and `$pull` leaves it alone**; Postgres, CockroachDB and MongoDB failed the statement, and the other engines miscounted it or rewrote it as an array.
-- **Fixed (MongoDB): `$size` takes comparison bounds**, and every relation `$size` in one `$where` applies, not just the last.
-- **`$between` and `$not` work on a JSON path, and `$elemMatch` reads a nested field**, where SQL Server dropped one past 4000 characters. A JSON number is cast on both sides, so an index over the path serves the comparison.
-- **Fixed: sorting by a JSON path orders numbers by value**, where `10` sorted before `9`.
-- **Fixed (MySQL, MariaDB): a JSON number compares with its fraction**, which a `DECIMAL` cast rounded: `{ 'kind.price': { $gt: 1.2 } }` no longer misses `1.4`.
-- **Fixed (Postgres, CockroachDB): a numeric comparison on a JSON path no longer fails on a row holding text**; regenerate a numeric `jsonPath` index, whose expression changed.
-- **MySQL indexes a JSON path**: `jsonPath` compiles to the expression queries compare, and a string path takes a `length`.
-- **Fixed (MySQL): `$elemMatch` returns the right rows on a large table**, where the planner could answer every row with one row's elements.
-- **Breaking: a vector search defaults to its index's metric** where neither the query nor the field names one, so an `l2` index serves it instead of a cosine scan.
-- **Fixed (MariaDB): a vector reads back with every float32 digit**, not the six `VEC_ToText` keeps.
+- **Breaking:** `$all` and `$elemMatch` match an element by its content, nested too, and by JSON type (`'5'` no longer matches `5`), on every engine.
+- **Breaking (MongoDB):** `$pull` compares an object's key order, as SQLite and SQL Server do.
+- **Breaking:** a vector search defaults to its index's metric.
+- `$between` and `$not` work on JSON paths, and MySQL indexes a `jsonPath`.
+- Fixed: JSON numbers sort and compare by value, and a path holding no array matches no `$size`, `$all` or `$elemMatch`.
+- Fixed (Postgres, CockroachDB): a numeric JSON comparison no longer fails on a row holding text; regenerate numeric `jsonPath` indexes.
+- Fixed (MySQL): `$elemMatch` returns the right rows on large tables.
+- Fixed (MongoDB): `$size` takes bounds, and every relation `$size` applies.
+- Fixed (MariaDB): vectors keep every float32 digit.
 
 ## [0.67.1] - 2026-09-16
 

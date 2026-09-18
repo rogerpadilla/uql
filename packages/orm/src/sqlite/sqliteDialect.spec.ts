@@ -163,8 +163,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string;
-      @Field({ type: String }) description?: string;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
     expect(sql).toBe(' WHERE `Listing` MATCH {`name` `description`} : ?');
@@ -176,7 +176,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     @Entity()
     class Flagged {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String, defaultValue: 'active' }) status?: string;
+      @Field({ type: String, defaultValue: 'active' }) status?: string | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, Flagged, [{ id: 1, status: 'x' }, { id: 2 }]));
     expect(sql).toBe('INSERT INTO `Flagged` (`id`, `status`) VALUES (?, ?), (?, ?) RETURNING `id` `id`');

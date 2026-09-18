@@ -11,7 +11,6 @@ import {
   type IsolationLevel,
   type JsonColumnType,
   type JsonUpdateOp,
-  type Key,
   parseQueryLock,
   type Query,
   type QueryAggMap,
@@ -83,6 +82,7 @@ import {
   normalizeScalarFieldSelection,
   parentJoins,
   targetKeyColumns,
+  type ParsedGroupEntry,
   parseGroupMap,
   parseRelationAtKey,
   parseRelationSize,
@@ -98,8 +98,7 @@ import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
 import {
   AGGREGATE_PAGE_ALIAS,
   AGGREGATE_VALUE_ALIAS,
-  COUNT_ALIAS,
-  COUNTED_ROWS_ALIAS,
+  ROWS_ALIAS,
   JSON_ELEM_ALIAS,
   JSON_PULL_ALIAS,
   relationSortColumn,
@@ -116,22 +115,16 @@ import {
 } from './jsonSql.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
+  groupPathField,
   NO_JOINS,
   type QueryJoins,
   type QuerySortOptions,
+  resolveGroupJoins,
   resolveQueryJoins,
   resolveSortableJoin,
 } from './queryJoins.js';
 import { resolveVectorCast } from './vectorCast.js';
 import { VectorSqlDialect } from './vectorSqlDialect.js';
-
-/** {@link JsonUpdateOp} as the dialects consume it: plain keys and values, no entity typing. */
-type JsonUpdateOperators = {
-  readonly $set?: Record<string, unknown>;
-  readonly $unset?: readonly string[];
-  readonly $push?: Record<string, unknown>;
-  readonly $pull?: Record<string, unknown>;
-};
 
 /** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
 type PersistKind = 'plain' | 'json' | 'vector';
@@ -177,6 +170,9 @@ export type SortRef = { readonly ref: string; readonly direction: string };
  * without an alias, and whether `sql` already answers under it, being a column of that very name.
  */
 export type SelectTerm = { readonly sql: string; readonly key?: string; readonly bare?: boolean };
+
+/** What an aggregate reads for one entry, and whether a bare column it can name inline. */
+type AggregateValue = { readonly sql: string; readonly bare: boolean };
 
 /** What a read selected, and for a relation's rows, the columns carrying their sort terms out. */
 export type ReadProjection = { readonly terms: readonly SelectTerm[]; readonly order?: readonly SortRef[] };
@@ -971,9 +967,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return `NOT (${this.buildFragment(ctx, (fragmentCtx) => this.compare(fragmentCtx, entity, key, val, opts))})`;
     }
     if (op === '$near') {
-      return this.vectorNearCondition(ctx, getMeta(entity), key as string, val as QueryVectorNear);
+      return this.vectorNearCondition(ctx, getMeta(entity), key, val as QueryVectorNear);
     }
-    const field = this.resolveOperandField(ctx, entity, key as string, opts);
+    const field = this.resolveOperandField(ctx, entity, key, opts);
     const condition =
       this.operatorCondition(ctx, field, op, val) ?? this.jsonArrayCondition(ctx, { base: field, path: '' }, op, val);
     return orRefuse(condition, `unknown operator: ${op}`);
@@ -1427,7 +1423,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions): void {
     const { $where, $skip, $limit } = q;
     if ($skip === undefined && $limit === undefined) {
-      this.select<E>(ctx, entity, { $select: [raw`COUNT(*)`.as(COUNT_ALIAS)] });
+      this.select<E>(ctx, entity, { $select: [raw`COUNT(*)`.as(AGGREGATE_VALUE_ALIAS)] });
       this.search(ctx, entity, { $where }, opts);
       return;
     }
@@ -1449,9 +1445,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** `SELECT COUNT(*)` over the rows `rows` appends, as a derived table. */
   private countRows(ctx: QueryContext, rows: () => void): void {
-    ctx.append(`SELECT COUNT(*) ${this.escapeId(COUNT_ALIAS, true)} FROM (`);
+    ctx.append(`SELECT COUNT(*) ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM (`);
     rows();
-    ctx.append(`) ${this.escapeId(COUNTED_ROWS_ALIAS, true)}`);
+    ctx.append(`) ${this.escapeId(ROWS_ALIAS, true)}`);
   }
 
   /**
@@ -1479,7 +1475,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QueryOptions = {},
   ): void {
     const meta = getMeta(entity);
-    const tableName = this.escapedTableName(meta);
+    const entries = parseGroupMap(q.$group, q.$select);
+    if (!entries.length) {
+      throw new TypeError('aggregate requires at least one $group column or $select function');
+    }
+    const table = this.tableRef(meta, this.readOptions(ctx, meta).alias);
+    const joins = resolveGroupJoins(meta, q.$group, (path) => ctx.claimAlias(path));
+    const prefix = joins.size ? table.alias : undefined;
+    const reads = entries.map((entry) => ({ entry, value: this.aggregateValue(ctx, entity, entry, joins, prefix) }));
+    // Only bare columns are read inline: SQL Server refuses a subquery inside an aggregate or a
+    // `GROUP BY`, and a filter's bound values would repeat in `HAVING`. A derived table answers by alias.
+    const derived = reads.some(({ value }) => !value.bare);
+    const named = (sql: string, alias: string) =>
+      sql === this.escapeId(alias) ? sql : `${sql} ${this.escapeId(alias)}`;
     const groupKeys: string[] = [];
     const selectParts: string[] = [];
     // Every column the statement emits, mapped to the SQL that references it. `$having` and `$sort`
@@ -1487,29 +1495,26 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // emit for it?".
     const emittedColumns: Record<string, string> = {};
 
-    for (const entry of parseGroupMap(q.$group, q.$select)) {
+    for (const { entry, value } of reads) {
+      const column = derived ? this.escapeId(entry.alias) : value.sql;
+      const expr =
+        entry.kind === 'key' ? column : this.aggregateFn(entry.op, value.sql === '*' ? '*' : column, entry.distinct);
       if (entry.kind === 'key') {
-        const field = meta.fields[entry.alias as FieldKey<E>];
-        const columnName = this.resolveColumnName(entry.alias, field);
-        const escaped = this.escapeId(columnName);
-        groupKeys.push(escaped);
-        emittedColumns[entry.alias] = escaped;
-        selectParts.push(columnName !== entry.alias ? `${escaped} ${this.escapeId(entry.alias)}` : escaped);
-      } else {
-        const sqlFn = AbstractSqlDialect.AGGREGATE_FN[entry.op];
-        const sqlArg = entry.fieldRef === '*' ? '*' : this.escapeId(this.columnOf(meta, entry.fieldRef));
-        const expr = `${sqlFn}(${entry.distinct ? 'DISTINCT ' : ''}${sqlArg})`;
-        emittedColumns[entry.alias] = expr;
-        selectParts.push(`${expr} ${this.escapeId(entry.alias)}`);
+        groupKeys.push(expr);
       }
+      emittedColumns[entry.alias] = expr;
+      selectParts.push(named(expr, entry.alias));
     }
 
-    if (!selectParts.length) {
-      throw new TypeError('aggregate requires at least one $group column or $select function');
+    const columns = reads.flatMap(({ entry, value }) => (value.sql === '*' ? [] : [named(value.sql, entry.alias)]));
+    ctx.append(
+      `SELECT ${selectParts.join(', ')} FROM ${derived ? `(SELECT ${columns.join(', ')} FROM ` : ''}${table.ref}`,
+    );
+    this.selectRelationJoins(ctx, meta, table.alias, joins);
+    this.where<E>(ctx, entity, q.$where, { ...opts, prefix });
+    if (derived) {
+      ctx.append(`) ${this.escapeId(ROWS_ALIAS, true)}`);
     }
-
-    ctx.append(`SELECT ${selectParts.join(', ')} FROM ${tableName}`);
-    this.where<E>(ctx, entity, q.$where, opts);
 
     if (groupKeys.length) {
       ctx.append(` GROUP BY ${groupKeys.join(', ')}`);
@@ -1521,6 +1526,48 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
     const sorted = this.aggregateSort(ctx, q.$sort, emittedColumns);
     this.pager(ctx, q, sorted);
+  }
+
+  /**
+   * What one entry reads: a grouped field, through the join its path passes, or an aggregate's argument,
+   * narrowed by its own `$where` to `CASE WHEN … THEN … END`. Bare where it is a column or `'*'`.
+   */
+  private aggregateValue<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    entry: ParsedGroupEntry<E>,
+    joins: QueryJoins,
+    prefix: string | undefined,
+  ): AggregateValue {
+    if (entry.kind === 'key') {
+      const { key, join } = groupPathField(joins, entry.path);
+      return join
+        ? this.aggregateOperand(ctx, join.entity, key, join.alias)
+        : this.aggregateOperand(ctx, entity, key, prefix);
+    }
+    const arg = entry.fieldRef === '*' ? undefined : this.aggregateOperand(ctx, entity, entry.fieldRef, prefix);
+    const { where } = entry;
+    const condition =
+      where &&
+      this.buildFragment(ctx, (fragment) => this.renderWhere(fragment, entity, where, { clause: false, prefix }));
+    if (!condition) {
+      return arg ?? { sql: '*', bare: true };
+    }
+    return { sql: `CASE WHEN ${condition} THEN ${arg?.sql ?? '1'} END`, bare: false };
+  }
+
+  /** A field as an aggregate reads it: its column, or the expression an inlined one stands for. */
+  private aggregateOperand<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    key: string,
+    prefix: string | undefined,
+  ): AggregateValue {
+    const field = getMeta(entity).fields[key];
+    return {
+      sql: this.resolveOperandField(ctx, entity, key, { prefix }),
+      bare: field === undefined || !isInlinedExpression(field),
+    };
   }
 
   /**
@@ -1820,7 +1867,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
-    return (getKeys(conflictPaths) as Key<E>[])
+    return getKeys(conflictPaths)
       .map((key) => {
         const field = meta.fields[key];
         const columnName = this.resolveColumnName(key, field);
@@ -1895,7 +1942,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const decoded: HydratableField[] = [];
     for (const [key, field] of Object.entries(meta.fields)) {
-      const kind = this.aggregateHydrateKind(meta, field) ?? this.hydrateKind(field);
+      const kind = this.fieldKind(meta, field);
       if (kind) {
         decoded.push([key, kind]);
       }
@@ -1909,13 +1956,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     q: QueryAggregate<E, G, A>,
   ): readonly HydratableField[] {
-    const { fields } = getMeta(entity);
+    const meta = getMeta(entity);
+    const joins = resolveGroupJoins(meta, q.$group);
     const decoded: HydratableField[] = [];
     for (const entry of parseGroupMap(q.$group, q.$select)) {
-      // A grouped column is the field itself; an aggregate reads the one it aggregates, `'*'` for a tally.
-      const key = entry.kind === 'fn' ? entry.fieldRef : entry.alias;
-      const field = fields[key as FieldKey<E>];
-      const kind = entry.kind === 'fn' ? this.aggregateKind(entry.op, field) : this.hydrateKind(field);
+      const kind =
+        entry.kind === 'fn'
+          ? this.aggregateKind(entry.op, this.fieldKind(meta, meta.fields[entry.fieldRef]))
+          : this.groupedKind(meta, joins, entry.path);
       if (kind) {
         decoded.push([entry.alias, kind]);
       }
@@ -1931,18 +1979,24 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    *
    * One rule for both readers: a relation aggregate a field declares, and an aggregate a query names.
    */
-  protected aggregateKind(op: QueryAggregateOp, field: FieldOptions | undefined): HydrateKind | undefined {
-    return op === '$count' || op === '$avg' ? 'number' : this.hydrateKind(field);
+  private aggregateKind(op: QueryAggregateOp, fieldKind: HydrateKind | undefined): HydrateKind | undefined {
+    return op === '$count' || op === '$avg' ? 'number' : fieldKind;
   }
 
-  /** What a relation aggregate a field declares decodes as: {@link aggregateKind} over the target's column. */
-  private aggregateHydrateKind<E>(meta: EntityMeta<E>, field: FieldMeta | undefined): HydrateKind | undefined {
+  /** What a grouped path decodes as: the kind of the field it reaches, through its join or on the entity. */
+  private groupedKind<E>(meta: EntityMeta<E>, joins: QueryJoins, path: readonly string[]): HydrateKind | undefined {
+    const { key, join } = groupPathField(joins, path);
+    return join ? this.fieldKind(join.meta, join.meta.fields[key]) : this.fieldKind(meta, meta.fields[key]);
+  }
+
+  /** What a field decodes as: its column's kind, or a relation aggregate's {@link aggregateKind} over the target's column. */
+  private fieldKind<E>(meta: EntityMeta<E>, field: FieldMeta | undefined): HydrateKind | undefined {
     const spec = aggregateOf(field);
     if (!spec) {
-      return undefined;
+      return this.hydrateKind(field);
     }
     const target = getMeta(relationOf(meta, spec.relation as RelationKey<E>).entity());
-    return this.aggregateKind(spec.op, spec.field ? target.fields[spec.field] : undefined);
+    return this.aggregateKind(spec.op, spec.field ? this.fieldKind(target, target.fields[spec.field]) : undefined);
   }
 
   /** What one column decodes as, the inverse of {@link persistKind}. `BigInt` first, since it shares the numeric family. */
@@ -2014,9 +2068,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `$pull` reads the column and every later one its expression once, so no value binds twice.
    */
   protected formatJsonUpdate(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp, field?: FieldOptions): void {
-    // Centralizes the one narrowing cast: the payload's keys are typed against the entity's JSON
-    // payload, which the dialects do not need - they only build SQL from keys and values.
-    const { $pull, $set, $push, $unset } = value as JsonUpdateOperators;
+    const { $pull, $set, $push, $unset } = value;
     let expr = escapedCol;
     if (hasKeys($pull)) {
       expr = this.jsonPull(ctx, expr, escapedCol, $pull);
@@ -2260,7 +2312,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(entity);
     const rel = relationOf(meta, aggregate.relation as RelationKey<E>);
     const parent = prefix || this.resolveTableAlias(meta);
-    if (!aggregate.query?.$limit && aggregate.query?.$skip === undefined) {
+    const { $limit, $skip } = aggregate.query ?? {};
+    if ($limit === undefined && $skip === undefined) {
       this.appendRelationSubquery(ctx, meta, aggregate.relation, rel, { prefix: parent }, aggregate);
       return;
     }
@@ -2300,13 +2353,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     this.read(ctx, entity, query, { alias }, joins);
   }
 
-  /** One aggregate over an operand, `COALESCE`d where the aggregate answers `0` on no rows rather than null. */
+  /** A relation aggregate over an operand, reading `0` on a parent with no rows where its type says so. */
   private aggregateCall(op: RelationAggregateOp, operand: string): string {
-    if (op === '$count') {
-      return 'COUNT(*)';
-    }
-    const call = `${AbstractSqlDialect.AGGREGATE_FN[op]}(${operand})`;
+    const call = this.aggregateFn(op, op === '$count' ? '*' : operand);
     return op === '$sum' ? `COALESCE(${call}, 0)` : call;
+  }
+
+  /** One aggregate function call, the one spelling every statement that aggregates writes. */
+  private aggregateFn(op: QueryAggregateOp, operand: string, distinct?: boolean): string {
+    return `${AbstractSqlDialect.AGGREGATE_FN[op]}(${distinct ? 'DISTINCT ' : ''}${operand})`;
   }
 
   /**

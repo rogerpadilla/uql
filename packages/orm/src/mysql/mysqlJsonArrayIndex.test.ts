@@ -21,7 +21,7 @@ const ROWS = 1000;
 @Entity({ name: TABLE })
 class JsonArrayIndexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) tags?: Json<string[]>;
+  @Field({ type: 'json' }) tags?: Json<string[]> | null;
 }
 
 /**

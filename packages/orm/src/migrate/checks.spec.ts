@@ -13,14 +13,14 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 })
 class Wallet {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number;
-  @Field({ type: Number }) spent?: number;
+  @Field({ type: Number }) balance?: number | null;
+  @Field({ type: Number }) spent?: number | null;
 }
 
 @Entity({ name: 'purse', checks: [{ where: raw`"balance" >= 0` }] })
 class RenamedWallet {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number;
+  @Field({ type: Number }) balance?: number | null;
 }
 
 @Entity()
@@ -76,20 +76,20 @@ describe('check expressions', () => {
 class Invoice {
   @Id({ type: Number }) id?: number;
   @Field({ type: String, enum: ['draft', 'paid', 'void'] as const })
-  status?: 'draft' | 'paid' | 'void';
-  @Field({ type: String }) note?: string;
+  status?: 'draft' | 'paid' | 'void' | null;
+  @Field({ type: String }) note?: string | null;
 }
 
 @Entity()
 class Priority {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, enum: [1, 2, 3] as const }) level?: 1 | 2 | 3;
+  @Field({ type: Number, enum: [1, 2, 3] as const }) level?: 1 | 2 | 3 | null;
 }
 
 @Entity()
 class Quoted {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: ["it's", 'plain'] as const }) label?: "it's" | 'plain';
+  @Field({ type: String, enum: ["it's", 'plain'] as const }) label?: "it's" | 'plain' | null;
 }
 
 enum Status {
@@ -100,7 +100,7 @@ enum Status {
 @Entity()
 class TsEnumInvoice {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, enum: Object.values(Status) }) status?: Status;
+  @Field({ type: String, enum: Object.values(Status) }) status?: Status | null;
 }
 
 describe('enum fields', () => {
@@ -112,7 +112,7 @@ describe('enum fields', () => {
     @Entity({ name: 'Priced' })
     class Priced {
       @Id({ type: Number }) id?: number;
-      @Field({ type: Number }) net?: number;
+      @Field({ type: Number }) net?: number | null;
       @Field({ type: Number, computed: raw`net * 2`, stored: true, nullable: false, unique: true }) gross?: number;
     }
 

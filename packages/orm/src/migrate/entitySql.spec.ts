@@ -16,9 +16,9 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 })
 class Ledger {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) balance?: number;
-  @Field({ type: Number }) spent?: number;
-  @Field({ type: Number }) refunded?: number;
+  @Field({ type: Number }) balance?: number | null;
+  @Field({ type: Number }) spent?: number | null;
+  @Field({ type: Number }) refunded?: number | null;
 }
 
 @Index((account) => [account.emailAddress], { unique: true, where: { deletedAt: null } })
@@ -28,22 +28,22 @@ class Ledger {
 @Entity()
 class Account {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) emailAddress?: string;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
+  @Field({ type: String }) emailAddress?: string | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
 }
 
 @Entity()
 class Scored {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) rawScore?: number;
-  @Field({ type: Number, computed: (scored) => raw`${scored.rawScore} + 1`, stored: true }) nextScore?: number;
+  @Field({ type: Number }) rawScore?: number | null;
+  @Field({ type: Number, computed: (scored) => raw`${scored.rawScore} + 1`, stored: true }) nextScore?: number | null;
 }
 
 class Line {
   id?: number;
-  unitPrice?: number;
-  qty?: number;
-  total?: number;
+  unitPrice?: number | null;
+  qty?: number | null;
+  total?: number | null;
 }
 
 defineEntity(Line, {
@@ -89,7 +89,7 @@ describe('SQL an entity declares', () => {
     @Entity({ checks: [{ where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 0.5 } } } }] })
     class Near {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
     }
     expect(ddl(new PostgresDialect(), Near)).toContain(`CHECK ("embedding" <=> '[1,2,3]'::vector < 0.5)`);
   });
@@ -111,7 +111,7 @@ describe('a date SQL an entity declares compares against', () => {
     @Entity({ checks: [{ where: { closedAt: { $gte: epoch } } }, { where: { closedAt: { $in: [epoch] } } }] })
     class Dated {
       @Id({ type: Number }) id?: number;
-      @Field({ type: Date }) closedAt?: Date;
+      @Field({ type: Date }) closedAt?: Date | null;
     }
     expect(ddl(new PostgresDialect(), Dated)).toContain(`CHECK ("closedAt" >= '1970-01-01 00:00:00.000')`);
     expect(ddl(new PostgresDialect(), Dated)).toContain(`CHECK ("closedAt" IN ('1970-01-01 00:00:00.000'))`);
@@ -121,10 +121,10 @@ describe('a date SQL an entity declares compares against', () => {
 
 type TicketShape = {
   id?: number;
-  status?: string;
-  priority?: number;
-  closedAt?: Date;
-  data?: Json<{ theme?: string }>;
+  status?: string | null;
+  priority?: number | null;
+  closedAt?: Date | null;
+  data?: Json<{ theme?: string }> | null;
 };
 
 const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
@@ -132,10 +132,10 @@ const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
   @Entity()
   class Ticket implements TicketShape {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) status?: string;
-    @Field({ type: Number }) priority?: number;
-    @Field({ type: Date }) closedAt?: Date;
-    @Field({ type: 'json' }) data?: Json<{ theme?: string }>;
+    @Field({ type: String }) status?: string | null;
+    @Field({ type: Number }) priority?: number | null;
+    @Field({ type: Date }) closedAt?: Date | null;
+    @Field({ type: 'json' }) data?: Json<{ theme?: string }> | null;
   }
   return Ticket;
 };

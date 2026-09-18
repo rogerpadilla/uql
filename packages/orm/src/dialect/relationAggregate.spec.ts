@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { defineField, Entity, Field, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import type { Query } from '../type/index.js';
+import type { Query, QueryAggregate } from '../type/index.js';
 import { memberRefs, raw } from '../util/index.js';
 
 /**
@@ -11,28 +11,29 @@ import { memberRefs, raw } from '../util/index.js';
 @Entity()
 class Task {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Project, type: Number }) projectId?: number;
+  @Field({ references: () => Project, type: Number }) projectId?: number | null;
   @ManyToOne({ entity: () => Project, references: (task) => task.projectId }) project?: Project;
-  @Field({ type: Number }) hours?: number;
-  @Field({ type: Boolean }) done?: boolean;
+  @Field({ type: Number }) hours?: number | null;
+  @Field({ type: Boolean }) done?: boolean | null;
 }
 
 @Entity()
 class Tag {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) weight?: number;
+  @Field({ type: Number }) weight?: number | null;
 }
 
 @Entity()
 class ProjectTag {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Project, type: Number }) projectId?: number;
-  @Field({ references: () => Tag, type: Number }) tagId?: number;
+  @Field({ references: () => Project, type: Number }) projectId?: number | null;
+  @Field({ references: () => Tag, type: Number }) tagId?: number | null;
 }
 
 @Entity()
 class Project {
   @Id({ type: Number }) id?: number;
+  @Field({ type: String }) owner?: string | null;
 
   @OneToMany({ entity: () => Task, mappedBy: (task) => task.project })
   tasks?: Task[];
@@ -79,6 +80,11 @@ describe('relation aggregate', () => {
     const ctx = dialect.createContext();
     dialect.find(ctx, Project, q);
     return ctx.sql;
+  };
+  const aggregateOf = (q: QueryAggregate<Project>): { sql: string; values: unknown[] } => {
+    const ctx = dialect.createContext();
+    dialect.aggregate(ctx, Project, q);
+    return { sql: ctx.sql, values: ctx.values };
   };
 
   it('should read a count as a correlated subquery', () => {
@@ -163,6 +169,39 @@ describe('relation aggregate', () => {
   it('should order by the subquery in a $sort', () => {
     expect(sqlOf({ $select: { id: true }, $sort: { taskCount: -1 } })).toBe(
       'SELECT "id" FROM "Project" ORDER BY (SELECT COUNT(*) FROM "Task" "tasks" WHERE "tasks"."projectId" = "Project"."id") DESC',
+    );
+  });
+
+  /** SQL Server refuses a subquery inside an aggregate or a `GROUP BY`, so the rows computing one are read first. */
+  it('should aggregate over the rows computing the field it names', () => {
+    expect(
+      aggregateOf({
+        $where: { id: { $gt: 1 } },
+        $group: { owner: true },
+        $select: { hours: { $sum: { totalHours: true } }, done: { $sum: { doneCount: true } } },
+      }),
+    ).toEqual({
+      sql: 'SELECT "owner", SUM("hours") "hours", SUM("done") "done" FROM (SELECT "owner", (SELECT COALESCE(SUM("tasks"."hours"), 0) FROM "Task" "tasks" WHERE "tasks"."projectId" = "Project"."id") "hours", (SELECT COUNT(*) FROM "Task" "tasks_2" WHERE "tasks_2"."projectId" = "Project"."id" AND "tasks_2"."done" = $1) "done" FROM "Project" WHERE "id" > $2) "_uql_rows" GROUP BY "owner"',
+      values: [true, 1],
+    });
+  });
+
+  it('should group by the field over the rows computing it', () => {
+    expect(
+      aggregateOf({
+        $group: { taskCount: true },
+        $select: { n: { $count: '*' } },
+        $having: { n: { $gt: 1 } },
+        $sort: { taskCount: -1 },
+      }).sql,
+    ).toBe(
+      'SELECT "taskCount", COUNT(*) "n" FROM (SELECT (SELECT COUNT(*) FROM "Task" "tasks" WHERE "tasks"."projectId" = "Project"."id") "taskCount" FROM "Project") "_uql_rows" GROUP BY "taskCount" HAVING COUNT(*) > $1 ORDER BY "taskCount" DESC',
+    );
+  });
+
+  it('should read the table itself where the aggregate names no computed field', () => {
+    expect(aggregateOf({ $group: { owner: true }, $select: { n: { $count: '*' } } }).sql).toBe(
+      'SELECT "owner", COUNT(*) "n" FROM "Project" GROUP BY "owner"',
     );
   });
 });

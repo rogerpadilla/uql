@@ -1,24 +1,27 @@
 // Every identifier UQL invents, `_uql`-prefixed to stay off a user's own, collected in one place:
 // the ends writing and reading one sit in different modules, and a drift between them fails silently.
 
-/** The column every internally-built count answers in: `COUNT(*)`, a grouped tally, a `$count` stage. */
-export const COUNT_ALIAS = '_uql_count';
-
 /** The column a paged read carries its own unpaged total in, from `COUNT(*) OVER ()`. */
 export const TOTAL_ALIAS = '_uql_total';
 
-/** The derived table a count wraps the rows it counts in: a page, or a `$distinct` set. MySQL requires the alias. */
-export const COUNTED_ROWS_ALIAS = '_uql_rows';
+/**
+ * The derived table a statement wraps the rows it counts or aggregates in: a page, a `$distinct` set, or
+ * rows computing an inlined field an aggregate names. MySQL requires the alias.
+ */
+export const ROWS_ALIAS = '_uql_rows';
 
 /** The derived table a capped relation aggregate reads: the page is taken first, then aggregated over. */
 export const AGGREGATE_PAGE_ALIAS = '_uql_page';
 
 /**
- * What an aggregate answers under: the column a capped page carries out for the aggregate wrapping it,
- * and the field a MongoDB `$group` or `$count` leaves its value in. One name, since both ends of each
- * are written and read here.
+ * The one value a statement that aggregates answers under: a `COUNT(*)` or an estimate, the column a
+ * capped page carries out for the aggregate wrapping it, and the field a MongoDB `$group` or `$count`
+ * leaves its result in. One name, since both ends of each are written and read here.
  */
 export const AGGREGATE_VALUE_ALIAS = '_uql_value';
+
+/** Beside each MongoDB `$sum`, how many values it read: `$sum` answers 0 over none, where SQL answers null. */
+export const SUM_COUNT_ALIAS = '_uql_count';
 
 /** The row a Postgres relation aggregates whole: a LATERAL projection of the columns it answers under. */
 export const RELATION_ROW_ALIAS = '_uql_row';

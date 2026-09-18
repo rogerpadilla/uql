@@ -117,6 +117,41 @@ describe('Migrator Core Methods', () => {
     expect(storage.logWithQuerier).toHaveBeenCalledTimes(2);
   });
 
+  /**
+   * `CREATE INDEX CONCURRENTLY` is the statement a busy table needs and a transaction refuses, so a
+   * migration says so for itself. What it gives up is the rollback: a failure part-way leaves the
+   * statements before it applied and the migration unlogged.
+   */
+  it('should run a migration that opts out of its transaction outside one', async () => {
+    const transaction = vi.spyOn(querier, 'transaction');
+    const outside: Migration = {
+      name: '20250104000000_concurrently',
+      transaction: false,
+      up: vi.fn().mockResolvedValue(undefined),
+      down: vi.fn().mockResolvedValue(undefined),
+    };
+
+    const result = await migrator.runMigration(outside, 'up');
+
+    expect(result.success).toBe(true);
+    expect(outside.up).toHaveBeenCalled();
+    expect(storage.logWithQuerier).toHaveBeenCalledWith(querier, '20250104000000_concurrently');
+    expect(transaction).not.toHaveBeenCalled();
+  });
+
+  it('should wrap a migration in a transaction by default', async () => {
+    const transaction = vi.spyOn(querier, 'transaction');
+    const wrapped: Migration = {
+      name: '20250105000000_plain',
+      up: vi.fn().mockResolvedValue(undefined),
+      down: vi.fn().mockResolvedValue(undefined),
+    };
+
+    await migrator.runMigration(wrapped, 'up');
+
+    expect(transaction).toHaveBeenCalledTimes(1);
+  });
+
   it('should run up to a named migration', async () => {
     mockExecuted.mockResolvedValue([]);
 
@@ -670,14 +705,14 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
 @Entity()
 class SyncUser {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
 }
 
 @Entity()
 class SyncProfile {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) bio?: string;
-  @Field({ references: () => SyncUser }) userId?: number;
+  @Field({ type: String }) bio?: string | null;
+  @Field({ references: () => SyncUser }) userId?: number | null;
 }
 
 describe('Migrator sync against an introspected schema', () => {
@@ -732,10 +767,10 @@ describe('Migrator sync against an introspected schema', () => {
     @Entity()
     class MultiFieldUser {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) username?: string;
-      @Field({ type: String }) email?: string;
-      @Field({ type: Number }) age?: number;
-      @Field({ type: Boolean }) isActive?: boolean;
+      @Field({ type: String }) username?: string | null;
+      @Field({ type: String }) email?: string | null;
+      @Field({ type: Number }) age?: number | null;
+      @Field({ type: Boolean }) isActive?: boolean | null;
     }
 
     const multiFieldMigrator = new Migrator(pool, {

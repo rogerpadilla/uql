@@ -2,6 +2,7 @@ import { getMeta, relationOf } from '../entity/index.js';
 import type {
   EntityMeta,
   Query,
+  QueryGroupMap,
   QueryPopulate,
   QuerySortMap,
   RelationKey,
@@ -9,7 +10,7 @@ import type {
   RelationQuery,
   Type,
 } from '../type/index.js';
-import { getKeys, getRelationRequestSummary, isToManyRelation, parseRelationAtKey } from '../util/index.js';
+import { getKeys, getRelationRequestSummary, isRecord, isToManyRelation, parseRelationAtKey } from '../util/index.js';
 
 /**
  * One relation a statement joins, keyed by the alias its columns are addressed by (`tax`,
@@ -64,8 +65,41 @@ export function resolveQueryJoins<E>(
   }
   const joins = new Map<string, QueryJoin>();
   addPopulateJoins(joins, claimAlias, meta, q.$populate);
-  addSortJoins(joins, claimAlias, meta, q.$sort);
+  addPathJoins(joins, claimAlias, meta, q.$sort);
   return joins;
+}
+
+/** What an aggregate joins: each to-one relation a `$group` path passes through. */
+export function resolveGroupJoins<E>(
+  meta: EntityMeta<E>,
+  group: QueryGroupMap<E> | undefined,
+  claimAlias: (path: string) => string = (path) => path,
+): QueryJoins {
+  const joins = new Map<string, QueryJoin>();
+  for (const ref of Object.values(group ?? {})) {
+    if (isRecord(ref)) {
+      addPathJoins(joins, claimAlias, meta, ref);
+    }
+  }
+  return joins;
+}
+
+/** The field a grouped `path` reads, and the join it reads it through: none for the entity's own. */
+export function groupPathField(
+  joins: QueryJoins,
+  path: readonly string[],
+): { readonly key: string; readonly join: QueryJoin | undefined } {
+  const key = path[path.length - 1];
+  if (path.length === 1) {
+    return { key, join: undefined };
+  }
+  const join = joins.get(path.slice(0, -1).join('.'));
+  if (!join) {
+    throw new TypeError(
+      `cannot $group by '${path.join('.')}': only a to-one relation's field groups, since a to-many multiplies the rows it joins`,
+    );
+  }
+  return { key, join };
 }
 
 /**
@@ -144,27 +178,28 @@ function addPopulateJoins<E>(
   }
 }
 
-function addSortJoins<E>(
+/** The to-one relations a nested map of fields passes through, a `$sort` or a `$group` path, as joins adding no columns. */
+function addPathJoins<E>(
   joins: Map<string, QueryJoin>,
   claimAlias: (path: string) => string,
   meta: EntityMeta<E>,
-  sort: QuerySortMap<E> | undefined,
+  map: Readonly<Record<string, unknown>> | undefined,
   parent?: QueryJoin,
 ): void {
-  if (!sort) {
+  if (!map) {
     return;
   }
-  for (const key of getKeys(sort)) {
+  for (const key of getKeys(map)) {
     const relation = meta.relations[key as RelationKey<E>];
-    const value = sort[key as keyof QuerySortMap<E>];
+    const value = map[key];
     // A to-many, or a value that is not a map of the relation's own fields, cannot be joined and is
-    // reported where the `ORDER BY` is rendered - the one place that knows how to name it.
+    // reported where the statement names it - the one place that knows how to.
     if (!relation || isToManyRelation(relation) || !isSortMap(value)) {
       continue;
     }
     const join = addJoin(joins, claimAlias, parent, key, relation, {}, false, false);
-    // `E` stated: inferred from a `QuerySortMap<object>`, it lands on the nested relation's target.
-    addSortJoins<object>(joins, claimAlias, join.meta, value, join);
+    // `E` stated: inferred from the nested map, it lands on the nested relation's target.
+    addPathJoins<object>(joins, claimAlias, join.meta, value, join);
   }
 }
 
@@ -191,7 +226,7 @@ export function resolveSortableJoin(
   return { join, sort: value };
 }
 
-/** A nested `$sort` map, as opposed to a direction or a vector search. */
+/** A nested map of fields, as opposed to a `$sort` direction or vector search, or a `$group` field's `true`. */
 function isSortMap(value: unknown): value is QuerySortMap<object> {
   return typeof value === 'object' && value !== null && !Array.isArray(value) && !('$vector' in value);
 }

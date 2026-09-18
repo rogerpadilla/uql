@@ -28,8 +28,8 @@ export interface DatabaseConfig {
 @Entity({ name: 'SyncComputedAdded' })
 class ComputedAdded {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) qty?: number;
-  @Field({ type: Number, computed: raw`qty * 2`, stored: true }) double?: number;
+  @Field({ type: Number }) qty?: number | null;
+  @Field({ type: Number, computed: raw`qty * 2`, stored: true }) double?: number | null;
 }
 
 /** One engine's run of the shared sync suite; each engine is its own test file, so vitest runs them in parallel. */
@@ -88,8 +88,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncUserTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
-        @Field({ type: String }) email?: string;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: String }) email?: string | null;
       }
 
       const tableName = 'AutoSyncUserTest1';
@@ -112,12 +112,12 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncSettledTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
-        @Field({ type: String, index: true }) email?: string;
-        @Field({ type: Number }) cost?: number;
-        @Field({ type: Boolean }) active?: boolean;
-        @Field({ type: 'text' }) bio?: string;
-        @Field({ type: 'json' }) data?: object;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: String, index: true }) email?: string | null;
+        @Field({ type: Number }) cost?: number | null;
+        @Field({ type: Boolean }) active?: boolean | null;
+        @Field({ type: 'text' }) bio?: string | null;
+        @Field({ type: 'json' }) data?: object | null;
       }
 
       await givenNoTable('AutoSyncSettledTest');
@@ -132,10 +132,10 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncDefaultsTest {
         @Id({ type: String }) id?: string;
-        @Field({ type: String, defaultValue: "it's" }) quoted?: string;
-        @Field({ type: String, defaultValue: 'a\\b' }) slash?: string;
-        @Field({ type: 'text', defaultValue: 'none' }) note?: string;
-        @Field({ type: Number, defaultValue: -3 }) negative?: number;
+        @Field({ type: String, defaultValue: "it's" }) quoted?: string | null;
+        @Field({ type: String, defaultValue: 'a\\b' }) slash?: string | null;
+        @Field({ type: 'text', defaultValue: 'none' }) note?: string | null;
+        @Field({ type: Number, defaultValue: -3 }) negative?: number | null;
       }
 
       await givenNoTable('AutoSyncDefaultsTest');
@@ -156,7 +156,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         [idKey]?: 'userId' | 'groupId';
         @Id({ type: Number }) userId?: number;
         @Id({ type: Number }) groupId?: number;
-        @Field({ type: String }) note?: string;
+        @Field({ type: String }) note?: string | null;
       }
 
       const tableName = 'AutoSyncKeyTest';
@@ -198,7 +198,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncIndexTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: true }) email?: string;
+        @Field({ type: String, index: true }) email?: string | null;
       }
 
       const tableName = 'AutoSyncIndexTest';
@@ -216,10 +216,10 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncProductTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
-        @Field({ type: Number }) price?: number;
-        @Field({ type: String }) description?: string;
-        @Field({ type: Boolean }) active?: boolean;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: Number }) price?: number | null;
+        @Field({ type: String }) description?: string | null;
+        @Field({ type: Boolean }) active?: boolean | null;
       }
 
       const tableName = 'AutoSyncProductTest1';
@@ -234,7 +234,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncCategoryTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
+        @Field({ type: String }) name?: string | null;
       }
 
       const tableName = 'AutoSyncCategoryTest1';
@@ -251,8 +251,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncNewTableTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string;
-        @Field({ type: String }) content?: string;
+        @Field({ type: String }) title?: string | null;
+        @Field({ type: String }) content?: string | null;
       }
 
       const tableName = 'AutoSyncNewTableTest1';
@@ -274,8 +274,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity({ name: 'custom_user_table' })
       class AutoSyncCustomNameTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) username?: string;
-        @Field({ type: String }) email?: string;
+        @Field({ type: String }) username?: string | null;
+        @Field({ type: String }) email?: string | null;
       }
 
       const tableName = 'custom_user_table';
@@ -290,7 +290,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncCustomColumnTest1 {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, name: 'user_email' }) email?: string;
+        @Field({ type: String, name: 'user_email' }) email?: string | null;
       }
 
       const tableName = 'AutoSyncCustomColumnTest1';
@@ -305,7 +305,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncRenameTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) newName?: string;
+        @Field({ type: String }) newName?: string | null;
       }
 
       const tableName = 'AutoSyncRenameTest';
@@ -320,7 +320,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncUnsafeRenameTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) newName?: string;
+        @Field({ type: String }) newName?: string | null;
       }
 
       const tableName = 'AutoSyncUnsafeRenameTest';
@@ -339,7 +339,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncFloatTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) cost?: number;
+        @Field({ type: Number }) cost?: number | null;
       }
 
       const tableName = 'AutoSyncFloatTest';
@@ -355,7 +355,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncNoDropTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
+        @Field({ type: String }) name?: string | null;
       }
 
       const tableName = 'AutoSyncNoDropTest';
@@ -393,7 +393,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class FkSyncEmployee {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkSyncCompany, onDelete: 'CASCADE' }) companyId?: number;
+        @Field({ references: () => FkSyncCompany, onDelete: 'CASCADE' }) companyId?: number | null;
       }
 
       await givenRelatedTables('FkSyncCompany', 'FkSyncEmployee');
@@ -422,7 +422,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Entity()
         class FkAlterEmployee {
           @Id({ type: Number }) id?: number;
-          @Field({ references: () => FkAlterCompany, onDelete: 'SET NULL' }) companyId?: number;
+          @Field({ references: () => FkAlterCompany, onDelete: 'SET NULL' }) companyId?: number | null;
         }
 
         await givenRelatedTables('FkAlterCompany', 'FkAlterEmployee');
@@ -455,7 +455,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class FkStableEmployee {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkStableCompany, onDelete: 'CASCADE' }) companyId?: number;
+        @Field({ references: () => FkStableCompany, onDelete: 'CASCADE' }) companyId?: number | null;
       }
 
       await givenNoTable('FkStableEmployee');
@@ -473,7 +473,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Entity()
         class FkUnnamedEmployee {
           @Id({ type: Number }) id?: number;
-          @Field({ type: Number }) companyId?: number;
+          @Field({ type: Number }) companyId?: number | null;
         }
 
         await givenRelatedTables('FkUnnamedCompany', 'FkUnnamedEmployee');
@@ -501,7 +501,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class FkLegacyEmployee {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkLegacyCompany, onDelete: 'CASCADE' }) companyId?: number;
+        @Field({ references: () => FkLegacyCompany, onDelete: 'CASCADE' }) companyId?: number | null;
       }
 
       await givenNoTable('FkLegacyEmployee');
@@ -533,7 +533,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       class SyncEnumAdded {
         @Id({ type: Number }) id?: number;
         @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
-        status?: 'draft' | 'paid';
+        status?: 'draft' | 'paid' | null;
       }
 
       const tableName = 'SyncEnumAdded';
@@ -551,7 +551,10 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class SyncEnumCreated {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['on', 'off'] as const }) state?: 'on' | 'off';
+        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['on', 'off'] as const }) state?:
+          | 'on'
+          | 'off'
+          | null;
       }
 
       await givenNoTable('SyncEnumCreated');
@@ -576,7 +579,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       class Narrow {
         @Id({ type: Number }) id?: number;
         @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
-        status?: 'draft' | 'paid';
+        status?: 'draft' | 'paid' | null;
       }
 
       await givenNoTable('SyncEnumWidened');
@@ -587,7 +590,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       class Wide {
         @Id({ type: Number }) id?: number;
         @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid', 'void'] as const })
-        status?: 'draft' | 'paid' | 'void';
+        status?: 'draft' | 'paid' | 'void' | null;
       }
       const migrator = new Migrator(pool, { entities: [Wide] });
 
@@ -608,8 +611,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity({ checks: [{ where: raw`spent <= balance` }] })
       class SyncChecked {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) spent?: number;
-        @Field({ type: Number }) balance?: number;
+        @Field({ type: Number }) spent?: number | null;
+        @Field({ type: Number }) balance?: number | null;
       }
 
       await givenNoTable('SyncChecked');
@@ -633,7 +636,9 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Entity()
         class SyncCommented {
           @Id({ type: Number }) id?: number;
-          @Field({ type: String, columnType: 'varchar', length: 40, comment: "the author's name" }) author?: string;
+          @Field({ type: String, columnType: 'varchar', length: 40, comment: "the author's name" }) author?:
+            | string
+            | null;
         }
 
         await givenNoTable('SyncCommented');
@@ -645,8 +650,10 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Entity({ name: 'SyncCommented' })
         class SyncCommentedMore {
           @Id({ type: Number }) id?: number;
-          @Field({ type: String, columnType: 'varchar', length: 40, comment: "the author's name" }) author?: string;
-          @Field({ type: String, columnType: 'varchar', length: 40, comment: 'where it ran' }) origin?: string;
+          @Field({ type: String, columnType: 'varchar', length: 40, comment: "the author's name" }) author?:
+            | string
+            | null;
+          @Field({ type: String, columnType: 'varchar', length: 40, comment: 'where it ran' }) origin?: string | null;
         }
 
         await new Migrator(pool, { entities: [SyncCommentedMore] }).sync({ logging: true });
@@ -664,9 +671,9 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class SyncComputed {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) qty?: number;
-        @Field({ type: Number }) price?: number;
-        @Field({ type: Number, computed: raw`qty * price`, stored: true }) total?: number;
+        @Field({ type: Number }) qty?: number | null;
+        @Field({ type: Number }) price?: number | null;
+        @Field({ type: Number, computed: raw`qty * price`, stored: true }) total?: number | null;
       }
 
       await givenNoTable('SyncComputed');
@@ -698,7 +705,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity({ name: 'SyncComputedAdded' })
       class ComputedBefore {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) qty?: number;
+        @Field({ type: Number }) qty?: number | null;
       }
 
       await givenNoTable('SyncComputedAdded');
@@ -743,7 +750,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncLogTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) name?: string;
+        @Field({ type: String }) name?: string | null;
       }
 
       const tableName = 'AutoSyncLogTest';
@@ -767,7 +774,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       @Entity()
       class AutoSyncUnsafeAlterTest {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) cost?: number; // Defaults to bigint
+        @Field({ type: Number }) cost?: number | null; // Defaults to bigint
       }
 
       const tableName = 'AutoSyncUnsafeAlterTest';
@@ -788,7 +795,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Entity()
         class AutoSyncUnsafeAlterErrorTest {
           @Id({ type: Number }) id?: number;
-          @Field({ type: Number }) cost?: number;
+          @Field({ type: Number }) cost?: number | null;
         }
 
         const tableName = 'AutoSyncUnsafeAlterErrorTest';

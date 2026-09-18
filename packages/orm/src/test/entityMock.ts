@@ -21,13 +21,13 @@ export abstract class BaseEntity {
    * foreign-keys are really simple to specify with the `references` property.
    */
   @Field({ references: () => Company })
-  companyId?: string;
+  companyId?: string | null;
 
   @ManyToOne({ entity: () => Company, references: (baseEntity) => baseEntity.companyId })
   company?: Company;
 
   @Field({ references: () => User })
-  creatorId?: string;
+  creatorId?: string | null;
 
   @ManyToOne({ entity: () => User, references: (baseEntity) => baseEntity.creatorId })
   creator?: User;
@@ -37,14 +37,14 @@ export abstract class BaseEntity {
    * obtaining the value of a field when inserting:
    */
   @Field({ type: Number, onInsert: Date.now })
-  createdAt?: number;
+  createdAt?: number | null;
 
   /**
    * 'onUpdate' property can be used to specify a custom mechanism for
    * obtaining the value of a field when updating:
    */
   @Field({ type: Number, onUpdate: Date.now })
-  updatedAt?: number;
+  updatedAt?: number | null;
 }
 
 export type CompanyKindKey = 'public' | 'private';
@@ -77,13 +77,13 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
 @Entity()
 export class Company extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 
   @Field({ type: 'jsonb' })
-  kind?: Json<CompanyKind>;
+  kind?: Json<CompanyKind> | null;
 }
 
 /**
@@ -103,7 +103,7 @@ export class Profile extends BaseEntity {
   pk?: string;
 
   @Field({ type: String, name: 'image' })
-  picture?: string;
+  picture?: string | null;
 
   // Narrows the inherited m1 relation to 1-1. A real field rather than `declare`, because the standard
   // decorator spec has nothing to decorate on a `declare` member; the initializer marks the shadowing as
@@ -115,13 +115,13 @@ export class Profile extends BaseEntity {
 @Entity()
 export class User extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String, updatable: false })
-  email?: string;
+  email?: string | null;
 
   @Field({ type: String, eager: false })
-  password?: string;
+  password?: string | null;
 
   @OneToOne({ entity: () => Profile, mappedBy: (profile) => profile.creator, cascade: true })
   profile?: Profile;
@@ -136,19 +136,19 @@ export class UserWithNonUpdatableId {
   id!: number;
 
   @Field({ type: String })
-  name!: string;
+  name!: string | null;
 }
 
 @Entity()
 export class LedgerAccount extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 
   @Field({ references: () => LedgerAccount })
-  parentLedgerId?: string;
+  parentLedgerId?: string | null;
 
   @ManyToOne({ entity: () => LedgerAccount, references: (ledgerAccount) => ledgerAccount.parentLedgerId })
   parentLedger?: LedgerAccount;
@@ -173,28 +173,28 @@ export class TaxCategory extends BaseEntity {
   pk?: string;
 
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 }
 
 @Entity()
 export class Tax extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: Number })
-  percentage?: number;
+  percentage?: number | null;
 
   @Field({ references: () => TaxCategory })
-  categoryId?: string;
+  categoryId?: string | null;
 
   @ManyToOne({ entity: () => TaxCategory, references: (tax) => tax.categoryId })
   category?: TaxCategory;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 }
 
 /**
@@ -204,7 +204,7 @@ export class Tax extends BaseEntity {
 @Entity()
 export class MeasureUnitCategory extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @OneToMany({ entity: () => MeasureUnit, mappedBy: (measureUnit) => measureUnit.categoryId })
   measureUnits?: MeasureUnit[];
@@ -214,16 +214,16 @@ export class MeasureUnitCategory extends BaseEntity {
   readonly unitCount?: number;
 
   @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number;
+  deletedAt?: number | null;
 }
 
 @Entity()
 export class MeasureUnit extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ references: () => MeasureUnitCategory })
-  categoryId?: string;
+  categoryId?: string | null;
 
   @ManyToOne({
     entity: () => MeasureUnitCategory,
@@ -233,61 +233,61 @@ export class MeasureUnit extends BaseEntity {
   category?: MeasureUnitCategory;
 
   @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number;
+  deletedAt?: number | null;
 }
 
 @Entity()
 export class Storehouse extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String })
-  address?: string;
+  address?: string | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 }
 
 @Entity()
 export class Item extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 
   @Field({ type: String })
-  code?: string;
+  code?: string | null;
 
   @Field({ references: () => LedgerAccount })
-  buyLedgerAccountId?: string;
+  buyLedgerAccountId?: string | null;
 
   @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.buyLedgerAccountId })
   buyLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => LedgerAccount })
-  saleLedgerAccountId?: string;
+  saleLedgerAccountId?: string | null;
 
   @ManyToOne({ entity: () => LedgerAccount, references: (item) => item.saleLedgerAccountId })
   saleLedgerAccount?: LedgerAccount;
 
   @Field({ references: () => Tax })
-  taxId?: string;
+  taxId?: string | null;
 
   @ManyToOne({ entity: () => Tax, references: (item) => item.taxId })
   tax?: Tax;
 
   @Field({ references: () => MeasureUnit })
-  measureUnitId?: string;
+  measureUnitId?: string | null;
 
   @ManyToOne({ entity: () => MeasureUnit, references: (item) => item.measureUnitId })
   measureUnit?: MeasureUnit;
 
   @Field({ type: Number })
-  salePrice?: number;
+  salePrice?: number | null;
 
   @Field({ type: Boolean })
-  inventoryable?: boolean;
+  inventoryable?: boolean | null;
 
   @ManyToMany({ entity: () => Tag, through: () => ItemTag, cascade: true })
   tags?: Tag[];
@@ -303,7 +303,7 @@ export class Item extends BaseEntity {
 @Entity()
 export class Tag extends BaseEntity {
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @ManyToMany({ entity: () => Item, mappedBy: (item) => item.tags })
   items?: Item[];
@@ -319,10 +319,10 @@ export class ItemTag {
   id?: string;
 
   @Field({ references: () => Item })
-  itemId?: string;
+  itemId?: string | null;
 
   @Field({ references: () => Tag })
-  tagId?: string;
+  tagId?: string | null;
 }
 
 @Entity()
@@ -335,34 +335,34 @@ export class InventoryAdjustment extends BaseEntity {
   itemAdjustments?: ItemAdjustment[];
 
   @Field({ type: Date })
-  date?: Date;
+  date?: Date | null;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 }
 
 @Entity()
 export class ItemAdjustment extends BaseEntity {
   @Field({ references: () => Item })
-  itemId?: string;
+  itemId?: string | null;
 
   @ManyToOne({ entity: () => Item, references: (itemAdjustment) => itemAdjustment.itemId })
   item?: Item;
 
   @Field({ type: Number })
-  number?: number;
+  number?: number | null;
 
   @Field({ type: Number })
-  buyPrice?: number;
+  buyPrice?: number | null;
 
   @Field({ references: () => Storehouse })
-  storehouseId?: string;
+  storehouseId?: string | null;
 
   @ManyToOne({ entity: () => Storehouse, references: (itemAdjustment) => itemAdjustment.storehouseId })
   storehouse?: Storehouse;
 
   @Field({ references: () => InventoryAdjustment })
-  inventoryAdjustmentId?: string;
+  inventoryAdjustmentId?: string | null;
 
   @ManyToOne({
     entity: () => InventoryAdjustment,
@@ -383,7 +383,7 @@ export class Invoice {
   id?: number;
 
   @Field({ type: String })
-  description?: string;
+  description?: string | null;
 
   @OneToMany({
     entity: () => InvoiceLine,
@@ -399,10 +399,10 @@ export class InvoiceLine {
   id?: number;
 
   @Field({ type: Number })
-  amount?: number;
+  amount?: number | null;
 
   @Field({ references: () => Invoice })
-  invoiceId?: number;
+  invoiceId?: number | null;
 
   @ManyToOne({ entity: () => Invoice, references: (invoiceLine) => invoiceLine.invoiceId })
   invoice?: Invoice;
@@ -416,8 +416,8 @@ export class InvoiceLine {
 @Entity()
 export class Coupon {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, unique: true }) code?: string;
-  @Field({ type: String }) label?: string;
+  @Field({ type: String, unique: true }) code?: string | null;
+  @Field({ type: String }) label?: string | null;
 }
 
 /**
@@ -429,21 +429,21 @@ export class Coupon {
 @Entity()
 export class TypedRow {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: Number }) count?: number;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: Number }) count?: number | null;
   /** precision/scale makes this DECIMAL/NUMERIC, which pg and mysql2 both return as a string. */
-  @Field({ type: Number, precision: 12, scale: 2 }) amount?: number;
-  @Field({ type: Boolean }) enabled?: boolean;
+  @Field({ type: Number, precision: 12, scale: 2 }) amount?: number | null;
+  @Field({ type: Boolean }) enabled?: boolean | null;
   /**
    * The opt-out from that: `columnType` still makes it DECIMAL, but declaring `String` keeps it off
    * the numeric path, so a value wider than 2^53 survives as the exact text the driver returned.
    */
-  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
+  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string | null;
   /** A BIGINT written from a `bigint`, which only an exact bind keeps apart from its rounded neighbour. */
-  @Field({ type: BigInt }) wide?: bigint;
-  @Field({ type: Date }) at?: Date;
-  @Field({ type: 'blob' }) bytes?: Uint8Array;
-  @Field({ references: () => TypedGroup }) groupId?: number;
+  @Field({ type: BigInt }) wide?: bigint | null;
+  @Field({ type: Date }) at?: Date | null;
+  @Field({ type: 'blob' }) bytes?: Uint8Array | null;
+  @Field({ references: () => TypedGroup }) groupId?: number | null;
   @ManyToOne({ entity: () => TypedGroup, references: (typedRow) => typedRow.groupId }) group?: TypedGroup;
 }
 
@@ -451,15 +451,15 @@ export class TypedRow {
 @Entity()
 export class TypedGroup {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
   @OneToMany({ entity: () => TypedRow, mappedBy: (typedRow) => typedRow.group }) rows?: TypedRow[];
 }
 
 @Entity()
 export class VectorItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: 'vector', dimensions: 3 }) vec!: number[];
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
 }
 
 /**
@@ -470,9 +470,9 @@ export class VectorItem {
 @Entity()
 export class NarrowVectorItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: 'halfvec', dimensions: 3 }) half!: number[];
-  @Field({ type: 'sparsevec', dimensions: 3 }) sparse!: number[];
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'halfvec', dimensions: 3 }) half!: number[] | null;
+  @Field({ type: 'sparsevec', dimensions: 3 }) sparse!: number[] | null;
 }
 
 /**
@@ -483,5 +483,5 @@ export class NarrowVectorItem {
 @Entity()
 export class JsonRecord {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) entries?: Json<unknown[]>;
+  @Field({ type: 'json' }) entries?: Json<unknown[]> | null;
 }

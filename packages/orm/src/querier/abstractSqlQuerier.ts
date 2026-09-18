@@ -1,4 +1,4 @@
-import { COUNT_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
 import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta, namesKey } from '../entity/index.js';
@@ -387,13 +387,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Runs a statement whose one row carries a {@link COUNT_ALIAS} column. `Number` because `COUNT(*)` is BIGINT and
+   * Runs a statement whose one row carries a {@link AGGREGATE_VALUE_ALIAS} column. `Number` because `COUNT(*)` is BIGINT and
    * a caller supplying their own `types` replaces the decoding the pools do at the wire; `?? 0` because
    * a catalog that does not know the table answers with no row, which is nothing counted.
    */
   private async runCount(build: QueryBuildFn): Promise<number> {
-    const [row] = await this.query<Record<typeof COUNT_ALIAS, number | null>>(build);
-    return Number(row?.[COUNT_ALIAS] ?? 0);
+    const [row] = await this.query<Record<typeof AGGREGATE_VALUE_ALIAS, number | null>>(build);
+    return Number(row?.[AGGREGATE_VALUE_ALIAS] ?? 0);
   }
 
   protected override async internalCount<E extends object>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {

@@ -18,6 +18,12 @@ export type QueryOptions = {
    */
   hardDelete?: boolean;
   /**
+   * `updateMany`/`deleteMany` only: address every row of the table on purpose. Without it a bulk write
+   * that names none - no `$where` and no `$limit` - is refused, since a forgotten filter and the whole
+   * table look alike. The entity's own filters never count as naming one.
+   */
+  unfiltered?: boolean;
+  /**
    * prefix the query with this.
    */
   prefix?: string;

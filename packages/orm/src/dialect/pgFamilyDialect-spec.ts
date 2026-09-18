@@ -200,9 +200,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     @Entity({ name: 'UpsertFallbackWidget' })
     class UpsertFallbackWidget {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) email!: string;
-      @Field({ type: Number, onUpdate: () => 111 }) updatedAt?: number;
-      @Field({ type: String, onUpdate: () => 'v2' }) version?: string;
+      @Field({ type: String }) email!: string | null;
+      @Field({ type: Number, onUpdate: () => 111 }) updatedAt?: number | null;
+      @Field({ type: String, onUpdate: () => 'v2' }) version?: string | null;
     }
 
     const { sql, values } = this.exec((ctx) =>
@@ -708,7 +708,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     @Entity({ name: 'VectorItem' })
     class VectorItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector' }) vec!: number[];
+      @Field({ type: 'vector' }) vec!: number[] | null;
     }
     const { sql, values } = this.exec((ctx) =>
       this.dialect.insert(ctx, VectorItem, {
@@ -1356,8 +1356,8 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string;
-      @Field({ type: String }) description?: string;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
     }
     const res = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
     expect(res.sql).toBe(` WHERE TO_TSVECTOR("name" || ' ' || "description") @@ WEBSEARCH_TO_TSQUERY($1)`);

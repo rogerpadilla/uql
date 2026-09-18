@@ -51,6 +51,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
   stringSizing: 'bounded-text',
   supportsUnsigned: false,
   serverSideCursors: true,
+  correlatedWrites: true,
   rowLocks: true,
   rowLockWithWindow: false,
   rowLockOf: true,

@@ -7,7 +7,7 @@ import type {
   OptionalUnlessRequiredId,
   UpdateFilter,
 } from 'mongodb';
-import { COUNT_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier, enrichError } from '../querier/index.js';
@@ -42,7 +42,7 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 
-import type { ExtractedVectorSort, MongoDialect } from './mongoDialect.js';
+import type { ExtractedVectorSort, MongoAggregationPipelineEntry, MongoDialect } from './mongoDialect.js';
 
 /**
  * `$limit: 0` asks for no rows, the way it does on every SQL dialect - but MongoDB reads `limit(0)`
@@ -175,7 +175,7 @@ export class MongodbQuerier extends AbstractQuerier {
     q: Query<E>,
     vectorSort: ExtractedVectorSort<E>,
     opts?: QueryOptions,
-  ): Record<string, unknown>[] {
+  ): MongoAggregationPipelineEntry<Document>[] {
     const scoreAlias = vectorSort.vectorSearch.$project;
 
     return [
@@ -196,7 +196,7 @@ export class MongodbQuerier extends AbstractQuerier {
         sort: this.dialect.sort(entity, vectorSort.regularSort, q.$populate),
         project: scoreAlias ? { [scoreAlias]: 1 } : undefined,
       }),
-    ] as Record<string, unknown>[];
+    ];
   }
 
   protected override async internalAggregate<E extends Document, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
@@ -230,14 +230,14 @@ export class MongodbQuerier extends AbstractQuerier {
       this.internalFindMany(entity, q, opts),
       this.execute((session) =>
         this.collection(entity)
-          .aggregate<Record<typeof COUNT_ALIAS, number>>(
-            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: COUNT_ALIAS }],
+          .aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(
+            [...this.dialect.aggregationPipeline(entity, unpaged, opts), { $count: AGGREGATE_VALUE_ALIAS }],
             { session },
           )
           .toArray(),
       ),
     ]);
-    return [founds, counted[0]?.[COUNT_ALIAS] ?? 0];
+    return [founds, counted[0]?.[AGGREGATE_VALUE_ALIAS] ?? 0];
   }
 
   /** The pipeline `countDocuments` runs, spelled out so a relation condition gets its lookups and a page its stages. */
@@ -246,12 +246,17 @@ export class MongodbQuerier extends AbstractQuerier {
       return 0;
     }
     return this.timed('internalCount', undefined, async () => {
-      const { stages, filter } = this.dialect.whereWithRelations(entity, q.$where, opts);
-      const pipeline = [...stages, { $match: filter }, ...this.dialect.pagerStages(q), { $count: COUNT_ALIAS }];
+      const pipeline = [
+        ...this.dialect.matchStages(entity, q.$where, opts),
+        ...this.dialect.pagerStages(q),
+        { $count: AGGREGATE_VALUE_ALIAS },
+      ];
       const [counted] = await this.execute((session) =>
-        this.collection(entity).aggregate<Record<typeof COUNT_ALIAS, number>>(pipeline, { session }).toArray(),
+        this.collection(entity)
+          .aggregate<Record<typeof AGGREGATE_VALUE_ALIAS, number>>(pipeline, { session })
+          .toArray(),
       );
-      return counted?.[COUNT_ALIAS] ?? 0;
+      return counted?.[AGGREGATE_VALUE_ALIAS] ?? 0;
     });
   }
 
@@ -263,11 +268,6 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.timed('estimatedCount', undefined, async () =>
       this.execute((session) => this.collection(entity).estimatedDocumentCount({ session })),
     );
-  }
-
-  /** A `find` filter cannot host the `$lookup` a relation condition needs, so such a write names its rows by id. */
-  protected override settlesWrite<E extends Document>(entity: Type<E>, q: QuerySearch<E>): boolean {
-    return super.settlesWrite(entity, q) || this.dialect.constrainsRelations(entity, q.$where);
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
@@ -313,7 +313,7 @@ export class MongodbQuerier extends AbstractQuerier {
    * upsert; in `$set` it would refuse every matched document. Everything else updates either way.
    */
   private upsertUpdate<E extends Document>(persistable: Partial<E>): UpdateFilter<E> {
-    const { _id, ...rest } = persistable as Document;
+    const { _id, ...rest } = persistable;
     const update: Document = {};
     if (hasKeys(rest)) {
       update['$set'] = rest;
@@ -321,7 +321,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (_id !== undefined) {
       update['$setOnInsert'] = { _id };
     }
-    return update as UpdateFilter<E>;
+    return update;
   }
 
   private buildConflictFilter<E extends Document>(

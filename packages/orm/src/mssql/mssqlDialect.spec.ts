@@ -394,7 +394,7 @@ class Enrolment {
   [idKey]?: 'studentId' | 'courseId';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: Number }) courseId?: number;
-  @Field({ type: String }) grade?: string;
+  @Field({ type: String }) grade?: string | null;
 }
 
 createSpec(new MsSqlDialectSpec());

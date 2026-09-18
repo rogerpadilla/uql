@@ -67,14 +67,19 @@ expectType<TypeFor<number[]>>(Number);
 expectType<TypeFor<Json<{ a: number }>>>('text');
 
 // ─── FieldOptionsFor: `type` required, except behind `references` ───
+expectType<FieldOptionsFor<string | null>>({ type: String });
+expectType<FieldOptionsFor<string | null>>({ type: 'varchar', length: 150 });
+// A property that does not admit `null` says the column refuses one, which is what a decorator checks
+// the other way round.
+expectType<FieldOptionsFor<string>>({ type: String, nullable: false });
+// @ts-expect-error the column holds `null` and the property does not admit it
 expectType<FieldOptionsFor<string>>({ type: String });
-expectType<FieldOptionsFor<string>>({ type: 'varchar', length: 150 });
 expectType<FieldOptionsFor<number>>({ type: Number, isId: true });
 // A foreign key may omit `type` so schema generation resolves it from the referenced primary key. Unlike
 // `@Field`, this arm cannot also check the property against that key: `FieldOptionsFor<V>` is reached
 // through a mapped type, which gives the target no inference position to be read from.
-expectType<FieldOptionsFor<string>>({ references: () => Company });
-expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'uuid' });
+expectType<FieldOptionsFor<string | null>>({ references: () => Company });
+expectType<FieldOptionsFor<string | null>>({ references: () => Company, type: 'uuid' });
 
 // @ts-expect-error `type` is required when there is no `references` to resolve it from
 expectType<FieldOptionsFor<string>>({ length: 150 });
@@ -88,29 +93,29 @@ expectType<FieldOptionsFor<string>>({ references: () => Company, type: 'int' });
 // it is checked on its own - the case `schemaASTBuilder.spec` pins, a BIGINT column over a uuid key.
 export class Referrer {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number;
-  @Field({ type: BigInt, references: () => Company }) wideCompanyId?: bigint;
+  @Field({ references: () => Company }) companyId?: number | null;
+  @Field({ type: BigInt, references: () => Company }) wideCompanyId?: bigint | null;
   // @ts-expect-error a string property cannot hold Company's numeric key
-  @Field({ references: () => Company }) misTypedId?: string;
+  @Field({ references: () => Company }) misTypedId?: string | null;
 }
 // ─── Generators stamp the value the field declares ───
 // `defaultValue` does too, with one exception: a JSONB column defaults with the SQL literal it
 // stores. Requiring the field's own type there as well broke every such column in 0.24.3.
 class Generated {
   @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
-  @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number;
-  @Field({ type: Date, softDelete: true }) deletedAt?: Date;
-  @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number;
-  @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }>;
+  @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number | null;
+  @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }> | null;
 
   // @ts-expect-error a uuid column is not stamped with a number
-  @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string;
+  @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string | null;
 }
 expectType<string | undefined>(new Generated().id);
 
 // The same check on the imperative path, which `FieldOptions<V>` carries into `FieldOptionsFor<V>`.
-expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => Date.now() });
-expectType<FieldOptionsFor<Json<{ theme?: string }>>>({ type: 'jsonb', defaultValue: '{}' });
+expectType<FieldOptionsFor<number | null>>({ type: Number, onInsert: () => Date.now() });
+expectType<FieldOptionsFor<Json<{ theme?: string }> | null>>({ type: 'jsonb', defaultValue: '{}' });
 // @ts-expect-error a number column is not stamped with a string
 expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
 // @ts-expect-error nor does it default to one
@@ -224,7 +229,7 @@ expectType<RelationOptionsFor<Company[]>>({
 // column, so both directions are pinned here.
 class WithJsonArray {
   id?: number;
-  items?: Json<{ a: string }>[];
+  items?: Json<{ a: string }>[] | null;
   employees?: Employee[];
 }
 expectType<FieldKey<WithJsonArray>>('items');
@@ -255,9 +260,9 @@ expectType<MethodKey<WithMethods>>('name');
 // ─── EntityOptions: the checks survive being reached through `defineEntity` ───
 class Account {
   id?: number;
-  email?: string;
-  createdAt?: Date;
-  ownerId?: number;
+  email?: string | null;
+  createdAt?: Date | null;
+  ownerId?: number | null;
   owner?: Company;
   touch() {}
 }
@@ -326,7 +331,7 @@ defineEntity(Sponsorship, {
 @Entity({ relations: { company: { cardinality: 'm1', entity: () => Company, references: (seat) => seat.companyId } } })
 export class Seat {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number;
+  @Field({ references: () => Company }) companyId?: number | null;
   company?: Company;
 }
 
@@ -334,7 +339,7 @@ export class Seat {
 @Entity({ relations: { company: { cardinality: 'm1', entity: () => Company } } })
 export class UnlinkedSeat {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) companyId?: number;
+  @Field({ references: () => Company }) companyId?: number | null;
   company?: Company;
 }
 
@@ -401,7 +406,7 @@ defineIndex(Account, { columns: (account) => [account.emial] });
 })
 export class Tagged {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) label?: string;
+  @Field({ type: String }) label?: string | null;
   touch() {}
 }
 defineEntity(Account, {

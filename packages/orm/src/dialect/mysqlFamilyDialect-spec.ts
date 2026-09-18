@@ -29,7 +29,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toBe(
-      'SELECT TABLE_ROWS `_uql_count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
+      'SELECT TABLE_ROWS `_uql_value` FROM information_schema.TABLES WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ?',
     );
     expect(values).toEqual(['User']);
   }
@@ -42,7 +42,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     }
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Ledger));
     expect(sql).toBe(
-      'SELECT TABLE_ROWS `_uql_count` FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
+      'SELECT TABLE_ROWS `_uql_value` FROM information_schema.TABLES WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?',
     );
     expect(values).toEqual(['crm', 'Ledger']);
   }
@@ -53,8 +53,8 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
     class Listing {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) name?: string;
-      @Field({ type: String }) description?: string;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
     expect(sql).toBe(' WHERE MATCH(`name`, `description`) AGAINST(?)');

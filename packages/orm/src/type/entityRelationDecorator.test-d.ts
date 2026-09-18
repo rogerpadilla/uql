@@ -7,12 +7,12 @@ import { Field, Id, idKey, ManyToMany, ManyToOne, OneToMany, OneToOne } from '..
 
 class Company {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
 }
 
 class Project {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) ownerId?: number;
+  @Field({ references: () => Company }) ownerId?: number | null;
   @ManyToOne({ entity: () => Company, references: (project) => project.ownerId }) owner?: Company;
 }
 
@@ -26,7 +26,7 @@ class Unrelated {
 export class Employee {
   @Id({ type: Number }) id?: number;
 
-  @Field({ references: () => Company }) companyId?: number;
+  @Field({ references: () => Company }) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (employee) => employee.companyId }) company?: Company;
   // @ts-expect-error `@ManyToOne` targets `Company`; the property must hold a `Company`, not a string.
   // Its `references` is what a valid one takes, so what this pins is the property's type and nothing else.
@@ -58,7 +58,7 @@ export class Employee {
 }
 
 abstract class Authored {
-  @Field({ references: () => Company }) creatorId?: number;
+  @Field({ references: () => Company }) creatorId?: number | null;
   @ManyToOne({ entity: () => Company, references: (authored) => authored.creatorId }) creator?: Company;
 }
 
@@ -76,7 +76,7 @@ abstract class Unkeyed {
 }
 export class Keyed extends Unkeyed {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Company }) ownerId?: number;
+  @Field({ references: () => Company }) ownerId?: number | null;
 }
 
 class Berth {
@@ -87,12 +87,12 @@ class Berth {
 
 export class Mooring {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) companyCode?: string;
+  @Field({ type: String }) companyCode?: string | null;
   // @ts-expect-error a foreign key holds the value of the key it references, and `Company.id` is a number
   @ManyToOne({ entity: () => Company, references: (mooring) => mooring.companyCode }) company?: Company;
 
-  @Field({ type: String }) berthDock?: string;
-  @Field({ type: Number }) berthSlot?: number;
+  @Field({ type: String }) berthDock?: string | null;
+  @Field({ type: Number }) berthSlot?: number | null;
   @ManyToOne({
     entity: () => Berth,
     references: (mooring, berth) => [
@@ -127,18 +127,18 @@ class Note {
 /** A column holds every value of the key it joins: a wider one does, a narrower one does not. */
 export class Entry {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) ledgerCode?: string;
+  @Field({ type: String }) ledgerCode?: string | null;
   @ManyToOne({ entity: () => Ledger, references: (entry) => entry.ledgerCode }) ledger?: Ledger;
-  @Field({ type: String }) noteRef?: Uuid;
+  @Field({ type: String }) noteRef?: Uuid | null;
   // @ts-expect-error a `Uuid` column cannot hold every `number` key
   @ManyToOne({ entity: () => Note, references: (entry) => entry.noteRef }) note?: Note;
 }
 
 class Review {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) body?: string;
-  @Field({ type: Number }) berthSlot?: number;
-  @Field({ references: () => Company }) companyId?: number;
+  @Field({ type: String }) body?: string | null;
+  @Field({ type: Number }) berthSlot?: number | null;
+  @Field({ references: () => Company }) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (review) => review.companyId }) company?: Company;
   touch(): void {}
 }
@@ -165,5 +165,5 @@ export class ReviewedBerth {
 export class Docking {
   @Id({ type: Number }) id?: number;
   // @ts-expect-error a column references one key, and `Berth`'s is composite
-  @Field({ references: () => Berth }) berthId?: number;
+  @Field({ references: () => Berth }) berthId?: number | null;
 }

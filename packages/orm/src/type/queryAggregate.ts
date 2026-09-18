@@ -1,7 +1,8 @@
-import type { FieldKey } from './entity.js';
+import type { FieldKey, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
+import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
-import type { RejectKeys } from './utility.js';
+import type { IsMany, RejectKeys } from './utility.js';
 
 /** The columns `$group` names by a literal `true`, so an uninferred `$group`, its own constraint, names none. */
 type GroupedKeys<G> = { [K in keyof G]: G[K] extends true ? K : never }[keyof G];
@@ -29,34 +30,19 @@ export function isQueryAggregateOp(op: string): op is QueryAggregateOp {
 }
 
 /**
- * DISTINCT-qualified aggregate ops, each mapped to the base op it applies to a field's distinct
- * values: `$countDistinct` -> `COUNT(DISTINCT col)`, and likewise `$sumDistinct`/`$avgDistinct`. Flat
- * (not a nested `{ $distinct }` argument) so the op is self-documenting and greppable. `$min`/`$max`
- * are omitted: DISTINCT is a no-op for them.
+ * `$countDistinct` -> `COUNT(DISTINCT col)`. Flat (not a nested `{ $distinct }` argument) so the op is
+ * self-documenting and greppable. The other ops have no DISTINCT variant: `$sum`/`$avg` over deduplicated
+ * values is rarely what totalling or averaging means, and DISTINCT is a no-op for `$min`/`$max`.
  */
-const QUERY_AGGREGATE_DISTINCT_OP_BASE = {
-  $countDistinct: '$count',
-  $sumDistinct: '$sum',
-  $avgDistinct: '$avg',
-} as const satisfies Readonly<Record<string, QueryAggregateOp>>;
-
-/** DISTINCT-qualified aggregate operators (the keys of {@link QUERY_AGGREGATE_DISTINCT_OP_BASE}). */
-export type QueryAggregateDistinctOp = keyof typeof QUERY_AGGREGATE_DISTINCT_OP_BASE;
-
-/** Whether `key` is a DISTINCT-qualified aggregate operator (narrows for a cast-free base lookup). */
-function isQueryAggregateDistinctOp(key: string): key is QueryAggregateDistinctOp {
-  // `Object.hasOwn`, not `key in`: the latter matches inherited members like `toString`.
-  return Object.hasOwn(QUERY_AGGREGATE_DISTINCT_OP_BASE, key);
-}
+export type QueryAggregateDistinctOp = '$countDistinct';
 
 /**
- * Resolve an aggregate op key into its base op and whether it is DISTINCT-qualified. A flat distinct
- * op resolves to its base op with `distinct: true`; a plain op to `distinct: false`. Throws otherwise
- * (`$min`/`$max` have no distinct variant).
+ * Resolve an aggregate op key into its base op and whether it is DISTINCT-qualified: `$countDistinct`
+ * resolves to `$count` with `distinct: true`, a plain op to itself with `distinct: false`. Throws otherwise.
  */
 export function resolveAggregateOp(key: string): { op: QueryAggregateOp; distinct: boolean } {
-  if (isQueryAggregateDistinctOp(key)) {
-    return { op: QUERY_AGGREGATE_DISTINCT_OP_BASE[key], distinct: true };
+  if (key === '$countDistinct') {
+    return { op: '$count', distinct: true };
   }
   if (isQueryAggregateOp(key)) {
     return { op: key, distinct: false };
@@ -82,9 +68,8 @@ export type QueryFieldRef<E, F extends keyof E = FieldKey<E>> = ExactlyOne<Requi
 export type QueryAggregateArg<E> = QueryFieldRef<E> | '*';
 
 /**
- * Fields `SUM`/`AVG` can total. Restricted to numeric columns because the result is declared
- * `number`: totalling a text or date column is either an engine error or a coercion, and neither
- * produces the value the signature promises.
+ * Fields `SUM`/`AVG` can total. Restricted to numeric columns because totalling a text or date one is
+ * either an engine error or a coercion, and neither produces the value the signature promises.
  */
 type NumericFieldKey<E> = {
   readonly [K in FieldKey<E>]: [NonNullable<E[K]>] extends [number | bigint] ? K : never;
@@ -100,8 +85,14 @@ type AggregateOp = QueryAggregateOp | QueryAggregateDistinctOp;
  */
 type OpsOf<K extends AggregateOp> = K;
 
+/** Ops that add a column up, which keeps the column's own type: a `bigint` column totals to a `bigint`. */
+type SummingOp = OpsOf<'$sum'>;
+
+/** Ops that mean a column, which the engine floats, so the result is a `number` however wide the column. */
+type AveragingOp = OpsOf<'$avg'>;
+
 /** Ops that total a column, so their argument has to be numeric. */
-type TotallingOp = OpsOf<'$sum' | '$avg' | '$sumDistinct' | '$avgDistinct'>;
+type TotallingOp = SummingOp | AveragingOp;
 
 /**
  * Every aggregate op mapped to the argument it accepts: `$count` a field or `'*'` (`COUNT(*)`),
@@ -113,18 +104,74 @@ type QueryAggregateArgMap<E> = Record<'$count', QueryAggregateArg<E>> &
 
 /**
  * An aggregate over one field, exactly one op per entry: `{ $sum: { amount: true } }` is `SUM("amount")`,
- * `{ $countDistinct: { id: true } }` is `COUNT(DISTINCT "id")`, and only `$count` takes `'*'`.
+ * `{ $countDistinct: { id: true } }` is `COUNT(DISTINCT "id")`, and only `$count` takes `'*'`. Its own
+ * `$where` narrows the rows it reads to those matching, over the entity's own fields.
  */
-export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>>;
+export type QueryAggregateFn<E> = ExactlyOne<QueryAggregateArgMap<E>> & {
+  readonly $where?: QueryAggregateWhere<E>;
+};
 
-/** A single-key `{ [op]: unknown }` shape for each op in `Ops`, matched to infer that op's result. */
-type FnWithOp<Ops extends string> = { [K in Ops]: { readonly [P in K]: unknown } }[Ops];
+/** What an aggregate's own `$where` reads: the entity's fields, since a relation there is a subquery inside it. */
+type QueryAggregateWhere<E> = QueryWhere<E, QueryRaw, FieldKey<E>>;
+
+/** An aggregate's `$where` naming a key it does not have, refused: a captured `$select` skips the excess-property check. */
+type AggregateWhereKeys<E, Fn> = Fn extends { readonly $where: infer W }
+  ? { readonly $where: RejectKeys<Exclude<keyof W, keyof QueryAggregateWhere<E>>> }
+  : unknown;
+
+/** A single-key `{ [op]: Arg }` shape for each op in `Ops`, matched to infer that op's result or its argument. */
+type FnWithOp<Ops extends string, Arg = unknown> = { [K in Ops]: { readonly [P in K]: Arg } }[Ops];
 
 /** Ops that count rows. Alone among the ops they answer `0`, never NULL, over an empty group. */
 type CountingOp = OpsOf<'$count' | '$countDistinct'>;
 
-/** The columns to group by, `{ status: true }`, typed against the entity like `$select`. */
-export type QueryGroupMap<E> = Readonly<QuerySelect<E, FieldKey<E>, true>>;
+/** Ops that read back as the column they aggregate, rather than widening or floating it. */
+type ColumnTypedOp = SummingOp | OpsOf<'$min' | '$max'>;
+
+/**
+ * A field a group key reads, by the path to it: `{ orderId: true }`, or through a to-one relation,
+ * `{ transaction: { orderId: true } }`. A to-many is `never`, since joining one multiplies the rows.
+ */
+export type QueryGroupRef<E, K extends keyof E = FieldKey<E> | RelationKey<E>> = ExactlyOne<
+  Required<{
+    [P in K]: P extends RelationKey<E>
+      ? IsMany<E[P]> extends true
+        ? never
+        : QueryGroupRef<RelationTarget<E[P]>>
+      : true;
+  }>
+>;
+
+/** The columns to group by: a field switched on, `{ status: true }`, or an alias for a field a path reads. */
+export type QueryGroupMap<E> = { readonly [key: string]: true | QueryGroupRef<E> };
+
+/**
+ * A captured `$group` against its schema: a field key takes `true` and keeps its link, any other key is an
+ * alias for a path. A key switched on that is no field is refused by name, which the intersection alone lets by.
+ */
+type QueryGroupSchema<E, G> = Readonly<QuerySelect<E, FieldKey<E>, true>> & {
+  readonly [K in Exclude<NamedKeys<G>, FieldKey<E>>]: QueryGroupRef<E>;
+} & RejectKeys<Exclude<GroupedKeys<G>, FieldKey<E>>>;
+
+/**
+ * The value a path reads: the field's own type, or through a relation, `null` where the row points nowhere.
+ * `any` answers `unknown`: TypeScript checks a deferred type by instantiating it with `any`, which would
+ * walk every relation of the entity on every aggregate call, quadrupling what one costs to check.
+ */
+type GroupRefValue<E, Ref> = 0 extends 1 & Ref
+  ? unknown
+  : {
+      [K in keyof Ref & keyof E]: Ref[K] extends true
+        ? E[K]
+        : NonNullable<GroupRefLeaf<RelationTarget<E[K]>, Ref[K]>> | null;
+    }[keyof Ref & keyof E];
+
+/** The field at the end of a path, whose type {@link GroupRefValue} widens with `null`; `any` as it does. */
+type GroupRefLeaf<E, Ref> = 0 extends 1 & Ref
+  ? unknown
+  : {
+      [K in keyof Ref & keyof E]: Ref[K] extends true ? E[K] : GroupRefLeaf<RelationTarget<E[K]>, Ref[K]>;
+    }[keyof Ref & keyof E];
 
 /** Computed columns by the alias each is read back under: `{ count: { $count: '*' }, avgAge: { $avg: { age: true } } }`. */
 export type QueryAggMap<E> = {
@@ -135,15 +182,16 @@ export type QueryAggMap<E> = {
 type FieldValueType<E, F> = F extends keyof E ? E[F] : unknown;
 
 /**
- * A computed column's type: a count is a `number`; every other aggregate is `null` over no rows, a
- * total a `number` (exact to 2^53, `raw` beyond) and `$min`/`$max` the field's own type.
+ * A computed column's type: a count is a `number`; every other aggregate is `null` over no rows, a mean
+ * a `number` whatever it read, and a total, a `$min` or a `$max` the column's own type - so a `bigint`
+ * column totals to a `bigint`, which is what the driver decodes rather than rounding through a float.
  */
 type QueryAggregateFnResult<E, Fn> =
   Fn extends FnWithOp<CountingOp>
     ? number
-    : Fn extends FnWithOp<TotallingOp>
+    : Fn extends FnWithOp<AveragingOp>
       ? number | null
-      : Fn extends { readonly $min: infer F } | { readonly $max: infer F }
+      : Fn extends FnWithOp<ColumnTypedOp, infer F>
         ? FieldValueType<E, keyof F> | null
         : unknown;
 
@@ -153,9 +201,11 @@ type QueryAggregateFnResult<E, Fn> =
  */
 type Simplify<T> = { [K in keyof T]: T[K] } & {};
 
-/** An aggregate's row: each grouped column with its entity type, each computed one with its aggregate's. */
+/** An aggregate's row: each grouped column with its entity type, each alias with its path's, each computed one with its aggregate's. */
 export type QueryAggregateResult<E, G, A> = Simplify<
   Pick<E, GroupedKeys<G> & FieldKey<E>> & {
+    -readonly [K in Exclude<NamedKeys<G>, FieldKey<E>>]: GroupRefValue<E, G[K]>;
+  } & {
     -readonly [K in keyof A]: QueryAggregateFnResult<E, A[K]>;
   }
 >;
@@ -183,18 +233,19 @@ export type QueryAggregate<
   readonly $where?: QueryWhere<E>;
 
   /**
-   * Columns to group by - `{ status: true }`, typed against the entity like `$select`. A computed
-   * aggregate wrongly placed here (it belongs in `$select`) is rejected via {@link RejectKeys}, since
-   * `$group` is captured as a generic and a bare generic skips excess-property checking. The captured
-   * map meets its schema, {@link QueryGroupMap}, so each key keeps its link to the entity property.
+   * Columns to group by: `{ status: true }`, or an alias for a to-one relation's field by the path to
+   * it, `{ orderId: { transaction: { orderId: true } } }`. The captured map meets its schema, so a field
+   * key keeps its link to the entity property, and a typo matches neither form.
    */
-  readonly $group?: G & QueryGroupMap<E> & RejectKeys<Exclude<keyof G, FieldKey<E>>>;
+  readonly $group?: G & QueryGroupSchema<E, G>;
 
   /**
    * The computed columns by alias, the captured map meeting its schema so field keys stay linked. An alias
    * repeating a `$group` column is refused, since both would come back under one name.
    */
-  readonly $select?: A & { readonly [K in keyof A]: QueryAggregateFn<E> } & RejectKeys<NamedKeys<A> & GroupedKeys<G>>;
+  readonly $select?: A & {
+    readonly [K in keyof A]: QueryAggregateFn<E> & AggregateWhereKeys<E, A[K]>;
+  } & RejectKeys<NamedKeys<A> & NamedKeys<G>>;
 
   /** Filtering after grouping, by a result column, each value typed as that column is. */
   readonly $having?: {

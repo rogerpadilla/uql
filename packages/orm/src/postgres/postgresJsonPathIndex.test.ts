@@ -23,7 +23,7 @@ const ROWS = 1000;
 @Entity({ name: TABLE })
 class JsonPathIndexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'jsonb' }) kind?: Json<{ name: string; score: number }>;
+  @Field({ type: 'jsonb' }) kind?: Json<{ name: string; score: number }> | null;
 }
 
 /**

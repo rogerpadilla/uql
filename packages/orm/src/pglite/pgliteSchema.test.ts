@@ -11,21 +11,21 @@ import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
 class Customer {
   id?: number;
-  name?: string;
+  name?: string | null;
 }
 
 class Order {
   id?: number;
-  total?: number;
-  customerId?: number;
+  total?: number | null;
+  customerId?: number | null;
   customer?: Customer;
 }
 
 /** No schema of its own: it follows whichever pool reads it. */
 class Ledger {
   id?: number;
-  total?: number;
-  label?: string;
+  total?: number | null;
+  label?: string | null;
 }
 
 defineEntity(Customer, {
@@ -54,8 +54,8 @@ defineEntity(Ledger, {
 /** The same `crm.Customer` table, plus a column, so the diff has something to find. */
 class Drifted {
   id?: number;
-  name?: string;
-  age?: number;
+  name?: string | null;
+  age?: number | null;
 }
 defineEntity(Drifted, {
   schema: 'crm',

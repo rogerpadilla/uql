@@ -518,7 +518,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
    */
   async shouldFindManyAndCountDistinctThroughADerivedTable() {
     mockAllResolvedValueOnce(this.querier.all, [{ name: 'a' }]);
-    mockAllResolvedValueOnce(this.querier.all, [{ _uql_count: 2 }]);
+    mockAllResolvedValueOnce(this.querier.all, [{ _uql_value: 2 }]);
 
     const [, total] = await this.querier.findManyAndCount(User, {
       $select: { name: true },
@@ -534,7 +534,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT COUNT(*) `_uql_count` FROM (SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ?) `_uql_rows`',
+      'SELECT COUNT(*) `_uql_value` FROM (SELECT DISTINCT `name` FROM `User` WHERE `companyId` = ?) `_uql_rows`',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(2);
@@ -544,12 +544,12 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   /** An empty page carries no row to read the total off, so that one case falls back to a count. */
   async shouldFindManyAndCountFallingBackOnAnEmptyPage() {
     mockAllResolvedValueOnce(this.querier.all, []);
-    mockAllResolvedValueOnce(this.querier.all, [{ _uql_count: 7 }]);
+    mockAllResolvedValueOnce(this.querier.all, [{ _uql_value: 7 }]);
 
     const [founds, count] = await this.querier.findManyAndCount(User, { $where: { companyId: '123' }, $skip: 50 });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       2,
-      'SELECT COUNT(*) `_uql_count` FROM `User` WHERE `companyId` = ?',
+      'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(2);
@@ -1089,7 +1089,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.count(User, { $where: { companyId: '123' } });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT COUNT(*) `_uql_count` FROM `User` WHERE `companyId` = ?',
+      'SELECT COUNT(*) `_uql_value` FROM `User` WHERE `companyId` = ?',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
@@ -1101,7 +1101,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.count(User, { $where: { companyId: '123' }, $skip: 2, $limit: 5 });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT COUNT(*) `_uql_count` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5 OFFSET 2) `_uql_rows`',
+      'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5 OFFSET 2) `_uql_rows`',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
@@ -1114,7 +1114,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.count(User, sorted);
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT COUNT(*) `_uql_count` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5) `_uql_rows`',
+      'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 5) `_uql_rows`',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);
@@ -1125,7 +1125,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     await this.querier.exists(User, { $where: { companyId: '123' } });
     expect(this.querier.all).toHaveBeenNthCalledWith(
       1,
-      'SELECT COUNT(*) `_uql_count` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 1) `_uql_rows`',
+      'SELECT COUNT(*) `_uql_value` FROM (SELECT `id` FROM `User` WHERE `companyId` = ? LIMIT 1) `_uql_rows`',
       ['123'],
     );
     expect(this.querier.all).toHaveBeenCalledTimes(1);

@@ -15,14 +15,14 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 @Entity()
 class FkCompany {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
+  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
 }
 
 @Entity()
 class FkEmployee {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string;
-  @Field({ references: () => FkCompany, onDelete: 'CASCADE' }) companyId?: number;
+  @Field({ type: String, columnType: 'varchar', length: 255 }) name?: string | null;
+  @Field({ references: () => FkCompany, onDelete: 'CASCADE' }) companyId?: number | null;
   @ManyToOne({ entity: () => FkCompany, references: (fkEmployee) => fkEmployee.companyId }) company?: FkCompany;
 }
 
@@ -30,7 +30,7 @@ class FkEmployee {
 @Entity()
 class FkSetDefault {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => FkCompany, onDelete: 'SET DEFAULT' }) companyId?: number;
+  @Field({ references: () => FkCompany, onDelete: 'SET DEFAULT' }) companyId?: number | null;
   @ManyToOne({ entity: () => FkCompany, references: (fkSetDefault) => fkSetDefault.companyId }) company?: FkCompany;
 }
 
@@ -43,14 +43,14 @@ class FkNarrowCompany {
 @Entity()
 class FkNarrowEmployee {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => FkNarrowCompany }) companyId?: number;
+  @Field({ references: () => FkNarrowCompany }) companyId?: number | null;
 }
 
 /** No relation at all, so a foreign key found on its table is one the entity does not declare. */
 @Entity()
 class FkStandalone {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) companyId?: number;
+  @Field({ type: Number }) companyId?: number | null;
 }
 
 const ENTITIES = [FkCompany, FkEmployee, FkSetDefault, FkStandalone];

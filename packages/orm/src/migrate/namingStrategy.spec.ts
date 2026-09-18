@@ -7,8 +7,8 @@ import { SqlSchemaGenerator } from './schemaGenerator.js';
 @Entity()
 class UserProfileMigrate {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) firstName?: string;
-  @Field({ type: String }) lastName?: string;
+  @Field({ type: String }) firstName?: string | null;
+  @Field({ type: String }) lastName?: string | null;
 }
 
 /** Named after itself: what the author wrote is the table, however much it looks like a default. */
@@ -32,7 +32,7 @@ describe('Schema Generator with Naming Strategy', () => {
 
     class ComposedRow {
       id?: number;
-      title?: string;
+      title?: string | null;
     }
     defineEntity(ComposedRow, { fields: { id: { type: Number, isId: true } } });
     // Composing adds fields; it does not turn the class name it derived into a name the author wrote.

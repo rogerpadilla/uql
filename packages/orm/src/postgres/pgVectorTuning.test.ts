@@ -10,8 +10,8 @@ const TABLE = 'pg_vector_tuning';
 @Entity({ name: TABLE })
 class TunedItem {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[];
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
 }
 
 /**

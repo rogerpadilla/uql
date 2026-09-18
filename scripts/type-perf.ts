@@ -32,17 +32,17 @@ const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany
 
 @Entity() export class Company {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: Number }) size?: number;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: Number }) size?: number | null;
   @OneToMany({ entity: () => User, mappedBy: (u) => u.company }) users?: User[];
 }
 @Entity() export class User {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
-  @Field({ type: String }) email?: string;
-  @Field({ type: Number }) age?: number;
-  @Field({ type: Date }) createdAt?: Date;
-  @Field({ type: Number, references: () => Company }) companyId?: number;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: Number }) age?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
+  @Field({ type: Number, references: () => Company }) companyId?: number | null;
   @ManyToOne({ entity: () => Company, references: (u) => u.companyId }) company?: Company;
 }
 @Entity() export class Membership {
@@ -52,8 +52,8 @@ const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany
 }
 @Entity() export class Seat {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) memberUserId?: number;
-  @Field({ type: Number }) memberCompanyId?: number;
+  @Field({ type: Number }) memberUserId?: number | null;
+  @Field({ type: Number }) memberCompanyId?: number | null;
   @ManyToOne({
     entity: () => Membership,
     references: (s, m) => [{ local: s.memberUserId, foreign: m.userId }, { local: s.memberCompanyId, foreign: m.companyId }],
@@ -62,7 +62,7 @@ const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany
 }
 `;
 
-/** One block per call site, mixing the clauses a real query does: projection, filter, sort, relation. */
+/** One block per call site, mixing the clauses a real query does: projection, filter, sort, relation, aggregate. */
 const block = (i: number) => /*ts*/ `
 export async function q${i}(q: Querier) {
   const a = await q.findMany(User, { $select: { id: true, name: true }, $where: { age: { $gte: ${i} } }, $sort: { createdAt: -1 } });
@@ -70,7 +70,13 @@ export async function q${i}(q: Querier) {
   const c = await q.findMany(Company, { $populate: { users: { $select: { name: true } } }, $where: { size: ${i} } });
   await q.insertMany(User, [{ name: 'x', age: ${i} }]);
   await q.updateMany(User, { $where: { age: ${i} } }, { name: 'y' });
-  return [a[0]?.name, b?.name, c[0]?.users];
+  const d = await q.aggregate(User, {
+    $group: { name: true, companyName: { company: { name: true } } },
+    $select: { n: { $count: '*', $where: { age: { $gt: ${i} } } }, total: { $sum: { age: true } } },
+    $having: { n: { $gt: ${i} } },
+    $sort: { total: -1 },
+  });
+  return [a[0]?.name, b?.name, c[0]?.users, d[0]?.companyName];
 }`;
 
 async function measure(blocks: number): Promise<string> {
@@ -121,4 +127,4 @@ async function measure(blocks: number): Promise<string> {
 }
 
 console.log(`fixed (0 queries)   ${await measure(0)}`);
-console.log(`${String(calls * 3).padEnd(5)} queries        ${await measure(calls)}`);
+console.log(`${String(calls * 4).padEnd(5)} queries        ${await measure(calls)}`);

@@ -1,5 +1,4 @@
 import type {
-  EntityData,
   EntityGetter,
   EntityIndexInput,
   EntityMembers,
@@ -345,13 +344,16 @@ export function relationOf<E>(meta: EntityMeta<E>, key: RelationKey<E>): Relatio
   return relation;
 }
 
+/** A row of `E` as far as reading its key goes: a record or a write, whatever its values. */
+type KeyedRow<E> = { readonly [K in keyof E]?: unknown };
+
 /** Whether the row names every column of its primary key, `0` and `''` included. */
-export function namesKey<E>(meta: EntityMeta<E>, row: EntityData<E>): boolean {
+export function namesKey<E>(meta: EntityMeta<E>, row: KeyedRow<E>): boolean {
   return meta.ids.every((key) => row[key] != null);
 }
 
 /** A row's primary key: its value, or a map of every column on a composite, checked at run time. */
-export function idOf<E>(meta: EntityMeta<E>, row: EntityData<E>): WrittenId<E> {
+export function idOf<E>(meta: EntityMeta<E>, row: KeyedRow<E>): WrittenId<E> {
   const { ids } = meta;
   const id = ids.length === 1 ? row[ids[0]] : Object.fromEntries(ids.map((key) => [key, row[key]]));
   return id as WrittenId<E>;

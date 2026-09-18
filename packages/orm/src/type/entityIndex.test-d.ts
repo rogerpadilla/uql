@@ -18,8 +18,8 @@ import { raw } from '../util/index.js';
 @Entity()
 export class Article {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
 }
 
 /**
@@ -32,7 +32,7 @@ export class Article {
 @Entity()
 export class NonVectorIndexWithDistance {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
+  @Field({ type: String }) title?: string | null;
 }
 
 // @ts-expect-error hnsw needs a distance metric
@@ -44,7 +44,7 @@ export class NonVectorIndexWithDistance {
 @Entity()
 export class MissingMetric {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
 }
 
 /**
@@ -63,8 +63,8 @@ export class MissingMetric {
 @Entity()
 export class Post {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ references: () => Article }) articleId?: number;
+  @Field({ type: String }) title?: string | null;
+  @Field({ references: () => Article }) articleId?: number | null;
   @ManyToOne({ entity: () => Article, references: (post) => post.articleId }) author?: Article;
 }
 
@@ -79,7 +79,7 @@ export class Post {
 @Entity()
 export class Covering {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
+  @Field({ type: String }) title?: string | null;
 }
 
 /**
@@ -106,9 +106,9 @@ export class Covering {
 @Entity()
 export class SoftDeleted {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: Date }) deletedAt?: Date;
-  @Field({ references: () => Article }) articleId?: number;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: Date }) deletedAt?: Date | null;
+  @Field({ references: () => Article }) articleId?: number | null;
   @ManyToOne({ entity: () => Article, references: (softDeleted) => softDeleted.articleId }) author?: Article;
 }
 
@@ -150,8 +150,8 @@ export class SoftDeleted {
 @Entity()
 export class JsonIndexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: 'json' }) kind?: Json<{ theme: { color: string }; rating: number; ids: number[] }>;
-  @Field({ type: 'json' }) tags?: Json<string[]>;
-  @Field({ type: 'json' }) loose?: Json<unknown>;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: 'json' }) kind?: Json<{ theme: { color: string }; rating: number; ids: number[] }> | null;
+  @Field({ type: 'json' }) tags?: Json<string[]> | null;
+  @Field({ type: 'json' }) loose?: Json<unknown> | null;
 }

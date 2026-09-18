@@ -27,14 +27,14 @@ class ExtraTableEntity {
 @Entity({ name: 'DriftTable' })
 class ExpectedEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 50 }) label?: string;
+  @Field({ type: String, columnType: 'varchar', length: 50 }) label?: string | null;
 }
 
 /** Same table as {@link ExpectedEntity}, as the database actually has it. */
 @Entity({ name: 'DriftTable' })
 class DriftedEntity {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number, columnType: 'int' }) label?: number;
+  @Field({ type: Number, columnType: 'int' }) label?: number | null;
 }
 
 const current = vi.hoisted((): { migrator?: Migrator } => ({}));
@@ -372,12 +372,12 @@ describe('CLI', () => {
     @Entity({ name: 'IndexedTable' })
     class Indexed {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String, index: true }) code?: string;
+      @Field({ type: String, index: true }) code?: string | null;
     }
     @Entity({ name: 'IndexedTable' })
     class Unindexed {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) code?: string;
+      @Field({ type: String }) code?: string | null;
     }
     vi.mocked(migrator.schemaIntrospector.introspect).mockResolvedValue(buildSchemaAST([Indexed]));
 

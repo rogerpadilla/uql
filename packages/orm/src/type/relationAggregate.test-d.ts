@@ -11,11 +11,11 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 @Entity()
 class Ticket {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Board, type: Number }) boardId?: number;
+  @Field({ references: () => Board, type: Number }) boardId?: number | null;
   @ManyToOne({ entity: () => Board, references: (ticket) => ticket.boardId }) board?: Board;
-  @Field({ type: Number }) points?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: Boolean }) open?: boolean;
+  @Field({ type: Number }) points?: number | null;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: Boolean }) open?: boolean | null;
 }
 
 @Entity()
@@ -103,5 +103,5 @@ class Board {
    * the aggregate already says, which is why the fields above declare none.
    */
   @Field({ type: Number, computed: (board) => board.tickets.count() })
-  readonly typedCount?: number;
+  readonly typedCount?: number | null;
 }

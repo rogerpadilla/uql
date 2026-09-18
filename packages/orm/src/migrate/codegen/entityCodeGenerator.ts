@@ -227,9 +227,11 @@ export class EntityCodeGenerator {
       lines.push(`  @Field(${fieldOptions})`);
     }
 
-    // Property
+    // Property. A generated column is the database's to write, so it is `readonly`: a write payload
+    // leaves those out, and one naming it would be dropped rather than persisted.
     const nullable = col.nullable ? '?' : '';
-    lines.push(`  ${propertyName}${nullable}: ${tsType};`);
+    const written = col.generatedAs === undefined ? '' : 'readonly ';
+    lines.push(`  ${written}${propertyName}${nullable}: ${tsType};`);
 
     return lines.join('\n');
   }

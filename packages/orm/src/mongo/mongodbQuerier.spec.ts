@@ -1,6 +1,6 @@
 import { AbstractCursor, Collection, type Document, MongoClient } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { COUNT_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
 import { assertDefined, Item } from '../test/index.js';
 import { MongoDialect } from './mongoDialect.js';
@@ -10,23 +10,23 @@ import { MongodbQuerier } from './mongodbQuerier.js';
 @Index((article) => [article.embedding], { type: 'vectorSearch', name: 'embedding_vs' })
 class Article {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: String }) category?: string;
-  @Field({ type: 'vector' }) embedding?: number[];
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: String }) category?: string | null;
+  @Field({ type: 'vector' }) embedding?: number[] | null;
 }
 
 @Entity({ name: 'Author' })
 class Author {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
 }
 
 @Entity({ name: 'Post' })
 class Post {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => Author }) authorId?: number;
+  @Field({ references: () => Author }) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
-  @Field({ references: () => Author }) reviewerId?: number;
+  @Field({ references: () => Author }) reviewerId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.reviewerId }) reviewer?: Author;
 }
 
@@ -34,7 +34,7 @@ class Post {
 @Entity({ name: 'SoftDoc' })
 class SoftDoc {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Date, name: 'deleted_at', softDelete: true }) deletedAt?: Date;
+  @Field({ type: Date, name: 'deleted_at', softDelete: true }) deletedAt?: Date | null;
 }
 
 /** An entity that is both vector-searchable and has a relation, for the combined case. */
@@ -42,10 +42,10 @@ class SoftDoc {
 @Index((chunk) => [chunk.embedding], { type: 'vectorSearch', name: 'chunk_vs' })
 class Chunk {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) text?: string;
-  @Field({ references: () => Author }) authorId?: number;
+  @Field({ type: String }) text?: string | null;
+  @Field({ references: () => Author }) authorId?: number | null;
   @ManyToOne({ entity: () => Author, references: (chunk) => chunk.authorId }) author?: Author;
-  @Field({ type: 'vector' }) embedding?: number[];
+  @Field({ type: 'vector' }) embedding?: number[] | null;
 }
 
 /**
@@ -260,14 +260,14 @@ describe('MongodbQuerier vector search', () => {
 describe('MongodbQuerier relation conditions', () => {
   /** `countDocuments` takes a plain filter, so a relation condition has to count through a pipeline. */
   it('should count through an aggregation when the $where constrains a relation', async () => {
-    const { querier, aggregate } = createRecordingQuerier([{ [COUNT_ALIAS]: 3 }]);
+    const { querier, aggregate } = createRecordingQuerier([{ [AGGREGATE_VALUE_ALIAS]: 3 }]);
     const countDocuments = vi.spyOn(Collection.prototype, 'countDocuments');
 
     expect(await querier.count(Post, { $where: { author: { name: 'ada' } } })).toBe(3);
     expect(countDocuments).not.toHaveBeenCalled();
     const pipeline = pipelineOf(aggregate.mock.calls);
     expect(pipeline[0]).toHaveProperty('$lookup');
-    expect(pipeline.at(-1)).toEqual({ $count: COUNT_ALIAS });
+    expect(pipeline.at(-1)).toEqual({ $count: AGGREGATE_VALUE_ALIAS });
   });
 
   it('should report zero when the aggregation matches nothing', async () => {
@@ -278,13 +278,13 @@ describe('MongodbQuerier relation conditions', () => {
 
   /** The cheap shape on Mongo too: a count of one capped match, which stops at the first. */
   it('should check existence with a count capped at one', async () => {
-    const { querier, aggregate } = createRecordingQuerier([{ [COUNT_ALIAS]: 1 }]);
+    const { querier, aggregate } = createRecordingQuerier([{ [AGGREGATE_VALUE_ALIAS]: 1 }]);
 
     expect(await querier.exists(Post, { $where: { authorId: 9 } })).toBe(true);
     expect(pipelineOf(aggregate.mock.calls)).toEqual([
       { $match: { authorId: 9 } },
       { $limit: 1 },
-      { $count: COUNT_ALIAS },
+      { $count: AGGREGATE_VALUE_ALIAS },
     ]);
   });
 
@@ -298,14 +298,14 @@ describe('MongodbQuerier relation conditions', () => {
   /** A `$distinct` read counts past the stages that collapse it, which only the read pipeline builds. */
   it('should count a $distinct read past the stages that collapse it', async () => {
     const { querier, aggregate, toArray } = createRecordingQuerier();
-    toArray.mockResolvedValueOnce([{ name: 'a' }]).mockResolvedValueOnce([{ [COUNT_ALIAS]: 2 }]);
+    toArray.mockResolvedValueOnce([{ name: 'a' }]).mockResolvedValueOnce([{ [AGGREGATE_VALUE_ALIAS]: 2 }]);
     const countDocuments = vi.spyOn(Collection.prototype, 'countDocuments');
 
     const [, total] = await querier.findManyAndCount(Item, { $select: { name: true }, $distinct: true });
 
     expect(countDocuments).not.toHaveBeenCalled();
     const pipeline = pipelineOf(aggregate.mock.calls, 1);
-    expect(pipeline.at(-1)).toEqual({ $count: COUNT_ALIAS });
+    expect(pipeline.at(-1)).toEqual({ $count: AGGREGATE_VALUE_ALIAS });
     expect(pipeline.some((stage) => stage['$group'])).toBe(true);
     expect(total).toBe(2);
   });

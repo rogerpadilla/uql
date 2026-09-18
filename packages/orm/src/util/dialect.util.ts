@@ -56,7 +56,7 @@ export function filterFieldKeys<E>(
   return getKeys(payload).filter((key) => {
     const fieldOpts = meta.fields[key];
     return fieldOpts && !isDatabaseWritten(fieldOpts) && (callbackKey !== 'onUpdate' || fieldOpts.updatable !== false);
-  }) as FieldKey<E>[];
+  });
 }
 
 /** Whether `key` is a field the caller writes, and `record` provides a defined value for. */
@@ -72,7 +72,7 @@ function isInsertableField<E>(meta: EntityMeta<E>, record: EntityData<E>, key: F
  */
 export function insertShapeOf<E>(meta: EntityMeta<E>, record: EntityData<E>): string {
   let shape = '';
-  for (const key of getKeys(record as object) as FieldKey<E>[]) {
+  for (const key of getKeys(record)) {
     if (isInsertableField(meta, record, key)) {
       shape += `${key},`;
     }
@@ -87,7 +87,7 @@ function addInsertFieldKeys<E>(
   seen: Set<FieldKey<E>>,
   keys: FieldKey<E>[],
 ): void {
-  for (const key of getKeys(record as object) as FieldKey<E>[]) {
+  for (const key of getKeys(record)) {
     if (!seen.has(key) && isInsertableField(meta, record, key)) {
       seen.add(key);
       keys.push(key);
@@ -218,7 +218,7 @@ export function normalizeScalarFieldSelection<E>(
     for (const key of getKeys(select)) {
       if (!(key in meta.fields)) continue;
       if (select[key]) {
-        positiveFields.push(key as FieldKey<E>);
+        positiveFields.push(key);
       } else {
         excludedFields ??= new Set<FieldKey<E>>();
         excludedFields.add(key);
@@ -408,8 +408,13 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
 /**
  * Parsed entry from a `$group` map - either a raw group key or an aggregate function call.
  */
-export type ParsedGroupEntry =
-  | { readonly kind: 'key'; readonly alias: string }
+export type ParsedGroupEntry<E = object> =
+  | {
+      readonly kind: 'key';
+      readonly alias: string;
+      /** The field it reads, behind the to-one relations leading to it: `['transaction', 'orderId']`. */
+      readonly path: readonly string[];
+    }
   | {
       readonly kind: 'fn';
       readonly alias: string;
@@ -417,6 +422,8 @@ export type ParsedGroupEntry =
       readonly fieldRef: string;
       /** `true` for a flat distinct op (`$countDistinct`, ...) -> `COUNT(DISTINCT field)`. */
       readonly distinct: boolean;
+      /** The rows it reads, where not all of the statement's. */
+      readonly where?: QueryWhere<E>;
     };
 
 /**
@@ -427,7 +434,7 @@ export function parseRelationSize(val: unknown): number | QuerySizeComparisonOps
   if (!val || typeof val !== 'object' || !('$size' in val)) {
     return undefined;
   }
-  const siblings = getKeys(val as object).filter((key) => key !== '$size');
+  const siblings = getKeys(val).filter((key) => key !== '$size');
   if (siblings.length) {
     throw new TypeError(`$size on a relation cannot be combined with other conditions: ${siblings.join(', ')}`);
   }
@@ -447,32 +454,47 @@ export function parseSortByCount(val: unknown): unknown {
   if (siblings.length) {
     throw new TypeError(`$count in a $sort cannot be combined with other keys: ${siblings.join(', ')}`);
   }
-  return (val as { $count: unknown }).$count;
+  return val.$count;
 }
 
 /**
  * Parse the `$group` (grouped columns) and `$select` (computed aggregates) maps into structured
  * entries consumable by any dialect. Grouped columns come first, then computed columns.
  */
-export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<E>): ParsedGroupEntry[] {
-  const entries: ParsedGroupEntry[] = [];
+export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<E>): ParsedGroupEntry<E>[] {
+  const entries: ParsedGroupEntry<E>[] = [];
   const groupMap = group ?? {};
   for (const alias of getKeys(groupMap)) {
-    if (groupMap[alias]) {
-      entries.push({ kind: 'key', alias });
+    const ref: unknown = groupMap[alias];
+    if (ref) {
+      entries.push({ kind: 'key', alias, path: ref === true ? [alias] : groupRefPath(alias, ref) });
     }
   }
   if (!select) {
     return entries;
   }
   for (const alias of getKeys(select)) {
-    const fnEntry: Readonly<Record<string, unknown>> = select[alias];
-    const key = getKeys(fnEntry)[0];
+    const { $where: where } = select[alias];
+    const call: Readonly<Record<string, unknown>> = select[alias];
+    const key = getKeys(call).find((name) => name !== '$where');
+    if (key === undefined) {
+      throw new TypeError(`aggregate '${alias}' names no op, only a $where`);
+    }
     // Flat DISTINCT ops (`$countDistinct`, ...) normalize to their base op + a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
-    entries.push({ kind: 'fn', alias, op, fieldRef: aggregateFieldRef(alias, fnEntry[key]), distinct });
+    const fieldRef = aggregateFieldRef(alias, call[key]);
+    entries.push({ kind: 'fn', alias, op, fieldRef, distinct, ...(where && hasKeys(where) ? { where } : {}) });
   }
   return entries;
+}
+
+/** The path a group key's `{ transaction: { orderId: true } }` names, one key at each level. */
+function groupRefPath(alias: string, ref: unknown): string[] {
+  const [key, ...rest] = isRecord(ref) ? getKeys(ref) : [];
+  if (!isRecord(ref) || key === undefined || rest.length) {
+    throw new TypeError(`$group '${alias}' names one field by the path to it: got ${JSON.stringify(ref)}`);
+  }
+  return ref[key] === true ? [key] : [key, ...groupRefPath(alias, ref[key])];
 }
 
 /** The column an aggregate reads: `'*'`, or the one field its `{ field: true }` names. */

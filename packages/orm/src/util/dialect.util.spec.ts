@@ -30,9 +30,9 @@ class Filtered {
   @Field({ type: Number, isId: true })
   id?: number;
   @Field({ type: String })
-  status?: string;
+  status?: string | null;
   @Field({ type: Date, softDelete: true })
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 function applied(where: QueryWhere<Filtered>, opts?: Parameters<typeof applyFilters>[2]) {
@@ -61,7 +61,7 @@ it('should skip a convenience filter whose condition does not resolve', () => {
   @Entity()
   class Owned {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) ownerId?: number;
+    @Field({ type: Number }) ownerId?: number | null;
   }
   expect(applyFilters(getMeta(Owned), {})).toEqual({});
 });
@@ -86,9 +86,9 @@ class Tenanted {
   @Field({ type: Number, isId: true })
   id?: number;
   @Field({ type: Number })
-  companyId?: number;
+  companyId?: number | null;
   @Field({ type: Date, softDelete: true })
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 function tenantApplied(where: QueryWhere<Tenanted>, opts?: Parameters<typeof applyFilters>[2]) {
@@ -126,7 +126,7 @@ it('should read a condition resolving to {} as no restriction, merging nothing',
     @Field({ type: Number, isId: true })
     id?: number;
     @Field({ type: Number })
-    companyId?: number;
+    companyId?: number | null;
   }
   const meta = getMeta(SystemScoped);
   // system context: security filter resolves to {} -> no $and appended, no broken predicate
@@ -200,7 +200,7 @@ class LazyId {
   @Id({ type: Number, eager: false })
   id?: number;
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 }
 
 it('should drop an eager: false id from the default selection', () => {
@@ -238,10 +238,44 @@ it('should parse group keys and aggregate functions', () => {
   };
   const entries = parseGroupMap(group, agg);
   expect(entries).toEqual([
-    { kind: 'key', alias: 'code' },
+    { kind: 'key', alias: 'code', path: ['code'] },
     { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*', distinct: false },
     { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice', distinct: false },
   ]);
+});
+
+it('should parse a group key reaching through relations, and an aggregate filtering its rows', () => {
+  const entries = parseGroupMap<Item>(
+    { taxName: { tax: { name: true } } },
+    { total: { $sum: { salePrice: true }, $where: { code: 'a' } }, all: { $count: '*', $where: {} } },
+  );
+  expect(entries).toEqual([
+    { kind: 'key', alias: 'taxName', path: ['tax', 'name'] },
+    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice', distinct: false, where: { code: 'a' } },
+    { kind: 'fn', alias: 'all', op: '$count', fieldRef: '*', distinct: false },
+  ]);
+});
+
+/** Wire input, past the types: an aggregate names an op beside its `$where`, and a path is a map. */
+it('should reject an aggregate naming no op, and a group path that is no map', () => {
+  // @ts-expect-error: an aggregate names an op
+  expect(() => parseGroupMap<Item>(undefined, { n: { $where: { code: 'a' } } })).toThrow(
+    "aggregate 'n' names no op, only a $where",
+  );
+  // @ts-expect-error: a path is a map
+  expect(() => parseGroupMap<Item>({ code: 5 })).toThrow("$group 'code' names one field by the path to it: got 5");
+});
+
+/** Wire input, past the types: a path names one field, one key at each level. */
+it('should reject a group path naming no field, or two', () => {
+  // @ts-expect-error: a path names one field
+  expect(() => parseGroupMap<Item>({ both: { tax: { name: true, id: true } } })).toThrow(
+    `$group 'both' names one field by the path to it: got {"name":true,"id":true}`,
+  );
+  // @ts-expect-error: a path names a field
+  expect(() => parseGroupMap<Item>({ none: { tax: {} } })).toThrow(
+    `$group 'none' names one field by the path to it: got {}`,
+  );
 });
 
 it('should normalize a flat distinct function to its base', () => {
@@ -274,15 +308,15 @@ describe('textSearchFields', () => {
   @Index((article) => [article.title, article.body], { type: 'fulltext' })
   class Article {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string;
-    @Field({ type: String }) body?: string;
-    @Field({ type: String }) summary?: string;
+    @Field({ type: String }) title?: string | null;
+    @Field({ type: String }) body?: string | null;
+    @Field({ type: String }) summary?: string | null;
   }
 
   @Entity()
   class Plain {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string;
+    @Field({ type: String }) title?: string | null;
   }
 
   @Entity()
@@ -290,8 +324,8 @@ describe('textSearchFields', () => {
   @Index((twiceIndexed) => [twiceIndexed.body], { type: 'fulltext' })
   class TwiceIndexed {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) title?: string;
-    @Field({ type: String }) body?: string;
+    @Field({ type: String }) title?: string | null;
+    @Field({ type: String }) body?: string | null;
   }
 
   it('should search the fields it names, whatever the entity declares', () => {
@@ -331,7 +365,7 @@ it('should name only the insertable keys a row carries', () => {
 it('should skip falsy and non-object entries in a group map', () => {
   const entries = parseGroupMap(malformedGroupMapFixture());
   // Only `true` is a valid group key; false/0/'' are ignored
-  expect(entries).toEqual([{ kind: 'key', alias: 'd' }]);
+  expect(entries).toEqual([{ kind: 'key', alias: 'd', path: ['d'] }]);
 });
 
 @Entity()
@@ -339,7 +373,7 @@ class Enrolled {
   [idKey]?: 'studentId' | 'courseId';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: String }) courseId?: string;
-  @Field({ type: String }) grade?: string;
+  @Field({ type: String }) grade?: string | null;
 }
 
 describe('whereIds', () => {
@@ -387,7 +421,7 @@ describe('findVectorIndex', () => {
     @Entity()
     class Indexed {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Indexed), 'embedding')?.type).toBe('hnsw');
   });
@@ -397,7 +431,7 @@ describe('findVectorIndex', () => {
     @Entity()
     class Expressed {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[];
+      @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
     }
     expect(findVectorIndex(getMeta(Expressed), 'embedding')).toBeUndefined();
   });

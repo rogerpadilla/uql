@@ -1,7 +1,7 @@
 import { CRUD_ROUTES, entityPath, type HttpMethod } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
 import type {
-  EntityData,
+  EntityWrite,
   EntityId,
   FieldKey,
   QueryFilter,
@@ -15,7 +15,7 @@ import type {
   RequestCountedSuccessResponse,
   RequestSuccessResponse,
   Type,
-  UpdatePayload,
+  UpdateWrite,
   WireQuery,
   WrittenId,
 } from '../../type/index.js';
@@ -145,12 +145,12 @@ export class HttpQuerier implements ClientQuerier {
     return { ...res, data: res.data > 0 };
   }
 
-  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
+  insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
+  insertMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.insertMany.path}`,
@@ -162,7 +162,7 @@ export class HttpQuerier implements ClientQuerier {
   async updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
-    payload: UpdatePayload<E, never>,
+    payload: UpdateWrite<E, never>,
     opts?: RequestOptions,
   ) {
     const basePath = this.getBasePath(entity);
@@ -172,7 +172,7 @@ export class HttpQuerier implements ClientQuerier {
   updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E, never>,
-    payload: UpdatePayload<E, never>,
+    payload: UpdateWrite<E, never>,
     opts?: RequestOptions,
   ) {
     const basePath = this.getBasePath(entity);
@@ -180,12 +180,12 @@ export class HttpQuerier implements ClientQuerier {
     return patch<number>(`${basePath}${qs}`, payload, this.buildOptions(opts));
   }
 
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>, opts?: RequestOptions) {
+  saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[], opts?: RequestOptions) {
+  saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.saveMany.path}`,

@@ -7,7 +7,7 @@ import { MsSqlQuerierPool } from './mssqlQuerierPool.js';
 @Entity({ name: 'mssql_regexp' })
 class RegexpRow {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 50 }) name?: string;
+  @Field({ type: String, length: 50 }) name?: string | null;
 }
 
 /**

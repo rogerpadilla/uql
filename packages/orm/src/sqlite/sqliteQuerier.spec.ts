@@ -41,7 +41,7 @@ class TextPkNote {
   code?: string;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 }
 
 describe('insertMany id semantics', () => {

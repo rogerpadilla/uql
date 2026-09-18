@@ -20,7 +20,7 @@ class Customer {
   id?: number;
 
   @Field({ type: String, index: true })
-  name?: string;
+  name?: string | null;
 }
 
 @Entity({ schema: 'sales' })
@@ -29,10 +29,10 @@ class Order {
   id?: number;
 
   @Field({ type: Number })
-  total?: number;
+  total?: number | null;
 
   @Field({ references: () => Customer })
-  customerId?: number;
+  customerId?: number | null;
 
   @ManyToOne({ entity: () => Customer, references: (order) => order.customerId })
   customer?: Customer;
@@ -45,7 +45,7 @@ class Plain {
   id?: number;
 
   @Field({ type: Number })
-  total?: number;
+  total?: number | null;
 }
 
 const sqlOf = (dialect: AbstractSqlDialect, build: (ctx: QueryContext) => void) => {

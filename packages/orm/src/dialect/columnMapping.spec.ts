@@ -13,9 +13,9 @@ class Renamed {
   @Id({ type: Number, name: 'row_pk' })
   id?: number;
   @Field({ type: String, name: 'the_label' })
-  label?: string;
+  label?: string | null;
   @Field({ type: Date, name: 'deleted_at', softDelete: true })
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 const pgSql = (build: (dialect: PostgresDialect, ctx: ReturnType<PostgresDialect['createContext']>) => void) => {
@@ -46,6 +46,7 @@ it('should group by the stored column while returning the caller key', () => {
   expect(pgSql((d, ctx) => d.aggregate(ctx, Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } }))) //
     .toContain('"the_label" "label"');
   expect(mongo.buildAggregateStages(Renamed, { $group: { label: true }, $select: { n: { $count: '*' } } })).toEqual([
+    { $match: { deleted_at: null } },
     { $group: { _id: { label: '$the_label' }, n: { $sum: 1 } } },
     { $project: { _id: 0, label: '$_id.label', n: 1 } },
   ]);
@@ -61,7 +62,7 @@ it('should reject a relation $size mixed with other conditions on both engines',
   expect(() => pgSql((d, ctx) => d.where(ctx, Item, mixed))).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );
-  expect(() => mongo.whereWithRelations(Item, mixed)).toThrow(
+  expect(() => mongo.matchStages(Item, mixed)).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );
 });

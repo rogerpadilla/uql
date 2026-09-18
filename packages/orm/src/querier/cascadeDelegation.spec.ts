@@ -15,7 +15,7 @@ class DelegatedParent {
   id?: number;
 
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @OneToMany({ entity: () => DelegatedChild, mappedBy: (delegatedChild) => delegatedChild.parent })
   children?: DelegatedChild[];
@@ -27,7 +27,7 @@ class DelegatedChild {
   id?: number;
 
   @Field({ type: Number })
-  parentId?: number;
+  parentId?: number | null;
 
   @ManyToOne({
     entity: () => DelegatedParent,
@@ -44,7 +44,7 @@ class WalkedParent {
   id?: number;
 
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @OneToMany({ entity: () => WalkedChild, mappedBy: (walkedChild) => walkedChild.parent, cascade: 'delete' })
   children?: WalkedChild[];
@@ -56,7 +56,7 @@ class WalkedChild {
   id?: number;
 
   @Field({ type: Number })
-  parentId?: number;
+  parentId?: number | null;
 
   @ManyToOne({
     entity: () => WalkedParent,

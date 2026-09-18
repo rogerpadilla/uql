@@ -122,7 +122,7 @@ class TestSqlDialect extends AbstractSqlDialect {
 @Entity()
 class Shelf {
   @Id({ type: Number }) id?: number;
-  @Field({ references: () => VectorItem }) vectorItemId?: number;
+  @Field({ references: () => VectorItem }) vectorItemId?: number | null;
   @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
 }
 
@@ -132,11 +132,11 @@ class RefLedger {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Number })
-  creditLimit?: number;
+  creditLimit?: number | null;
   @Field({ type: String, name: 'display_label' })
-  label?: string;
+  label?: string | null;
   @Field({ type: Number, computed: (ledger) => raw`${ledger.creditLimit} * 2` })
-  double?: number;
+  double?: number | null;
 }
 
 describe('AbstractSqlDialect', () => {

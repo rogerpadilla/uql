@@ -8,6 +8,7 @@ class User {
   id!: number;
   status!: string;
   age!: number;
+  balance!: bigint;
 }
 
 declare const querier: Querier;
@@ -88,21 +89,13 @@ export async function aggregateTyping() {
     $sort: { conut: -1 },
   });
 
-  // Positive: flat DISTINCT ops accept a field and resolve to number.
+  // Positive: the flat DISTINCT op accepts a field and resolves to number.
   const distinctRows = await querier.aggregate(User, {
     $group: { status: true },
-    $select: {
-      uniqueAges: { $countDistinct: { age: true } },
-      distinctAgeSum: { $sumDistinct: { age: true } },
-      distinctAgeAvg: { $avgDistinct: { age: true } },
-    },
+    $select: { uniqueAges: { $countDistinct: { age: true } } },
   });
   const uniqueAges: number = distinctRows[0].uniqueAges;
-  const distinctAgeSum: number | null = distinctRows[0].distinctAgeSum;
-  const distinctAgeAvg: number | null = distinctRows[0].distinctAgeAvg;
   void uniqueAges;
-  void distinctAgeSum;
-  void distinctAgeAvg;
 
   // Negative: only $count accepts '*'; every other aggregate requires a real field.
   await querier.aggregate(User, {
@@ -197,4 +190,137 @@ export async function anAliasMayNotShadowAGroupedColumn() {
   await querier.aggregate(User, { $group: { age: true }, $select: { age: { $count: '*' } } });
   // a different alias over the same column is fine
   await querier.aggregate(User, { $group: { age: true }, $select: { ageCount: { $count: '*' } } });
+}
+
+/**
+ * A total reads back as the column it totals - `SUM` over a `bigint` column answers a `bigint`, which
+ * is what the driver decodes - while an average is a `number` whatever it read, since the engine floats it.
+ */
+export async function aTotalKeepsItsColumnsType() {
+  const rows = await querier.aggregate(User, {
+    $select: {
+      totalBalance: { $sum: { balance: true } },
+      avgBalance: { $avg: { balance: true } },
+      maxBalance: { $max: { balance: true } },
+      totalAge: { $sum: { age: true } },
+    },
+    $having: { totalBalance: { $gt: 5n }, avgBalance: { $gt: 5 } },
+  });
+  const totalBalance: bigint | null = rows[0].totalBalance;
+  const avgBalance: number | null = rows[0].avgBalance;
+  const maxBalance: bigint | null = rows[0].maxBalance;
+  const totalAge: number | null = rows[0].totalAge;
+  void totalBalance;
+  void avgBalance;
+  void maxBalance;
+  void totalAge;
+
+  // @ts-expect-error a total over a `bigint` column is a `bigint`, not a `number`
+  const balanceAsNumber: number | null = rows[0].totalBalance;
+  void balanceAsNumber;
+
+  await querier.aggregate(User, {
+    $select: { totalBalance: { $sum: { balance: true } } },
+    // @ts-expect-error a `bigint` total compares against a `bigint`, not a `number`
+    $having: { totalBalance: { $gt: 5 } },
+  });
+}
+
+class Owner {
+  id!: number;
+  name!: string;
+}
+
+class Txn {
+  id!: number;
+  orderId!: string;
+  kind!: string;
+  owner?: Owner;
+  entries?: Entry[];
+}
+
+class Entry {
+  id!: number;
+  account!: string;
+  amount!: bigint;
+  transactionId!: number;
+  transaction?: Txn;
+}
+
+/**
+ * A group key names a to-one relation's field by the path through it, under an alias: rows stay flat,
+ * and the value is `null` where the row points nowhere.
+ */
+export async function aGroupKeyReachesThroughToOneRelations() {
+  const rows = await querier.aggregate(Entry, {
+    $group: {
+      account: true,
+      orderId: { transaction: { orderId: true } },
+      ownerName: { transaction: { owner: { name: true } } },
+    },
+    $select: { total: { $sum: { amount: true } } },
+    $having: { orderId: { $ne: null }, total: { $gt: 0n } },
+    $sort: { orderId: 1, total: -1 },
+  });
+  const account: string = rows[0].account;
+  const orderId: string | null = rows[0].orderId;
+  const ownerName: string | null = rows[0].ownerName;
+  void account;
+  void orderId;
+  void ownerName;
+  // @ts-expect-error a row pointing nowhere groups under `null`
+  const orderIdNotNull: string = rows[0].orderId;
+  void orderIdNotNull;
+
+  // @ts-expect-error a to-many multiplies the rows it joins, and every total with them
+  await querier.aggregate(Txn, { $group: { amount: { entries: { amount: true } } } });
+  // @ts-expect-error 'orderID' is not a field of Txn
+  await querier.aggregate(Entry, { $group: { orderId: { transaction: { orderID: true } } } });
+  // @ts-expect-error a path names one field
+  await querier.aggregate(Entry, { $group: { both: { transaction: { orderId: true, kind: true } } } });
+  // @ts-expect-error a relation is a path, not a key switched on
+  await querier.aggregate(Entry, { $group: { transaction: true } });
+  // @ts-expect-error an alias may not be a field's name
+  await querier.aggregate(Entry, { $group: { account: { transaction: { kind: true } } } });
+  await querier.aggregate(Entry, {
+    $group: { orderId: { transaction: { orderId: true } } },
+    // @ts-expect-error 'orderId' is already a grouped column
+    $select: { orderId: { $count: '*' } },
+  });
+  // @ts-expect-error a relation's field is grouped, never aggregated
+  await querier.aggregate(Entry, { $select: { s: { $sum: { transaction: { id: true } } } } });
+}
+
+/** An aggregate takes a `$where` of its own over the entity's fields, and keeps its result type. */
+export async function anAggregateFiltersItsOwnRows() {
+  const rows = await querier.aggregate(Entry, {
+    $group: { orderId: { transaction: { orderId: true } } },
+    $select: {
+      held: { $sum: { amount: true }, $where: { account: 'buyer_clearing' } },
+      entries: { $count: '*', $where: { amount: { $gt: 0n }, $or: [{ account: 'a' }, { account: 'b' }] } },
+    },
+  });
+  const held: bigint | null = rows[0].held;
+  const entries: number = rows[0].entries;
+  void held;
+  void entries;
+
+  await querier.aggregate(Entry, {
+    // @ts-expect-error a filter reads the entity's own fields; a relation there is a subquery inside the aggregate
+    $select: { n: { $count: '*', $where: { transaction: { kind: 'x' } } } },
+  });
+  await querier.aggregate(Entry, {
+    // @ts-expect-error 'acount' is not a field of Entry
+    $select: { n: { $count: '*', $where: { account: 'a', acount: 'b' } } },
+  });
+  await querier.aggregate(Entry, {
+    // @ts-expect-error an amount compares against a bigint
+    $select: { n: { $count: '*', $where: { amount: 'x' } } },
+  });
+}
+
+/** A path names a field at its end, however optional the properties along it. */
+export async function aPathEndsInAField() {
+  // @ts-expect-error a relation names no field on its own
+  await querier.aggregate(Entry, { $group: { none: { transaction: {} } } });
 }

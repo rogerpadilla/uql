@@ -1,4 +1,4 @@
-import type { EntityData, EntityId, FieldKey, RelationKey, UpdatePayload, WrittenId } from './entity.js';
+import type { EntityId, EntityWrite, FieldKey, RelationKey, UpdateWrite, WrittenId } from './entity.js';
 import type {
   QueryConflictPaths,
   QueryFilter,
@@ -97,7 +97,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
-    payload: UpdatePayload<E, QuerierRaw<W>>,
+    payload: UpdateWrite<E, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, number>;
 
@@ -105,7 +105,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
   updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E, QuerierRaw<W>>,
-    payload: UpdatePayload<E, QuerierRaw<W>>,
+    payload: UpdateWrite<E, QuerierRaw<W>>,
     opts?: O,
   ): QuerierResult<W, number>;
 
@@ -148,27 +148,27 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
   ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
 
   /** Insert a record and resolve to its id. See {@link UniversalQuerier.insertMany}. */
-  insertOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined>;
+  insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined>;
 
   /**
    * Insert records in as few statements as the bind limit allows, resolving to their ids in payload order.
    * Ids are exact everywhere but MySQL, which infers them from its header and reports `undefined` rather
    * than a guess where it cannot: a batch naming some keys, or a key that is not `AUTO_INCREMENT`.
    */
-  insertMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]>;
+  insertMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]>;
 
   /** Insert or update a record by its conflict paths; resolves to its id and whether it was created. */
   upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>,
+    payload: EntityWrite<E>,
   ): Promise<QueryUpsertOneResult<E>>;
 
   /** Insert or update records by their conflict paths; resolves to their ids in payload order. */
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>[],
+    payload: EntityWrite<E>[],
   ): Promise<QueryUpsertManyResult<E>>;
 
   /**
@@ -177,7 +177,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the ID
    */
-  saveOne<E extends object>(entity: Type<E>, payload: EntityData<E>): Promise<WrittenId<E> | undefined>;
+  saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined>;
 
   /**
    * Insert or update records.
@@ -185,7 +185,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany<E extends object>(entity: Type<E>, payload: EntityData<E>[]): Promise<(WrittenId<E> | undefined)[]>;
+  saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

@@ -246,9 +246,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       $select: { total: { $sum: { wide: true } }, rows: { $count: '*' } },
     });
 
-    // Odd past 2^53, so a total that went through a float would print an even neighbour instead. Read
-    // as text, since an engine answers a wide integer as a `bigint` or as its digits, never as both.
-    expect(String(row?.total)).toBe('9007199254740995');
+    // Odd past 2^53, so a total that went through a float would answer an even neighbour instead. A
+    // `bigint`, which is what the result type promises, whichever of a number or its digits the engine sent.
+    expect(row?.total).toBe(9007199254740995n);
     expect(row?.rows).toBe(2);
   }
 

@@ -1,4 +1,4 @@
-import { COUNT_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PG_VECTOR_METRICS, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
@@ -26,7 +26,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
   override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
     const table = this.escapedTableName(getMeta(entity));
     ctx.append(
-      `SELECT row_count ${this.escapeId(COUNT_ALIAS, true)} FROM [SHOW STATISTICS FOR TABLE ${table}] ORDER BY created DESC LIMIT 1`,
+      `SELECT row_count ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM [SHOW STATISTICS FOR TABLE ${table}] ORDER BY created DESC LIMIT 1`,
     );
   }
 }

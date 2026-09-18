@@ -38,7 +38,7 @@ class SoftDeleteRaw {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Date, softDelete: () => raw(() => 'NOW()') })
-  deletedAt?: Date;
+  deletedAt?: Date | null;
 }
 
 /** A column of each literal kind an inline context writes. */
@@ -47,11 +47,11 @@ class InlineRow {
   @Id({ type: Number })
   id?: number;
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
   @Field({ type: Boolean })
-  active?: boolean;
+  active?: boolean | null;
   @Field({ type: Number })
-  rank?: number;
+  rank?: number | null;
 }
 
 declare module '../type/index.js' {
@@ -70,9 +70,9 @@ class SecureRelated {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Number })
-  tenantId?: number;
+  tenantId?: number | null;
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 }
 
 @Entity()
@@ -80,7 +80,7 @@ class SecureParent {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureRelated })
-  relatedId?: number;
+  relatedId?: number | null;
   @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
   related?: SecureRelated;
 }
@@ -95,11 +95,11 @@ class SecureChild {
   @Id({ type: Number })
   id?: number;
   @Field({ type: Number })
-  tenantId?: number;
+  tenantId?: number | null;
   @Field({ references: () => SecureCollection })
-  collectionId?: number;
+  collectionId?: number | null;
   @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number;
+  deletedAt?: number | null;
   @ManyToOne({ entity: () => SecureCollection, references: (secureChild) => secureChild.collectionId })
   collection?: SecureCollection;
 }
@@ -110,7 +110,7 @@ class PlainChild {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
-  collectionId?: number;
+  collectionId?: number | null;
   @ManyToOne({ entity: () => SecureCollection, references: (plainChild) => plainChild.collectionId })
   collection?: SecureCollection;
 }
@@ -121,9 +121,9 @@ class SecureCollectionChild {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
-  secureCollectionId?: number;
+  secureCollectionId?: number | null;
   @Field({ references: () => SecureChild })
-  secureChildId?: number;
+  secureChildId?: number | null;
 }
 
 @Entity()
@@ -131,9 +131,9 @@ class SecureCollectionPlain {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
-  secureCollectionId?: number;
+  secureCollectionId?: number | null;
   @Field({ references: () => PlainChild })
-  plainChildId?: number;
+  plainChildId?: number | null;
 }
 
 /** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
@@ -150,7 +150,7 @@ class RenamedChild {
   @Id({ type: Number })
   id?: number;
   @Field({ name: 'parent_fk', references: () => RenamedParent })
-  parentId?: number;
+  parentId?: number | null;
 }
 
 /** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
@@ -159,9 +159,9 @@ class SecureCollectionRenamed {
   @Id({ type: Number })
   id?: number;
   @Field({ name: 'renamed_collection', references: () => SecureCollection })
-  secureCollectionId?: number;
+  secureCollectionId?: number | null;
   @Field({ name: 'renamed_child', references: () => SecureChild })
-  secureChildId?: number;
+  secureChildId?: number | null;
 }
 
 /** A soft-deletable junction: an unlinked row must not count as a link. */
@@ -170,11 +170,11 @@ class SecureCollectionLink {
   @Id({ type: Number })
   id?: number;
   @Field({ references: () => SecureCollection })
-  secureCollectionId?: number;
+  secureCollectionId?: number | null;
   @Field({ references: () => PlainChild })
-  plainChildId?: number;
+  plainChildId?: number | null;
   @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number;
+  deletedAt?: number | null;
 }
 
 @Entity()
@@ -2679,6 +2679,70 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([]);
   }
 
+  /** A group key reaches a to-one relation's field through a `LEFT JOIN`, and every column is qualified once one joins. */
+  shouldAggregateGroupedByARelationsField() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, Item, {
+        $where: { code: 'a' },
+        $group: { taxName: { tax: { name: true } } },
+        $select: { total: { $sum: { salePrice: true } } },
+        $sort: { total: -1 },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} LEFT JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(1)} GROUP BY ${e}tax${e}.${e}name${e} ORDER BY SUM(${e}Item${e}.${e}salePrice${e}) DESC`,
+    );
+    expect(values).toEqual(['a']);
+  }
+
+  /**
+   * An aggregate's own `$where` is a `CASE WHEN` read from a derived table, where `HAVING` names it by
+   * alias: repeating the expression would repeat its bound values.
+   */
+  shouldAggregateOnlyTheRowsItsOwnWherePasses() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, Item, {
+        $group: { code: true },
+        $select: {
+          sold: { $sum: { salePrice: true }, $where: { name: 'a' } },
+          n: { $count: '*' },
+          named: { $count: '*', $where: { name: { $isNotNull: true } } },
+        },
+        $having: { sold: { $gt: 5 } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}code${e}, SUM(${e}sold${e}) ${e}sold${e}, COUNT(*) ${e}n${e}, COUNT(${e}named${e}) ${e}named${e} FROM (SELECT ${e}code${e}, CASE WHEN ${e}name${e} = ${this.ph(1)} THEN ${e}salePrice${e} END ${e}sold${e}, CASE WHEN ${e}name${e} IS NOT NULL THEN 1 END ${e}named${e} FROM ${e}Item${e}) ${e}_uql_rows${e} GROUP BY ${e}code${e} HAVING SUM(${e}sold${e}) > ${this.ph(2)}`,
+    );
+    expect(values).toEqual(['a', 5]);
+  }
+
+  /** A joined row's relation aggregate is a subquery, so the rows computing it are read first, the join inside. */
+  shouldAggregateGroupedByAJoinedRowsRelationAggregate() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, MeasureUnit, {
+        $group: { units: { category: { unitCount: true } } },
+        $select: { n: { $count: '*' } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}units${e}, COUNT(*) ${e}n${e} FROM (SELECT (SELECT COUNT(*) FROM ${e}MeasureUnit${e} ${e}measureUnits${e} WHERE ${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e} AND ${e}measureUnits${e}.${e}deletedAt${e} IS NULL) ${e}units${e} FROM ${e}MeasureUnit${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}category${e} ON ${e}category${e}.${e}id${e} = ${e}MeasureUnit${e}.${e}categoryId${e} AND ${e}category${e}.${e}deletedAt${e} IS NULL WHERE ${e}MeasureUnit${e}.${e}deletedAt${e} IS NULL) ${e}_uql_rows${e} GROUP BY ${e}units${e}`,
+    );
+  }
+
+  /** A to-many multiplies the rows it joins, and every total with them, so it is refused by name. */
+  shouldRefuseToGroupByAToManysField() {
+    expect(() =>
+      this.exec((ctx) =>
+        // @ts-expect-error a to-many multiplies the rows it joins
+        this.dialect.aggregate(ctx, Item, { $group: { tagName: { tags: { name: true } } } }),
+      ),
+    ).toThrow("cannot $group by 'tags.name': only a to-one relation's field groups");
+  }
+
   /**
    * A `$having` value that is not an operator map is a value to compare against. Iterating its own
    * keys as operators emitted a dangling `HAVING ` for a `Date` (it has none) and threw on an
@@ -2783,34 +2847,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(sql).toBe(
       `SELECT ${e}name${e}, COUNT(${e}email${e}) ${e}emails${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
-    );
-    expect(values).toEqual([]);
-  }
-
-  shouldAggregateSumDistinct() {
-    const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.aggregate(ctx, User, {
-        $group: { name: true },
-        $select: { total: { $sumDistinct: { createdAt: true } } },
-      }),
-    );
-    expect(sql).toBe(
-      `SELECT ${e}name${e}, SUM(DISTINCT ${e}createdAt${e}) ${e}total${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
-    );
-    expect(values).toEqual([]);
-  }
-
-  shouldAggregateAvgDistinct() {
-    const e = this.dialect.escapeIdChar;
-    const { sql, values } = this.exec((ctx) =>
-      this.dialect.aggregate(ctx, User, {
-        $group: { name: true },
-        $select: { average: { $avgDistinct: { createdAt: true } } },
-      }),
-    );
-    expect(sql).toBe(
-      `SELECT ${e}name${e}, AVG(DISTINCT ${e}createdAt${e}) ${e}average${e} FROM ${e}User${e} GROUP BY ${e}name${e}`,
     );
     expect(values).toEqual([]);
   }

@@ -14,8 +14,8 @@ const ROWS = 1000;
 @Entity({ name: TABLE })
 class ElemMatched {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'json' }) items?: Json<{ name: string }[]>;
-  @Field({ type: 'json' }) tags?: Json<string[]>;
+  @Field({ type: 'json' }) items?: Json<{ name: string }[]> | null;
+  @Field({ type: 'json' }) tags?: Json<string[]> | null;
 }
 
 /**

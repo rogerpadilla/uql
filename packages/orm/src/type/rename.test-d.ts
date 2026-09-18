@@ -20,20 +20,20 @@ class Studio {
 @Entity({ checks: [{ where: { rating: { $gte: 0 } } }, { where: (movie) => raw`${movie.rating} <= ${10}` }] })
 class Movie {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ type: Number }) rating?: number;
-  @Field({ type: Number, references: () => Studio }) studioId?: number;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: Number }) rating?: number | null;
+  @Field({ type: Number, references: () => Studio }) studioId?: number | null;
   @ManyToOne({ entity: () => Studio, references: (movie, target) => [{ local: movie.studioId, foreign: target.id }] })
   studio?: Studio;
-  @Field({ type: Number, references: () => Cinema }) cinemaId?: number;
+  @Field({ type: Number, references: () => Cinema }) cinemaId?: number | null;
   @ManyToOne({ entity: () => Cinema, references: (movie) => movie.cinemaId }) venue?: Cinema;
-  @Field({ type: Number, computed: (movie) => raw`${movie.rating} * 2` }) score?: number;
+  @Field({ type: Number, computed: (movie) => raw`${movie.rating} * 2` }) score?: number | null;
 }
 
 class Cinema {
   id?: number;
-  city?: string;
-  label?: string;
+  city?: string | null;
+  label?: string | null;
   films?: Movie[];
   readonly filmCount?: number;
   readonly topRating?: number | null;
@@ -90,11 +90,12 @@ export async function write() {
 export async function aggregate() {
   const rows = await querier.aggregate(Movie, {
     $where: { rating: { $gt: 0 } },
-    $group: { studioId: true },
+    $group: { studioId: true, venueCity: { venue: { city: true } } },
     $select: {
       total: { $sum: { rating: true } },
       best: { $max: { rating: true } },
       titles: { $countDistinct: { title: true } },
+      rated: { $count: '*', $where: { rating: { $gt: 5 } } },
     },
     $having: { studioId: { $gt: 0 }, total: { $gt: 10 } },
     $sort: { studioId: 1, total: -1 },

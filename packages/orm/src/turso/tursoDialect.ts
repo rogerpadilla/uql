@@ -7,6 +7,10 @@ import type { SqlDialectFeatures } from '../type/index.js';
  * `ORDER BY` inside an aggregate, which its Rust engine lacks. Imports no driver.
  */
 export class TursoDialect extends LibsqlDialect {
-  /** The Rust engine takes no `ORDER BY` inside an aggregate. */
-  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, orderedJsonAggregates: false };
+  /** The Rust engine takes no `ORDER BY` inside an aggregate, nor a subquery reading the table a write changes. */
+  override readonly features: SqlDialectFeatures = {
+    ...SQLITE_FEATURES,
+    orderedJsonAggregates: false,
+    correlatedWrites: false,
+  };
 }

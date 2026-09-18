@@ -12,7 +12,7 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      email?: string;
+      email?: string | null;
     }
 
     const meta = getMeta(User);
@@ -30,7 +30,7 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      email?: string;
+      email?: string | null;
     }
 
     const meta = getMeta(User);
@@ -46,10 +46,10 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      firstName?: string;
+      firstName?: string | null;
 
       @Field({ type: String })
-      lastName?: string;
+      lastName?: string | null;
     }
 
     const meta = getMeta(User);
@@ -65,7 +65,7 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      email?: string;
+      email?: string | null;
     }
 
     const meta = getMeta(User);
@@ -82,13 +82,13 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      email?: string;
+      email?: string | null;
 
       @Field({ type: String })
-      firstName?: string;
+      firstName?: string | null;
 
       @Field({ type: String })
-      lastName?: string;
+      lastName?: string | null;
     }
 
     const meta = getMeta(User);
@@ -104,10 +104,10 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      email?: string;
+      email?: string | null;
 
       @Field({ type: Date, nullable: true })
-      deletedAt?: Date;
+      deletedAt?: Date | null;
     }
 
     const meta = getMeta(User);
@@ -123,7 +123,7 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      name?: string;
+      name?: string | null;
     }
 
     const meta = getMeta(Category);
@@ -138,10 +138,10 @@ describe('@Index decorator', () => {
       id?: number;
 
       @Field({ type: String })
-      status?: string;
+      status?: string | null;
 
       @Field({ type: Number })
-      priority?: number;
+      priority?: number | null;
     }
 
     const meta = getMeta(Task);

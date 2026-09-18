@@ -16,7 +16,7 @@ const TABLE = 'maria_vector_index';
 @Entity({ name: TABLE })
 class MariaVectorIndexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[];
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
 }
 
 /** The same table before the index is declared on it, so `autoSync` has one to add. */

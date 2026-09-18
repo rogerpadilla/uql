@@ -2,7 +2,7 @@ import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js
 import type { FilterOptions, RelationQuery } from './query.js';
 import type { ColumnRef, QueryRaw, RelationAggregate } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { Except, IsMany, Json, Scalar, Type, Unpacked } from './utility.js';
+import type { Except, IsMany, Json, Scalar, Type, Unpacked, Writable } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /** Brands the property an entity is identified by, where it is not `id`, `_id` or `uuid`. */
@@ -29,6 +29,28 @@ export type FieldKey<E> = {
     ? K
     : never;
 }[Key<E>];
+
+/**
+ * Whether `A` and `B` are the same type, `readonly` included - which no conditional sees, since
+ * assignability ignores the modifier. Two identical generic signatures compare equal only when their
+ * deferred bodies do.
+ */
+type IfEquals<A, B, Yes, No> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? Yes : No;
+
+/**
+ * The fields a caller writes: every one the class does not declare `readonly`. A field the database
+ * writes - a relation aggregate, a stored generated column, a trigger-kept stamp - is `readonly`, and
+ * its value never reaches the database, so a write payload leaves it out rather than dropping it.
+ */
+export type WritableKey<E> = {
+  readonly [K in FieldKey<E>]-?: IfEquals<Pick<E, K>, Writable<Pick<E, K>>, K, never>;
+}[FieldKey<E>];
+
+/** A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write. */
+export type EntityWrite<E> = EntityData<E, WritableKey<E>>;
+
+/** A partial write as a caller supplies one: {@link UpdatePayload} without them. */
+export type UpdateWrite<E, Raw = QueryRaw> = UpdatePayload<E, Raw, WritableKey<E>>;
 
 /** The relation names of an entity: every key but its fields and its methods, so the two sets cannot drift. */
 export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
@@ -416,9 +438,20 @@ export type TsTypeOf<T> = T extends StringConstructor
  * omit it, taking the referenced key's column type instead.
  */
 export type FieldOptionsFor<V, E = unknown> =
-  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> })
-  | (FieldOptions<NonNullable<V>, E> & { readonly references: EntityGetter; readonly type?: TypeFor<V> })
+  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V>; readonly isId: true })
+  | (FieldOptions<NonNullable<V>, E> & { readonly type: TypeFor<V> } & DeclaresNotNull<V>)
+  | (FieldOptions<NonNullable<V>, E> & {
+      readonly references: EntityGetter;
+      readonly type?: TypeFor<V>;
+    } & DeclaresNotNull<V>)
   | AggregateOptionsFor<V, E>;
+
+/**
+ * A column holds `null` unless `nullable: false` says otherwise, and a read hydrates one, so a property
+ * that does not admit it says so here. The decorators state the same rule the other way round, against
+ * the property they are applied to; a key needs neither, being NOT NULL on every engine.
+ */
+type DeclaresNotNull<V> = null extends V ? unknown : { readonly nullable: false };
 
 /**
  * A field a relation aggregate computes: the aggregate types it, so it declares no `type`, and only the

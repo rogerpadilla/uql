@@ -1,5 +1,5 @@
 import { type CarriedFields, type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
-import { COUNT_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSlotArgs } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
@@ -43,6 +43,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   stringSizing: 'varchar',
   supportsUnsigned: false,
   serverSideCursors: false,
+  correlatedWrites: true,
   rowLocks: true,
   rowLockWithWindow: true,
   rowLockOf: true,
@@ -151,7 +152,7 @@ export class MsSqlDialect extends MergeSqlDialect {
       return undefined;
     }
     const records = Array.isArray(payload) ? payload : [payload];
-    const stated = records.some((record) => (record as Record<string, unknown>)[idKey as string] !== undefined);
+    const stated = records.some((record) => (record as Record<string, unknown>)[idKey] !== undefined);
     return stated ? this.escapedTableName(meta) : undefined;
   }
 
@@ -278,7 +279,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
     const meta = getMeta(entity);
     ctx.append(
-      `SELECT SUM(p.rows) ${this.escapeId(COUNT_ALIAS, true)} FROM sys.partitions p` +
+      `SELECT SUM(p.rows) ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM sys.partitions p` +
         ` JOIN sys.objects o ON o.object_id = p.object_id` +
         ` JOIN sys.schemas s ON s.schema_id = o.schema_id` +
         ` WHERE p.index_id IN (0, 1) AND o.name = `,

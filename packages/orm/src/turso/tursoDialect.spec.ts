@@ -11,7 +11,7 @@ class TursoPreferences {
   id?: string;
 
   @Field({ type: 'json' })
-  values?: Json<Record<string, number>>;
+  values?: Json<Record<string, number>> | null;
 }
 
 const keys = Array.from({ length: 200 }, (_, at) => `k${at}`);

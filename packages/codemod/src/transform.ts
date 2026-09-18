@@ -401,7 +401,8 @@ function foreignKeyColumn(
   }
   const indent = ' '.repeat(property.getSourceFile().getLineAndCharacterOfPosition(property.getStart()).character);
   const type = keyTypeSource(key, property, checker);
-  return inserted(property, `@Field({ references: () => ${target} }) ${column}?: ${type};\n${indent}`);
+  // `| null`, as on every column the codemod touches: a foreign key holds one like any other.
+  return inserted(property, `@Field({ references: () => ${target} }) ${column}?: ${type} | null;\n${indent}`);
 }
 
 /** The key's type as written where that is in scope, the same file, or as the checker spells it out. */
@@ -510,6 +511,7 @@ function rewriteEntityOptions(options: ts.ObjectLiteralExpression, owner: Owner,
   }
   for (const field of objectProperties(fields)) {
     renameSqlOption(optionsOf(field.initializer), 'virtual', 'computed', field, owner, ctx);
+    admitNullOnDefined(field, owner, ctx);
   }
   for (const filter of objectProperties(propertyValue(options, 'filters'))) {
     renameOption(optionsOf(filter.initializer), 'condition', 'where', filter, ctx);
@@ -850,6 +852,9 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     }
     const options = decoratorOptions(decorator);
     if (FIELD_DECORATORS.has(name)) {
+      if (name === 'Field') {
+        admitNull(options, node, ctx);
+      }
       addFieldType(decorator, node, ctx);
       // Options it cannot read may still hold `virtual`, so they are reported where they mention it.
       if (options.kind === 'opaque' && /\bvirtual\b/.test(decorator.getText())) {
@@ -872,6 +877,72 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
     dropDeclare(node, ctx);
   }
   unwrapRelationAlias(node, ctx);
+}
+
+/**
+ * A column holds `null` unless `nullable: false` says otherwise, and a read hydrates one, so the property
+ * says so too. A key is NOT NULL on every engine, and a relation aggregate is typed by the aggregate,
+ * which declares its own `null` or none, so neither is touched.
+ */
+function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context): void {
+  // Options it cannot read may state `nullable` themselves, and appending to the property would then
+  // contradict the column. `addFieldType` already reports the same options, so this adds no second note.
+  if (options.kind === 'opaque') {
+    return;
+  }
+  if (
+    declaresNotNull(options) ||
+    findProperty(options, 'isId') ||
+    (findProperty(options, 'computed') && !findProperty(options, 'type'))
+  ) {
+    return;
+  }
+  if (!node.type) {
+    ctx.notes.push(
+      `${ctx.describe(node)}: declare '${propertyKey(node.name)}' as a type that admits 'null', which the column holds`,
+    );
+    return;
+  }
+  if (admitsNull(node.type)) {
+    return;
+  }
+  ctx.edits.push(appended(node.type, ' | null'));
+}
+
+/**
+ * The same null rule where `defineEntity` names the field: the property is on the class the call takes,
+ * so the declaration is found there rather than under a decorator.
+ */
+function admitNullOnDefined(field: NamedProperty, owner: Owner, ctx: Context): void {
+  if (!ts.isPropertyAssignment(field)) {
+    return;
+  }
+  const key = propertyKey(field.name);
+  const declaration = key
+    ? instanceTypeOf(owner.entity, ctx.checker)
+        .getProperty(key)
+        ?.declarations?.find((it) => ts.isPropertyDeclaration(it))
+    : undefined;
+  if (declaration?.type) {
+    admitNull(optionsOf(field.initializer), declaration, ctx);
+  }
+}
+
+/** Whether the options say the column refuses `null`; `nullable: true` is the default said out loud. */
+function declaresNotNull(options: Options): boolean {
+  const nullable = findProperty(options, 'nullable');
+  return !!nullable && ts.isPropertyAssignment(nullable) && nullable.initializer.kind === ts.SyntaxKind.FalseKeyword;
+}
+
+/**
+ * Whether a written type already admits `null`, wherever it sits in the union. In a type position `null`
+ * parses as a literal type rather than a keyword, which is why the kind is read off `literal`.
+ */
+function admitsNull(type: ts.TypeNode): boolean {
+  if (ts.isLiteralTypeNode(type)) {
+    return type.literal.kind === ts.SyntaxKind.NullKeyword;
+  }
+  return ts.isUnionTypeNode(type) && type.types.some(admitsNull);
 }
 
 /** Names a decorator that no longer exists, wherever it appears. */

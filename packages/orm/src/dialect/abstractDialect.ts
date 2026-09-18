@@ -1,3 +1,4 @@
+import { getMeta } from '../entity/index.js';
 import type {
   DialectFeatures,
   DialectName,
@@ -12,9 +13,11 @@ import type {
   QueryOptions,
   QueryWhere,
   QueryWhereArray,
+  Type,
 } from '../type/index.js';
+import { QueryRaw } from '../type/queryRaw.js';
 import { applyFilters, assertWhere } from '../util/dialect.util.js';
-import { entityName } from '../util/index.js';
+import { aggregateOf, entityName, someKey } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
 
 /**
@@ -135,10 +138,29 @@ export abstract class AbstractDialect {
    * straight to `Query`, so a scalar can arrive where an array belongs. Shared so both backends
    * refuse the same payload rather than one throwing and the other failing further in.
    */
-  protected static groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E>): QueryWhereArray<E> {
+  protected static groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | undefined): QueryWhereArray<E> {
     if (val !== undefined && !Array.isArray(val)) {
       throw TypeError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
     }
     return val ?? [];
+  }
+
+  /**
+   * Whether a `$where` reads a relation at any depth: filters by one, or by a relation aggregate. What
+   * cannot host that read - a MongoDB filter, a write without {@link DialectFeatures.correlatedWrites} -
+   * has the rows it names read first.
+   */
+  constrainsRelations<E>(entity: Type<E>, where: QueryWhere<E> | undefined): boolean {
+    if (!where) {
+      return false;
+    }
+    const meta = getMeta(entity);
+    return someKey(where, (key) =>
+      AbstractDialect.isGroupOp(key)
+        ? AbstractDialect.groupClauses(key, where[key]).some(
+            (it) => !(it instanceof QueryRaw) && this.constrainsRelations(entity, it),
+          )
+        : !!meta.relations[key] || aggregateOf(meta.fields[key]) !== undefined,
+    );
   }
 }

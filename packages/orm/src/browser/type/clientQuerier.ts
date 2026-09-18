@@ -1,4 +1,4 @@
-import type { EntityData, QuerierResult, QueryOptions, SharedQuerier, Type, WrittenId } from '../../type/index.js';
+import type { EntityWrite, QuerierResult, QueryOptions, SharedQuerier, Type, WrittenId } from '../../type/index.js';
 import type { RequestOptions } from './request.js';
 
 /**
@@ -10,25 +10,25 @@ import type { RequestOptions } from './request.js';
 export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, QueryOptions & RequestOptions> {
   insertOne<E extends object>(
     entity: Type<E>,
-    payload: EntityData<E>,
+    payload: EntityWrite<E>,
     opts?: RequestOptions,
   ): QuerierResult<'client', WrittenId<E> | undefined>;
 
   insertMany<E extends object>(
     entity: Type<E>,
-    payload: EntityData<E>[],
+    payload: EntityWrite<E>[],
     opts?: RequestOptions,
   ): QuerierResult<'client', (WrittenId<E> | undefined)[]>;
 
   saveOne<E extends object>(
     entity: Type<E>,
-    payload: EntityData<E>,
+    payload: EntityWrite<E>,
     opts?: RequestOptions,
   ): QuerierResult<'client', WrittenId<E> | undefined>;
 
   saveMany<E extends object>(
     entity: Type<E>,
-    payload: EntityData<E>[],
+    payload: EntityWrite<E>[],
     opts?: RequestOptions,
   ): QuerierResult<'client', (WrittenId<E> | undefined)[]>;
 }

@@ -151,7 +151,7 @@ describe('hook decorators', () => {
     @Entity()
     class ChildEntity extends BaseEntity {
       @Field({ type: String })
-      name?: string;
+      name?: string | null;
 
       @BeforeInsert()
       childHook() {}
@@ -174,7 +174,7 @@ describe('hook decorators', () => {
     @Entity()
     class ChildEntity extends BaseEntity {
       @Field({ type: String })
-      name?: string;
+      name?: string | null;
     }
 
     const meta = getMeta(ChildEntity);
@@ -193,7 +193,7 @@ describe('hook decorators', () => {
     @Entity()
     class ChildEntity extends BaseEntity {
       @Field({ type: String })
-      name?: string;
+      name?: string | null;
 
       @AfterUpdate()
       childHook() {}
@@ -211,7 +211,7 @@ describe('hook decorators', () => {
       id?: number;
 
       @Field({ type: String })
-      name?: string;
+      name?: string | null;
     }
 
     const meta = getMeta(PlainEntity);

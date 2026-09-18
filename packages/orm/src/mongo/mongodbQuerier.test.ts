@@ -24,7 +24,7 @@ class Ticket {
   id?: string;
 
   @Field({ type: String })
-  subject?: string;
+  subject?: string | null;
 }
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {

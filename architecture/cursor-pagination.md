@@ -111,7 +111,7 @@ Opaque is not signed. The cursor carries the sort values, so a caller holding on
 
 ## Where it touches the rest
 
-- **R6** is the gate: minting `endCursor` needs the sort values on the returned row, and `$select` need not have asked for them. Carrying them out as `_uql_cursor_<path>` aliases and stripping them before hydration is the fourth projection rule the roadmap names - and it is the same carry-out a relation's `_uql_sort_<path>` columns already do, so unifying first is what keeps it from being a fourth implementation.
+- **R6** is the gate: minting `endCursor` needs the sort values on the returned row, and `$select` need not have asked for them. Carrying them out as `_uql_cursor_<path>` aliases and stripping them before hydration is the carried-out column rule the roadmap names - the same one a relation's `_uql_sort_<path>` columns and a paged read's `_uql_total` already each implement separately.
 - **The wire** needs a string clause group. `Query` has object, number and boolean groups; `$after`/`$before` are strings, so `parseQueryParams` would `JSON.parse` them today. A `QUERY_ROOT_STRING_CLAUSES` beside the others keeps the `satisfies` check and keeps them off a relation's own query - per-parent keyset is not this feature.
 - **The envelope** carries `data` and an optional `count`. A page needs `endCursor`/`hasNextPage` beside them, and the response shape differs enough to earn its own route (`GET /page`) rather than a flag on `GET /`.
 - **Aggregates are out of scope.** A keyset over `$group` rows compares against `HAVING`, not `WHERE`. Prisma gates post-group pagination on a prior `orderBy` at the type level; the same gate here is `$sort` on the aggregate, and the condition is a different builder.

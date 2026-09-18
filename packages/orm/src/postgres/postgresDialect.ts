@@ -1,4 +1,4 @@
-import { COUNT_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { QueryConflictPaths, QueryContext, SqlDialectFeatures, SqlDialectName, Type } from '../type/index.js';
@@ -25,7 +25,7 @@ export class PostgresDialect extends PgLikeSqlDialect {
    */
   override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
     ctx.append(
-      `SELECT GREATEST(reltuples, 0)::bigint ${this.escapeId(COUNT_ALIAS, true)} FROM pg_class WHERE oid = to_regclass(`,
+      `SELECT GREATEST(reltuples, 0)::bigint ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM pg_class WHERE oid = to_regclass(`,
     );
     ctx.addValue(this.escapedTableName(getMeta(entity)));
     ctx.append(')');

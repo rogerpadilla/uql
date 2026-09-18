@@ -57,8 +57,8 @@ it('should register the table a hand-written entity would, whichever way the typ
 
   class Written {
     id?: number;
-    title?: string;
-    servings?: number;
+    title?: string | null;
+    servings?: number | null;
   }
   defineEntity(Written, {
     name: 'recipe',

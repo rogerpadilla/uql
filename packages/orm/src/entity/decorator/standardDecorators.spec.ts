@@ -26,7 +26,7 @@ describe('standard decorators', () => {
     @Entity()
     class Basic {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string;
+      @Field({ type: String }) title?: string | null;
     }
 
     const meta = getMeta(Basic);
@@ -40,12 +40,12 @@ describe('standard decorators', () => {
   it('should inherit fields from an undecorated abstract base, parent fields first', () => {
     abstract class Base {
       @Id({ type: Number }) id?: number;
-      @Field({ type: Date }) createdAt?: Date;
+      @Field({ type: Date }) createdAt?: Date | null;
     }
 
     @Entity()
     class Child extends Base {
-      @Field({ type: String }) name?: string;
+      @Field({ type: String }) name?: string | null;
     }
 
     const meta = getMeta(Child);
@@ -61,12 +61,12 @@ describe('standard decorators', () => {
 
     @Entity()
     class Left extends Shared {
-      @Field({ type: String }) leftOnly?: string;
+      @Field({ type: String }) leftOnly?: string | null;
     }
 
     @Entity()
     class Right extends Shared {
-      @Field({ type: Number }) rightOnly?: number;
+      @Field({ type: Number }) rightOnly?: number | null;
     }
 
     // A bag that copied its parent's map, or mutated a shared one, would leak these into each other.
@@ -84,7 +84,7 @@ describe('standard decorators', () => {
 
     @Entity()
     class HookedChild extends HookedBase {
-      @Field({ type: String }) name?: string;
+      @Field({ type: String }) name?: string | null;
     }
 
     // Both the bag drain and `extendMeta` see this hook; only one of them may register it.
@@ -101,7 +101,7 @@ describe('standard decorators', () => {
     @Entity()
     class Owned {
       @Id({ type: Number }) id?: number;
-      @Field({ references: () => Owner }) ownerId?: number;
+      @Field({ references: () => Owner }) ownerId?: number | null;
       @ManyToOne({ entity: () => Owner, references: (owned) => owned.ownerId }) owner?: Owner;
     }
 
@@ -115,7 +115,7 @@ describe('standard decorators', () => {
     @Entity()
     class Indexed {
       @Id({ type: Number }) id?: number;
-      @Field({ type: String }) title?: string;
+      @Field({ type: String }) title?: string | null;
     }
 
     // Class decorators apply bottom-up in both specs, so `@Entity()` finalizes before `@Index` appends.

@@ -48,6 +48,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   stringSizing: 'text',
   supportsUnsigned: false,
   serverSideCursors: false,
+  correlatedWrites: true,
   rowLocks: false,
   rowLockWithWindow: true,
   rowLockOf: true,

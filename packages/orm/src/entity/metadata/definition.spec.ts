@@ -61,7 +61,7 @@ it('should name the columns of a composite key, and name its row by every one', 
     [idKey]?: 'row' | 'number';
     @Id({ type: String }) row?: string;
     @Id({ type: Number }) number?: number;
-    @Field({ type: String }) holder?: string;
+    @Field({ type: String }) holder?: string | null;
   }
   const meta = getMeta(Seat);
   expect(() => assertSoleId(meta, 'a key lookup')).toThrow(
@@ -88,7 +88,7 @@ it('should name the relation it reads, and refuse one the entity does not declar
 it('should keep a check constraint as authored, for the schema build to render', () => {
   class Stocked {
     id?: number;
-    quantity?: number;
+    quantity?: number | null;
   }
   const checks = [{ name: 'quantity_positive', where: raw`quantity > 0` }, { where: raw`quantity < 1000` }];
   const meta = defineEntity(Stocked, {
@@ -126,7 +126,7 @@ it('should keep the columns an inverse side names itself', () => {
   @Entity()
   class Book {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Shelf }) shelfRef?: number;
+    @Field({ references: () => Shelf }) shelfRef?: number | null;
     @ManyToOne({ entity: () => Shelf, references: (book, shelf) => [{ local: book.shelfRef, foreign: shelf.id }] })
     shelf?: Shelf;
   }
@@ -141,7 +141,7 @@ it('should keep a foreign key column a column, with no relation it did not decla
   @Entity()
   class Pallet {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Warehouse }) warehouseId?: number;
+    @Field({ references: () => Warehouse }) warehouseId?: number | null;
   }
   const meta = getMeta(Pallet);
   expect(meta.relations).toEqual({});
@@ -161,8 +161,8 @@ it('should take a junction column as the one referencing its side, whatever eith
   @Entity()
   class Enrolment {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Course }) course?: number;
-    @Field({ references: () => Student }) learner?: number;
+    @Field({ references: () => Course }) course?: number | null;
+    @Field({ references: () => Student }) learner?: number | null;
   }
   expect(getMeta(Course).relations.students?.references).toEqual([
     { local: 'course', foreign: 'id' },
@@ -806,7 +806,7 @@ it('should refuse an entity with no @Id', () => {
     @Entity()
     class SomeEntity {
       @Field({ type: String })
-      id!: string;
+      id!: string | null;
     }
     return SomeEntity;
   }).toThrow(
@@ -836,9 +836,9 @@ it("should join a one-to-many through a junction by the junction's columns", () 
     @Field({ type: Number, isId: true })
     id?: number;
     @Field({ type: Number, references: () => Author })
-    authorId?: number;
+    authorId?: number | null;
     @Field({ type: Number, references: () => Book })
-    bookId?: number;
+    bookId?: number | null;
   }
 
   @Entity()
@@ -913,7 +913,7 @@ it('should say which column to declare for a junction referencing no side', () =
     @Field({ type: Number, isId: true })
     id?: number;
     @Field({ type: Number, references: () => Colour })
-    colourId?: number;
+    colourId?: number | null;
   }
 
   @Entity()
@@ -938,8 +938,8 @@ it('should refuse a junction where two columns reference the same key', () => {
   @Entity()
   class Friendship {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Person }) personId?: number;
-    @Field({ references: () => Person }) friendId?: number;
+    @Field({ references: () => Person }) personId?: number | null;
+    @Field({ references: () => Person }) friendId?: number | null;
   }
 
   expect(() => getMeta(Person)).toThrow(
@@ -957,14 +957,14 @@ it('should resolve a junction read first, even with an inverse side leading back
     @Id({ type: Number }) id?: number;
     // Ahead of the junction's own foreign key, and leading back through the junction.
     @OneToMany({ entity: () => Review, mappedBy: (review) => review.screening }) reviews?: Review[];
-    @Field({ references: () => Film }) filmId?: number;
+    @Field({ references: () => Film }) filmId?: number | null;
     @ManyToOne({ entity: () => Film, references: (screening) => screening.filmId }) film?: Film;
-    @Field({ references: () => Review }) reviewId?: number;
+    @Field({ references: () => Review }) reviewId?: number | null;
   }
   @Entity()
   class Review {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Screening }) screeningId?: number;
+    @Field({ references: () => Screening }) screeningId?: number | null;
     @ManyToOne({ entity: () => Screening, references: (review) => review.screeningId }) screening?: Screening;
     @ManyToMany({ entity: () => Film, through: () => Screening }) films?: Film[];
   }
@@ -981,7 +981,7 @@ it('should resolve an inverse side through a junction whichever side is read fir
   class Genre {
     @Id({ type: Number }) id?: number;
     @ManyToMany({ entity: () => Album, mappedBy: (album) => album.genres }) albums?: Album[];
-    @Field({ references: () => Album }) featuredId?: number;
+    @Field({ references: () => Album }) featuredId?: number | null;
     @ManyToOne({ entity: () => Album, references: (genre) => genre.featuredId }) featured?: Album;
   }
   @Entity()
@@ -994,8 +994,8 @@ it('should resolve an inverse side through a junction whichever side is read fir
   @Entity()
   class AlbumGenre {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Album }) albumId?: number;
-    @Field({ references: () => Genre }) genreId?: number;
+    @Field({ references: () => Album }) albumId?: number | null;
+    @Field({ references: () => Genre }) genreId?: number | null;
   }
 
   expect(getMeta(Album).relations.featuredBy?.references).toEqual([{ local: 'id', foreign: 'featuredId' }]);
@@ -1012,9 +1012,9 @@ it('should refuse a second softDelete field', () => {
       @Field({ type: String, isId: true })
       id!: string;
       @Field({ type: Number, softDelete: true })
-      deletedAt?: number;
+      deletedAt?: number | null;
       @Field({ type: Date, softDelete: () => new Date() })
-      archivedAt?: Date;
+      archivedAt?: Date | null;
     }
     return SomeEntity;
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
@@ -1029,7 +1029,7 @@ it('should join a to-one on the foreign key its references name, whatever either
   @Entity()
   class Essay {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Author }) writtenById?: number;
+    @Field({ references: () => Author }) writtenById?: number | null;
     @ManyToOne({ entity: () => Author, references: (essay) => essay.writtenById }) author?: Author;
   }
 
@@ -1046,7 +1046,7 @@ it('should refuse a to-one naming no foreign key, on every read rather than hand
   @Entity()
   class Barge {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Quay }) quayId?: number;
+    @Field({ references: () => Quay }) quayId?: number | null;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @ManyToOne({ entity: () => Quay }) quay?: Quay;
   }
@@ -1062,7 +1062,7 @@ it('should refuse a join on a member that is not a column of its entity', () => 
   @Entity()
   class Pier {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number, computed: raw`1` }) berthCount?: number;
+    @Field({ type: Number, computed: raw`1` }) berthCount?: number | null;
   }
   class Tug {
     id?: number;
@@ -1073,7 +1073,7 @@ it('should refuse a join on a member that is not a column of its entity', () => 
   defineRelation(Tug, 'pier', { cardinality: 'm1', entity: () => Pier, references: (tug) => tug.pierId });
   class Yacht {
     id?: number;
-    pierId?: number;
+    pierId?: number | null;
     pier?: Pier;
   }
   defineEntity(Yacht, { fields: { id: { type: Number, isId: true }, pierId: { type: Number } } });
@@ -1101,7 +1101,7 @@ it('should refuse a to-one whose foreign key references another entity', () => {
   @Entity()
   class Ferry {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Marina }) harbourId?: number;
+    @Field({ references: () => Marina }) harbourId?: number | null;
     @ManyToOne({ entity: () => Harbour, references: (ferry) => ferry.harbourId }) harbour?: Harbour;
   }
 
@@ -1120,7 +1120,7 @@ it('should refuse references naming one column for a composite key, which needs 
   @Entity()
   class Rental {
     @Id({ type: Number }) id?: number;
-    @Field({ type: String }) lockerRef?: string;
+    @Field({ type: String }) lockerRef?: string | null;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
     @ManyToOne({ entity: () => Locker, references: (rental) => rental.lockerRef }) locker?: Locker;
   }
@@ -1139,7 +1139,7 @@ it('should refuse references naming one column on a relation that holds no forei
   defineEntity(Dock, { fields: { id: { type: Number, isId: true } } });
   class Ship {
     id?: number;
-    dockId?: number;
+    dockId?: number | null;
   }
   defineEntity(Ship, { fields: { id: { type: Number, isId: true }, dockId: { type: Number } } });
   const options = { cardinality: '1m', entity: () => Dock, references: () => 'dockId' };
@@ -1158,7 +1158,7 @@ it('should join a relation a base class declares on its foreign key in every ent
     @Id({ type: Number }) id?: number;
   }
   abstract class Regional {
-    @Field({ references: () => Region }) regionId?: number;
+    @Field({ references: () => Region }) regionId?: number | null;
     @ManyToOne({ entity: () => Region, references: (regional) => regional.regionId }) region?: Region;
   }
   @Entity()
@@ -1186,7 +1186,7 @@ it('should register @Filter and bulk filters', () => {
     @Id({ type: Number })
     id?: number;
     @Field({ type: String })
-    status?: string;
+    status?: string | null;
   }
   const meta = getMeta(FilteredEntity);
   expect(meta.filters?.['active']).toEqual({ where: { status: 'active' }, default: false });
@@ -1202,7 +1202,7 @@ it('should refuse softDelete as a filter name', () => {
       @Id({ type: Number })
       id?: number;
       @Field({ type: String })
-      status?: string;
+      status?: string | null;
     }
     return ReservedFilter;
   }).toThrow("filter name 'softDelete' is reserved");
@@ -1236,7 +1236,7 @@ it('should make the primary key composite on a second @Id', () => {
     @Id({ type: Number })
     groupId?: number;
     @Field({ type: String })
-    role?: string;
+    role?: string | null;
   }
 
   const meta = getMeta(Membership);
@@ -1269,8 +1269,8 @@ it('should pair every key of both sides in a junction, the inverse side swapping
   @Entity()
   class EnrolmentBadge {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) enrolmentStudentId?: number;
-    @Field({ type: String }) enrolmentCourseId?: string;
+    @Field({ type: Number }) enrolmentStudentId?: number | null;
+    @Field({ type: String }) enrolmentCourseId?: string | null;
     @ManyToOne({
       entity: () => Enrolment,
       references: (enrolmentBadge, enrolment) => [
@@ -1279,7 +1279,7 @@ it('should pair every key of both sides in a junction, the inverse side swapping
       ],
     })
     enrolment?: Enrolment;
-    @Field({ references: () => Badge }) badgeId?: number;
+    @Field({ references: () => Badge }) badgeId?: number | null;
   }
 
   expect(getMeta(Enrolment).relations.badges?.references).toEqual([
@@ -1299,7 +1299,7 @@ it('should refuse an inverse relation mapped by a field when the key is composit
   @Entity()
   class Note {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) enrolmentStudentId?: number;
+    @Field({ type: Number }) enrolmentStudentId?: number | null;
   }
   @Entity()
   class Enrolment {
@@ -1321,7 +1321,7 @@ it('should pair an inverse relation mapped by a field from the parent side', () 
   @Entity()
   class Note {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) ownerId?: number;
+    @Field({ type: Number }) ownerId?: number | null;
   }
   @Entity()
   class Owner {
@@ -1342,7 +1342,7 @@ it('should refuse an inverse relation mapped by a field referencing another enti
   @Entity()
   class Review {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Reader }) readerId?: number;
+    @Field({ references: () => Reader }) readerId?: number | null;
   }
   @Entity()
   class Critic {
@@ -1364,7 +1364,7 @@ it('should refuse a to-many joining columns whose foreign key, on the other side
   @Entity()
   class Sailor {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Crew }) crewId?: number;
+    @Field({ references: () => Crew }) crewId?: number | null;
   }
   @Entity()
   class Captain {
@@ -1389,7 +1389,7 @@ it('should refuse an inverse relation mapped by a relation to another entity', (
   @Entity()
   class Draft {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) editorId?: number;
+    @Field({ type: Number }) editorId?: number | null;
     @ManyToOne({ entity: () => Editor, references: (draft) => draft.editorId }) editor?: Editor;
   }
   @Entity()
@@ -1411,13 +1411,13 @@ it('should accept an inverse relation mapped by a field referencing the entity i
     volumes?: Volume[];
   }
   class Bookcase extends Shelf {
-    label?: string;
+    label?: string | null;
   }
   defineEntity(Bookcase, { fields: { label: { type: String } } });
   @Entity()
   class Volume {
     @Id({ type: Number }) id?: number;
-    @Field({ references: () => Shelf }) shelfId?: number;
+    @Field({ references: () => Shelf }) shelfId?: number | null;
   }
 
   expect(getMeta(Bookcase).relations.volumes?.references).toEqual([{ local: 'id', foreign: 'shelfId' }]);
@@ -1445,7 +1445,7 @@ it('should refuse a plain foreign key pointing at a composite key', () => {
   class Note {
     @Id({ type: Number }) id?: number;
     // @ts-expect-error the type refuses it too; this covers the runtime guard for untyped callers
-    @Field({ references: () => Enrolment }) enrolmentStudentId?: number;
+    @Field({ references: () => Enrolment }) enrolmentStudentId?: number | null;
   }
 
   // The column, the key it cannot reach, and the decorator that can: the rest is wording.
@@ -1462,7 +1462,7 @@ it('should drop every key of a composite parent from a subclass declaring its ow
     [idKey]?: 'left' | 'right';
     @Id({ type: Number }) left?: number;
     @Id({ type: Number }) right?: number;
-    @Field({ type: String }) label?: string;
+    @Field({ type: String }) label?: string | null;
   }
   @Entity()
   class Single extends Pair {
@@ -1477,7 +1477,7 @@ it('should drop every key of a composite parent from a subclass declaring its ow
 it('should inherit the parent fields in a subclass declaring the only @Id', () => {
   class IdlessBase {
     @Field({ type: String })
-    name?: string;
+    name?: string | null;
   }
 
   @Entity()
@@ -1498,15 +1498,15 @@ it("should inherit the parent's softDelete field key and filters in a subclass",
     @Id({ type: Number })
     id?: number;
     @Field({ type: String })
-    status?: string;
+    status?: string | null;
     @Field({ type: Date, softDelete: true })
-    deletedAt?: Date;
+    deletedAt?: Date | null;
   }
 
   @Entity()
   class SoftChild extends SoftBase {
     @Field({ type: String })
-    name?: string;
+    name?: string | null;
   }
 
   const meta = getMeta(SoftChild);
@@ -1537,7 +1537,7 @@ it('should inherit through `extends` the fields, relations, hooks and filters of
 
   class Ticket {
     id?: number;
-    title?: string;
+    title?: string | null;
     createdAt?: Date;
     ownerId?: string;
     owner?: User;
@@ -1560,18 +1560,22 @@ it('should keep a base named by extends in its own table, and the child what it 
   class Auditable {
     id?: number;
     label?: string;
-    archived?: boolean;
+    archived?: boolean | null;
   }
   defineEntity(Auditable, {
     name: 'auditable',
-    fields: { id: { type: Number, isId: true }, label: { type: String }, archived: { type: Boolean } },
+    fields: {
+      id: { type: Number, isId: true },
+      label: { type: String, nullable: false },
+      archived: { type: Boolean },
+    },
   });
 
   class Invoice {
     [idKey]?: 'ref';
     ref?: string;
     label?: string;
-    archived?: boolean;
+    archived?: boolean | null;
   }
   defineEntity(Invoice, {
     extends: Auditable,
@@ -1622,7 +1626,7 @@ it('should keep the relations a junction declares itself', () => {
     @Field({ type: Number, isId: true })
     id?: number;
     @Field({ type: Number })
-    filmScreeningId?: number;
+    filmScreeningId?: number | null;
   }
 
   @Entity()
@@ -1630,11 +1634,11 @@ it('should keep the relations a junction declares itself', () => {
     @Field({ type: Number, isId: true })
     id?: number;
     @Field({ references: () => Film })
-    filmId?: number;
+    filmId?: number | null;
     @ManyToOne({ entity: () => Film, cascade: 'delete', references: (filmScreening) => filmScreening.filmId })
     film?: Film;
     @Field({ references: () => Screening })
-    screeningId?: number;
+    screeningId?: number | null;
     @OneToMany({ entity: () => Note, mappedBy: (note) => note.filmScreeningId })
     notes?: Note[];
   }
@@ -1778,7 +1782,7 @@ it('should register bulk relations and their foreign keys as incremental registr
     name: 'LinkedRow',
     fields: {
       id: { type: Number, isId: true },
-      targetId: { type: Number, references: () => Target },
+      targetId: { type: Number, references: () => Target, nullable: false },
     },
     relations: {
       target: { cardinality: 'm1', entity: () => Target, references: (bulk) => bulk.targetId },
@@ -1817,7 +1821,7 @@ it('should let bulk relations point at an entity shaped differently from the own
 
   class Book {
     id?: number;
-    authorId?: string;
+    authorId?: string | null;
     author?: Author;
   }
   defineEntity(Book, {
@@ -1836,8 +1840,8 @@ it('should let bulk relations point at an entity shaped differently from the own
 it('should register bulk indexes and hooks', () => {
   class Indexed {
     id?: number;
-    email?: string;
-    status?: string;
+    email?: string | null;
+    status?: string | null;
 
     stampCreatedAt() {}
     hydrate() {}
@@ -1873,7 +1877,7 @@ it('should register bulk indexes and hooks', () => {
 it("should inherit a parent's fields when the parent was finalized first", () => {
   class ParentEntity {
     id?: number;
-    baseCol?: string;
+    baseCol?: string | null;
   }
   defineEntity(ParentEntity, {
     fields: {
@@ -1883,7 +1887,7 @@ it("should inherit a parent's fields when the parent was finalized first", () =>
   });
 
   class ChildEntity extends ParentEntity {
-    childCol?: boolean;
+    childCol?: boolean | null;
   }
   defineEntity(ChildEntity, {
     fields: {
@@ -1900,7 +1904,7 @@ it("should inherit a parent's fields when the parent was finalized first", () =>
 
 it('should refuse bulk fields that declare no id', () => {
   class MissingId {
-    title?: string;
+    title?: string | null;
   }
   expect(() =>
     defineEntity(MissingId, {
@@ -1912,7 +1916,7 @@ it('should refuse bulk fields that declare no id', () => {
 it('should register a bulk isId as defineId does', () => {
   class A {
     pk?: string;
-    x?: number;
+    x?: number | null;
   }
   defineEntity(A, {
     fields: { pk: { type: String, isId: true }, x: { type: Number } },
@@ -1942,7 +1946,7 @@ it('should register bulk filters as incremental defineFilter does', () => {
 
   class Bulk {
     id?: number;
-    status?: string;
+    status?: string | null;
   }
   defineEntity(Bulk, {
     name: 'TaskBulk',
@@ -1961,8 +1965,8 @@ it('should register bulk filters as incremental defineFilter does', () => {
 it('should keep the name and schema a first defineEntity set', () => {
   class Composed {
     id?: number;
-    title?: string;
-    extra?: string;
+    title?: string | null;
+    extra?: string | null;
   }
   defineEntity(Composed, {
     name: 'composed_rows',

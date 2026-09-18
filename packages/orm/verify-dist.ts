@@ -117,10 +117,10 @@ function checkBrowserGraph(): number {
 // root moves with them. Deliberately per-entry and not a `dist` total: a total also counts
 // declarations, so JSDoc spends it and it has to be raised for documentation alone, which is noise
 // these budgets aren't. Each is the entry as measured plus 2%, rounded up to the next hundred, so
-// raising one is deliberate - and the CHANGELOG entry for that release says which module grew.
+// raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   '.': 31_600,
-  './postgres': 29_100,
+  './postgres': 30_000,
   './migrate': 47_800,
   './browser': 2_000,
 };
@@ -219,15 +219,15 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
 @Entity()
 export class Post {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) title?: string;
-  @Field({ references: () => User }) authorId?: string;
+  @Field({ type: String }) title?: string | null;
+  @Field({ references: () => User }) authorId?: string | null;
   @ManyToOne({ entity: () => User, references: (post) => post.authorId }) author?: User;
 }
 
 @Entity()
 export class User {
   @Id({ type: 'uuid' }) id?: string;
-  @Field({ type: String }) email?: string;
+  @Field({ type: String }) email?: string | null;
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author }) posts?: Post[];
 }
 `,

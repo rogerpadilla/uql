@@ -22,13 +22,13 @@ class Enrolment {
   notes?: Note[];
   @ManyToMany({ entity: () => Badge, through: () => EnrolmentBadge })
   badges?: Badge[];
-  @Field({ type: String }) grade?: string;
+  @Field({ type: String }) grade?: string | null;
 }
 
 @Entity()
 class Badge {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) label?: string;
+  @Field({ type: String }) label?: string | null;
 }
 
 /**
@@ -39,8 +39,8 @@ class Badge {
 @Entity()
 class EnrolmentBadge {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) enrolmentStudentId?: number;
-  @Field({ type: String }) enrolmentCourseId?: string;
+  @Field({ type: Number }) enrolmentStudentId?: number | null;
+  @Field({ type: String }) enrolmentCourseId?: string | null;
   @ManyToOne({
     entity: () => Enrolment,
     references: (enrolmentBadge, enrolment) => [
@@ -49,7 +49,7 @@ class EnrolmentBadge {
     ],
   })
   enrolment?: Enrolment;
-  @Field({ type: Number }) badgeId?: number;
+  @Field({ type: Number }) badgeId?: number | null;
   @ManyToOne({ entity: () => Badge, references: (enrolmentBadge) => enrolmentBadge.badgeId }) badge?: Badge;
 }
 
@@ -61,8 +61,8 @@ class EnrolmentBadge {
 @Entity()
 class Note {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) enrolmentStudentId?: number;
-  @Field({ type: String }) enrolmentCourseId?: string;
+  @Field({ type: Number }) enrolmentStudentId?: number | null;
+  @Field({ type: String }) enrolmentCourseId?: string | null;
   @ManyToOne({
     entity: () => Enrolment,
     references: (note, enrolment) => [
@@ -71,7 +71,7 @@ class Note {
     ],
   })
   enrolment?: Enrolment;
-  @Field({ type: String }) body?: string;
+  @Field({ type: String }) body?: string | null;
 }
 
 /** Its own table, so the writes below cannot disturb the row counts the reads further down assert. */
@@ -80,7 +80,7 @@ class Attempt {
   [idKey]?: 'studentId' | 'task';
   @Id({ type: Number }) studentId?: number;
   @Id({ type: String }) task?: string;
-  @Field({ type: String }) score?: string;
+  @Field({ type: String }) score?: string | null;
 }
 
 /** A composite whose second column the ORM mints, so only the written row carries it. */
@@ -89,7 +89,7 @@ class Ticket {
   [idKey]?: 'tenant' | 'code';
   @Id({ type: String }) tenant?: string;
   @Id({ type: String, onInsert: () => 'minted' }) code?: string;
-  @Field({ type: String }) title?: string;
+  @Field({ type: String }) title?: string | null;
 }
 
 @Entity()
@@ -104,8 +104,8 @@ class Term {
 @Entity()
 class Session {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) termYear?: number;
-  @Field({ type: String }) termSeason?: string;
+  @Field({ type: Number }) termYear?: number | null;
+  @Field({ type: String }) termSeason?: string | null;
   @ManyToOne({
     entity: () => Term,
     references: (session, term) => [
@@ -339,14 +339,14 @@ describe('changing the primary key of an existing table', () => {
   class MemberBefore {
     [idKey]?: 'userId';
     @Id({ type: Number }) userId?: number;
-    @Field({ type: String }) note?: string;
+    @Field({ type: String }) note?: string | null;
   }
   @Entity({ name: 'Member' })
   class MemberAfter {
     [idKey]?: 'userId' | 'groupId';
     @Id({ type: Number }) userId?: number;
     @Id({ type: Number }) groupId?: number;
-    @Field({ type: String }) note?: string;
+    @Field({ type: String }) note?: string | null;
   }
 
   /** As introspection reports it: the columns it has, under the name the engine gave the constraint. */
@@ -418,8 +418,8 @@ describe('a composite key across a relation', () => {
   @Entity()
   class Attendance {
     @Id({ type: Number }) id?: number;
-    @Field({ type: Number }) enrolmentStudentId?: number;
-    @Field({ type: String }) enrolmentCourseId?: string;
+    @Field({ type: Number }) enrolmentStudentId?: number | null;
+    @Field({ type: String }) enrolmentCourseId?: string | null;
     @ManyToOne({
       entity: () => Enrolment,
       references: (attendance, enrolment) => [

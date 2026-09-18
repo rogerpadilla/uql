@@ -33,7 +33,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     @Entity({ name: 'HalfvecItem' })
     class HalfvecItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'halfvec' }) vec!: number[];
+      @Field({ type: 'halfvec' }) vec!: number[] | null;
     }
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, HalfvecItem, {
@@ -55,7 +55,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     @Entity({ name: 'SparsevecItem' })
     class SparsevecItem {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'sparsevec' }) vec!: number[];
+      @Field({ type: 'sparsevec' }) vec!: number[] | null;
     }
     const { sql, values } = this.exec((ctx) =>
       this.dialect.find(ctx, SparsevecItem, {
@@ -72,7 +72,7 @@ class PostgresDialectSpec extends PgFamilySpec {
     @Entity({ name: 'SparsevecItem2' })
     class SparsevecItem2 {
       @Id({ type: Number }) id?: number;
-      @Field({ type: 'sparsevec' }) vec!: number[];
+      @Field({ type: 'sparsevec' }) vec!: number[] | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, SparsevecItem2, { vec: [1, 0, 2] }));
     expect(sql).toBe('INSERT INTO "SparsevecItem2" ("vec") VALUES ($1::sparsevec) RETURNING "id" "id"');
@@ -128,7 +128,7 @@ class PostgresDialectSpec extends PgFamilySpec {
    */
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
-    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_count" FROM pg_class WHERE oid = to_regclass($1)');
+    expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_value" FROM pg_class WHERE oid = to_regclass($1)');
     expect(values).toEqual(['"User"']);
   }
 

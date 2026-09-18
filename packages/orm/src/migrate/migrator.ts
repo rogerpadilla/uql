@@ -157,7 +157,8 @@ export class Migrator {
   }
 
   /**
-   * Run a single migration, within a transaction where the dialect has one for it
+   * Run a single migration, in a transaction where the dialect has one for it and the migration has not
+   * declared `transaction: false` - the opt-out a statement an engine refuses inside one needs.
    */
   public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
@@ -166,7 +167,7 @@ export class Migrator {
       try {
         this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
 
-        await transaction(async () => {
+        const work = async () => {
           if (direction === 'up') {
             await migration.up(querier);
             await this.storage.logWithQuerier(querier, migration.name);
@@ -174,7 +175,8 @@ export class Migrator {
             await migration.down(querier);
             await this.storage.unlogWithQuerier(querier, migration.name);
           }
-        });
+        };
+        await (migration.transaction === false ? work() : transaction(work));
 
         const duration = Date.now() - startTime;
         this.logger.logMigration(
@@ -394,7 +396,7 @@ export class Migrator {
   }
 
   protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
-    const filteredDiff = { ...diff } as { -readonly [K in keyof SchemaDiff]: SchemaDiff[K] };
+    const filteredDiff: { -readonly [K in keyof SchemaDiff]: SchemaDiff[K] } = { ...diff };
     if (options.safe !== false) {
       // In safe mode, we only allow additions (creating tables/columns)
       // We block drops and alterations to prevent accidental data loss

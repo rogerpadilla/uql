@@ -43,7 +43,7 @@ Verified by type-checking these shapes in memory against a copy of `Field` and `
 - **It reads on every engine.** The declaration is data, not SQL, so each renders it: a correlated subquery on SQL, a `$lookup` ending in a `$count` or a `$group` on MongoDB, which also answers `0` or `null` over no rows. A `computed` field writing SQL stays SQL-only, and MongoDB refuses one a query names.
 - **`count` and `sum` are the storable aggregates, in the type.** A stored `max` fails to compile, as does an event list on any aggregate. `sum` takes numeric fields only. Until the triggers below are built, `stored: true` is refused at registration: the aggregate reads as a subquery, which no engine keeps in a generated column.
 - **The property must equal the aggregate's value.** Today's check is one-way, since a decorator context accepts a property narrower than its value, so a `number` property would take `max()`'s `number | null`. The aggregate overload checks both directions and names the mismatch (`__propertyMustAdmit: number | null`). `count` and `sum` are never null - stored, the column is `NOT NULL DEFAULT 0`; unstored, the read is `COALESCE(..., 0)` - while `min`, `max` and `avg` are nullable, since an empty set has no extreme.
-- **A write payload leaves `readonly` fields out.** `EntityData` and `UpdatePayload` default their key set to `WritableKey<E>`, which drops a key whose `Pick` differs from its mutable copy. `insert(User, { resourceCount })`, `update(...)` with one, and `user.resourceCount = 2` are compile errors; reads, hydration and `$select` are untouched. A decorator cannot see `readonly`, so on a class it is a convention a missing modifier merely leaves unenforced; `defineEntity`, which writes the entity type itself, marks every database-written field `readonly`.
+- **A write payload leaves `readonly` fields out.** `EntityWrite` and `UpdateWrite` are `EntityData` and `UpdatePayload` keyed by `WritableKey<E>`, which drops a key whose `Pick` differs from its mutable copy, and they are what every write method takes. `insert(User, { resourceCount: 2 })` and `update(...)` with one are compile errors; reads, hydration and `$select` are untouched, and an _instance_ still passes, since a value that is not a fresh literal carries extra properties freely. Removing the key rather than typing it `undefined` is what buys that: the marker form refused an entity instance too, and stopped a mapped type being assignable to `E` at all. A caller's write crosses into the library's own shape once, in `hooked`. A decorator cannot see `readonly`, and neither can `defineEntity`, which takes the class rather than writing it - so on either form it is a convention, one `generate:entities` now writes for a generated column.
 - **Only aggregates pay.** Per entity, in instantiations: a plain one costs the same as today (70.8), one with a SQL `computed` the same (116 against 117), and one with a stored count 197. The exact check adds about 35 per aggregate field. A single union constraint also type-checked but charged every plain entity 16% more, which is why it is two overloads.
 
 ## The maintained aggregate
@@ -144,13 +144,15 @@ const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector
 
 ## Build order
 
-1. **Relation refs and the unstored aggregate.** No R7, every engine, the same operators and compile path as the roadmap's relation aggregates, plus the two overloads and `WritableKey`. Enough on its own for the case study below.
-2. **After R7, on Postgres:** stored aggregates and event lists, then authored triggers. They need:
+1. **Relation refs and the unstored aggregate.** Built: no R7, every engine, the same operators the query language uses, with the two overloads and `WritableKey` beside them. Enough on its own for the case study below.
+2. **After R7, on Postgres:** stored aggregates and event lists, then authored triggers. What is still missing:
    - `SchemaDiffResult` flattened, since it has one field per kind (`schema/types.ts`);
    - a `pg_trigger`/`pg_proc` introspector;
    - row-qualified refs (`row`/`old`) in `compileDdl`, which qualifies nothing today;
-   - trigger-backed rows in `FIELD_OPTION_FAMILY`/`deadOn`, since `GENERATED_WRITES` kills `defaultValue` on anything `computed` while a stored aggregate derives one;
-   - a migration step outside the transaction, for the backfill.
+   - trigger-backed rows in `FIELD_OPTION_FAMILY`/`deadOn`, since `GENERATED_WRITES` kills `defaultValue` on anything `computed` while a stored aggregate derives one.
+
+   The backfill's own step outside the transaction is built: a migration declaring `transaction: false` runs outside one.
+
 3. **Other engines**, a renderer each.
 
 The typing above is verified; the runtime claims are reasoned from the Postgres documentation and owed an integration suite, on Postgres and PGlite. It covers insert and delete, reparenting, a filter flip, soft delete, a backfill racing concurrent writes, and `aggregate:check` after TRUNCATE.

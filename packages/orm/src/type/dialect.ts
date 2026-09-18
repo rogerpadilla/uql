@@ -130,6 +130,12 @@ export interface DialectFeatures {
    * answer, not the driver's: node-`pg` streams on its own and keeps doing so.
    */
   readonly serverSideCursors: boolean;
+  /**
+   * Whether an `UPDATE` or `DELETE` can read a relation in its filter. False on MongoDB, whose filter
+   * hosts no lookup, and on Turso's engine, which cannot resolve the written table inside a subquery:
+   * such a write reads the ids of the rows it names first.
+   */
+  readonly correlatedWrites: boolean;
 }
 
 /** What a SQL engine can do beyond {@link DialectFeatures}, read where a statement is built. */

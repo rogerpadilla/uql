@@ -16,20 +16,20 @@ import { columnFamily } from '../util/field.util.js';
 @Entity()
 class PlainRow {
   @Id({ type: String }) id?: string;
-  @Field({ type: String }) name?: string;
+  @Field({ type: String }) name?: string | null;
   /**
    * The opt-out for a decimal wider than 2^53: `columnType` still makes the column DECIMAL, while the
    * declared `String` keeps it off the numeric path, so the driver's exact text survives untouched.
    * Drizzle and MikroORM both make *this* their default and require opting in to a number; uql goes
    * the other way, so the escape hatch has to exist and stay working.
    */
-  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string;
+  @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string | null;
 }
 
 @Entity()
 class FlagRow {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Boolean }) active?: boolean;
+  @Field({ type: Boolean }) active?: boolean | null;
 }
 
 /**
@@ -40,9 +40,9 @@ class FlagRow {
 @Entity()
 class LogicalRow {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'boolean' }) active?: boolean;
-  @Field({ type: 'decimal', precision: 12, scale: 2 }) amount?: number;
-  @Field({ type: BigInt }) huge?: bigint;
+  @Field({ type: 'boolean' }) active?: boolean | null;
+  @Field({ type: 'decimal', precision: 12, scale: 2 }) amount?: number | null;
+  @Field({ type: BigInt }) huge?: bigint | null;
 }
 
 describe('hydratableFields', () => {

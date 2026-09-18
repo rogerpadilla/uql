@@ -165,7 +165,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Stream B', email: 'streamb@example.com', password: '123456789b!' },
     ]);
 
-    const names: (string | undefined)[] = [];
+    const names: (string | null | undefined)[] = [];
     for await (const user of this.pool.findManyStream(User, { $select: { name: true }, $sort: { name: 1 } })) {
       names.push(user.name);
     }
@@ -557,6 +557,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       {
         itemAdjustments: null,
       },
+      { unfiltered: true },
     );
 
     await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(0);
@@ -1074,6 +1075,121 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $where: { id: beta },
     });
     expect(afterDelete?.unitCount).toBe(0);
+  }
+
+  /** A relation aggregate groups and aggregates like any field: the rows computing it are read first. */
+  async shouldAggregateARelationAggregate() {
+    const [alpha, beta, gamma] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'grouped alpha' },
+      { name: 'grouped beta' },
+      { name: 'grouped gamma' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId: alpha },
+      { name: 'two', categoryId: alpha },
+      { name: 'three', categoryId: beta },
+      { name: 'four', categoryId: gamma },
+    ]);
+    const $where = { name: { $istartsWith: 'grouped' } };
+
+    const byCount = await this.querier.aggregate(MeasureUnitCategory, {
+      $where,
+      $group: { unitCount: true },
+      $select: { categories: { $count: '*' } },
+      $having: { categories: { $gte: 1 } },
+      $sort: { unitCount: 1 },
+    });
+    expect(byCount).toEqual([
+      { unitCount: 1, categories: 2 },
+      { unitCount: 2, categories: 1 },
+    ]);
+
+    const totals = await this.querier.aggregate(MeasureUnitCategory, {
+      $where,
+      $select: { units: { $sum: { unitCount: true } }, most: { $max: { unitCount: true } } },
+    });
+    expect(totals).toEqual([{ units: 4, most: 2 }]);
+  }
+
+  /** Every statement taking a `$where` reads a relation aggregate in it, at any depth. */
+  async shouldFilterEveryStatementByARelationAggregate() {
+    const [alpha, beta] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'filtered alpha' },
+      { name: 'filtered beta' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId: alpha },
+      { name: 'two', categoryId: alpha },
+      { name: 'three', categoryId: beta },
+    ]);
+    const $where = { name: { $istartsWith: 'filtered' }, $or: [{ unitCount: { $gte: 2 } }, { name: 'none' }] };
+
+    expect(await this.querier.count(MeasureUnitCategory, { $where })).toBe(1);
+    expect(
+      await this.querier.aggregate(MeasureUnitCategory, { $where, $select: { categories: { $count: '*' } } }),
+    ).toEqual([{ categories: 1 }]);
+
+    expect(await this.querier.updateMany(MeasureUnitCategory, { $where }, { name: 'filtered, updated' })).toBe(1);
+    const updated = await this.querier.findOneById(MeasureUnitCategory, alpha, { $select: { name: true } });
+    expect(updated?.name).toBe('filtered, updated');
+
+    expect(await this.querier.deleteMany(MeasureUnitCategory, { $where })).toBe(1);
+    expect(await this.querier.count(MeasureUnitCategory, { $where: { name: { $istartsWith: 'filtered' } } })).toBe(1);
+  }
+
+  /**
+   * A report in one statement: rows grouped by a to-one relation's field, pivoted into columns by each
+   * aggregate's own `$where`. A group no row of an aggregate reaches answers null, as SQL does.
+   */
+  async shouldAggregateAcrossARelationPivotingByEachAggregatesWhere() {
+    const [itemA, itemB] = await this.querier.insertMany(Item, [{ code: 'pivot-a' }, { code: 'pivot-b' }]);
+    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, { description: 'pivot' });
+    await this.querier.insertMany(ItemAdjustment, [
+      { inventoryAdjustmentId, itemId: itemA, number: 1, buyPrice: 10 },
+      { inventoryAdjustmentId, itemId: itemA, number: 2, buyPrice: 5 },
+      { inventoryAdjustmentId, itemId: itemB, number: 1, buyPrice: 7 },
+      { inventoryAdjustmentId, number: 1, buyPrice: 3 },
+    ]);
+
+    const rows = await this.querier.aggregate(ItemAdjustment, {
+      $where: { inventoryAdjustmentId, item: { code: { $startsWith: 'pivot' } } },
+      $group: { code: { item: { code: true } } },
+      $select: {
+        ones: { $sum: { buyPrice: true }, $where: { number: 1 } },
+        twos: { $sum: { buyPrice: true }, $where: { number: 2 } },
+        adjustments: { $count: '*' },
+      },
+      $sort: { code: 1 },
+    });
+    expect(rows).toEqual([
+      { code: 'pivot-a', ones: 10, twos: 5, adjustments: 2 },
+      { code: 'pivot-b', ones: 7, twos: null, adjustments: 1 },
+    ]);
+
+    // A row pointing nowhere groups under null.
+    const [orphans, ...rest] = await this.querier.aggregate(ItemAdjustment, {
+      $where: { inventoryAdjustmentId, itemId: null },
+      $group: { code: { item: { code: true } } },
+      $select: { adjustments: { $count: '*' } },
+    });
+    expect(rest).toEqual([]);
+    expect(orphans?.code == null).toBe(true);
+    expect(orphans?.adjustments).toBe(1);
+  }
+
+  /** An aggregate's `$where` constrains a relation as a find's does. */
+  async shouldAggregateRowsFilteredByARelation() {
+    const [alpha] = await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'related alpha' },
+      { name: 'related beta' },
+    ]);
+    await this.querier.insertMany(MeasureUnit, [{ name: 'related kg', categoryId: alpha }]);
+
+    const rows = await this.querier.aggregate(MeasureUnitCategory, {
+      $where: { name: { $istartsWith: 'related' }, measureUnits: { name: 'related kg' } },
+      $select: { categories: { $count: '*' } },
+    });
+    expect(rows).toEqual([{ categories: 1 }]);
   }
 
   /**
@@ -2216,7 +2332,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const affectedRows = await this.querier.transaction(async () => {
       await this.shouldInsertMany();
       const count = await this.querier.count(User, {});
-      await this.querier.deleteMany(User, {});
+      await this.querier.deleteMany(User, {}, { unfiltered: true });
       return count;
     });
     expect(affectedRows).toBe(2);
@@ -2348,6 +2464,34 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
     await expect(this.querier.deleteMany(User, { $where: { companyId: '1' } })).resolves.toBe(0);
     await expect(this.querier.deleteMany(User, { $where: { companyId: null } })).resolves.toBe(3);
+  }
+
+  /**
+   * A bulk write names the rows it changes. An empty `$where` addresses every row of the table, which
+   * is a thing to ask for by name rather than to reach by leaving a filter off.
+   */
+  async shouldRefuseABulkWriteThatNamesNoRows() {
+    await this.querier.insertMany(User, [
+      { name: 'unfiltered one', email: 'unfiltered.one@test.com' },
+      { name: 'unfiltered two', email: 'unfiltered.two@test.com' },
+    ]);
+
+    await expect(this.querier.deleteMany(User, {})).rejects.toThrow("'deleteMany' over 'User' names no rows");
+    await expect(this.querier.deleteMany(User, { $where: {} })).rejects.toThrow('names no rows');
+    await expect(this.querier.updateMany(User, {}, { name: 'x' })).rejects.toThrow(
+      "'updateMany' over 'User' names no rows",
+    );
+
+    // Still there: the refusal happens before any statement runs.
+    await expect(this.querier.count(User)).resolves.toBe(2);
+
+    // A `$limit` names them too - it caps how many rows the write reaches.
+    await expect(this.querier.updateMany(User, { $limit: 1 }, { name: 'capped' })).resolves.toBe(1);
+
+    const changed = await this.querier.updateMany(User, {}, { name: 'renamed' }, { unfiltered: true });
+    expect(changed).toBe(2);
+    const removed = await this.querier.deleteMany(User, {}, { unfiltered: true });
+    expect(removed).toBe(2);
   }
 
   async shouldSoftDelete() {
@@ -2607,13 +2751,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $select: { total: { $sum: { createdAt: true } } },
     });
 
-    expect(res).toHaveLength(1);
-    // MongoDB returns _id: null, while SQL dialects might return it differently depending on group by.
-    // We are mainly checking that the task was executed.
-    expect(res[0]).toHaveProperty('total');
-    // Not `Number(res[0].total)`: Postgres widens a SUM over BIGINT to NUMERIC and hands it back as
-    // text, so coercing here is the test agreeing to whatever the driver did instead of checking.
-    expect(res[0].total).toBe(500);
+    // Exact, never coerced: Postgres widens a SUM over BIGINT to NUMERIC and hands it back as text, and
+    // MongoDB's `$group` answers with an `_id` the row does not declare.
+    expect(res).toEqual([{ total: 500 }]);
   }
 
   async shouldSoftDeleteExcludeFromReadsAndRestore() {
@@ -2672,7 +2812,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async clearTables() {
     const entities = getEntities();
-    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {})));
+    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true })));
   }
 
   abstract createTables(): Promise<void>;

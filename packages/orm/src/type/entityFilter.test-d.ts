@@ -44,14 +44,14 @@ export const contextFilterReturningFragment: FilterOptions<Invoice> = {
 @Filter('broken', { where: { statuz: 'active' } })
 class DecoratedInvoice {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) status?: string;
+  @Field({ type: String }) status?: string | null;
 }
 void DecoratedInvoice;
 
 // ─── EntityOptions.filters: reached through defineEntity, same as decorators ───
 class Bill {
   id?: number;
-  status?: string;
+  status?: string | null;
 }
 defineEntity(Bill, {
   fields: { id: { type: Number, isId: true }, status: { type: String } },
@@ -74,7 +74,7 @@ export const skippingFilter: FilterOptions<Invoice> = { where: { status: 'active
 @Filter('softDelete', { where: { status: 'active' } })
 class ReservedInvoice {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String }) status?: string;
+  @Field({ type: String }) status?: string | null;
 }
 void ReservedInvoice;
 

@@ -30,7 +30,7 @@ class CockroachDialectSpec extends PgFamilySpec {
     const ctx = this.dialect.createContext();
     this.dialect.estimatedCount(ctx, User);
     expect(ctx.sql).toBe(
-      'SELECT row_count "_uql_count" FROM [SHOW STATISTICS FOR TABLE "User"] ORDER BY created DESC LIMIT 1',
+      'SELECT row_count "_uql_value" FROM [SHOW STATISTICS FOR TABLE "User"] ORDER BY created DESC LIMIT 1',
     );
     expect(ctx.values).toEqual([]);
   }

@@ -14,10 +14,10 @@ class User {
   id?: number;
 
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
 
   @Field({ type: String, nullable: true })
-  email?: string;
+  email?: string | null;
 
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
   posts?: Post[];
@@ -29,16 +29,16 @@ class Post {
   id?: number;
 
   @Field({ type: String })
-  title?: string;
+  title?: string | null;
 
   @Field({ type: 'text' })
-  content?: string;
+  content?: string | null;
 
   @ManyToOne({ entity: () => User, references: (post) => post.authorId })
   author?: User;
 
   @Field({ type: Number, name: 'author_id' })
-  authorId?: number;
+  authorId?: number | null;
 }
 
 @Entity({ name: 'categories' })
@@ -47,10 +47,10 @@ class Category {
   id?: number;
 
   @Field({ type: String, unique: true })
-  slug?: string;
+  slug?: string | null;
 
   @Field({ type: String, length: 100 })
-  name?: string;
+  name?: string | null;
 }
 
 describe('SchemaASTBuilder', () => {
@@ -98,7 +98,7 @@ describe('SchemaASTBuilder', () => {
         // No explicit type/columnType - should inherit 'uuid' from Account.id,
         // not fall back to the generic TypeScript-inferred 'string' (TEXT).
         @Field({ references: () => Account })
-        accountId?: string;
+        accountId?: string | null;
       }
 
       const ast = buildSchemaAST([Account, Item]);
@@ -119,7 +119,7 @@ describe('SchemaASTBuilder', () => {
       class Child2 {
         @Id({ type: Number }) id?: number;
         @Field({ references: () => Parent2, type: 'text' })
-        parentRef?: string;
+        parentRef?: string | null;
       }
 
       const ast = buildSchemaAST([Parent2, Child2]);
@@ -139,7 +139,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkChild {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkParent }) parentId?: number;
+        @Field({ type: Number, references: () => FkParent }) parentId?: number | null;
         // The action lives on the owning side, which is the side that holds the key.
         @ManyToOne({
           entity: () => FkParent,
@@ -152,7 +152,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class PlainChild {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkParent }) parentId?: number;
+        @Field({ type: Number, references: () => FkParent }) parentId?: number | null;
         @ManyToOne({ entity: () => FkParent, references: (plainChild) => plainChild.parentId }) parent?: FkParent;
       }
 
@@ -178,20 +178,20 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkOnFieldOnlyChild {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
       }
       // A declared relation with no onDelete of its own inherits the field's, so the two never drift.
       @Entity()
       class FkOnFieldWithRelationChild {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
         @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId }) parent?: FkOnFieldParent;
       }
       // The relation's own onDelete still wins over a disagreeing field.
       @Entity()
       class FkOnFieldOverriddenChild {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number;
+        @Field({ type: Number, references: () => FkOnFieldParent, onDelete: 'CASCADE' }) parentId?: number | null;
         @ManyToOne({ entity: () => FkOnFieldParent, references: (child) => child.parentId, onDelete: 'SET NULL' })
         parent?: FkOnFieldParent;
       }
@@ -220,7 +220,7 @@ describe('SchemaASTBuilder', () => {
         // An explicit `type` must win over resolving the column from `references`, which would
         // otherwise inherit 'uuid' from Parent3.id.
         @Field({ references: () => Parent3, type: BigInt })
-        parentRef?: bigint;
+        parentRef?: bigint | null;
       }
 
       const ast = buildSchemaAST([Parent3, Child3]);
@@ -278,7 +278,7 @@ describe('SchemaASTBuilder', () => {
           references: (user11, profile11) => [{ local: user11.profileId, foreign: profile11.id }],
         })
         profile?: Profile11;
-        @Field({ type: Number }) profileId?: number;
+        @Field({ type: Number }) profileId?: number | null;
       }
 
       const ast = buildSchemaAST([Profile11, User11]);
@@ -291,8 +291,8 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Covered {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number, name: 'tenant_id' }) tenantId?: number;
-        @Field({ type: Date, name: 'created_at' }) createdAt?: Date;
+        @Field({ type: Number, name: 'tenant_id' }) tenantId?: number | null;
+        @Field({ type: Date, name: 'created_at' }) createdAt?: Date | null;
       }
 
       const ast = buildSchemaAST([Covered]);
@@ -334,7 +334,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class ComputedUser {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, computed: raw`TRUE` }) secret?: string;
+        @Field({ type: String, computed: raw`TRUE` }) secret?: string | null;
       }
       const ast = buildSchemaAST([ComputedUser]);
       expect(ast.getTable('ComputedUser')?.columns.has('secret')).toBe(false);
@@ -349,9 +349,9 @@ describe('SchemaASTBuilder', () => {
       })
       class IndexedUser {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) firstName?: string;
-        @Field({ type: String }) lastName?: string;
-        @Field({ type: Boolean }) active?: boolean;
+        @Field({ type: String }) firstName?: string | null;
+        @Field({ type: String }) lastName?: string | null;
+        @Field({ type: Boolean }) active?: boolean | null;
       }
 
       const ast = buildSchemaAST([IndexedUser], {
@@ -410,7 +410,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkPost {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog }) fkBlogId?: number;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
       }
 
       expect(buildSchemaAST([FkBlog, FkPost]).getTable('FkPost')?.indexes).toMatchObject([
@@ -429,8 +429,8 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkCity {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) cityCountry?: string;
-        @Field({ type: String }) cityArea?: string;
+        @Field({ type: String }) cityCountry?: string | null;
+        @Field({ type: String }) cityArea?: string | null;
         @ManyToOne({
           entity: () => FkRegion,
           references: (fkCity, fkRegion) => [
@@ -449,14 +449,14 @@ describe('SchemaASTBuilder', () => {
       @Index((fkLeading) => [fkLeading.fkBlogId, fkLeading.title])
       class FkLeading {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String }) title?: string;
-        @Field({ references: () => FkBlog }) fkBlogId?: number;
+        @Field({ type: String }) title?: string | null;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
       }
 
       @Entity()
       class FkFieldIndexed {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, index: 'by_blog' }) fkBlogId?: number;
+        @Field({ references: () => FkBlog, index: 'by_blog' }) fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkLeading, FkFieldIndexed]);
@@ -476,7 +476,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkBlogOwner {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, unique: true }) fkBlogId?: number;
+        @Field({ references: () => FkBlog, unique: true }) fkBlogId?: number | null;
       }
 
       const ast = buildSchemaAST([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
@@ -490,7 +490,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class FkUnindexed {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => FkBlog, index: false }) fkBlogId?: number;
+        @Field({ references: () => FkBlog, index: false }) fkBlogId?: number | null;
       }
 
       expect(indexedColumns(buildSchemaAST([FkBlog, FkUnindexed]), 'FkUnindexed')).toEqual([]);
@@ -505,7 +505,7 @@ describe('SchemaASTBuilder', () => {
       @Index((covering) => [covering.tenantId], { include: (covering) => [covering['legacy_total']] })
       class Covering {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) tenantId?: number;
+        @Field({ type: Number }) tenantId?: number | null;
       }
       const table = buildSchemaAST([Covering]).getTable('Covering');
       assertDefined(table);
@@ -518,7 +518,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class RenamedColumn {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: true }) name?: string;
+        @Field({ type: String, index: true }) name?: string | null;
       }
 
       let callCount = 0;
@@ -532,7 +532,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Unstable {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => Unstable }) selfId?: number;
+        @Field({ references: () => Unstable }) selfId?: number | null;
         @ManyToOne({ entity: () => Unstable, references: (unstable) => unstable.selfId }) self?: Unstable;
       }
 
@@ -563,7 +563,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class DefaultIndex {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: true }) name?: string;
+        @Field({ type: String, index: true }) name?: string | null;
       }
 
       expect(buildSchemaAST([DefaultIndex]).getTable('DefaultIndex')?.indexes[0].name).toBe('DefaultIndex__name_idx');
@@ -577,13 +577,13 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class Source {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) targetId?: number;
+        @Field({ type: Number }) targetId?: number | null;
         @ManyToOne({ entity: () => Target, references: (source) => source.targetId }) target?: Target;
       }
       @Entity()
       class Member {
         @Id({ type: Number }) id?: number;
-        @Field({ type: Number }) groupIdKey?: number;
+        @Field({ type: Number }) groupIdKey?: number | null;
         @ManyToOne({
           entity: () => Target,
           references: (member, target) => [{ local: member.groupIdKey, foreign: target.id }],
@@ -605,7 +605,7 @@ describe('SchemaASTBuilder', () => {
       @Entity()
       class CustomIndex {
         @Id({ type: Number }) id?: number;
-        @Field({ type: String, index: 'my_custom_idx' }) name?: string;
+        @Field({ type: String, index: 'my_custom_idx' }) name?: string | null;
       }
       const ast = buildSchemaAST([CustomIndex]);
       expect(ast.getTable('CustomIndex')?.indexes[0].name).toBe('my_custom_idx');

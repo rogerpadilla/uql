@@ -16,14 +16,14 @@ const TABLE = 'pg_vector_index';
 @Entity({ name: TABLE })
 class PgVectorIndexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[];
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
 }
 
 /** The same table before the index is declared, so a sync has one to add. */
 @Entity({ name: TABLE })
 class PgVectorUnindexed {
   @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[];
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
 }
 
 /**

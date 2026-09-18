@@ -10,8 +10,8 @@ import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 @Entity()
 class MongoUser {
   @Id({ type: String }) id?: string;
-  @Field({ type: String, index: true }) username?: string;
-  @Field({ type: String, index: 'email_idx', unique: true }) email?: string;
+  @Field({ type: String, index: true }) username?: string | null;
+  @Field({ type: String, index: 'email_idx', unique: true }) email?: string | null;
 }
 
 @Index((ticket) => [ticket.status, { column: ticket.createdAt, order: 'desc' }], { unique: true })
@@ -22,10 +22,10 @@ class MongoUser {
 @Entity()
 class MongoTicket {
   @Id({ type: String }) id?: string;
-  @Field({ type: String }) status?: string;
-  @Field({ type: String }) assignee?: string;
-  @Field({ type: Number }) priority?: number;
-  @Field({ type: Date }) createdAt?: Date;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: String }) assignee?: string | null;
+  @Field({ type: Number }) priority?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
 }
 
 const urgentAssigneeOptions = {
@@ -36,15 +36,15 @@ const urgentAssigneeOptions = {
 
 const statusCreatedAtOptions = { name: 'MongoTicket__status_createdAt_idx', unique: true };
 
-type TicketShape = { id?: string; status?: string; createdAt?: Date };
+type TicketShape = { id?: string; status?: string | null; createdAt?: Date | null };
 
 const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
   @Index((ticket) => [ticket.status], { name: 'ticket_idx', where })
   @Entity()
   class Ticket implements TicketShape {
     @Id({ type: String }) id?: string;
-    @Field({ type: String }) status?: string;
-    @Field({ type: Date }) createdAt?: Date;
+    @Field({ type: String }) status?: string | null;
+    @Field({ type: Date }) createdAt?: Date | null;
   }
   return Ticket;
 };

@@ -21,7 +21,7 @@ import {
   type DerivedRelation,
   type RelationRows,
 } from './abstractSqlDialect.js';
-import { COUNT_ALIAS } from './aliases.js';
+import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonSetCall, jsonPath, jsonRemoveCall, type JsonSlot, jsonSetTarget } from './jsonSql.js';
 import { aggregatesRelations } from './queryJoins.js';
@@ -48,6 +48,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   stringSizing: 'varchar',
   supportsUnsigned: true,
   serverSideCursors: false,
+  correlatedWrites: true,
   rowLocks: true,
   rowLockWithWindow: true,
   rowLockOf: true,
@@ -74,7 +75,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const meta = getMeta(entity);
     const schema = this.resolveSchema(meta);
     ctx.append(
-      `SELECT TABLE_ROWS ${this.escapeId(COUNT_ALIAS, true)} FROM information_schema.TABLES WHERE TABLE_SCHEMA = `,
+      `SELECT TABLE_ROWS ${this.escapeId(AGGREGATE_VALUE_ALIAS, true)} FROM information_schema.TABLES WHERE TABLE_SCHEMA = `,
     );
     if (schema) {
       ctx.addValue(schema);

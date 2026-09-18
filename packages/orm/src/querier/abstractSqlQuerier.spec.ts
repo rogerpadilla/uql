@@ -12,9 +12,9 @@ class HydratedChild {
   @Id({ type: Number })
   id?: number;
   @Field({ type: 'jsonb' })
-  payload?: Json<{ b?: number }>;
+  payload?: Json<{ b?: number }> | null;
   @Field({ references: () => HydratedParent })
-  parentId?: number;
+  parentId?: number | null;
   @ManyToOne({ entity: () => HydratedParent, references: (hydratedChild) => hydratedChild.parentId })
   parent?: HydratedParent;
 }
@@ -24,9 +24,9 @@ class HydratedParent {
   @Id({ type: Number })
   id?: number;
   @Field({ type: 'json' })
-  settings?: Json<{ a?: number }>;
+  settings?: Json<{ a?: number }> | null;
   @Field({ type: String })
-  name?: string;
+  name?: string | null;
   @OneToMany({ entity: () => HydratedChild, mappedBy: (hydratedChild) => hydratedChild.parent })
   children?: HydratedChild[];
 }

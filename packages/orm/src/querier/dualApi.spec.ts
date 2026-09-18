@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, expectTypeOf, it, vi } from 'vitest';
+import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { MeasureUnitCategory, User, VectorItem } from '../test/index.js';
 import type {
   Query,
@@ -17,6 +18,7 @@ import { AbstractQuerier } from './abstractQuerier.js';
  * Mock implementation to test the dual-API (entity-as-argument vs entity-as-field)
  */
 class MockQuerier extends AbstractQuerier {
+  readonly dialect = new PostgresDialect();
   findManyMock = vi.fn().mockResolvedValue([]);
   countMock = vi.fn().mockResolvedValue(0);
   deleteManyMock = vi.fn().mockResolvedValue(0);
