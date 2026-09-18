@@ -7,9 +7,9 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - `$sort: { $text }` takes either direction, and `{ $project: 'score', $order? }` also returns the relevance, typed with `WithScore<E, 'score'>`.
 - MongoDB reads a fulltext `config` as its language; **changed:** an index with none no longer stems, as on SQL, and `drift:check` reports one built in another language.
 - Fixed: `$text` beside a `$populate` join no longer fails on a column both tables have.
-- Fixed (SQLite): `$text` failed on every search.
+- Fixed (SQLite): `$text`.
 - Fixed: `$project` refuses a name that collides with a field, column, relation, `_id` or `_uql` name; MongoDB overwrote the field.
-- Fixed (MongoDB): 64-bit integers read back exactly, not as the driver's `Long`.
+- Fixed (MongoDB): 64-bit integers read back exactly.
 
 ## [0.72.1] - 2026-09-18
 
