@@ -5,10 +5,8 @@
  * skipped by vitest, and left out of the build (excluded by the `.test-d.ts` suffix).
  */
 import type { IndexOptions } from './entity.js';
-import type { Except } from './utility.js';
-
-type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2 ? true : false;
-type Expect<T extends true> = T;
+import type { Expect } from './typeTest.test-d.js';
+import type { Except, IsEqual } from './utility.js';
 
 // The key has to exist: a typo or a renamed property is a compile error, not a silent no-op.
 type Src = { readonly a: string; b?: number; c: boolean };

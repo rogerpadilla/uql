@@ -34,7 +34,7 @@ it('should project the stored column, never the property key', () => {
 
 it('should sort by the stored column', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, { $sort: { label: 'desc' } }))).toContain('ORDER BY "the_label" DESC');
-  expect(mongo.sort(Renamed, { label: 'desc' })).toEqual({ the_label: -1 });
+  expect(mongo.sort(Renamed, { $sort: { label: 'desc' } })).toEqual({ the_label: -1 });
 });
 
 it('should filter by the stored column', () => {
@@ -71,5 +71,5 @@ it('should address the primary key as each engine stores it', () => {
   expect(pgSql((d, ctx) => d.where(ctx, Renamed, { id: 1 }))).toContain('"row_pk" = ');
   // MongoDB always stores it as `_id`, whatever the column is named
   expect(mongo.where(Renamed, { id: 1 })).toMatchObject({ _id: 1 });
-  expect(mongo.sort(Renamed, { id: 1 })).toEqual({ _id: 1 });
+  expect(mongo.sort(Renamed, { $sort: { id: 1 } })).toEqual({ _id: 1 });
 });

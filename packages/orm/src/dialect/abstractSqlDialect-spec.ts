@@ -533,6 +533,29 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([123, '1']);
   }
 
+  /** `$inc` adds in the statement, so no read races it, and a NULL counts as 0, as MongoDB's does. */
+  shouldUpdateWithIncrement() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: -2 }, updatedAt: 123 }),
+    );
+    expect(sql).toBe(
+      `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) + ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
+    );
+    expect(values).toEqual([-2, 123, '1']);
+  }
+
+  shouldUpdateWithMultiply() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $mul: 1.5 }, updatedAt: 123 }),
+    );
+    expect(sql).toBe(
+      `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) * ${this.ph(1)}, ${e}updatedAt${e} = ${this.ph(2)} WHERE ${e}id${e} = ${this.ph(3)}`,
+    );
+    expect(values).toEqual([1.5, 123, '1']);
+  }
+
   shouldUpdateWithJsonbField() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
@@ -2605,6 +2628,33 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       `SELECT \`id\` FROM \`User\` WHERE MATCH(\`name\`) AGAINST(?) AND ${this.neSql('`name`')} AND \`companyId\` = ?${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
+  }
+
+  /** `$sort: { $text }` orders by each row's relevance to the root `$where` search, most relevant first. */
+  shouldSortBy$textRelevance() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $sort: { $text: 'desc', name: 'asc' },
+      }),
+    );
+    expect(res.sql).toBe(
+      'SELECT `id` FROM `Item` WHERE MATCH(`name`) AGAINST(?) ORDER BY MATCH(`name`) AGAINST(?) DESC, `name`',
+    );
+    expect(res.values).toEqual(['lamp', 'lamp']);
+  }
+
+  /** Only a search at the root of `$where` is one the rows can be ranked by: a nested or negated one is not. */
+  shouldRefuseToSortBy$textWithoutARootSearch() {
+    const search = { $fields: { name: true }, $value: 'lamp' } as const;
+    const message = '$sort by $text ranks by the $text at the root of $where, which this query has none of';
+    expect(() => this.exec((ctx) => this.dialect.find(ctx, Item, { $sort: { $text: 'desc' } }))).toThrow(message);
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $where: { $or: [{ $text: search }, { code: 'x' }] }, $sort: { $text: 'desc' } }),
+      ),
+    ).toThrow(message);
   }
 
   shouldUpdateWithJsonNull() {

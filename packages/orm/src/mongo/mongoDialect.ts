@@ -6,6 +6,7 @@ import {
   REL_TEMP_PREFIX,
   SUM_COUNT_ALIAS,
   sortCountField,
+  TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
 import {
   groupPathField,
@@ -23,6 +24,7 @@ import type {
   EntityData,
   EntityMeta,
   FieldOptions,
+  FieldUpdateOp,
   Query,
   QueryAggMap,
   QueryAggregate,
@@ -32,7 +34,6 @@ import type {
   QueryLikeOp,
   QueryOptions,
   QueryPager,
-  QueryPopulate,
   QuerySelect,
   QuerySelectValue,
   QuerySortMap,
@@ -57,6 +58,7 @@ import {
   columnFamily,
   countedRelations,
   entityName,
+  fieldUpdateOf,
   fillOnFields,
   filterFieldKeys,
   findVectorIndex,
@@ -64,6 +66,7 @@ import {
   getKeys,
   getRelationRequestSummary,
   hasKeys,
+  isFieldUpdateOp,
   isJsonObject,
   isJsonUpdateOp,
   isOperatorMap,
@@ -77,6 +80,7 @@ import {
   parseRelationAtKey,
   parseRelationSize,
   parseSortByCount,
+  rankedTextSearch,
   someKey,
   targetKeyColumns,
 } from '../util/index.js';
@@ -103,6 +107,22 @@ type MongoReadStages = {
 type RelationLookups = {
   readonly stages: MongoAggregationPipelineEntry<Document>[];
   readonly temps: string[];
+};
+
+/** A `$sort` document: each field's direction, and `textScore` where the rows rank by a `$text` search. */
+type MongoSort = Record<string, 1 | -1 | { $meta: 'textScore' }>;
+
+/** A scalar field's operator as the aggregation operator computing it. */
+const MONGO_ARITHMETIC = { $inc: '$add', $mul: '$multiply' } as const satisfies Record<keyof FieldUpdateOp, string>;
+
+/** An update's operators, grouped by kind and keyed by dotted path. */
+type UpdateGroups = {
+  readonly set: Document;
+  readonly push: Document;
+  readonly pull: Document;
+  /** Each scalar field's operator as the pipeline expression computing it, a `null` or missing value read as 0. */
+  readonly arithmetic: Document;
+  readonly unset: ReadonlySet<string>;
 };
 
 /** Default {@link DialectFeatures} for MongoDB. */
@@ -627,9 +647,16 @@ export class MongoDialect extends AbstractDialect {
    * means a *populated* one, at every level of the path: a lookup adds a field to the result, so one
    * added for the sort alone would change what the caller gets back.
    */
-  public sort<E extends Document>(entity: Type<E>, sort?: QuerySortMap<E>, populate?: QueryPopulate<E>): Sort {
+  public sort<E extends Document>(
+    entity: Type<E>,
+    { $sort: sort, $populate: populate, $where: where }: Query<E>,
+  ): Sort {
     const meta = getMeta(entity);
-    const normalized: Record<string, 1 | -1> = {};
+    const normalized: MongoSort = {};
+    // Refused as the SQL dialects refuse it, before MongoDB answers a missing score with its own error.
+    if (sort?.$text) {
+      rankedTextSearch(where);
+    }
     // The same join set the lookups are built from, so what an ordering may address and what the
     // pipeline actually produces cannot drift apart - `$sort` contributes its own to-one joins here
     // exactly as it does on the SQL dialects.
@@ -643,10 +670,19 @@ export class MongoDialect extends AbstractDialect {
     sort: QuerySortMap<E> | undefined,
     joins: QueryJoins,
     path: string,
-    out: Record<string, 1 | -1>,
+    out: MongoSort,
   ): void {
     for (const [key, value] of Object.entries(sort ?? {})) {
       const relation = meta.relations[key];
+      if (key === '$text') {
+        if (path) {
+          throw new TypeError(
+            `$sort by $text is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
+          );
+        }
+        out[TEXT_SCORE_ALIAS] = { $meta: 'textScore' };
+        continue;
+      }
       if (!relation) {
         // The queried entity's own vector search is lifted out before this walk, so one reaching it
         // sits under a relation, which a `$lookup` brings in one row at a time - there is nothing to
@@ -756,7 +792,7 @@ export class MongoDialect extends AbstractDialect {
     const relOpts = relationOf(meta, spec.relation as RelationKey<E>);
     const query = spec.query ?? {};
     const tail = [
-      ...(query.$sort ? [{ $sort: this.sort(relOpts.entity(), query.$sort) }] : []),
+      ...(query.$sort ? [{ $sort: this.sort(relOpts.entity(), query) }] : []),
       ...this.pagerStages(query),
       spec.field
         ? {
@@ -891,7 +927,7 @@ export class MongoDialect extends AbstractDialect {
     return [
       ...this.matchStages(entity, q.$where, opts, this.aggregateKeys(entity, q)),
       ...this.readStages(entity, q, {
-        sort: this.sort(entity, q.$sort, q.$populate),
+        sort: this.sort(entity, q),
         pager: this.pagerStages(q),
       }),
     ];
@@ -1182,14 +1218,18 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /** One MongoDB update document's operators, grouped by kind and keyed by dotted path. */
-  private groupUpdateOperators<E extends Document>(
-    persistable: Partial<E>,
-  ): { set: Document; push: Document; pull: Document; unset: Set<string> } {
+  private groupUpdateOperators<E extends Document>(persistable: Partial<E>): UpdateGroups {
     const set: Document = {};
     const push: Document = {};
     const pull: Document = {};
+    const arithmetic: Document = {};
     const unset = new Set<string>();
     for (const [key, value] of Object.entries(persistable)) {
+      if (isFieldUpdateOp(value)) {
+        const [op, operand] = fieldUpdateOf(value);
+        arithmetic[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
+        continue;
+      }
       if (!isJsonUpdateOp(value)) {
         set[key] = value;
         continue;
@@ -1207,7 +1247,7 @@ export class MongoDialect extends AbstractDialect {
         pull[`${key}.${path}`] = v;
       }
     }
-    return { set, push, pull, unset };
+    return { set, push, pull, arithmetic, unset };
   }
 
   /**
@@ -1217,13 +1257,13 @@ export class MongoDialect extends AbstractDialect {
    */
   public getUpdateFilter<E extends Document>(persistable: Partial<E>): UpdateFilter<E> | Document[] {
     const groups = this.groupUpdateOperators(persistable);
-    const { set, push, pull, unset } = groups;
+    const { set, push, pull, arithmetic, unset } = groups;
     const exprKeys = [...Object.keys(pull), ...Object.keys(set), ...Object.keys(push)];
 
-    // Native `$pull` fails on a value that is no array, and MongoDB rejects two operators targeting one
-    // path in a single update document: either forces the pipeline form.
+    // Native `$pull` fails on a value that is no array, native `$inc`/`$mul` on a `null`, and MongoDB
+    // rejects two operators targeting one path in a single update document: each forces the pipeline form.
     const allPaths = [...exprKeys, ...unset];
-    if (hasKeys(pull) || new Set(allPaths).size < allPaths.length) {
+    if (hasKeys(pull) || hasKeys(arithmetic) || new Set(allPaths).size < allPaths.length) {
       return this.getUpdatePipeline(groups, new Set(exprKeys));
     }
     return {
@@ -1234,14 +1274,14 @@ export class MongoDialect extends AbstractDialect {
   }
 
   /**
-   * A JSON update as one pipeline, since MongoDB refuses two operators on one path: each path composed as
+   * An update as one pipeline, since MongoDB refuses two operators on one path: each path composed as
    * `$pull`, `$set`, `$push`, then `$unset`, as SQL does, with values as `$literal` so `$x` stays data.
    */
   private getUpdatePipeline(
-    { set, push, pull, unset }: { set: Document; push: Document; pull: Document; unset: ReadonlySet<string> },
+    { set, push, pull, arithmetic, unset }: UpdateGroups,
     exprPaths: ReadonlySet<string>,
   ): Document[] {
-    const assignments: Document = {};
+    const assignments: Document = { ...arithmetic };
     for (const path of exprPaths) {
       let expr: Document = { $ifNull: [`$${path}`, []] };
       if (path in pull) {

@@ -190,7 +190,7 @@ describe('AbstractSqlDialect', () => {
 
   it('should reject a $sort by relation in a statement that joins none', () => {
     const ctx = dialect.createContext();
-    expect(() => dialect.sort(ctx, ItemAdjustment, { item: { name: 1 } })).toThrow(
+    expect(() => dialect.sort(ctx, ItemAdjustment, { $sort: { item: { name: 1 } } })).toThrow(
       "cannot $sort by relation 'item': this statement joins no relations",
     );
   });
@@ -826,7 +826,7 @@ describe('AbstractSqlDialect', () => {
   describe('relation $count sort', () => {
     it('should rank parents by a correlated count, not by a join', () => {
       const ctx = dialect.createContext();
-      dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 } });
+      dialect.sort(ctx, MeasureUnitCategory, { $sort: { measureUnits: { $count: -1 } } });
       expect(ctx.sql).toBe(
         ' ORDER BY (SELECT COUNT(*) FROM `MeasureUnit` `measureUnits` WHERE `measureUnits`.`categoryId` = `MeasureUnitCategory`.`id`' +
           ' AND `measureUnits`.`deletedAt` IS NULL) DESC',
@@ -836,22 +836,22 @@ describe('AbstractSqlDialect', () => {
 
     it('should count junction rows for a many-to-many', () => {
       const ctx = dialect.createContext();
-      dialect.sort(ctx, Item, { tags: { $count: 1 } });
+      dialect.sort(ctx, Item, { $sort: { tags: { $count: 1 } } });
       expect(ctx.sql).toBe(' ORDER BY (SELECT COUNT(*) FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id`)');
     });
 
     it('should compose with an ordering by the parent own columns', () => {
       const ctx = dialect.createContext();
-      dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1 }, name: 1 });
+      dialect.sort(ctx, MeasureUnitCategory, { $sort: { measureUnits: { $count: -1 }, name: 1 } });
       expect(ctx.sql).toContain('DESC, `name`');
     });
 
     it('should reject a $count combined with other keys', () => {
       const ctx = dialect.createContext();
-      // @ts-expect-error: a to-many sorts by `$count` alone
-      expect(() => dialect.sort(ctx, MeasureUnitCategory, { measureUnits: { $count: -1, name: 1 } })).toThrow(
-        '$count in a $sort cannot be combined with other keys',
-      );
+      expect(() =>
+        // @ts-expect-error: a to-many sorts by `$count` alone
+        dialect.sort(ctx, MeasureUnitCategory, { $sort: { measureUnits: { $count: -1, name: 1 } } }),
+      ).toThrow('$count in a $sort cannot be combined with other keys');
     });
   });
   describe('relation $size', () => {

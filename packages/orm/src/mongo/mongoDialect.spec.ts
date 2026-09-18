@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { AGGREGATE_VALUE_ALIAS, REL_TEMP_PREFIX } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
@@ -227,7 +227,7 @@ class MongoDialectSpec implements Spec {
   /** Reads address the stored column, never the property key. */
   shouldAddressStoredColumnsForRenamedFields() {
     expect(this.dialect.select(RenamedDoc, { id: true, label: true })).toEqual({ _id: 1, the_label: 1 });
-    expect(this.dialect.sort(RenamedDoc, { label: -1, id: 1 })).toEqual({ the_label: -1, _id: 1 });
+    expect(this.dialect.sort(RenamedDoc, { $sort: { label: -1, id: 1 } })).toEqual({ the_label: -1, _id: 1 });
     expect(this.dialect.where(RenamedDoc, { label: 'x' })).toEqual({ the_label: 'x', deleted_at: null });
     // group by the column, project back under the caller's key
     expect(this.dialect.buildAggregateStages(RenamedDoc, { $group: { label: true }, $select: { n: { $count: '*' } } })) //
@@ -606,12 +606,16 @@ class MongoDialectSpec implements Spec {
 
   /** A populated to-one is a field of the unwound document, so it sorts by its own column name. */
   shouldSortByRelationField() {
-    expect(this.dialect.sort(Item, { tax: { name: -1 } }, { tax: true })).toEqual({ 'tax.name': -1 });
-    expect(this.dialect.sort(User, { profile: { picture: 1 } }, { profile: true })).toEqual({
+    expect(this.dialect.sort(Item, { $sort: { tax: { name: -1 } }, $populate: { tax: true } })).toEqual({
+      'tax.name': -1,
+    });
+    expect(this.dialect.sort(User, { $sort: { profile: { picture: 1 } }, $populate: { profile: true } })).toEqual({
       'profile.image': 1,
     });
     // As many of its fields as the caller asks for, and alongside the parent's own columns.
-    expect(this.dialect.sort(Item, { tax: { name: 1, percentage: -1 }, code: -1 }, { tax: true })).toEqual({
+    expect(
+      this.dialect.sort(Item, { $sort: { tax: { name: 1, percentage: -1 }, code: -1 }, $populate: { tax: true } }),
+    ).toEqual({
       'tax.name': 1,
       'tax.percentage': -1,
       code: -1,
@@ -625,7 +629,7 @@ class MongoDialectSpec implements Spec {
    * it asked for, in the order it asked for.
    */
   shouldSortByAnUnpopulatedRelation() {
-    expect(this.dialect.sort(Item, { tax: { name: 1 } })).toEqual({ 'tax.name': 1 });
+    expect(this.dialect.sort(Item, { $sort: { tax: { name: 1 } } })).toEqual({ 'tax.name': 1 });
 
     const pipeline = this.dialect.aggregationPipeline(Item, { $sort: { tax: { name: 1 } } });
     expect(pipeline.map((stage) => Object.keys(stage)[0])).toEqual(['$lookup', '$unwind', '$sort', '$unset']);
@@ -657,20 +661,19 @@ class MongoDialectSpec implements Spec {
 
   shouldThrowOnUnjoinableRelationInSort() {
     // @ts-expect-error: a to-many sorts by `$count` alone
-    expect(() => this.dialect.sort(Item, { tags: { name: 1 } }, { tags: true })).toThrow("cannot $sort by 'tags'");
+    expect(() => this.dialect.sort(Item, { $sort: { tags: { name: 1 } }, $populate: { tags: true } })).toThrow(
+      "cannot $sort by 'tags'",
+    );
     // Every level of the path gets its own lookup, so a nested ordering resolves without populating.
-    expect(this.dialect.sort(Item, { tax: { category: { name: 1 } } })).toEqual({
+    expect(this.dialect.sort(Item, { $sort: { tax: { category: { name: 1 } } } })).toEqual({
       'tax.category.name': 1,
     });
     // Populating the whole path orders by the same nested alias the SQL dialects join to.
     expect(
-      this.dialect.sort(
-        Item,
-        { tax: { category: { name: -1 } } },
-        {
-          tax: { $populate: { category: true } },
-        },
-      ),
+      this.dialect.sort(Item, {
+        $sort: { tax: { category: { name: -1 } } },
+        $populate: { tax: { $populate: { category: true } } },
+      }),
     ).toEqual({ 'tax.category.name': -1 });
   }
 
@@ -695,13 +698,13 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldBuildSort() {
-    expect(this.dialect.sort(Item, {})).toEqual({});
-    expect(this.dialect.sort(Item, { code: 1 })).toEqual({ code: 1 });
-    expect(this.dialect.sort(Item, { code: -1 })).toEqual({ code: -1 });
-    expect(this.dialect.sort(Item, { code: 1 })).toEqual({ code: 1 });
-    expect(this.dialect.sort(Item, { code: -1 })).toEqual({ code: -1 });
-    expect(this.dialect.sort(Item, { name: 1, createdAt: -1 })).toEqual({ name: 1, createdAt: -1 });
-    expect(this.dialect.sort(Item, { name: -1, createdAt: -1 })).toEqual({ name: -1, createdAt: -1 });
+    expect(this.dialect.sort(Item, { $sort: {} })).toEqual({});
+    expect(this.dialect.sort(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
+    expect(this.dialect.sort(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
+    expect(this.dialect.sort(Item, { $sort: { code: 1 } })).toEqual({ code: 1 });
+    expect(this.dialect.sort(Item, { $sort: { code: -1 } })).toEqual({ code: -1 });
+    expect(this.dialect.sort(Item, { $sort: { name: 1, createdAt: -1 } })).toEqual({ name: 1, createdAt: -1 });
+    expect(this.dialect.sort(Item, { $sort: { name: -1, createdAt: -1 } })).toEqual({ name: -1, createdAt: -1 });
   }
 
   shouldNormalizeIds() {
@@ -1804,6 +1807,40 @@ class MongoDialectSpec implements Spec {
           },
         },
       },
+    ]);
+  }
+
+  /** Native `$inc` fails on a stored `null`, which the pipeline counts as 0, as SQL does. */
+  shouldUsePipelineForIncrement() {
+    expect(this.dialect.getUpdateFilter({ name: 'plain', salePrice: { $inc: -2 } })).toEqual([
+      {
+        $set: {
+          name: { $literal: 'plain' },
+          salePrice: { $add: [{ $ifNull: ['$salePrice', 0] }, { $literal: -2 }] },
+        },
+      },
+    ]);
+  }
+
+  /** `textScore` is what `$sort: { $text }` ranks by, and MongoDB orders by it only most relevant first. */
+  shouldSortBy$textRelevance() {
+    expect(
+      this.dialect.aggregationPipeline(Item, {
+        $where: { $text: { $value: 'lamp' } },
+        $sort: { $text: 'desc', name: 1 },
+      }),
+    ).toContainEqual({ $sort: { [TEXT_SCORE_ALIAS]: { $meta: 'textScore' }, name: 1 } });
+  }
+
+  shouldRefuseToSortBy$textWithoutARootSearch() {
+    expect(() => this.dialect.aggregationPipeline(Item, { $sort: { $text: 'desc' } })).toThrow(
+      '$sort by $text ranks by the $text at the root of $where, which this query has none of',
+    );
+  }
+
+  shouldUsePipelineForMultiply() {
+    expect(this.dialect.getUpdateFilter({ salePrice: { $mul: 1.5 } })).toEqual([
+      { $set: { salePrice: { $multiply: [{ $ifNull: ['$salePrice', 0] }, { $literal: 1.5 }] } } },
     ]);
   }
 

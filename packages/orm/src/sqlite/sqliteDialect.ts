@@ -230,6 +230,11 @@ export class SqliteDialect extends AbstractSqlDialect {
     ctx.addValue(search.$value);
   }
 
+  /** FTS5's `BM25` of the match, lower for a better one, so negated to rank as every other engine does. */
+  protected override appendTextRank<E>(ctx: QueryContext, meta: EntityMeta<E>): void {
+    ctx.append(`-BM25(${this.escapedTableName(meta)})`);
+  }
+
   protected override jsonLength(slot: JsonSlot): string {
     return `JSON_ARRAY_LENGTH(${jsonArraySlotArgs(slot, this.jsonIsArray(slot))})`;
   }

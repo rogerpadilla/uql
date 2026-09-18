@@ -170,13 +170,37 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
+    const { document, query } = this.textSearchParts(meta, search);
+    ctx.append(`${document} @@ ${query}`);
+    ctx.addValue(search.$value);
+    ctx.append(')');
+  }
+
+  /** `TS_RANK` of the document the predicate matches, against the same search. */
+  protected override appendTextRank<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
+  ): void {
+    const { document, query } = this.textSearchParts(meta, search);
+    ctx.append(`TS_RANK(${document}, ${query}`);
+    ctx.addValue(search.$value);
+    ctx.append('))');
+  }
+
+  /** The document a search reads and the search itself, open for its value. */
+  private textSearchParts<E>(
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
+  ): { document: string; query: string } {
     const keys = textSearchFields(meta, search);
     const index = fulltextIndexOver(meta, keys);
     const config = search.$config ?? (index && fulltextConfig(index));
     const columns = keys.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
-    ctx.append(`${this.textSearchTarget(columns, config)} @@ ${this.textQueryFn}(${this.textConfigArg(config)}`);
-    ctx.addValue(search.$value);
-    ctx.append(')');
+    return {
+      document: this.textSearchTarget(columns, config),
+      query: `${this.textQueryFn}(${this.textConfigArg(config)}`,
+    };
   }
 
   /**

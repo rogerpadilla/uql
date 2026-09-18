@@ -1934,6 +1934,47 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found?.kind).toEqual({ public: 1, tags: ['first'] });
   }
 
+  /** `$inc` adds to what is stored, a NULL counting as 0, on every engine. */
+  async shouldIncrementANumericField() {
+    const id = await this.querier.insertOne(Item, { name: 'Counted', salePrice: null });
+
+    await this.querier.updateOneById(Item, id, { salePrice: { $inc: 5 } });
+    await this.querier.updateOneById(Item, id, { salePrice: { $inc: -2 } });
+
+    const found = await this.querier.findOneById(Item, id, { $select: { salePrice: true } });
+    expect(found?.salePrice).toBe(3);
+  }
+
+  /** `$mul` scales what is stored, a NULL counting as 0, on every engine. */
+  async shouldMultiplyANumericField() {
+    const [unset, priced] = await this.querier.insertMany(Item, [
+      { name: 'Unpriced', salePrice: null },
+      { name: 'Priced', salePrice: 4 },
+    ]);
+
+    await this.querier.updateMany(Item, { $where: { id: [unset, priced] } }, { salePrice: { $mul: 3 } });
+
+    const found = await this.querier.findMany(Item, {
+      $select: { salePrice: true },
+      $where: { id: [unset, priced] },
+      $sort: { name: 'desc' },
+    });
+    expect(found.map((item) => item.salePrice)).toEqual([0, 12]);
+  }
+
+  /** A decrement guarded by the same row's value, so two writers racing for the last unit cannot both take it. */
+  async shouldDecrementOnlyWhereTheGuardHolds() {
+    const id = await this.querier.insertOne(Item, { name: 'Last unit', salePrice: 1 });
+    const take = () =>
+      this.querier.updateMany(Item, { $where: { id, salePrice: { $gte: 1 } } }, { salePrice: { $inc: -1 } });
+
+    expect(await take()).toBe(1);
+    expect(await take()).toBe(0);
+
+    const found = await this.querier.findOneById(Item, id, { $select: { salePrice: true } });
+    expect(found?.salePrice).toBe(0);
+  }
+
   /** A JSONB `$set` persists `true` and `false`, not only numbers and strings. */
   async shouldSetJsonBooleanField() {
     const id = await this.querier.insertOne(Company, {

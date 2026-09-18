@@ -152,7 +152,7 @@ export class MongodbQuerier extends AbstractQuerier {
     if (hasKeys(select)) {
       cursor.project(select);
     }
-    const sort = this.dialect.sort(entity, q.$sort, q.$populate);
+    const sort = this.dialect.sort(entity, q);
     if (hasKeys(sort)) {
       cursor.sort(sort);
     }
@@ -194,7 +194,7 @@ export class MongodbQuerier extends AbstractQuerier {
       ...(scoreAlias ? [{ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } }] : []),
       // `$vectorSearch` has already applied `$limit`, so the pager is its own.
       ...this.dialect.readStages(entity, q, {
-        sort: this.dialect.sort(entity, vectorSort.regularSort, q.$populate),
+        sort: this.dialect.sort(entity, { ...q, $sort: vectorSort.regularSort }),
         project: scoreAlias ? { [scoreAlias]: 1 } : undefined,
       }),
     ];
@@ -300,7 +300,6 @@ export class MongodbQuerier extends AbstractQuerier {
     return this.timed('internalUpdateMany', undefined, async () => {
       const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
       const filter = this.dialect.where(entity, qm.$where, opts);
-      // Maps JSON operators ($set/$unset/$push/$pull) onto their native MongoDB equivalents.
       const update = this.dialect.getUpdateFilter<E>(persistable);
       const { matchedCount } = await this.execute((session) =>
         this.collection(entity).updateMany(filter, update, { session }),

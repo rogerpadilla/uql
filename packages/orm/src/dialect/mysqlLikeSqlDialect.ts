@@ -243,6 +243,15 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
+    this.appendTextRank(ctx, meta, search);
+  }
+
+  /** `MATCH ... AGAINST` is the relevance itself, a match being any row it scores above zero. */
+  protected override appendTextRank<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
+  ): void {
     const columns = textSearchFields(meta, search).map((key) =>
       this.escapeId(this.resolveColumnName(key, meta.fields[key])),
     );

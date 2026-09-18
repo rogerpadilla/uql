@@ -56,7 +56,6 @@ export type QuerySortOptions = {
   /** Alias the queried entity's own columns are qualified by, when the statement qualifies them. */
   readonly prefix?: string;
   readonly joins?: QueryJoins;
-  readonly distinct?: boolean;
 };
 
 /**

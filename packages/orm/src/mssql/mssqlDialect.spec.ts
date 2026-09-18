@@ -201,6 +201,21 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     );
   }
 
+  /** Only the search-less case reaches the sort: a `$text` anywhere is refused first, as above. */
+  override shouldRefuseToSortBy$textWithoutARootSearch() {
+    expect(() => this.exec((ctx) => this.dialect.find(ctx, Item, { $sort: { $text: 'desc' } }))).toThrow(
+      '$sort by $text ranks by the $text at the root of $where, which this query has none of',
+    );
+  }
+
+  override shouldSortBy$textRelevance() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, { $where: { $text: { $value: 'a' } }, $sort: { $text: 'desc' } }),
+      ),
+    ).toThrow('does not support $text');
+  }
+
   /**
    * `JSON_MODIFY` deletes a key it is handed NULL, so a `$set` of null cannot be expressed. The
    * types already refuse one; `/http` casts client JSON straight to a payload, so it gets here.

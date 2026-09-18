@@ -111,6 +111,9 @@ const users = await pool.findMany(User, {
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
 - `updateMany` and `deleteMany` naming no rows - no `$where`, no `$limit` - throw; `{ unfiltered: true }` means the whole table.
+- An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0,
+  so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$set`, `$unset`,
+  `$push`, `$pull`.
 - `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`.
 
 ## Connections and transactions

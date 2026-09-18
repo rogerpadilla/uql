@@ -198,6 +198,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['1']);
   }
 
+  /** FTS5's `bm25` is lower for a better match, so it is negated to rank the way every other engine does. */
+  override shouldSortBy$textRelevance() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $sort: { $text: 'desc', name: 'asc' },
+      }),
+    );
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `Item` MATCH {`name`} : ? ORDER BY -BM25(`Item`) DESC, `name`');
+    expect(res.values).toEqual(['lamp']);
+  }
+
   override shouldFind$text() {
     let res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {

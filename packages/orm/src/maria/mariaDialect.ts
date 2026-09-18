@@ -41,8 +41,9 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   protected override appendRelationArray(ctx: QueryContext, { entity, query, alias, joins }: RelationRows): void {
     const meta = getMeta(entity);
     const terms = this.projection(ctx, entity, query, { prefix: alias, json: true }, joins);
-    const sortOpts = { prefix: alias, joins, distinct: query.$distinct };
-    const order = this.buildFragment(ctx, (fragmentCtx) => this.sort(fragmentCtx, entity, query.$sort, sortOpts));
+    const order = this.buildFragment(ctx, (fragmentCtx) =>
+      this.sort(fragmentCtx, entity, query, { prefix: alias, joins }),
+    );
     const page = this.buildFragment(ctx, (fragmentCtx) => this.pager(fragmentCtx, query));
     const from = this.buildFragment(ctx, (fragmentCtx) => {
       this.selectRelationJoins(fragmentCtx, meta, alias, joins);

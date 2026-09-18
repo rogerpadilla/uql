@@ -8,6 +8,7 @@ import {
   type FieldKey,
   type FieldMeta,
   type FieldOptions,
+  type FieldUpdateOp,
   type IsolationLevel,
   type JsonColumnType,
   type JsonUpdateOp,
@@ -74,6 +75,8 @@ import {
   idOnlyQuery,
   columnFamily,
   countedRelations,
+  fieldUpdateOf,
+  isFieldUpdateOp,
   isJsonObject,
   isJsonUpdateOp,
   isOperatorMap,
@@ -81,6 +84,7 @@ import {
   isVectorSearch,
   normalizeScalarFieldSelection,
   parentJoins,
+  rankedTextSearch,
   targetKeyColumns,
   type ParsedGroupEntry,
   parseGroupMap,
@@ -126,6 +130,9 @@ import {
 import { resolveVectorCast } from './vectorCast.js';
 import { VectorSqlDialect } from './vectorSqlDialect.js';
 
+/** A scalar field's operator as the SQL arithmetic computing it. */
+const SQL_ARITHMETIC = { $inc: '+', $mul: '*' } as const satisfies Record<keyof FieldUpdateOp, string>;
+
 /** How a column's values are bound: see {@link AbstractSqlDialect.persistKind}. */
 type PersistKind = 'plain' | 'json' | 'vector';
 
@@ -161,6 +168,9 @@ type SortTerm = {
   readonly direction: string;
   readonly output: boolean;
 };
+
+/** A `$sort` walk's options: {@link QuerySortOptions}, and what the sorted query settles for every level of it. */
+type SortWalk = QuerySortOptions & { readonly distinct?: boolean; readonly rankText: QueryBuildFn };
 
 /** A sort term of a relation's rows as their aggregate orders by it: the column carrying it out. */
 export type SortRef = { readonly ref: string; readonly direction: string };
@@ -431,9 +441,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       opts = { ...opts, prefix };
     }
     this.where<E>(ctx, entity, this.rankedWhere(meta, q, prefix), opts);
-    const sorted = order
-      ? this.orderCarried(ctx, q, order)
-      : this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
+    const sorted = order ? this.orderCarried(ctx, q, order) : this.sort<E>(ctx, entity, q, { prefix, joins });
     this.pager(ctx, q, sorted);
   }
 
@@ -524,6 +532,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 
+  /**
+   * A row's relevance to a `$text` search, higher for a better match: what `$sort: { $text }` orders by.
+   * Each engine that searches scores too, so a dialect overrides this beside {@link appendTextSearch}.
+   */
+  protected appendTextRank<E>(_ctx: QueryContext, _meta: EntityMeta<E>, _search: QueryTextSearchOptions<E>): void {
+    throw new TypeError(`${this.dialectName} does not support $text full-text search`);
+  }
+
+  /** Ranks by the root `$text` of `where`, which is looked up only once a `$sort` asks for it. */
+  private textRanker<E>(meta: EntityMeta<E>, where: QueryWhere<E> | undefined): QueryBuildFn {
+    return (ctx) => this.appendTextRank(ctx, meta, rankedTextSearch(where));
+  }
+
   select<E>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -536,7 +557,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const { alias, ref } = this.tableRef(meta, opts.alias);
     const prefix = this.resolveRelationAwarePrefix(alias, meta, opts, q.$populate, joins);
     const terms = this.projection(ctx, entity, q, { prefix, json: opts.json }, joins);
-    const carried = opts.carried ? this.carrySort(ctx, meta, q, { prefix, joins, distinct: q.$distinct }) : undefined;
+    const carried = opts.carried ? this.carrySort(ctx, meta, q, { prefix, joins }) : undefined;
     const columns = carried ? [...terms, ...carried.columns] : [...terms];
     if (totalAlias) {
       columns.push({ sql: this.totalOverExpr, key: totalAlias });
@@ -603,7 +624,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QuerySortOptions,
   ): { columns: SelectTerm[]; order: SortRef[] } {
     const columns: SelectTerm[] = [];
-    const order = this.sortTerms(ctx, meta, q.$sort, opts).map(({ key, expr, direction, output }) => {
+    const order = this.sortTerms(ctx, meta, q, opts).map(({ key, expr, direction, output }) => {
       if (output) {
         return { ref: expr, direction };
       }
@@ -1216,8 +1237,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** Appends the `ORDER BY`, reporting whether there was one - which {@link pager} needs on the
    * engines that refuse to page an unordered statement. */
-  sort<E>(ctx: QueryContext, entity: Type<E>, sort: QuerySortMap<E> | undefined, opts: QuerySortOptions = {}): boolean {
-    const terms = this.sortTerms(ctx, getMeta(entity), sort, opts);
+  sort<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QuerySortOptions = {}): boolean {
+    const terms = this.sortTerms(ctx, getMeta(entity), q, opts);
     if (terms.length) {
       ctx.append(` ORDER BY ${terms.map(({ expr, direction }) => expr + direction).join(', ')}`);
     }
@@ -1228,18 +1249,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * The terms of an `ORDER BY`, collected before anything is appended so an unorderable key is reported
    * instead of half a clause, and because a vector distance is the primary ordering wherever it appears.
    */
-  private sortTerms<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    sort: QuerySortMap<E> | undefined,
-    opts: QuerySortOptions,
-  ): SortTerm[] {
-    if (!hasKeys(sort)) {
+  private sortTerms<E>(ctx: QueryContext, meta: EntityMeta<E>, q: Query<E>, opts: QuerySortOptions): SortTerm[] {
+    if (!hasKeys(q.$sort)) {
       return [];
     }
     const vectors: SortTerm[] = [];
     const columns: SortTerm[] = [];
-    this.collectSortTerms(ctx, meta, sort, opts, vectors, columns);
+    const walk = { ...opts, distinct: q.$distinct, rankText: this.textRanker(meta, q.$where) };
+    this.collectSortTerms(ctx, meta, q.$sort, walk, vectors, columns);
     return [...vectors, ...columns];
   }
 
@@ -1253,7 +1270,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     meta: EntityMeta<E>,
     sort: QuerySortMap<E>,
-    opts: QuerySortOptions,
+    opts: SortWalk,
     vectors: SortTerm[],
     columns: SortTerm[],
     path = '',
@@ -1263,6 +1280,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     for (const [key, value] of Object.entries(sort)) {
       const relation = meta.relations[key as RelationKey<E>];
       const keyPath = path ? `${path}.${key}` : key;
+      if (key === '$text') {
+        if (path) {
+          throw new TypeError(`$sort by $text is only supported on the queried entity, not on relation '${path}'`);
+        }
+        const expr = this.buildFragment(ctx, opts.rankText);
+        columns.push({ key, expr, direction: this.resolveSortDirection(value), output: false });
+        continue;
+      }
       if (relation) {
         const countDirection = parseSortByCount(value);
         if (countDirection !== undefined) {
@@ -1805,6 +1830,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
       if (isJsonUpdateOp(value)) {
         this.formatJsonUpdate(ctx, escapedCol, value, field);
+      } else if (isFieldUpdateOp(value)) {
+        const [op, operand] = fieldUpdateOf(value);
+        ctx.append(`${escapedCol} = COALESCE(${escapedCol}, 0) ${SQL_ARITHMETIC[op]} `);
+        ctx.addValue(operand);
       } else {
         ctx.append(`${escapedCol} = `);
         this.formatPersistableValue(ctx, field, value);

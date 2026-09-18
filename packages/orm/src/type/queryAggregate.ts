@@ -2,7 +2,7 @@ import type { FieldKey, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
-import type { IsMany, RejectKeys } from './utility.js';
+import type { ExactlyOne, IsMany, RejectKeys } from './utility.js';
 
 /** The columns `$group` names by a literal `true`, so an uninferred `$group`, its own constraint, names none. */
 type GroupedKeys<G> = { [K in keyof G]: G[K] extends true ? K : never }[keyof G];
@@ -49,14 +49,6 @@ export function resolveAggregateOp(key: string): { op: QueryAggregateOp; distinc
   }
   throw new TypeError(`unsupported aggregate operator: ${key}`);
 }
-
-/**
- * Exactly one key of `T` with its value; every other key is forbidden (`never`). `Pick`, not `Record`,
- * so the chosen key stays linked to `T`'s own property and renames follow it through.
- */
-type ExactlyOne<T> = {
-  [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
-}[keyof T];
 
 /**
  * One field named as a key - `{ amount: true }` - the way a statement names every field, so an editor

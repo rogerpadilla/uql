@@ -9,6 +9,7 @@ import {
   type EntityMeta,
   type FieldKey,
   type FieldOptions,
+  type FieldUpdateOp,
   type FilterOnMissing,
   type JsonUpdateOp,
   type OnFieldCallback,
@@ -328,6 +329,19 @@ export function isJsonUpdateOp(value: unknown): value is JsonUpdateOp {
   return isRecord(value) && someKey(value, (key) => JSON_UPDATE_OPS.includes(key));
 }
 
+/** `satisfies` ties this to {@link FieldUpdateOp}, so renaming an operator breaks it at compile time. */
+const FIELD_UPDATE_OPS: readonly string[] = ['$inc', '$mul'] as const satisfies readonly (keyof FieldUpdateOp)[];
+
+/** Type guard: checks whether an update payload value is a scalar field's operator. */
+export function isFieldUpdateOp(value: unknown): value is FieldUpdateOp {
+  return isRecord(value) && someKey(value, (key) => FIELD_UPDATE_OPS.includes(key));
+}
+
+/** The one operator a scalar field's update carries, and its operand. */
+export function fieldUpdateOf(value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint] {
+  return value.$inc === undefined ? ['$mul', value.$mul] : ['$inc', value.$inc];
+}
+
 /**
  * The `$where` naming rows by key: a bare value names the one key column (refused on a composite), a
  * composite's key map is a `$where` already, and a list is an `IN` of bare values or an OR of maps.
@@ -589,6 +603,17 @@ export function fulltextIndexOver<E>(meta: EntityMeta<E>, fields: readonly strin
       index.columns.length === fields.length &&
       index.columns.every((entry, at) => entry.column === fields[at]),
   );
+}
+
+/**
+ * The search a `$sort` by `$text` ranks by: the one at the root of the same query's `$where`. A nested or
+ * negated one has no score to order by, and MongoDB scores only the one `$text` it allows.
+ */
+export function rankedTextSearch<E>(where: QueryWhere<E> | undefined): QueryTextSearchOptions<E> {
+  if (!where?.$text) {
+    throw new TypeError('$sort by $text ranks by the $text at the root of $where, which this query has none of');
+  }
+  return where.$text;
 }
 
 /**

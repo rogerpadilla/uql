@@ -55,6 +55,24 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
 
     afterAll(() => pool.end());
 
+    /** Inserted least relevant first, so only the ranking puts the row naming "otter" most often ahead. */
+    it('should rank rows by relevance to the search', async () => {
+      await pool.withQuerier((querier) =>
+        querier.insertMany(TextDoc, [
+          { title: 'heron', bodyText: 'watches an otter' },
+          { title: 'otter', bodyText: 'an otter otter family' },
+        ]),
+      );
+      const found = await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, {
+          $select: { title: true },
+          $where: { $text: { $value: 'otter' } },
+          $sort: { $text: 'desc' },
+        }),
+      );
+      expect(found.map((doc) => doc.title)).toEqual(['otter', 'heron']);
+    });
+
     it('should plan nothing more once the index exists', async () => {
       expect(await migrator().planSync()).toEqual([]);
     });

@@ -30,11 +30,27 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    */
   protected readonly upsertCreatedFlag: string = ', (xmax = 0) AS "_created"';
 
+  /** How this engine types a config literal, and the function reading a search's text. */
+  protected readonly textConfigCast: string = '::regconfig';
+  protected readonly textQueryFn: string = 'WEBSEARCH_TO_TSQUERY';
+
+  /** The document over `columns`, and the search read under `config`, open for its value. */
+  private textParts(columns: readonly string[], config?: string): { document: string; query: string } {
+    const text = columns.map((column) => `COALESCE("${column}", '')`).join(` || ' ' || `);
+    const arg = config === undefined ? '' : `'${config}'${this.textConfigCast}, `;
+    return { document: `TO_TSVECTOR(${arg}${text})`, query: `${this.textQueryFn}(${arg}` };
+  }
+
   /** A `$text` over `columns` as this engine spells it: the document, then the search read under `config`. */
   protected textSearch(columns: readonly string[], config?: string): string {
-    const document = columns.map((column) => `COALESCE("${column}", '')`).join(` || ' ' || `);
-    const arg = config === undefined ? '' : `'${config}'::regconfig, `;
-    return `TO_TSVECTOR(${arg}${document}) @@ WEBSEARCH_TO_TSQUERY(${arg}`;
+    const { document, query } = this.textParts(columns, config);
+    return `${document} @@ ${query}`;
+  }
+
+  /** What a `$sort` by `$text` orders by: the document's rank against the same search. */
+  protected textRank(columns: readonly string[], config?: string): string {
+    const { document, query } = this.textParts(columns, config);
+    return `TS_RANK(${document}, ${query}`;
   }
 
   override shouldBeValidEscapeCharacter() {
@@ -691,6 +707,20 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       `SELECT "id" FROM "User" WHERE ${this.textSearch(['name'])}$1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
+  }
+
+  override shouldSortBy$textRelevance() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $sort: { $text: 'desc', name: 'asc' },
+      }),
+    );
+    expect(res.sql).toBe(
+      `SELECT "id" FROM "Item" WHERE ${this.textSearch(['name'])}$1) ORDER BY ${this.textRank(['name'])}$2)) DESC, "name"`,
+    );
+    expect(res.values).toEqual(['lamp', 'lamp']);
   }
 
   override shouldUpdateWithRawString() {

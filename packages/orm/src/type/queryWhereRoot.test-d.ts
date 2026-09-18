@@ -42,6 +42,12 @@ export async function fullTextSearch() {
   await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: { naem: true } } } });
   // @ts-expect-error $value is required
   await querier.findMany(Person, { $where: { $text: { $fields: { name: true } } } });
+
+  // Ranked by relevance to that search, most relevant first, then by any other key.
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: 'desc', name: 'asc' } });
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: -1 } });
+  // @ts-expect-error least relevant first is no ranking any engine offers
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: 'asc' } });
 }
 
 export async function existsSubqueries() {

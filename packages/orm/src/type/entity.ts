@@ -2,7 +2,7 @@ import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js
 import type { FilterOptions, RelationQuery } from './query.js';
 import type { ColumnRef, QueryRaw, RelationAggregate } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { Except, IsMany, Json, Scalar, Type, Unpacked, Writable } from './utility.js';
+import type { Except, ExactlyOne, IsEqual, IsMany, Json, Scalar, Type, Unpacked, Writable } from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /** Brands the property an entity is identified by, where it is not `id`, `_id` or `uuid`. */
@@ -31,19 +31,12 @@ export type FieldKey<E> = {
 }[Key<E>];
 
 /**
- * Whether `A` and `B` are the same type, `readonly` included - which no conditional sees, since
- * assignability ignores the modifier. Two identical generic signatures compare equal only when their
- * deferred bodies do.
- */
-type IfEquals<A, B, Yes, No> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? Yes : No;
-
-/**
  * The fields a caller writes: every one the class does not declare `readonly`. A field the database
  * writes - a relation aggregate, a stored generated column, a trigger-kept stamp - is `readonly`, and
  * its value never reaches the database, so a write payload leaves it out rather than dropping it.
  */
 export type WritableKey<E> = {
-  readonly [K in FieldKey<E>]-?: IfEquals<Pick<E, K>, Writable<Pick<E, K>>, K, never>;
+  readonly [K in FieldKey<E>]-?: IsEqual<Pick<E, K>, Writable<Pick<E, K>>> extends true ? K : never;
 }[FieldKey<E>];
 
 /** A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write. */
@@ -162,8 +155,23 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
     ? never
     : JsonUpdateOp<T>;
 
-/** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and JSON operators. */
-type UpdateExtra<V, Raw> = (undefined extends V ? null : never) | Raw | JsonUpdateOpFor<V>;
+/**
+ * A scalar field's update operator, as {@link JsonUpdateOp} is a JSON field's, computed in the statement:
+ * `$inc` adds, `$mul` multiplies, a NULL counting as 0 on every engine. One per field, since their order
+ * would change the result. A `bigint` steps by a `bigint`, exactly.
+ * @example `{ stock: { $inc: -1 } }`
+ */
+export type FieldUpdateOp<T extends number | bigint = number | bigint> = ExactlyOne<Record<'$inc' | '$mul', T>>;
+
+/** The {@link FieldUpdateOp} a field takes: `never` on one it has no operator for, which is any but a number. */
+type FieldUpdateOpFor<V> = [NonNullable<V>] extends [number]
+  ? FieldUpdateOp<number>
+  : [NonNullable<V>] extends [bigint]
+    ? FieldUpdateOp<bigint>
+    : never;
+
+/** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and update operators. */
+type UpdateExtra<V, Raw> = (undefined extends V ? null : never) | Raw | JsonUpdateOpFor<V> | FieldUpdateOpFor<V>;
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a

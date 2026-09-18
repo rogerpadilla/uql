@@ -1,5 +1,5 @@
 /**
- * `UpdatePayload` (typo'd fields, `raw()` values, relations as their own entity shape) and
+ * `UpdatePayload` (typo'd fields, `raw()` values, `$inc`/`$mul`, relations as their own entity shape) and
  * `QueryConflictPaths`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
@@ -33,6 +33,36 @@ export async function updatePayloadSafety() {
   await querier.updateMany(Employee, { $where: { id: 1 } }, { naem: 'x' });
   // @ts-expect-error a relation's value is checked against its own entity's fields
   await querier.updateOneById(Employee, 1, { company: { id: 1, naem: 'Acme' } });
+}
+
+class Counter {
+  id!: number;
+  label!: string;
+  hits?: number | null;
+  total!: bigint;
+  owner?: Company;
+}
+
+export async function arithmeticSafety() {
+  await querier.updateOneById(Counter, 1, { hits: { $inc: 1 }, total: { $inc: 5n } });
+  await querier.updateMany(Counter, { $where: { hits: { $gte: 2 } } }, { hits: { $inc: -2 } });
+  await querier.updateOneById(Counter, 1, { hits: { $mul: 1.5 }, total: { $mul: 2n } });
+
+  // @ts-expect-error one operator per field, since `$inc` then `$mul` is not `$mul` then `$inc`
+  await querier.updateOneById(Counter, 1, { hits: { $inc: 1, $mul: 2 } });
+  // @ts-expect-error only a numeric field multiplies
+  await querier.updateOneById(Counter, 1, { label: { $mul: 2 } });
+
+  // @ts-expect-error only a numeric field increments
+  await querier.updateOneById(Counter, 1, { label: { $inc: 1 } });
+  // @ts-expect-error a relation is no number
+  await querier.updateOneById(Counter, 1, { owner: { $inc: 1 } });
+  // @ts-expect-error the step is a number, as the field is
+  await querier.updateOneById(Counter, 1, { hits: { $inc: '1' } });
+  // @ts-expect-error a bigint field steps by a bigint, which keeps it exact
+  await querier.updateOneById(Counter, 1, { total: { $inc: 1 } });
+  // @ts-expect-error an upsert writes whole rows, with no update operator
+  await querier.upsertOne(Counter, { id: true }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
 }
 
 export async function conflictPathSafety() {

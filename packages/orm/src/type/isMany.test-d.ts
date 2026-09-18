@@ -2,10 +2,8 @@
  * {@link IsMany}: one case per part it is built from, each failing if that part is dropped, plus the
  * answers its callers depend on. Type-checked by `bun run ts` only.
  */
-import type { IsMany } from './utility.js';
-
-type IsEqual<A, B> = (<G>() => G extends A ? 1 : 2) extends <G>() => G extends B ? 1 : 2 ? true : false;
-type Expect<T extends true> = T;
+import type { Expect } from './typeTest.test-d.js';
+import type { IsEqual, IsMany } from './utility.js';
 
 export type _array = Expect<IsEqual<IsMany<string[]>, true>>;
 export type _entity = Expect<IsEqual<IsMany<{ id: number }>, false>>;

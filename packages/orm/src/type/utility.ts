@@ -37,6 +37,13 @@ export interface RawRow {
   [key: string]: unknown;
 }
 
+/**
+ * Whether `A` and `B` are the same type, `readonly` included - which no conditional sees, since
+ * assignability ignores the modifier. Two identical generic signatures compare equal only when their
+ * deferred bodies do.
+ */
+export type IsEqual<A, B> = (<T>() => T extends A ? 1 : 2) extends <T>() => T extends B ? 1 : 2 ? true : false;
+
 export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 
 /**
@@ -51,6 +58,14 @@ export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? neve
  * excess-property check on one.
  */
 export type RejectKeys<K> = [K] extends [never] ? unknown : Record<K & string, never>;
+
+/**
+ * Exactly one key of `T` with its value; every other key is forbidden (`never`). `Pick`, not `Record`,
+ * so the chosen key stays linked to `T`'s own property and renames follow it through.
+ */
+export type ExactlyOne<T> = {
+  [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
+}[keyof T];
 
 export type Unpacked<T> = T extends readonly (infer U)[]
   ? U

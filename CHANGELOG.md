@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.72.0] - 2026-09-18
+
+- `$inc` and `$mul` add to and multiply a numeric field in the statement, `{ stock: { $inc: -1 } }`, a NULL counting as 0.
+- `$sort: { $text: 'desc' }` orders a `$text` search by relevance, on every engine with full-text search.
+
 ## [0.71.0] - 2026-09-18
 
 - **Breaking:** a `$group` path through a relation reads only rows that have one, so its column is typed as the field is; group by the foreign key to count rows pointing nowhere.

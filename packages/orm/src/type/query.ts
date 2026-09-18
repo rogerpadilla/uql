@@ -151,9 +151,17 @@ export type QuerySortByCount = {
 };
 
 /**
- * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or a vector distance,
- * which `Vector` confines to the queried entity. One mapped type over the key sets: an intersection is
- * checked once per member, which made this the costliest type to check.
+ * Ordering by relevance to the `$text` at the root of `$where`: most relevant first, the one order every
+ * engine ranks by (MongoDB's `textScore` sorts no other way).
+ */
+export type QuerySortByText = {
+  $text?: -1 | 'desc';
+};
+
+/**
+ * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or a vector distance or
+ * `$text` relevance, which `Vector` confines to the queried entity. One mapped type over the key sets: an
+ * intersection is checked once per member, which made this the costliest type to check.
  */
 export type QuerySortMap<E, Vector extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
   [P in K]?: P extends RelationKey<E>
@@ -166,7 +174,8 @@ export type QuerySortMap<E, Vector extends boolean = true, K extends keyof E = F
         ? QuerySortValue
         : QuerySortDirection
       : QuerySortDirection;
-} & ([JsonFieldPaths<E>] extends [never] ? unknown : { [P in JsonFieldPaths<E>]?: QuerySortDirection });
+} & ([JsonFieldPaths<E>] extends [never] ? unknown : { [P in JsonFieldPaths<E>]?: QuerySortDirection }) &
+  (Vector extends true ? QuerySortByText : unknown);
 
 /**
  * pager options.

@@ -218,6 +218,14 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(await this.querier.count(TypedRow, { $where: { wide: 9007199254740992n } })).toBe(0);
   }
 
+  async shouldIncrementAWideBigIntExactly() {
+    const id = await this.querier.insertOne(TypedRow, { name: 'wide', wide: 9007199254740992n });
+
+    await this.querier.updateOneById(TypedRow, id, { wide: { $inc: 1n } });
+
+    expect(await this.querier.count(TypedRow, { $where: { wide: 9007199254740993n } })).toBe(1);
+  }
+
   /**
    * Past 2^53 a JS number rounds silently, so a BIGINT that wide reads back as its exact text: the one
    * rule every driver's decode shares (`decodeWideNumber`).

@@ -89,11 +89,8 @@ class CockroachDialectSpec extends PgFamilySpec {
   }
 
   /** v26.3 has neither `regconfig` nor `WEBSEARCH_TO_TSQUERY`: the config is text, the search plain words. */
-  protected override textSearch(columns: readonly string[], config?: string): string {
-    const document = columns.map((column) => `COALESCE("${column}", '')`).join(` || ' ' || `);
-    const arg = config === undefined ? '' : `'${config}', `;
-    return `TO_TSVECTOR(${arg}${document}) @@ PLAINTO_TSQUERY(${arg}`;
-  }
+  protected override readonly textConfigCast = '';
+  protected override readonly textQueryFn = 'PLAINTO_TSQUERY';
 }
 
 createSpec(new CockroachDialectSpec());
