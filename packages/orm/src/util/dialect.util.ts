@@ -492,7 +492,7 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
     // `$countDistinct` normalizes to `$count` plus a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
     const fieldRef = aggregateFieldRef(alias, call[key]);
-    entries.push({ kind: 'fn', alias, op, fieldRef, distinct, ...(where && hasKeys(where) ? { where } : {}) });
+    entries.push({ kind: 'fn', alias, op, fieldRef, distinct, ...(hasKeys(where) ? { where } : {}) });
   }
   return entries;
 }

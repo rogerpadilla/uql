@@ -98,7 +98,8 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- The keys are `$select`, `$exclude`, `$where`, `$populate`, `$sort`, `$skip`, `$limit`.
+- The keys are `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`;
+  `$count: { posts: true }` tallies a to-many under `_count` without loading it.
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
   `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
   `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
@@ -109,7 +110,7 @@ const users = await pool.findMany(User, {
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyStream`, `count`, `exists`,
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
-- `updateMany` and `deleteMany` with no `$where` throw; `{ unfiltered: true }` means the whole table.
+- `updateMany` and `deleteMany` naming no rows - no `$where`, no `$limit` - throw; `{ unfiltered: true }` means the whole table.
 - `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`.
 
 ## Connections and transactions

@@ -10,11 +10,11 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - MongoDB migrations create the Atlas vector search index a `type: 'vectorSearch'` `@Index` declares.
 - `@Index({ type: 'fulltext' })` works on PostgreSQL and CockroachDB too, so one declaration serves `$text` everywhere; `config` names its text-search configuration.
 - An aggregate's `$where` on a relation its `$group` joins reads that join rather than a second lookup.
-- `uql-orm` ships an agent skill: `npx @tanstack/intent install`, or `npx skills add rogerpadilla/uql`.
+- `uql-orm` ships an agent skill: `npx skills add ./node_modules/uql-orm`.
 
 ## [0.70.0] - 2026-09-18
 
-- **Breaking:** `deleteMany` and `updateMany` with an empty `$where` throw; pass `{ unfiltered: true }` to mean the whole table.
+- **Breaking:** `deleteMany` and `updateMany` naming no rows (no `$where`, no `$limit`) throw; pass `{ unfiltered: true }` to mean the whole table.
 - **Breaking (types):** a nullable column's property admits `null` (`name?: string | null`), or declares `nullable: false`. `npx uql-codemod` rewrites it.
 - **Breaking (types):** writes refuse `readonly` fields the database fills (relation aggregates, generated columns), which were silently dropped.
 - **Breaking:** `$sumDistinct` and `$avgDistinct` are removed; `$countDistinct` stays.

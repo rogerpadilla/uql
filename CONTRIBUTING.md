@@ -32,7 +32,7 @@ Open an issue describing the desired behavior and the "why" behind it. We prefer
 
 - ESM-only, **zero runtime dependencies**. Adding one is a decision, not a convenience.
 - Decorators need no consumer polyfill: `entity/decorator/bag.ts` fills in `Symbol.metadata` via `Symbol.for('Symbol.metadata')`.
-- `skills/` ships in the package beside the README, both copied in by `prepack`, so the agent skill a user installs is the one for their version. `npx skills add rogerpadilla/uql` reads the same folder from GitHub.
+- `skills/` ships in the package beside the README, both copied in by `prepack`, so `npx skills add ./node_modules/uql-orm` installs the skill for the user's version. `npx skills add rogerpadilla/uql` reads the same folder from GitHub.
 - The CLI bundles **no transpiler**. `uql.config.ts` is loaded with a plain `import()`, so the caller supplies TypeScript support (`bun`, or `node --import tsx`). Deliberate: the config imports the entity classes, so the loader decides which decorator spec they run under, and only the runtime knows the project's `tsconfig.json`.
 
 ## Releasing
