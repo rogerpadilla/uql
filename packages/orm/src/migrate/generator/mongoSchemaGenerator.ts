@@ -1,5 +1,5 @@
 import { getMeta } from '../../entity/index.js';
-import { MongoDialect } from '../../mongo/mongoDialect.js';
+import { MongoDialect, textLanguage } from '../../mongo/mongoDialect.js';
 import type { ForeignKeyAction, IndexType, TableNode } from '../../schema/types.js';
 import {
   type CreateSchemaOptions,
@@ -17,7 +17,7 @@ import {
 } from '../../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../../util/ddlExpression.util.js';
-import { fulltextWeights } from '../../util/dialect.util.js';
+import { fulltextConfig, fulltextWeights } from '../../util/dialect.util.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
@@ -172,6 +172,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
         name: index.name,
         partialFilterExpression: index.where && JSON.parse(index.where),
         weights: weights && Object.fromEntries(index.entries.map((entry, at) => [entry.column, weights[at]])),
+        default_language: index.type === 'fulltext' ? textLanguage(fulltextConfig(index)) : undefined,
       },
     });
   }

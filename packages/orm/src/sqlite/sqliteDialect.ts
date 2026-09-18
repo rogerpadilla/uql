@@ -28,7 +28,6 @@ import {
   type QueryTextSearchOptions,
   type QueryWhere,
   type SqlDialectFeatures,
-  type Type,
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
@@ -36,6 +35,16 @@ import { indexDistance, isVectorIndexType } from '../type/vector.js';
 import { declaredIndexName } from '../util/ddlExpression.util.js';
 import { findVectorIndex, findVectorSort, textSearchFields, vectorCandidates } from '../util/dialect.util.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
+
+/**
+ * An FTS5 query over `columns` for what a person typed: each word a quoted string, which FTS5 reads as a
+ * term to match and never as syntax, and every one required, as the other engines read plain words.
+ */
+function ftsQuery(columns: readonly string[], value: string): string {
+  const quote = (text: string) => `"${text.replaceAll('"', '""')}"`;
+  const words = value.split(/\s+/).filter(Boolean);
+  return `{${columns.map(quote).join(' ')}} : (${words.map(quote).join(' ') || '""'})`;
+}
 
 /** What SQLite and the engines derived from it have. */
 export const SQLITE_FEATURES: SqlDialectFeatures = {
@@ -215,20 +224,17 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   /**
-   * FTS5 matches the table itself rather than its columns, so this only works when the table *is* an
-   * FTS5 virtual table (UQL does not create those; declare it outside your entities).
+   * FTS5 matches the table itself, so this works only where the table *is* an FTS5 virtual table (UQL does
+   * not create those; declare it outside your entities). The whole query is bound, column filter and all.
    */
   protected override appendTextSearch<E>(
     ctx: QueryContext,
-    entity: Type<E>,
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    const columns = textSearchFields(meta, search).map((key) =>
-      this.escapeId(this.resolveColumnName(key, meta.fields[key])),
-    );
-    ctx.append(`${this.escapedTableName(meta)} MATCH {${columns.join(' ')}} : `);
-    ctx.addValue(search.$value);
+    const columns = textSearchFields(meta, search).map((key) => this.resolveColumnName(key, meta.fields[key]));
+    ctx.append(`${this.escapedTableName(meta)} MATCH `);
+    ctx.addValue(ftsQuery(columns, search.$value));
   }
 
   /** FTS5's `BM25` of the match, lower for a better one, so negated to rank as every other engine does. */

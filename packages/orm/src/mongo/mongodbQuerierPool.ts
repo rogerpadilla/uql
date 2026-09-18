@@ -10,7 +10,10 @@ export class MongodbQuerierPool extends AbstractQuerierPool<MongodbQuerier, Mong
 
   constructor(uri: string, opts?: MongoClientOptions, extra?: ExtraOptions) {
     super(new MongoDialect(dialectOptionsFrom(extra)), extra);
-    this.client = new MongoClient(uri, opts);
+    // A 64-bit integer read as the exact `bigint` it is, where the driver would round it past 2^53 or
+    // hand back its own `Long`; each read then decodes it the way every SQL driver does. First, as the
+    // MySQL pool's `supportBigNumbers` is, so an explicit choice of the caller's wins.
+    this.client = new MongoClient(uri, { useBigInt64: true, ...opts });
   }
 
   async getQuerier() {

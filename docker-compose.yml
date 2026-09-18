@@ -88,7 +88,7 @@ services:
     # claims up to ~8GB of a CI runner it shares with three other engines. It holds 20 tiny tables.
     command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB
     ports:
-      - '26257:26257'
+      - 26257:26257
     healthcheck:
       test: ['CMD-SHELL', "cockroach sql --insecure -e 'SELECT 1'"]
       interval: 5s

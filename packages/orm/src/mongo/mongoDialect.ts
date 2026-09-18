@@ -9,6 +9,7 @@ import {
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
 import {
+  aggregateColumnField,
   groupPathField,
   type QueryJoin,
   type QueryJoins,
@@ -23,6 +24,7 @@ import type {
   DialectFeatures,
   EntityData,
   EntityMeta,
+  FieldKey,
   FieldOptions,
   FieldUpdateOp,
   Query,
@@ -83,7 +85,9 @@ import {
   rankedTextSearch,
   someKey,
   targetKeyColumns,
+  textSortOf,
 } from '../util/index.js';
+import { decodeBigIntsExcept } from '../util/wideNumber.js';
 
 /**
  * Operators MongoDB already expresses natively. `Pick`'s constraint ties this back to
@@ -99,8 +103,12 @@ type MongoReadStages = {
   /** Ordering, which runs after the lookups when it reads one of their fields. */
   readonly sort?: Sort;
   readonly pager?: MongoAggregationPipelineEntry<Document>[];
-  /** Keys merged into the query's projection, when it has one: a vector search's score. */
-  readonly project?: Record<string, 1>;
+  /** A score the read answers as a field, a vector search's or a text search's; a temporary one leaves again. */
+  readonly score?: {
+    readonly field: string;
+    readonly meta: 'vectorSearchScore' | 'textScore';
+    readonly temporary?: boolean;
+  };
 };
 
 /** Accumulator threaded through `$where` rendering: the relation lookups it needs, and their temp fields. */
@@ -108,9 +116,6 @@ type RelationLookups = {
   readonly stages: MongoAggregationPipelineEntry<Document>[];
   readonly temps: string[];
 };
-
-/** A `$sort` document: each field's direction, and `textScore` where the rows rank by a `$text` search. */
-type MongoSort = Record<string, 1 | -1 | { $meta: 'textScore' }>;
 
 /** A scalar field's operator as the aggregation operator computing it. */
 const MONGO_ARITHMETIC = { $inc: '$add', $mul: '$multiply' } as const satisfies Record<keyof FieldUpdateOp, string>;
@@ -124,6 +129,19 @@ type UpdateGroups = {
   readonly arithmetic: Document;
   readonly unset: ReadonlySet<string>;
 };
+
+/**
+ * A text-search config as MongoDB names the language: the same word for each language both know, and
+ * `'none'` for the no-stemming parser Postgres calls `'simple'`. {@link textConfigOf} reads one back.
+ */
+export function textLanguage(config: string): string {
+  return config === 'simple' ? 'none' : config;
+}
+
+/** A MongoDB language as the text-search config it is, the inverse of {@link textLanguage}. */
+export function textConfigOf(language: string): string {
+  return language === 'none' ? 'simple' : language;
+}
 
 /** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {
@@ -234,7 +252,8 @@ export class MongoDialect extends AbstractDialect {
       } else if (key === '$text') {
         // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
         // the way it does elsewhere - the same shape as `$distance` being index-defined here.
-        filter['$text'] = { $search: (val as QueryTextSearchOptions<E>).$value };
+        const { $value, $config } = val as QueryTextSearchOptions<E>;
+        filter['$text'] = { $search: $value, ...($config && { $language: textLanguage($config) }) };
       } else if (meta.relations[key]) {
         this.assertNoRaw(val);
         if (!lookups) {
@@ -652,7 +671,7 @@ export class MongoDialect extends AbstractDialect {
     { $sort: sort, $populate: populate, $where: where }: Query<E>,
   ): Sort {
     const meta = getMeta(entity);
-    const normalized: MongoSort = {};
+    const normalized: Record<string, 1 | -1> = {};
     // Refused as the SQL dialects refuse it, before MongoDB answers a missing score with its own error.
     if (sort?.$text) {
       rankedTextSearch(where);
@@ -670,7 +689,7 @@ export class MongoDialect extends AbstractDialect {
     sort: QuerySortMap<E> | undefined,
     joins: QueryJoins,
     path: string,
-    out: MongoSort,
+    out: Record<string, 1 | -1>,
   ): void {
     for (const [key, value] of Object.entries(sort ?? {})) {
       const relation = meta.relations[key];
@@ -680,7 +699,8 @@ export class MongoDialect extends AbstractDialect {
             `$sort by $text is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
           );
         }
-        out[TEXT_SCORE_ALIAS] = { $meta: 'textScore' };
+        const { order, project } = textSortOf(sort)!;
+        out[project ?? TEXT_SCORE_ALIAS] = sortDirection(order);
         continue;
       }
       if (!relation) {
@@ -924,11 +944,14 @@ export class MongoDialect extends AbstractDialect {
     q: Query<E>,
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<E>[] {
+    // Sorted as a field, which goes either way where a `$meta` sort only descends.
+    const text = textSortOf(q.$sort);
     return [
       ...this.matchStages(entity, q.$where, opts, this.aggregateKeys(entity, q)),
       ...this.readStages(entity, q, {
         sort: this.sort(entity, q),
         pager: this.pagerStages(q),
+        score: text && { field: text.project ?? TEXT_SCORE_ALIAS, meta: 'textScore', temporary: !text.project },
       }),
     ];
   }
@@ -961,10 +984,17 @@ export class MongoDialect extends AbstractDialect {
     const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
     const pager = extra.pager ?? [];
 
-    // Merged into the query's own projection rather than standing in for one: a query that asked
-    // for no columns wants the whole document, not just the field this adds to it.
+    // The score becomes a real field before anything reads it, so the lookups, the sort and the projection
+    // that follow treat it like any other; merged into the query's own projection rather than standing in
+    // for one, since a query that asked for no columns wants the whole document as well.
+    const { score } = extra;
+    if (score && !score.temporary) {
+      this.assertProjectable(meta, score.field);
+    }
+    const scored = score ? [{ $addFields: { [score.field]: { $meta: score.meta } } }] : [];
+    const unscored = score?.temporary ? [{ $unset: [score.field] }] : [];
     const projection = this.pipelineProjection(entity, q);
-    const projected = projection ? { ...projection, ...extra.project } : undefined;
+    const projected = projection && score ? { ...projection, [score.field]: 1 as const } : projection;
     const project = projected ? [{ $project: projected }] : [];
 
     // A `$lookup` the ordering asked for puts a field on the document the caller never requested,
@@ -993,7 +1023,7 @@ export class MongoDialect extends AbstractDialect {
     // ordering and the page have to run after it to address the set the caller actually receives.
     const dedup = q.$distinct ? this.distinctStages(projected) : [];
     if (dedup.length) {
-      return [...lookups, ...related, ...project, ...dedup, ...sort, ...pager];
+      return [...scored, ...lookups, ...related, ...project, ...dedup, ...sort, ...pager, ...unscored];
     }
 
     // A `$required` relation drops parents when it unwinds, and an ordering may read a field only a
@@ -1003,10 +1033,12 @@ export class MongoDialect extends AbstractDialect {
       this.sortsRelations(entity, q.$sort) ||
       lookups.some((stage) => stage.$unwind?.preserveNullAndEmptyArrays === false);
     return [
+      ...scored,
       ...(lookupsFirst ? [...lookups, ...sort, ...pager] : [...sort, ...pager, ...lookups]),
       ...related,
       ...unset,
       ...project,
+      ...unscored,
     ];
   }
 
@@ -1180,6 +1212,9 @@ export class MongoDialect extends AbstractDialect {
         res[key] = this.fromWireId(res[key]);
       }
     }
+    // A 64-bit integer, which the pool reads as a `bigint`: kept for a `BigInt` field, and elsewhere the
+    // number it is where exact and its exact text past 2^53, as every SQL driver decodes one.
+    decodeBigIntsExcept(res, (key) => meta.fields[key as FieldKey<E>]?.type === BigInt);
 
     const relKeys = getKeys(meta.relations).filter((key) => res[key]) as RelationKey<E>[];
 
@@ -1191,6 +1226,26 @@ export class MongoDialect extends AbstractDialect {
     }
 
     return res as E;
+  }
+
+  /** An aggregate's rows with each 64-bit integer decoded as a document's is: a `bigint` only where the column reads a `BigInt` field. */
+  public normalizeAggregateRows<
+    E extends Document,
+    const G extends QueryGroupMap<E>,
+    const A extends QueryAggMap<E>,
+    R extends Document,
+  >(entity: Type<E>, q: QueryAggregate<E, G, A>, rows: R[]): R[] {
+    const meta = getMeta(entity);
+    const { joins } = resolveGroupJoins(meta, q);
+    const exact = new Set(
+      parseGroupMap(q.$group, q.$select)
+        .filter((entry) => aggregateColumnField(meta, joins, entry)?.field?.type === BigInt)
+        .map((entry) => entry.alias),
+    );
+    for (const row of rows) {
+      decodeBigIntsExcept(row, (key) => exact.has(key));
+    }
+    return rows;
   }
 
   /**

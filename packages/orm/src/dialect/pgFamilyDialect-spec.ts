@@ -709,6 +709,25 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
 
+  protected override qualifiedTextSearchSql(): string {
+    const text = `TO_TSVECTOR(${this.textConfigArg()}COALESCE("Item"."name", ''))`;
+    const query = `${this.textQueryFn}(${this.textConfigArg()}`;
+    return `SELECT "Item"."id", "tax"."id" "tax.id", "tax"."name" "tax.name" FROM "Item" LEFT JOIN "Tax" "tax" ON "tax"."id" = "Item"."taxId" WHERE ${text} @@ ${query}$1) ORDER BY TS_RANK(${text}, ${query}$2)) DESC`;
+  }
+
+  /** A config as the text-search functions' first argument, or nothing. */
+  private textConfigArg(config?: string): string {
+    return config === undefined ? '' : `'${config}'${this.textConfigCast}, `;
+  }
+
+  protected override projectedTextRelevance(): { sql: string; values: unknown[] } {
+    const { document, query } = this.textParts(['name']);
+    return {
+      sql: `SELECT "id", TS_RANK(${document}, ${query}$1)) "score" FROM "Item" WHERE ${document} @@ ${query}$2) ORDER BY "score" DESC`,
+      values: ['lamp', 'lamp'],
+    };
+  }
+
   override shouldSortBy$textRelevance() {
     const res = this.exec((ctx) =>
       this.dialect.find(ctx, Item, {
@@ -748,6 +767,28 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       `SELECT "id" FROM "Listing" WHERE ${document} @@ ${query}$1) ORDER BY (1 * TS_RANK(${document}, ${query}$2)) + 1 * TS_RANK(${name}, ${query}$3))) DESC`,
     );
     expect(res.values).toEqual(['lamp', 'lamp', 'lamp']);
+  }
+
+  /** A search over other fields than the weighted index's ranks them alike: the weights belong to that index. */
+  shouldRankUnweightedWhereTheFieldsAreNotTheWeightedIndexs() {
+    @Entity()
+    @Index((listing) => [{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
+    }
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Listing, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $sort: { $text: 'desc' },
+      }),
+    );
+    const { document, query } = this.textParts(['name']);
+    expect(res.sql).toBe(
+      `SELECT "id" FROM "Listing" WHERE ${document} @@ ${query}$1) ORDER BY TS_RANK(${document}, ${query}$2)) DESC`,
+    );
   }
 
   override shouldUpdateWithRawString() {

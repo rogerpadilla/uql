@@ -1,9 +1,17 @@
 import { v7 as uuidv7 } from 'uuid';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { provisioningTimeout } from '../test/index.js';
-import { isMongoQuerier, isSqlQuerier, type MigratorDialect, type Querier, type QuerierPool } from '../type/index.js';
+import {
+  isMongoQuerier,
+  isSqlQuerier,
+  type MigratorDialect,
+  type Querier,
+  type QuerierPool,
+  type WithScore,
+} from '../type/index.js';
 
 const TABLE = 'text_search_doc';
 
@@ -89,6 +97,63 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
         }),
       );
       expect(found.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
+    });
+
+    /** The relevance each row was ranked by, under a name of the caller's, highest first. */
+    it('should answer the relevance it ranks by', async () => {
+      const found = (await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, {
+          $select: { title: true },
+          $where: { $text: { $value: 'kestrel' } },
+          $sort: { $text: { $project: 'score' } },
+        }),
+      )) as WithScore<TextDoc, 'score'>[];
+      expect(found.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
+      expect(found[0].score).toBeGreaterThan(found[1].score);
+    });
+
+    /** Least relevant first, either way it is asked for, and no field of UQL's own left on a row. */
+    it('should rank the other way when asked', async () => {
+      const search = { $select: { title: true }, $where: { $text: { $value: 'kestrel' } } } as const;
+      const plain = await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, { ...search, $sort: { $text: 'asc' } }),
+      );
+      const projected = (await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, { ...search, $sort: { $text: { $project: 'score', $order: 'asc' } } }),
+      )) as WithScore<TextDoc, 'score'>[];
+      expect(plain.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);
+      expect(plain[0]).not.toHaveProperty(TEXT_SCORE_ALIAS);
+      expect(projected.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);
+      expect(projected[0].score).toBeLessThan(projected[1].score);
+    });
+
+    /** A paged write settles its rows through the read, so the one it touches is the most relevant. */
+    it('should write only the most relevant rows a page names', async () => {
+      await pool.withQuerier((querier) =>
+        querier.insertMany(TextDoc, [
+          { title: 'wren', bodyText: 'sings to a plover' },
+          { title: 'plover', bodyText: 'plover chicks' },
+        ]),
+      );
+      const changed = await pool.withQuerier((querier) =>
+        querier.updateMany(
+          TextDoc,
+          { $where: { $text: { $value: 'plover' } }, $sort: { $text: 'desc' }, $limit: 1 },
+          { bodyText: 'ringed' },
+        ),
+      );
+      const found = await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, {
+          $select: { title: true, bodyText: true },
+          $where: { title: { $in: ['wren', 'plover'] } },
+          $sort: { title: 'asc' },
+        }),
+      );
+      expect(changed).toBe(1);
+      expect(found.map((doc) => [doc.title, doc.bodyText])).toEqual([
+        ['plover', 'ringed'],
+        ['wren', 'sings to a plover'],
+      ]);
     });
 
     it('should plan nothing more once the index exists', async () => {

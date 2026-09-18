@@ -17,8 +17,9 @@ export type QueryTextSearchOptions<E> = {
    */
   $fields?: QuerySelect<E>;
   /**
-   * Postgres text-search configuration (e.g. `'english'`), applied to both the document and the
-   * query. Defaults to the server's `default_text_search_config`. Ignored by other dialects.
+   * The language the search is parsed in (e.g. `'english'`, or `'simple'` for no stemming), else that of
+   * the fulltext index over its fields: the Postgres family's text-search config, MongoDB's `$language`.
+   * MySQL and SQLite parse by their index alone.
    */
   $config?: string;
 };

@@ -37,6 +37,7 @@ import {
   getSoftDeleteValue,
   hasKeys,
   populatesRelations,
+  textSortOf,
   throwNoPendingTransaction,
   throwPendingTransaction,
   vectorCandidates,
@@ -132,7 +133,8 @@ export class MongodbQuerier extends AbstractQuerier {
       populatesRelations(getMeta(entity), q.$populate) ||
       this.dialect.constrainsRelations(entity, q.$where) ||
       this.dialect.sortsRelations(entity, q.$sort) ||
-      this.dialect.readsAggregates(entity, q)
+      this.dialect.readsAggregates(entity, q) ||
+      textSortOf(q.$sort) !== undefined
     );
   }
 
@@ -178,7 +180,6 @@ export class MongodbQuerier extends AbstractQuerier {
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     const scoreAlias = vectorSort.vectorSearch.$project;
-
     return [
       this.dialect.buildVectorSearchStage(
         entity,
@@ -189,13 +190,10 @@ export class MongodbQuerier extends AbstractQuerier {
         opts,
         vectorCandidates(q),
       ),
-      // The score becomes a real field before anything reads it, so the lookups and the projection
-      // that follow treat it like any other - and a query with no projection keeps its own columns.
-      ...(scoreAlias ? [{ $addFields: { [scoreAlias]: { $meta: 'vectorSearchScore' } } }] : []),
       // `$vectorSearch` has already applied `$limit`, so the pager is its own.
       ...this.dialect.readStages(entity, q, {
         sort: this.dialect.sort(entity, { ...q, $sort: vectorSort.regularSort }),
-        project: scoreAlias ? { [scoreAlias]: 1 } : undefined,
+        score: scoreAlias ? { field: scoreAlias, meta: 'vectorSearchScore' } : undefined,
       }),
     ];
   }
@@ -207,9 +205,10 @@ export class MongodbQuerier extends AbstractQuerier {
   ): Promise<QueryAggregateResult<E, G, A>[]> {
     return this.timed('internalAggregate', undefined, async () => {
       const pipeline = this.dialect.buildAggregateStages(entity, q, opts);
-      return this.execute((session) =>
+      const rows = await this.execute((session) =>
         this.collection(entity).aggregate<QueryAggregateResult<E, G, A>>(pipeline, { session }).toArray(),
       );
+      return this.dialect.normalizeAggregateRows(entity, q, rows);
     });
   }
 

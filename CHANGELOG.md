@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.72.2] - 2026-09-18
+
+- `$sort: { $text }` takes either direction, and `{ $project: 'score', $order? }` also returns the relevance under that name; annotate it with `WithScore<E, 'score'>`.
+- A fulltext index's `config` and a search's `$config` set MongoDB's language too (`'simple'` is its `'none'`).
+- Changed (MongoDB): a text index stating no `config` builds with no stemming, as on SQL; `drift:check` reports one built in another language.
+- Fixed: `$text` beside a `$populate` join qualifies its columns instead of failing on a name both tables have.
+- Fixed (SQLite): `$text` failed on every search; it now binds its FTS5 query whole and reads what a person types as words.
+- Fixed: a `$project` name colliding with a field, column, relation, `_id` or `_uql` name, or not a plain name, is refused; MongoDB overwrote the field.
+- Fixed (MongoDB): a 64-bit integer reads back exactly, in rows and aggregates: a `bigint` for a `BigInt` field, its exact text past 2^53 elsewhere, not the driver's `Long`.
+
 ## [0.72.1] - 2026-09-18
 
 - A fulltext index weighs its columns, `{ column: post.title, weight: 3 }`, which `$sort: { $text }` ranks by on every engine with full-text search.

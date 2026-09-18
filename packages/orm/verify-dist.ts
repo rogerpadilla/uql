@@ -119,7 +119,7 @@ function checkBrowserGraph(): number {
 // these budgets aren't. Each is the entry as measured plus 2%, rounded up to the next hundred, so
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
-  '.': 31_600,
+  '.': 32_300,
   './postgres': 30_800,
   './migrate': 50_600,
   './browser': 2_000,

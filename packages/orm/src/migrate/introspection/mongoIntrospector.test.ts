@@ -49,12 +49,15 @@ describe('MongoSchemaIntrospector', () => {
     });
   });
 
-  /** A text index answers `_fts`/`_ftsx` as its key: its fields, and their weights, are in `weights`. */
+  /** A text index answers `_fts`/`_ftsx` as its key: its fields and weights are in `weights`, and `'none'` is `'simple'`. */
   it("should read a text index's fields and weights", async () => {
     await pool.withQuerier(async ({ db }) => {
       await db
         .collection('note')
-        .createIndex({ zeta: 'text', alpha: 'text' }, { name: 'note_text_idx', weights: { zeta: 10 } });
+        .createIndex(
+          { zeta: 'text', alpha: 'text' },
+          { name: 'note_text_idx', weights: { zeta: 10 }, default_language: 'none' },
+        );
     });
     const schema = await introspector.getTableSchema('note');
     await pool.withQuerier(({ db }) => db.collection('note').drop());
@@ -63,6 +66,7 @@ describe('MongoSchemaIntrospector', () => {
       entries: [{ column: 'alpha' }, { column: 'zeta', weight: 10 }],
       unique: false,
       type: 'fulltext',
+      config: 'simple',
     });
   });
 

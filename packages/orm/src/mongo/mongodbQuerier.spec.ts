@@ -181,6 +181,15 @@ describe('MongodbQuerier vector search', () => {
     expect(pipeline.some((stage) => '$project' in stage)).toBe(false);
   });
 
+  /** As on SQL: the score would overwrite the field of that name in every document it came back in. */
+  it('should refuse to project the score over a field', async () => {
+    const { querier } = createRecordingQuerier([]);
+
+    await expect(
+      querier.findMany(Article, { $sort: { embedding: { $vector: [1, 2, 3], $project: 'title' } }, $limit: 5 }),
+    ).rejects.toThrow("$project 'title' collides with a field of 'Article'");
+  });
+
   it('should add $project with $select and score projection combined', async () => {
     const { querier, aggregate } = createRecordingQuerier([]);
 

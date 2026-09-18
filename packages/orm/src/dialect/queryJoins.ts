@@ -1,6 +1,8 @@
 import { getMeta, relationOf } from '../entity/index.js';
 import type {
   EntityMeta,
+  FieldKey,
+  FieldMeta,
   Query,
   QueryGroupMap,
   QueryPopulate,
@@ -17,6 +19,7 @@ import {
   isRecord,
   isToManyRelation,
   parseRelationAtKey,
+  type ParsedGroupEntry,
   parseRelationSize,
 } from '../util/index.js';
 
@@ -124,6 +127,25 @@ export function groupPathField(
     );
   }
   return { key, join };
+}
+
+/**
+ * The field an aggregate's column reads as, and the join it reads it through, none for the entity's own:
+ * a group key's, or the one a `$sum`, `$min` or `$max` aggregates. None at all for `$count` and `$avg`,
+ * which the engine widens to a number whatever they read.
+ */
+export function aggregateColumnField<E>(
+  meta: EntityMeta<E>,
+  joins: QueryJoins,
+  entry: ParsedGroupEntry<E>,
+): { readonly field: FieldMeta | undefined; readonly join?: QueryJoin } | undefined {
+  if (entry.kind === 'fn') {
+    return entry.op === '$count' || entry.op === '$avg'
+      ? undefined
+      : { field: meta.fields[entry.fieldRef as FieldKey<E>] };
+  }
+  const { key, join } = groupPathField(joins, entry.path);
+  return join ? { field: join.meta.fields[key], join } : { field: meta.fields[key as FieldKey<E>] };
 }
 
 /**

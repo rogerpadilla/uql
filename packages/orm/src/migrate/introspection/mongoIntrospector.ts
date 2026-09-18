@@ -1,3 +1,4 @@
+import { textConfigOf } from '../../mongo/mongoDialect.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
 import type { TableNode } from '../../schema/types.js';
@@ -16,6 +17,8 @@ type MongoIndex = {
   readonly unique?: boolean;
   /** A text index's fields and their weights, alphabetically: its key is `_fts`/`_ftsx` instead. */
   readonly weights?: Record<string, number>;
+  /** The language a text index stems in. */
+  readonly default_language?: string;
 };
 
 /** The parts of an Atlas search index description this introspector reads. */
@@ -34,7 +37,7 @@ const SEARCH_NOT_ENABLED = 31082;
  */
 export class MongoSchemaIntrospector implements SchemaIntrospector {
   /** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
-  readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textWeights']);
+  readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textIndex']);
 
   constructor(private readonly pool: QuerierPool) {}
 
@@ -68,11 +71,15 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         name: tableName,
         columns: [],
         indexes: [
-          ...indexes.map(({ name, key, unique, weights }) => ({
+          ...indexes.map(({ name, key, unique, weights, default_language }) => ({
             name: name ?? Object.keys(key).join('_'),
             unique: !!unique,
             ...(weights
-              ? { entries: Object.entries(weights).map(textIndexEntry), type: 'fulltext' as const }
+              ? {
+                  entries: Object.entries(weights).map(textIndexEntry),
+                  type: 'fulltext' as const,
+                  config: default_language && textConfigOf(default_language),
+                }
               : { entries: Object.keys(key).map((column) => ({ column })) }),
           })),
           ...searchIndexes

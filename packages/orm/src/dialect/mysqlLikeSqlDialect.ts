@@ -240,11 +240,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    */
   protected override appendTextSearch<E>(
     ctx: QueryContext,
-    _entity: Type<E>,
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    prefix: string | undefined,
   ): void {
-    this.appendTextScore(ctx, meta, search, textSearchFields(meta, search));
+    this.appendTextScore(ctx, meta, search, textSearchFields(meta, search), prefix);
   }
 
   /**
@@ -256,9 +256,9 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
     keys: readonly string[],
+    prefix: string | undefined,
   ): void {
-    const columns = keys.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
-    ctx.append(`MATCH(${this.textSearchTarget(columns)}) AGAINST(`);
+    ctx.append(`MATCH(${this.textSearchTarget(this.textColumns(meta, keys, prefix))}) AGAINST(`);
     ctx.addValue(search.$value);
     ctx.append(')');
   }

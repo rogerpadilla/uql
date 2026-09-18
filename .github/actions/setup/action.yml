@@ -1,0 +1,18 @@
+name: Setup
+description: Install the pinned Bun, optionally Node, and the locked dependencies
+inputs:
+  node-version:
+    description: Node version to install; empty keeps the image's
+    default: ''
+runs:
+  using: composite
+  steps:
+    - uses: oven-sh/setup-bun@v2
+      with:
+        bun-version-file: .bun-version
+    - if: inputs.node-version != ''
+      uses: actions/setup-node@v6
+      with:
+        node-version: ${{ inputs.node-version }}
+    - run: bun install --frozen-lockfile
+      shell: bash

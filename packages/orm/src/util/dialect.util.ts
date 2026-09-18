@@ -23,6 +23,7 @@ import {
   type QuerySearch,
   type QuerySelect,
   type QuerySelectValue,
+  type QuerySortDirection,
   type QuerySizeComparisonOps,
   type QuerySortMap,
   type QueryTextSearchOptions,
@@ -638,6 +639,17 @@ export function fulltextIndexOver<E>(meta: EntityMeta<E>, fields: readonly strin
       index.columns.length === fields.length &&
       index.columns.every((entry, at) => entry.column === fields[at]),
   );
+}
+
+/** How a `$sort` orders by `$text`: its direction, and the name it answers the relevance under, if any. */
+export function textSortOf<E>(
+  sort: QuerySortMap<E> | undefined,
+): { readonly order: QuerySortDirection; readonly project?: string } | undefined {
+  const text = sort?.$text;
+  if (text === undefined) {
+    return undefined;
+  }
+  return isRecord(text) ? { order: text.$order ?? 'desc', project: text.$project } : { order: text };
 }
 
 /**

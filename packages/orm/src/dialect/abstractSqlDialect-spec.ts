@@ -2645,6 +2645,56 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(res.values).toEqual(['lamp', 'lamp']);
   }
 
+  /** The relevance answered under the name `$project` gives it, and ordered by that name, as a vector distance is. */
+  shouldProject$textRelevance() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $sort: { $text: { $project: 'score' } },
+      }),
+    );
+    expect(res).toEqual(this.projectedTextRelevance());
+  }
+
+  /** What {@link shouldProject$textRelevance} renders on this engine. */
+  protected projectedTextRelevance(): { sql: string; values: unknown[] } {
+    return {
+      sql: 'SELECT `id`, MATCH(`name`) AGAINST(?) `score` FROM `Item` WHERE MATCH(`name`) AGAINST(?) ORDER BY `score` DESC',
+      values: ['lamp', 'lamp'],
+    };
+  }
+
+  /** Under a join, a searched column is qualified as any other is: `Tax` has a `name` of its own. */
+  shouldQualify$textColumnsUnderAJoin() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+        $populate: { tax: { $select: { name: true } } },
+        $sort: { $text: 'desc' },
+      }),
+    );
+    expect(res.sql).toBe(this.qualifiedTextSearchSql());
+  }
+
+  /** What {@link shouldQualify$textColumnsUnderAJoin} renders on this engine. */
+  protected qualifiedTextSearchSql(): string {
+    return 'SELECT `Item`.`id`, `tax`.`id` `tax.id`, `tax`.`name` `tax.name` FROM `Item` LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId` WHERE MATCH(`Item`.`name`) AGAINST(?) ORDER BY MATCH(`Item`.`name`) AGAINST(?) DESC';
+  }
+
+  /** A projected name is a new column, so one the entity has would come back twice under it. */
+  shouldRefuseToProject$textRelevanceOverAField() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, {
+          $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+          $sort: { $text: { $project: 'name' } },
+        }),
+      ),
+    ).toThrow("$project 'name' collides with a field of 'Item'");
+  }
+
   /** Only a search at the root of `$where` is one the rows can be ranked by: a nested or negated one is not. */
   shouldRefuseToSortBy$textWithoutARootSearch() {
     const search = { $fields: { name: true }, $value: 'lamp' } as const;

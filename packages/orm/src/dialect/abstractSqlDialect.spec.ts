@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
@@ -169,6 +169,27 @@ describe('AbstractSqlDialect', () => {
     expect(() => dialect.where(ctx, User, { $text: { $fields: { name: true }, $value: 'x' } })).toThrow(
       'does not support $text full-text search',
     );
+  });
+
+  /**
+   * A projected score is a key of every row it comes back in, so it can be neither one the row already
+   * has - a field, the column it is stored under, a relation - nor a name the engine or UQL reserves.
+   */
+  it.each([
+    ['salePrice', "$project 'salePrice' collides with a field of 'Item'"],
+    ['sale_price', "$project 'sale_price' collides with a field of 'Item'"],
+    ['tax', "$project 'tax' collides with a relation of 'Item'"],
+    ['_id', "$project '_id' is a name MongoDB or UQL reserves"],
+    ['_uql_score', "$project '_uql_score' is a name MongoDB or UQL reserves"],
+    ['$score', "$project '$score' is no plain name: letters, digits and '_', not led by a digit"],
+    ['score.value', "$project 'score.value' is no plain name: letters, digits and '_', not led by a digit"],
+  ])('should refuse to project a score as %s', (alias, message) => {
+    const snake = new TestSqlDialect({ namingStrategy: new SnakeCaseNamingStrategy() });
+    expect(() => snake.assertProjectable(getMeta(Item), alias)).toThrow(message);
+  });
+
+  it('should project a score under a plain name of its own', () => {
+    expect(() => dialect.assertProjectable(getMeta(Item), 'relevance_2')).not.toThrow();
   });
 
   it('should keep a Date for the driver to bind natively', () => {

@@ -17,7 +17,7 @@ import type {
 } from '../type/index.js';
 import { QueryRaw } from '../type/queryRaw.js';
 import { applyFilters, assertWhere } from '../util/dialect.util.js';
-import { aggregateOf, entityName, someKey } from '../util/index.js';
+import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
 
 /**
@@ -41,6 +41,9 @@ export function dialectOptionsFrom(extra: ExtraOptions | undefined): DialectOpti
 /**
  * Base abstract class for all database dialects (SQL and NoSQL).
  */
+/** A name a score can be projected under: what every engine takes as a key, with nothing to escape. */
+const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
 export abstract class AbstractDialect {
   abstract readonly dialectName: DialectName;
 
@@ -105,6 +108,28 @@ export abstract class AbstractDialect {
    */
   columnOf<E>(meta: EntityMeta<E>, key: string): string {
     return this.resolveColumnName(key, meta.fields[key as FieldKey<E>]);
+  }
+
+  /**
+   * Refuses a name a `$sort` projects a score under that a row already has - a field, the column it is
+   * stored under, a relation - or that MongoDB or UQL reserves, or that is no plain name: it is a key of
+   * every row it comes back in, and MongoDB would read `$` or `.` in one as an operator or a path.
+   */
+  assertProjectable<E>(meta: EntityMeta<E>, alias: string): void {
+    if (!PLAIN_NAME.test(alias)) {
+      throw new TypeError(`$project '${alias}' is no plain name: letters, digits and '_', not led by a digit`);
+    }
+    if (alias === '_id' || alias.startsWith('_uql')) {
+      throw new TypeError(`$project '${alias}' is a name MongoDB or UQL reserves`);
+    }
+    if (
+      definedEntries(meta.fields).some(([key, field]) => key === alias || this.resolveColumnName(key, field) === alias)
+    ) {
+      throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
+    }
+    if (alias in meta.relations) {
+      throw new TypeError(`$project '${alias}' collides with a relation of '${entityName(meta)}'`);
+    }
   }
 
   /**

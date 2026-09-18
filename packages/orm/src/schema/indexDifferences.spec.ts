@@ -27,7 +27,7 @@ describe('describeIndexDifferences', () => {
   it('should compare a text index as its fields and their weights, where the engine keeps them', () => {
     const text = (entries: IndexNode['entries']) => index({ type: 'fulltext', entries });
     const declared = text([{ column: 'zeta', weight: 10 }, { column: 'alpha' }]);
-    const weights = new Set(['textWeights'] as const);
+    const weights = new Set(['textIndex'] as const);
     expect(
       describeIndexDifferences(declared, text([{ column: 'alpha' }, { column: 'zeta', weight: 10 }]), weights),
     ).toEqual([]);
@@ -35,6 +35,15 @@ describe('describeIndexDifferences', () => {
       describeIndexDifferences(declared, text([{ column: 'alpha' }, { column: 'zeta', weight: 5 }]), weights),
     ).toEqual(['columns: (alpha, zeta weight 5) -> (alpha, zeta weight 10)']);
     expect(describeIndexDifferences(declared, text([{ column: 'zeta' }, { column: 'alpha' }]), new Set())).toEqual([]);
+  });
+
+  /** The language a text index stems in is a difference where the engine keeps it, `'simple'` where none is stated. */
+  it("should compare a text index's language, where the engine keeps it", () => {
+    const text = (config?: string) => index({ type: 'fulltext', config });
+    const weights = new Set(['textIndex'] as const);
+    expect(describeIndexDifferences(text(), text('english'), weights)).toEqual(['config: english -> simple']);
+    expect(describeIndexDifferences(text(), text('simple'), weights)).toEqual([]);
+    expect(describeIndexDifferences(text(), text('english'), new Set())).toEqual([]);
   });
 
   /** A vector index of any type is the one index an engine has, so only a plain one standing in for it differs. */

@@ -13,8 +13,6 @@ on:
 
 permissions:
   contents: read
-  pull-requests: write
-  statuses: write
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,14 +24,11 @@ env:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Lint & Typecheck
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
+      - uses: ./.github/actions/setup
       - name: Lint
         run: bun run lint
       - name: Typecheck
@@ -41,18 +36,14 @@ jobs:
 
   package:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     name: Package & Size
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
       # `build` shells out to node-shebang bins (tsc, rimraf), so don't inherit the image's node.
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup
         with:
           node-version: lts/*
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
       # The build only ever ran locally at release time, so packaging regressions surfaced at publish.
       # `build` ends with verify-dist.ts (declared paths, browser-safe graphs, size budgets).
       - name: Build and verify dist
@@ -87,6 +78,10 @@ jobs:
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    permissions:
+      contents: read
+      pull-requests: write
+      statuses: write
     strategy:
       fail-fast: false
       matrix:
@@ -103,29 +98,28 @@ jobs:
     name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
     steps:
       - uses: actions/checkout@v6
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: latest
-      - uses: actions/setup-node@v6
+      - uses: ./.github/actions/setup
         with:
           node-version: ${{ matrix.node }}
-      - name: Install OS dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get -y install libkrb5-dev
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
       - name: Start services
         run: docker compose up -d --wait
       - name: Run tests
         run: bun run test:${{ matrix.suite }}
       # A hook that times out reports only `(unnamed)`, so a database that stalled or was silently
-      # restarted (every service is `restart: always`) reads as a test bug. These logs say which it was.
+      # restarted (every service is `restart: always`) reads as a test bug. These logs say which it was,
+      # and the images say whether a floating tag moved since the last green run.
       - name: Dump service state on failure
         if: failure()
         run: |
-          docker compose ps
-          docker compose logs --tail=200
+          docker compose ps -a
+          docker compose images
+          docker compose logs --no-color --timestamps > compose.log
+      - name: Upload service logs
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: compose-logs-${{ strategy.job-index }}
+          path: compose.log
       - name: Submit coverage
         if: matrix.suite == 'vitest' && matrix.node == 'lts/*'
         uses: coverallsapp/github-action@v2

@@ -46,8 +46,18 @@ export async function fullTextSearch() {
   // Ranked by relevance to that search, most relevant first, then by any other key.
   await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: 'desc', name: 'asc' } });
   await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: -1 } });
-  // @ts-expect-error least relevant first is no ranking any engine offers
+  // Either direction, as any key sorts.
   await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: 'asc' } });
+  // The relevance itself, under a name of the caller's, most relevant first unless `$order` says otherwise.
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: { $project: 'score' } } });
+  await querier.findMany(Person, {
+    $where: { $text: { $value: 'john' } },
+    $sort: { $text: { $project: 'score', $order: 'asc' } },
+  });
+  // @ts-expect-error the relevance is projected under a name
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: { $project: true } } });
+  // @ts-expect-error a direction alone is the plain form
+  await querier.findMany(Person, { $where: { $text: { $value: 'john' } }, $sort: { $text: { $order: 'asc' } } });
 }
 
 export async function existsSubqueries() {

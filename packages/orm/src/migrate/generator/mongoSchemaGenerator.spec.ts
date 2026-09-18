@@ -134,6 +134,27 @@ describe('MongoSchemaGenerator', () => {
     expect(create([{ column: 'username' }, { column: 'email' }]).options.weights).toBeUndefined();
   });
 
+  /**
+   * A fulltext index's `config` is MongoDB's `default_language`, `'simple'` being its `'none'`: no stemming,
+   * which is also what one stating none builds with, as on SQL.
+   */
+  it('should build a text index in the language its config names', () => {
+    const create = (config?: string) =>
+      JSON.parse(
+        generator.generateCreateIndex('MongoUser', {
+          name: 'text_idx',
+          entries: [{ column: 'username' }],
+          unique: false,
+          type: 'fulltext',
+          config,
+        }),
+      );
+
+    expect(create('spanish').options.default_language).toBe('spanish');
+    expect(create('simple').options.default_language).toBe('none');
+    expect(create().options.default_language).toBe('none');
+  });
+
   describe('Atlas vector search index', () => {
     const chunkIndex = {
       action: 'createSearchIndex',

@@ -13,7 +13,6 @@ import type {
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, unsupportedVectorMetric } from '../type/vector.js';
 import { findVectorIndex, findVectorSort, vectorCandidates } from '../util/dialect.util.js';
-import { entityName } from '../util/object.util.js';
 import { AbstractDialect } from './abstractDialect.js';
 import { encodeFloat32s, type VectorCast } from './vectorCast.js';
 
@@ -101,26 +100,6 @@ export abstract class VectorSqlDialect extends AbstractDialect {
    */
   supportedVectorType(cast: VectorCast): VectorCast {
     return this.features.narrowVectorTypes ? cast : 'vector';
-  }
-
-  /**
-   * The distance a vector `$sort` projects, which the projection names after `$project`. Delegates to
-   * `appendVectorDistance` so each dialect's distance syntax is written once.
-   */
-  protected appendVectorProjection<E>(
-    ctx: QueryContext,
-    meta: EntityMeta<E>,
-    key: string,
-    search: QueryVectorSearch,
-  ): void {
-    const alias = search.$project!;
-    // `$project` names a new column, so it cannot be one the entity already has: both come back
-    // under that name and the driver keeps whichever it read last. Checked here rather than in the
-    // type because TypeScript cannot say "any string except these".
-    if (meta.fields[alias as FieldKey<E>]) {
-      throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
-    }
-    this.appendVectorDistance(ctx, meta, key, search);
   }
 
   /**

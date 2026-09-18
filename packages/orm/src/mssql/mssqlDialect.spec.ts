@@ -208,6 +208,25 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     );
   }
 
+  override shouldQualify$textColumnsUnderAJoin() {
+    this.shouldFind$text();
+  }
+
+  override shouldProject$textRelevance() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, Item, {
+          $where: { $text: { $fields: { name: true }, $value: 'a' } },
+          $sort: { $text: { $project: 'score' } },
+        }),
+      ),
+    ).toThrow('does not support $text');
+  }
+
+  override shouldRefuseToProject$textRelevanceOverAField() {
+    this.shouldProject$textRelevance();
+  }
+
   override shouldSortBy$textRelevance() {
     expect(() =>
       this.exec((ctx) =>

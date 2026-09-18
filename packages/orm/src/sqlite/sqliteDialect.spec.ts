@@ -167,8 +167,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       @Field({ type: String }) description?: string | null;
     }
     const { sql, values } = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
-    expect(sql).toBe(' WHERE `Listing` MATCH {`name` `description`} : ?');
-    expect(values).toEqual(['lamp']);
+    expect(sql).toBe(' WHERE `Listing` MATCH ?');
+    expect(values).toEqual(['{"name" "description"} : ("lamp")']);
   }
 
   /** SQLite has no `DEFAULT` in a multi-row `VALUES`, so a row missing a column writes its declared default. */
@@ -198,6 +198,19 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['1']);
   }
 
+  /** BM25 reads the match, so the rank binds nothing of its own. */
+  protected override projectedTextRelevance(): { sql: string; values: unknown[] } {
+    return {
+      sql: 'SELECT `id`, -BM25(`Item`) `score` FROM `Item` WHERE `Item` MATCH ? ORDER BY `score` DESC',
+      values: ['{"name"} : ("lamp")'],
+    };
+  }
+
+  /** FTS5 matches the table, which under a join is read by its name, as the join qualifies every column. */
+  protected override qualifiedTextSearchSql(): string {
+    return 'SELECT `Item`.`id`, `tax`.`id` `tax.id`, `tax`.`name` `tax.name` FROM `Item` LEFT JOIN `Tax` `tax` ON `tax`.`id` = `Item`.`taxId` WHERE `Item` MATCH ? ORDER BY -BM25(`Item`) DESC';
+  }
+
   /** FTS5's `bm25` is lower for a better match, so it is negated to rank the way every other engine does. */
   override shouldSortBy$textRelevance() {
     const res = this.exec((ctx) =>
@@ -207,8 +220,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $sort: { $text: 'desc', name: 'asc' },
       }),
     );
-    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `Item` MATCH {`name`} : ? ORDER BY -BM25(`Item`) DESC, `name`');
-    expect(res.values).toEqual(['lamp']);
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `Item` MATCH ? ORDER BY -BM25(`Item`) DESC, `name`');
+    expect(res.values).toEqual(['{"name"} : ("lamp")']);
   }
 
   override shouldFind$text() {
@@ -219,10 +232,8 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $limit: 30,
       }),
     );
-    expect(res.sql).toBe(
-      'SELECT `id` FROM `Item` WHERE `Item` MATCH {`name` `description`} : ? AND `companyId` = ? LIMIT 30',
-    );
-    expect(res.values).toEqual(['some text', '1']);
+    expect(res.sql).toBe('SELECT `id` FROM `Item` WHERE `Item` MATCH ? AND `companyId` = ? LIMIT 30');
+    expect(res.values).toEqual(['{"name" "description"} : ("some" "text")', '1']);
 
     res = this.exec((ctx) =>
       this.dialect.find(ctx, User, {
@@ -236,9 +247,9 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `User` MATCH {`name`} : ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
+      'SELECT `id` FROM `User` WHERE `User` MATCH ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
     );
-    expect(res.values).toEqual(['something', 'other unwanted', '1']);
+    expect(res.values).toEqual(['{"name"} : ("something")', 'other unwanted', '1']);
   }
 
   shouldHandleBoolean() {

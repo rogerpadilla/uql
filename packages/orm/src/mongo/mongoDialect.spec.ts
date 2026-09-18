@@ -1590,6 +1590,16 @@ class MongoDialectSpec implements Spec {
   }
 
   /**
+   * A search's `$config` is the language MongoDB parses it in, `'simple'` being its `'none'`.
+   */
+  shouldSearchInTheLanguage$configNames() {
+    const where = (config: string) =>
+      this.dialect.where(Item, { $text: { $fields: { name: true }, $value: 'lamps', $config: config } });
+    expect(where('spanish')).toMatchObject({ $text: { $search: 'lamps', $language: 'spanish' } });
+    expect(where('simple')).toMatchObject({ $text: { $search: 'lamps', $language: 'none' } });
+  }
+
+  /**
    * MongoDB's `$text` takes only the search string: its text index declares the fields it covers, so
    * `$fields` cannot narrow it.
    */
@@ -1823,13 +1833,34 @@ class MongoDialectSpec implements Spec {
   }
 
   /** `textScore` is what `$sort: { $text }` ranks by, and MongoDB orders by it only most relevant first. */
+  /**
+   * `textScore` becomes a field, which sorts either way where a `$meta` sort only descends: under the name
+   * `$project` gives it, or under a temporary one taken back out.
+   */
   shouldSortBy$textRelevance() {
-    expect(
+    const pipeline = this.dialect.aggregationPipeline(Item, {
+      $where: { $text: { $value: 'lamp' } },
+      $sort: { $text: 'asc', name: 1 },
+    });
+    expect(pipeline).toContainEqual({ $addFields: { [TEXT_SCORE_ALIAS]: { $meta: 'textScore' } } });
+    expect(pipeline).toContainEqual({ $sort: { [TEXT_SCORE_ALIAS]: 1, name: 1 } });
+    expect(pipeline.at(-1)).toEqual({ $unset: [TEXT_SCORE_ALIAS] });
+  }
+
+  shouldProject$textRelevance() {
+    const pipeline = this.dialect.aggregationPipeline(Item, {
+      $where: { $text: { $value: 'lamp' } },
+      $sort: { $text: { $project: 'score' } },
+    });
+    expect(pipeline).toContainEqual({ $addFields: { score: { $meta: 'textScore' } } });
+    expect(pipeline).toContainEqual({ $sort: { score: -1 } });
+    expect(pipeline).not.toContainEqual({ $unset: ['score'] });
+    expect(() =>
       this.dialect.aggregationPipeline(Item, {
         $where: { $text: { $value: 'lamp' } },
-        $sort: { $text: 'desc', name: 1 },
+        $sort: { $text: { $project: 'name' } },
       }),
-    ).toContainEqual({ $sort: { [TEXT_SCORE_ALIAS]: { $meta: 'textScore' }, name: 1 } });
+    ).toThrow("$project 'name' collides with a field of 'Item'");
   }
 
   shouldRefuseToSortBy$textWithoutARootSearch() {

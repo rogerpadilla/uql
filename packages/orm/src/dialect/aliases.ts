@@ -32,7 +32,7 @@ export const JSON_ELEM_ALIAS = '_uql_elem';
 /** The alias a `$pull` reads its surviving elements through, kept distinct from {@link JSON_ELEM_ALIAS}. */
 export const JSON_PULL_ALIAS = '_uql_pull';
 
-/** The key a MongoDB `$sort` by `$text` orders `textScore` under, which names no field of the document. */
+/** The field a MongoDB `$sort` by `$text` reads `textScore` from where it projects none, taken back out after. */
 export const TEXT_SCORE_ALIAS = '_uql_text_score';
 
 /** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */

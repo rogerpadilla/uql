@@ -1,13 +1,14 @@
 import type { IndexColumnSchema } from '../type/index.js';
 import { isVectorIndexType } from '../type/vector.js';
+import { fulltextConfig } from '../util/dialect.util.js';
 import type { IndexNode } from './types.js';
 
 /**
  * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
  * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it.
- * `textWeights` is a text index's weights, kept by an engine that lists its fields in no declared order.
+ * `textIndex` is a text index's weights and language, kept by an engine that lists its fields in no declared order.
  */
-export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector' | 'textWeights';
+export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector' | 'textIndex';
 
 /**
  * Whether the table has this index already, by shape rather than name, uniqueness included. An index
@@ -68,6 +69,13 @@ export function describeIndexDifferences(
     }
   }
 
+  if (facets.has('textIndex') && source.type === 'fulltext' && target.type === 'fulltext') {
+    const [expected, actual] = [fulltextConfig(source), fulltextConfig(target)];
+    if (expected !== actual) {
+      differences.push(`config: ${actual} -> ${expected}`);
+    }
+  }
+
   if (source.unique !== target.unique) {
     differences.push(`unique: ${target.unique} -> ${source.unique}`);
   }
@@ -96,7 +104,7 @@ export function describeIndexDifferences(
 
 /** A text index's fields as a set where the engine keeps its weights: MongoDB lists them alphabetically. */
 function textFieldOrder(index: Pick<IndexNode, 'type'>, facets: ReadonlySet<IndexFacet>, entries: string[]): string[] {
-  return facets.has('textWeights') && index.type === 'fulltext' ? entries.toSorted() : entries;
+  return facets.has('textIndex') && index.type === 'fulltext' ? entries.toSorted() : entries;
 }
 
 function entrySignature(entry: IndexColumnSchema, facets: ReadonlySet<IndexFacet>): string {
@@ -112,7 +120,7 @@ function entrySignature(entry: IndexColumnSchema, facets: ReadonlySet<IndexFacet
   if (facets.has('opsClass') && entry.opsClass) {
     parts.push(entry.opsClass);
   }
-  if (facets.has('textWeights') && (entry.weight ?? 1) !== 1) {
+  if (facets.has('textIndex') && (entry.weight ?? 1) !== 1) {
     parts.push(`weight ${entry.weight}`);
   }
   return parts.join(' ');

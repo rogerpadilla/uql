@@ -89,6 +89,7 @@ import {
   rankedTextSearch,
   targetKeyColumns,
   textSearchFields,
+  textSortOf,
   textWeightSteps,
   type ParsedGroupEntry,
   parseGroupMap,
@@ -127,6 +128,7 @@ import {
   NO_JOINS,
   type QueryJoins,
   type QuerySortOptions,
+  aggregateColumnField,
   resolveGroupJoins,
   resolveQueryJoins,
   resolveSortableJoin,
@@ -529,9 +531,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected appendTextSearch<E>(
     _ctx: QueryContext,
-    _entity: Type<E>,
     _meta: EntityMeta<E>,
     _search: QueryTextSearchOptions<E>,
+    _prefix: string | undefined,
   ): void {
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
@@ -541,21 +543,26 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * weighs its columns, a match counts its column's weight, as MongoDB's `textScore` counts it: the score
    * over every column times the lightest weight, plus each heavier column's own times what it weighs more.
    */
-  private appendTextRank<E>(ctx: QueryContext, meta: EntityMeta<E>, search: QueryTextSearchOptions<E>): void {
+  private appendTextRank<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    search: QueryTextSearchOptions<E>,
+    prefix: string | undefined,
+  ): void {
     const keys = textSearchFields(meta, search);
     const index = fulltextIndexOver(meta, keys);
     const weights = index && fulltextWeights({ type: index.type, entries: index.columns });
     if (!weights) {
-      this.appendTextScore(ctx, meta, search, keys);
+      this.appendTextScore(ctx, meta, search, keys, prefix);
       return;
     }
     const { lightest, extra } = textWeightSteps(weights);
     ctx.append(`(${lightest} * `);
-    this.appendTextScore(ctx, meta, search, keys);
+    this.appendTextScore(ctx, meta, search, keys, prefix);
     keys.forEach((key, at) => {
       if (extra[at]) {
         ctx.append(` + ${extra[at]} * `);
-        this.appendTextScore(ctx, meta, search, [key]);
+        this.appendTextScore(ctx, meta, search, [key], prefix);
       }
     });
     ctx.append(')');
@@ -570,13 +577,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     _meta: EntityMeta<E>,
     _search: QueryTextSearchOptions<E>,
     _keys: readonly string[],
+    _prefix: string | undefined,
   ): void {
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 
+  /** The columns a `$text` over `keys` reads, qualified by `prefix` where the statement joins, as any column is. */
+  protected textColumns<E>(meta: EntityMeta<E>, keys: readonly string[], prefix: string | undefined): string[] {
+    return keys.map((key) => this.columnWithPrefix(key, meta.fields[key as FieldKey<E>], prefix));
+  }
+
   /** Ranks by the root `$text` of `where`, which is looked up only once a `$sort` asks for it. */
-  private textRanker<E>(meta: EntityMeta<E>, where: QueryWhere<E> | undefined): QueryBuildFn {
-    return (ctx) => this.appendTextRank(ctx, meta, rankedTextSearch(where));
+  private textRanker<E>(
+    meta: EntityMeta<E>,
+    where: QueryWhere<E> | undefined,
+    prefix: string | undefined,
+  ): QueryBuildFn {
+    return (ctx) => this.appendTextRank(ctx, meta, rankedTextSearch(where), prefix);
   }
 
   select<E>(
@@ -624,7 +641,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ...this.selectJoinedRows(ctx, joins, opts.json, distinct),
       ...this.selectToManyRelations(ctx, meta, q.$populate, parent, distinct),
       ...this.selectRelationCounts(ctx, meta, q.$count, parent),
-      ...this.selectVectorProjections(ctx, meta, q),
+      ...this.selectSortProjections(ctx, meta, q, opts.prefix),
     ];
   }
 
@@ -633,18 +650,31 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return bare || key === undefined ? sql : `${sql} ${this.escapeId(key, true)}`;
   }
 
-  /** The distance each vector `$sort` projects, under the name it asked for. */
-  private selectVectorProjections<E>(ctx: QueryContext, meta: EntityMeta<E>, q: Query<E>): SelectTerm[] {
-    return Object.entries(q.$sort ?? {}).flatMap(([key, value]) =>
+  /** What a `$sort` projects, each under the name it asked for: a vector's distance, the `$text` relevance. */
+  private selectSortProjections<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    q: Query<E>,
+    prefix: string | undefined,
+  ): SelectTerm[] {
+    const distances = Object.entries(q.$sort ?? {}).flatMap(([key, value]) =>
       isVectorSearch(value) && value.$project
         ? [
-            {
-              sql: this.buildFragment(ctx, (fragmentCtx) => this.appendVectorProjection(fragmentCtx, meta, key, value)),
-              key: value.$project,
-            },
+            this.sortProjection(ctx, meta, value.$project, (fragmentCtx) =>
+              this.appendVectorDistance(fragmentCtx, meta, key, value),
+            ),
           ]
         : [],
     );
+    const score = textSortOf(q.$sort)?.project;
+    return score
+      ? [...distances, this.sortProjection(ctx, meta, score, this.textRanker(meta, q.$where, prefix))]
+      : distances;
+  }
+
+  private sortProjection<E>(ctx: QueryContext, meta: EntityMeta<E>, alias: string, build: QueryBuildFn): SelectTerm {
+    this.assertProjectable(meta, alias);
+    return { sql: this.buildFragment(ctx, build), key: alias };
   }
 
   /**
@@ -821,7 +851,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     if (key === '$text') {
-      this.appendTextSearch(ctx, entity, meta, val as QueryTextSearchOptions<E>);
+      this.appendTextSearch(ctx, meta, val as QueryTextSearchOptions<E>, opts.prefix);
       return;
     }
 
@@ -1289,7 +1319,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const vectors: SortTerm[] = [];
     const columns: SortTerm[] = [];
-    const walk = { ...opts, distinct: q.$distinct, rankText: this.textRanker(meta, q.$where) };
+    const walk = { ...opts, distinct: q.$distinct, rankText: this.textRanker(meta, q.$where, opts.prefix) };
     this.collectSortTerms(ctx, meta, q.$sort, walk, vectors, columns);
     return [...vectors, ...columns];
   }
@@ -1318,8 +1348,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         if (path) {
           throw new TypeError(`$sort by $text is only supported on the queried entity, not on relation '${path}'`);
         }
-        const expr = this.buildFragment(ctx, opts.rankText);
-        columns.push({ key, expr, direction: this.resolveSortDirection(value), output: false });
+        // Where projected in the SELECT list, ordered by that alias rather than scored twice.
+        const { order, project } = textSortOf(sort)!;
+        const expr = project ? this.escapeId(project) : this.buildFragment(ctx, opts.rankText);
+        columns.push({ key, expr, direction: this.resolveSortDirection(order), output: project !== undefined });
         continue;
       }
       if (relation) {
@@ -2031,10 +2063,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const { joins } = resolveGroupJoins(meta, q);
     const decoded: HydratableField[] = [];
     for (const entry of parseGroupMap(q.$group, q.$select)) {
-      const kind =
-        entry.kind === 'fn'
-          ? this.aggregateKind(entry.op, this.fieldKind(meta, meta.fields[entry.fieldRef]))
-          : this.groupedKind(meta, joins, entry.path);
+      const source = aggregateColumnField(meta, joins, entry);
+      const kind = !source
+        ? 'number'
+        : source.join
+          ? this.fieldKind(source.join.meta, source.field)
+          : this.fieldKind(meta, source.field);
       if (kind) {
         decoded.push([entry.alias, kind]);
       }
@@ -2052,12 +2086,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   private aggregateKind(op: QueryAggregateOp, fieldKind: HydrateKind | undefined): HydrateKind | undefined {
     return op === '$count' || op === '$avg' ? 'number' : fieldKind;
-  }
-
-  /** What a grouped path decodes as: the kind of the field it reaches, through its join or on the entity. */
-  private groupedKind<E>(meta: EntityMeta<E>, joins: QueryJoins, path: readonly string[]): HydrateKind | undefined {
-    const { key, join } = groupPathField(joins, path);
-    return join ? this.fieldKind(join.meta, join.meta.fields[key]) : this.fieldKind(meta, meta.fields[key]);
   }
 
   /** What a field decodes as: its column's kind, or a relation aggregate's {@link aggregateKind} over the target's column. */

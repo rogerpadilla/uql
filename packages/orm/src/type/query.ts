@@ -151,12 +151,18 @@ export type QuerySortByCount = {
 };
 
 /**
- * Ordering by relevance to the `$text` at the root of `$where`: most relevant first, the one order every
- * engine ranks by (MongoDB's `textScore` sorts no other way).
+ * Ordering by relevance to the `$text` at the root of `$where`, in either direction as any key sorts. The
+ * object form also answers it under the name `$project` gives it, most relevant first unless `$order` says.
  */
 export type QuerySortByText = {
-  $text?: -1 | 'desc';
+  $text?: QuerySortDirection | { readonly $project: string; readonly $order?: QuerySortDirection };
 };
+
+/**
+ * A row with the relevance a `$sort: { $text: { $project } }` names, which is not inferred:
+ * `(await querier.findMany(Post, q)) as WithScore<Post, 'score'>[]`.
+ */
+export type WithScore<E, K extends string> = E & Record<K, number>;
 
 /**
  * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or a vector distance or

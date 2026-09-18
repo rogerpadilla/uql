@@ -9,7 +9,6 @@ import {
   QueryRaw,
   type QueryTextSearchOptions,
   type SqlDialectFeatures,
-  type Type,
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
@@ -167,11 +166,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    */
   protected override appendTextSearch<E>(
     ctx: QueryContext,
-    _entity: Type<E>,
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    prefix: string | undefined,
   ): void {
-    const { document, query } = this.textSearchParts(meta, search);
+    const { document, query } = this.textSearchParts(meta, search, prefix);
     ctx.append(`${document} @@ ${query}`);
     ctx.addValue(search.$value);
     ctx.append(')');
@@ -183,8 +182,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
     keys: readonly string[],
+    prefix: string | undefined,
   ): void {
-    const { document, query } = this.textSearchParts(meta, search, keys);
+    const { document, query } = this.textSearchParts(meta, search, prefix, keys);
     ctx.append(`TS_RANK(${document}, ${query}`);
     ctx.addValue(search.$value);
     ctx.append('))');
@@ -197,14 +197,14 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   private textSearchParts<E>(
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    prefix: string | undefined,
     keys?: readonly string[],
   ): { document: string; query: string } {
     const fields = textSearchFields(meta, search);
     const index = fulltextIndexOver(meta, fields);
     const config = search.$config ?? (index && fulltextConfig(index));
-    const columns = (keys ?? fields).map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
     return {
-      document: this.textSearchTarget(columns, config),
+      document: this.textSearchTarget(this.textColumns(meta, keys ?? fields, prefix), config),
       query: `${this.textQueryFn}(${this.textConfigArg(config)}`,
     };
   }

@@ -10,6 +10,7 @@ import {
   mongoUri,
   Profile,
   TaxCategory,
+  TypedRow,
   User,
   uuidPattern,
 } from '../test/index.js';
@@ -45,6 +46,40 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   override async dropTables() {
     await this.querier.conn.db().dropDatabase();
+  }
+
+  /**
+   * A wide integer stays exact, as every SQL driver keeps it: a `BigInt` field reads back as one, `$inc`
+   * included, and a number past 2^53 in any other field as its exact text rather than a rounded number.
+   */
+  async shouldKeepAWideIntegerExact() {
+    const id = await this.querier.insertOne(TypedRow, { id: 1, name: 'wide', wide: 9007199254740993n });
+    await this.querier.updateOneById(TypedRow, id, { wide: { $inc: 1n } });
+    const raw = this.querier.conn.db().collection<{ _id: number; count?: bigint }>('TypedRow');
+    await raw.updateOne({ _id: 1 }, { $set: { count: 9007199254740993n } });
+
+    const found = await this.querier.findOneById(TypedRow, id, { $select: { wide: true, count: true } });
+
+    expect(found?.wide).toBe(9007199254740994n);
+    expect(found?.count).toBe('9007199254740993');
+  }
+
+  /** An aggregate decodes as a document does: a total over a `BigInt` field a `bigint`, over any other the number it is. */
+  async shouldTotalAWideIntegerAsItsField() {
+    const raw = this.querier.conn
+      .db()
+      .collection<{ _id: number; name: string; count: bigint; wide: bigint }>('TypedRow');
+    await raw.insertMany([
+      { _id: 1, name: 'a', count: 5n, wide: 9007199254740993n },
+      { _id: 2, name: 'a', count: 2n, wide: 1n },
+    ]);
+
+    const rows = await this.querier.aggregate(TypedRow, {
+      $group: { name: true },
+      $select: { total: { $sum: { count: true } }, wideTotal: { $sum: { wide: true } } },
+    });
+
+    expect(rows).toEqual([{ name: 'a', total: 7, wideTotal: 9007199254740994n }]);
   }
 
   /** A raw projection is SQL, which MongoDB refuses before it could count anything beside one. */
