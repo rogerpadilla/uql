@@ -545,6 +545,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([-2, 123, '1']);
   }
 
+  /** Their order would change the result, so a field takes one; an untyped payload naming both is refused, not halved. */
+  shouldRefuseTwoUpdateOperatorsOnOneField() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: 1, $mul: 2 } as never }),
+      ),
+    ).toThrow("'salePrice' takes one of $inc and $mul");
+  }
+
   shouldUpdateWithMultiply() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>

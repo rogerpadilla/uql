@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { VectorItem } from '../test/index.js';
-import type { WithDistance } from '../type/index.js';
+import type { WithProjection } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
 /**
@@ -53,7 +53,7 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     const results = (await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $project: 'distance' } },
-    })) as WithDistance<VectorItem, 'distance'>[];
+    })) as WithProjection<VectorItem, 'distance'>[];
 
     expect(results).toHaveLength(2);
     expect(results[0].name).toBe('close');
@@ -128,7 +128,7 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
       $where: { name: { $startsWith: 'keep' }, vec: { $near: { $vector: [1, 0, 0], $lt: 0.5 } } },
       $sort: { vec: { $vector: [1, 0, 0], $project: 'score' } },
       $limit: 10,
-    })) as WithDistance<VectorItem, 'score'>[];
+    })) as WithProjection<VectorItem, 'score'>[];
 
     expect(results.map((r) => r.name)).toEqual(['keep-same', 'keep-near']);
     expect(results[0].score).toBeCloseTo(0, 5);
@@ -233,7 +233,7 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     const results = (await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $distance: 'l2', $project: 'distance' } },
-    })) as WithDistance<VectorItem, 'distance'>[];
+    })) as WithProjection<VectorItem, 'distance'>[];
 
     expect(results[0].name).toBe('near');
     expect(results[0].distance).toBeCloseTo(0, 5);

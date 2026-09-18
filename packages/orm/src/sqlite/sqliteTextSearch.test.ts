@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
-import type { WithScore } from '../type/index.js';
+import type { WithProjection } from '../type/index.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 /** An FTS5 table, which SQLite's `$text` searches: UQL does not create one, so it is made here by hand. */
@@ -21,7 +21,7 @@ describe('SQLite text search', () => {
         $where: { $text: { $fields: { title: true, bodyText: true }, $value } },
         $sort: { $text: { $project: 'score' } },
       }),
-    ) as Promise<WithScore<FtsDoc, 'score'>[]>;
+    ) as Promise<WithProjection<FtsDoc, 'score'>[]>;
 
   beforeAll(async () => {
     await pool.withQuerier(async (querier) => {

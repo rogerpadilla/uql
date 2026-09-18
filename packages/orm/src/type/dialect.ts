@@ -1,6 +1,7 @@
 import type { EntityMeta, UpdatePayload } from './entity.js';
 import type { Query, QueryConflictPaths, QueryOptions, QueryPage, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
+import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
 
 /**
@@ -281,20 +282,34 @@ export interface SqlQueryDialect {
  */
 export type RelationAggregateOp = QueryAggregateOp;
 
+/**
+ * One aggregate as every renderer reads it: its op, the field it reads - none counts the rows - and the
+ * rows it reads, where not all of them. A statement's `$select` entry and a relation aggregate are each
+ * this, beside what names the rows they aggregate over.
+ */
+export type AggregateCall<E = object> = {
+  readonly op: QueryAggregateOp;
+  readonly field?: string;
+  readonly where?: QueryWhere<E>;
+};
+
 /** What a relation aggregate reads: how many rows, or one of the target's columns. */
 export type RelationAggregateProjection =
   | { readonly op: '$count'; readonly field?: never }
   | { readonly op: Exclude<RelationAggregateOp, '$count'>; readonly field: string };
 
-/** A relation aggregate as a `computed` field holds it: what it reads, off which relation, filtered how. */
-export type RelationAggregateSpec = RelationAggregateProjection & {
-  readonly relation: string;
-  /** Which of the related rows it reads, and the page it caps them to, as the field declared them. */
-  readonly query?: RelationSubqueryQuery;
-};
+/**
+ * A relation aggregate as a `computed` field holds it: an {@link AggregateCall} over the rows of the
+ * relation it names, capped where it declared a page.
+ */
+export type RelationAggregateSpec = RelationAggregateProjection &
+  Pick<AggregateCall, 'where'> & {
+    readonly relation: string;
+    readonly page?: RelationAggregatePage;
+  };
 
-/** The rows a relation subquery reads: which ones, in what order, and the page capping them. */
-export type RelationSubqueryQuery = Pick<RelationQuery, '$where' | '$sort' | '$limit' | '$skip'>;
+/** The page of a relation's rows an aggregate reads, and the order picking them. */
+export type RelationAggregatePage = Pick<RelationQuery, '$sort' | '$limit' | '$skip'>;
 
 /**
  * Supported SQL dialect identifiers.

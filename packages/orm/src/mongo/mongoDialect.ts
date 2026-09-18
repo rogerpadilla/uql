@@ -810,10 +810,10 @@ export class MongoDialect extends AbstractDialect {
     field: string,
   ): MongoAggregationPipelineEntry<Document>[] {
     const relOpts = relationOf(meta, spec.relation as RelationKey<E>);
-    const query = spec.query ?? {};
+    const page = spec.page ?? {};
     const tail = [
-      ...(query.$sort ? [{ $sort: this.sort(relOpts.entity(), query) }] : []),
-      ...this.pagerStages(query),
+      ...(page.$sort ? [{ $sort: this.sort(relOpts.entity(), page) }] : []),
+      ...this.pagerStages(page),
       spec.field
         ? {
             $group: {
@@ -824,7 +824,7 @@ export class MongoDialect extends AbstractDialect {
         : { $count: AGGREGATE_VALUE_ALIAS },
     ];
     return [
-      this.relationLookup(meta, relOpts, query.$where ?? {}, temp, tail),
+      this.relationLookup(meta, relOpts, spec.where ?? {}, temp, tail),
       { $addFields: { [field]: this.tally(temp, spec.op) } },
     ];
   }
@@ -856,7 +856,7 @@ export class MongoDialect extends AbstractDialect {
     for (const { relKey, where } of countedRelations(meta, q.$count)) {
       const temp = `${REL_TEMP_PREFIX}count_${relKey}`;
       temps.push(temp);
-      const spec: RelationAggregateSpec = { relation: relKey, op: '$count', query: { $where: where } };
+      const spec: RelationAggregateSpec = { relation: relKey, op: '$count', where };
       stages.push(...this.aggregateStages(meta, spec, temp, `${COUNT_RESULT_KEY}.${relKey}`));
     }
     return temps.length ? [...stages, { $unset: temps }] : stages;
@@ -1281,7 +1281,7 @@ export class MongoDialect extends AbstractDialect {
     const unset = new Set<string>();
     for (const [key, value] of Object.entries(persistable)) {
       if (isFieldUpdateOp(value)) {
-        const [op, operand] = fieldUpdateOf(value);
+        const [op, operand] = fieldUpdateOf(key, value);
         arithmetic[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
         continue;
       }
@@ -1477,18 +1477,26 @@ export class MongoDialect extends AbstractDialect {
         columns[entry.alias] = `$_id.${entry.alias}`;
         continue;
       }
-      named.push(entry.fieldRef);
-      const ref = `$${this.columnOf(meta, entry.fieldRef)}`;
+      const { field } = entry;
+      if (field !== undefined) {
+        named.push(field);
+      }
       const test = entry.where && this.whereExpression(meta, entry.where, named);
       // What the accumulator reads from a row its own `$where` passes, and from one it does not.
       const read = (passed: unknown, failed: unknown) => (test ? { $cond: [test, passed, failed] } : passed);
       columns[entry.alias] = 1;
+      if (field === undefined) {
+        // COUNT(*): every row, as SQL counts one.
+        accumulators[entry.alias] = { $sum: read(1, 0) };
+        continue;
+      }
+      const ref = `$${this.columnOf(meta, field)}`;
       if (entry.distinct) {
         accumulators[entry.alias] = { $addToSet: read(ref, '$$REMOVE') };
         columns[entry.alias] = { $size: `$${entry.alias}` };
       } else if (entry.op === '$count') {
-        // COUNT(*) counts every row; COUNT(field) counts non-null values, matching SQL.
-        accumulators[entry.alias] = { $sum: entry.fieldRef === '*' ? read(1, 0) : read(MongoDialect.countOf(ref), 0) };
+        // COUNT(field) counts the non-null values, as SQL does.
+        accumulators[entry.alias] = { $sum: read(MongoDialect.countOf(ref), 0) };
       } else {
         // `$sum`, `$avg`, `$min` and `$max` are MongoDB accumulators of the same name, and skip a null.
         accumulators[entry.alias] = { [entry.op]: read(ref, null) };

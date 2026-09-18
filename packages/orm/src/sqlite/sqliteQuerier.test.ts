@@ -4,7 +4,7 @@ import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
 import type { AbstractSqlQuerierPool } from '../querier/index.js';
 import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
 import { createSpec, VectorItem } from '../test/index.js';
-import type { WithDistance } from '../type/index.js';
+import type { WithProjection } from '../type/index.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 import type { SqliteQuerier } from './sqliteQuerier.js';
 import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
@@ -47,7 +47,7 @@ export class Sqlite3QuerierIt extends VectorQuerierIt {
     const results = (await this.querier.findMany(VectorItem, {
       $select: { name: true },
       $sort: { vec: { $vector: [1, 0, 0], $distance: 'l1', $project: 'distance' } },
-    })) as WithDistance<VectorItem, 'distance'>[];
+    })) as WithProjection<VectorItem, 'distance'>[];
 
     expect(results.map((r) => r.name)).toEqual(['near', 'far']);
     expect(results[1].distance).toBeCloseTo(2, 5); // |1-0| + |0-1| = 2

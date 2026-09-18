@@ -239,8 +239,8 @@ it('should parse group keys and aggregate functions', () => {
   const entries = parseGroupMap(group, agg);
   expect(entries).toEqual([
     { kind: 'key', alias: 'code', path: ['code'] },
-    { kind: 'fn', alias: 'count', op: '$count', fieldRef: '*', distinct: false },
-    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice', distinct: false },
+    { kind: 'fn', alias: 'count', op: '$count', distinct: false },
+    { kind: 'fn', alias: 'total', op: '$sum', field: 'salePrice', distinct: false },
   ]);
 });
 
@@ -251,8 +251,8 @@ it('should parse a group key reaching through relations, and an aggregate filter
   );
   expect(entries).toEqual([
     { kind: 'key', alias: 'taxName', path: ['tax', 'name'] },
-    { kind: 'fn', alias: 'total', op: '$sum', fieldRef: 'salePrice', distinct: false, where: { code: 'a' } },
-    { kind: 'fn', alias: 'all', op: '$count', fieldRef: '*', distinct: false },
+    { kind: 'fn', alias: 'total', op: '$sum', field: 'salePrice', distinct: false, where: { code: 'a' } },
+    { kind: 'fn', alias: 'all', op: '$count', distinct: false },
   ]);
 });
 
@@ -281,7 +281,19 @@ it('should reject a group path naming no field, or two', () => {
 it('should normalize a flat distinct function to its base', () => {
   const agg: QueryAggMap<Item> = { codes: { $countDistinct: { code: true } } };
   const entries = parseGroupMap(undefined, agg);
-  expect(entries).toEqual([{ kind: 'fn', alias: 'codes', op: '$count', fieldRef: 'code', distinct: true }]);
+  expect(entries).toEqual([{ kind: 'fn', alias: 'codes', op: '$count', field: 'code', distinct: true }]);
+});
+
+/** Wire input, past the types: `'*'` counts rows, which no other op can read, `SUM(*)` failing on every engine. */
+it("should reject '*' on an op that reads a field", () => {
+  // @ts-expect-error: only $count takes '*'
+  expect(() => parseGroupMap(undefined, { total: { $sum: '*' } })).toThrow(
+    "aggregate 'total' takes '*' only as a $count",
+  );
+  // @ts-expect-error: a distinct count reads the field it deduplicates
+  expect(() => parseGroupMap(undefined, { codes: { $countDistinct: '*' } })).toThrow(
+    "aggregate 'codes' takes '*' only as a $count",
+  );
 });
 
 /** Wire input, past the types: an aggregate reads one field named as a key, or `'*'`, and nothing else. */

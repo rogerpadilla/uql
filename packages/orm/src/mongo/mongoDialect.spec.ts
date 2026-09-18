@@ -1832,7 +1832,13 @@ class MongoDialectSpec implements Spec {
     ]);
   }
 
-  /** `textScore` is what `$sort: { $text }` ranks by, and MongoDB orders by it only most relevant first. */
+  /** Their order would change the result, so a field takes one; an untyped payload naming both is refused, not halved. */
+  shouldRefuseTwoUpdateOperatorsOnOneField() {
+    expect(() => this.dialect.getUpdateFilter({ salePrice: { $inc: 1, $mul: 2 } as never })).toThrow(
+      "'salePrice' takes one of $inc and $mul",
+    );
+  }
+
   /**
    * `textScore` becomes a field, which sorts either way where a `$meta` sort only descends: under the name
    * `$project` gives it, or under a temporary one taken back out.

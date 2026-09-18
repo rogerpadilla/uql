@@ -140,9 +140,9 @@ export function aggregateColumnField<E>(
   entry: ParsedGroupEntry<E>,
 ): { readonly field: FieldMeta | undefined; readonly join?: QueryJoin } | undefined {
   if (entry.kind === 'fn') {
-    return entry.op === '$count' || entry.op === '$avg'
+    return entry.op === '$count' || entry.op === '$avg' || entry.field === undefined
       ? undefined
-      : { field: meta.fields[entry.fieldRef as FieldKey<E>] };
+      : { field: meta.fields[entry.field as FieldKey<E>] };
   }
   const { key, join } = groupPathField(joins, entry.path);
   return join ? { field: join.meta.fields[key], join } : { field: meta.fields[key as FieldKey<E>] };

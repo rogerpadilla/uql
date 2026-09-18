@@ -10,7 +10,7 @@ import {
   type MigratorDialect,
   type Querier,
   type QuerierPool,
-  type WithScore,
+  type WithProjection,
 } from '../type/index.js';
 
 const TABLE = 'text_search_doc';
@@ -107,7 +107,7 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
           $where: { $text: { $value: 'kestrel' } },
           $sort: { $text: { $project: 'score' } },
         }),
-      )) as WithScore<TextDoc, 'score'>[];
+      )) as WithProjection<TextDoc, 'score'>[];
       expect(found.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
       expect(found[0].score).toBeGreaterThan(found[1].score);
     });
@@ -120,7 +120,7 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
       );
       const projected = (await pool.withQuerier((querier) =>
         querier.findMany(TextDoc, { ...search, $sort: { $text: { $project: 'score', $order: 'asc' } } }),
-      )) as WithScore<TextDoc, 'score'>[];
+      )) as WithProjection<TextDoc, 'score'>[];
       expect(plain.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);
       expect(plain[0]).not.toHaveProperty(TEXT_SCORE_ALIAS);
       expect(projected.map((doc) => doc.title)).toEqual(['finch', 'kestrel']);

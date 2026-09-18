@@ -39,7 +39,7 @@ function vectorDecoder(cast: VectorCast): Decoder {
 
 const denseVector = vectorDecoder('vector');
 
-/** A vector bound as bytes: packed float32s as a driver returns them, else hex or text, as JSON or an older row carries it. */
+/** A vector bound as bytes: packed float32s as a driver returns them, else the hex that crossed JSON. */
 const float32Decoder: Decoder = (value) => {
   if (value instanceof ArrayBuffer) {
     return decodeFloat32s(new Uint8Array(value));

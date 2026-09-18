@@ -1,5 +1,6 @@
 import { fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import {
+  type AggregateCall,
   type ColumnFamily,
   COUNT_RESULT_KEY,
   type EntityData,
@@ -51,7 +52,6 @@ import {
   type RelationAggregateOp,
   type RelationAggregateProjection,
   type RelationAggregateSpec,
-  type RelationSubqueryQuery,
   type RelationMeta,
   type RelationQuery,
   type SqlDialectName,
@@ -279,11 +279,8 @@ function inOperands(op: string, value: unknown): unknown[] {
  */
 type RelationSubqueryProjection = { readonly op: 'exists'; readonly field?: never } | RelationAggregateProjection;
 
-/**
- * One relation subquery as its caller states it: what to select, which rows to read, and the page to
- * cap them to - the shape a {@link RelationAggregateSpec} already has, minus the relation it names.
- */
-type RelationSubqueryRead = RelationSubqueryProjection & { readonly query?: RelationSubqueryQuery };
+/** One relation subquery as its caller states it: what to select, and which of the rows to read. */
+type RelationSubqueryRead = RelationSubqueryProjection & Pick<AggregateCall, 'where'>;
 
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
@@ -1636,7 +1633,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ? this.aggregateOperand(ctx, join.entity, key, join.alias)
         : this.aggregateOperand(ctx, entity, key, prefix);
     }
-    const arg = entry.fieldRef === '*' ? undefined : this.aggregateOperand(ctx, entity, entry.fieldRef, prefix);
+    const arg = entry.field === undefined ? undefined : this.aggregateOperand(ctx, entity, entry.field, prefix);
     const { where } = entry;
     const condition =
       where &&
@@ -1897,7 +1894,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       if (isJsonUpdateOp(value)) {
         this.formatJsonUpdate(ctx, escapedCol, value, field);
       } else if (isFieldUpdateOp(value)) {
-        const [op, operand] = fieldUpdateOf(value);
+        const [op, operand] = fieldUpdateOf(key, value);
         ctx.append(`${escapedCol} = COALESCE(${escapedCol}, 0) ${SQL_ARITHMETIC[op]} `);
         ctx.addValue(operand);
       } else {
@@ -2347,7 +2344,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const relatedMeta = getMeta(relatedEntity);
     const parent = opts.prefix ?? this.resolveTableAlias(meta);
     // Resolved before any SQL is emitted: it also decides whether the junction form reaches the target.
-    const targetWhere = this.scopedWhere(relatedMeta, read.query?.$where ?? {});
+    const targetWhere = this.scopedWhere(relatedMeta, read.where ?? {});
 
     if (rel.through) {
       // The rows here are the junction's own, so a column of the far side is read as a page instead.
@@ -2411,8 +2408,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(entity);
     const rel = relationOf(meta, aggregate.relation as RelationKey<E>);
     const parent = prefix || this.resolveTableAlias(meta);
-    const { $limit, $skip } = aggregate.query ?? {};
-    if ($limit === undefined && $skip === undefined) {
+    if (aggregate.page?.$limit === undefined && aggregate.page?.$skip === undefined) {
       this.appendRelationSubquery(ctx, meta, aggregate.relation, rel, { prefix: parent }, aggregate);
       return;
     }
@@ -2440,7 +2436,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const entity = rel.entity();
     const alias = ctx.claimAlias(aggregate.relation, parent);
     const correlation = raw(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
-    const { $where, ...page } = aggregate.query ?? {};
+    const { where: $where, page } = aggregate;
     // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
     const read = aggregate.field ? refs(entity)[aggregate.field as FieldKey<object>] : raw`1`;
     const query = {
@@ -2513,14 +2509,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): SelectTerm[] {
     return countedRelations(meta, count).map(({ relKey, relation, where }) => {
       const sql = this.buildFragment(ctx, (fragmentCtx) =>
-        this.appendRelationSubquery(
-          fragmentCtx,
-          meta,
-          relKey,
-          relation,
-          { prefix: parent },
-          { op: '$count', query: { $where: where } },
-        ),
+        this.appendRelationSubquery(fragmentCtx, meta, relKey, relation, { prefix: parent }, { op: '$count', where }),
       );
       return { sql, key: `${COUNT_RESULT_KEY}.${relKey}` };
     });
@@ -2664,7 +2653,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QueryComparisonOptions,
   ): void {
     ctx.append('EXISTS ');
-    this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, { op: 'exists', query: { $where: val } });
+    this.appendRelationSubquery(ctx, getMeta(entity), relKey, rel, opts, { op: 'exists', where: val });
   }
 
   /** Filter by relation size: the same subquery, counting instead of testing for existence. */

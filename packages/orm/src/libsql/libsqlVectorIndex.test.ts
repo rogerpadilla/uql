@@ -112,8 +112,11 @@ describe('libSQL vector index declared over a plain one', () => {
       indexFacets: introspector.indexFacets,
     });
 
-    expect(report.drifts.map(({ type, index }) => ({ type, index }))).toEqual([
-      { type: 'index_mismatch', index: `${TABLE}__vec_idx` },
+    // The column first: libSQL builds a vector index only over a vector column, so a `TEXT` one is rebuilt
+    // as `F32_BLOB` before the index can be.
+    expect(report.drifts.map(({ type, column, index }) => ({ type, column, index }))).toEqual([
+      { type: 'type_mismatch', column: 'vec', index: undefined },
+      { type: 'index_mismatch', column: undefined, index: `${TABLE}__vec_idx` },
     ]);
   });
 });

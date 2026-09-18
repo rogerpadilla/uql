@@ -424,14 +424,12 @@ describe('canonicalType', () => {
 });
 
 describe('engineType', () => {
-  /** SQLite keeps a vector in a column of any type, so one created as `TEXT` before vectors were blobs is no drift. */
-  it('should compare a SQLite vector equal to the TEXT column older versions created', () => {
-    const stored = engineType(new SqliteDialect());
-    expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(true);
-  });
-
-  it('should keep a vector apart from text where the engine types it', () => {
-    const stored = engineType(new PostgresDialect());
-    expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(false);
-  });
+  /** A vector column is `F32_BLOB` on the SQLite family, so a `TEXT` one is drift there as everywhere. */
+  it.each([new SqliteDialect(), new PostgresDialect()])(
+    'should keep a vector apart from text on $dialectName',
+    (dialect) => {
+      const stored = engineType(dialect);
+      expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(false);
+    },
+  );
 });

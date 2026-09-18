@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.73.0] - 2026-09-18
+
+- **Breaking (types):** `WithDistance` and `WithScore` are one type, `WithProjection<E, K>`, for the row any `$sort` `$project` names.
+- **Breaking (SQLite, libSQL, Turso):** a vector column created as `TEXT` before 0.71.0 is reported as drift; recreate its table with the column as `F32_BLOB`, which libSQL's vector index needs.
+- Fixed: a field given both `$inc` and `$mul` throws, where `$mul` was silently dropped.
+
 ## [0.72.2] - 2026-09-18
 
 - `$sort: { $text }` takes either direction, and `{ $project: 'score', $order? }` also returns the relevance, typed with `WithScore<E, 'score'>`.
@@ -29,7 +35,6 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - Vectors on SQLite, libSQL, Turso and MariaDB are stored and searched as float32 bytes, much faster.
 - MongoDB migrations create the Atlas vector search index a `type: 'vectorSearch'` `@Index` declares.
 - `@Index({ type: 'fulltext' })` works on PostgreSQL and CockroachDB too, so one declaration serves `$text` everywhere; `config` names its text-search configuration.
-- An aggregate's `$where` on a relation its `$group` joins reads that join rather than a second lookup.
 - `uql-orm` ships an agent skill: `npx skills add ./node_modules/uql-orm`.
 
 ## [0.70.0] - 2026-09-18

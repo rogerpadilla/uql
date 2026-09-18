@@ -2,6 +2,7 @@ import { getContext, UqlSecurityError } from '../context/context.js';
 import { soleIdOf } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
+  type AggregateCall,
   type CascadeType,
   type EntityData,
   type EntityId,
@@ -15,7 +16,6 @@ import {
   type OnFieldCallback,
   type Query,
   type QueryAggMap,
-  type QueryAggregateOp,
   type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
@@ -338,8 +338,14 @@ export function isFieldUpdateOp(value: unknown): value is FieldUpdateOp {
   return isRecord(value) && someKey(value, (key) => FIELD_UPDATE_OPS.includes(key));
 }
 
-/** The one operator a scalar field's update carries, and its operand. */
-export function fieldUpdateOf(value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint] {
+/**
+ * The one operator a scalar field's update carries, and its operand. Naming both throws rather than
+ * reading one: their order would change the result, and an untyped payload is how both arrive.
+ */
+export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint] {
+  if (value.$inc !== undefined && value.$mul !== undefined) {
+    throw new TypeError(`'${key}' takes one of $inc and $mul`);
+  }
   return value.$inc === undefined ? ['$mul', value.$mul] : ['$inc', value.$inc];
 }
 
@@ -439,16 +445,12 @@ export type ParsedGroupEntry<E = object> =
       /** The field it reads, behind the to-one relations leading to it: `['transaction', 'orderId']`. */
       readonly path: readonly string[];
     }
-  | {
+  | (AggregateCall<E> & {
       readonly kind: 'fn';
       readonly alias: string;
-      readonly op: QueryAggregateOp;
-      readonly fieldRef: string;
       /** `true` for `$countDistinct`: `COUNT(DISTINCT field)`. */
       readonly distinct: boolean;
-      /** The rows it reads, where not all of the statement's. */
-      readonly where?: QueryWhere<E>;
-    };
+    });
 
 /**
  * The `$size` of a relation condition, `{ comments: { $size: { $gte: 2 } } }`, or `undefined` where it
@@ -506,8 +508,11 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
     }
     // `$countDistinct` normalizes to `$count` plus a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
-    const fieldRef = aggregateFieldRef(alias, call[key]);
-    entries.push({ kind: 'fn', alias, op, fieldRef, distinct, ...(hasKeys(where) ? { where } : {}) });
+    const field = aggregateField(alias, call[key]);
+    if (field === undefined && (op !== '$count' || distinct)) {
+      throw new TypeError(`aggregate '${alias}' takes '*' only as a $count`);
+    }
+    entries.push({ kind: 'fn', alias, op, distinct, ...(field && { field }), ...(hasKeys(where) ? { where } : {}) });
   }
   return entries;
 }
@@ -521,9 +526,12 @@ function groupRefPath(alias: string, ref: unknown): string[] {
   return ref[key] === true ? [key] : [key, ...groupRefPath(alias, ref[key])];
 }
 
-/** The column an aggregate reads: `'*'`, or the one field its `{ field: true }` names. */
-function aggregateFieldRef(alias: string, arg: unknown): string {
-  const [field, ...rest] = arg === '*' ? [arg] : namedKeys(arg);
+/** The field an aggregate reads, the one its `{ field: true }` names; none for `'*'`, which counts the rows. */
+function aggregateField(alias: string, arg: unknown): string | undefined {
+  if (arg === '*') {
+    return undefined;
+  }
+  const [field, ...rest] = namedKeys(arg);
   if (field === undefined || rest.length) {
     throw new TypeError(`aggregate '${alias}' takes one field as { field: true }, or '*': got ${JSON.stringify(arg)}`);
   }

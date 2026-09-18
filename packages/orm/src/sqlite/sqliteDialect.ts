@@ -211,7 +211,8 @@ export class SqliteDialect extends AbstractSqlDialect {
   protected override readonly carriedFields = {
     numeric: (expr, field) => (isIntegerColumn(field) ? `CAST(${expr} AS TEXT)` : expr),
     blob: (expr) => this.bytesAsText(expr),
-    vector: (expr) => `CASE WHEN typeof(${expr}) = 'blob' THEN ${this.bytesAsText(expr)} ELSE ${expr} END`,
+    // D1 keeps a vector as its text; every other engine here, as float32 bytes.
+    vector: (expr) => (this.features.vectorBytes ? this.bytesAsText(expr) : expr),
   } satisfies CarriedFields;
 
   private bytesAsText(expr: string): string {

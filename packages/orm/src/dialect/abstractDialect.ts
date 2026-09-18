@@ -38,12 +38,12 @@ export function dialectOptionsFrom(extra: ExtraOptions | undefined): DialectOpti
   return { namingStrategy: extra?.namingStrategy, schema: extra?.schema };
 }
 
-/**
- * Base abstract class for all database dialects (SQL and NoSQL).
- */
 /** A name a score can be projected under: what every engine takes as a key, with nothing to escape. */
 const PLAIN_NAME = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
+/**
+ * Base abstract class for all database dialects (SQL and NoSQL).
+ */
 export abstract class AbstractDialect {
   abstract readonly dialectName: DialectName;
 

@@ -103,6 +103,9 @@ const users = await pool.findMany(User, {
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
   `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
   `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
+- `$text: { $value }` in `$where` searches text on every engine with full-text search, through the entity's
+  `@Index(..., { type: 'fulltext', config })`, whose columns may carry a `weight`. `$sort: { $text: 'desc' }` ranks by
+  relevance, and `{ $text: { $project: 'score' } }` also returns it, typed with `WithProjection<E, 'score'>`.
 - A result is narrowed to what the query selected and populated: reading an unselected field is a compile error.
   Name that shape with `QueryFindResult<User, 'id' | 'email'>` rather than widening the query.
 - `$populate` loads relations in the same statement. Nothing is lazy: a relation not populated is not there.

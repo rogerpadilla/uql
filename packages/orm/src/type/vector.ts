@@ -29,12 +29,6 @@ export interface QueryVectorSearch extends QueryVectorQuery {
 }
 
 /**
- * A row with the distance a `$sort` `$project` names, which is not inferred:
- * `(await querier.findMany(Article, q)) as WithDistance<Article, 'similarity'>[]`.
- */
-export type WithDistance<E, K extends string = '_distance'> = E & Record<K, number>;
-
-/**
  * How a dialect spells a metric: an operator, or a function taking the metric by name where `metricArg`
  * says so, and `index`, how the dialect's vector index names it where it builds one. One map serves the
  * query and the index alike, so its keys say which metrics exist.

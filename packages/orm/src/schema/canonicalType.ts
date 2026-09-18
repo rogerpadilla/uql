@@ -385,14 +385,8 @@ export function canonicalToTypeScript(type: CanonicalType): string {
  * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
-  return (type) => {
-    const stored = sqlToCanonical(canonicalToSql(type, dialect));
-    // SQLite keeps a vector in any column, so one created as `TEXT` before vectors were blobs stays as it is.
-    return dialect.dialectName === 'sqlite' && isVectorCategory(stored.category) ? SQLITE_TEXT : stored;
-  };
+  return (type) => sqlToCanonical(canonicalToSql(type, dialect));
 }
-
-const SQLITE_TEXT: CanonicalType = { category: 'string', size: 'small' };
 
 /**
  * Convert UQL FieldOptions to a canonical type.

@@ -17,6 +17,7 @@ import {
   type Type,
 } from '../type/index.js';
 import { isInlinedExpression } from './field.util.js';
+import { hasKeys } from './object.util.js';
 
 /**
  * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `raw` renders
@@ -79,14 +80,20 @@ export function entityWhere<E>(where: EntityWhere<E>): EntityWhereMeta<E> {
  */
 function memberRef(relation: string): ColumnRef {
   const over = (op: Exclude<RelationAggregateOp, '$count'>) => (pick: PickedRef, q?: AggregatePage<object>) =>
-    relationAggregate({ relation, op, field: pick(memberRefs<object>()).key, ...(q && { query: q }) });
+    relationAggregate({ relation, op, field: pick(memberRefs<object>()).key, ...rowsOf(q) });
   return Object.assign(columnRef(undefined, relation), {
-    count: (q?: AggregatePage<object>) => relationAggregate({ relation, op: '$count', ...(q && { query: q }) }),
+    count: (q?: AggregatePage<object>) => relationAggregate({ relation, op: '$count', ...rowsOf(q) }),
     sum: over('$sum'),
     min: over('$min'),
     max: over('$max'),
     avg: over('$avg'),
   });
+}
+
+/** The rows an aggregate's declared query reads: its `$where`, and the page the rest of it caps them to. */
+function rowsOf(q: AggregatePage<object> | undefined): Pick<RelationAggregateSpec, 'where' | 'page'> {
+  const { $where, ...page } = q ?? {};
+  return { ...($where && { where: $where }), ...(hasKeys(page) && { page }) };
 }
 
 /** A to-many aggregate's column, named by reading it off the target's refs: `(item) => item.amount`. */

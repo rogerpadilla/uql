@@ -159,29 +159,29 @@ export type QuerySortByText = {
 };
 
 /**
- * A row with the relevance a `$sort: { $text: { $project } }` names, which is not inferred:
- * `(await querier.findMany(Post, q)) as WithScore<Post, 'score'>[]`.
+ * A row with the value a `$sort` projects under the name its `$project` gives - a vector's distance, or a
+ * `$text` relevance - which is not inferred: `(await querier.findMany(Post, q)) as WithProjection<Post, 'score'>[]`.
  */
-export type WithScore<E, K extends string> = E & Record<K, number>;
+export type WithProjection<E, K extends string> = E & Record<K, number>;
 
 /**
- * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or a vector distance or
- * `$text` relevance, which `Vector` confines to the queried entity. One mapped type over the key sets: an
- * intersection is checked once per member, which made this the costliest type to check.
+ * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or - where `Root` says it
+ * sorts the queried entity itself, not a relation's rows - a vector distance or a `$text` relevance. One
+ * mapped type over the key sets: an intersection is checked once per member, which made this the costliest.
  */
-export type QuerySortMap<E, Vector extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
+export type QuerySortMap<E, Root extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
   [P in K]?: P extends RelationKey<E>
     ? // A to-many has no single value to order by, so what it offers instead is its own size.
       IsMany<E[P]> extends true
       ? QuerySortByCount
       : QuerySortMap<RelationTarget<E[P]>, false>
-    : Vector extends true
+    : Root extends true
       ? NonNullable<E[P]> extends readonly number[]
         ? QuerySortValue
         : QuerySortDirection
       : QuerySortDirection;
 } & ([JsonFieldPaths<E>] extends [never] ? unknown : { [P in JsonFieldPaths<E>]?: QuerySortDirection }) &
-  (Vector extends true ? QuerySortByText : unknown);
+  (Root extends true ? QuerySortByText : unknown);
 
 /**
  * pager options.
