@@ -4,13 +4,12 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.72.2] - 2026-09-18
 
-- `$sort: { $text }` takes either direction, and `{ $project: 'score', $order? }` also returns the relevance under that name; annotate it with `WithScore<E, 'score'>`.
-- A fulltext index's `config` and a search's `$config` set MongoDB's language too (`'simple'` is its `'none'`).
-- Changed (MongoDB): a text index stating no `config` builds with no stemming, as on SQL; `drift:check` reports one built in another language.
-- Fixed: `$text` beside a `$populate` join qualifies its columns instead of failing on a name both tables have.
-- Fixed (SQLite): `$text` failed on every search; it now binds its FTS5 query whole and reads what a person types as words.
-- Fixed: a `$project` name colliding with a field, column, relation, `_id` or `_uql` name, or not a plain name, is refused; MongoDB overwrote the field.
-- Fixed (MongoDB): a 64-bit integer reads back exactly, in rows and aggregates: a `bigint` for a `BigInt` field, its exact text past 2^53 elsewhere, not the driver's `Long`.
+- `$sort: { $text }` takes either direction, and `{ $project: 'score', $order? }` also returns the relevance, typed with `WithScore<E, 'score'>`.
+- MongoDB reads a fulltext `config` as its language; **changed:** an index with none no longer stems, as on SQL, and `drift:check` reports one built in another language.
+- Fixed: `$text` beside a `$populate` join no longer fails on a column both tables have.
+- Fixed (SQLite): `$text` failed on every search.
+- Fixed: `$project` refuses a name that collides with a field, column, relation, `_id` or `_uql` name; MongoDB overwrote the field.
+- Fixed (MongoDB): 64-bit integers read back exactly, not as the driver's `Long`.
 
 ## [0.72.1] - 2026-09-18
 
