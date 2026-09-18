@@ -8,6 +8,18 @@ export type MongoIndexOptions = {
   readonly partialFilterExpression?: Readonly<Record<string, unknown>>;
 };
 
+/** A field of an Atlas vector search index: the vector itself, or one its `filter` pre-filters on. */
+export type MongoVectorSearchField =
+  | { readonly type: 'vector'; readonly path: string; readonly numDimensions: number; readonly similarity: string }
+  | { readonly type: 'filter'; readonly path: string };
+
+/** An Atlas search index as `createSearchIndex` takes one. */
+export type MongoSearchIndex = {
+  readonly name: string;
+  readonly type: 'vectorSearch';
+  readonly definition: { readonly fields: readonly MongoVectorSearchField[] };
+};
+
 /** The commands {@link MongoSchemaGenerator} emits as JSON, one per statement. */
 export type MongoCommand =
   | { readonly action: 'createCollection'; readonly name: string }
@@ -20,7 +32,9 @@ export type MongoCommand =
       readonly key: MongoIndexKey;
       readonly options: MongoIndexOptions;
     }
-  | { readonly action: 'dropIndex'; readonly collection: string; readonly name: string };
+  | { readonly action: 'dropIndex'; readonly collection: string; readonly name: string }
+  | { readonly action: 'createSearchIndex'; readonly collection: string; readonly index: MongoSearchIndex }
+  | { readonly action: 'dropSearchIndex'; readonly collection: string; readonly name: string };
 
 export function serializeMongoCommand(command: MongoCommand): string {
   return JSON.stringify(command);
@@ -38,6 +52,8 @@ export type MongoCommandTarget = {
     drop(): Promise<unknown>;
     createIndex(key: MongoIndexKey, options: MongoIndexOptions): Promise<unknown>;
     dropIndex(name: string): Promise<unknown>;
+    createSearchIndex(index: MongoSearchIndex): Promise<unknown>;
+    dropSearchIndex(name: string): Promise<unknown>;
   };
 };
 
@@ -67,6 +83,10 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
       return db.collection(command.collection).createIndex(command.key, command.options);
     case 'dropIndex':
       return db.collection(command.collection).dropIndex(command.name);
+    case 'createSearchIndex':
+      return db.collection(command.collection).createSearchIndex(command.index);
+    case 'dropSearchIndex':
+      return db.collection(command.collection).dropSearchIndex(command.name);
     default:
       // Unreachable for a command this module produced; a hand-written statement lands here rather
       // than being silently skipped.
@@ -89,6 +109,10 @@ export function mongoCommandSource(statement: string, db: string): string {
       return `${db}.collection(${literal(command.collection)}).createIndex(${literal(command.key)}, ${literal(command.options)})`;
     case 'dropIndex':
       return `${db}.collection(${literal(command.collection)}).dropIndex(${literal(command.name)})`;
+    case 'createSearchIndex':
+      return `${db}.collection(${literal(command.collection)}).createSearchIndex(${literal(command.index)})`;
+    case 'dropSearchIndex':
+      return `${db}.collection(${literal(command.collection)}).dropSearchIndex(${literal(command.name)})`;
     default:
       throw unsupportedMongoCommand(statement);
   }

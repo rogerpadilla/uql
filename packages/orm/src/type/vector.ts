@@ -1,3 +1,4 @@
+import type { VectorCast } from '../dialect/vectorCast.js';
 import type { IndexType } from '../schema/types.js';
 
 /**
@@ -60,6 +61,25 @@ export type VectorIndexOptions = {
   efConstruction?: number;
   /** IVFFlat: number of inverted lists. */
   lists?: number;
+};
+
+/** The metric a search or an index measures by where nothing names one: every engine with vectors has it. */
+export const DEFAULT_VECTOR_DISTANCE: VectorDistance = 'cosine';
+
+/** The metric an index is built for: its own, else {@link DEFAULT_VECTOR_DISTANCE}. */
+export function indexDistance(index: { readonly distance?: VectorDistance }): VectorDistance {
+  return index.distance ?? DEFAULT_VECTOR_DISTANCE;
+}
+
+/**
+ * What a vector index's DDL reads off the field it indexes, never declared on the index itself, so the
+ * two cannot disagree. Absent for a non-vector index, and for one whose field is unknown.
+ */
+export type IndexedVectorField = {
+  /** The field's vector type, which pgvector's operator classes are named after (`halfvec_cosine_ops`); `vector` where absent. */
+  readonly vectorType?: VectorCast;
+  /** The field's dimensions, which an Atlas vector search index states. */
+  readonly dimensions?: number;
 };
 
 /**

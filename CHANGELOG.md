@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.71.0] - 2026-09-18
+
+- **Breaking:** a `$group` path through a relation reads only rows that have one, so its column is typed as the field is; group by the foreign key to count rows pointing nowhere.
+- **Breaking (libSQL, Turso Cloud):** a vector `@Index` builds a DiskANN index, which a ranked, paged `$vector` sort reads; drift names one still built plain.
+- Vectors on SQLite, libSQL, Turso and MariaDB are stored and searched as float32 bytes, much faster.
+- MongoDB migrations create the Atlas vector search index a `type: 'vectorSearch'` `@Index` declares.
+- `@Index({ type: 'fulltext' })` works on PostgreSQL and CockroachDB too, so one declaration serves `$text` everywhere; `config` names its text-search configuration.
+- An aggregate's `$where` on a relation its `$group` joins reads that join rather than a second lookup.
+- `uql-orm` ships an agent skill: `npx @tanstack/intent install`, or `npx skills add rogerpadilla/uql`.
+
 ## [0.70.0] - 2026-09-18
 
 - **Breaking:** `deleteMany` and `updateMany` with an empty `$where` throw; pass `{ unfiltered: true }` to mean the whole table.

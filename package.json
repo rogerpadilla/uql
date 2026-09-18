@@ -35,7 +35,6 @@
     "@vitest/coverage-v8": "^5.0.1",
     "esbuild": "^0.28.2",
     "lerna": "^10.0.1",
-    "mongodb-memory-server": "11.2.0",
     "oxfmt": "^0.68.0",
     "oxlint": "^1.83.0",
     "publint": "^0.3.24",

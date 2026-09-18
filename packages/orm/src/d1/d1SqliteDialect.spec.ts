@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerier } from '../sqlite/sqliteQuerier.js';
-import { createTables, Item, ItemTag, Tag, Tax } from '../test/index.js';
+import { createTables, Item, ItemTag, Tag, Tax, VectorItem } from '../test/index.js';
 import type { Json } from '../type/index.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
 
@@ -87,5 +87,18 @@ describe('D1SqliteDialect', () => {
     expect(tag.items).toMatchObject([{ id: itemId, name: 'pen', tax: { id: taxId, name: 'VAT', percentage: 16 } }]);
     expect(await d1.findOneById(Preferences, 'p', { $select: { values: true } })).toEqual({ values: { k0: 0, k1: 1 } });
     db.close();
+  });
+});
+
+/** D1 answers a BLOB as an array of its byte values, which a read would take for the vector itself. */
+describe('D1 vectors', () => {
+  it('should write a vector as its text', () => {
+    const ctx = dialect.createContext();
+    dialect.insert(ctx, VectorItem, { vec: [1, 2, 3] });
+    expect(ctx.values).toEqual(['[1,2,3]']);
+  });
+
+  it('should read a vector back from its text', () => {
+    expect(dialect.hydratableFields(VectorItem)).toContainEqual(['vec', 'vector']);
   });
 });

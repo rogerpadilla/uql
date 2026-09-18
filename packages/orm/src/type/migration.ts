@@ -1,4 +1,3 @@
-import type { VectorCast } from '../dialect/vectorCast.js';
 import type { AnyMigrationOperation } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
@@ -8,6 +7,7 @@ import type {
   EntityWhereMeta,
   FieldOptions,
   IndexColumnSchema,
+  IndexedVectorField,
   LoggingOptions,
   Querier,
   SqlQuerier,
@@ -162,7 +162,12 @@ export interface TableSchema {
 /**
  * Represents an index in a database table
  */
-export interface IndexSchema extends VectorIndexOptions {
+export interface IndexSchema extends VectorIndexOptions, IndexedVectorField {
+  /**
+   * A `fulltext` index's text-search configuration, which `$text` parses with on the Postgres family
+   * (`'english'`); `'simple'` where unstated. Other engines take their language from elsewhere.
+   */
+  readonly config?: string;
   readonly name: string;
   /**
    * What the index is over, in order. Named `entries` and not `columns` because an entry need not be
@@ -178,12 +183,6 @@ export interface IndexSchema extends VectorIndexOptions {
   readonly where?: string;
   /** Non-key columns stored in the index (Postgres-wire `INCLUDE`). */
   readonly include?: readonly string[];
-  /**
-   * The indexed column's vector type, which pgvector's operator-class names are built from
-   * (`halfvec_cosine_ops`). Absent for a non-vector index, and for an index whose column types are
-   * unknown, where `vector` is assumed.
-   */
-  readonly vectorType?: VectorCast;
 }
 
 /**

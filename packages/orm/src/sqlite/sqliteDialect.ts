@@ -18,18 +18,23 @@ import {
   jsonRemoveCall,
   jsonSetTarget,
 } from '../dialect/jsonSql.js';
-import type {
-  EntityMeta,
-  FieldOptions,
-  QueryContext,
-  QueryPager,
-  QueryTextSearchOptions,
-  SqlDialectFeatures,
-  Type,
-  VectorDistance,
-  VectorMetric,
+import {
+  type EntityMeta,
+  type FieldOptions,
+  type Query,
+  type QueryContext,
+  type QueryPager,
+  QueryRaw,
+  type QueryTextSearchOptions,
+  type QueryWhere,
+  type SqlDialectFeatures,
+  type Type,
+  type VectorDistance,
+  type VectorMetric,
 } from '../type/index.js';
-import { textSearchFields } from '../util/dialect.util.js';
+import { indexDistance, isVectorIndexType } from '../type/vector.js';
+import { declaredIndexName } from '../util/ddlExpression.util.js';
+import { findVectorIndex, findVectorSort, textSearchFields, vectorCandidates } from '../util/dialect.util.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 
 /** What SQLite and the engines derived from it have. */
@@ -43,7 +48,8 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   generatedColumnAdd: false, // accepted in a CREATE TABLE, rejected in an ALTER
   commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
-  vectorSupportsLength: false,
+  vectorSupportsLength: true,
+  vectorBytes: true,
   supportsTimestamptz: false,
   stringSizing: 'text',
   supportsUnsigned: false,
@@ -98,6 +104,42 @@ export class SqliteDialect extends AbstractSqlDialect {
     ['l2', { fn: 'vec_distance_L2' }],
     ['l1', { fn: 'vec_distance_L1' }],
   ]);
+
+  /**
+   * A read ranked by the metric its field's vector index measures, and paged, narrowed to the rowids of
+   * that index's nearest rows, which libSQL's `vector_top_k` answers: `$candidates` of them, else as many
+   * as the page reaches. Their exact distance still orders them. Unchanged on an engine with no such index.
+   */
+  protected override rankedWhere<E>(
+    meta: EntityMeta<E>,
+    q: Query<E>,
+    prefix: string | undefined,
+  ): QueryWhere<E> | undefined {
+    const ranked = findVectorSort(q.$sort);
+    const k = vectorCandidates(q) ?? (q.$limit === undefined ? undefined : (q.$skip ?? 0) + q.$limit);
+    const index = ranked && findVectorIndex(meta, ranked.key);
+    if (!ranked || !index || !isVectorIndexType(index.type) || k === undefined) {
+      return q.$where;
+    }
+    const { colName, distance, field } = this.resolveVectorDistance(meta, ranked.key, ranked.search);
+    if (indexDistance(index) !== distance || !this.vectorMetrics.get(distance)?.index) {
+      return q.$where;
+    }
+    const name = declaredIndexName(index.name, this.resolveTableName(meta), [{ column: colName }]);
+    const table = this.escapeId(prefix ?? this.resolveTableAlias(meta), true, true);
+    const nearest = new QueryRaw(({ ctx }) => {
+      ctx.append(`${table}rowid IN (SELECT id FROM vector_top_k(`);
+      ctx.addValue(name);
+      ctx.append(', ');
+      this.appendVectorValue(ctx, ranked.search.$vector, field);
+      ctx.append(', ');
+      ctx.addValue(k);
+      ctx.append('))');
+    });
+    const where: QueryWhere<E> = {};
+    where.$and = q.$where ? [q.$where, nearest] : [nearest];
+    return where;
+  }
 
   /**
    * SQLite does not support the `DEFAULT` keyword inside `VALUES`. Inline the metadata default
@@ -158,8 +200,13 @@ export class SqliteDialect extends AbstractSqlDialect {
    */
   protected override readonly carriedFields = {
     numeric: (expr, field) => (isIntegerColumn(field) ? `CAST(${expr} AS TEXT)` : expr),
-    blob: (expr) => `${this.escape(BYTES_PREFIX)} || hex(${expr})`,
+    blob: (expr) => this.bytesAsText(expr),
+    vector: (expr) => `CASE WHEN typeof(${expr}) = 'blob' THEN ${this.bytesAsText(expr)} ELSE ${expr} END`,
   } satisfies CarriedFields;
+
+  private bytesAsText(expr: string): string {
+    return `${this.escape(BYTES_PREFIX)} || hex(${expr})`;
+  }
 
   /** A date reads back as SQLite stored it, a number or text, which JSON carries unchanged. */
   protected override hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {

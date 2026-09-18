@@ -39,6 +39,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
+  vectorBytes: false,
   supportsTimestamptz: false,
   stringSizing: 'varchar',
   supportsUnsigned: false,

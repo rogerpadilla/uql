@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import type { JsonUpdateCaseName } from '../dialect/abstractSqlDialect-spec.js';
 import { MySqlFamilySpec } from '../dialect/mysqlFamilyDialect-spec.js';
+import { encodeFloat32s } from '../dialect/vectorCast.js';
 import { Company, ItemTag, MeasureUnitCategory, VectorItem } from '../test/index.js';
 import { createSpec } from '../test/spec.util.js';
 import { MariaDialect } from './mariaDialect.js';
@@ -107,15 +108,11 @@ export class MariaDialectSpec extends MySqlFamilySpec {
     expect(sql).toContain('INSERT IGNORE');
   }
 
-  /**
-   * A `VECTOR` column takes a packed float32 blob, so a bound `'[1,2,3]'` is rejected outright
-   * (`Incorrect vector value`) and reading the column raw hands back that blob. Both directions go
-   * through MariaDB's text conversions, verified against MariaDB 12.3.
-   */
-  shouldInsertVectorThroughVecFromText() {
+  /** A `VECTOR` column takes a packed float32 blob and rejects the `[1,2,3]` text outright (`Incorrect vector value`). */
+  shouldInsertVectorAsPackedBytes() {
     const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, VectorItem, { vec: [1, 2, 3] }));
-    expect(sql).toBe('INSERT INTO `VectorItem` (`vec`) VALUES (VEC_FromText(?)) RETURNING `id` `id`');
-    expect(values).toEqual(['[1,2,3]']);
+    expect(sql).toBe('INSERT INTO `VectorItem` (`vec`) VALUES (?) RETURNING `id` `id`');
+    expect(values).toEqual([encodeFloat32s([1, 2, 3])]);
   }
 
   shouldReadVectorAsItsPackedBytes() {

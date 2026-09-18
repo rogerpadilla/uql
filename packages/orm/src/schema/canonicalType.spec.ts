@@ -7,6 +7,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { type ColumnFamily, COLUMN_TYPES } from '../type/index.js';
 import {
+  engineType,
   areTypesEqual,
   canonicalToColumnType,
   canonicalToSql,
@@ -176,6 +177,11 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'vector', length: 768 }, maria)).toBe('VECTOR(768)');
       expect(canonicalToSql({ category: 'halfvec', length: 1536 }, maria)).toBe('VECTOR(1536)');
       expect(canonicalToSql({ category: 'sparsevec', length: 4000 }, maria)).toBe('VECTOR(4000)');
+    });
+
+    it('should store a SQLite vector as the packed F32_BLOB libSQL names, and read it back as one', () => {
+      expect(canonicalToSql({ category: 'vector', length: 3 }, sqlite)).toBe('F32_BLOB(3)');
+      expect(sqlToCanonical('F32_BLOB(3)')).toEqual({ category: 'vector', length: 3 });
     });
 
     it('should fall back halfvec/sparsevec to VECTOR for cockroachdb (no native HALFVEC/SPARSEVEC)', () => {
@@ -414,5 +420,18 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'integer', size: 'tiny' }, mysql)).toBe('TINYINT');
       expect(canonicalToSql({ category: 'integer', size: 'medium' }, mysql)).toBe('MEDIUMINT');
     });
+  });
+});
+
+describe('engineType', () => {
+  /** SQLite keeps a vector in a column of any type, so one created as `TEXT` before vectors were blobs is no drift. */
+  it('should compare a SQLite vector equal to the TEXT column older versions created', () => {
+    const stored = engineType(new SqliteDialect());
+    expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(true);
+  });
+
+  it('should keep a vector apart from text where the engine types it', () => {
+    const stored = engineType(new PostgresDialect());
+    expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(false);
   });
 });

@@ -229,6 +229,7 @@ export async function aTotalKeepsItsColumnsType() {
 class Owner {
   id!: number;
   name!: string;
+  nickname?: string | null;
 }
 
 class Txn {
@@ -248,8 +249,9 @@ class Entry {
 }
 
 /**
- * A group key names a to-one relation's field by the path through it, under an alias: rows stay flat,
- * and the value is `null` where the row points nowhere.
+ * A group key names a to-one relation's field by the path through it, under an alias: rows stay flat.
+ * A path joins the rows it reads, so a row pointing nowhere is in no group of it, and the value is the
+ * field's own: `null` only where the column holds one.
  */
 export async function aGroupKeyReachesThroughToOneRelations() {
   const rows = await querier.aggregate(Entry, {
@@ -257,20 +259,23 @@ export async function aGroupKeyReachesThroughToOneRelations() {
       account: true,
       orderId: { transaction: { orderId: true } },
       ownerName: { transaction: { owner: { name: true } } },
+      nickname: { transaction: { owner: { nickname: true } } },
     },
     $select: { total: { $sum: { amount: true } } },
-    $having: { orderId: { $ne: null }, total: { $gt: 0n } },
+    $having: { total: { $gt: 0n } },
     $sort: { orderId: 1, total: -1 },
   });
   const account: string = rows[0].account;
-  const orderId: string | null = rows[0].orderId;
-  const ownerName: string | null = rows[0].ownerName;
+  const orderId: string = rows[0].orderId;
+  const ownerName: string = rows[0].ownerName;
+  const nickname: string | null = rows[0].nickname;
   void account;
   void orderId;
   void ownerName;
-  // @ts-expect-error a row pointing nowhere groups under `null`
-  const orderIdNotNull: string = rows[0].orderId;
-  void orderIdNotNull;
+  void nickname;
+  // @ts-expect-error the column holds `null`, which the path reads as it is
+  const nicknameNotNull: string = rows[0].nickname;
+  void nicknameNotNull;
 
   // @ts-expect-error a to-many multiplies the rows it joins, and every total with them
   await querier.aggregate(Txn, { $group: { amount: { entries: { amount: true } } } });

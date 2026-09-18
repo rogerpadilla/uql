@@ -6,15 +6,16 @@ import type {
   Query,
   QueryContext,
   QueryVectorSearch,
+  QueryWhere,
   SqlDialectFeatures,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
-import { unsupportedVectorMetric } from '../type/vector.js';
-import { findVectorIndex, findVectorSort } from '../util/dialect.util.js';
+import { DEFAULT_VECTOR_DISTANCE, unsupportedVectorMetric } from '../type/vector.js';
+import { findVectorIndex, findVectorSort, vectorCandidates } from '../util/dialect.util.js';
 import { entityName } from '../util/object.util.js';
 import { AbstractDialect } from './abstractDialect.js';
-import type { VectorCast } from './vectorCast.js';
+import { encodeFloat32s, type VectorCast } from './vectorCast.js';
 
 /**
  * Vector search for the SQL dialects: the distance a `$sort` ranks by and projects, and the ANN tuning.
@@ -43,15 +44,16 @@ export abstract class VectorSqlDialect extends AbstractDialect {
    * spelled into a `SET` rather than bound, and `/http` input is untyped.
    */
   protected tunedVectorIndex<E>(meta: EntityMeta<E>, q: Query<E>): EntityIndexMeta | undefined {
-    const candidates = q.$candidates;
-    if (candidates === undefined) {
+    if (vectorCandidates(q) === undefined) {
       return undefined;
-    }
-    if (!Number.isInteger(candidates) || candidates < 1) {
-      throw new TypeError(`$candidates must be a positive integer, got ${JSON.stringify(candidates)}`);
     }
     const key = this.vectorSortKey(q);
     return key ? findVectorIndex(meta, key) : undefined;
+  }
+
+  /** The `$where` a read runs: the query's own, which an engine reading its vector index as a table narrows. */
+  protected rankedWhere<E>(_meta: EntityMeta<E>, q: Query<E>, _prefix: string | undefined): QueryWhere<E> | undefined {
+    return q.$where;
   }
 
   /**
@@ -60,6 +62,11 @@ export abstract class VectorSqlDialect extends AbstractDialect {
    * metric supported here", for a query and an index alike.
    */
   readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map();
+
+  /** Whether this engine has a vector index: the one a metric's `index` names. */
+  hasVectorIndex(): boolean {
+    return [...this.vectorMetrics.values()].some((metric) => metric.index);
+  }
 
   /** Quotes an identifier; supplied by the SQL dialect built on top of this layer. */
   abstract escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
@@ -75,16 +82,17 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined } {
     const field = meta.fields[key as FieldKey<E>];
     const colName = this.resolveColumnName(key, field);
-    const distance = search.$distance ?? field?.distance ?? findVectorIndex(meta, key)?.distance ?? 'cosine';
+    const distance =
+      search.$distance ?? field?.distance ?? findVectorIndex(meta, key)?.distance ?? DEFAULT_VECTOR_DISTANCE;
     return { colName, distance, field };
   }
 
   /**
    * Binds a vector, both as a persisted value and as the query vector of a distance expression, so a
-   * dialect needing a conversion around it (`$1::vector`, `VEC_FromText(?)`) declares it once.
+   * dialect needing a conversion around it (`$1::vector`, `CAST(? AS VECTOR(n))`) declares it once.
    */
   protected appendVectorValue(ctx: QueryContext, value: readonly unknown[], _field?: FieldOptions): void {
-    ctx.addValue(`[${value.join(',')}]`);
+    ctx.addValue(this.features.vectorBytes ? encodeFloat32s(value) : `[${value.join(',')}]`);
   }
 
   /**

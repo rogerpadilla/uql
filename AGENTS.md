@@ -15,6 +15,8 @@ Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. 
 - **A `bigint` reaches the driver as it is**: `normalizeValue` never makes one a number, since every driver binds it exactly; one that refuses it (D1) sends its text. `shouldWriteAWideBigIntExactly` holds it, on every SQL engine.
 - **`strict` is the floor; `noUncheckedIndexedAccess` and `exactOptionalPropertyTypes` stay off** - measured, not assumed. EOPT breaks the querier hierarchy for a distinction nothing here draws: option objects are spread together and defaulted with `??`. NUIA lands 314 of its 419 errors in tests indexing their own fixtures. Both would be paid in `!`.
 
+- **A change to the public API updates [`skills/uql-orm/SKILL.md`](skills/uql-orm/SKILL.md) in the same change** when the skill shows or names what changed. It is what a user's coding agent writes UQL from, and it ships with the release.
+
 ## Verifying a change
 
 - `bun run check` is the gate: `lint`, `ts`, `ts.rename`, `test`, `build`, `check.package`. `build` is in it because `check.package` inspects `dist`, so without one the gate passes on the previous release's output. `bun run lint.fix` fixes instead of reporting.

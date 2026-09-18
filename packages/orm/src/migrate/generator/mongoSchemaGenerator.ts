@@ -13,20 +13,28 @@ import {
   type SchemaDiff,
   type SchemaGenerator,
   type Type,
+  type VectorDistance,
 } from '../../type/index.js';
-import { declaredIndexes, indexNameParts, renderIndexColumn } from '../../util/ddlExpression.util.js';
-import { derivedIndexName } from '../../util/sql.util.js';
+import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
+import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../../util/ddlExpression.util.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
 import { renderIndexDefinition } from './definitionToNode.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
 
-/** The index types a key spec can say: a plain key, or `'text'`. */
-const MONGO_INDEX_TYPES: ReadonlySet<IndexType> = new Set(['btree', 'fulltext']);
+/** The index types a key spec can say, a plain key or `'text'`, and Atlas's vector search index. */
+const MONGO_INDEX_TYPES: ReadonlySet<IndexType> = new Set(['btree', 'fulltext', 'vectorSearch']);
 
 /** A key spec's one feature beyond its keys: a partial filter. */
 const MONGO_INDEX_FEATURES: ReadonlySet<IndexFeature> = new Set(['partial']);
+
+/** Atlas's name for each metric a vector search index scores by. */
+const ATLAS_SIMILARITY: Partial<Record<VectorDistance, string>> = {
+  cosine: 'cosine',
+  l2: 'euclidean',
+  inner: 'dotProduct',
+};
 
 export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerator {
   constructor(
@@ -79,7 +87,12 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     const entries = index.columns
       .map((entry) => renderIndexColumn(entry, () => this.compileDdl()))
       .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
-    const name = index.name ?? derivedIndexName(collectionName, indexNameParts(entries));
+    const [first] = index.columns;
+    const vector =
+      index.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
+    const name = vector
+      ? this.vectorSearchIndexName(index.name, entries[0].column)
+      : declaredIndexName(index.name, collectionName, entries);
     return {
       name,
       entries,
@@ -87,6 +100,8 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       type: index.type,
       include: index.include,
       where: index.where && this.compileIndexPredicate(index.where, meta.entity, name),
+      distance: index.distance ?? vector?.distance,
+      dimensions: vector?.dimensions,
     };
   }
 
@@ -127,12 +142,19 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
   }
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
-    return (diff.indexesToAdd ?? []).map((index) => this.generateDropIndex(diff.tableName, index.name));
+    return (diff.indexesToAdd ?? []).map((index) =>
+      index.type === 'vectorSearch'
+        ? serializeMongoCommand({ action: 'dropSearchIndex', collection: diff.tableName, name: index.name })
+        : this.generateDropIndex(diff.tableName, index.name),
+    );
   }
 
   /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
   generateCreateIndex(tableName: string, index: IndexSchema): string {
     assertIndexType(index, MONGO_INDEX_TYPES, this.dialectName);
+    if (index.type === 'vectorSearch') {
+      return this.generateCreateSearchIndex(tableName, index);
+    }
     assertIndexFeatures(index, MONGO_INDEX_FEATURES, this.dialectName);
     const key: MongoIndexKey = {};
     for (const entry of index.entries) {
@@ -147,6 +169,34 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
         unique: index.unique,
         name: index.name,
         partialFilterExpression: index.where && JSON.parse(index.where),
+      },
+    });
+  }
+
+  /** An Atlas vector search index: its vector field first, then each field a `$vectorSearch` pre-filters on. */
+  private generateCreateSearchIndex(tableName: string, index: IndexSchema): string {
+    assertIndexFeatures(index, new Set(), this.dialectName);
+    const [vector, ...filters] = index.entries;
+    if (!vector || index.dimensions === undefined) {
+      throw new TypeError(`an Atlas vector search index states its field's dimensions (index "${index.name}")`);
+    }
+    const distance = indexDistance(index);
+    const similarity = ATLAS_SIMILARITY[distance];
+    if (!similarity) {
+      throw unsupportedVectorMetric(this.dialectName, distance, index.name);
+    }
+    return serializeMongoCommand({
+      action: 'createSearchIndex',
+      collection: tableName,
+      index: {
+        name: index.name,
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: vector.column, numDimensions: index.dimensions, similarity },
+            ...filters.map((entry) => ({ type: 'filter' as const, path: entry.column })),
+          ],
+        },
       },
     });
   }

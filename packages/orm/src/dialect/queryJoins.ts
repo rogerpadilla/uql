@@ -5,12 +5,20 @@ import type {
   QueryGroupMap,
   QueryPopulate,
   QuerySortMap,
+  QueryWhere,
   RelationKey,
   RelationMeta,
   RelationQuery,
   Type,
 } from '../type/index.js';
-import { getKeys, getRelationRequestSummary, isRecord, isToManyRelation, parseRelationAtKey } from '../util/index.js';
+import {
+  getKeys,
+  getRelationRequestSummary,
+  isRecord,
+  isToManyRelation,
+  parseRelationAtKey,
+  parseRelationSize,
+} from '../util/index.js';
 
 /**
  * One relation a statement joins, keyed by the alias its columns are addressed by (`tax`,
@@ -65,23 +73,40 @@ export function resolveQueryJoins<E>(
   }
   const joins = new Map<string, QueryJoin>();
   addPopulateJoins(joins, claimAlias, meta, q.$populate);
-  addPathJoins(joins, claimAlias, meta, q.$sort);
+  addPathJoins(joins, claimAlias, meta, q.$sort, false);
   return joins;
 }
 
-/** What an aggregate joins: each to-one relation a `$group` path passes through. */
+/**
+ * What an aggregate joins, and the `$where` left to it. Each to-one relation a `$group` path passes through
+ * is an `INNER` join, since a group of a path names a related row; a filter on one of them, keyed at the top
+ * of the `$where` where an `AND` joins it, moves into that join rather than reading its table again. Under a
+ * `$not` it could not: the join would drop the rows the negation keeps.
+ */
 export function resolveGroupJoins<E>(
   meta: EntityMeta<E>,
-  group: QueryGroupMap<E> | undefined,
+  q: { readonly $group?: QueryGroupMap<E>; readonly $where?: QueryWhere<E> },
   claimAlias: (path: string) => string = (path) => path,
-): QueryJoins {
+): { readonly joins: QueryJoins; readonly where: QueryWhere<E> | undefined } {
   const joins = new Map<string, QueryJoin>();
-  for (const ref of Object.values(group ?? {})) {
+  for (const ref of Object.values(q.$group ?? {})) {
     if (isRecord(ref)) {
-      addPathJoins(joins, claimAlias, meta, ref);
+      addPathJoins(joins, claimAlias, meta, ref, true);
     }
   }
-  return joins;
+  if (!q.$where) {
+    return { joins, where: q.$where };
+  }
+  const where: QueryWhere<E> = { ...q.$where };
+  for (const key of getKeys(q.$where)) {
+    const join = joins.get(key);
+    const filter = q.$where[key];
+    if (join && isRecord(filter) && parseRelationSize(filter) === undefined) {
+      joins.set(key, { ...join, query: { $where: filter } });
+      delete where[key];
+    }
+  }
+  return { joins, where };
 }
 
 /** The field a grouped `path` reads, and the join it reads it through: none for the entity's own. */
@@ -178,12 +203,16 @@ function addPopulateJoins<E>(
   }
 }
 
-/** The to-one relations a nested map of fields passes through, a `$sort` or a `$group` path, as joins adding no columns. */
+/**
+ * The to-one relations a nested map of fields passes through, a `$sort` or a `$group` path, as joins adding
+ * no columns: `required` where the path names a related row, as a group's does, and a sort's does not.
+ */
 function addPathJoins<E>(
   joins: Map<string, QueryJoin>,
   claimAlias: (path: string) => string,
   meta: EntityMeta<E>,
   map: Readonly<Record<string, unknown>> | undefined,
+  required: boolean,
   parent?: QueryJoin,
 ): void {
   if (!map) {
@@ -197,9 +226,9 @@ function addPathJoins<E>(
     if (!relation || isToManyRelation(relation) || !isSortMap(value)) {
       continue;
     }
-    const join = addJoin(joins, claimAlias, parent, key, relation, {}, false, false);
+    const join = addJoin(joins, claimAlias, parent, key, relation, {}, required, false);
     // `E` stated: inferred from the nested map, it lands on the nested relation's target.
-    addPathJoins<object>(joins, claimAlias, join.meta, value, join);
+    addPathJoins<object>(joins, claimAlias, join.meta, value, required, join);
   }
 }
 

@@ -19,6 +19,13 @@ describe('describeIndexDifferences', () => {
       describeIndexDifferences(index({}), index({ unique: true, type: 'hash' }), new Set(['accessMethod'])),
     ).toEqual([expect.stringMatching(/^unique: true .* false$/), expect.stringMatching(/^type: hash .* btree$/)]);
   });
+
+  /** A vector index of any type is the one index an engine has, so only a plain one standing in for it differs. */
+  it('should report a plain index where a vector index is declared, and no vector type against another', () => {
+    const vector = new Set(['vector'] as const);
+    expect(describeIndexDifferences(index({ type: 'hnsw' }), index({}), vector)).toEqual(['vector index: no -> yes']);
+    expect(describeIndexDifferences(index({ type: 'hnsw' }), index({ type: 'vector' }), vector)).toEqual([]);
+  });
 });
 
 describe('indexNameStem', () => {

@@ -2,12 +2,19 @@ import { describe, expect, it } from 'vitest';
 import {
   type MongoCommand,
   type MongoCommandTarget,
+  type MongoSearchIndex,
   mongoCommandSource,
   runMongoCommand,
   serializeMongoCommand,
 } from './mongoCommand.js';
 
 type Call = readonly [string, ...unknown[]];
+
+const SEARCH_INDEX: MongoSearchIndex = {
+  name: 'vec_index',
+  type: 'vectorSearch',
+  definition: { fields: [{ type: 'vector', path: 'vec', numDimensions: 3, similarity: 'cosine' }] },
+};
 
 function target(): { calls: Call[]; db: MongoCommandTarget } {
   const calls: Call[] = [];
@@ -24,6 +31,8 @@ function target(): { calls: Call[]; db: MongoCommandTarget } {
         drop: () => record('drop', name),
         createIndex: (key, options) => record('createIndex', name, key, options),
         dropIndex: (indexName) => record('dropIndex', name, indexName),
+        createSearchIndex: (index) => record('createSearchIndex', name, index),
+        dropSearchIndex: (indexName) => record('dropSearchIndex', name, indexName),
       }),
     },
   };
@@ -49,6 +58,8 @@ describe('mongoCommandSource', () => {
         options: { unique: true, name: 'users__email_idx' },
       },
       { action: 'dropIndex', collection: 'users', name: 'users__email_idx' },
+      { action: 'createSearchIndex', collection: 'items', index: SEARCH_INDEX },
+      { action: 'dropSearchIndex', collection: 'items', name: 'vec_index' },
     ];
 
     expect(commands.map((command) => mongoCommandSource(serializeMongoCommand(command), 'db'))).toEqual([
@@ -57,6 +68,8 @@ describe('mongoCommandSource', () => {
       'db.renameCollection("users", "members")',
       'db.collection("users").createIndex({"email":1}, {"unique":true,"name":"users__email_idx"})',
       'db.collection("users").dropIndex("users__email_idx")',
+      `db.collection("items").createSearchIndex(${JSON.stringify(SEARCH_INDEX)})`,
+      'db.collection("items").dropSearchIndex("vec_index")',
     ]);
   });
 
@@ -68,6 +81,15 @@ describe('mongoCommandSource', () => {
 });
 
 describe('runMongoCommand', () => {
+  it('should create and drop an Atlas search index', async () => {
+    expect(await run({ action: 'createSearchIndex', collection: 'items', index: SEARCH_INDEX })).toEqual([
+      ['createSearchIndex', 'items', SEARCH_INDEX],
+    ]);
+    expect(await run({ action: 'dropSearchIndex', collection: 'items', name: 'vec_index' })).toEqual([
+      ['dropSearchIndex', 'items', 'vec_index'],
+    ]);
+  });
+
   it('should create a collection', async () => {
     expect(await run({ action: 'createCollection', name: 'users' })).toEqual([['createCollection', 'users']]);
   });

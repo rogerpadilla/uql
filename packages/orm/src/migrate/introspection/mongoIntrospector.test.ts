@@ -1,21 +1,23 @@
-import { MongoMemoryServer } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { MongoDialect } from '../../mongo/mongoDialect.js';
 import { MongodbQuerierPool } from '../../mongo/mongodbQuerierPool.js';
 import { indexColumns } from '../../schema/indexColumns.js';
-import { assertDefined, createMockQuerier, createMockQuerierPool, provisioningTimeout } from '../../test/index.js';
+import {
+  assertDefined,
+  createMockQuerier,
+  createMockQuerierPool,
+  mongoUri,
+  provisioningTimeout,
+} from '../../test/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
 describe('MongoSchemaIntrospector', () => {
-  let server: MongoMemoryServer;
-  let pool: MongodbQuerierPool;
-  let introspector: MongoSchemaIntrospector;
+  const pool = new MongodbQuerierPool(mongoUri('uql_introspect'));
+  const introspector = new MongoSchemaIntrospector(pool);
 
   beforeAll(async () => {
-    server = await MongoMemoryServer.create();
-    pool = new MongodbQuerierPool(server.getUri('introspect'));
-    introspector = new MongoSchemaIntrospector(pool);
     await pool.withQuerier(async ({ db }) => {
+      await db.dropDatabase();
       await db.createCollection('user');
       await db.collection('user').createIndex({ email: 1 }, { unique: true, name: 'user_email_idx' });
       await db.collection('user').createIndex({ lastName: 1, email: -1 });
@@ -23,10 +25,7 @@ describe('MongoSchemaIntrospector', () => {
     });
   }, provisioningTimeout);
 
-  afterAll(async () => {
-    await pool.end();
-    await server.stop();
-  }, provisioningTimeout);
+  afterAll(() => pool.end());
 
   it('should list the collections and not the views', async () => {
     expect(await introspector.getTableNames()).toEqual(['user']);

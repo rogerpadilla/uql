@@ -13,7 +13,7 @@ import {
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
-import { hasVectorNear, textSearchFields } from '../util/dialect.util.js';
+import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
 import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
@@ -35,6 +35,9 @@ export const PG_VECTOR_METRICS: ReadonlyMap<VectorDistance, VectorMetric> = new 
   ['l1', { op: '<+>', index: 'l1' }],
 ]);
 
+/** pgvector's HNSW candidate list, the one setting an iterative scan goes with. */
+const HNSW_EF_SEARCH = 'hnsw.ef_search';
+
 /** What the Postgres-wire engines have. */
 export const PG_FEATURES: SqlDialectFeatures = {
   ifNotExists: true,
@@ -47,6 +50,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
   commentSyntax: 'statement',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
+  vectorBytes: false,
   supportsTimestamptz: true,
   stringSizing: 'bounded-text',
   supportsUnsigned: false,
@@ -118,12 +122,12 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   override readonly vectorMetrics = PG_VECTOR_METRICS;
 
   /**
-   * The GUC each pgvector index type reads for "how much of the index to explore". They are not the
+   * The setting each vector index type reads for "how much of the index to explore". They are not the
    * same quantity - `ef_search` is a candidate-list size, `probes` a count of lists - which is why
    * `$candidates` is documented in the index's own units rather than as a portable number.
    */
-  private static readonly ANN_SETTINGS: ReadonlyMap<IndexType, string> = new Map<IndexType, string>([
-    ['hnsw', 'hnsw.ef_search'],
+  protected readonly annSettings: ReadonlyMap<IndexType, string> = new Map<IndexType, string>([
+    ['hnsw', HNSW_EF_SEARCH],
     ['ivfflat', 'ivfflat.probes'],
   ]);
 
@@ -133,12 +137,12 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    */
   override vectorTuningStatements<E>(meta: EntityMeta<E>, q: Query<E>): readonly string[] {
     const indexType = this.tunedVectorIndex(meta, q)?.type;
-    const setting = indexType ? PgLikeSqlDialect.ANN_SETTINGS.get(indexType) : undefined;
+    const setting = indexType ? this.annSettings.get(indexType) : undefined;
     if (!setting) {
       return [];
     }
     const statements = [`SET LOCAL ${setting} = ${q.$candidates}`];
-    if (indexType === 'hnsw' && hasVectorNear(q.$where)) {
+    if (setting === HNSW_EF_SEARCH && hasVectorNear(q.$where)) {
       statements.push('SET LOCAL hnsw.iterative_scan = strict_order');
     }
     return statements;
@@ -156,9 +160,9 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `TO_TSVECTOR(...) @@ WEBSEARCH_TO_TSQUERY(...)`. `WEBSEARCH_TO_TSQUERY` takes free-form user input
-   * (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike `TO_TSQUERY`, which
-   * rejects anything unparseable - including a plain two-word search.
+   * `<document> @@ WEBSEARCH_TO_TSQUERY(...)`, under the `$config` asked for, else that of the fulltext
+   * index over these fields, which the planner serves it from. `WEBSEARCH_TO_TSQUERY` takes free-form
+   * input (quoted phrases, `or`, `-negation`) and never raises a syntax error, unlike `TO_TSQUERY`.
    */
   protected override appendTextSearch<E>(
     ctx: QueryContext,
@@ -166,15 +170,33 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    const fields = textSearchFields(meta, search)
-      .map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])))
-      .join(` || ' ' || `);
-    // The config is bound once and its numbered placeholder reused by both calls.
-    const config = search.$config ? `${this.addValue(ctx, search.$config)}::regconfig, ` : '';
-    ctx.append(`TO_TSVECTOR(${config}${fields}) @@ WEBSEARCH_TO_TSQUERY(${config}`);
+    const keys = textSearchFields(meta, search);
+    const index = fulltextIndexOver(meta, keys);
+    const config = search.$config ?? (index && fulltextConfig(index));
+    const columns = keys.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    ctx.append(`${this.textSearchTarget(columns, config)} @@ ${this.textQueryFn}(${this.textConfigArg(config)}`);
     ctx.addValue(search.$value);
     ctx.append(')');
   }
+
+  /**
+   * The document, `TO_TSVECTOR('english'::regconfig, COALESCE("a", '') || ' ' || COALESCE("b", ''))`, a
+   * `NULL` column read as empty rather than emptying it all. The config is a literal: an index is built
+   * over one, and a bound one reaches it only where the driver leaves the parameter untyped.
+   */
+  override textSearchTarget(columns: readonly string[], config?: string): string {
+    const document = columns.map((column) => `COALESCE(${column}, '')`).join(` || ' ' || `);
+    return `TO_TSVECTOR(${this.textConfigArg(config)}${document})`;
+  }
+
+  /** A config as the text-search functions' first argument, or nothing, for the server's default. */
+  private textConfigArg(config: string | undefined): string {
+    return config === undefined ? '' : `${this.escape(config)}${this.textConfigCast}, `;
+  }
+
+  /** How a config literal is typed, and the function reading a search's text: CockroachDB lacks both of these. */
+  protected readonly textConfigCast: string = '::regconfig';
+  protected readonly textQueryFn: string = 'WEBSEARCH_TO_TSQUERY';
 
   protected override jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
     return `${this.jsonValue(slot)} @> ${this.jsonVal(ctx, values)}`;

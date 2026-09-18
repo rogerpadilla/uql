@@ -271,6 +271,15 @@ export function findVectorSort<E>(
   return undefined;
 }
 
+/** `$candidates`, checked: it can be spelled into a statement, and `/http` input is untyped. */
+export function vectorCandidates(q: { readonly $candidates?: number }): number | undefined {
+  const candidates = q.$candidates;
+  if (candidates !== undefined && (!Number.isInteger(candidates) || candidates < 1)) {
+    throw new TypeError(`$candidates must be a positive integer, got ${JSON.stringify(candidates)}`);
+  }
+  return candidates;
+}
+
 /**
  * Every index type that means "vector" to some engine: pgvector's two, the generic one MariaDB and
  * CockroachDB share, and Atlas's. Wider than {@link VECTOR_INDEX_TYPES}, which is the set whose DDL
@@ -420,7 +429,7 @@ export type ParsedGroupEntry<E = object> =
       readonly alias: string;
       readonly op: QueryAggregateOp;
       readonly fieldRef: string;
-      /** `true` for a flat distinct op (`$countDistinct`, ...) -> `COUNT(DISTINCT field)`. */
+      /** `true` for `$countDistinct`: `COUNT(DISTINCT field)`. */
       readonly distinct: boolean;
       /** The rows it reads, where not all of the statement's. */
       readonly where?: QueryWhere<E>;
@@ -480,7 +489,7 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
     if (key === undefined) {
       throw new TypeError(`aggregate '${alias}' names no op, only a $where`);
     }
-    // Flat DISTINCT ops (`$countDistinct`, ...) normalize to their base op + a `distinct` flag.
+    // `$countDistinct` normalizes to `$count` plus a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
     const fieldRef = aggregateFieldRef(alias, call[key]);
     entries.push({ kind: 'fn', alias, op, fieldRef, distinct, ...(where && hasKeys(where) ? { where } : {}) });
@@ -562,6 +571,24 @@ export function assertAggregateColumns(clauseMap: object, emitted: ReadonlySet<s
       throwUnknownAggregateColumn(key, clause);
     }
   }
+}
+
+/** The text-search config a fulltext index builds with where it states none: language-neutral, no stemming. */
+const DEFAULT_TEXT_CONFIG = 'simple';
+
+/** The text-search config a fulltext index builds with, which a search it serves has to parse with too. */
+export function fulltextConfig(index: { readonly config?: string }): string {
+  return index.config ?? DEFAULT_TEXT_CONFIG;
+}
+
+/** The fulltext index over exactly `fields`, in order, which a search of them is served by. */
+export function fulltextIndexOver<E>(meta: EntityMeta<E>, fields: readonly string[]): EntityIndexMeta<E> | undefined {
+  return meta.indexes?.find(
+    (index) =>
+      index.type === 'fulltext' &&
+      index.columns.length === fields.length &&
+      index.columns.every((entry, at) => entry.column === fields[at]),
+  );
 }
 
 /**

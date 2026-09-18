@@ -3,7 +3,7 @@ import { TursoDialect } from './tursoDialect.js';
 
 /**
  * SQLite Dialect specialization for the embedded Turso engine, the Rust engine alone: it adds a
- * dot-product distance to libSQL's cosine and L2, and caps no function call.
+ * dot-product distance to libSQL's cosine and L2, caps no function call, and has no vector index.
  */
 export class TursoLocalDialect extends TursoDialect {
   override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([

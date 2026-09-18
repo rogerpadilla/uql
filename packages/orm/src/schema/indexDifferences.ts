@@ -1,8 +1,12 @@
 import type { IndexColumnSchema } from '../type/index.js';
+import { isVectorIndexType } from '../type/vector.js';
 import type { IndexNode } from './types.js';
 
-/** What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits. */
-export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include';
+/**
+ * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
+ * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it.
+ */
+export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector';
 
 /**
  * Whether the table has this index already, by shape rather than name, uniqueness included. An index
@@ -65,6 +69,11 @@ export function describeIndexDifferences(
 
   if (facets.has('accessMethod') && (source.type ?? 'btree') !== (target.type ?? 'btree')) {
     differences.push(`type: ${target.type ?? 'btree'} -> ${source.type ?? 'btree'}`);
+  }
+
+  if (facets.has('vector') && isVectorIndexType(source.type) !== isVectorIndexType(target.type)) {
+    const [expected, actual] = [source, target].map((index) => (isVectorIndexType(index.type) ? 'yes' : 'no'));
+    differences.push(`vector index: ${actual} -> ${expected}`);
   }
 
   if (facets.has('include')) {

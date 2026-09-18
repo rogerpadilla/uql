@@ -13,7 +13,7 @@ import { TursoDialect } from '../turso/tursoDialect.js';
 import { TursoLocalDialect } from '../turso/tursoLocalDialect.js';
 import type { Query, Type, VectorDistance } from '../type/index.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
-import { parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
+import { encodeFloat32s, parseVectorLiteral, toSparsevecLiteral } from './vectorCast.js';
 
 /** A per-field default metric, which a query without `$distance` inherits. */
 @Entity({ name: 'L2Item' })
@@ -41,7 +41,15 @@ type Engine = {
   distance: (metric: VectorDistance, placeholder: string) => string;
   supported: VectorDistance[];
   unsupported: VectorDistance[];
+  /** What `[1, 2, 3]` binds as, where the engine takes bytes rather than the `[1,2,3]` text. */
+  bound?: unknown;
+  /** The filter a read ranked through a vector index gains, where the engine reads that index as a table. */
+  nearest?: (table: string) => string;
 };
+
+const TOP_K = (table: string) => ` WHERE \`${table}\`.rowid IN (SELECT id FROM vector_top_k(?, ?, ?))`;
+
+const PACKED = encodeFloat32s([1, 2, 3]);
 
 const PG_OPS: Partial<Record<VectorDistance, string>> = { cosine: '<=>', l2: '<->', inner: '<#>', l1: '<+>' };
 const MARIA_FNS: Partial<Record<VectorDistance, string>> = {
@@ -78,14 +86,16 @@ const engines: Engine[] = [
   },
   {
     name: 'MariaDialect',
+    bound: PACKED,
     dialect: new MariaDialect({}),
-    // A `VECTOR` column takes a packed float32 blob, so the query vector needs the text conversion.
-    distance: (metric, ph) => `${MARIA_FNS[metric]}(\`vec\`, VEC_FromText(${ph}))`,
+    // A `VECTOR` column takes a packed float32 blob, which binds as it is.
+    distance: (metric, ph) => `${MARIA_FNS[metric]}(\`vec\`, ${ph})`,
     supported: ['cosine', 'l2'],
     unsupported: ['inner', 'l1'],
   },
   {
     name: 'SqliteDialect (sqlite-vec)',
+    bound: PACKED,
     dialect: new SqliteDialect(),
     distance: (metric, ph) => `${SQLITE_VEC_FNS[metric]}(\`vec\`, ${ph})`,
     supported: ['cosine', 'l2', 'l1'],
@@ -93,6 +103,8 @@ const engines: Engine[] = [
   },
   {
     name: 'LibsqlDialect',
+    bound: PACKED,
+    nearest: TOP_K,
     dialect: new LibsqlDialect(),
     distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
     supported: ['cosine', 'l2'],
@@ -100,6 +112,8 @@ const engines: Engine[] = [
   },
   {
     name: 'TursoDialect',
+    bound: PACKED,
+    nearest: TOP_K,
     dialect: new TursoDialect(),
     distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
     // A Turso Cloud database runs libSQL unless it was created as `tursodb`, and libSQL has no dot product.
@@ -108,6 +122,7 @@ const engines: Engine[] = [
   },
   {
     name: 'TursoLocalDialect',
+    bound: PACKED,
     dialect: new TursoLocalDialect(),
     distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
     // The embedded Rust engine adds a dot-product distance libSQL never had.
@@ -124,210 +139,216 @@ const engines: Engine[] = [
   },
 ];
 
-describe.each(engines)('$name vector search', ({ dialect, distance, supported, unsupported }) => {
-  const q = (id: string) => dialect.escapeId(id);
-  const ph = (index: number) => dialect.placeholder(index);
-  /** The pager this dialect emits, so a second paging syntax needs no change here. */
-  const pgr = (limit?: number, skip?: number, sorted = false) => {
-    const ctx = dialect.createContext();
-    dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
-    return ctx.sql;
-  };
-  const find = <E extends object>(entity: Type<E>, query: Query<E>) => {
-    const ctx = dialect.createContext();
-    dialect.find(ctx, entity, query);
-    return { sql: ctx.sql, values: ctx.values };
-  };
+describe.each(engines)(
+  '$name vector search',
+  ({ dialect, distance, supported, unsupported, bound = '[1,2,3]', nearest = () => '' }) => {
+    const q = (id: string) => dialect.escapeId(id);
+    const ph = (index: number) => dialect.placeholder(index);
+    /** The pager this dialect emits, so a second paging syntax needs no change here. */
+    const pgr = (limit?: number, skip?: number, sorted = false) => {
+      const ctx = dialect.createContext();
+      dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
+      return ctx.sql;
+    };
+    const find = <E extends object>(entity: Type<E>, query: Query<E>) => {
+      const ctx = dialect.createContext();
+      dialect.find(ctx, entity, query);
+      return { sql: ctx.sql, values: ctx.values };
+    };
 
-  it.each(supported)('should sort by %s', (metric) => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $sort: { vec: { $vector: [1, 2, 3], $distance: metric } },
-      $limit: 10,
+    it.each(supported)('should sort by %s', (metric) => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $distance: metric } },
+        $limit: 10,
+      });
+
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance(metric, ph(1))}${pgr(10, undefined, true)}`,
+      );
+      expect(values).toEqual([bound]);
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance(metric, ph(1))}${pgr(10, undefined, true)}`,
-    );
-    expect(values).toEqual(['[1,2,3]']);
-  });
+    it('should default to cosine', () => {
+      const { sql } = find(VectorItem, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
 
-  it('should default to cosine', () => {
-    const { sql } = find(VectorItem, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
-
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance('cosine', ph(1))}${pgr(10, undefined, true)}`,
-    );
-  });
-
-  it("should take the field's own default metric", () => {
-    const { sql } = find(L2Item, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
-
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('L2Item')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
-    );
-  });
-
-  it("should take the index's metric where the field names none", () => {
-    const { sql } = find(L2IndexedItem, {
-      $select: { id: true },
-      $sort: { vec: { $vector: [1, 2, 3] } },
-      $limit: 10,
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} ORDER BY ${distance('cosine', ph(1))}${pgr(10, undefined, true)}`,
+      );
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('L2IndexedItem')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
-    );
-  });
+    it("should take the field's own default metric", () => {
+      const { sql } = find(L2Item, { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 });
 
-  it('should compose with a filter and a regular sort', () => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { name: 'test' },
-      $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
-      $limit: 10,
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('L2Item')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
+      );
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${q('name')} = ${ph(1)} ` +
-        `ORDER BY ${distance('cosine', ph(2))}, ${q('name')} DESC${pgr(10, undefined, true)}`,
-    );
-    expect(values).toEqual(['test', '[1,2,3]']);
-  });
+    it("should take the index's metric where the field names none", () => {
+      const { sql } = find(L2IndexedItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      });
 
-  it('should project the distance and order by its alias', () => {
-    const { sql } = find(VectorItem, {
-      $select: { id: true },
-      $sort: { vec: { $vector: [1, 2, 3], $project: 'similarity' } },
-      $limit: 10,
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('L2IndexedItem')}${nearest('L2IndexedItem')} ORDER BY ${distance('l2', ph(1))}${pgr(10, undefined, true)}`,
+      );
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('similarity')} ` +
-        `FROM ${q('VectorItem')} ORDER BY ${q('similarity')}${pgr(10, undefined, true)}`,
-    );
-  });
+    it('should compose with a filter and a regular sort', () => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { name: 'test' },
+        $sort: { vec: { $vector: [1, 2, 3] }, name: -1 },
+        $limit: 10,
+      });
 
-  it.each(supported)('should filter by %s distance', (metric) => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 0.35 } } },
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${q('name')} = ${ph(1)} ` +
+          `ORDER BY ${distance('cosine', ph(2))}, ${q('name')} DESC${pgr(10, undefined, true)}`,
+      );
+      expect(values).toEqual(['test', bound]);
     });
 
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance(metric, ph(1))} < ${ph(2)}`);
-    expect(values).toEqual(['[1,2,3]', 0.35]);
-  });
+    it('should project the distance and order by its alias', () => {
+      const { sql } = find(VectorItem, {
+        $select: { id: true },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'similarity' } },
+        $limit: 10,
+      });
 
-  // Two bounds means the distance is spelled twice: a WHERE has no output alias to point back at,
-  // so there is nothing to reuse the way `$project` lets ORDER BY reuse its own.
-  it('should repeat the expression for each bound', () => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { vec: { $near: { $vector: [1, 2, 3], $gt: 0.1, $lte: 0.5 } } },
+      expect(sql).toBe(
+        `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('similarity')} ` +
+          `FROM ${q('VectorItem')} ORDER BY ${q('similarity')}${pgr(10, undefined, true)}`,
+      );
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
-        `WHERE (${distance('cosine', ph(1))} > ${ph(2)} AND ${distance('cosine', ph(3))} <= ${ph(4)})`,
-    );
-    expect(values).toEqual(['[1,2,3]', 0.1, '[1,2,3]', 0.5]);
-  });
+    it.each(supported)('should filter by %s distance', (metric) => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 0.35 } } },
+      });
 
-  it('should filter by a distance range', () => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { vec: { $near: { $vector: [1, 2, 3], $between: [0.1, 0.5] } } },
+      expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance(metric, ph(1))} < ${ph(2)}`);
+      expect(values).toEqual([bound, 0.35]);
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance('cosine', ph(1))} BETWEEN ${ph(2)} AND ${ph(3)}`,
-    );
-    expect(values).toEqual(['[1,2,3]', 0.1, 0.5]);
-  });
+    // Two bounds means the distance is spelled twice: a WHERE has no output alias to point back at,
+    // so there is nothing to reuse the way `$project` lets ORDER BY reuse its own.
+    it('should repeat the expression for each bound', () => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { vec: { $near: { $vector: [1, 2, 3], $gt: 0.1, $lte: 0.5 } } },
+      });
 
-  // The RAG shape: a threshold in `$where` and the ranking in `$sort`, on the same field, in one statement.
-  it('should filter and rank in one statement', () => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { name: 'docs', vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } },
-      $sort: { vec: { $vector: [1, 2, 3], $project: 'score' } },
-      $limit: 30,
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
+          `WHERE (${distance('cosine', ph(1))} > ${ph(2)} AND ${distance('cosine', ph(3))} <= ${ph(4)})`,
+      );
+      expect(values).toEqual([bound, 0.1, bound, 0.5]);
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('score')} FROM ${q('VectorItem')} ` +
-        `WHERE ${q('name')} = ${ph(2)} AND ${distance('cosine', ph(3))} < ${ph(4)} ` +
-        `ORDER BY ${q('score')}${pgr(30, undefined, true)}`,
-    );
-    expect(values).toEqual(['[1,2,3]', 'docs', '[1,2,3]', 0.35]);
-  });
+    it('should filter by a distance range', () => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { vec: { $near: { $vector: [1, 2, 3], $between: [0.1, 0.5] } } },
+      });
 
-  it("should take the field's own default metric for a predicate", () => {
-    const { sql } = find(L2Item, { $select: { id: true }, $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 1 } } } });
-
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('L2Item')} WHERE ${distance('l2', ph(1))} < ${ph(2)}`);
-  });
-
-  // A `$near` with only a vector is a WHERE that is always true, which is a silent no-op rather than
-  // the filter the caller asked for. `/http` casts client JSON straight to `Query`, so it gets here.
-  it('should reject a $near with no bound', () => {
-    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3] } } } })).toThrow(
-      "$near on 'vec' needs a bound",
-    );
-  });
-
-  it('should reject a bound that is not an ordering comparison', () => {
-    // @ts-expect-error: a distance takes ordered bounds only
-    expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } })).toThrow(
-      'unsupported $near bound: $like',
-    );
-  });
-
-  // `$where` operators mean the same thing at any depth, so a predicate nested under a logical
-  // operator compiles like a top-level one - and the parenthesization is the surrounding clause's.
-  it('should compile inside a logical operator', () => {
-    const { sql, values } = find(VectorItem, {
-      $select: { id: true },
-      $where: { $or: [{ vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } }, { name: 'x' }] },
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} WHERE ${distance('cosine', ph(1))} BETWEEN ${ph(2)} AND ${ph(3)}`,
+      );
+      expect(values).toEqual([bound, 0.1, 0.5]);
     });
 
-    expect(sql).toBe(
-      `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
-        `WHERE ${distance('cosine', ph(1))} < ${ph(2)} OR ${q('name')} = ${ph(3)}`,
-    );
-    expect(values).toEqual(['[1,2,3]', 0.35, 'x']);
-  });
+    // The RAG shape: a threshold in `$where` and the ranking in `$sort`, on the same field, in one statement.
+    it('should filter and rank in one statement', () => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { name: 'docs', vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'score' } },
+        $limit: 30,
+      });
 
-  it('should compile under a negation', () => {
-    const { sql } = find(VectorItem, {
-      $select: { id: true },
-      $where: { vec: { $not: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } },
+      expect(sql).toBe(
+        `SELECT ${q('id')}, ${distance('cosine', ph(1))} ${q('score')} FROM ${q('VectorItem')} ` +
+          `WHERE ${q('name')} = ${ph(2)} AND ${distance('cosine', ph(3))} < ${ph(4)} ` +
+          `ORDER BY ${q('score')}${pgr(30, undefined, true)}`,
+      );
+      expect(values).toEqual([bound, 'docs', bound, 0.35]);
     });
 
-    expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE NOT (${distance('cosine', ph(1))} < ${ph(2)})`);
-  });
+    it("should take the field's own default metric for a predicate", () => {
+      const { sql } = find(L2Item, {
+        $select: { id: true },
+        $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 1 } } },
+      });
 
-  it.each(unsupported)('should reject a %s predicate', (metric) => {
-    expect(() =>
-      find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 1 } } } }),
-    ).toThrow(`does not support vector distance metric: ${metric}`);
-  });
+      expect(sql).toBe(`SELECT ${q('id')} FROM ${q('L2Item')} WHERE ${distance('l2', ph(1))} < ${ph(2)}`);
+    });
 
-  it.each(unsupported)('should reject %s', (metric) => {
-    expect(() => find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: metric } } })).toThrow(
-      `does not support vector distance metric: ${metric}`,
-    );
-  });
+    // A `$near` with only a vector is a WHERE that is always true, which is a silent no-op rather than
+    // the filter the caller asked for. `/http` casts client JSON straight to `Query`, so it gets here.
+    it('should reject a $near with no bound', () => {
+      expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3] } } } })).toThrow(
+        "$near on 'vec' needs a bound",
+      );
+    });
 
-  // `toString` is not an own property of the distance map, but `Object.prototype.toString` is: a
-  // bracket-access lookup would resolve it and emit that as the operator.
-  it('should not resolve a metric through the prototype chain', () => {
-    expect(() =>
-      // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
-      find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' } } }),
-    ).toThrow('does not support vector distance metric: toString');
-  });
-});
+    it('should reject a bound that is not an ordering comparison', () => {
+      // @ts-expect-error: a distance takes ordered bounds only
+      expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } })).toThrow(
+        'unsupported $near bound: $like',
+      );
+    });
+
+    // `$where` operators mean the same thing at any depth, so a predicate nested under a logical
+    // operator compiles like a top-level one - and the parenthesization is the surrounding clause's.
+    it('should compile inside a logical operator', () => {
+      const { sql, values } = find(VectorItem, {
+        $select: { id: true },
+        $where: { $or: [{ vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } }, { name: 'x' }] },
+      });
+
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorItem')} ` +
+          `WHERE ${distance('cosine', ph(1))} < ${ph(2)} OR ${q('name')} = ${ph(3)}`,
+      );
+      expect(values).toEqual([bound, 0.35, 'x']);
+    });
+
+    it('should compile under a negation', () => {
+      const { sql } = find(VectorItem, {
+        $select: { id: true },
+        $where: { vec: { $not: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } },
+      });
+
+      expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE NOT (${distance('cosine', ph(1))} < ${ph(2)})`);
+    });
+
+    it.each(unsupported)('should reject a %s predicate', (metric) => {
+      expect(() =>
+        find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $distance: metric, $lt: 1 } } } }),
+      ).toThrow(`does not support vector distance metric: ${metric}`);
+    });
+
+    it.each(unsupported)('should reject %s', (metric) => {
+      expect(() => find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: metric } } })).toThrow(
+        `does not support vector distance metric: ${metric}`,
+      );
+    });
+
+    // `toString` is not an own property of the distance map, but `Object.prototype.toString` is: a
+    // bracket-access lookup would resolve it and emit that as the operator.
+    it('should not resolve a metric through the prototype chain', () => {
+      expect(() =>
+        // @ts-expect-error: an inherited property, which a plain lookup would take for a metric
+        find(VectorItem, { $sort: { vec: { $vector: [1, 2, 3], $distance: 'toString' } } }),
+      ).toThrow('does not support vector distance metric: toString');
+    });
+  },
+);
 
 describe('dialects without vector search', () => {
   it('should reject a vector sort on MySQL, which has no distance function outside HeatWave', () => {
@@ -441,6 +462,15 @@ describe('vector query-time tuning', () => {
     expect(pg.vectorTuningStatements(getMeta(HnswItem), rank)).toEqual(['SET LOCAL hnsw.ef_search = 200']);
   });
 
+  /** CockroachDB's own beam, for either type that builds its vector index; it has no iterative scan to ask for. */
+  it("should widen CockroachDB's search beam instead", () => {
+    const crdb = new CockroachDialect();
+    const bounded = { ...rank, $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } } };
+    expect(crdb.vectorTuningStatements(getMeta(HnswItem), bounded)).toEqual([
+      'SET LOCAL vector_search_beam_size = 200',
+    ]);
+  });
+
   it('should set the probe count for an IVFFlat index, which measures a different thing', () => {
     expect(pg.vectorTuningStatements(getMeta(IvfflatItem), rank)).toEqual(['SET LOCAL ivfflat.probes = 200']);
   });
@@ -517,7 +547,7 @@ describe('vector query-time tuning', () => {
     expect(new MariaDialect().features.vectorTuningNeedsTransaction).toBe(false);
   });
 
-  // SQLite, libSQL and Turso compute every distance, so there is no candidate list to widen.
+  // libSQL narrows the read to the index's nearest rows instead, so nothing precedes the statement.
   it('should emit nothing where the search is exact', () => {
     expect(new SqliteDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
     expect(new TursoDialect().vectorTuningStatements(getMeta(HnswItem), rank)).toEqual([]);
@@ -563,5 +593,64 @@ describe('vector query-time tuning', () => {
     expect(ctx.sql).toMatch(
       /^SET STATEMENT mhnsw_ef_search=200, group_concat_max_len=18446744073709551615 FOR SELECT /,
     );
+  });
+});
+
+/**
+ * libSQL's DiskANN index answers `vector_top_k(index, vector, k)`, the rowids of its `k` nearest rows, which
+ * the read narrows to before ordering them by their exact distance. `k` is `$candidates`, else the page.
+ */
+describe('libSQL vector index search', () => {
+  const libsql = new LibsqlDialect();
+  const find = <E extends object>(dialect: AbstractSqlDialect, entity: Type<E>, query: Query<E>) => {
+    const ctx = dialect.createContext();
+    dialect.find(ctx, entity, query);
+    return { sql: ctx.sql, values: ctx.values };
+  };
+  const rank = { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 } as const;
+  const narrowed = `SELECT \`id\` FROM \`HnswItem\`${TOP_K('HnswItem')} ORDER BY vector_distance_cos(\`vec\`, ?) LIMIT 10`;
+
+  it('should read the nearest rows of the index it declares, as many as the page', () => {
+    expect(find(libsql, HnswItem, rank)).toEqual({ sql: narrowed, values: ['HnswItem__vec_idx', PACKED, 10, PACKED] });
+  });
+
+  it('should read as many as $candidates asks, and the skipped rows too', () => {
+    expect(find(libsql, HnswItem, { ...rank, $candidates: 50 }).values).toEqual([
+      'HnswItem__vec_idx',
+      PACKED,
+      50,
+      PACKED,
+    ]);
+    expect(find(libsql, HnswItem, { ...rank, $skip: 20 }).values).toEqual(['HnswItem__vec_idx', PACKED, 30, PACKED]);
+  });
+
+  it('should keep the filter beside it', () => {
+    const { sql } = find(libsql, HnswItem, { ...rank, $where: { id: { $gt: 1 } } });
+    expect(sql).toContain('WHERE `id` > ? AND `HnswItem`.rowid IN (SELECT id FROM vector_top_k(?, ?, ?))');
+  });
+
+  it('should compute every distance where the page is unbounded', () => {
+    expect(find(libsql, HnswItem, { ...rank, $limit: undefined }).sql).not.toContain('vector_top_k');
+  });
+
+  it('should compute every distance where the index measures another metric', () => {
+    const { sql } = find(libsql, HnswItem, { ...rank, $sort: { vec: { $vector: [1, 2, 3], $distance: 'l2' } } });
+    expect(sql).not.toContain('vector_top_k');
+  });
+
+  /** An Atlas index names a vector search to MongoDB; libSQL builds a plain index for it, which `vector_top_k` cannot read. */
+  it('should compute every distance where the index is an Atlas one', () => {
+    @Entity({ name: 'AtlasItem' })
+    @Index((atlasItem) => [atlasItem.vec], { type: 'vectorSearch' })
+    class AtlasItem {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+    }
+    expect(find(libsql, AtlasItem, rank).sql).not.toContain('vector_top_k');
+  });
+
+  it('should compute every distance where the engine has no vector index', () => {
+    expect(find(new TursoLocalDialect(), HnswItem, rank).sql).not.toContain('vector_top_k');
+    expect(find(new SqliteDialect(), HnswItem, rank).sql).not.toContain('vector_top_k');
   });
 });

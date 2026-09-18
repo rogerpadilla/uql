@@ -30,6 +30,13 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    */
   protected readonly upsertCreatedFlag: string = ', (xmax = 0) AS "_created"';
 
+  /** A `$text` over `columns` as this engine spells it: the document, then the search read under `config`. */
+  protected textSearch(columns: readonly string[], config?: string): string {
+    const document = columns.map((column) => `COALESCE("${column}", '')`).join(` || ' ' || `);
+    const arg = config === undefined ? '' : `'${config}'::regconfig, `;
+    return `TO_TSVECTOR(${arg}${document}) @@ WEBSEARCH_TO_TSQUERY(${arg}`;
+  }
+
   override shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
   }
@@ -665,7 +672,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || ' ' || "description") @@ WEBSEARCH_TO_TSQUERY($1) AND "code" = $2${this.pgr(30)}`,
+      `SELECT "id" FROM "Item" WHERE ${this.textSearch(['name', 'description'])}$1) AND "code" = $2${this.pgr(30)}`,
     );
     expect(res.values).toEqual(['some text', '1']);
 
@@ -681,7 +688,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT "id" FROM "User" WHERE TO_TSVECTOR("name") @@ WEBSEARCH_TO_TSQUERY($1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3${this.pgr(10)}`,
+      `SELECT "id" FROM "User" WHERE ${this.textSearch(['name'])}$1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
@@ -1341,16 +1348,23 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['{"private":1}', 123, '1']);
   }
 
-  /** The configuration binds once and both calls reuse its placeholder, so the document and the query agree. */
+  /** The config is a literal, as the fulltext index it may be served by is built over, and the same in both calls. */
   shouldSearchTextUnderAConfiguration() {
     const res = this.exec((ctx) =>
       this.dialect.where(ctx, Item, { $text: { $fields: { name: true }, $value: 'lamp', $config: 'english' } }),
     );
-    expect(res.sql).toContain('TO_TSVECTOR($1::regconfig, "name") @@ WEBSEARCH_TO_TSQUERY($1::regconfig, $2)');
-    expect(res.values).toEqual(['english', 'lamp']);
+    expect(res.sql).toBe(` WHERE ${this.textSearch(['name'], 'english')}$1)`);
+    expect(res.values).toEqual(['lamp']);
   }
 
-  /** With no `$fields`, the search runs over the columns of the fulltext index the entity declares. */
+  shouldQuoteAConfigurationSpelledAsALiteral() {
+    const res = this.exec((ctx) =>
+      this.dialect.where(ctx, Item, { $text: { $fields: { name: true }, $value: 'lamp', $config: "en'glish" } }),
+    );
+    expect(res.sql).toContain("'en''glish'");
+  }
+
+  /** With no `$fields`, the search runs over the columns of the fulltext index the entity declares, and under its config. */
   shouldSearchTheFulltextIndexWhereTextNamesNoFields() {
     @Entity()
     @Index((listing) => [listing.name, listing.description], { type: 'fulltext' })
@@ -1360,7 +1374,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       @Field({ type: String }) description?: string | null;
     }
     const res = this.exec((ctx) => this.dialect.where(ctx, Listing, { $text: { $value: 'lamp' } }));
-    expect(res.sql).toBe(` WHERE TO_TSVECTOR("name" || ' ' || "description") @@ WEBSEARCH_TO_TSQUERY($1)`);
+    expect(res.sql).toBe(` WHERE ${this.textSearch(['name', 'description'], 'simple')}$1)`);
     expect(res.values).toEqual(['lamp']);
   }
 

@@ -1,12 +1,11 @@
 import { mkdtemp, readFile, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { MongodbQuerierPool } from '../mongo/mongodbQuerierPool.js';
+import { mongoUri, provisioningTimeout } from '../test/index.js';
 import { loadTsDefaultExport } from '../test/loadTsDefaultExport.js';
-import { provisioningTimeout } from '../test/spec.util.js';
 import type { MigrationDefinition, MongoQuerier } from '../type/index.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
 import { runMongoCommand, serializeMongoCommand } from './generator/mongoCommand.js';
@@ -15,18 +14,11 @@ import { migrationBuilderFor } from './migrationTarget.js';
 import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 
 describe('Migrator on MongoDB (integration)', () => {
-  let replSet: MongoMemoryReplSet;
-  let pool: MongodbQuerierPool;
+  const pool = new MongodbQuerierPool(mongoUri('uql_migrate'));
 
-  beforeAll(async () => {
-    replSet = await MongoMemoryReplSet.create({ replSet: { count: 1, storageEngine: 'wiredTiger' } });
-    pool = new MongodbQuerierPool(replSet.getUri());
-  }, provisioningTimeout);
+  beforeAll(() => pool.withQuerier((querier) => querier.db.dropDatabase()), provisioningTimeout);
 
-  afterAll(async () => {
-    await pool.end();
-    await replSet.stop();
-  }, provisioningTimeout);
+  afterAll(() => pool.end());
 
   it('should apply a data migration, record it, and revert it', async () => {
     const migrator = new Migrator(pool);

@@ -5,9 +5,10 @@ import { decodeFloat32s, parseVectorLiteral, type VectorCast } from './vectorCas
  * How a stored column is decoded on read: the inverse of `AbstractSqlDialect.persistKind`. `json`
  * parses; a {@link VectorCast} says which literal; `boolean` undoes an engine with no boolean type,
  * `number` and `bigint` a driver that hands a wide integer or a decimal back as text, and `date` and
- * `bytes` a row that crossed JSON inside its parent's statement, which spells both as text.
+ * `bytes` a row that crossed JSON inside its parent's statement, which spells both as text. `float32` is
+ * a vector bound as bytes (`DialectFeatures.vectorBytes`).
  */
-export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'bytes' | VectorCast;
+export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'bytes' | 'float32' | VectorCast;
 
 /**
  * Decodes one non-null cell. A no-op where the driver already decoded it, since that varies per driver,
@@ -36,6 +37,16 @@ function vectorDecoder(cast: VectorCast): Decoder {
   );
 }
 
+const denseVector = vectorDecoder('vector');
+
+/** A vector bound as bytes: packed float32s as a driver returns them, else hex or text, as JSON or an older row carries it. */
+const float32Decoder: Decoder = (value) => {
+  if (value instanceof ArrayBuffer) {
+    return decodeFloat32s(new Uint8Array(value));
+  }
+  return value instanceof Uint8Array ? decodeFloat32s(value) : denseVector(value);
+};
+
 const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
   // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
   boolean: (value) => (typeof value === 'boolean' ? value : Boolean(value)),
@@ -63,7 +74,8 @@ const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
       return value;
     }
   }),
-  vector: vectorDecoder('vector'),
+  float32: float32Decoder,
+  vector: denseVector,
   halfvec: vectorDecoder('halfvec'),
   sparsevec: vectorDecoder('sparsevec'),
 };

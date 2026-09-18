@@ -132,3 +132,18 @@ services:
       timeout: 10s
       retries: 30
       start_period: 20s
+
+  # Atlas Local: a one-node replica set, which transactions need, with the Atlas Search that
+  # `$vectorSearch` and a `vectorSearch` index need, where a plain server answers `SearchNotEnabled`.
+  mongodb:
+    image: mongodb/mongodb-atlas-local:8
+    restart: always
+    container_name: uql-mongodb-8
+    ports:
+      - 27027:27017
+    healthcheck:
+      test: ['CMD', '/usr/local/bin/runner', 'healthcheck']
+      interval: 5s
+      timeout: 30s
+      retries: 30
+      start_period: 30s

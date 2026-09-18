@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
-import { createSpec, Item, User, VectorItem } from '../test/index.js';
+import { createSpec, User, VectorItem } from '../test/index.js';
 import { CockroachDialect } from './cockroachDialect.js';
 
 /**
@@ -88,16 +88,11 @@ class CockroachDialectSpec extends PgFamilySpec {
     ).toThrow('cockroachdb does not support vector distance metric: toString');
   }
 
-  shouldSupportTextFullTextSearchViaToTsvectorToTsqueryVerifiedToWorkOnCockroachDB() {
-    const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, Item, {
-      $select: { id: true },
-      $where: { $text: { $fields: { name: true, description: true }, $value: 'some text' } },
-    });
-    expect(ctx.sql).toBe(
-      'SELECT "id" FROM "Item" WHERE TO_TSVECTOR("name" || \' \' || "description") @@ WEBSEARCH_TO_TSQUERY($1)',
-    );
-    expect(ctx.values).toEqual(['some text']);
+  /** v26.3 has neither `regconfig` nor `WEBSEARCH_TO_TSQUERY`: the config is text, the search plain words. */
+  protected override textSearch(columns: readonly string[], config?: string): string {
+    const document = columns.map((column) => `COALESCE("${column}", '')`).join(` || ' ' || `);
+    const arg = config === undefined ? '' : `'${config}', `;
+    return `TO_TSVECTOR(${arg}${document}) @@ PLAINTO_TSQUERY(${arg}`;
   }
 }
 

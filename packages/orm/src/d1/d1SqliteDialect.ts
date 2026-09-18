@@ -1,4 +1,5 @@
-import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { SQLITE_FEATURES, SqliteDialect } from '../sqlite/sqliteDialect.js';
+import type { SqlDialectFeatures } from '../type/index.js';
 
 /**
  * SQLite Dialect specialization for Cloudflare D1.
@@ -6,6 +7,9 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
  * @remarks Distinct type for `D1QuerierPool` and a hook for D1-specific SQL differences.
  */
 export class D1SqliteDialect extends SqliteDialect {
+  /** A vector stays text: D1 answers a BLOB as an array of its byte values, which reads like a vector. */
+  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, vectorBytes: false };
+
   // Cloudflare D1 caps bound parameters at 100 per query.
   override readonly maxBindValues: number = 100;
 

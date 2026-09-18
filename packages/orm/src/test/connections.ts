@@ -35,3 +35,6 @@ export const mssqlConnection = (database = 'test') => ({
   database,
   options: { trustServerCertificate: true, encrypt: false },
 });
+
+/** `directConnection`, since the one-node replica set names a host only the container resolves. */
+export const mongoUri = (database: string) => `mongodb://127.0.0.1:27027/${database}?directConnection=true`;

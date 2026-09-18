@@ -1166,14 +1166,20 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { code: 'pivot-b', ones: 7, twos: null, adjustments: 1 },
     ]);
 
-    // A row pointing nowhere groups under null.
-    const [orphans, ...rest] = await this.querier.aggregate(ItemAdjustment, {
+    // A row pointing nowhere is in no group of the path, and its own foreign key groups it under null.
+    const pathGroups = await this.querier.aggregate(ItemAdjustment, {
       $where: { inventoryAdjustmentId, itemId: null },
       $group: { code: { item: { code: true } } },
       $select: { adjustments: { $count: '*' } },
     });
+    expect(pathGroups).toEqual([]);
+    const [orphans, ...rest] = await this.querier.aggregate(ItemAdjustment, {
+      $where: { inventoryAdjustmentId, itemId: null },
+      $group: { itemId: true },
+      $select: { adjustments: { $count: '*' } },
+    });
     expect(rest).toEqual([]);
-    expect(orphans?.code == null).toBe(true);
+    expect(orphans?.itemId == null).toBe(true);
     expect(orphans?.adjustments).toBe(1);
   }
 

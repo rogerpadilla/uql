@@ -9,7 +9,7 @@ import {
   type IndexJsonPath,
   type IndexSchema,
 } from '../../type/index.js';
-import { getKeys } from '../../util/index.js';
+import { fulltextConfig, getKeys } from '../../util/index.js';
 
 /**
  * What in an index asks for each feature. A `Record` over the feature union rather than a list, so a
@@ -66,7 +66,7 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     assertIndexFeatures(index, this.indexFeatures, this.dialect.dialectName);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
-    const columns = index.entries.map((entry) => this.indexColumn(entry, index)).join(', ');
+    const columns = this.indexTarget(index);
     return (
       `CREATE ${unique}${this.indexKeyword(index)} ${ifNotExists}${this.dialect.escapeId(index.name)} ` +
       `ON ${this.dialect.escapeId(tableName)}${this.indexAccessMethod(index)} (${columns})` +
@@ -105,6 +105,15 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
   /** The keyword an index type replaces `INDEX` with, or `INDEX` for the types that do not. */
   protected indexKeyword(index: IndexSchema): string {
     return (index.type && this.indexTypeKeywords.get(index.type)) || 'INDEX';
+  }
+
+  /** What the index is over, between the parentheses: a fulltext one's columns as a search matches them, else its entries. */
+  protected indexTarget(index: IndexSchema): string {
+    if (index.type === 'fulltext' && !index.entries.some((entry) => entry.expression)) {
+      const columns = index.entries.map((entry) => this.dialect.escapeId(entry.column));
+      return this.dialect.textSearchTarget(columns, fulltextConfig(index));
+    }
+    return index.entries.map((entry) => this.indexColumn(entry, index)).join(', ');
   }
 
   /** One index entry: what is indexed, its operator class if any, then its stored order. */

@@ -154,23 +154,16 @@ type QueryGroupSchema<E, G> = Readonly<QuerySelect<E, FieldKey<E>, true>> & {
 } & RejectKeys<Exclude<GroupedKeys<G>, FieldKey<E>>>;
 
 /**
- * The value a path reads: the field's own type, or through a relation, `null` where the row points nowhere.
- * `any` answers `unknown`: TypeScript checks a deferred type by instantiating it with `any`, which would
- * walk every relation of the entity on every aggregate call, quadrupling what one costs to check.
+ * The value a path reads: the field at its end as its column holds it, `null` only where that does, since
+ * the path joins the rows it reads. `any` answers `unknown`: TypeScript checks a deferred type by
+ * instantiating it with `any`, which would walk every relation of the entity on every aggregate call.
  */
 type GroupRefValue<E, Ref> = 0 extends 1 & Ref
   ? unknown
   : {
       [K in keyof Ref & keyof E]: Ref[K] extends true
-        ? E[K]
-        : NonNullable<GroupRefLeaf<RelationTarget<E[K]>, Ref[K]>> | null;
-    }[keyof Ref & keyof E];
-
-/** The field at the end of a path, whose type {@link GroupRefValue} widens with `null`; `any` as it does. */
-type GroupRefLeaf<E, Ref> = 0 extends 1 & Ref
-  ? unknown
-  : {
-      [K in keyof Ref & keyof E]: Ref[K] extends true ? E[K] : GroupRefLeaf<RelationTarget<E[K]>, Ref[K]>;
+        ? Exclude<E[K], undefined>
+        : GroupRefValue<RelationTarget<E[K]>, Ref[K]>;
     }[keyof Ref & keyof E];
 
 /** Computed columns by the alias each is read back under: `{ count: { $count: '*' }, avgAge: { $avg: { age: true } } }`. */

@@ -8,6 +8,7 @@ import {
   QueryRaw,
 } from '../type/index.js';
 import { definedEntries } from './object.util.js';
+import { derivedIndexName } from './sql.util.js';
 
 /**
  * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
@@ -43,4 +44,13 @@ export function renderIndexColumn(entry: EntityIndexColumn, render: (sql: QueryR
 /** What an unnamed index's name is built from: each entry's column, or `expr<n>` for an expression, which has none. */
 export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] {
   return entries.map((entry, at) => (typeof entry.column === 'string' ? entry.column : `expr${at}`));
+}
+
+/** The name an index is created and read by: its own, else one derived from its table and its entries' columns. */
+export function declaredIndexName(
+  name: string | undefined,
+  table: string,
+  entries: readonly EntityIndexColumn[],
+): string {
+  return name ?? derivedIndexName(table, indexNameParts(entries));
 }

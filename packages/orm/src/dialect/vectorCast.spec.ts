@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { decodeFloat32s, parseVectorLiteral } from './vectorCast.js';
+import { decodeFloat32s, encodeFloat32s, parseVectorLiteral } from './vectorCast.js';
 
 describe('parseVectorLiteral', () => {
   it('should read a dense literal of numbers', () => {
@@ -33,5 +33,21 @@ describe('decodeFloat32s', () => {
     buffer.set(packed([1.5, -1]), 4);
 
     expect(decodeFloat32s(buffer.subarray(4))).toEqual([1.5, -1]);
+  });
+});
+
+describe('encodeFloat32s', () => {
+  it('should pack each element as a little-endian float32', () => {
+    expect([...encodeFloat32s([1, -2])]).toEqual([0, 0, 128, 63, 0, 0, 0, 192]);
+  });
+
+  it('should round-trip through decodeFloat32s', () => {
+    expect(decodeFloat32s(encodeFloat32s([0.1234567, 3.1415927, 0.5, -2, 0]))).toEqual([
+      0.1234567, 3.1415927, 0.5, -2, 0,
+    ]);
+  });
+
+  it('should pack an empty vector as no bytes', () => {
+    expect(encodeFloat32s([]).byteLength).toBe(0);
   });
 });

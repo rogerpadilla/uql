@@ -430,7 +430,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (opts.prefix !== prefix) {
       opts = { ...opts, prefix };
     }
-    this.where<E>(ctx, entity, q.$where, opts);
+    this.where<E>(ctx, entity, this.rankedWhere(meta, q, prefix), opts);
     const sorted = order
       ? this.orderCarried(ctx, q, order)
       : this.sort<E>(ctx, entity, q.$sort, { prefix, joins, distinct: q.$distinct });
@@ -1480,7 +1480,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       throw new TypeError('aggregate requires at least one $group column or $select function');
     }
     const table = this.tableRef(meta, this.readOptions(ctx, meta).alias);
-    const joins = resolveGroupJoins(meta, q.$group, (path) => ctx.claimAlias(path));
+    const { joins, where } = resolveGroupJoins(meta, q, (path) => ctx.claimAlias(path));
     const prefix = joins.size ? table.alias : undefined;
     const reads = entries.map((entry) => ({ entry, value: this.aggregateValue(ctx, entity, entry, joins, prefix) }));
     // Only bare columns are read inline: SQL Server refuses a subquery inside an aggregate or a
@@ -1511,7 +1511,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       `SELECT ${selectParts.join(', ')} FROM ${derived ? `(SELECT ${columns.join(', ')} FROM ` : ''}${table.ref}`,
     );
     this.selectRelationJoins(ctx, meta, table.alias, joins);
-    this.where<E>(ctx, entity, q.$where, { ...opts, prefix });
+    this.where<E>(ctx, entity, where, { ...opts, prefix });
     if (derived) {
       ctx.append(`) ${this.escapeId(ROWS_ALIAS, true)}`);
     }
@@ -1696,6 +1696,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (returning) {
       ctx.append(` ${returning}`);
     }
+  }
+
+  /**
+   * What a text search matches and a fulltext index covers, which have to agree for the index to serve the
+   * search: the columns themselves, where the engine indexes them as they are (MySQL's `MATCH (a, b)`).
+   */
+  textSearchTarget(columns: readonly string[], _config?: string): string {
+    return columns.join(', ');
   }
 
   /** Where an insert's id clause goes: `RETURNING` at the end, or SQL Server's `OUTPUT` before `VALUES`. */
@@ -1957,7 +1965,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     q: QueryAggregate<E, G, A>,
   ): readonly HydratableField[] {
     const meta = getMeta(entity);
-    const joins = resolveGroupJoins(meta, q.$group);
+    const { joins } = resolveGroupJoins(meta, q);
     const decoded: HydratableField[] = [];
     for (const entry of parseGroupMap(q.$group, q.$select)) {
       const kind =
@@ -2009,7 +2017,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       case 'json':
         return 'json';
       case 'vector':
-        return this.supportedVectorType(resolveVectorCast(field));
+        return this.features.vectorBytes ? 'float32' : this.supportedVectorType(resolveVectorCast(field));
       case 'boolean':
         return 'boolean';
       case 'numeric':

@@ -1068,7 +1068,7 @@ class MongoDialectSpec implements Spec {
     });
     expect(stages).toEqual([
       { $lookup: { from: 'Tax', localField: 'taxId', foreignField: '_id', as: 'tax' } },
-      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: true } },
+      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } },
       {
         $group: {
           _id: { taxName: '$tax.name' },
@@ -1085,6 +1085,27 @@ class MongoDialectSpec implements Spec {
           n: 1,
         },
       },
+    ]);
+  }
+
+  /** A filter on the relation the group path joins runs inside that `$lookup`, not in a second one. */
+  shouldFilterAGroupedRelationInsideItsLookup() {
+    const stages = this.dialect.buildAggregateStages(Item, {
+      $where: { tax: { name: 'vat' } },
+      $group: { taxName: { tax: { name: true } } },
+      $select: { n: { $count: '*' } },
+    });
+    expect(stages.slice(0, 2)).toEqual([
+      {
+        $lookup: {
+          from: 'Tax',
+          localField: 'taxId',
+          foreignField: '_id',
+          pipeline: [{ $match: { name: 'vat' } }],
+          as: 'tax',
+        },
+      },
+      { $unwind: { path: '$tax', preserveNullAndEmptyArrays: false } },
     ]);
   }
 

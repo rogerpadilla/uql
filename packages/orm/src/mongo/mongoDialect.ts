@@ -117,6 +117,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
+  vectorBytes: false,
   supportsTimestamptz: false,
   stringSizing: 'bounded-text',
   supportsUnsigned: false,
@@ -1310,14 +1311,14 @@ export class MongoDialect extends AbstractDialect {
     opts?: QueryOptions,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
-    const joins = resolveGroupJoins(meta, q.$group);
+    const { joins, where } = resolveGroupJoins(meta, q);
     const { groupId, accumulators, columns, named } = this.buildGroupSpec(
       meta,
       parseGroupMap(q.$group, q.$select),
       joins,
     );
     const pipeline: MongoAggregationPipelineEntry<Document>[] = [
-      ...this.matchStages(entity, q.$where, opts, named),
+      ...this.matchStages(entity, where, opts, named),
       ...this.lookupStages(meta, joins),
       { $group: { _id: hasKeys(groupId) ? groupId : null, ...accumulators } },
       // `$group` answers with `_id` even when grouping by nothing, and with what `columns` read to the end.
@@ -1541,6 +1542,11 @@ export class MongoDialect extends AbstractDialect {
     return { vectorKey: found.key, vectorSearch: found.search, regularSort: regularSort as QuerySortMap<E> };
   }
 
+  /** The Atlas index a `$vectorSearch` over `column` reads, and migrations create: its declared name, else `<column>_index`. */
+  protected vectorSearchIndexName(name: string | undefined, column: string): string {
+    return name ?? `${column}_index`;
+  }
+
   /**
    * Build a `$vectorSearch` aggregation pipeline stage.
    * Merges `$where` into `$vectorSearch.filter` for optimal pre-filtering.
@@ -1561,8 +1567,7 @@ export class MongoDialect extends AbstractDialect {
     }
     const colName = this.resolveColumnName(key, field);
 
-    // Resolve index name from @Index metadata, or fall back to convention
-    const indexName = findVectorIndex(meta, key)?.name ?? `${colName}_index`;
+    const indexName = this.vectorSearchIndexName(findVectorIndex(meta, key)?.name, colName);
 
     if (!limit) {
       throw new TypeError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);

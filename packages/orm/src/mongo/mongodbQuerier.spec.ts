@@ -255,6 +255,15 @@ describe('MongodbQuerier vector search', () => {
 
     expect(pipelineOf(aggregate.mock.calls)[0]).toMatchObject({ $vectorSearch: { limit: 10, numCandidates: 100 } });
   });
+
+  /** `/http` casts client JSON straight to `Query`, so a count Atlas would answer with an error of its own is refused. */
+  it('should refuse a candidate count that is no positive integer', async () => {
+    const { querier } = createRecordingQuerier([]);
+
+    await expect(
+      querier.findMany(Article, { $sort: { embedding: { $vector: [1, 2, 3] } }, $candidates: -5 }),
+    ).rejects.toThrow('$candidates must be a positive integer, got -5');
+  });
 });
 
 describe('MongodbQuerier relation conditions', () => {

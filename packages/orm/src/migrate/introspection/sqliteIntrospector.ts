@@ -1,3 +1,4 @@
+import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { derivedForeignKeyName } from '../../util/sql.util.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
@@ -6,12 +7,20 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
  * SQLite schema introspector
  */
 export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
+  /** Whether an index is libSQL's vector index, where the engine has one; elsewhere a declared one is built plain. */
+  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(
+    this.dialect.hasVectorIndex() ? ['vector'] : [],
+  );
+
+  /** Not SQLite's own tables, nor the ones libSQL keeps a vector index in: its metadata and `<index>_shadow`. */
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT name
       FROM sqlite_master
       WHERE type = 'table'
         AND name NOT LIKE 'sqlite_%'
+        AND name <> 'libsql_vector_meta_shadow'
+        AND name NOT IN (SELECT name || '_shadow' FROM sqlite_master WHERE type = 'index')
       ORDER BY name
     `;
   }
@@ -112,15 +121,23 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
       // `PRAGMA index_info` names an expression entry `null` (its `cid` is -2), and the expression text
       // lives only in `sqlite_master.sql`. Reporting `{ column: null }` put a column literally named
-      // `null` into the diff, so an index UQL cannot describe is left out entirely instead.
+      // `null` into the diff, so an index UQL cannot describe is left out, libSQL's vector index aside.
       const named = columns.filter((column): column is { name: string } => column.name !== null);
 
-      if (named.length === columns.length && (isUserCreated || isCompositeUnique)) {
+      if (!isUserCreated && !isCompositeUnique) {
+        continue;
+      }
+      if (named.length === columns.length) {
         indexSchemas.push({
           name: index.name,
           entries: named.map((column) => ({ column: column.name })),
           unique: Boolean(index.unique),
         });
+      } else {
+        const vectorIndex = await this.getVectorIndex(read, index.name);
+        if (vectorIndex) {
+          indexSchemas.push(vectorIndex);
+        }
       }
     }
 
@@ -185,13 +202,28 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return uniqueColumns;
   }
 
+  /** libSQL's `libsql_vector_idx(col, 'metric=...')`, read back from the statement that created it. */
+  private async getVectorIndex(read: TableRowReader, indexName: string): Promise<IndexSchema | undefined> {
+    const [row] = await read<{ sql: string | null }>(
+      /*sql*/ `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`,
+      [indexName],
+    );
+    const column = row?.sql?.match(/libsql_vector_idx\s*\(\s*[`"[]?([^`"\],\s)]+)/i)?.[1];
+    if (!column) {
+      return undefined;
+    }
+    const metric = row.sql?.match(/'metric=(\w+)'/i)?.[1]?.toLowerCase();
+    const distances = new Map([...this.dialect.vectorMetrics].map(([distance, { index }]) => [index, distance]));
+    return { name: indexName, entries: [{ column }], unique: false, type: 'vector', distance: distances.get(metric) };
+  }
+
   private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {
     return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.escapeId(indexName)})`);
   }
 
   protected normalizeType(type: string): string {
     // Extract base type without length/precision
-    const match = type.match(/^([A-Za-z]+)/);
+    const match = type.match(/^([A-Za-z][A-Za-z0-9_]*)/);
     return match ? match[1].toUpperCase() : type.toUpperCase();
   }
 

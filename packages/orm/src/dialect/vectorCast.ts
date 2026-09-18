@@ -64,6 +64,14 @@ function parseDense(text: string): number[] | undefined {
   }
 }
 
+/** The packed little-endian float32s a blob vector column holds, and {@link decodeFloat32s} reads back. */
+export function encodeFloat32s(values: readonly unknown[]): Uint8Array {
+  const bytes = new Uint8Array(values.length * 4);
+  const view = new DataView(bytes.buffer);
+  values.forEach((value, at) => view.setFloat32(at * 4, Number(value), true));
+  return bytes;
+}
+
 /** Packed little-endian float32s, each read as {@link shortestFloat32}. */
 export function decodeFloat32s(bytes: Uint8Array): number[] {
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength);

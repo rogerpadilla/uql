@@ -697,12 +697,15 @@ export type HookRegistration = {
 };
 
 /**
- * An index type with the metric it needs: a vector index has to name one, since engines default to
- * a different one than the queries use, and any other index names none.
+ * An index type with what it needs: a vector index has to name its metric, since engines default to a
+ * different one than the queries use; an Atlas `vectorSearch` index may, else takes its field's, else
+ * cosine; a `fulltext` one may name the text-search `config` it parses with; and any other index neither.
  */
 export type IndexTypeOptions =
-  | { type: VectorIndexType; distance: VectorDistance }
-  | { type?: Exclude<IndexType, VectorIndexType>; distance?: never };
+  | { type: VectorIndexType; distance: VectorDistance; config?: never }
+  | { type: 'vectorSearch'; distance?: VectorDistance; config?: never }
+  | { type: 'fulltext'; distance?: never; config?: string }
+  | { type?: Exclude<IndexType, VectorIndexType | 'vectorSearch' | 'fulltext'>; distance?: never; config?: never };
 
 /** One index entry as the migration builder takes it: a column name, `raw`, or an object when it needs more. */
 export type IndexColumnInput = string | QueryRaw | EntityIndexColumn;

@@ -221,6 +221,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         type: INDEX_TYPES.find((type) => type === rows[0].method),
         where: rows[0].predicate ?? undefined,
         include: include.length > 0 ? include : undefined,
+        ...fulltextIndex(rows),
       };
     });
   }
@@ -299,6 +300,30 @@ const FOREIGN_KEY_ACTION_CODES = {
 
 const NUMBER_DEFAULT = /^\(?(-?\d+(?:\.\d+)?)\)?$/;
 const QUOTED_NUMBER_DEFAULT = /^'(-?\d+(?:\.\d+)?)'::(?:smallint|integer|bigint|numeric|real|double precision)$/;
+
+/**
+ * A `fulltext` index read back as declared, from the document its `GIN` index (`inverted` on CockroachDB)
+ * is over as UQL builds it, `to_tsvector('english'::regconfig, COALESCE(title, ''::text) || ...)`: its
+ * columns and config, so it compares with the entity. Any other expression stays the expression it is.
+ */
+function fulltextIndex(
+  rows: readonly PostgresIndexRow[],
+): Pick<IndexSchema, 'type' | 'entries' | 'config'> | undefined {
+  const [row] = rows;
+  const document = rows.length === 1 && TEXT_INDEX_METHODS.has(row.method) && row.is_expression;
+  const config = document ? /^\(?to_tsvector\('((?:[^']|'')*)'::/i.exec(row.entry) : null;
+  const columns = config
+    ? [...row.entry.matchAll(/COALESCE\(("(?:[^"]|"")+"|[^,()\s]+),/gi)].map(([, column]) =>
+        column.startsWith('"') ? column.slice(1, -1).replaceAll('""', '"') : column,
+      )
+    : [];
+  if (!config || !columns.length) {
+    return undefined;
+  }
+  return { type: 'fulltext', entries: columns.map((column) => ({ column })), config: config[1].replaceAll("''", "'") };
+}
+
+const TEXT_INDEX_METHODS: ReadonlySet<string> = new Set(['gin', 'inverted']);
 
 /**
  * Postgres states every entry in full: a plain column still reports `order: 'asc'`, and only a

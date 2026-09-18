@@ -97,6 +97,7 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
 
   // === Vector (for AI/embeddings) ===
   vector: { category: 'vector' },
+  f32_blob: { category: 'vector' },
   halfvec: { category: 'halfvec' },
   sparsevec: { category: 'sparsevec' },
 };
@@ -241,8 +242,8 @@ const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
     sizes: MYSQL_SIZES,
     decimal: { precision: 10, scale: 2 },
   },
-  // SQLite uses affinity, so no size variants.
-  sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'TEXT') },
+  // SQLite uses affinity, so no size variants. `F32_BLOB` is libSQL's vector type; elsewhere just a name of BLOB affinity.
+  sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'F32_BLOB') },
   // 2025 and up; below that the server refuses the type rather than storing it as text.
   mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'VECTOR'), sizes: MSSQL_SIZES },
   mongodb: { scalars: withVectorType(MONGO_SCALAR_MAP, 'array') },
@@ -278,7 +279,7 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
   const withoutUnsigned = normalized.replace(/\s*unsigned\s*/i, ' ').trim();
 
   // Extract base type and parameters: "VARCHAR(255)" -> ["varchar", "255"]
-  const match = withoutUnsigned.match(/^([a-z][a-z0-9 ]*?)(?:\(([^)]+)\))?$/);
+  const match = withoutUnsigned.match(/^([a-z][a-z0-9_ ]*?)(?:\(([^)]+)\))?$/);
   const base = match ? SQL_TO_CANONICAL[match[1]] : undefined;
   if (!match || !base) {
     return { category: 'string', raw: sqlType };
@@ -384,8 +385,14 @@ export function canonicalToTypeScript(type: CanonicalType): string {
  * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
-  return (type) => sqlToCanonical(canonicalToSql(type, dialect));
+  return (type) => {
+    const stored = sqlToCanonical(canonicalToSql(type, dialect));
+    // SQLite keeps a vector in any column, so one created as `TEXT` before vectors were blobs stays as it is.
+    return dialect.dialectName === 'sqlite' && isVectorCategory(stored.category) ? SQLITE_TEXT : stored;
+  };
 }
+
+const SQLITE_TEXT: CanonicalType = { category: 'string', size: 'small' };
 
 /**
  * Convert UQL FieldOptions to a canonical type.

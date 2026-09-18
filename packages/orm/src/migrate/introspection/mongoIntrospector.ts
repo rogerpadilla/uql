@@ -12,6 +12,16 @@ import {
 /** The parts of a Mongo index description this introspector reads. */
 type MongoIndex = { readonly name?: string; readonly key: Record<string, unknown>; readonly unique?: boolean };
 
+/** The parts of an Atlas search index description this introspector reads. */
+type MongoSearchIndexInfo = {
+  readonly name: string;
+  readonly type?: string;
+  readonly latestDefinition: { readonly fields: readonly { readonly path: string }[] };
+};
+
+/** What a server without Atlas Search answers a search index command with. */
+const SEARCH_NOT_ENABLED = 31082;
+
 /**
  * MongoDB schema introspector.
  * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
@@ -44,16 +54,28 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 
       // Annotated rather than inferred: the driver's `indexes()` is overloaded and resolves to `any` on
       // some versions, which silently made every field below unchecked.
-      const indexes: readonly MongoIndex[] = await db.collection(tableName).indexes();
+      const collection = db.collection(tableName);
+      const indexes: readonly MongoIndex[] = await collection.indexes();
+      const searchIndexes = await listSearchIndexes(collection);
 
       return {
         name: tableName,
         columns: [],
-        indexes: indexes.map((idx) => ({
-          name: idx.name ?? Object.keys(idx.key).join('_'),
-          entries: Object.keys(idx.key).map((column) => ({ column })),
-          unique: !!idx.unique,
-        })),
+        indexes: [
+          ...indexes.map((idx) => ({
+            name: idx.name ?? Object.keys(idx.key).join('_'),
+            entries: Object.keys(idx.key).map((column) => ({ column })),
+            unique: !!idx.unique,
+          })),
+          ...searchIndexes
+            .filter((idx) => idx.type === 'vectorSearch')
+            .map((idx) => ({
+              name: idx.name,
+              entries: idx.latestDefinition.fields.map(({ path }) => ({ column: path })),
+              unique: false,
+              type: 'vectorSearch' as const,
+            })),
+        ],
       };
     });
   }
@@ -81,6 +103,20 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   }
 }
 
+/** A collection's Atlas search indexes, none where the server has no Atlas Search. */
+async function listSearchIndexes(
+  collection: ReturnType<MongoQuerier['db']['collection']>,
+): Promise<readonly MongoSearchIndexInfo[]> {
+  try {
+    return await collection.aggregate<MongoSearchIndexInfo>([{ $listSearchIndexes: {} }]).toArray();
+  } catch (error) {
+    if (error instanceof Error && 'code' in error && error.code === SEARCH_NOT_ENABLED) {
+      return [];
+    }
+    throw error;
+  }
+}
+
 async function hasCollection(db: MongoQuerier['db'], name: string): Promise<boolean> {
   const collections = await db.listCollections({ name, type: 'collection' }, { nameOnly: true }).toArray();
   return collections.length > 0;
@@ -105,7 +141,7 @@ function buildTable({ name, indexes = [] }: TableSchema): TableNode {
         });
       }
     }
-    table.indexes.push({ name: index.name, table, entries: index.entries, unique: index.unique });
+    table.indexes.push({ name: index.name, table, entries: index.entries, unique: index.unique, type: index.type });
   }
 
   return table;

@@ -2,7 +2,7 @@ import { fieldOf, foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/de
 import type { EntityGetter } from '../type/entity.js';
 import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
-import { declaredIndexes, indexNameParts, renderIndexColumn } from '../util/ddlExpression.util.js';
+import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
@@ -288,7 +288,7 @@ function addCompositeIndex(
   });
   if (!resolved.length) return;
 
-  const name = idxMeta.name ?? derivedIndexName(table.name, indexNameParts(resolved));
+  const name = declaredIndexName(idxMeta.name, table.name, resolved);
   ctx.ast.addIndex({
     name,
     table,
@@ -301,5 +301,6 @@ function addCompositeIndex(
     m: idxMeta.m,
     efConstruction: idxMeta.efConstruction,
     lists: idxMeta.lists,
+    config: idxMeta.config,
   });
 }

@@ -3,14 +3,9 @@ import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/in
 import { unsupportedVectorMetric } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
-/** `$text` computes its `TO_TSVECTOR` per row, which no index over the raw columns serves. */
-const PG_INDEX_TYPE_HINTS: ReadonlyMap<IndexType, string> = new Map([
-  ['fulltext', '. $text needs none there; name the columns it searches with $fields.'],
-]);
-
 /** `CREATE INDEX ... USING hnsw ("embedding" vector_cosine_ops) WITH (m = ...)`, pgvector's form. */
 export class PgIndexDdl extends IndexDdl {
-  /** Postgres 18's `pg_am`, with pgvector's two. */
+  /** Postgres 18's `pg_am`, with pgvector's two, and `fulltext`, which builds a `gin` one. */
   protected override readonly indexTypes = new Set<IndexType>([
     'btree',
     'hash',
@@ -19,9 +14,8 @@ export class PgIndexDdl extends IndexDdl {
     'brin',
     'hnsw',
     'ivfflat',
+    'fulltext',
   ]);
-
-  protected override readonly indexTypeHints = PG_INDEX_TYPE_HINTS;
 
   protected override readonly indexFeatures = new Set<IndexFeature>([
     'expression',
@@ -38,6 +32,9 @@ export class PgIndexDdl extends IndexDdl {
   }
 
   protected override indexAccessMethod(index: IndexSchema): string {
+    if (index.type === 'fulltext') {
+      return ' USING gin';
+    }
     return index.type ? ` USING ${index.type}` : '';
   }
 
@@ -85,10 +82,9 @@ export class CockroachIndexDdl extends PgIndexDdl {
   protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'partial', 'include', 'jsonPath']);
 
   /** v26.3 answers `hash` and `brin` "unimplemented", `ivfflat` "unrecognized"; `hnsw` builds its vector index. */
-  protected override readonly indexTypes = new Set<IndexType>(['btree', 'gin', 'gist', 'hnsw', 'vector']);
+  protected override readonly indexTypes = new Set<IndexType>(['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext']);
 
   protected override readonly indexTypeHints = new Map<IndexType, string>([
-    ...PG_INDEX_TYPE_HINTS,
     ['ivfflat', "; declare type: 'vector' instead"],
   ]);
 
@@ -108,8 +104,10 @@ export class CockroachIndexDdl extends PgIndexDdl {
     return this.isNativeVectorIndex(index) ? '' : super.indexAccessMethod(index);
   }
 
-  /** None of pgvector's knobs: `WITH (m = 16)` answers "invalid storage parameter", `hnsw` included. */
-  protected override indexTuning(): string {
-    return '';
+  /** Its build-time candidate list alone: pgvector's `WITH (m = 16)` answers "invalid storage parameter", `hnsw` included. */
+  protected override indexTuning(index: IndexSchema): string {
+    return this.isVectorIndex(index) && index.efConstruction !== undefined
+      ? ` WITH (build_beam_size = ${index.efConstruction})`
+      : '';
   }
 }

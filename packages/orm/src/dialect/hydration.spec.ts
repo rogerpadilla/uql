@@ -98,11 +98,19 @@ describe('hydratableFields', () => {
   it('should read narrow vectors back as dense everywhere else, because that is how they were written', () => {
     // The bug this prevents: decoding by the field's own declared cast would hunt for a `{1:1}/3`
     // literal on an engine that only ever stored `[0,0,1]`, and hand back the raw text instead.
-    for (const dialect of [new CockroachDialect(), new MariaDialect(), new SqliteDialect()]) {
+    expect(new CockroachDialect().hydratableFields(NarrowVectorItem)).toEqual([
+      ['id', 'number'],
+      ['half', 'vector'],
+      ['sparse', 'vector'],
+    ]);
+  });
+
+  it('should read a vector bound as bytes back as its float32s', () => {
+    for (const dialect of [new MariaDialect(), new SqliteDialect()]) {
       expect(dialect.hydratableFields(NarrowVectorItem)).toEqual([
         ['id', 'number'],
-        ['half', 'vector'],
-        ['sparse', 'vector'],
+        ['half', 'float32'],
+        ['sparse', 'float32'],
       ]);
     }
   });

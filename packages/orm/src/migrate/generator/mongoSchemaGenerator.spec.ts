@@ -28,6 +28,15 @@ class MongoTicket {
   @Field({ type: Date }) createdAt?: Date | null;
 }
 
+/** The vector first, then each field a `$vectorSearch` pre-filters on. */
+@Index((chunk) => [chunk.embedding, chunk.tenant], { type: 'vectorSearch', distance: 'l2' })
+@Entity()
+class MongoChunk {
+  @Id({ type: String }) id?: string;
+  @Field({ type: String }) tenant?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) embedding?: number[] | null;
+}
+
 const urgentAssigneeOptions = {
   name: 'urgent_assignee_idx',
   unique: false,
@@ -109,6 +118,64 @@ describe('MongoSchemaGenerator', () => {
 
     expect(descending.key).toEqual({ createdAt: -1 });
     expect(text.key).toEqual({ username: 'text', email: 'text' });
+  });
+
+  describe('Atlas vector search index', () => {
+    const chunkIndex = {
+      action: 'createSearchIndex',
+      collection: 'MongoChunk',
+      index: {
+        name: 'embedding_index',
+        type: 'vectorSearch',
+        definition: {
+          fields: [
+            { type: 'vector', path: 'embedding', numDimensions: 3, similarity: 'euclidean' },
+            { type: 'filter', path: 'tenant' },
+          ],
+        },
+      },
+    };
+
+    /** Named as the `$vectorSearch` stage reads it by default, so an unnamed index is the one queried. */
+    it('should create it with the collection, named after its vector field', () => {
+      expect(generator.generateCreateSchema([MongoChunk]).map((json) => JSON.parse(json))).toEqual([
+        { action: 'createCollection', name: 'MongoChunk' },
+        chunkIndex,
+      ]);
+    });
+
+    it('should drop it as a search index when the migration is undone', () => {
+      const diff = generator.diffSchema(MongoChunk, createTableNode('MongoChunk'));
+      assertDefined(diff);
+
+      expect(generator.generateAlterTableDown(diff).map((json) => JSON.parse(json))).toEqual([
+        { action: 'dropSearchIndex', collection: 'MongoChunk', name: 'embedding_index' },
+      ]);
+    });
+
+    it('should refuse one whose vector field states no dimensions', () => {
+      expect(() =>
+        generator.generateCreateIndex('MongoChunk', {
+          name: 'embedding_index',
+          entries: [{ column: 'embedding' }],
+          unique: false,
+          type: 'vectorSearch',
+        }),
+      ).toThrow('an Atlas vector search index states its field\'s dimensions (index "embedding_index")');
+    });
+
+    it('should refuse a metric Atlas has no similarity for', () => {
+      expect(() =>
+        generator.generateCreateIndex('MongoChunk', {
+          name: 'embedding_index',
+          entries: [{ column: 'embedding' }],
+          unique: false,
+          type: 'vectorSearch',
+          dimensions: 3,
+          distance: 'l1',
+        }),
+      ).toThrow('mongodb does not support vector distance metric: l1 (index "embedding_index")');
+    });
   });
 
   it('should reject index options MongoDB has no equivalent for', () => {

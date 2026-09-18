@@ -1,20 +1,23 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
+import { LibsqlDialect } from '../../libsql/libsqlDialect.js';
 import { MariaDialect } from '../../maria/mariaDialect.js';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { INDEX_TYPES, type IndexType } from '../../schema/types.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
+import { TursoDialect } from '../../turso/tursoDialect.js';
+import { TursoLocalDialect } from '../../turso/tursoLocalDialect.js';
 import type { Except, IndexSchema } from '../../type/index.js';
 import {
   CockroachIndexDdl,
-  IndexDdl,
   indexDdlFor,
   MariaIndexDdl,
   MsSqlIndexDdl,
   MySqlIndexDdl,
   PgIndexDdl,
+  SqliteIndexDdl,
 } from './index.js';
 
 /**
@@ -29,7 +32,8 @@ describe('indexDdlFor', () => {
     ['a subclass of MySQL', new (class extends MySqlDialect {})(), MySqlIndexDdl],
     ['MariaDB, over its MySQL base', new MariaDialect(), MariaIndexDdl],
     ['SQL Server', new MsSqlDialect(), MsSqlIndexDdl],
-    ['anything else, which is SQLite', new SqliteDialect(), IndexDdl],
+    ['SQLite', new SqliteDialect(), SqliteIndexDdl],
+    ['libSQL, over its SQLite base', new LibsqlDialect(), SqliteIndexDdl],
   ] as const)('gives %s its own', (_name, dialect, expected) => {
     expect(indexDdlFor(dialect)).toBeInstanceOf(expected);
   });
@@ -54,8 +58,8 @@ describe('index features', () => {
    * type builds its plain index there, which is what lets an entity written for Postgres migrate.
    */
   const indexTypes: Record<keyof typeof dialects, readonly IndexType[]> = {
-    postgres: ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat'],
-    cockroachdb: ['btree', 'gin', 'gist', 'hnsw', 'vector'],
+    postgres: ['btree', 'hash', 'gin', 'gist', 'brin', 'hnsw', 'ivfflat', 'fulltext'],
+    cockroachdb: ['btree', 'gin', 'gist', 'hnsw', 'vector', 'fulltext'],
     mysql: ['btree', 'hash', 'fulltext'],
     mariadb: ['btree', 'hash', 'fulltext', 'vector'],
     sqlite: INDEX_TYPES,
@@ -76,6 +80,29 @@ describe('index features', () => {
   it.each(typePairs(false))('should refuse a %s %s index rather than emit one the server rejects', (dialect, type) => {
     expect(() => render(dialect, { entries: [{ column: 'c' }], type })).toThrow(
       `${dialect} has no ${type} index (index "i")`,
+    );
+  });
+
+  /** One declaration on every engine with full-text: each indexes the columns as its search reads them. */
+  it.each([
+    [
+      'postgres',
+      `CREATE INDEX IF NOT EXISTS "i" ON "t" USING gin (TO_TSVECTOR('english'::regconfig, COALESCE("title", '') || ' ' || COALESCE("body", '')));`,
+    ],
+    [
+      'cockroachdb',
+      `CREATE INDEX IF NOT EXISTS "i" ON "t" USING gin (TO_TSVECTOR('english', COALESCE("title", '') || ' ' || COALESCE("body", '')));`,
+    ],
+    ['mysql', 'CREATE FULLTEXT INDEX `i` ON `t` (`title`, `body`);'],
+  ] as const)('should build a %s fulltext index over what its search reads', (dialect, expected) => {
+    expect(
+      render(dialect, { entries: [{ column: 'title' }, { column: 'body' }], type: 'fulltext', config: 'english' }),
+    ).toBe(expected);
+  });
+
+  it("should build a Postgres fulltext index under 'simple' where it states no config", () => {
+    expect(render('postgres', { entries: [{ column: 'title' }], type: 'fulltext' })).toContain(
+      `TO_TSVECTOR('simple'::regconfig, COALESCE("title", ''))`,
     );
   });
 
@@ -102,11 +129,14 @@ describe('index features', () => {
   });
 
   // CockroachDB builds `USING hnsw` as its native vector index, which answers pgvector's `WITH (m = 16)`
-  // with "invalid storage parameter".
-  it('should drop pgvector tuning from a CockroachDB hnsw index', () => {
+  // with "invalid storage parameter", and names its build-time candidate list `build_beam_size`.
+  it('should build a CockroachDB vector index with its own build-time candidate list', () => {
     expect(render('cockroachdb', { entries: [{ column: 'v' }], type: 'hnsw', distance: 'cosine', m: 16 })).toBe(
       'CREATE INDEX IF NOT EXISTS "i" ON "t" USING hnsw ("v" vector_cosine_ops);',
     );
+    expect(
+      render('cockroachdb', { entries: [{ column: 'v' }], type: 'vector', distance: 'cosine', efConstruction: 64 }),
+    ).toBe('CREATE VECTOR INDEX IF NOT EXISTS "i" ON "t" ("v" vector_cosine_ops) WITH (build_beam_size = 64);');
   });
 
   // MySQL requires the extra parentheses; Postgres, CockroachDB and SQLite accept them, so one
@@ -361,20 +391,6 @@ describe('CREATE INDEX', () => {
     expect(sql).toBe(`CREATE FULLTEXT INDEX ${ifNotExists}\`text_idx\` ON \`articles\` (\`title\`, \`body\`);`);
   });
 
-  // Postgres has no `fulltext` access method, so `USING fulltext` could only fail at the server.
-  it('should refuse a fulltext index on Postgres', () => {
-    expect(() =>
-      pgDdl.getCreateIndexStatement('articles', {
-        name: 'text_idx',
-        entries: [{ column: 'title' }],
-        unique: false,
-        type: 'fulltext',
-      }),
-    ).toThrow(
-      'postgres has no fulltext index (index "text_idx"). $text needs none there; name the columns it searches with $fields.',
-    );
-  });
-
   // MySQL 26.7 has `VECTOR` columns but no vector index: `USING hnsw` is a syntax error, and the inline
   // `VECTOR INDEX` form is MariaDB's.
   it.each(['hnsw', 'ivfflat', 'vector'] as const)('should reject a %s index on MySQL', (type) => {
@@ -402,6 +418,52 @@ describe('CREATE INDEX', () => {
       distance: 'cosine',
     });
     expect(sql).toBe('CREATE INDEX IF NOT EXISTS `embedding_idx` ON `articles` (`embedding`);');
+  });
+
+  describe('libSQL vector index', () => {
+    const vectorIndex = (dialect: SqliteDialect, index: Partial<IndexSchema> = {}) =>
+      indexDdlFor(dialect).getCreateIndexStatement('articles', {
+        name: 'embedding_idx',
+        entries: [{ column: 'embedding' }],
+        unique: false,
+        type: 'hnsw',
+        ...index,
+      });
+
+    /** Any vector type, so an entity written for Postgres gets libSQL's own index. */
+    it.each(['hnsw', 'ivfflat', 'vector'] as const)(
+      'should build the DiskANN index of libSQL for a %s index',
+      (type) => {
+        expect(vectorIndex(new LibsqlDialect(), { type })).toBe(
+          "CREATE INDEX IF NOT EXISTS `embedding_idx` ON `articles` (libsql_vector_idx(`embedding`, 'metric=cosine'));",
+        );
+      },
+    );
+
+    it('should name the metric, the neighbour count and the build-time candidate list it declares', () => {
+      expect(vectorIndex(new TursoDialect(), { distance: 'l2', m: 8, efConstruction: 100 })).toBe(
+        "CREATE INDEX IF NOT EXISTS `embedding_idx` ON `articles` (libsql_vector_idx(`embedding`, 'metric=l2', 'max_neighbors=8', 'insert_l=100'));",
+      );
+    });
+
+    it('should refuse a metric libSQL cannot index', () => {
+      expect(() => vectorIndex(new LibsqlDialect(), { distance: 'inner' })).toThrow(
+        'does not support vector distance metric: inner (index "embedding_idx")',
+      );
+    });
+
+    /** libSQL names its index's tables after it, unquoted, and fails with no word of why otherwise. */
+    it('should refuse a name that is not a plain identifier', () => {
+      expect(() => vectorIndex(new LibsqlDialect(), { name: 'embedding idx' })).toThrow(
+        'libSQL names a vector index only by letters, digits and underscores, over one column (index "embedding idx")',
+      );
+    });
+
+    it('should build a plain index where the engine has no vector index', () => {
+      for (const dialect of [new TursoLocalDialect(), new SqliteDialect()]) {
+        expect(vectorIndex(dialect)).toBe('CREATE INDEX IF NOT EXISTS `embedding_idx` ON `articles` (`embedding`);');
+      }
+    });
   });
 
   // pgvector's operator classes are named `{type}_{metric}_ops`, so an index on a narrower vector
@@ -469,23 +531,6 @@ describe('CREATE INDEX', () => {
         where: '`deletedAt` IS NULL',
       }),
     ).toThrow('mysql does not support partial indexes (index "live_email_idx"');
-  });
-
-  it('should generate CREATE VECTOR INDEX for CockroachDB (native syntax, no USING/WITH)', () => {
-    const ddl = indexDdlFor(new CockroachDialect());
-    const sql = ddl.getCreateIndexStatement('articles', {
-      name: 'articles_embedding_idx',
-      entries: [{ column: 'embedding' }],
-      unique: false,
-      type: 'vector',
-      distance: 'cosine',
-      // CockroachDB has its own tuning knobs, not m/efConstruction/lists - must not appear.
-      m: 16,
-      efConstruction: 64,
-    });
-    expect(sql).toBe(
-      'CREATE VECTOR INDEX IF NOT EXISTS "articles_embedding_idx" ON "articles" ("embedding" vector_cosine_ops);',
-    );
   });
 
   it('should not add an operator class to a CockroachDB index with a non-vector type', () => {

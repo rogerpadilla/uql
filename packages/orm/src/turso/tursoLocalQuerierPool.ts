@@ -1,8 +1,7 @@
 import type { connect } from '@tursodatabase/database';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
-import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
-import { applySqlitePragmas } from '../sqlite/sqlitePragmas.js';
-import { type SqliteDatabase, SqliteQuerier } from '../sqlite/sqliteQuerier.js';
+import { AbstractLocalSqliteQuerierPool } from '../sqlite/localSqliteQuerierPool.js';
+import type { SqliteDatabase } from '../sqlite/sqliteQuerier.js';
 import type { ExtraOptions } from '../type/index.js';
 import { TursoLocalDialect } from './tursoLocalDialect.js';
 
@@ -10,11 +9,7 @@ import { TursoLocalDialect } from './tursoLocalDialect.js';
 export type TursoLocalOptions = NonNullable<Parameters<typeof connect>[1]>;
 
 /** A pool for the embedded Turso engine, on `uql-orm/turso/local` so its native binaries stay out of edge bundles. */
-export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
-  SqliteDatabase,
-  SqliteQuerier,
-  TursoLocalDialect
-> {
+export class TursoLocalQuerierPool extends AbstractLocalSqliteQuerierPool<SqliteDatabase, TursoLocalDialect> {
   constructor(
     readonly filename = ':memory:',
     readonly opts?: TursoLocalOptions,
@@ -23,16 +18,10 @@ export class TursoLocalQuerierPool extends AbstractSharedHandleQuerierPool<
     super(new TursoLocalDialect(dialectOptionsFrom(extra)), extra);
   }
 
-  protected override async openDb(): Promise<SqliteDatabase> {
+  protected override async createDb(): Promise<SqliteDatabase> {
     const { connect } = await import('@tursodatabase/database');
     const db = await connect(this.filename, this.opts);
-    // Integers as `bigint`, which the querier decodes exactly past 2^53.
     db.defaultSafeIntegers(true);
-    await applySqlitePragmas(db);
     return db;
-  }
-
-  protected override buildQuerier(db: SqliteDatabase) {
-    return new SqliteQuerier(db, this.dialect, this.extra);
   }
 }

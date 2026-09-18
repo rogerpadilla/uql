@@ -1,4 +1,3 @@
-import { MongoMemoryReplSet } from 'mongodb-memory-server';
 import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
@@ -8,6 +7,7 @@ import {
   createSpec,
   Item,
   MeasureUnitCategory,
+  mongoUri,
   Profile,
   TaxCategory,
   User,
@@ -28,34 +28,8 @@ class Ticket {
 }
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
-  static replSet: MongoMemoryReplSet;
-
   constructor() {
-    super(new MongodbQuerierPool('mongodb://127.0.0.1:27017/test'));
-  }
-
-  override async beforeAll() {
-    MongodbQuerierIt.replSet = await MongoMemoryReplSet.create({
-      replSet: { count: 1, storageEngine: 'wiredTiger' },
-    });
-    const uri = MongodbQuerierIt.replSet.getUri();
-    this.pool = new MongodbQuerierPool(uri);
-    await super.beforeAll();
-  }
-
-  override async afterAll() {
-    await super.afterAll();
-    try {
-      // Stop the replica set - cleanup may throw due to timing issues in mongodb-memory-server
-      await MongodbQuerierIt.replSet.stop({ doCleanup: false });
-    } finally {
-      // Try cleanup separately to avoid "mongodProcess is still defined" error
-      try {
-        await MongodbQuerierIt.replSet.cleanup();
-      } catch {
-        // Ignore cleanup errors - the process will be cleaned up by the OS
-      }
-    }
+    super(new MongodbQuerierPool(mongoUri('uql_querier')));
   }
 
   override async createTables() {

@@ -115,6 +115,11 @@ export interface DialectFeatures {
   readonly vectorIndexRequiresNotNull: boolean;
   /** Whether the dialect requires/allows (n) length constraints on vector types. */
   readonly vectorSupportsLength: boolean;
+  /**
+   * Whether a vector binds as its packed little-endian float32 bytes, which a blob column holds and the
+   * SQLite family and MariaDB read, rather than as `[1,2,3]` text they would reparse per row.
+   */
+  readonly vectorBytes: boolean;
   /** Whether the dialect natively supports the TIMESTAMPTZ alias/type. */
   readonly supportsTimestamptz: boolean;
   /**

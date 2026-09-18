@@ -21,12 +21,14 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   override readonly insertIdSource = 'returning';
 
   /**
-   * Unlike MySQL: `VECTOR(n)` takes its dimension, every column of a vector index has to be NOT NULL,
-   * `CREATE INDEX` takes `IF NOT EXISTS`, and a lock cannot be narrowed to one table of a join.
+   * Unlike MySQL: `VECTOR(n)` takes its dimension and binds as packed float32 bytes, every column of a
+   * vector index has to be NOT NULL, `CREATE INDEX` takes `IF NOT EXISTS`, and a lock cannot be narrowed
+   * to one table of a join.
    */
   override readonly features: SqlDialectFeatures = {
     ...MYSQL_FEATURES,
     vectorSupportsLength: true,
+    vectorBytes: true,
     vectorIndexRequiresNotNull: true,
     indexIfNotExists: true,
     rowLockOf: false,
@@ -90,18 +92,6 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     ['cosine', { fn: 'VEC_DISTANCE_COSINE', index: 'cosine' }],
     ['l2', { fn: 'VEC_DISTANCE_EUCLIDEAN', index: 'euclidean' }],
   ]);
-
-  /**
-   * A `VECTOR` column holds a packed little-endian float32 blob, and MariaDB refuses text where one
-   * belongs: inserting `'[1,2,3]'` fails with `Incorrect vector value`, and passing it to
-   * `VEC_DISTANCE_COSINE` with `Illegal parameter data type varchar`. `VEC_FromText` is the
-   * conversion, needed on both paths.
-   */
-  protected override appendVectorValue(ctx: QueryContext, value: readonly unknown[]): void {
-    ctx.append('VEC_FromText(');
-    super.appendVectorValue(ctx, value);
-    ctx.append(')');
-  }
 
   /**
    * `mhnsw_ef_search` too, where a vector search is tuned. A setting scoped to one statement needs

@@ -44,6 +44,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   commentSyntax: 'inline',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
+  vectorBytes: false,
   supportsTimestamptz: false,
   stringSizing: 'varchar',
   supportsUnsigned: true,
@@ -245,7 +246,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const columns = textSearchFields(meta, search).map((key) =>
       this.escapeId(this.resolveColumnName(key, meta.fields[key])),
     );
-    ctx.append(`MATCH(${columns.join(', ')}) AGAINST(`);
+    ctx.append(`MATCH(${this.textSearchTarget(columns)}) AGAINST(`);
     ctx.addValue(search.$value);
     ctx.append(')');
   }

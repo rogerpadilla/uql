@@ -2679,7 +2679,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([]);
   }
 
-  /** A group key reaches a to-one relation's field through a `LEFT JOIN`, and every column is qualified once one joins. */
+  /** A group key reaches a to-one relation's field through an `INNER JOIN`, and every column is qualified once one joins. */
   shouldAggregateGroupedByARelationsField() {
     const e = this.dialect.escapeIdChar;
     const { sql, values } = this.exec((ctx) =>
@@ -2691,9 +2691,40 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} LEFT JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(1)} GROUP BY ${e}tax${e}.${e}name${e} ORDER BY SUM(${e}Item${e}.${e}salePrice${e}) DESC`,
+      `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(1)} GROUP BY ${e}tax${e}.${e}name${e} ORDER BY SUM(${e}Item${e}.${e}salePrice${e}) DESC`,
     );
     expect(values).toEqual(['a']);
+  }
+
+  /**
+   * A filter on the relation the group key already joins reads that join, rather than the relation's table
+   * a second time in an `EXISTS`: the join keeps a row whose one related row matches, which is what it asks.
+   */
+  shouldFilterAGroupedRelationThroughItsJoin() {
+    const e = this.dialect.escapeIdChar;
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, Item, {
+        $where: { code: 'a', tax: { name: 'vat' } },
+        $group: { taxName: { tax: { name: true } } },
+        $select: { total: { $sum: { salePrice: true } } },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${e}tax${e}.${e}name${e} ${e}taxName${e}, SUM(${e}Item${e}.${e}salePrice${e}) ${e}total${e} FROM ${e}Item${e} INNER JOIN ${e}Tax${e} ${e}tax${e} ON ${e}tax${e}.${e}id${e} = ${e}Item${e}.${e}taxId${e} AND ${e}tax${e}.${e}name${e} = ${this.ph(1)} WHERE ${e}Item${e}.${e}code${e} = ${this.ph(2)} GROUP BY ${e}tax${e}.${e}name${e}`,
+    );
+    expect(values).toEqual(['vat', 'a']);
+  }
+
+  /** A negated one stays a `NOT EXISTS`, which the join cannot say. */
+  shouldKeepANegatedGroupedRelationFilterAsASubquery() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.aggregate(ctx, Item, {
+        $where: { $not: [{ tax: { name: 'vat' } }] },
+        $group: { taxName: { tax: { name: true } } },
+        $select: { total: { $sum: { salePrice: true } } },
+      }),
+    );
+    expect(sql).toContain('NOT EXISTS');
   }
 
   /**
@@ -2729,7 +2760,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       }),
     );
     expect(sql).toBe(
-      `SELECT ${e}units${e}, COUNT(*) ${e}n${e} FROM (SELECT (SELECT COUNT(*) FROM ${e}MeasureUnit${e} ${e}measureUnits${e} WHERE ${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e} AND ${e}measureUnits${e}.${e}deletedAt${e} IS NULL) ${e}units${e} FROM ${e}MeasureUnit${e} LEFT JOIN ${e}MeasureUnitCategory${e} ${e}category${e} ON ${e}category${e}.${e}id${e} = ${e}MeasureUnit${e}.${e}categoryId${e} AND ${e}category${e}.${e}deletedAt${e} IS NULL WHERE ${e}MeasureUnit${e}.${e}deletedAt${e} IS NULL) ${e}_uql_rows${e} GROUP BY ${e}units${e}`,
+      `SELECT ${e}units${e}, COUNT(*) ${e}n${e} FROM (SELECT (SELECT COUNT(*) FROM ${e}MeasureUnit${e} ${e}measureUnits${e} WHERE ${e}measureUnits${e}.${e}categoryId${e} = ${e}category${e}.${e}id${e} AND ${e}measureUnits${e}.${e}deletedAt${e} IS NULL) ${e}units${e} FROM ${e}MeasureUnit${e} INNER JOIN ${e}MeasureUnitCategory${e} ${e}category${e} ON ${e}category${e}.${e}id${e} = ${e}MeasureUnit${e}.${e}categoryId${e} AND ${e}category${e}.${e}deletedAt${e} IS NULL WHERE ${e}MeasureUnit${e}.${e}deletedAt${e} IS NULL) ${e}_uql_rows${e} GROUP BY ${e}units${e}`,
     );
   }
 

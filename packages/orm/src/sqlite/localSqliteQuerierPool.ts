@@ -1,9 +1,7 @@
-import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
-import type { ExtraOptions } from '../type/index.js';
-import { SqliteDialect } from './sqliteDialect.js';
+import type { SqliteDialect } from './sqliteDialect.js';
 import { applySqlitePragmas } from './sqlitePragmas.js';
-import { type SqlitePreparedStatement, SqliteQuerier } from './sqliteQuerier.js';
+import { type SqliteDatabase, type SqlitePreparedStatement, SqliteQuerier } from './sqliteQuerier.js';
 
 /** What every local SQLite pool accepts on top of its driver's own options. */
 export type LocalSqlitePoolOptions = {
@@ -48,30 +46,29 @@ export function adaptSqlite<S extends Omit<SqlitePreparedStatement, 'reader'>>(
   };
 }
 
-/** A pool for a SQLite file opened in this process, configured the same way whichever driver's {@link createDb} opens it. */
-export abstract class AbstractLocalSqliteQuerierPool<
-  O extends LocalSqlitePoolOptions,
-> extends AbstractSharedHandleQuerierPool<LocalSqliteDatabase, SqliteQuerier, SqliteDialect> {
-  constructor(
-    readonly opts?: O,
-    extra?: ExtraOptions,
-  ) {
-    super(new SqliteDialect(dialectOptionsFrom(extra)), extra);
+/** `db` with each loadable extension installed, which `node:sqlite` refuses unless opened to allow them. */
+export function loadExtensions(db: LocalSqliteDatabase, extensions: readonly string[] = []): LocalSqliteDatabase {
+  for (const extension of extensions) {
+    db.loadExtension(extension);
   }
+  return db;
+}
 
-  /** Opens the driver's database, and nothing more: the caller configures it. */
-  protected abstract createDb(): Promise<LocalSqliteDatabase>;
+/** A pool for a database file opened in this process, configured the same way whichever driver's {@link createDb} opens it. */
+export abstract class AbstractLocalSqliteQuerierPool<
+  DB extends SqliteDatabase,
+  D extends SqliteDialect,
+> extends AbstractSharedHandleQuerierPool<DB, SqliteQuerier, D> {
+  /** Opens the driver's database, reading integers as `bigint`, which the querier decodes exactly past 2^53. */
+  protected abstract createDb(): Promise<DB>;
 
-  protected override async openDb(): Promise<LocalSqliteDatabase> {
+  protected override async openDb(): Promise<DB> {
     const db = await this.createDb();
     await applySqlitePragmas(db);
-    for (const extension of this.opts?.extensions ?? []) {
-      db.loadExtension(extension);
-    }
     return db;
   }
 
-  protected override buildQuerier(db: LocalSqliteDatabase) {
+  protected override buildQuerier(db: DB) {
     return new SqliteQuerier(db, this.dialect, this.extra);
   }
 }

@@ -1,6 +1,7 @@
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PG_VECTOR_METRICS, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
+import type { IndexType } from '../schema/types.js';
 import type { QueryContext, SqlDialectFeatures, Type } from '../type/index.js';
 
 /** CockroachDB: the Postgres wire and SQL, without `xmax` (so no upsert `created`) and with native vectors. */
@@ -13,6 +14,16 @@ export class CockroachDialect extends PgLikeSqlDialect {
    * Re-check that issue before adding it.
    */
   override readonly vectorMetrics = new Map([...PG_VECTOR_METRICS].filter(([metric]) => metric !== 'l1'));
+
+  /** Neither `regconfig` nor `WEBSEARCH_TO_TSQUERY` exist here (v26.3): the config goes as text, the search as plain words. */
+  protected override readonly textConfigCast = '';
+  protected override readonly textQueryFn = 'PLAINTO_TSQUERY';
+
+  /** Its own beam for either type that builds its vector index; it refuses pgvector's `hnsw.ef_search`. */
+  protected override readonly annSettings: ReadonlyMap<IndexType, string> = new Map<IndexType, string>([
+    ['hnsw', 'vector_search_beam_size'],
+    ['vector', 'vector_search_beam_size'],
+  ]);
 
   /** An upsert batch mixing an update and an insert returns the update first (verified on v26.2). */
   override readonly features: SqlDialectFeatures = { ...PG_FEATURES, orderedUpsertReturning: false };

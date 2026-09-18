@@ -65,6 +65,8 @@ The compiler catches each of those, with no codegen: the entity classes are the 
 - [Entities](https://uql-orm.dev/entities/basic) - decorators, relations, hooks, or the decorator-free [imperative API](https://uql-orm.dev/entities/imperative)
 - [Switching to UQL](https://uql-orm.dev/switching-to-uql) - coming from Prisma, Drizzle, TypeORM, or MikroORM
 
+Using a coding agent? The package ships a [skill](skills/uql-orm/SKILL.md) for it (`npx @tanstack/intent install`, or `npx skills add rogerpadilla/uql`), and every docs page is Markdown, indexed at [uql-orm.dev/llms.txt](https://uql-orm.dev/llms.txt).
+
 Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/main/CHANGELOG.md).
 
 ---

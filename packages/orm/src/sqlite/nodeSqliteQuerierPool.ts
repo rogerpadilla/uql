@@ -1,10 +1,13 @@
+import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { ExtraOptions } from '../type/index.js';
 import {
   AbstractLocalSqliteQuerierPool,
   adaptSqlite,
   type LocalSqliteDatabase,
   type LocalSqlitePoolOptions,
+  loadExtensions,
 } from './localSqliteQuerierPool.js';
+import { SqliteDialect } from './sqliteDialect.js';
 
 /**
  * The `DatabaseSync` options worth surfacing, plus the loadable extensions to install. Declared here
@@ -22,13 +25,13 @@ export type NodeSqlitePoolOptions = LocalSqlitePoolOptions & {
  * A pool over Node's built-in `node:sqlite`, needing no dependency at all. {@link Sqlite3QuerierPool} is the
  * faster choice for read-heavy work, and the one on Bun.
  */
-export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSqlitePoolOptions> {
+export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqliteDatabase, SqliteDialect> {
   constructor(
     readonly filename = ':memory:',
-    opts?: NodeSqlitePoolOptions,
+    readonly opts?: NodeSqlitePoolOptions,
     extra?: ExtraOptions,
   ) {
-    super(opts, extra);
+    super(new SqliteDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override async createDb(): Promise<LocalSqliteDatabase> {
@@ -36,11 +39,13 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<NodeSq
     const { extensions, ...driverOpts } = this.opts ?? {};
     const nodeDb = new DatabaseSync(this.filename, {
       ...driverOpts,
-      // Integers as `bigint`, which the querier decodes exactly past 2^53.
       readBigInts: true,
       // `node:sqlite` refuses `loadExtension` unless the database was opened with this on.
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });
-    return adaptSqlite(nodeDb, (stmt) => stmt.columns().length > 0);
+    return loadExtensions(
+      adaptSqlite(nodeDb, (stmt) => stmt.columns().length > 0),
+      extensions,
+    );
   }
 }

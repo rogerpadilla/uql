@@ -102,6 +102,18 @@ describe('decodeColumn', () => {
     expect(decodeColumn('\\xDED6FC3DDB0F49400000003F000000C0', 'vector')).toEqual([0.1234567, 3.1415927, 0.5, -2]);
   });
 
+  /** A SQLite blob column, in each shape its drivers hand one over. */
+  it('should read a float32 column from the bytes a SQLite driver returns', () => {
+    const packed = new Float32Array([1, 0.5, -2]);
+    expect(decodeColumn(new Uint8Array(packed.buffer), 'float32')).toEqual([1, 0.5, -2]);
+    expect(decodeColumn(packed.buffer, 'float32')).toEqual([1, 0.5, -2]);
+  });
+
+  it('should read a float32 column that crossed JSON as hex, or was stored as text before blobs', () => {
+    expect(decodeColumn('\\x0000803F000000C0', 'float32')).toEqual([1, -2]);
+    expect(decodeColumn('[1,0,2]', 'float32')).toEqual([1, 0, 2]);
+  });
+
   it('should keep text that is not that column’s literal', () => {
     expect(decodeColumn('[1,2]', 'sparsevec')).toBe('[1,2]');
   });
