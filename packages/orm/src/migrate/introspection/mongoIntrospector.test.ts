@@ -49,6 +49,23 @@ describe('MongoSchemaIntrospector', () => {
     });
   });
 
+  /** A text index answers `_fts`/`_ftsx` as its key: its fields, and their weights, are in `weights`. */
+  it("should read a text index's fields and weights", async () => {
+    await pool.withQuerier(async ({ db }) => {
+      await db
+        .collection('note')
+        .createIndex({ zeta: 'text', alpha: 'text' }, { name: 'note_text_idx', weights: { zeta: 10 } });
+    });
+    const schema = await introspector.getTableSchema('note');
+    await pool.withQuerier(({ db }) => db.collection('note').drop());
+    expect(schema?.indexes).toContainEqual({
+      name: 'note_text_idx',
+      entries: [{ column: 'alpha' }, { column: 'zeta', weight: 10 }],
+      unique: false,
+      type: 'fulltext',
+    });
+  });
+
   it('should read no schema for a collection that does not exist', async () => {
     expect(await introspector.getTableSchema('missing')).toBeUndefined();
   });

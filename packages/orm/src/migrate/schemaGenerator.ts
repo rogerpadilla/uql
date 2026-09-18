@@ -3,7 +3,7 @@ import { getMeta } from '../entity/index.js';
 import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
 import { indexSignature } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import { buildSchemaAST, resolveColumnCanonicalType } from '../schema/schemaASTBuilder.js';
+import { type BuildSchemaASTOptions, buildSchemaAST, resolveColumnCanonicalType } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
@@ -123,7 +123,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /** The entity side as an AST, carrying this generator's default referential action. */
   buildAST(entities: readonly Type<object>[]): SchemaAST {
-    return buildEntityAST(this, entities, this.defaultForeignKeyAction);
+    return buildEntityAST(this, entities, {
+      defaultForeignKeyAction: this.defaultForeignKeyAction,
+      textScoreIndexes: this.dialect.features.textScoreIndexes,
+    });
   }
 
   /**
@@ -187,7 +190,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     direction: 'create' | 'drop',
     only?: readonly string[],
   ): TableNode[] {
-    const ast = buildEntityAST(this, entities, this.defaultForeignKeyAction);
+    const ast = this.buildAST(entities);
     const tables = direction === 'create' ? ast.getCreateOrder() : ast.getDropOrder();
     if (!only) {
       return tables;
@@ -248,7 +251,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     // Add indexes
     if (diff.indexesToAdd?.length) {
       for (const index of diff.indexesToAdd) {
-        statements.push(this.generateCreateIndex(diff.tableName, index));
+        statements.push(...this.addIndexStatements(diff.tableName, index));
       }
     }
 
@@ -352,6 +355,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
     return this.indexDdl.getCreateIndexStatement(tableName, index, options);
+  }
+
+  /** An index added to a table that may already have rows: its `CREATE`, then what the engine needs after. */
+  private addIndexStatements(tableName: string, index: IndexSchema): string[] {
+    return [this.generateCreateIndex(tableName, index), ...this.indexDdl.settleStatements(tableName, index)];
   }
 
   /**
@@ -479,7 +487,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
     // Keyed by the qualified name this generator resolves, which is the key the AST stores the table
     // under.
-    const desired = (desiredAst ?? buildEntityAST(this, [entity], this.defaultForeignKeyAction)).getTable(tableName);
+    const desired = (desiredAst ?? this.buildAST([entity])).getTable(tableName);
     if (!desired) {
       return undefined;
     }
@@ -741,7 +749,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       case 'alterColumn':
         return this.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
       case 'createIndex':
-        return [this.generateCreateIndexFromDefinition(operation.tableName, operation.index)];
+        return this.addIndexStatements(
+          operation.tableName,
+          renderIndexDefinition(operation.index, (sql) => this.dialect.compileDdl(sql)),
+        );
       case 'dropIndex':
         return [this.generateDropIndex(operation.tableName, operation.indexName)];
       case 'addForeignKey':
@@ -914,7 +925,7 @@ export function buildEntityAST(
     'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName' | 'compileDdl' | 'compileIndexPredicate'
   >,
   entities: readonly Type<object>[],
-  defaultForeignKeyAction?: ForeignKeyAction,
+  options: Pick<BuildSchemaASTOptions, 'defaultForeignKeyAction' | 'textScoreIndexes'> = {},
 ): SchemaAST {
   return buildSchemaAST(entities, {
     // The alias, not `resolveTableName`: a node holds its schema separately, so that a name derived
@@ -924,6 +935,6 @@ export function buildEntityAST(
     resolveColumnName: (key, field) => generator.resolveColumnName(key, field),
     compileDdl: (sql, entity) => generator.compileDdl(sql, entity),
     compileIndexPredicate: (where, entity, indexName) => generator.compileIndexPredicate(where, entity, indexName),
-    defaultForeignKeyAction,
+    ...options,
   });
 }

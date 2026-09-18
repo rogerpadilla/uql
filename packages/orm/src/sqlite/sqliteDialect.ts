@@ -58,6 +58,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   rowLocks: false,
   rowLockWithWindow: true,
   rowLockOf: true,
+  textScoreIndexes: false,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
@@ -231,7 +232,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   /** FTS5's `BM25` of the match, lower for a better one, so negated to rank as every other engine does. */
-  protected override appendTextRank<E>(ctx: QueryContext, meta: EntityMeta<E>): void {
+  protected override appendTextScore<E>(ctx: QueryContext, meta: EntityMeta<E>): void {
     ctx.append(`-BM25(${this.escapedTableName(meta)})`);
   }
 

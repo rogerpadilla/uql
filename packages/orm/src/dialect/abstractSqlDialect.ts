@@ -76,6 +76,8 @@ import {
   columnFamily,
   countedRelations,
   fieldUpdateOf,
+  fulltextIndexOver,
+  fulltextWeights,
   isFieldUpdateOp,
   isJsonObject,
   isJsonUpdateOp,
@@ -86,6 +88,8 @@ import {
   parentJoins,
   rankedTextSearch,
   targetKeyColumns,
+  textSearchFields,
+  textWeightSteps,
   type ParsedGroupEntry,
   parseGroupMap,
   parseRelationAtKey,
@@ -533,10 +537,40 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * A row's relevance to a `$text` search, higher for a better match: what `$sort: { $text }` orders by.
-   * Each engine that searches scores too, so a dialect overrides this beside {@link appendTextSearch}.
+   * A row's relevance to a `$text` search, what `$sort: { $text }` orders by. Where the fulltext index
+   * weighs its columns, a match counts its column's weight, as MongoDB's `textScore` counts it: the score
+   * over every column times the lightest weight, plus each heavier column's own times what it weighs more.
    */
-  protected appendTextRank<E>(_ctx: QueryContext, _meta: EntityMeta<E>, _search: QueryTextSearchOptions<E>): void {
+  private appendTextRank<E>(ctx: QueryContext, meta: EntityMeta<E>, search: QueryTextSearchOptions<E>): void {
+    const keys = textSearchFields(meta, search);
+    const index = fulltextIndexOver(meta, keys);
+    const weights = index && fulltextWeights({ type: index.type, entries: index.columns });
+    if (!weights) {
+      this.appendTextScore(ctx, meta, search, keys);
+      return;
+    }
+    const { lightest, extra } = textWeightSteps(weights);
+    ctx.append(`(${lightest} * `);
+    this.appendTextScore(ctx, meta, search, keys);
+    keys.forEach((key, at) => {
+      if (extra[at]) {
+        ctx.append(` + ${extra[at]} * `);
+        this.appendTextScore(ctx, meta, search, [key]);
+      }
+    });
+    ctx.append(')');
+  }
+
+  /**
+   * How relevant the `keys` of a row are to a `$text` search, higher for a better match. Each engine that
+   * searches scores too, so a dialect overrides this beside {@link appendTextSearch}.
+   */
+  protected appendTextScore<E>(
+    _ctx: QueryContext,
+    _meta: EntityMeta<E>,
+    _search: QueryTextSearchOptions<E>,
+    _keys: readonly string[],
+  ): void {
     throw new TypeError(`${this.dialectName} does not support $text full-text search`);
   }
 

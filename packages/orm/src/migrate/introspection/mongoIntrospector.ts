@@ -10,7 +10,13 @@ import {
 } from '../../type/index.js';
 
 /** The parts of a Mongo index description this introspector reads. */
-type MongoIndex = { readonly name?: string; readonly key: Record<string, unknown>; readonly unique?: boolean };
+type MongoIndex = {
+  readonly name?: string;
+  readonly key: Record<string, unknown>;
+  readonly unique?: boolean;
+  /** A text index's fields and their weights, alphabetically: its key is `_fts`/`_ftsx` instead. */
+  readonly weights?: Record<string, number>;
+};
 
 /** The parts of an Atlas search index description this introspector reads. */
 type MongoSearchIndexInfo = {
@@ -27,8 +33,8 @@ const SEARCH_NOT_ENABLED = 31082;
  * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
  */
 export class MongoSchemaIntrospector implements SchemaIntrospector {
-  /** `listIndexes` reports keys and uniqueness; a `partialFilterExpression` is no SQL predicate. */
-  readonly indexFacets: ReadonlySet<IndexFacet> = new Set();
+  /** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
+  readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textWeights']);
 
   constructor(private readonly pool: QuerierPool) {}
 
@@ -62,10 +68,12 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         name: tableName,
         columns: [],
         indexes: [
-          ...indexes.map((idx) => ({
-            name: idx.name ?? Object.keys(idx.key).join('_'),
-            entries: Object.keys(idx.key).map((column) => ({ column })),
-            unique: !!idx.unique,
+          ...indexes.map(({ name, key, unique, weights }) => ({
+            name: name ?? Object.keys(key).join('_'),
+            unique: !!unique,
+            ...(weights
+              ? { entries: Object.entries(weights).map(textIndexEntry), type: 'fulltext' as const }
+              : { entries: Object.keys(key).map((column) => ({ column })) }),
           })),
           ...searchIndexes
             .filter((idx) => idx.type === 'vectorSearch')
@@ -101,6 +109,11 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
       return task(querier.db);
     });
   }
+}
+
+/** A text index field as an entity declares it: its weight stated only where it is not the default 1. */
+function textIndexEntry([column, weight]: [string, number]): { column: string; weight?: number } {
+  return weight === 1 ? { column } : { column, weight };
 }
 
 /** A collection's Atlas search indexes, none where the server has no Atlas Search. */

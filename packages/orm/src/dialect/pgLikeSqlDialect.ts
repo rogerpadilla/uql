@@ -59,6 +59,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
   rowLocks: true,
   rowLockWithWindow: false,
   rowLockOf: true,
+  textScoreIndexes: false,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
@@ -176,27 +177,32 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(')');
   }
 
-  /** `TS_RANK` of the document the predicate matches, against the same search. */
-  protected override appendTextRank<E>(
+  /** `TS_RANK` of the document over `keys` against the same search the match reads. */
+  protected override appendTextScore<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    keys: readonly string[],
   ): void {
-    const { document, query } = this.textSearchParts(meta, search);
+    const { document, query } = this.textSearchParts(meta, search, keys);
     ctx.append(`TS_RANK(${document}, ${query}`);
     ctx.addValue(search.$value);
     ctx.append('))');
   }
 
-  /** The document a search reads and the search itself, open for its value. */
+  /**
+   * The document over `keys` and the search itself, open for its value, under the `$config` asked for,
+   * else that of the fulltext index over every field searched, which is what serves the match.
+   */
   private textSearchParts<E>(
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    keys?: readonly string[],
   ): { document: string; query: string } {
-    const keys = textSearchFields(meta, search);
-    const index = fulltextIndexOver(meta, keys);
+    const fields = textSearchFields(meta, search);
+    const index = fulltextIndexOver(meta, fields);
     const config = search.$config ?? (index && fulltextConfig(index));
-    const columns = keys.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
+    const columns = (keys ?? fields).map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
     return {
       document: this.textSearchTarget(columns, config),
       query: `${this.textQueryFn}(${this.textConfigArg(config)}`,

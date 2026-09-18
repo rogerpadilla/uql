@@ -6,6 +6,8 @@ export type MongoIndexOptions = {
   readonly unique: boolean;
   readonly name: string;
   readonly partialFilterExpression?: Readonly<Record<string, unknown>>;
+  /** A text index's weight per field, which `textScore` multiplies a match in it by. */
+  readonly weights?: Readonly<Record<string, number>>;
 };
 
 /** A field of an Atlas vector search index: the vector itself, or one its `filter` pre-filters on. */

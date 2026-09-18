@@ -747,6 +747,11 @@ export type IndexColumnModifiers = {
   readonly nulls?: 'first' | 'last';
   /** Operator class, e.g. `jsonb_path_ops` for a smaller GIN index. Postgres only. */
   readonly opsClass?: string;
+  /**
+   * How many times a match in this column of a fulltext index counts in `$sort: { $text }`, 1 by default:
+   * a whole number from 1 to 99999, the range MongoDB weighs by.
+   */
+  readonly weight?: number;
   /** Index a path inside a JSON column. See {@link IndexJsonPath}. */
   readonly jsonPath?: IndexJsonPath;
   /** Index every element of a JSON array. See {@link IndexJsonArray}. */

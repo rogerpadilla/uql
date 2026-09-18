@@ -7,7 +7,7 @@ import { isMongoQuerier, isSqlQuerier, type MigratorDialect, type Querier, type 
 
 const TABLE = 'text_search_doc';
 
-@Index((doc) => [doc.title, doc.bodyText], { type: 'fulltext', config: 'english' })
+@Index((doc) => [{ column: doc.title, weight: 10 }, doc.bodyText], { type: 'fulltext', config: 'english' })
 @Entity({ name: TABLE })
 class TextDoc {
   @Id({ type: String, onInsert: uuidv7 }) id?: string;
@@ -71,6 +71,24 @@ export function describeTextSearch(name: string, createPool: () => QuerierPool<Q
         }),
       );
       expect(found.map((doc) => doc.title)).toEqual(['otter', 'heron']);
+    });
+
+    /** A title match outweighs three in the body, and is inserted last so the order it came in cannot pass for it. */
+    it('should rank a match by the weight of the column it is in', async () => {
+      await pool.withQuerier((querier) =>
+        querier.insertMany(TextDoc, [
+          { title: 'finch', bodyText: 'a kestrel kestrel kestrel nest' },
+          { title: 'kestrel', bodyText: 'hovers' },
+        ]),
+      );
+      const found = await pool.withQuerier((querier) =>
+        querier.findMany(TextDoc, {
+          $select: { title: true },
+          $where: { $text: { $value: 'kestrel' } },
+          $sort: { $text: 'desc' },
+        }),
+      );
+      expect(found.map((doc) => doc.title)).toEqual(['kestrel', 'finch']);
     });
 
     it('should plan nothing more once the index exists', async () => {

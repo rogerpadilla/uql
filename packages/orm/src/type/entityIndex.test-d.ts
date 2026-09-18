@@ -15,6 +15,10 @@ import { raw } from '../util/index.js';
 // Column entry sugar: an expression, and the object form's length/order/nulls/opsClass modifiers.
 @Index((article) => [raw`lower(${article.title})`], { unique: true })
 @Index((article) => [{ column: article.title, length: 64, order: 'desc', nulls: 'last', opsClass: 'text_ops' }])
+// A fulltext column's weight is a number on every engine, never a Postgres label.
+@Index((article) => [{ column: article.title, weight: 2 }], { type: 'fulltext' })
+// @ts-expect-error a weight is a number
+@Index((article) => [{ column: article.title, weight: 'A' }], { type: 'fulltext' })
 @Entity()
 export class Article {
   @Id({ type: Number }) id?: number;

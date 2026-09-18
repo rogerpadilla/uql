@@ -151,6 +151,11 @@ export interface SqlDialectFeatures extends DialectFeatures {
   readonly rowLockWithWindow: boolean;
   /** Whether a lock can be narrowed to one table of a join, `FOR UPDATE OF`, which MariaDB lacks. */
   readonly rowLockOf: boolean;
+  /**
+   * Whether a fulltext index's heavier column needs a fulltext index of its own to be scored by, as
+   * MySQL's `MATCH` does, which reads only an index over exactly its columns.
+   */
+  readonly textScoreIndexes: boolean;
   /** Whether a multi-row upsert's `RETURNING` lists its rows in payload order; where not, the ids are read back. */
   readonly orderedUpsertReturning: boolean;
   /** Whether a JSON aggregate takes an `ORDER BY` of its own; where not, a relation's rows keep their derived table's order. */

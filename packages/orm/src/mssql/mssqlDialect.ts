@@ -48,6 +48,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   rowLocks: true,
   rowLockWithWindow: true,
   rowLockOf: true,
+  textScoreIndexes: false,
   orderedUpsertReturning: false,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,

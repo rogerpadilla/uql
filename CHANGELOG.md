@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.72.1] - 2026-09-18
+
+- A fulltext index weighs its columns, `{ column: post.title, weight: 3 }`, which `$sort: { $text }` ranks by on every engine with full-text search.
+- Fixed (MongoDB): `drift:check` reads a text index's fields, rather than reporting every one as drifted.
+- Fixed (MySQL, MariaDB): a fulltext index added to a table with rows is followed by `OPTIMIZE TABLE`, without which InnoDB scores it 0 or fails the search.
+
 ## [0.72.0] - 2026-09-18
 
 - `$inc` and `$mul` add to and multiply a numeric field in the statement, `{ stock: { $inc: -1 } }`, a NULL counting as 0.

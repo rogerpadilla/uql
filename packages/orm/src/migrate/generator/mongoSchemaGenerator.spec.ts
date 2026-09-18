@@ -120,6 +120,20 @@ describe('MongoSchemaGenerator', () => {
     expect(text.key).toEqual({ username: 'text', email: 'text' });
   });
 
+  /** MongoDB weighs a text index's fields itself, so the weights are the index's own option. */
+  it('should weigh a fulltext index by its columns, and leave an unweighted one without', () => {
+    const create = (entries: readonly { column: string; weight?: number }[]) =>
+      JSON.parse(
+        generator.generateCreateIndex('MongoUser', { name: 'text_idx', entries, unique: false, type: 'fulltext' }),
+      );
+
+    expect(create([{ column: 'username', weight: 10 }, { column: 'email' }]).options.weights).toEqual({
+      username: 10,
+      email: 1,
+    });
+    expect(create([{ column: 'username' }, { column: 'email' }]).options.weights).toBeUndefined();
+  });
+
   describe('Atlas vector search index', () => {
     const chunkIndex = {
       action: 'createSearchIndex',

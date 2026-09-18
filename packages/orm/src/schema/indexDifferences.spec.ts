@@ -20,6 +20,23 @@ describe('describeIndexDifferences', () => {
     ).toEqual([expect.stringMatching(/^unique: true .* false$/), expect.stringMatching(/^type: hash .* btree$/)]);
   });
 
+  /**
+   * MongoDB keeps a text index's weights and lists its fields alphabetically, so the order is no
+   * difference there and a weight is; an engine that ranks by weights at query time stores none to compare.
+   */
+  it('should compare a text index as its fields and their weights, where the engine keeps them', () => {
+    const text = (entries: IndexNode['entries']) => index({ type: 'fulltext', entries });
+    const declared = text([{ column: 'zeta', weight: 10 }, { column: 'alpha' }]);
+    const weights = new Set(['textWeights'] as const);
+    expect(
+      describeIndexDifferences(declared, text([{ column: 'alpha' }, { column: 'zeta', weight: 10 }]), weights),
+    ).toEqual([]);
+    expect(
+      describeIndexDifferences(declared, text([{ column: 'alpha' }, { column: 'zeta', weight: 5 }]), weights),
+    ).toEqual(['columns: (alpha, zeta weight 5) -> (alpha, zeta weight 10)']);
+    expect(describeIndexDifferences(declared, text([{ column: 'zeta' }, { column: 'alpha' }]), new Set())).toEqual([]);
+  });
+
   /** A vector index of any type is the one index an engine has, so only a plain one standing in for it differs. */
   it('should report a plain index where a vector index is declared, and no vector type against another', () => {
     const vector = new Set(['vector'] as const);

@@ -17,6 +17,7 @@ import {
 } from '../../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../../util/ddlExpression.util.js';
+import { fulltextWeights } from '../../util/dialect.util.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
@@ -160,6 +161,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     for (const entry of index.entries) {
       key[entry.column] = index.type === 'fulltext' ? 'text' : entry.order === 'desc' ? -1 : 1;
     }
+    const weights = fulltextWeights(index);
     return serializeMongoCommand({
       action: 'createIndex',
       collection: tableName,
@@ -169,6 +171,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
         unique: index.unique,
         name: index.name,
         partialFilterExpression: index.where && JSON.parse(index.where),
+        weights: weights && Object.fromEntries(index.entries.map((entry, at) => [entry.column, weights[at]])),
       },
     });
   }

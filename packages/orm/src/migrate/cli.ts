@@ -284,7 +284,8 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
   } else {
     console.log('\nChecking for schema drift...');
 
-    const expectedAST = buildEntityAST(await migrator.getSchemaGenerator(), config.entities);
+    const generator = await migrator.getSchemaGenerator();
+    const expectedAST = generator.buildAST?.(config.entities) ?? buildEntityAST(generator, config.entities);
 
     // Build actual schema from database
     const actualAST = await migrator.schemaIntrospector.introspect();

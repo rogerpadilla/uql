@@ -100,6 +100,17 @@ describe('index features', () => {
     ).toBe(expected);
   });
 
+  /** A weight ranks at query time, so a weighted index is the very one `$text` matches through. */
+  it.each(['postgres', 'cockroachdb'] as const)(
+    'should leave a %s fulltext index as it is for its weights',
+    (dialect) => {
+      const plain = render(dialect, { entries: [{ column: 'title' }, { column: 'body' }], type: 'fulltext' });
+      expect(render(dialect, { entries: [{ column: 'title', weight: 2 }, { column: 'body' }], type: 'fulltext' })).toBe(
+        plain,
+      );
+    },
+  );
+
   it("should build a Postgres fulltext index under 'simple' where it states no config", () => {
     expect(render('postgres', { entries: [{ column: 'title' }], type: 'fulltext' })).toContain(
       `TO_TSVECTOR('simple'::regconfig, COALESCE("title", ''))`,

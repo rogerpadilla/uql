@@ -723,6 +723,33 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['lamp', 'lamp']);
   }
 
+  /**
+   * Weights rank only, the match staying the document its index is over: a match counts its column's
+   * weight, the score over every column times the lightest plus each heavier column's own times the rest.
+   */
+  shouldSearchAndRankByAWeightedFulltextIndex() {
+    @Entity()
+    @Index((listing) => [{ column: listing.name, weight: 2 }, listing.description], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
+    }
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, Listing, {
+        $select: { id: true },
+        $where: { $text: { $value: 'lamp' } },
+        $sort: { $text: 'desc' },
+      }),
+    );
+    const { document, query } = this.textParts(['name', 'description'], 'simple');
+    const name = this.textParts(['name'], 'simple').document;
+    expect(res.sql).toBe(
+      `SELECT "id" FROM "Listing" WHERE ${document} @@ ${query}$1) ORDER BY (1 * TS_RANK(${document}, ${query}$2)) + 1 * TS_RANK(${name}, ${query}$3))) DESC`,
+    );
+    expect(res.values).toEqual(['lamp', 'lamp', 'lamp']);
+  }
+
   override shouldUpdateWithRawString() {
     const { sql, values } = this.exec((ctx) =>
       this.dialect.update(

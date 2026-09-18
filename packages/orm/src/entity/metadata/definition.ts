@@ -32,6 +32,7 @@ import {
   hasKeys,
   isToManyRelation,
   memberRefs,
+  fulltextWeights,
   normalizeIndexColumn,
   definedEntries,
 } from '../../util/index.js';
@@ -164,11 +165,13 @@ export function defineHook<E>(entity: Type<E>, methodName: string, event: HookEv
 export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
   const refs = memberRefs<E>();
+  const columns = index.columns(refs).map(normalizeIndexColumn);
+  fulltextWeights({ type: index.type, entries: columns });
   (meta.indexes ??= []).push({
     ...index,
     unique: index.unique ?? false,
     where: index.where && entityWhere(index.where),
-    columns: index.columns(refs).map(normalizeIndexColumn),
+    columns,
     include: index.include?.(refs).map((ref) => ref.key),
   });
   return meta;

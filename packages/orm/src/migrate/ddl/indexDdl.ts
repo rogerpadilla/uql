@@ -74,6 +74,11 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     );
   }
 
+  /** What an index added to a table that has rows needs run after it to serve queries; nothing, mostly. */
+  settleStatements(_tableName: string, _index: IndexSchema): string[] {
+    return [];
+  }
+
   /**
    * Index features this dialect can express. Everything here is supported by at least one engine and
    * refused by at least one other, so an index asking for a missing one is rejected rather than

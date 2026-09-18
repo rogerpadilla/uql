@@ -53,6 +53,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   rowLocks: true,
   rowLockWithWindow: true,
   rowLockOf: true,
+  textScoreIndexes: true,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,
   narrowVectorTypes: false,
@@ -243,18 +244,20 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
   ): void {
-    this.appendTextRank(ctx, meta, search);
+    this.appendTextScore(ctx, meta, search, textSearchFields(meta, search));
   }
 
-  /** `MATCH ... AGAINST` is the relevance itself, a match being any row it scores above zero. */
-  protected override appendTextRank<E>(
+  /**
+   * `MATCH ... AGAINST` is the relevance itself, a match being any row it scores above zero. Over `keys`
+   * alone, it needs a `FULLTEXT` index of exactly those: a weighted index declares one per heavier column.
+   */
+  protected override appendTextScore<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     search: QueryTextSearchOptions<E>,
+    keys: readonly string[],
   ): void {
-    const columns = textSearchFields(meta, search).map((key) =>
-      this.escapeId(this.resolveColumnName(key, meta.fields[key])),
-    );
+    const columns = keys.map((key) => this.escapeId(this.resolveColumnName(key, meta.fields[key])));
     ctx.append(`MATCH(${this.textSearchTarget(columns)}) AGAINST(`);
     ctx.addValue(search.$value);
     ctx.append(')');

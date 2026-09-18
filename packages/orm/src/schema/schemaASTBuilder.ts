@@ -1,8 +1,17 @@
 import { fieldOf, foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { EntityGetter } from '../type/entity.js';
-import type { EntityIndexMeta, EntityMeta, EntityWhereMeta, FieldMeta, FieldOptions, Type } from '../type/index.js';
+import type {
+  EntityIndexColumn,
+  EntityIndexMeta,
+  EntityMeta,
+  EntityWhereMeta,
+  FieldMeta,
+  FieldOptions,
+  Type,
+} from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
+import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import { isSoleIdField } from '../util/field.util.js';
 import { isAutoIncrement } from '../util/field.util.js';
@@ -39,6 +48,8 @@ export interface BuildSchemaASTOptions {
   compileDdl?: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
   /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. `buildEntityAST` supplies it. */
   compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
+  /** Whether a weighted fulltext index declares one of its own for each heavier column, as MySQL scores through one. */
+  textScoreIndexes?: boolean;
 }
 
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
@@ -50,6 +61,7 @@ type BuildContext = {
   readonly defaultForeignKeyAction: ForeignKeyAction;
   readonly compileDdl: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
   readonly compileIndexPredicate: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
+  readonly textScoreIndexes: boolean;
 };
 
 /**
@@ -71,6 +83,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
     compileDdl,
     compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
+    textScoreIndexes: options.textScoreIndexes ?? false,
   };
 
   for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
@@ -302,5 +315,31 @@ function addCompositeIndex(
     efConstruction: idxMeta.efConstruction,
     lists: idxMeta.lists,
     config: idxMeta.config,
+  });
+  if (ctx.textScoreIndexes) {
+    addTextScoreIndexes(ctx, table, idxMeta.type, resolved);
+  }
+}
+
+/** A fulltext index of its own for each column heavier than the index's lightest, which its score reads. */
+function addTextScoreIndexes(
+  ctx: BuildContext,
+  table: TableNode,
+  type: EntityIndexMeta['type'],
+  entries: readonly EntityIndexColumn[],
+): void {
+  const weights = fulltextWeights({ type, entries });
+  if (!weights) return;
+  const { extra } = textWeightSteps(weights);
+  entries.forEach((entry, at) => {
+    if (extra[at] && typeof entry.column === 'string') {
+      ctx.ast.addIndex({
+        name: derivedIndexName(table.name, [entry.column, 'score']),
+        table,
+        entries: [{ column: entry.column }],
+        unique: false,
+        type: 'fulltext',
+      });
+    }
   });
 }

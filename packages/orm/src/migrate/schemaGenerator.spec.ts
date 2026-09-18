@@ -1,7 +1,7 @@
 import { v7 as uuidv7 } from 'uuid';
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
@@ -10,7 +10,7 @@ import { SchemaAST } from '../schema/schemaAST.js';
 import type { IndexNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined, mockSqlTableNode, mockTableNode } from '../test/index.js';
-import type { ColumnSchema } from '../type/index.js';
+import type { ColumnSchema, SchemaDiff } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { buildEntityAST, SqlSchemaGenerator } from './schemaGenerator.js';
@@ -110,6 +110,54 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     );
     return table;
   }
+
+  /**
+   * MySQL scores a column by `MATCH` over exactly that column, which only a `FULLTEXT` index of its own
+   * serves, so a weighted index declares one per column heavier than its lightest; Postgres needs none.
+   */
+  it('should declare a fulltext index for each heavier column where the engine scores through one', () => {
+    @Entity()
+    @Index((doc) => [{ column: doc.title, weight: 3 }, doc.summary, doc.body], { type: 'fulltext' })
+    class WeightedDoc {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) title?: string | null;
+      @Field({ type: String }) summary?: string | null;
+      @Field({ type: String }) body?: string | null;
+    }
+    const indexes = (dialect: MySqlDialect | PostgresDialect) =>
+      new SqlSchemaGenerator(dialect)
+        .buildAST([WeightedDoc])
+        .getTable('WeightedDoc')
+        ?.indexes.map(({ name, entries, type }) => ({ name, columns: entries.map((entry) => entry.column), type }));
+
+    expect(indexes(new MySqlDialect())).toEqual([
+      { name: 'WeightedDoc__title_summary_body_idx', columns: ['title', 'summary', 'body'], type: 'fulltext' },
+      { name: 'WeightedDoc__title_score_idx', columns: ['title'], type: 'fulltext' },
+    ]);
+    expect(indexes(new PostgresDialect())).toEqual([
+      { name: 'WeightedDoc__title_summary_body_idx', columns: ['title', 'summary', 'body'], type: 'fulltext' },
+    ]);
+  });
+
+  /** InnoDB fills a fulltext index added beside another on a loaded table only once the table is optimized. */
+  it('should optimize a MySQL-family table a fulltext index is added to, and no other', () => {
+    const diff: SchemaDiff = {
+      tableName: 'docs',
+      type: 'alter',
+      indexesToAdd: [
+        { name: 'docs_title_idx', entries: [{ column: 'title' }], unique: false, type: 'fulltext' },
+        { name: 'docs_slug_idx', entries: [{ column: 'slug' }], unique: false },
+      ],
+    };
+    expect(new SqlSchemaGenerator(new MySqlDialect()).generateAlterTable(diff)).toEqual([
+      'CREATE FULLTEXT INDEX `docs_title_idx` ON `docs` (`title`);',
+      'OPTIMIZE TABLE `docs`;',
+      'CREATE INDEX `docs_slug_idx` ON `docs` (`slug`);',
+    ]);
+    expect(new SqlSchemaGenerator(new PostgresDialect()).generateAlterTable(diff)).not.toContain(
+      expect.stringContaining('OPTIMIZE'),
+    );
+  });
 
   it('should emit CREATE VECTOR INDEX for MariaDB', () => {
     const mariaGenerator = new SqlSchemaGenerator(new MariaDialect());

@@ -18,6 +18,14 @@ export class MysqlLikeIndexDdl extends IndexDdl {
 
   protected override readonly indexTypeKeywords: ReadonlyMap<IndexType, string> = MYSQL_LIKE_INDEX_KEYWORDS;
 
+  /**
+   * InnoDB fills a fulltext index added beside another on a loaded table only once the table is optimized:
+   * until then MariaDB scores it 0 and MySQL can fail a `MATCH` over it (MySQL 26.7, MariaDB 12.3).
+   */
+  override settleStatements(tableName: string, index: IndexSchema): string[] {
+    return index.type === 'fulltext' ? [`OPTIMIZE TABLE ${this.dialect.escapeId(tableName)};`] : [];
+  }
+
   /** ` USING btree|hash` trails the columns: between the table and them, it is a syntax error here. */
   protected override indexTuning(index: IndexSchema): string {
     return index.type && !this.indexTypeKeywords.has(index.type) ? ` USING ${index.type}` : '';

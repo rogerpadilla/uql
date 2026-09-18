@@ -595,6 +595,41 @@ export function fulltextConfig(index: { readonly config?: string }): string {
   return index.config ?? DEFAULT_TEXT_CONFIG;
 }
 
+/** The largest weight MongoDB's text index takes, which truncates a fraction to the whole number below. */
+const MAX_TEXT_WEIGHT = 99_999;
+
+/**
+ * Each column's weight in a fulltext index, 1 where it states none, or none at all where they are alike.
+ * Checked wherever it is read, so the migration, the search and its rank refuse the same declaration.
+ */
+export function fulltextWeights(index: {
+  readonly type?: IndexType;
+  readonly entries: readonly { readonly weight?: number }[];
+}): readonly number[] | undefined {
+  if (!index.entries.some((entry) => entry.weight !== undefined)) {
+    return undefined;
+  }
+  if (index.type !== 'fulltext') {
+    throw new TypeError(`a column weight ranks a fulltext index, and this one is ${index.type ?? 'btree'}`);
+  }
+  const weights = index.entries.map(({ weight = 1 }) => {
+    if (!Number.isInteger(weight) || weight < 1 || weight > MAX_TEXT_WEIGHT) {
+      throw new TypeError(`a column weight is a whole number from 1 to ${MAX_TEXT_WEIGHT}, not ${weight}`);
+    }
+    return weight;
+  });
+  return new Set(weights).size > 1 ? weights : undefined;
+}
+
+/**
+ * A weighted fulltext index's lightest weight, and what each column weighs beyond it: the score over every
+ * column counts the lightest, and a column weighing more adds its own score times the rest.
+ */
+export function textWeightSteps(weights: readonly number[]): { lightest: number; extra: number[] } {
+  const lightest = Math.min(...weights);
+  return { lightest, extra: weights.map((weight) => weight - lightest) };
+}
+
 /** The fulltext index over exactly `fields`, in order, which a search of them is served by. */
 export function fulltextIndexOver<E>(meta: EntityMeta<E>, fields: readonly string[]): EntityIndexMeta<E> | undefined {
   return meta.indexes?.find(

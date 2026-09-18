@@ -5,8 +5,9 @@ import type { IndexNode } from './types.js';
 /**
  * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
  * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it.
+ * `textWeights` is a text index's weights, kept by an engine that lists its fields in no declared order.
  */
-export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector';
+export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector' | 'textWeights';
 
 /**
  * Whether the table has this index already, by shape rather than name, uniqueness included. An index
@@ -55,8 +56,12 @@ export function describeIndexDifferences(
   );
 
   if (comparableEntries) {
-    const [sourceColumns, targetColumns] = [source.entries, target.entries].map((entries) =>
-      entries.map((entry) => entrySignature(entry, facets)).join(', '),
+    const [sourceColumns, targetColumns] = [source, target].map((index) =>
+      textFieldOrder(
+        index,
+        facets,
+        index.entries.map((entry) => entrySignature(entry, facets)),
+      ).join(', '),
     );
     if (sourceColumns !== targetColumns) {
       differences.push(`columns: (${targetColumns}) -> (${sourceColumns})`);
@@ -89,6 +94,11 @@ export function describeIndexDifferences(
   return differences;
 }
 
+/** A text index's fields as a set where the engine keeps its weights: MongoDB lists them alphabetically. */
+function textFieldOrder(index: Pick<IndexNode, 'type'>, facets: ReadonlySet<IndexFacet>, entries: string[]): string[] {
+  return facets.has('textWeights') && index.type === 'fulltext' ? entries.toSorted() : entries;
+}
+
 function entrySignature(entry: IndexColumnSchema, facets: ReadonlySet<IndexFacet>): string {
   const parts = [entry.column];
   if (facets.has('order')) {
@@ -101,6 +111,9 @@ function entrySignature(entry: IndexColumnSchema, facets: ReadonlySet<IndexFacet
   }
   if (facets.has('opsClass') && entry.opsClass) {
     parts.push(entry.opsClass);
+  }
+  if (facets.has('textWeights') && (entry.weight ?? 1) !== 1) {
+    parts.push(`weight ${entry.weight}`);
   }
   return parts.join(' ');
 }

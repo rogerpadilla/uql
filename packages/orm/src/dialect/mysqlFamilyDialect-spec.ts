@@ -61,6 +61,28 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['lamp']);
   }
 
+  /** A heavier column's own `MATCH` reads the one-column `FULLTEXT` index a weighted index declares for it. */
+  shouldRankByAWeightedFulltextIndex() {
+    @Entity()
+    @Index((listing) => [{ column: listing.name, weight: 3 }, listing.description], { type: 'fulltext' })
+    class Listing {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) name?: string | null;
+      @Field({ type: String }) description?: string | null;
+    }
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Listing, {
+        $select: { id: true },
+        $where: { $text: { $value: 'lamp' } },
+        $sort: { $text: 'desc' },
+      }),
+    );
+    expect(sql).toBe(
+      'SELECT `id` FROM `Listing` WHERE MATCH(`name`, `description`) AGAINST(?) ORDER BY (1 * MATCH(`name`, `description`) AGAINST(?) + 2 * MATCH(`name`) AGAINST(?)) DESC',
+    );
+    expect(values).toEqual(['lamp', 'lamp', 'lamp']);
+  }
+
   /** InnoDB runs `FOR UPDATE` beside a window function, so a locked paged read stays one statement. */
   shouldRunAWindowUnderARowLock() {
     expect(this.dialect.features.rowLockWithWindow).toBe(true);
