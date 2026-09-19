@@ -309,8 +309,7 @@ export function relationSortTerms(
         `cannot $project the distance of relation '${path}': it ranks the parent, and no one row answers under it`,
       );
     }
-    const { $vector, $distance } = search;
-    return [{ spec: { relation: relKey, op: '$min', field, search: { $vector, $distance } }, direction: undefined }];
+    return [{ spec: { relation: relKey, op: '$min', field, search }, direction: undefined }];
   });
   return { aggregates, rest: joinedSortFields(value) };
 }

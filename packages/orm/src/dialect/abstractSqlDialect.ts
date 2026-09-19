@@ -43,7 +43,6 @@ import {
   type QuerySortMap,
   type QueryTextSearchOptions,
   type QueryVectorNear,
-  type QueryVectorSearch,
   type QueryWhere,
   type QueryWhereArray,
   type QueryWhereOptions,
@@ -2742,12 +2741,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // Required by the type, so this only fires for a query that never met it: `/http` casts client
     // JSON straight to `Query`. A `$near` never borrows the `$sort`'s vector, which is what keeps the
     // predicate meaning the same thing in a `count`, or in an entity filter merged into a `$where`.
-    const { $vector, $distance } = near;
-    if (!$vector) {
+    if (!near.$vector) {
       throw TypeError(`$near on '${key}' needs its own $vector`);
     }
-    const search: QueryVectorSearch = { $vector, $distance };
-    const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, search, prefix);
+    const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, near, prefix);
     return this.boundConditions(
       ctx,
       distance,
