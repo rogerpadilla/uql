@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
-import { Entity, Field, getMeta, Id, Index, OneToMany } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { VectorItem } from '../test/index.js';
+import { VectorChunk, VectorDoc, VectorItem } from '../test/index.js';
 import { TursoDialect } from '../turso/tursoDialect.js';
 import { TursoLocalDialect } from '../turso/tursoLocalDialect.js';
 import type { Query, Type, VectorDistance } from '../type/index.js';
@@ -30,6 +30,15 @@ class L2IndexedItem {
   @Field({ type: 'vector' }) vec!: number[] | null;
 }
 
+/** A vector column named like the one of the item it joins, which only its table alias tells apart. */
+@Entity({ name: 'VectorNote' })
+class VectorNote {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: 'vector', dimensions: 3 }) vec!: number[] | null;
+  @Field({ references: () => VectorItem }) itemId?: number | null;
+  @ManyToOne({ entity: () => VectorItem, references: (note) => note.itemId }) item?: VectorItem;
+}
+
 /**
  * Every dialect's vector search side by side: the metrics it has and the expression each compiles to,
  * the query shapes around them being identical. Each mapping was verified against a live engine, since
@@ -38,7 +47,7 @@ class L2IndexedItem {
 type Engine = {
   name: string;
   dialect: AbstractSqlDialect;
-  distance: (metric: VectorDistance, placeholder: string) => string;
+  distance: (metric: VectorDistance, placeholder: string, column: string) => string;
   supported: VectorDistance[];
   unsupported: VectorDistance[];
   /** What `[1, 2, 3]` binds as, where the engine takes bytes rather than the `[1,2,3]` text. */
@@ -72,14 +81,14 @@ const engines: Engine[] = [
   {
     name: 'PostgresDialect',
     dialect: new PostgresDialect(),
-    distance: (metric, ph) => `"vec" ${PG_OPS[metric]} ${ph}::vector`,
+    distance: (metric, ph, col) => `${col} ${PG_OPS[metric]} ${ph}::vector`,
     supported: ['cosine', 'l2', 'inner', 'l1'],
     unsupported: [],
   },
   {
     name: 'CockroachDialect',
     dialect: new CockroachDialect(),
-    distance: (metric, ph) => `"vec" ${PG_OPS[metric]} ${ph}::vector`,
+    distance: (metric, ph, col) => `${col} ${PG_OPS[metric]} ${ph}::vector`,
     supported: ['cosine', 'l2', 'inner'],
     // Not implemented upstream: `<+>`/`vector_l1_ops` throw "operator class is not supported".
     unsupported: ['l1'],
@@ -89,7 +98,7 @@ const engines: Engine[] = [
     bound: PACKED,
     dialect: new MariaDialect({}),
     // A `VECTOR` column takes a packed float32 blob, which binds as it is.
-    distance: (metric, ph) => `${MARIA_FNS[metric]}(\`vec\`, ${ph})`,
+    distance: (metric, ph, col) => `${MARIA_FNS[metric]}(${col}, ${ph})`,
     supported: ['cosine', 'l2'],
     unsupported: ['inner', 'l1'],
   },
@@ -97,7 +106,7 @@ const engines: Engine[] = [
     name: 'SqliteDialect (sqlite-vec)',
     bound: PACKED,
     dialect: new SqliteDialect(),
-    distance: (metric, ph) => `${SQLITE_VEC_FNS[metric]}(\`vec\`, ${ph})`,
+    distance: (metric, ph, col) => `${SQLITE_VEC_FNS[metric]}(${col}, ${ph})`,
     supported: ['cosine', 'l2', 'l1'],
     unsupported: ['inner'],
   },
@@ -106,7 +115,7 @@ const engines: Engine[] = [
     bound: PACKED,
     nearest: TOP_K,
     dialect: new LibsqlDialect(),
-    distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
+    distance: (metric, ph, col) => `${LIBSQL_FNS[metric]}(${col}, ${ph})`,
     supported: ['cosine', 'l2'],
     unsupported: ['inner', 'l1'],
   },
@@ -115,7 +124,7 @@ const engines: Engine[] = [
     bound: PACKED,
     nearest: TOP_K,
     dialect: new TursoDialect(),
-    distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
+    distance: (metric, ph, col) => `${LIBSQL_FNS[metric]}(${col}, ${ph})`,
     // A Turso Cloud database runs libSQL unless it was created as `tursodb`, and libSQL has no dot product.
     supported: ['cosine', 'l2'],
     unsupported: ['inner', 'l1'],
@@ -124,7 +133,7 @@ const engines: Engine[] = [
     name: 'TursoLocalDialect',
     bound: PACKED,
     dialect: new TursoLocalDialect(),
-    distance: (metric, ph) => `${LIBSQL_FNS[metric]}(\`vec\`, ${ph})`,
+    distance: (metric, ph, col) => `${LIBSQL_FNS[metric]}(${col}, ${ph})`,
     // The embedded Rust engine adds a dot-product distance libSQL never had.
     supported: ['cosine', 'l2', 'inner'],
     unsupported: ['l1'],
@@ -133,7 +142,7 @@ const engines: Engine[] = [
     name: 'MsSqlDialect',
     dialect: new MsSqlDialect({}),
     // One function taking the metric by name, and a query vector it refuses unless cast to `VECTOR`.
-    distance: (metric, ph) => `VECTOR_DISTANCE('${MSSQL_METRICS[metric]}', "vec", CAST(${ph} AS VECTOR(3)))`,
+    distance: (metric, ph, col) => `VECTOR_DISTANCE('${MSSQL_METRICS[metric]}', ${col}, CAST(${ph} AS VECTOR(3)))`,
     supported: ['cosine', 'l2', 'inner'],
     unsupported: ['l1'],
   },
@@ -141,8 +150,10 @@ const engines: Engine[] = [
 
 describe.each(engines)(
   '$name vector search',
-  ({ dialect, distance, supported, unsupported, bound = '[1,2,3]', nearest = () => '' }) => {
+  ({ dialect, distance: distanceOf, supported, unsupported, bound = '[1,2,3]', nearest = () => '' }) => {
     const q = (id: string) => dialect.escapeId(id);
+    const distance = (metric: VectorDistance, placeholder: string, column = q('vec')) =>
+      distanceOf(metric, placeholder, column);
     const ph = (index: number) => dialect.placeholder(index);
     /** The pager this dialect emits, so a second paging syntax needs no change here. */
     const pgr = (limit?: number, skip?: number, sorted = false) => {
@@ -325,6 +336,91 @@ describe.each(engines)(
       });
 
       expect(sql).toBe(`SELECT ${q('id')} FROM ${q('VectorItem')} WHERE NOT (${distance('cosine', ph(1))} < ${ph(2)})`);
+    });
+
+    it('should qualify the column beside a join', () => {
+      const { sql } = find(VectorNote, {
+        $select: { id: true },
+        $populate: { item: { $select: { id: true } } },
+        $where: { vec: { $near: { $vector: [1, 2, 3], $lt: 0.35 } } },
+        $sort: { vec: { $vector: [1, 2, 3] } },
+        $limit: 10,
+      });
+      const column = `${q('VectorNote')}.${q('vec')}`;
+
+      expect(sql).toContain(`WHERE ${distance('cosine', ph(1), column)} < ${ph(2)}`);
+      expect(sql).toContain(`ORDER BY ${distance('cosine', ph(3), column)}`);
+    });
+
+    it('should qualify a projected distance beside a join', () => {
+      const { sql } = find(VectorNote, {
+        $select: { id: true },
+        $populate: { item: { $select: { id: true } } },
+        $sort: { vec: { $vector: [1, 2, 3], $project: 'score' } },
+        $limit: 10,
+      });
+
+      expect(sql).toContain(`${distance('cosine', ph(1), `${q('VectorNote')}.${q('vec')}`)} ${q('score')}`);
+    });
+
+    // A parent has many rows, so it ranks by the one nearest the vector: the smallest of their distances.
+    it('should rank by the nearest row of a to-many', () => {
+      const { sql, values } = find(VectorDoc, {
+        $select: { id: true },
+        $sort: { chunks: { vec: { $vector: [1, 2, 3] } } },
+        $limit: 10,
+      });
+
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorDoc')} ORDER BY (SELECT MIN(${distance('cosine', ph(1), `${q('chunks')}.${q('vec')}`)}) ` +
+          `FROM ${q('VectorChunk')} ${q('chunks')} WHERE ${q('chunks')}.${q('vectorDocId')} = ${q('VectorDoc')}.${q('id')})` +
+          pgr(10, undefined, true),
+      );
+      expect(values).toEqual([bound]);
+    });
+
+    it('should rank by the nearest target of a many-to-many, each read once', () => {
+      const { sql } = find(VectorDoc, {
+        $select: { id: true },
+        $sort: { cited: { vec: { $vector: [1, 2, 3], $distance: supported[1] } } },
+        $limit: 10,
+      });
+
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorDoc')} ORDER BY (SELECT MIN(${distance(supported[1], ph(1), `${q('cited')}.${q('vec')}`)}) ` +
+          `FROM ${q('VectorChunk')} ${q('cited')} WHERE ${q('cited')}.${q('id')} IN (SELECT ${q('VectorCitation')}.${q('vectorChunkId')} ` +
+          `FROM ${q('VectorCitation')} WHERE ${q('VectorCitation')}.${q('vectorDocId')} = ${q('VectorDoc')}.${q('id')}))` +
+          pgr(10, undefined, true),
+      );
+    });
+
+    it('should rank by a to-one without joining it', () => {
+      const { sql } = find(VectorChunk, {
+        $select: { id: true },
+        $sort: { doc: { vec: { $vector: [1, 2, 3] } }, name: 1 },
+        $limit: 10,
+      });
+
+      expect(sql).toBe(
+        `SELECT ${q('id')} FROM ${q('VectorChunk')} ORDER BY (SELECT MIN(${distance('cosine', ph(1), `${q('doc')}.${q('vec')}`)}) ` +
+          `FROM ${q('VectorDoc')} ${q('doc')} WHERE ${q('doc')}.${q('id')} = ${q('VectorChunk')}.${q('vectorDocId')}), ${q('name')}` +
+          pgr(10, undefined, true),
+      );
+    });
+
+    it('should reject projecting a distance through a relation', () => {
+      expect(() =>
+        find(VectorDoc, {
+          // @ts-expect-error: a relation's distance ranks its parent, and has no row of its own to answer under
+          $sort: { chunks: { vec: { $vector: [1, 2, 3], $project: 'score' } } },
+        }),
+      ).toThrow("cannot $project the distance of relation 'chunks'");
+    });
+
+    it('should reject ranking by a relation with $distinct', () => {
+      expect(() => find(VectorDoc, { $distinct: true, $sort: { chunks: { vec: { $vector: [1, 2, 3] } } } })).toThrow(
+        "cannot $sort by 'chunks.vec' with $distinct: it is not a selected column",
+      );
     });
 
     it.each(unsupported)('should reject a %s predicate', (metric) => {

@@ -1,7 +1,7 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { UqlSecurityError, withContext } from '../context/context.js';
-import { AGGREGATE_VALUE_ALIAS, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
@@ -17,11 +17,13 @@ import {
   Tax,
   TaxCategory,
   User,
-  VectorItem,
+  VectorChunk,
+  VectorDoc,
 } from '../test/index.js';
 import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MongoDialect } from './mongoDialect.js';
+import { vectorDistanceExpr } from './vectorDistance.js';
 
 declare module '../type/index.js' {
   interface UqlContext {
@@ -1412,20 +1414,43 @@ class MongoDialectSpec implements Spec {
   }
 
   /** A `$lookup` brings a relation in one row at a time, so there is nothing under it to rank by distance. */
-  shouldRejectAVectorSortUnderARelation() {
-    @Entity()
-    class Shelf {
-      @Id({ type: String }) id?: string;
-      @Field({ references: () => VectorItem }) vectorItemId?: number | null;
-      @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
-    }
+  /** A parent ranks by its nearest related row, read by the same lookup a relation `$count` sorts by. */
+  shouldRankByTheNearestRowOfARelation() {
+    const pipeline = this.dialect.aggregationPipeline(VectorDoc, {
+      $sort: { name: 1, chunks: { vec: { $vector: [3, 4, 0], $distance: 'l2' } } },
+    });
+    const field = '_uql_sort_min_chunks_vec';
+    const [lookup, lifted] = pipeline;
+
+    expect(lookup.$lookup?.as).toBe(`${REL_TEMP_PREFIX}${field}`);
+    expect(lookup.$lookup?.pipeline?.at(-1)).toEqual({
+      $group: { _id: null, [AGGREGATE_VALUE_ALIAS]: { $min: vectorDistanceExpr('vec', [3, 4, 0], 'l2') } },
+    });
+    expect(lifted.$addFields?.[field]).toBeDefined();
+    // The distance orders first wherever it appears, as on the SQL dialects.
+    expect(pipeline.find((stage) => stage.$sort)?.$sort).toEqual({ [field]: 1, name: 1 });
+    expect(pipeline.at(-1)).toEqual({ $unset: [field] });
+  }
+
+  /** A many-to-many's lookup reads its junction's rows, so each is swapped for its target before the aggregate. */
+  shouldRankByTheNearestTargetOfAManyToMany() {
+    const [lookup] = this.dialect.aggregationPipeline(VectorDoc, { $sort: { cited: { vec: { $vector: [1, 0, 0] } } } });
+    const stages = lookup.$lookup?.pipeline ?? [];
+
+    expect(stages.at(-2)).toEqual({ $replaceRoot: { newRoot: { $arrayElemAt: [`$${REL_NESTED_KEY}`, 0] } } });
+    expect(stages.at(-1)?.$group).toEqual({
+      _id: null,
+      [AGGREGATE_VALUE_ALIAS]: { $min: vectorDistanceExpr('vec', [1, 0, 0], 'cosine') },
+    });
+  }
+
+  shouldRejectANearestSortUnderARelation() {
     expect(() =>
-      this.dialect.aggregationPipeline(Shelf, {
-        $populate: { vectorItem: true },
-        // @ts-expect-error: a relation sorts by no vector
-        $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
+      this.dialect.aggregationPipeline(VectorChunk, {
+        $populate: { doc: true },
+        $sort: { doc: { chunks: { vec: { $vector: [1, 2, 3] } } } },
       }),
-    ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
+    ).toThrow("$sort by 'doc.chunks.vec' is only supported on the queried entity");
   }
 
   /** The tally rides on a field only the queried entity's own pipeline adds, so a nested one is refused. */

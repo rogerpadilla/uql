@@ -8,6 +8,7 @@ import type {
   QueryPopulate,
   QuerySortMap,
   QueryWhere,
+  RelationAggregateSpec,
   RelationKey,
   RelationMeta,
   RelationQuery,
@@ -16,11 +17,14 @@ import type {
 import {
   getKeys,
   getRelationRequestSummary,
+  hasKeys,
   isRecord,
   isToManyRelation,
+  isVectorSearch,
   parseRelationAtKey,
   type ParsedGroupEntry,
   parseRelationSize,
+  parseSortByCount,
 } from '../util/index.js';
 
 /**
@@ -244,12 +248,13 @@ function addPathJoins<E>(
     const value = map[key];
     // A to-many, or a value that is not a map of the relation's own fields, cannot be joined and is
     // reported where the statement names it - the one place that knows how to.
-    if (!relation || isToManyRelation(relation) || !isSortMap(value)) {
+    const fields = isSortMap(value) ? joinedSortFields(value) : undefined;
+    if (!relation || isToManyRelation(relation) || !fields) {
       continue;
     }
     const join = addJoin(joins, claimAlias, parent, key, relation, {}, required, false);
     // `E` stated: inferred from the nested map, it lands on the nested relation's target.
-    addPathJoins<object>(joins, claimAlias, join.meta, value, required, join);
+    addPathJoins<object>(joins, claimAlias, join.meta, fields, required, join);
   }
 }
 
@@ -274,6 +279,46 @@ export function resolveSortableJoin(
     throw new TypeError(unjoinable);
   }
   return { join, sort: value };
+}
+
+/** One ordering a relation's rows answer as a single value: their `$count`, or their nearest to a vector. */
+export type RelationSortAggregate = { readonly spec: RelationAggregateSpec; readonly direction: unknown };
+
+/**
+ * A relation's `$sort` value as the aggregates over its rows it orders by - its `$count`, or per vector
+ * field the distance of its nearest row - and what is left for a join to order by, if anything.
+ */
+export function relationSortTerms(
+  relKey: string,
+  path: string,
+  value: unknown,
+): { readonly aggregates: readonly RelationSortAggregate[]; readonly rest: unknown } {
+  const count = parseSortByCount(value);
+  if (count !== undefined) {
+    return { aggregates: [{ spec: { relation: relKey, op: '$count' }, direction: count }], rest: undefined };
+  }
+  if (!isSortMap(value)) {
+    return { aggregates: [], rest: value };
+  }
+  const aggregates = Object.entries(value).flatMap(([field, search]): RelationSortAggregate[] => {
+    if (!isVectorSearch(search)) {
+      return [];
+    }
+    if (search.$project !== undefined) {
+      throw new TypeError(
+        `cannot $project the distance of relation '${path}': it ranks the parent, and no one row answers under it`,
+      );
+    }
+    const { $vector, $distance } = search;
+    return [{ spec: { relation: relKey, op: '$min', field, search: { $vector, $distance } }, direction: undefined }];
+  });
+  return { aggregates, rest: joinedSortFields(value) };
+}
+
+/** The fields of a relation's sort map a join orders by: all but its vector searches, which rank its nearest row. */
+function joinedSortFields(map: QuerySortMap<object>): QuerySortMap<object> | undefined {
+  const fields = Object.fromEntries(Object.entries(map).filter(([, value]) => !isVectorSearch(value)));
+  return hasKeys(fields) ? fields : undefined;
 }
 
 /** A nested map of fields, as opposed to a `$sort` direction or vector search, or a `$group` field's `true`. */

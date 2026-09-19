@@ -15,6 +15,9 @@ import {
   Tax,
   TaxCategory,
   User,
+  VectorChunk,
+  VectorCitation,
+  VectorDoc,
 } from '../test/index.js';
 import type { Querier, QuerierPool, QuerySearch, QueryWhere } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
@@ -2897,5 +2900,85 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(bySize.map(({ id }) => String(id))).toEqual([String(categoryId)]);
 
     expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ name: 'kg' });
+  }
+
+  /**
+   * A parent ranks by its related row nearest the vector, the smallest of their distances, in one read.
+   * Every parent here has rows, since engines disagree about where one with none sorts.
+   */
+  async shouldRankByTheNearestRowOfAToMany() {
+    const [far, near] = await this.querier.insertMany(VectorDoc, [{ name: 'far' }, { name: 'near' }]);
+    await this.querier.insertMany(VectorChunk, [
+      { name: 'far-a', vec: [0, 1, 0], vectorDocId: far },
+      { name: 'far-b', vec: [Math.SQRT1_2, Math.SQRT1_2, 0], vectorDocId: far },
+      { name: 'near-a', vec: [0, 0, 1], vectorDocId: near },
+      { name: 'near-b', vec: [1, 0, 0], vectorDocId: near },
+    ]);
+
+    const docs = await this.querier.findMany(VectorDoc, {
+      $select: { name: true },
+      $sort: { chunks: { vec: { $vector: [1, 0, 0] } } },
+    });
+
+    expect(docs.map((doc) => doc.name)).toEqual(['near', 'far']);
+  }
+
+  /** Each target once, however many links pair it, and never a column of the junction's. */
+  async shouldRankByTheNearestTargetOfAManyToMany() {
+    const [east, north, northeast] = await this.querier.insertMany(VectorChunk, [
+      { name: 'east', vec: [1, 0, 0] },
+      { name: 'north', vec: [0, 1, 0] },
+      { name: 'northeast', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
+    ]);
+    const [citesNorth, citesEast] = await this.querier.insertMany(VectorDoc, [
+      { name: 'cites-north' },
+      { name: 'cites-east' },
+    ]);
+    await this.querier.insertMany(VectorCitation, [
+      { vectorDocId: citesNorth, vectorChunkId: north },
+      { vectorDocId: citesNorth, vectorChunkId: northeast },
+      { vectorDocId: citesEast, vectorChunkId: east },
+    ]);
+
+    const docs = await this.querier.findMany(VectorDoc, {
+      $select: { name: true },
+      $sort: { cited: { vec: { $vector: [0, 1, 0], $distance: 'l2' } } },
+    });
+
+    expect(docs.map((doc) => doc.name)).toEqual(['cites-north', 'cites-east']);
+  }
+
+  /** An aggregate over a many-to-many reads its targets' columns, not the junction rows pairing them. */
+  async shouldAggregateAColumnOfAManyToManyTarget() {
+    const [east, north] = await this.querier.insertMany(VectorChunk, [{ name: 'east' }, { name: 'north' }]);
+    const vectorDocId = await this.querier.insertOne(VectorDoc, { name: 'doc' });
+    await this.querier.insertMany(VectorCitation, [
+      { vectorDocId, vectorChunkId: east },
+      { vectorDocId, vectorChunkId: north },
+    ]);
+
+    const doc = await this.querier.findOneById(VectorDoc, vectorDocId, { $select: { lastCited: true } });
+
+    expect(doc?.lastCited).toBe('north');
+  }
+
+  /** A to-one ranks the same way, with no join and nothing populated. */
+  async shouldRankByAToOneWithoutPopulatingIt() {
+    const [east, north] = await this.querier.insertMany(VectorDoc, [
+      { name: 'east', vec: [1, 0, 0] },
+      { name: 'north', vec: [0, 1, 0] },
+    ]);
+    await this.querier.insertMany(VectorChunk, [
+      { name: 'b', vectorDocId: north },
+      { name: 'a', vectorDocId: north },
+      { name: 'c', vectorDocId: east },
+    ]);
+
+    const chunks = await this.querier.findMany(VectorChunk, {
+      $select: { name: true },
+      $sort: { doc: { vec: { $vector: [0, 1, 0] } }, name: 1 },
+    });
+
+    expect(chunks.map((chunk) => chunk.name)).toEqual(['a', 'b', 'c']);
   }
 }

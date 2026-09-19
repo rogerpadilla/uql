@@ -134,13 +134,19 @@ export async function whereOperatorGating() {
   // @ts-expect-error naming the distance is `$sort`'s job; `$near` only filters
   await querier.findMany(Person, { $where: { embedding: { $near: { $vector: [1, 2, 3], $lt: 1, $project: 's' } } } });
 
-  // Vector search sorts only on number[] fields, and only on the queried entity: it ranks the rows
-  // the statement returns, so a relation of theirs has nothing to rank.
+  // Vector search sorts only on number[] fields. Through a relation it ranks each row by its related
+  // row nearest the vector, whose distance no row answers under, so it has nothing to `$project`.
   await querier.findMany(Person, { $sort: { embedding: { $vector: [1, 2, 3] }, name: 'asc' } });
   // @ts-expect-error $vector requires a number[] field
   await querier.findMany(Person, { $sort: { name: { $vector: [1, 2, 3] } } });
-  // @ts-expect-error a vector search ranks the queried rows, not a relation's
-  await querier.findMany(Person, { $sort: { manager: { embedding: { $vector: [1, 2, 3] } } } });
+  await querier.findMany(Person, { $sort: { manager: { embedding: { $vector: [1, 2, 3], $distance: 'l2' } } } });
+  await querier.findMany(Person, { $sort: { friends: { embedding: { $vector: [1, 2, 3] } } } });
+  // @ts-expect-error a relation's distance has no row to answer under
+  await querier.findMany(Person, { $sort: { manager: { embedding: { $vector: [1, 2, 3], $project: 's' } } } });
+  // @ts-expect-error nor a to-many's
+  await querier.findMany(Person, { $sort: { friends: { embedding: { $vector: [1, 2, 3], $project: 's' } } } });
+  // @ts-expect-error a to-many ranks by its vectors, never by another field of theirs
+  await querier.findMany(Person, { $sort: { friends: { embedding: { $vector: [1, 2, 3] }, name: 1 } } });
 
   // A to-one relation sorts via a nested map keyed by the related entity's fields, at any depth.
   await querier.findMany(Person, { $sort: { manager: { name: -1 } } });

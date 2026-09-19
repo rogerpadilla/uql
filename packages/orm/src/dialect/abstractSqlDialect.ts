@@ -95,7 +95,6 @@ import {
   parseGroupMap,
   parseRelationAtKey,
   parseRelationSize,
-  parseSortByCount,
   populatesRelations,
   aggregateOf,
   raw,
@@ -131,6 +130,7 @@ import {
   aggregateColumnField,
   resolveGroupJoins,
   resolveQueryJoins,
+  relationSortTerms,
   resolveSortableJoin,
 } from './queryJoins.js';
 import { resolveVectorCast } from './vectorCast.js';
@@ -658,7 +658,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       isVectorSearch(value) && value.$project
         ? [
             this.sortProjection(ctx, meta, value.$project, (fragmentCtx) =>
-              this.appendVectorDistance(fragmentCtx, meta, key, value),
+              this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
             ),
           ]
         : [],
@@ -1049,7 +1049,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return `NOT (${this.buildFragment(ctx, (fragmentCtx) => this.compare(fragmentCtx, entity, key, val, opts))})`;
     }
     if (op === '$near') {
-      return this.vectorNearCondition(ctx, getMeta(entity), key, val as QueryVectorNear);
+      return this.vectorNearCondition(ctx, getMeta(entity), key, val as QueryVectorNear, opts.prefix);
     }
     const field = this.resolveOperandField(ctx, entity, key, opts);
     const condition =
@@ -1352,27 +1352,30 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         continue;
       }
       if (relation) {
-        const countDirection = parseSortByCount(value);
-        if (countDirection !== undefined) {
-          // A correlated count, not a join: a parent has many of these, so what is being ordered by
-          // is how many, and `SELECT DISTINCT` cannot order by an expression it did not select.
+        const { aggregates, rest } = relationSortTerms(key, keyPath, value);
+        for (const { spec, direction } of aggregates) {
+          // A correlated subquery, not a join: a parent has many of these, so what is being ordered by is
+          // one value over them, and `SELECT DISTINCT` cannot order by an expression it did not select.
+          const name = `${keyPath}.${spec.field ?? '$count'}`;
           if (opts.distinct) {
-            throw new TypeError(`cannot $sort by '${keyPath}.$count' with $distinct: it is not a selected column`);
+            throw new TypeError(`cannot $sort by '${name}' with $distinct: it is not a selected column`);
           }
-          columns.push({
-            key: keyPath,
-            expr: this.buildFragment(ctx, (fragmentCtx) =>
-              this.appendRelationSubquery(fragmentCtx, meta, key, relation, { prefix }, { op: '$count' }),
-            ),
-            direction: this.resolveSortDirection(countDirection),
-            output: false,
-          });
+          const expr = this.buildFragment(ctx, (fragmentCtx) =>
+            this.appendRelationAggregate(fragmentCtx, meta.entity, spec, prefix ?? ''),
+          );
+          if (spec.search) {
+            vectors.push({ key: name, expr, direction: '', output: false });
+          } else {
+            columns.push({ key: keyPath, expr, direction: this.resolveSortDirection(direction), output: false });
+          }
+        }
+        if (rest === undefined) {
           continue;
         }
         const { join, sort: relationSort } = resolveSortableJoin(
           relation,
           keyPath,
-          value,
+          rest,
           opts.joins ?? NO_JOINS,
           `cannot $sort by relation '${keyPath}': this statement joins no relations`,
         );
@@ -1387,9 +1390,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         continue;
       }
       if (isVectorSearch(value)) {
-        if (path) {
-          throw new TypeError(`$vector sort is only supported on the queried entity, not on relation '${path}'`);
-        }
         // Already projected in the SELECT list: order by that alias rather than recomputing it.
         vectors.push(
           value.$project
@@ -1397,7 +1397,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
             : {
                 key: keyPath,
                 expr: this.buildFragment(ctx, (fragmentCtx) =>
-                  this.appendVectorDistance(fragmentCtx, meta, key, value),
+                  this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
                 ),
                 direction: '',
                 output: false,
@@ -2346,13 +2346,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // Resolved before any SQL is emitted: it also decides whether the junction form reaches the target.
     const targetWhere = this.scopedWhere(relatedMeta, read.where ?? {});
 
-    if (rel.through) {
-      // The rows here are the junction's own, so a column of the far side is read as a page instead.
-      if (read.field) {
-        throw new TypeError(
-          `cannot read ${read.op}('${read.field}') over the many-to-many '${relKey}' without a page: its rows are the junction's, so name a '$sort' and a '$limit' to read the target's own`,
-        );
-      }
+    // A tally or an existence reads the junction's own rows; a column of the target reads each target once.
+    if (rel.through && !read.field) {
       ctx.append(`(SELECT ${read.op === 'exists' ? '1' : 'COUNT(*)'} FROM `);
       const junction = this.junctionRows(ctx, meta, rel, rel.through(), parent);
       ctx.append(junction.from);
@@ -2367,9 +2362,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     } else {
       // The alias is claimed before the SELECT is written, since an aggregate names a column of it.
       const related = this.tableRef(relatedMeta, ctx.claimAlias(relKey, parent));
-      ctx.append(`(SELECT ${this.aggregateProjection(read, related.alias, relatedMeta)} FROM `);
-      ctx.append(related.ref);
-      ctx.append(` WHERE ${this.correlation(meta, rel, parent, related.alias, relatedMeta)}`);
+      ctx.append(
+        `(SELECT ${this.aggregateProjection(ctx, read, related.alias, relatedMeta)} FROM ${related.ref} WHERE `,
+      );
+      this.appendCorrelation(ctx, meta, rel, parent, related.alias);
       this.renderWhere(ctx, relatedEntity, targetWhere, { prefix: related.alias, clause: 'AND' });
     }
 
@@ -2378,10 +2374,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /**
    * What a relation subquery selects: the literals a relation operator reads, or an aggregate over one
-   * of the target's columns. `count` and `sum` answer `0` on a parent with no rows, which is what makes
-   * them the two a trigger could keep; the rest answer `NULL`, and the field's type says so.
+   * of the target's columns or its distance to a vector. `count` and `sum` answer `0` on a parent with no
+   * rows, which is what makes them the two a trigger could keep; the rest answer `NULL`, and the field's
+   * type says so.
    */
   private aggregateProjection<E>(
+    ctx: QueryContext,
     projection: RelationSubqueryProjection,
     alias: string,
     relatedMeta: EntityMeta<E>,
@@ -2389,10 +2387,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (projection.op === 'exists') {
       return '1';
     }
-    return this.aggregateCall(
-      projection.op,
-      projection.field ? this.escapedColumn(alias, relatedMeta, projection.field) : '',
-    );
+    const { op, field, search } = projection;
+    if (!field) {
+      return this.aggregateCall(op, '');
+    }
+    const operand = search
+      ? this.buildFragment(ctx, (fragmentCtx) =>
+          this.appendVectorDistance(fragmentCtx, relatedMeta, field, search, alias),
+        )
+      : this.escapedColumn(alias, relatedMeta, field);
+    return this.aggregateCall(op, operand);
   }
 
   /**
@@ -2438,7 +2442,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const correlation = raw(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
     const { where: $where, page } = aggregate;
     // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
-    const read = aggregate.field ? refs(entity)[aggregate.field as FieldKey<object>] : raw`1`;
+    const { field, search } = aggregate;
+    const read = !field
+      ? raw`1`
+      : search
+        ? raw(({ ctx: readCtx }) => this.appendVectorDistance(readCtx, getMeta(entity), field, search, alias))
+        : refs(entity)[field as FieldKey<object>];
     const query = {
       ...page,
       $select: [read.as(AGGREGATE_VALUE_ALIAS)],
@@ -2709,7 +2718,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** `<distance> <op> ?`, the `$where` half of a vector search, its bounds checked here since `/http` input is untyped. */
-  private vectorNearCondition<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, near: QueryVectorNear): string {
+  private vectorNearCondition<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    near: QueryVectorNear,
+    prefix: string | undefined,
+  ): string {
     const bounds: Record<string, unknown> = {};
     for (const [op, val] of Object.entries(near)) {
       if (AbstractSqlDialect.VECTOR_QUERY_KEYS.has(op) || val === undefined) {
@@ -2732,7 +2747,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       throw TypeError(`$near on '${key}' needs its own $vector`);
     }
     const search: QueryVectorSearch = { $vector, $distance };
-    const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, search);
+    const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, search, prefix);
     return this.boundConditions(
       ctx,
       distance,

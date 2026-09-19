@@ -5,7 +5,7 @@ import {
   REL_NESTED_KEY,
   REL_TEMP_PREFIX,
   SUM_COUNT_ALIAS,
-  sortCountField,
+  sortAggregateField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
 import {
@@ -14,6 +14,7 @@ import {
   type QueryJoin,
   type QueryJoins,
   resolveGroupJoins,
+  relationSortTerms,
   resolveQueryJoins,
   resolveSortableJoin,
 } from '../dialect/queryJoins.js';
@@ -81,14 +82,15 @@ import {
   parseGroupMap,
   parseRelationAtKey,
   parseRelationSize,
-  parseSortByCount,
   rankedTextSearch,
   someKey,
   targetKeyColumns,
   textSortOf,
+  vectorDistanceOf,
 } from '../util/index.js';
 import { decodeBigIntsExcept } from '../util/wideNumber.js';
 import { textLanguage } from './textLanguage.js';
+import { vectorDistanceExpr } from './vectorDistance.js';
 
 /**
  * Operators MongoDB already expresses natively. `Pick`'s constraint ties this back to
@@ -659,7 +661,8 @@ export class MongoDialect extends AbstractDialect {
     { $sort: sort, $populate: populate, $where: where }: Query<E>,
   ): Sort {
     const meta = getMeta(entity);
-    const normalized: Record<string, 1 | -1> = {};
+    const nearest: Record<string, 1> = {};
+    const columns: Record<string, 1 | -1> = {};
     // Refused as the SQL dialects refuse it, before MongoDB answers a missing score with its own error.
     if (sort?.$text) {
       rankedTextSearch(where);
@@ -667,8 +670,10 @@ export class MongoDialect extends AbstractDialect {
     // The same join set the lookups are built from, so what an ordering may address and what the
     // pipeline actually produces cannot drift apart - `$sort` contributes its own to-one joins here
     // exactly as it does on the SQL dialects.
-    this.collectSort(meta, sort, resolveQueryJoins(meta, { $populate: populate, $sort: sort }), '', normalized);
-    return normalized;
+    const joins = resolveQueryJoins(meta, { $populate: populate, $sort: sort });
+    this.collectSort(meta, sort, joins, '', nearest, columns);
+    // A vector distance is the primary ordering wherever it appears, as on the SQL dialects.
+    return { ...nearest, ...columns };
   }
 
   /** Walks `$sort` against the metadata of the entity each level addresses, as the SQL dialects do. */
@@ -677,6 +682,7 @@ export class MongoDialect extends AbstractDialect {
     sort: QuerySortMap<E> | undefined,
     joins: QueryJoins,
     path: string,
+    nearest: Record<string, 1>,
     out: Record<string, 1 | -1>,
   ): void {
     for (const [key, value] of Object.entries(sort ?? {})) {
@@ -692,14 +698,11 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
       if (!relation) {
-        // The queried entity's own vector search is lifted out before this walk, so one reaching it
-        // sits under a relation, which a `$lookup` brings in one row at a time - there is nothing to
-        // rank. `sortDirection` would read the operator object as "ascending" and order by the raw
-        // vector column instead, which is the SQL dialects' rejection turned into a silent answer.
+        // The queried entity's first vector search is lifted out into `$vectorSearch` before this walk,
+        // so one reaching it is a second. `sortDirection` would read the operator object as "ascending"
+        // and order by the raw vector column instead, a silent answer where the caller asked for a rank.
         if (isVectorSearch(value)) {
-          throw new TypeError(
-            `$vector sort is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
-          );
+          throw new TypeError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
         }
         out[path + this.pathOf(meta, key)] = sortDirection(value);
         continue;
@@ -708,51 +711,53 @@ export class MongoDialect extends AbstractDialect {
       // one: ordering by a relation nothing looked up reads a field that is not there, which MongoDB
       // ranks as all-equal rather than rejecting. The SQL dialects can add the join themselves.
       const relPath = `${path}${key}`;
-      const countDirection = parseSortByCount(value);
-      if (countDirection !== undefined) {
-        // The tally rides on a field {@link sortCountStages} adds, which only the queried entity's
+      const { aggregates, rest } = relationSortTerms(key, relPath, value);
+      for (const { spec, direction } of aggregates) {
+        // The value rides on a field {@link sortAggregateStages} adds, which only the queried entity's
         // own pipeline has: a nested one is built inside its parent's `$lookup`, where there is no
         // parent document left to hang it off.
         if (path) {
-          throw new TypeError(`$sort by '${relPath}.$count' is only supported on the queried entity`);
+          throw new TypeError(
+            `$sort by '${relPath}.${spec.field ?? '$count'}' is only supported on the queried entity`,
+          );
         }
-        out[sortCountField(key)] = sortDirection(countDirection);
+        if (spec.search) {
+          nearest[sortAggregateField(spec)] = 1;
+        } else {
+          out[sortAggregateField(spec)] = sortDirection(direction);
+        }
+      }
+      if (rest === undefined) {
         continue;
       }
       const { join, sort: relationSort } = resolveSortableJoin(
         relation,
         relPath,
-        value,
+        rest,
         joins,
         `cannot $sort by relation '${relPath}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
       );
-      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, out);
+      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, nearest, out);
     }
   }
 
   /**
-   * The stages a `$sort` by a relation's size needs: one correlated `$lookup` tallying the relation
-   * per parent, and the `$set` that lifts the tally onto the document as the field the `$sort` then
-   * orders by. A parent with no related row gets no lookup result at all, which is a zero.
+   * The stages a `$sort` by a relation's aggregate needs - its size, or its row nearest a vector: one
+   * correlated `$lookup` reading it per parent, and the `$set` that lifts it onto the document as the
+   * field the `$sort` then orders by. A parent with no related row reads a zero tally and no distance.
    */
-  public sortCountStages<E extends Document>(
+  public sortAggregateStages<E extends Document>(
     entity: Type<E>,
     sort: QuerySortMap<E> | undefined,
   ): { readonly stages: MongoAggregationPipelineEntry<Document>[]; readonly fields: string[] } {
     const meta = getMeta(entity);
-    const stages: MongoAggregationPipelineEntry<Document>[] = [];
-    const fields: string[] = [];
-
-    for (const [key, value] of Object.entries(sort ?? {})) {
-      const relOpts = meta.relations[key];
-      if (!relOpts || parseSortByCount(value) === undefined) {
-        continue;
-      }
-      const temp = sortCountField(key);
-      stages.push(...this.aggregateStages(meta, { relation: key, op: '$count' }, `${REL_TEMP_PREFIX}${temp}`, temp));
-      fields.push(temp);
-    }
-
+    const specs = Object.entries(sort ?? {}).flatMap(([key, value]) =>
+      meta.relations[key] ? relationSortTerms(key, key, value).aggregates.map(({ spec }) => spec) : [],
+    );
+    const fields = specs.map(sortAggregateField);
+    const stages = specs.flatMap((spec, index) =>
+      this.aggregateStages(meta, spec, `${REL_TEMP_PREFIX}${fields[index]}`, fields[index]),
+    );
     return { stages, fields };
   }
 
@@ -798,15 +803,28 @@ export class MongoDialect extends AbstractDialect {
     field: string,
   ): MongoAggregationPipelineEntry<Document>[] {
     const relOpts = relationOf(meta, spec.relation as RelationKey<E>);
+    const relMeta = getMeta(relOpts.entity());
     const page = spec.page ?? {};
+    // A many-to-many's lookup runs over its junction's rows, each carrying its target: read as that
+    // target, so the page's order and the aggregate reach the target's own fields.
+    const targets = relOpts.through ? [{ $replaceRoot: { newRoot: { $arrayElemAt: [`$${REL_NESTED_KEY}`, 0] } } }] : [];
     const tail = [
+      ...targets,
       ...(page.$sort ? [{ $sort: this.sort(relOpts.entity(), page) }] : []),
       ...this.pagerStages(page),
       spec.field
         ? {
             $group: {
               _id: null,
-              [AGGREGATE_VALUE_ALIAS]: { [spec.op]: `$${this.columnOf(getMeta(relOpts.entity()), spec.field)}` },
+              [AGGREGATE_VALUE_ALIAS]: {
+                [spec.op]: spec.search
+                  ? vectorDistanceExpr(
+                      this.columnOf(relMeta, spec.field),
+                      spec.search.$vector,
+                      vectorDistanceOf(relMeta, spec.field, spec.search),
+                    )
+                  : `$${this.columnOf(relMeta, spec.field)}`,
+              },
             },
           }
         : { $count: AGGREGATE_VALUE_ALIAS },
@@ -963,10 +981,10 @@ export class MongoDialect extends AbstractDialect {
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
     const joins = resolveQueryJoins(meta, q);
-    // The tally an ordering by a relation's size reads, and the field it parks it on: both belong
+    // The value an ordering by a relation's aggregate reads, and the field it parks it on: both belong
     // with the lookups, since the `$sort` right after them is what they exist for.
-    const counted = this.sortCountStages(entity, q.$sort);
-    const lookups = [...this.lookupStages(meta, joins), ...counted.stages];
+    const aggregated = this.sortAggregateStages(entity, q.$sort);
+    const lookups = [...this.lookupStages(meta, joins), ...aggregated.stages];
     // Each to-many and each `$count`, which neither drop nor reorder a row, so they read the page alone.
     const related = this.relationReadStages(entity, q);
     const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
@@ -989,15 +1007,15 @@ export class MongoDialect extends AbstractDialect {
     // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
     // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
     const sortOnly = [...joins.values()].filter((join) => !join.projected).map((join) => join.path);
-    const dropped = [...sortOnly, ...counted.fields];
+    const dropped = [...sortOnly, ...aggregated.fields];
     const unset = dropped.length ? [{ $unset: dropped }] : [];
 
     // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
     // that reads a lookup those columns do not carry. Refused rather than answered all-equal, and in
     // the same terms the SQL dialects refuse `SELECT DISTINCT` ordered by an unselected column.
-    if (q.$distinct && counted.fields.length) {
+    if (q.$distinct && aggregated.fields.length) {
       throw new TypeError(
-        `cannot $sort by a relation's $count with $distinct: the grouping keeps only the columns it projects`,
+        `cannot $sort by a relation's aggregate with $distinct: the grouping keeps only the columns it projects`,
       );
     }
     if (q.$distinct && sortOnly.length) {

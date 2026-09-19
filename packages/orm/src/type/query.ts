@@ -3,7 +3,7 @@ import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { BooleanLike, Except, IsMany, PrimaryKey } from './utility.js';
-import type { QueryVectorSearch } from './vector.js';
+import type { QueryVectorQuery, QueryVectorSearch } from './vector.js';
 
 export type QueryOptions = {
   /**
@@ -150,6 +150,18 @@ export type QuerySortByCount = {
   $count: QuerySortDirection;
 };
 
+/** The fields of `E` a vector search can rank by. */
+type VectorFieldKey<E> = { [P in FieldKey<E>]: NonNullable<E[P]> extends readonly number[] ? P : never }[FieldKey<E>];
+
+/**
+ * Ordering parents by the row of a to-many nearest a vector, per vector field: its distance is the
+ * smallest of theirs. Nothing to `$project`, since no one row of the parent's answers under it. Never
+ * where the target has no vector, since an empty map would admit any value at all.
+ */
+export type QuerySortByNearest<E> = [VectorFieldKey<E>] extends [never]
+  ? never
+  : { [P in VectorFieldKey<E>]?: QueryVectorQuery };
+
 /**
  * Ordering by relevance to the `$text` at the root of `$where`, in either direction as any key sorts. The
  * object form also answers it under the name `$project` gives it, most relevant first unless `$order` says.
@@ -165,20 +177,21 @@ export type QuerySortByText = {
 export type WithProjection<E, K extends string> = E & Record<K, number>;
 
 /**
- * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count`, or - where `Root` says it
- * sorts the queried entity itself, not a relation's rows - a vector distance or a `$text` relevance. One
- * mapped type over the key sets: an intersection is checked once per member, which made this the costliest.
+ * A sort by fields, JSON paths, a to-one relation's fields, a to-many's `$count` or nearest row, a vector
+ * distance, or - where `Root` says it sorts the queried entity itself, not a relation's rows - a `$text`
+ * relevance or a distance it projects. One mapped type over the key sets: an intersection is checked once
+ * per member, which made this the costliest.
  */
 export type QuerySortMap<E, Root extends boolean = true, K extends keyof E = FieldKey<E> | RelationKey<E>> = {
   [P in K]?: P extends RelationKey<E>
-    ? // A to-many has no single value to order by, so what it offers instead is its own size.
+    ? // A to-many has no single value to order by, so what it offers instead is its size or nearest row.
       IsMany<E[P]> extends true
-      ? QuerySortByCount
+      ? QuerySortByCount | QuerySortByNearest<RelationTarget<E[P]>>
       : QuerySortMap<RelationTarget<E[P]>, false>
-    : Root extends true
-      ? NonNullable<E[P]> extends readonly number[]
+    : NonNullable<E[P]> extends readonly number[]
+      ? Root extends true
         ? QuerySortValue
-        : QuerySortDirection
+        : QuerySortDirection | QueryVectorQuery
       : QuerySortDirection;
 } & ([JsonFieldPaths<E>] extends [never] ? unknown : { [P in JsonFieldPaths<E>]?: QuerySortDirection }) &
   (Root extends true ? QuerySortByText : unknown);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
 import { Company, Item, ItemAdjustment, MeasureUnitCategory, Tax, User, VectorItem } from '../test/index.js';
 import type { QueryContext, SqlDialectFeatures, SqlDialectName } from '../type/index.js';
@@ -119,13 +119,6 @@ class TestSqlDialect extends AbstractSqlDialect {
   }
 }
 
-@Entity()
-class Shelf {
-  @Id({ type: Number }) id?: number;
-  @Field({ references: () => VectorItem }) vectorItemId?: number | null;
-  @ManyToOne({ entity: () => VectorItem, references: (shelf) => shelf.vectorItemId }) vectorItem?: VectorItem;
-}
-
 /** A field the strategy names, one named outright, and an inlined computed one, for `refs()` to render. */
 @Entity()
 class RefLedger {
@@ -228,17 +221,6 @@ describe('AbstractSqlDialect', () => {
     expect(() => dialect.find(ctx, ItemAdjustment, { $populate: { item: true }, $sort: { item: 1 } })).toThrow(
       "$sort by relation 'item' expects a map of its fields, got 1",
     );
-  });
-
-  it('should reject a $vector sort through a relation', () => {
-    const ctx = dialect.createContext();
-    expect(() =>
-      dialect.find(ctx, Shelf, {
-        $populate: { vectorItem: true },
-        // @ts-expect-error: a relation sorts by no vector
-        $sort: { vectorItem: { vec: { $vector: [1, 2, 3] } } },
-      }),
-    ).toThrow("$vector sort is only supported on the queried entity, not on relation 'vectorItem'");
   });
 
   it('should emit no HAVING when every condition is undefined', () => {

@@ -42,7 +42,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     const { rowLocks } = this.pool.dialect.features;
     // A held lock is only visible to another connection, which a shared-handle pool has not got.
     const connections = !(this.pool instanceof AbstractSharedHandleQuerierPool);
+    // Every engine with vector functions ranks through a relation; MySQL has none outside HeatWave.
+    const vectors = this.pool.dialect.vectorMetrics.size > 0;
     return {
+      shouldRankByTheNearestRowOfAToMany: vectors,
+      shouldRankByTheNearestTargetOfAManyToMany: vectors,
+      shouldRankByAToOneWithoutPopulatingIt: vectors,
       shouldRejectLockOutsideTransaction: rowLocks,
       shouldRejectALockTheEngineLacks: !rowLocks,
       shouldFindManyAndCountUnderALock: rowLocks,

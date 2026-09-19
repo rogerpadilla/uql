@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.74.0] - 2026-09-19
+
+- `$sort` ranks by a relation's row nearest a vector, `{ chunks: { embedding: { $vector } } }`, through a to-one, one-to-many or many-to-many, on every engine with vector search and on MongoDB without Atlas.
+- A `computed` `sum`, `min`, `max` or `avg` over a many-to-many's target column needs no page.
+- Fixed: a `$vector` sort, its `$project` or a `$near` beside a join no longer fails on a column both tables have.
+- Fixed (MongoDB): a `computed` aggregate over a many-to-many's target column read `null`.
+
 ## [0.73.1] - 2026-09-19
 
 - Fixed: `uql-orm/migrate` loads without `mongodb` installed.

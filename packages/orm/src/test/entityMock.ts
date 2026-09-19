@@ -463,6 +463,37 @@ export class VectorItem {
 }
 
 /**
+ * A document, its chunks and the chunks it cites, every one with a vector named `vec`: a join tells
+ * them apart by alias only, and a relation sort ranks a document by its nearest chunk.
+ */
+@Entity()
+export class VectorDoc {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
+  @OneToMany({ entity: () => VectorChunk, mappedBy: (chunk) => chunk.doc }) chunks?: VectorChunk[];
+  @ManyToMany({ entity: () => VectorChunk, through: () => VectorCitation }) cited?: VectorChunk[];
+  /** A column of a many-to-many's targets, which a junction row does not carry. */
+  @Field({ computed: (doc) => doc.cited.max((chunk) => chunk.name) }) readonly lastCited?: string | null;
+}
+
+@Entity()
+export class VectorChunk {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) name?: string | null;
+  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
+  @Field({ references: () => VectorDoc }) vectorDocId?: string | null;
+  @ManyToOne({ entity: () => VectorDoc, references: (chunk) => chunk.vectorDocId }) doc?: VectorDoc;
+}
+
+@Entity()
+export class VectorCitation {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ references: () => VectorDoc }) vectorDocId?: string | null;
+  @Field({ references: () => VectorChunk }) vectorChunkId?: string | null;
+}
+
+/**
  * pgvector's narrower vector types, which every other dialect maps onto the one it has. Their point
  * here is the round-trip: `halfvec` and `sparsevec` used to bind as plain arrays on insert, and
  * `sparsevec` rejects the dense literal the others take, both invisible to a SQL-text assertion.

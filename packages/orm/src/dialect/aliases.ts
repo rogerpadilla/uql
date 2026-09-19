@@ -1,3 +1,5 @@
+import type { RelationAggregateSpec } from '../type/index.js';
+
 // Every identifier UQL invents, `_uql`-prefixed to stay off a user's own, collected in one place:
 // the ends writing and reading one sit in different modules, and a drift between them fails silently.
 
@@ -52,12 +54,12 @@ export const UPSERT_NEW_ROW_ALIAS = '_uql_new';
 export const UPSERT_SOURCE_ALIAS = '_uql_src';
 
 /**
- * Where a `$sort` by a relation's size parks its tally until the ordering has run. A function, so the
- * `$sort` that names the field and the stage that produces it cannot spell it differently - MongoDB
- * ranks a field that is not there as all-equal rather than failing, so a drift would go unnoticed.
+ * Where a `$sort` by a relation's aggregate - its size, or its nearest row - parks the value until the
+ * ordering has run. A function, so the `$sort` that names the field and the stage that produces it cannot
+ * spell it differently - MongoDB ranks a field that is not there as all-equal, so a drift would go unnoticed.
  */
-export function sortCountField(relKey: string): string {
-  return `_uql_sort_count_${relKey}`;
+export function sortAggregateField({ op, relation, field }: RelationAggregateSpec): string {
+  return `_uql_sort_${op.slice(1)}_${relation}${field ? `_${field}` : ''}`;
 }
 
 /**

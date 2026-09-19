@@ -3,6 +3,7 @@ import type { Query, QueryConflictPaths, QueryOptions, QueryPage, QuerySearch, R
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
+import type { QueryVectorQuery } from './vector.js';
 
 /**
  * comparison options.
@@ -293,10 +294,14 @@ export type AggregateCall<E = object> = {
   readonly where?: QueryWhere<E>;
 };
 
-/** What a relation aggregate reads: how many rows, or one of the target's columns. */
+/** What a relation aggregate reads: how many rows, or one of the target's columns, or its distance to `search`. */
 export type RelationAggregateProjection =
-  | { readonly op: '$count'; readonly field?: never }
-  | { readonly op: Exclude<RelationAggregateOp, '$count'>; readonly field: string };
+  | { readonly op: '$count'; readonly field?: never; readonly search?: never }
+  | {
+      readonly op: Exclude<RelationAggregateOp, '$count'>;
+      readonly field: string;
+      readonly search?: QueryVectorQuery;
+    };
 
 /**
  * A relation aggregate as a `computed` field holds it: an {@link AggregateCall} over the rows of the

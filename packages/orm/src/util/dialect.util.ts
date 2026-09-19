@@ -27,14 +27,16 @@ import {
   type QuerySizeComparisonOps,
   type QuerySortMap,
   type QueryTextSearchOptions,
+  type QueryVectorQuery,
   type QueryVectorSearch,
   type QueryWhere,
   type RelationKey,
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
   type UpdatePayload,
+  type VectorDistance,
 } from '../type/index.js';
-import { VECTOR_INDEX_TYPES } from '../type/vector.js';
+import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { getFieldKeys, isDatabaseWritten } from './field.util.js';
 import {
   entityName,
@@ -296,6 +298,19 @@ const VECTOR_INDEX_MATCH: ReadonlySet<IndexType> = new Set<IndexType>([...VECTOR
 export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityIndexMeta<E> | undefined {
   return meta.indexes?.find(
     (index) => index.type !== undefined && VECTOR_INDEX_MATCH.has(index.type) && indexCoversColumn(index, key),
+  );
+}
+
+/**
+ * The metric a distance to `key` measures by: the search's own, else the field's, else its index's, which
+ * serves no other, else cosine. The one fallback every engine resolves, so none can rank by another.
+ */
+export function vectorDistanceOf<E>(meta: EntityMeta<E>, key: string, search: QueryVectorQuery): VectorDistance {
+  return (
+    search.$distance ??
+    meta.fields[key as FieldKey<E>]?.distance ??
+    findVectorIndex(meta, key)?.distance ??
+    DEFAULT_VECTOR_DISTANCE
   );
 }
 

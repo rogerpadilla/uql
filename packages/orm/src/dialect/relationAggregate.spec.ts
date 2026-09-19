@@ -60,7 +60,7 @@ class Project {
   @Field({ computed: (project) => project.tags.max((tag) => tag.weight, { $sort: { weight: -1 }, $limit: 1 }) })
   readonly heaviestTag?: number | null;
 
-  /** The same column without one: a many-to-many counts the junction's rows, which hold no weight. */
+  /** The same column without one: read off each target once, whichever junction rows pair it. */
   @Field({ computed: (project) => project.tags.max((tag) => tag.weight) })
   readonly unpagedTagWeight?: number | null;
 
@@ -133,9 +133,9 @@ describe('relation aggregate', () => {
     expect(sql).toContain('ORDER BY "tags"."weight" DESC LIMIT 1');
   });
 
-  it("should refuse a column of a many-to-many target without a page, whose rows are the junction's", () => {
-    expect(() => sqlOf({ $select: { unpagedTagWeight: true } })).toThrow(
-      "cannot read $max('weight') over the many-to-many 'tags' without a page",
+  it('should read a column of a many-to-many target without a page, each target once', () => {
+    expect(sqlOf({ $select: { unpagedTagWeight: true } })).toBe(
+      'SELECT (SELECT MAX("tags"."weight") FROM "Tag" "tags" WHERE "tags"."id" IN (SELECT "ProjectTag"."tagId" FROM "ProjectTag" WHERE "ProjectTag"."projectId" = "Project"."id")) "unpagedTagWeight" FROM "Project"',
     );
   });
 

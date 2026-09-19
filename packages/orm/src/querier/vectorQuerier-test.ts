@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { VectorItem } from '../test/index.js';
+import { VectorChunk, VectorDoc, VectorItem } from '../test/index.js';
 import type { WithProjection } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
@@ -133,6 +133,25 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     expect(results.map((r) => r.name)).toEqual(['keep-same', 'keep-near']);
     expect(results[0].score).toBeCloseTo(0, 5);
     expect(results[1].score).toBeCloseTo(1 - Math.SQRT1_2, 5);
+  }
+
+  /** A joined table with a vector of the same name, which only the alias tells apart. */
+  async shouldRankBesideAJoinedVector() {
+    const vectorDocId = await this.querier.insertOne(VectorDoc, { name: 'doc', vec: [0, 1, 0] });
+    await this.querier.insertMany(VectorChunk, [
+      { name: 'north', vec: [0, 1, 0], vectorDocId },
+      { name: 'east', vec: [1, 0, 0], vectorDocId },
+      { name: 'northeast', vec: [Math.SQRT1_2, Math.SQRT1_2, 0], vectorDocId },
+    ]);
+
+    const results = await this.querier.findMany(VectorChunk, {
+      $select: { name: true },
+      $populate: { doc: { $select: { name: true } } },
+      $where: { vec: { $near: { $vector: [1, 0, 0], $lt: 0.5 } } },
+      $sort: { vec: { $vector: [1, 0, 0] } },
+    });
+
+    expect(results.map((r) => r.name)).toEqual(['east', 'northeast']);
   }
 
   async shouldCombineFilterWithVectorSort() {

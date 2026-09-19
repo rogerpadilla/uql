@@ -5,14 +5,14 @@ import type {
   FieldOptions,
   Query,
   QueryContext,
-  QueryVectorSearch,
+  QueryVectorQuery,
   QueryWhere,
   SqlDialectFeatures,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
-import { DEFAULT_VECTOR_DISTANCE, unsupportedVectorMetric } from '../type/vector.js';
-import { findVectorIndex, findVectorSort, vectorCandidates } from '../util/dialect.util.js';
+import { unsupportedVectorMetric } from '../type/vector.js';
+import { findVectorIndex, findVectorSort, vectorCandidates, vectorDistanceOf } from '../util/dialect.util.js';
 import { AbstractDialect } from './abstractDialect.js';
 import { encodeFloat32s, type VectorCast } from './vectorCast.js';
 
@@ -70,20 +70,14 @@ export abstract class VectorSqlDialect extends AbstractDialect {
   /** Quotes an identifier; supplied by the SQL dialect built on top of this layer. */
   abstract escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
 
-  /**
-   * What a distance expression reads, for a `$sort` and a `$near` alike. The metric falls back to the
-   * field's, then its index's, which serves no other, then cosine.
-   */
+  /** What a distance expression reads, for a `$sort` and a `$near` alike. */
   protected resolveVectorDistance<E>(
     meta: EntityMeta<E>,
     key: string,
-    search: QueryVectorSearch,
+    search: QueryVectorQuery,
   ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined } {
     const field = meta.fields[key as FieldKey<E>];
-    const colName = this.resolveColumnName(key, field);
-    const distance =
-      search.$distance ?? field?.distance ?? findVectorIndex(meta, key)?.distance ?? DEFAULT_VECTOR_DISTANCE;
-    return { colName, distance, field };
+    return { colName: this.resolveColumnName(key, field), distance: vectorDistanceOf(meta, key, search), field };
   }
 
   /**
@@ -104,13 +98,15 @@ export abstract class VectorSqlDialect extends AbstractDialect {
 
   /**
    * The distance expression, in whichever of the two shapes this dialect spells it. One method for
-   * both, so the metric lookup and its refusal exist once rather than per shape.
+   * both, so the metric lookup and its refusal exist once rather than per shape. The column is read
+   * under `prefix`, the alias in scope, since a joined table may have a column of the same name.
    */
   protected appendVectorDistance<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     key: string,
-    search: QueryVectorSearch,
+    search: QueryVectorQuery,
+    prefix: string | undefined,
   ): void {
     if (this.vectorMetrics.size === 0) {
       throw new TypeError(
@@ -122,14 +118,15 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     if (!metric) {
       throw unsupportedVectorMetric(this.dialectName, distance);
     }
+    const column = this.escapeId(prefix, true, true) + this.escapeId(colName);
     if ('fn' in metric) {
       const leading = metric.metricArg === undefined ? '' : `'${metric.metricArg}', `;
-      ctx.append(`${metric.fn}(${leading}${this.escapeId(colName)}, `);
+      ctx.append(`${metric.fn}(${leading}${column}, `);
       this.appendVectorValue(ctx, search.$vector, field);
       ctx.append(')');
       return;
     }
-    ctx.append(`${this.escapeId(colName)} ${metric.op} `);
+    ctx.append(`${column} ${metric.op} `);
     this.appendVectorValue(ctx, search.$vector, field);
   }
 }
