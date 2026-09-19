@@ -37,6 +37,14 @@ export const JSON_PULL_ALIAS = '_uql_pull';
 /** The field a MongoDB `$sort` by `$text` reads `textScore` from where it projects none, taken back out after. */
 export const TEXT_SCORE_ALIAS = '_uql_text_score';
 
+/**
+ * The field a MongoDB `$sort` placing nulls orders by first: 1 where the value is null or missing, 0
+ * where it is not. MongoDB takes no `NULLS FIRST`, so the placement is this flag plus the sort on it.
+ */
+export function nullsSortField(path: string): string {
+  return `_uql_nulls_${path.replace(/\./g, '_')}`;
+}
+
 /** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */
 export const REL_TEMP_PREFIX = '_uql_rel_';
 

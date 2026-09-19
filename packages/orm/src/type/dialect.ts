@@ -154,6 +154,11 @@ export interface SqlDialectFeatures extends DialectFeatures {
   /** Whether a lock can be narrowed to one table of a join, `FOR UPDATE OF`, which MariaDB lacks. */
   readonly rowLockOf: boolean;
   /**
+   * How a `$sort` states where nulls land: the `NULLS FIRST/LAST` clause, a leading `IS NULL` term
+   * (MySQL, MariaDB), or a leading `CASE` (SQL Server, which has no orderable boolean).
+   */
+  readonly nullsOrdering: 'clause' | 'expression' | 'case';
+  /**
    * Whether a fulltext index's heavier column needs a fulltext index of its own to be scored by, as
    * MySQL's `MATCH` does, which reads only an index over exactly its columns.
    */

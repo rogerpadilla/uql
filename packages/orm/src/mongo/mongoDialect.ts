@@ -5,6 +5,7 @@ import {
   REL_NESTED_KEY,
   REL_TEMP_PREFIX,
   SUM_COUNT_ALIAS,
+  nullsSortField,
   sortAggregateField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
@@ -101,10 +102,23 @@ type MongoNativeOp = keyof Pick<
   '$all' | '$size' | '$elemMatch' | '$eq' | '$ne' | '$lt' | '$lte' | '$gt' | '$gte' | '$in' | '$nin' | '$regex' | '$not'
 >;
 
+/**
+ * An ordering as the pipeline runs it: the `$sort`, the fields it needs on the document first - a
+ * placement's null flags - and the ones to take back off after it. One object, so a caller cannot
+ * order by a field it forgot to add, or leave one behind in the rows it answers with.
+ */
+export type MongoSortPlan = {
+  readonly sort: Sort;
+  readonly stages: MongoAggregationPipelineEntry<Document>[];
+  readonly fields: string[];
+};
+
+const EMPTY_SORT_PLAN: MongoSortPlan = { sort: {}, stages: [], fields: [] };
+
 /** What a read pipeline contributes to {@link MongoDialect.readStages} beyond the query itself. */
 type MongoReadStages = {
   /** Ordering, which runs after the lookups when it reads one of their fields. */
-  readonly sort?: Sort;
+  readonly sort?: MongoSortPlan;
   readonly pager?: MongoAggregationPipelineEntry<Document>[];
   /** A score the read answers as a field, a vector search's or a text search's; a temporary one leaves again. */
   readonly score?: {
@@ -656,13 +670,23 @@ export class MongoDialect extends AbstractDialect {
    * means a *populated* one, at every level of the path: a lookup adds a field to the result, so one
    * added for the sort alone would change what the caller gets back.
    */
-  public sort<E extends Document>(
+  public sort<E extends Document>(entity: Type<E>, q: Query<E>): Sort {
+    return this.sortPlan(entity, q).sort;
+  }
+
+  /**
+   * The ordering, and the paths whose nulls it places. MongoDB sorts null and missing lowest and takes
+   * no placement, so one is emulated: {@link nullsSortStages} flags each path and the flag is ordered
+   * by ahead of the value itself.
+   */
+  public sortPlan<E extends Document>(
     entity: Type<E>,
     { $sort: sort, $populate: populate, $where: where }: Query<E>,
-  ): Sort {
+  ): MongoSortPlan {
     const meta = getMeta(entity);
     const nearest: Record<string, 1> = {};
     const columns: Record<string, 1 | -1> = {};
+    const placed: string[] = [];
     // Refused as the SQL dialects refuse it, before MongoDB answers a missing score with its own error.
     if (sort?.$text) {
       rankedTextSearch(where);
@@ -671,9 +695,16 @@ export class MongoDialect extends AbstractDialect {
     // pipeline actually produces cannot drift apart - `$sort` contributes its own to-one joins here
     // exactly as it does on the SQL dialects.
     const joins = resolveQueryJoins(meta, { $populate: populate, $sort: sort });
-    this.collectSort(meta, sort, joins, '', nearest, columns);
-    // A vector distance is the primary ordering wherever it appears, as on the SQL dialects.
-    return { ...nearest, ...columns };
+    this.collectSort(meta, sort, joins, '', nearest, columns, placed);
+    const flags = Object.fromEntries(
+      placed.map((path) => [nullsSortField(path), { $cond: [{ $eq: [{ $ifNull: [`$${path}`, null] }, null] }, 1, 0] }]),
+    );
+    return {
+      // A vector distance is the primary ordering wherever it appears, as on the SQL dialects.
+      sort: { ...nearest, ...columns },
+      stages: placed.length ? [{ $addFields: flags }] : [],
+      fields: placed.map(nullsSortField),
+    };
   }
 
   /** Walks `$sort` against the metadata of the entity each level addresses, as the SQL dialects do. */
@@ -684,6 +715,7 @@ export class MongoDialect extends AbstractDialect {
     path: string,
     nearest: Record<string, 1>,
     out: Record<string, 1 | -1>,
+    placed: string[],
   ): void {
     for (const [key, value] of Object.entries(sort ?? {})) {
       const relation = meta.relations[key];
@@ -704,7 +736,14 @@ export class MongoDialect extends AbstractDialect {
         if (isVectorSearch(value)) {
           throw new TypeError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
         }
-        out[path + this.pathOf(meta, key)] = sortDirection(value);
+        const docPath = path + this.pathOf(meta, key);
+        const nulls = sortNulls(value);
+        if (nulls) {
+          placed.push(docPath);
+          // The flag holds 1 for a null, so ordering by it descending brings the null block to the front.
+          out[nullsSortField(docPath)] = nulls === 'first' ? -1 : 1;
+        }
+        out[docPath] = sortDirection(value);
         continue;
       }
       // A `$lookup` is what puts the relation's fields on the document, and only `$populate` asks for
@@ -737,7 +776,7 @@ export class MongoDialect extends AbstractDialect {
         joins,
         `cannot $sort by relation '${relPath}' on MongoDB unless it is populated: only $populate adds its fields to the document`,
       );
-      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, nearest, out);
+      this.collectSort(join.meta, relationSort, joins, `${relPath}.`, nearest, out, placed);
     }
   }
 
@@ -955,7 +994,7 @@ export class MongoDialect extends AbstractDialect {
     return [
       ...this.matchStages(entity, q.$where, opts, this.aggregateKeys(entity, q)),
       ...this.readStages(entity, q, {
-        sort: this.sort(entity, q),
+        sort: this.sortPlan(entity, q),
         pager: this.pagerStages(q),
         score: text && { field: text.project ?? TEXT_SCORE_ALIAS, meta: 'textScore', temporary: !text.project },
       }),
@@ -984,10 +1023,12 @@ export class MongoDialect extends AbstractDialect {
     // The value an ordering by a relation's aggregate reads, and the field it parks it on: both belong
     // with the lookups, since the `$sort` right after them is what they exist for.
     const aggregated = this.sortAggregateStages(entity, q.$sort);
+    const ordering = extra.sort ?? EMPTY_SORT_PLAN;
     const lookups = [...this.lookupStages(meta, joins), ...aggregated.stages];
     // Each to-many and each `$count`, which neither drop nor reorder a row, so they read the page alone.
     const related = this.relationReadStages(entity, q);
-    const sort = hasKeys(extra.sort) ? [{ $sort: extra.sort }] : [];
+    // The flags a placement orders by travel with their `$sort`, wherever the pipeline puts it.
+    const sort = hasKeys(ordering.sort) ? [...ordering.stages, { $sort: ordering.sort }] : [];
     const pager = extra.pager ?? [];
 
     // The score becomes a real field before anything reads it, so the lookups, the sort and the projection
@@ -1007,7 +1048,7 @@ export class MongoDialect extends AbstractDialect {
     // which is the one way this differs from a SQL join. Taken back out once the `$sort` that needed
     // it has run, so ordering by an unpopulated relation costs the same nothing it does there.
     const sortOnly = [...joins.values()].filter((join) => !join.projected).map((join) => join.path);
-    const dropped = [...sortOnly, ...aggregated.fields];
+    const dropped = [...sortOnly, ...aggregated.fields, ...ordering.fields];
     const unset = dropped.length ? [{ $unset: dropped }] : [];
 
     // The grouping collapses rows onto the columns it projects, which leaves nothing for an ordering
@@ -1741,9 +1782,17 @@ export type ExtractedVectorSort<E> = {
   readonly regularSort: QuerySortMap<E>;
 };
 
-/** `-1` for the two descending spellings, `1` for everything else - MongoDB knows no other value. */
+/** `-1` for every descending spelling, `1` for everything else - MongoDB knows no other value. */
 function sortDirection(value: unknown): 1 | -1 {
-  return value === 'desc' || value === -1 ? -1 : 1;
+  return value === -1 || (typeof value === 'string' && value.startsWith('desc')) ? -1 : 1;
+}
+
+/** Where a direction asks nulls to land, where it asks at all. */
+function sortNulls(value: unknown): 'first' | 'last' | undefined {
+  if (typeof value !== 'string') {
+    return undefined;
+  }
+  return value.endsWith('NullsFirst') ? 'first' : value.endsWith('NullsLast') ? 'last' : undefined;
 }
 
 /**

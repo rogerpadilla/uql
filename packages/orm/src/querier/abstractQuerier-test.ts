@@ -884,6 +884,33 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found?.kind).toEqual({ public: 1, tags: ['b', 'z'] });
   }
 
+  /**
+   * Where nulls land is asked for rather than left to the engine: unqualified, Postgres and CockroachDB
+   * sort them last on `asc` where every other engine sorts them first. A placement reads the same
+   * everywhere - through `NULLS FIRST/LAST` where the engine has it, a leading term where it does not.
+   */
+  async shouldSortByNullPlacement() {
+    const names = ['nulls valued a', 'nulls null', 'nulls valued c'];
+    await this.querier.insertMany(Item, [
+      { name: names[0], code: 'a' },
+      { name: names[1], code: null },
+      { name: names[2], code: 'c' },
+    ]);
+    const page = { $select: { name: true }, $where: { name: { $in: names } } } as const;
+
+    const ascLast = await this.querier.findMany(Item, { ...page, $sort: { code: 'ascNullsLast' } });
+    expect(ascLast.map(({ name }) => name)).toEqual([names[0], names[2], names[1]]);
+
+    const ascFirst = await this.querier.findMany(Item, { ...page, $sort: { code: 'ascNullsFirst' } });
+    expect(ascFirst.map(({ name }) => name)).toEqual([names[1], names[0], names[2]]);
+
+    const descFirst = await this.querier.findMany(Item, { ...page, $sort: { code: 'descNullsFirst' } });
+    expect(descFirst.map(({ name }) => name)).toEqual([names[1], names[2], names[0]]);
+
+    const descLast = await this.querier.findMany(Item, { ...page, $sort: { code: 'descNullsLast' } });
+    expect(descLast.map(({ name }) => name)).toEqual([names[2], names[0], names[1]]);
+  }
+
   /** Filtering and sorting by a JSON dot-path, which MySQL reads through a full JSON path (`'$.public'`). */
   async shouldFindAndSortByJsonDotPath() {
     await this.querier.insertOne(Company, { name: 'JSON Scalar One', kind: { public: 1 } });
@@ -1462,6 +1489,25 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(found.measureUnits?.map(({ name }) => name)).toEqual(['alpha unit', 'zulu unit']);
+  }
+
+  /** A populated relation's own `$sort` places nulls too, inside the statement that reads its rows. */
+  async shouldPopulateToManySortedByNullPlacement() {
+    const id = await this.querier.insertOne(InventoryAdjustment, {
+      description: 'placed adjustment',
+      itemAdjustments: [
+        { number: 1, buyPrice: 7 },
+        { number: 2, buyPrice: null },
+        { number: 3, buyPrice: 9 },
+      ],
+    });
+
+    const found = await this.querier.findOneById(InventoryAdjustment, id, {
+      $select: { id: true },
+      $populate: { itemAdjustments: { $select: { number: true }, $sort: { buyPrice: 'ascNullsLast' } } },
+    });
+
+    expect(found?.itemAdjustments?.map(({ number }) => number)).toEqual([1, 3, 2]);
   }
 
   /**

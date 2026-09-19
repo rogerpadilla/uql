@@ -57,6 +57,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
   correlatedWrites: true,
   rowLocks: true,
   rowLockWithWindow: false,
+  nullsOrdering: 'clause',
   rowLockOf: true,
   textScoreIndexes: false,
   orderedUpsertReturning: true,

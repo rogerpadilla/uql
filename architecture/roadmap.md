@@ -14,8 +14,6 @@ await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 
 **R5: `dialect.compile(query)`.** The SQL and its values without running them, so several statements can be gathered first. _Unlocks batching._
 
-**R6: one carried-out column rule.** `_uql_sort_<path>`, `_uql_total` and `_uql_value` are columns a statement adds and drops again, each written and stripped in its own place. Cursor pagination adds a fourth, the sort keys a cursor is minted from. _Unlocks cursor pagination._
-
 **R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). _Unlocks views, triggers._
 
 ## Features
@@ -33,7 +31,7 @@ export const WorkspaceUsage = defineView({
 
 A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction.
 
-**Cursor pagination** (R6). `findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after })`, as an OR-chain of `$gt`/`$lt` every dialect already compiles. It throws when the sort is not total, which `meta.ids` and the unique indexes prove. The real work is nulls: `$sort` takes a null placement, emulated where an engine has no `NULLS FIRST`, before any page is correct. [The design](cursor-pagination.md).
+**Cursor pagination.** `findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after })`, throwing when the sort is not total, which `meta.ids` and the unique indexes prove. The condition is a row-value comparison where the engine has one and a bounded OR chain where it does not: measured, since the plain OR chain scans Postgres from the top and would page no faster than the `$skip` it replaces. `$sort`'s null placements shipped first; what is left is the null arms, `sortsNullsLowest`, and carrying the sort values out to mint a cursor. [The design](cursor-pagination.md).
 
 **Stored triggers** (R7). Stored aggregates (`computed: (u) => u.resources.count(), stored: true`), then `stored: ['update']` stamps, then authored triggers. Postgres first, then a renderer per SQL engine; MongoDB has no triggers and refuses `stored`. [The design](triggers.md).
 

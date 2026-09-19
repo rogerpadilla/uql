@@ -6,16 +6,16 @@ Two engines behind one family base, `MergeSqlDialect`. **SQL Server has shipped*
 
 Market share answers the wrong question. What matters is whether a would-be adopter is _blocked_:
 
-|                                                                   | SQL Server                                          | Oracle                             |
-| :---------------------------------------------------------------- | :-------------------------------------------------- | :--------------------------------- |
-| Developers using it ([SO 2025](https://survey.stackoverflow.co/)) | 25.3%                                               | 10.6%                              |
-| Node driver downloads/month                                       | 17.4M (`tedious`)                                   | 3.5M (`oracledb`)                  |
-| Shipped by                                                        | TypeORM, Sequelize, Knex, MikroORM, Prisma, Drizzle | TypeORM, Sequelize, Knex, MikroORM |
-| UQL's position without it                                         | the only serious TS ORM missing it                  | in company with Prisma and Drizzle |
+|                                                                   | SQL Server                                   | Oracle                             |
+| :---------------------------------------------------------------- | :------------------------------------------- | :--------------------------------- |
+| Developers using it ([SO 2025](https://survey.stackoverflow.co/)) | 25.3%                                        | 10.6%                              |
+| Node driver downloads/month                                       | 17.4M (`tedious`)                            | 3.5M (`oracledb`)                  |
+| Shipped by                                                        | every other serious TS ORM and query builder | most of them, the newest two aside |
+| UQL's position without it                                         | the only one missing it                      | in company with the newest two     |
 
-SQL Server was a gap that lost comparisons and blocked the .NET shop writing new Node services. Oracle is a differentiator: Prisma has had [an open request since June 2020](https://github.com/prisma/prisma/issues/2853).
+SQL Server was a gap that lost comparisons and blocked the .NET shop writing new Node services. Oracle is a differentiator: the request has been open elsewhere since June 2020 with nothing shipped.
 
-**Version floors.** SQL Server **2017+**, derived rather than chosen: `STRING_AGG` is the newest thing the dialect emits. Oracle **23ai** and up, which Oracle [renamed AI Database 26ai](https://mikedietrichde.com/2025/10/14/oracle-ai-database-26ai-replaces-oracle-database-23ai/) while keeping the internal `23.x` version. That floor is what keeps Oracle small: multi-row `VALUES`, native `BOOLEAN`, a native `JSON` type and `VECTOR_DISTANCE` all arrive with it, and below it each needs a second code path, which is why TypeORM's Oracle driver is 4,700 lines. Budget about 1,000 lines, as SQL Server took: introspection and DDL are the bulk, not the query builder.
+**Version floors.** SQL Server **2017+**, derived rather than chosen: `STRING_AGG` is the newest thing the dialect emits. Oracle **23ai** and up, which Oracle [renamed AI Database 26ai](https://mikedietrichde.com/2025/10/14/oracle-ai-database-26ai-replaces-oracle-database-23ai/) while keeping the internal `23.x` version. That floor is what keeps Oracle small: multi-row `VALUES`, native `BOOLEAN`, a native `JSON` type and `VECTOR_DISTANCE` all arrive with it, and below it each needs a second code path, which is why the drivers that support older servers run to thousands of lines. Budget about 1,000 lines, as SQL Server took: introspection and DDL are the bulk, not the query builder.
 
 ## The family base
 
@@ -29,8 +29,8 @@ AbstractSqlDialect
 
 `MergeSqlDialect` holds what both engines spell the SQL-standard way:
 
-- **Paging is always `OFFSET m ROWS FETCH NEXT n ROWS ONLY`**, with `ORDER BY (SELECT NULL)` synthesized when the query has no `$sort`, since SQL Server rejects `OFFSET` without an `ORDER BY`. Knex and MikroORM add `TOP (n)` as a second clause instead, and MikroORM throws on `$skip` without `$sort`: a query that runs on four engines must not throw on the fifth.
-- **Upsert is one `MERGE ... WITH (HOLDLOCK)`.** A bare `MERGE` takes an update key lock but [releases it before the insert](https://weblogs.sqlteam.com/dang/2009/01/31/upsert-race-condition-with-merge/), so two concurrent upserts of one key raise a duplicate-key error; MikroORM ships the bare form. Oracle differs only in the source (`USING (SELECT ? "id" FROM dual)`, or a values constructor on 23ai) and needs neither the hint nor the semicolon.
+- **Paging is always `OFFSET m ROWS FETCH NEXT n ROWS ONLY`**, with `ORDER BY (SELECT NULL)` synthesized when the query has no `$sort`, since SQL Server rejects `OFFSET` without an `ORDER BY`. The usual alternative adds `TOP (n)` as a second clause and throws on `$skip` without `$sort`: a query that runs on four engines must not throw on the fifth.
+- **Upsert is one `MERGE ... WITH (HOLDLOCK)`.** A bare `MERGE` takes an update key lock but [releases it before the insert](https://weblogs.sqlteam.com/dang/2009/01/31/upsert-race-condition-with-merge/), so two concurrent upserts of one key raise a duplicate-key error, which is what shipping the bare form costs. Oracle differs only in the source (`USING (SELECT ? "id" FROM dual)`, or a values constructor on 23ai) and needs neither the hint nor the semicolon.
 
 ```sql
 MERGE INTO "Item" WITH (HOLDLOCK) USING (VALUES (?, ?)) AS s ("id", "name") ON "Item"."id" = s."id"
@@ -60,13 +60,13 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 | `regexCondition`          | `REGEXP_LIKE`, which a server below 2025 refuses itself                        | `REGEXP_LIKE`                                 |
 | `$text`                   | throws - needs a full-text index and the FTS component                         | throws - needs a CONTEXT index                |
 
-**Identifiers stay `"`-quoted on both.** MikroORM and knex chose `[...]` for SQL Server, which would make `escapeIdChar` a pair. `"` is ANSI, and [tedious sets `enableQuotedIdentifier: true` by default](https://www.jsdocs.io/package/tedious). On Oracle, quoting is what keeps `createdAt` from folding to `CREATEDAT`: MikroORM's Oracle compiler drops quoting and pays for it with uppercase row keys.
+**Identifiers stay `"`-quoted on both.** The `[...]` other tools chose for SQL Server would make `escapeIdChar` a pair. `"` is ANSI, and [tedious sets `enableQuotedIdentifier: true` by default](https://www.jsdocs.io/package/tedious). On Oracle, quoting is what keeps `createdAt` from folding to `CREATEDAT`: dropping it is paid for in uppercase row keys.
 
 **Collation and Unicode are DDL decisions, not query knobs.** String comparison follows the database collation, case-insensitive by default as on MySQL; forcing one would put `COLLATE` into every string column's type. Strings are `NVARCHAR` and inlined literals take `N`; bound parameters need nothing, since tedious binds JS strings as `NVarChar`. Getting it wrong destroys non-ASCII data on write with no error.
 
 ## Oracle: what is left
 
-- **Generated ids ride in the values array**, so R5 is not a prerequisite. MikroORM's `OracleDriver` pushes an `out_<column>` bind map as the final params entry, marked `__outBindings`, and its connection hands that to `oracledb` as bind options, then reads `result.outBinds` back. node-oracledb [always returns DML-RETURNING binds as arrays](https://node-oracledb.readthedocs.io/en/latest/user_guide/bind.html), so one path covers single and multi-row inserts. Containable in `OracleDialect` and `OracleQuerier`, with `insertIdSource: 'returning'` unchanged. Knex's `RETURNING ROWID INTO :out` plus a second query is the one not to copy.
+- **Generated ids ride in the values array**, so R5 is not a prerequisite. The shape proven elsewhere: push an `out_<column>` bind map as the final params entry, marked `__outBindings`, hand it to `oracledb` as bind options, then read `result.outBinds` back. node-oracledb [always returns DML-RETURNING binds as arrays](https://node-oracledb.readthedocs.io/en/latest/user_guide/bind.html), so one path covers single and multi-row inserts. Containable in `OracleDialect` and `OracleQuerier`, with `insertIdSource: 'returning'` unchanged. `RETURNING ROWID INTO :out` plus a second query is the shape not to copy.
 - **`''` is `NULL`.** Nothing fixes it: an overridable expectation in the shared suites (the `expectedMixedBatchIds` pattern) and a line in the docs.
 - **Locking** is inherited unchanged: `FOR UPDATE OF ... SKIP LOCKED / NOWAIT` is what the base emits.
 - **Vectors**: `VECTOR_DISTANCE(a, b, DOT)` takes the metric last and unquoted, beside `COSINE_DISTANCE`, `L2_DISTANCE` and `L1_DISTANCE`.
@@ -91,7 +91,7 @@ The shared integration suite runs against SQL Server 2025 in `bun run test`, bes
 - **`estimatedCount`** reads `sys.dm_db_partition_stats`, which is live.
 - **Declined**: `JSON_ARRAYAGG`, which exists only above the floor, so both spellings would have to be kept.
 
-**Still open.** `OUTPUT` is rejected on a table with enabled triggers. Knex and MikroORM both fall back to four statements through a `#out` temp table; ship that behind detecting the error rather than pretending the plain form always works. And a `null` with no column context binds as `NVarChar`, which a typed column can reject.
+**Still open.** `OUTPUT` is rejected on a table with enabled triggers. The known workaround is four statements through a `#out` temp table; ship that behind detecting the error rather than pretending the plain form always works. And a `null` with no column context binds as `NVarChar`, which a typed column can reject.
 
 ## Out of scope
 

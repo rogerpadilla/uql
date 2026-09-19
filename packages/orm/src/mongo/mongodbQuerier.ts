@@ -134,6 +134,8 @@ export class MongodbQuerier extends AbstractQuerier {
       this.dialect.constrainsRelations(entity, q.$where) ||
       this.dialect.sortsRelations(entity, q.$sort) ||
       this.dialect.readsAggregates(entity, q) ||
+      // A placement is a field the pipeline adds and orders by; a `find` cursor can add none.
+      hasKeys(this.dialect.sortPlan(entity, q).fields) ||
       textSortOf(q.$sort) !== undefined
     );
   }
@@ -192,7 +194,7 @@ export class MongodbQuerier extends AbstractQuerier {
       ),
       // `$vectorSearch` has already applied `$limit`, so the pager is its own.
       ...this.dialect.readStages(entity, q, {
-        sort: this.dialect.sort(entity, { ...q, $sort: vectorSort.regularSort }),
+        sort: this.dialect.sortPlan(entity, { ...q, $sort: vectorSort.regularSort }),
         score: scoreAlias ? { field: scoreAlias, meta: 'vectorSearchScore' } : undefined,
       }),
     ];

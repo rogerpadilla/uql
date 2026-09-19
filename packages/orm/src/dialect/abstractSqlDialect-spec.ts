@@ -1849,6 +1849,23 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
+  /**
+   * The `ORDER BY` a null placement writes: the clause where the engine has one, a leading term where
+   * it does not. Overridden by the families that emulate it.
+   */
+  protected expectedNullsOrdering(column: string): string {
+    return `${column} DESC NULLS FIRST`;
+  }
+
+  /** Where nulls land is asked for, and reads the same on every engine. */
+  shouldSortByNullPlacement() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, { $select: { id: true }, $sort: { code: 'descNullsFirst' } }),
+    );
+    expect(sql).toBe(`SELECT ${e}id${e} FROM ${e}Item${e} ORDER BY ${this.expectedNullsOrdering(`${e}code${e}`)}`);
+  }
+
   /** A nested path is one alias (`"tax.category"`), and every level it crosses has to be joined. */
   shouldSortByNestedRelation() {
     const e = this.dialect.escapeIdChar;

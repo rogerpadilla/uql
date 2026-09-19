@@ -75,8 +75,8 @@ One statement ÷ 0.56.0's two, p50 of 300 rounds through each driver on Docker, 
 - **The server builds the JSON**, so a wide fan-out costs more there: 1.4x on MySQL, 1.7x on CockroachDB, 2x on SQL Server.
 - **Not taken**, each measured on the same data:
   - No numeric cast: 3 to 8% faster, but a `BIGINT` past 2^53 rounds.
-  - Positional arrays, as Drizzle: 6 to 20% faster on wide reads only, needs each relation's keys, and SQL Server builds objects anyway.
-  - `jsonb`, as Prisma: up to 1.7x slower on Postgres, 1.4 to 1.6x on SQLite.
+  - Positional arrays: 6 to 20% faster on wide reads only, needs each relation's keys, and SQL Server builds objects anyway.
+  - `jsonb` instead of `json`: up to 1.7x slower on Postgres, 1.4 to 1.6x on SQLite.
   - A `LATERAL` join per relation: faster only on CockroachDB's 50 × 50, and missing on MariaDB and SQLite.
   - A `ROW_NUMBER` window: it sorts every child to keep the top few.
   - Skipping `group_concat_max_len`: the lift costs nothing (0.99 to 1.01), and without it a large array comes back cut.
@@ -95,4 +95,4 @@ The subquery looks children up per parent, so the migrator indexes every foreign
 
 ## Prior art
 
-Drizzle joins `LATERAL` and reads positional arrays. Prisma 7 builds `jsonb`. MikroORM pages with `ROW_NUMBER`.
+The three shapes in use elsewhere are a `LATERAL` join read as positional arrays, a `jsonb` build, and a `ROW_NUMBER` window for paging. Each is measured above, and each lost.

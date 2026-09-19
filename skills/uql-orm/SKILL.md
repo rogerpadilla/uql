@@ -99,6 +99,10 @@ const users = await pool.findMany(User, {
 
 - The keys are `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`;
   `$count: { posts: true }` tallies a to-many under `_count` without loading it.
+- `$sort` takes `'asc'`/`1` or `'desc'`/`-1`, and `'ascNullsLast'`, `'ascNullsFirst'`, `'descNullsFirst'` or
+  `'descNullsLast'` to say where nulls land, which reads the same on every engine (emulated where there is no
+  `NULLS FIRST`). Unqualified, each engine keeps its own answer: Postgres and CockroachDB sort nulls last on `asc`,
+  the rest sort them first.
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
   `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
   `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.

@@ -52,6 +52,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   correlatedWrites: true,
   rowLocks: true,
   rowLockWithWindow: true,
+  nullsOrdering: 'expression',
   rowLockOf: true,
   textScoreIndexes: true,
   orderedUpsertReturning: true,

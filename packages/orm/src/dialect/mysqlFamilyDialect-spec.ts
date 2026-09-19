@@ -10,6 +10,11 @@ import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
  * which MySQL hints).
  */
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
+  /** MySQL and MariaDB have no `NULLS FIRST`, so the placement is a leading term of its own. */
+  protected override expectedNullsOrdering(column: string): string {
+    return `${column} IS NOT NULL, ${column} DESC`;
+  }
+
   protected abstract jsonCastText(operand: string): string;
 
   /** A field of the exploded element, as text or, with `json`, as the JSON value. */

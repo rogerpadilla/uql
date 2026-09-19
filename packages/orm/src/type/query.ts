@@ -133,9 +133,17 @@ export type FilterOptions<E = unknown> = {
 );
 
 /**
- * direction for the sort.
+ * direction for the sort, and where nulls land in it.
+ *
+ * Unqualified, each engine has its own answer - Postgres and CockroachDB sort nulls last on `asc`, the
+ * rest sort them first - so a placement is the only portable one. Engines with no `NULLS FIRST/LAST`
+ * emulate it with a leading term, which no index can serve, which is why it is asked for and never
+ * applied by default.
  */
-export type QuerySortDirection = -1 | 1 | 'asc' | 'desc';
+export type QuerySortDirection = -1 | 1 | 'asc' | 'desc' | QuerySortNullsDirection;
+
+/** A {@link QuerySortDirection} stating where nulls land. */
+export type QuerySortNullsDirection = 'ascNullsFirst' | 'ascNullsLast' | 'descNullsFirst' | 'descNullsLast';
 
 /**
  * Accepted value for a field in `$sort` - either a direction or a vector similarity search.

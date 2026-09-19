@@ -24,7 +24,7 @@ The alternatives, measured on Postgres 18 over 200k transactions and 800k entrie
 | join, grouped by order and account, pivoted in code     | 281 ms     | 0.5 ms     |
 | **join, grouped by order, one filtered sum per column** | **145 ms** | **0.4 ms** |
 
-A relation aggregate is a correlated subquery per parent, which Postgres does not decorrelate. It stays the tool for a value per row - `$select`, `$where`, `$sort` - and this is the tool for a value per group. Prisma, Drizzle, TypeORM, MikroORM, Sequelize and Knex leave the last shape to hand-written SQL; Django (`Sum('amount', filter=Q(...))`), SQLAlchemy, jOOQ and Kysely (`filterWhere`) declare it.
+A relation aggregate is a correlated subquery per parent, which Postgres does not decorrelate. It stays the tool for a value per row - `$select`, `$where`, `$sort` - and this is the tool for a value per group. No TypeScript ORM declares the last shape; each leaves it to hand-written SQL. The query builders and the mature ORMs outside this ecosystem do declare it, as a filtered aggregate (`Sum('amount', filter=...)`, `filterWhere`), which is the spelling to follow.
 
 ## Grouping by a relation's field
 

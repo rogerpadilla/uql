@@ -14,6 +14,11 @@ import { MsSqlDialect } from './mssqlDialect.js';
 const MSSQL_LOCK_WAITS: Readonly<Record<QueryLockWait, string>> = { block: '', skip: ', READPAST', nowait: ', NOWAIT' };
 
 class MsSqlDialectSpec extends AbstractSqlDialectSpec {
+  /** SQL Server has neither `NULLS FIRST` nor an orderable boolean, so the placement is a `CASE`. */
+  protected override expectedNullsOrdering(column: string): string {
+    return `CASE WHEN ${column} IS NULL THEN 0 ELSE 1 END, ${column} DESC`;
+  }
+
   /** `N'...'` quoting, and a `BIT` written as an integer. */
   protected override inlineLiterals() {
     return { quoted: "N'it''s'", truth: '1' };

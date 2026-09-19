@@ -163,14 +163,16 @@ type HydratableField = readonly [string, HydrateKind];
  */
 type JsonTarget = { readonly read: (mode: JsonAccessMode) => string; readonly slot: JsonSlot };
 
+/** A direction as a statement writes it: the suffix, and where the caller asked nulls to land. */
+type SortOrder = { readonly direction?: string; readonly nulls?: 'first' | 'last' };
+
 /**
  * One `ORDER BY` term, taken apart: `key` is the path it sorts by, and `output` says `expr` already
  * names a column of the result.
  */
-type SortTerm = {
+type SortTerm = SortOrder & {
   readonly key: string;
   readonly expr: string;
-  readonly direction: string;
   readonly output: boolean;
 };
 
@@ -178,7 +180,7 @@ type SortTerm = {
 type SortWalk = QuerySortOptions & { readonly distinct?: boolean; readonly rankText: QueryBuildFn };
 
 /** A sort term of a relation's rows as their aggregate orders by it: the column carrying it out. */
-export type SortRef = { readonly ref: string; readonly direction: string };
+export type SortRef = SortOrder & { readonly ref: string };
 
 /**
  * One column of a read's projection: the key its row answers under, none for a raw expression written
@@ -455,7 +457,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (!order.length || (q.$limit === undefined && q.$skip === undefined)) {
       return false;
     }
-    ctx.append(` ORDER BY ${order.map(({ ref, direction }) => ref + direction).join(', ')}`);
+    ctx.append(` ORDER BY ${order.map(({ ref, ...term }) => this.orderByTerm(ref, term)).join(', ')}`);
     return true;
   }
 
@@ -684,13 +686,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts: QuerySortOptions,
   ): { columns: SelectTerm[]; order: SortRef[] } {
     const columns: SelectTerm[] = [];
-    const order = this.sortTerms(ctx, meta, q, opts).map(({ key, expr, direction, output }) => {
+    const order = this.sortTerms(ctx, meta, q, opts).map(({ key, expr, output, ...term }) => {
       if (output) {
-        return { ref: expr, direction };
+        return { ref: expr, ...term };
       }
       const column = relationSortColumn(key);
       columns.push({ sql: expr, key: column });
-      return { ref: this.escapeId(column, true), direction };
+      return { ref: this.escapeId(column, true), ...term };
     });
     return { columns, order };
   }
@@ -1300,7 +1302,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   sort<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts: QuerySortOptions = {}): boolean {
     const terms = this.sortTerms(ctx, getMeta(entity), q, opts);
     if (terms.length) {
-      ctx.append(` ORDER BY ${terms.map(({ expr, direction }) => expr + direction).join(', ')}`);
+      ctx.append(` ORDER BY ${terms.map(({ expr, ...term }) => this.orderByTerm(expr, term)).join(', ')}`);
     }
     return terms.length > 0;
   }
@@ -1347,7 +1349,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         // Where projected in the SELECT list, ordered by that alias rather than scored twice.
         const { order, project } = textSortOf(sort)!;
         const expr = project ? this.escapeId(project) : this.buildFragment(ctx, opts.rankText);
-        columns.push({ key, expr, direction: this.resolveSortDirection(order), output: project !== undefined });
+        columns.push({ key, expr, ...this.resolveSortDirection(order), output: project !== undefined });
         continue;
       }
       if (relation) {
@@ -1363,9 +1365,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
             this.appendRelationAggregate(fragmentCtx, meta.entity, spec, prefix ?? ''),
           );
           if (spec.search) {
-            vectors.push({ key: name, expr, direction: '', output: false });
+            vectors.push({ key: name, expr, output: false });
           } else {
-            columns.push({ key: keyPath, expr, direction: this.resolveSortDirection(direction), output: false });
+            columns.push({ key: keyPath, expr, ...this.resolveSortDirection(direction), output: false });
           }
         }
         if (rest === undefined) {
@@ -1392,22 +1394,21 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         // Already projected in the SELECT list: order by that alias rather than recomputing it.
         vectors.push(
           value.$project
-            ? { key: keyPath, expr: this.escapeId(value.$project), direction: '', output: true }
+            ? { key: keyPath, expr: this.escapeId(value.$project), output: true }
             : {
                 key: keyPath,
                 expr: this.buildFragment(ctx, (fragmentCtx) =>
                   this.appendVectorDistance(fragmentCtx, meta, key, value, prefix),
                 ),
-                direction: '',
                 output: false,
               },
         );
         continue;
       }
-      const direction = this.resolveSortDirection(value);
+      const order = this.resolveSortDirection(value);
       // A JSON path can sort by more than one reading, each carried under a name of its own.
       this.sortColumns(ctx, meta, key, prefix).forEach((column, index) => {
-        columns.push({ key: index ? `${keyPath}:${index}` : keyPath, ...column, direction });
+        columns.push({ key: index ? `${keyPath}:${index}` : keyPath, ...column, ...order });
       });
     }
   }
@@ -1672,7 +1673,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx.append(' ORDER BY ');
     Object.entries(sort).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
-      ctx.append(this.aggregateRef(emittedColumns, key, '$sort') + this.resolveSortDirection(dir));
+      ctx.append(this.orderByTerm(this.aggregateRef(emittedColumns, key, '$sort'), this.resolveSortDirection(dir)));
     });
     return true;
   }
@@ -1695,16 +1696,40 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     });
   }
 
-  private static readonly SORT_DIRECTION_MAP = new Map<QuerySortDirection, string>([
-    [1, ''],
-    ['asc', ''],
-    ['desc', ' DESC'],
-    [-1, ' DESC'],
+  private static readonly SORT_DIRECTION_MAP = new Map<QuerySortDirection, SortOrder>([
+    [1, {}],
+    ['asc', {}],
+    ['desc', { direction: ' DESC' }],
+    [-1, { direction: ' DESC' }],
+    ['ascNullsFirst', { nulls: 'first' }],
+    ['ascNullsLast', { nulls: 'last' }],
+    ['descNullsFirst', { direction: ' DESC', nulls: 'first' }],
+    ['descNullsLast', { direction: ' DESC', nulls: 'last' }],
   ]);
 
-  private resolveSortDirection(sort: unknown): string {
-    const direction = AbstractSqlDialect.SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
-    return orRefuse(direction, `unknown sort direction: ${sort}`);
+  private resolveSortDirection(sort: unknown): SortOrder {
+    const order = AbstractSqlDialect.SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
+    return orRefuse(order, `unknown sort direction: ${sort}`);
+  }
+
+  /**
+   * One `ORDER BY` term. A placement the engine has no `NULLS FIRST/LAST` for becomes a term of its
+   * own in front of it, which is why one is only ever emitted where the caller asked for it: no index
+   * serves an expression. SQL Server needs a `CASE`, having no orderable boolean.
+   */
+  protected orderByTerm(expr: string, { direction = '', nulls }: SortOrder): string {
+    if (!nulls) {
+      return expr + direction;
+    }
+    const first = nulls === 'first';
+    if (this.features.nullsOrdering === 'clause') {
+      return `${expr}${direction} NULLS ${first ? 'FIRST' : 'LAST'}`;
+    }
+    const lead =
+      this.features.nullsOrdering === 'case'
+        ? `CASE WHEN ${expr} IS NULL THEN ${first ? 0 : 1} ELSE ${first ? 1 : 0} END`
+        : `${expr} IS ${first ? 'NOT NULL' : 'NULL'}`;
+    return `${lead}, ${expr}${direction}`;
   }
 
   /** Every operator of one `HAVING` condition, `AND`-joined. */
@@ -2629,7 +2654,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         const key = relationTermKey(term);
         return [key, `${alias}.${this.escapeId(key, true)}`] as const;
       }),
-      order: order.map(({ ref, direction }) => `${alias}.${ref}${direction}`).join(', '),
+      order: order.map(({ ref, ...term }) => this.orderByTerm(`${alias}.${ref}`, term)).join(', '),
     };
   }
 
