@@ -1,6 +1,7 @@
 import type { IndexColumnSchema } from '../type/index.js';
 import { isVectorIndexType } from '../type/vector.js';
 import { fulltextConfig } from '../util/dialect.util.js';
+import { derivedIndexName } from '../util/sql.util.js';
 import type { IndexNode } from './types.js';
 
 /**
@@ -10,12 +11,19 @@ import type { IndexNode } from './types.js';
  */
 export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector' | 'textIndex';
 
+type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique'>;
+
+/** An entry the engine reprints in its own words, so never compared as written. */
+function isReprinted(entry: IndexColumnSchema): boolean {
+  return Boolean(entry.expression || entry.jsonPath || entry.jsonArray);
+}
+
 /**
  * Whether the table has this index already, by shape rather than name, uniqueness included. An index
  * over an expression, whose text the engine reprints, falls back to its name.
  */
-export function indexSignature(index: Pick<IndexNode, 'name' | 'entries' | 'unique'>): string {
-  const comparable = !index.entries.some((entry) => entry.expression || entry.jsonPath || entry.jsonArray);
+export function indexSignature(index: ComparableIndex): string {
+  const comparable = !index.entries.some(isReprinted);
   const identity = comparable
     ? index.entries.map((entry) => entry.column).join(',')
     : `name:${indexNameStem(index.name)}`;
@@ -30,6 +38,40 @@ export function indexNameStem(name: string): string {
   const withoutSuffix = name.replace(KIND_SUFFIX, '');
   const bare = withoutSuffix === name ? name.replace(KIND_PREFIX, '') : withoutSuffix;
   return bare.replace(/__/g, '_');
+}
+
+/**
+ * The indexes a table lacks and the ones it no longer needs, matched by `keyOf`. Only an index uql
+ * named, or whose name the entity claims, is dropped: any other may have been made outside the ORM.
+ */
+export function indexChanges<I extends ComparableIndex>(
+  table: string,
+  declared: readonly I[],
+  current: readonly IndexNode[],
+  keyOf: (index: ComparableIndex) => string = indexSignature,
+): { toAdd: I[]; toDrop: IndexNode[] } {
+  const present = new Set(current.map(keyOf));
+  const wanted = new Set(declared.map(keyOf));
+  const claimed = new Set(declared.map((index) => index.name));
+  const owned = (index: IndexNode) => claimed.has(index.name) || hasDerivedName(table, index);
+  return {
+    toAdd: declared.filter((index) => !present.has(keyOf(index))),
+    toDrop: current.filter((index) => !wanted.has(keyOf(index)) && owned(index)),
+  };
+}
+
+/**
+ * Whether uql named the index itself, from its own columns: `Order__total_idx`, its unique `_uk`, or
+ * the `idx_Order_total` it wrote until 0.42.1.
+ */
+function hasDerivedName(table: string, index: ComparableIndex): boolean {
+  const parts = index.entries.map((entry, at) => (isReprinted(entry) ? `expr${at}` : entry.column));
+  const derived = [
+    derivedIndexName(table, parts),
+    derivedIndexName(table, parts, true),
+    `idx_${table}_${parts.join('_')}`,
+  ];
+  return derived.includes(index.name);
 }
 
 /** What this version emits. */
@@ -52,9 +94,7 @@ export function describeIndexDifferences(
   facets: ReadonlySet<IndexFacet>,
 ): string[] {
   const differences: string[] = [];
-  const comparableEntries = ![...source.entries, ...target.entries].some(
-    (entry) => entry.expression || entry.jsonPath || entry.jsonArray,
-  );
+  const comparableEntries = ![...source.entries, ...target.entries].some(isReprinted);
 
   if (comparableEntries) {
     const [sourceColumns, targetColumns] = [source, target].map((index) =>

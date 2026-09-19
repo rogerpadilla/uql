@@ -225,7 +225,8 @@ export interface SchemaDiff {
   readonly columnsToAlter?: { from: ColumnSchema; to: ColumnSchema }[];
   readonly columnsToDrop?: string[];
   readonly indexesToAdd?: IndexSchema[];
-  readonly indexesToDrop?: string[];
+  /** Whole rather than by name, so the rollback can create each again. */
+  readonly indexesToDrop?: IndexSchema[];
   readonly foreignKeysToAdd?: ForeignKeySchema[];
   /** Dropped under the name the *database* reported, which is the only name a `DROP` can use. */
   readonly foreignKeysToDrop?: string[];

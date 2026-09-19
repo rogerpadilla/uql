@@ -1,6 +1,7 @@
 import { getMeta } from '../../entity/index.js';
 import { MongoDialect } from '../../mongo/mongoDialect.js';
 import { textLanguage } from '../../mongo/textLanguage.js';
+import { indexChanges } from '../../schema/indexDifferences.js';
 import type { ForeignKeyAction, IndexType, TableNode } from '../../schema/types.js';
 import {
   type CreateSchemaOptions,
@@ -23,6 +24,7 @@ import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
 import { renderIndexDefinition } from './definitionToNode.js';
+import { indexNodeToSchema } from './indexNodeToSchema.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
 
 /** The index types a key spec can say, a plain key or `'text'`, and Atlas's vector search index. */
@@ -140,15 +142,23 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
   }
 
   generateAlterTable(diff: SchemaDiff): string[] {
-    return (diff.indexesToAdd ?? []).map((index) => this.generateCreateIndex(diff.tableName, index));
+    return [
+      ...(diff.indexesToDrop ?? []).map((index) => this.dropIndexCommand(diff.tableName, index)),
+      ...(diff.indexesToAdd ?? []).map((index) => this.generateCreateIndex(diff.tableName, index)),
+    ];
   }
 
   generateAlterTableDown(diff: SchemaDiff): string[] {
-    return (diff.indexesToAdd ?? []).map((index) =>
-      index.type === 'vectorSearch'
-        ? serializeMongoCommand({ action: 'dropSearchIndex', collection: diff.tableName, name: index.name })
-        : this.generateDropIndex(diff.tableName, index.name),
-    );
+    return [
+      ...(diff.indexesToAdd ?? []).map((index) => this.dropIndexCommand(diff.tableName, index)),
+      ...(diff.indexesToDrop ?? []).map((index) => this.generateCreateIndex(diff.tableName, index)),
+    ];
+  }
+
+  private dropIndexCommand(tableName: string, index: IndexSchema): string {
+    return index.type === 'vectorSearch'
+      ? serializeMongoCommand({ action: 'dropSearchIndex', collection: tableName, name: index.name })
+      : this.generateDropIndex(tableName, index.name);
   }
 
   /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
@@ -245,17 +255,23 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       return { tableName: collectionName, type: 'create' };
     }
 
-    const existingIndexes = new Set(currentTable.indexes.map((i) => i.name));
-    const indexesToAdd = this.indexesOf(meta, collectionName).filter((index) => !existingIndexes.has(index.name));
+    // By name: MongoDB lists a text index's fields alphabetically, so a shape would not match its own.
+    const { toAdd, toDrop } = indexChanges(
+      collectionName,
+      this.indexesOf(meta, collectionName),
+      currentTable.indexes,
+      (index) => index.name,
+    );
 
-    if (indexesToAdd.length === 0) {
+    if (!toAdd.length && !toDrop.length) {
       return undefined;
     }
 
     return {
       tableName: collectionName,
       type: 'alter',
-      indexesToAdd,
+      indexesToAdd: toAdd.length ? toAdd : undefined,
+      indexesToDrop: toDrop.length ? toDrop.map(indexNodeToSchema) : undefined,
     };
   }
 }

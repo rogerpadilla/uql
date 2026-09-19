@@ -268,7 +268,7 @@ function detectIndexDrifts(diff: SchemaDiffResult): Drift[] {
         table: idxDiff.table,
         index: idxDiff.name,
         details: `Index "${idxDiff.name}" exists in database but not defined in entity`,
-        suggestion: 'Add @Field({ index }) or create migration to drop',
+        suggestion: 'Declare it, or drop it via migration: generate:entities drops one uql named',
       });
     } else {
       // No `expected`/`actual` here: the CLI prints those by interpolation, where an `IndexNode`
@@ -279,7 +279,7 @@ function detectIndexDrifts(diff: SchemaDiffResult): Drift[] {
         table: idxDiff.table,
         index: idxDiff.name,
         details: `Index "${idxDiff.name}" differs from the entity (${idxDiff.description})`,
-        suggestion: 'Drop and recreate the index via migration',
+        suggestion: 'Recreate it via migration, which generate:entities writes',
       });
     }
   }

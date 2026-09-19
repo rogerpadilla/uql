@@ -1,7 +1,7 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
-import { indexSignature } from '../schema/indexDifferences.js';
+import { indexChanges } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { type BuildSchemaASTOptions, buildSchemaAST, resolveColumnCanonicalType } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
@@ -223,44 +223,26 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ]),
     );
 
-    // Add new columns
-    if (diff.columnsToAdd?.length) {
-      for (const column of diff.columnsToAdd) {
-        this.assertColumnAddable(diff.tableName, column);
-        statements.push(this.tableDdl.addColumn(diff.tableName, this.generateColumnDefinitionFromSchema(column)));
-        statements.push(...this.generateColumnCommentStatement(diff.tableName, column, diff.schema));
-      }
+    // Before the adds, which may reuse a dropped index's name, and before the columns: some engines
+    // drop an index along with its column, which would leave nothing here to name.
+    statements.push(...this.dropIndexStatements(diff.tableName, diff.indexesToDrop, diff.schema));
+
+    for (const column of diff.columnsToAdd ?? []) {
+      this.assertColumnAddable(diff.tableName, column);
+      statements.push(this.tableDdl.addColumn(diff.tableName, this.generateColumnDefinitionFromSchema(column)));
+      statements.push(...this.generateColumnCommentStatement(diff.tableName, column, diff.schema));
+    }
+    statements.push(
+      ...this.alterColumnStatements(
+        diff.tableName,
+        (diff.columnsToAlter ?? []).map((it) => it.to),
+      ),
+    );
+    for (const columnName of diff.columnsToDrop ?? []) {
+      statements.push(...this.tableDdl.dropColumn(diff.tableName, columnName));
     }
 
-    // Alter existing columns
-    if (diff.columnsToAlter?.length) {
-      for (const { to } of diff.columnsToAlter) {
-        const colDef = this.generateColumnDefinitionFromSchema(to);
-        const colStatements = this.generateAlterColumnStatements(diff.tableName, to, colDef);
-        statements.push(...colStatements);
-      }
-    }
-
-    // Drop columns
-    if (diff.columnsToDrop?.length) {
-      for (const columnName of diff.columnsToDrop) {
-        statements.push(...this.tableDdl.dropColumn(diff.tableName, columnName));
-      }
-    }
-
-    // Add indexes
-    if (diff.indexesToAdd?.length) {
-      for (const index of diff.indexesToAdd) {
-        statements.push(...this.addIndexStatements(diff.tableName, index));
-      }
-    }
-
-    // Drop indexes
-    if (diff.indexesToDrop?.length) {
-      for (const indexName of diff.indexesToDrop) {
-        statements.push(this.generateDropIndex(diff.tableName, indexName, diff.schema));
-      }
-    }
+    statements.push(...this.addIndexStatements(diff.tableName, diff.indexesToAdd));
 
     // Last, so every column it names exists by now.
     if (diff.primaryKey?.to.length) {
@@ -289,6 +271,26 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return constraintNames.map((name) => this.generateDropForeignKeySql(tableName, name));
   }
 
+  /** The `ALTER COLUMN` restating each of `columns`. */
+  private alterColumnStatements(tableName: string, columns: readonly ColumnSchema[]): string[] {
+    return columns.flatMap((column) =>
+      this.generateAlterColumnStatements(tableName, column, this.generateColumnDefinitionFromSchema(column)),
+    );
+  }
+
+  /** An index added to a table that may already have rows: its `CREATE`, then what the engine needs after. */
+  private addIndexStatements(tableName: string, indexes: readonly IndexSchema[] = []): string[] {
+    return indexes.flatMap((index) => [
+      this.generateCreateIndex(tableName, index),
+      ...this.indexDdl.settleStatements(tableName, index),
+    ]);
+  }
+
+  /** `DROP INDEX` for each of `indexes`, the mirror of {@link addIndexStatements}. */
+  private dropIndexStatements(tableName: string, indexes: readonly IndexSchema[] = [], schema?: string): string[] {
+    return indexes.map((index) => this.generateDropIndex(tableName, index.name, schema));
+  }
+
   generateAlterTableDown(diff: SchemaDiff): string[] {
     const statements: string[] = [];
 
@@ -310,28 +312,18 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       );
     }
 
-    // Reverse column additions by dropping them
-    if (diff.columnsToAdd?.length) {
-      for (const column of diff.columnsToAdd) {
-        statements.push(...this.tableDdl.dropColumn(diff.tableName, column.name));
-      }
+    for (const column of diff.columnsToAdd ?? []) {
+      statements.push(...this.tableDdl.dropColumn(diff.tableName, column.name));
     }
+    statements.push(
+      ...this.alterColumnStatements(
+        diff.tableName,
+        (diff.columnsToAlter ?? []).map((it) => it.from),
+      ),
+    );
 
-    // Reverse column alterations by restoring original schema
-    if (diff.columnsToAlter?.length) {
-      for (const { from } of diff.columnsToAlter) {
-        const colDef = this.generateColumnDefinitionFromSchema(from);
-        const colStatements = this.generateAlterColumnStatements(diff.tableName, from, colDef);
-        statements.push(...colStatements);
-      }
-    }
-
-    // Reverse index additions by dropping them
-    if (diff.indexesToAdd?.length) {
-      for (const index of diff.indexesToAdd) {
-        statements.push(this.generateDropIndex(diff.tableName, index.name, diff.schema));
-      }
-    }
+    statements.push(...this.dropIndexStatements(diff.tableName, diff.indexesToAdd, diff.schema));
+    statements.push(...this.addIndexStatements(diff.tableName, diff.indexesToDrop));
 
     if (diff.primaryKey?.from.length) {
       statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.from, diff.primaryKey.fromName));
@@ -346,8 +338,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ),
     );
 
-    if (diff.columnsToDrop?.length || diff.indexesToDrop?.length || diff.foreignKeysToDrop?.length) {
-      statements.push(`-- TODO: Manual reversal needed for dropped columns/indexes/foreign keys`);
+    if (diff.columnsToDrop?.length || diff.foreignKeysToDrop?.length) {
+      statements.push(`-- TODO: Manual reversal needed for dropped columns/foreign keys`);
     }
 
     return statements;
@@ -355,11 +347,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
     return this.indexDdl.getCreateIndexStatement(tableName, index, options);
-  }
-
-  /** An index added to a table that may already have rows: its `CREATE`, then what the engine needs after. */
-  private addIndexStatements(tableName: string, index: IndexSchema): string[] {
-    return [this.generateCreateIndex(tableName, index), ...this.indexDdl.settleStatements(tableName, index)];
   }
 
   /**
@@ -494,10 +481,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
     // Indexes are matched here rather than by the differ, which pairs them by name so that a changed
     // one reads as one index that altered. A migration needs the opposite: an index already in the
-    // table, under whatever name, must not be created again, and one whose shape differs is a
-    // separate index rather than a change - no engine alters an index's columns or uniqueness.
+    // table, under whatever name, must not be created again, and one whose shape differs is dropped
+    // and created anew - no engine alters an index's columns or uniqueness.
     const tableDiff = diffTable(desired, currentTable, { ...this.diffOptions(), compareIndexes: false });
-    const indexesToAdd = this.missingIndexes(desired, currentTable);
+    const indexes = indexChanges(currentTable.name, desired.indexes, currentTable.indexes);
+    const indexesToAdd = indexes.toAdd.map(indexNodeToSchema);
+    const indexesToDrop = indexes.toDrop.map(indexNodeToSchema);
 
     const columnDiffs = tableDiff?.columnDiffs ?? [];
     const columnsToAdd = columnDiffs.flatMap((it) => (it.type === 'add' ? [this.columnNodeToSchema(it.expected)] : []));
@@ -538,6 +527,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       !columnsToAlter.length &&
       !columnsToDrop.length &&
       !indexesToAdd.length &&
+      !indexesToDrop.length &&
       !foreignKeysToAdd.length &&
       !foreignKeysToDrop.length &&
       !foreignKeysToAlter.length &&
@@ -555,21 +545,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       columnsToAlter: columnsToAlter.length ? columnsToAlter : undefined,
       columnsToDrop: columnsToDrop.length ? columnsToDrop : undefined,
       indexesToAdd: indexesToAdd.length ? indexesToAdd : undefined,
+      indexesToDrop: indexesToDrop.length ? indexesToDrop : undefined,
       foreignKeysToAdd: foreignKeysToAdd.length ? foreignKeysToAdd : undefined,
       foreignKeysToDrop: foreignKeysToDrop.length ? foreignKeysToDrop : undefined,
       foreignKeysToAlter: foreignKeysToAlter.length ? foreignKeysToAlter : undefined,
     };
-  }
-
-  /**
-   * Indexes the entity declares that the table does not already have, in any shape.
-   *
-   * Additive only: an index the entity does not name may well have been created deliberately outside
-   * the ORM, and dropping it is a decision for a reviewed migration.
-   */
-  private missingIndexes(desired: TableNode, currentTable: TableNode): IndexSchema[] {
-    const present = new Set(currentTable.indexes.map(indexSignature));
-    return desired.indexes.filter((index) => !present.has(indexSignature(index))).map(indexNodeToSchema);
   }
 
   protected diffOptions(): DiffOptions {
@@ -749,10 +729,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       case 'alterColumn':
         return this.generateAlterColumnSql(operation.tableName, operation.columnName, operation.changes);
       case 'createIndex':
-        return this.addIndexStatements(
-          operation.tableName,
+        return this.addIndexStatements(operation.tableName, [
           renderIndexDefinition(operation.index, (sql) => this.dialect.compileDdl(sql)),
-        );
+        ]);
       case 'dropIndex':
         return [this.generateDropIndex(operation.tableName, operation.indexName)];
       case 'addForeignKey':

@@ -475,7 +475,7 @@ describe('Migrator Core Methods', () => {
         type: 'alter',
         tableName: 'User',
         columnsToDrop: ['old_col'],
-        indexesToDrop: ['old_idx'],
+        indexesToDrop: [{ name: 'old_idx', entries: [{ column: 'old_col' }], unique: false }],
       };
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       vi.spyOn(await migrator.getSchemaGenerator(), 'generateAlterTable').mockReturnValue([]);
@@ -637,6 +637,48 @@ describe('Migrator Core Methods', () => {
 
       const result = await m.generateFromEntities('test-full');
       expect(result).toContain('test_full');
+    });
+
+    it("should roll back the latest diff first, keeping each diff's own statement order", async () => {
+      const generator = new SqlSchemaGenerator(new PostgresDialect());
+      const m = new Migrator(pool, { storage, schemaGenerator: generator });
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([
+        { type: 'alter', tableName: 'First' },
+        { type: 'alter', tableName: 'Second' },
+      ]);
+      vi.spyOn(generator, 'generateAlterTable').mockReturnValue(['UP']);
+      vi.spyOn(generator, 'generateAlterTableDown').mockImplementation((diff) => [
+        `${diff.tableName} DROP NEW`,
+        `${diff.tableName} RESTORE OLD`,
+      ]);
+
+      await m.generateFromEntities('reorder');
+
+      const down = lastWrittenFile().split('async down')[1];
+      expect([...down.matchAll(/querier\.run\("(.+?)"\)/g)].map(([, sql]) => sql)).toEqual([
+        'Second DROP NEW',
+        'Second RESTORE OLD',
+        'First DROP NEW',
+        'First RESTORE OLD',
+      ]);
+    });
+
+    it('should hold back, in safe mode, an index recreated under the name of one it would drop', async () => {
+      const m = new Migrator(pool, { storage });
+      const lookup = { name: 'lookup', entries: [{ column: 'kind' }], unique: false };
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([
+        {
+          type: 'alter',
+          tableName: 'User',
+          indexesToDrop: [lookup],
+          indexesToAdd: [
+            { ...lookup, entries: [{ column: 'kind' }, { column: 'status' }] },
+            { ...lookup, name: 'other' },
+          ],
+        },
+      ]);
+
+      expect(await m.planSync()).toEqual(['CREATE INDEX IF NOT EXISTS "other" ON "User" ("kind");']);
     });
 
     it('should skip a table with no entity on generate and sync', async () => {

@@ -1,6 +1,6 @@
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { Entity, Field, Id, removeEntity } from '../entity/index.js';
+import { Entity, Field, Id, Index, removeEntity } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
@@ -55,6 +55,13 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
     /** The table's columns as introspected, sorted, so a test compares them as a set. */
     const columnNamesOf = async (tableName: string) => [...(await introspectTable(tableName)).columns.keys()].sort();
+
+    /** The table's index names, sorted, so a test compares them as a set. */
+    const indexNamesOf = async (tableName: string) =>
+      (await introspectTable(tableName)).indexes.map((index) => index.name).sort();
+
+    const createIndex = (tableName: string, name: string, columns: readonly string[]) =>
+      pool.run(`CREATE INDEX ${escapeId(name)} ON ${escapeId(tableName)} (${columns.map(escapeId).join(', ')})`);
 
     /** Names the table this test owns, guarantees it does not exist yet, and registers its teardown. */
     const givenNoTable = async (tableName: string) => {
@@ -208,8 +215,64 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [AutoSyncIndexTest] }).sync({ logging: true });
 
-      const after = await introspector.introspect([tableName]);
-      expect(after.getTable(tableName)?.indexes.map((index) => index.name)).toEqual(['AutoSyncIndexTest__email_idx']);
+      expect(await indexNamesOf(tableName)).toEqual(['AutoSyncIndexTest__email_idx']);
+    });
+
+    const givenKindStatusTable = (tableName: string) =>
+      givenTable(
+        tableName,
+        `${db.serialIdColumn}, ${escapeId('kind')} ${db.textType}, ${escapeId('status')} ${db.textType}`,
+      );
+
+    it('should drop the index an entity replaced, only outside safe mode, and keep one named by hand', async () => {
+      @Index((row) => [row.kind, row.status])
+      @Entity()
+      class AutoSyncReindexTest {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) kind?: string | null;
+        @Field({ type: String }) status?: string | null;
+      }
+
+      const tableName = 'AutoSyncReindexTest';
+      await givenKindStatusTable(tableName);
+      await createIndex(tableName, 'AutoSyncReindexTest__status_idx', ['status']);
+      await createIndex(tableName, 'hand_made_kind', ['kind']);
+      const migrator = new Migrator(pool, { entities: [AutoSyncReindexTest] });
+
+      await migrator.sync();
+      expect(await indexNamesOf(tableName)).toEqual([
+        'AutoSyncReindexTest__kind_status_idx',
+        'AutoSyncReindexTest__status_idx',
+        'hand_made_kind',
+      ]);
+
+      await migrator.sync({ safe: false });
+      expect(await indexNamesOf(tableName)).toEqual(['AutoSyncReindexTest__kind_status_idx', 'hand_made_kind']);
+      expect(await migrator.getDiffs()).toEqual([]);
+    });
+
+    it('should recreate an index whose declared columns changed under the same name', async () => {
+      @Index((row) => [row.kind, row.status], { name: 'AutoSyncReshapeTest_lookup' })
+      @Entity()
+      class AutoSyncReshapeTest {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) kind?: string | null;
+        @Field({ type: String }) status?: string | null;
+      }
+
+      const tableName = 'AutoSyncReshapeTest';
+      await givenKindStatusTable(tableName);
+      await createIndex(tableName, 'AutoSyncReshapeTest_lookup', ['kind']);
+      const migrator = new Migrator(pool, { entities: [AutoSyncReshapeTest] });
+      const columnsOfIndex = async () =>
+        (await introspectTable(tableName)).indexes.map((index) => index.entries.map((entry) => entry.column));
+
+      await migrator.sync();
+      expect(await columnsOfIndex()).toEqual([['kind']]);
+
+      await migrator.sync({ safe: false });
+      expect(await columnsOfIndex()).toEqual([['kind', 'status']]);
+      expect(await migrator.getDiffs()).toEqual([]);
     });
 
     it('should add multiple new properties to an existing entity', async () => {

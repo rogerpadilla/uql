@@ -247,15 +247,16 @@ export class Migrator {
       return '';
     }
 
+    // Diff by diff in reverse, each rolled back in the order its generator wrote it.
     const down = [
-      ...created.map((tableName) => generator.generateDropTable(tableName, { ifExists: true })),
-      ...altered.flatMap((diff) => generator.generateAlterTableDown(diff)),
+      ...altered.toReversed().flatMap((diff) => generator.generateAlterTableDown(diff)),
+      ...created.toReversed().map((tableName) => generator.generateDropTable(tableName, { ifExists: true })),
     ];
     const { emit } = this.target.source;
     const filePath = await this.writeMigration(name, {
       docExtraLines: ['Generated from entity definitions'],
       upInner: emit(up),
-      downInner: emit(down.reverse()),
+      downInner: emit(down),
     });
     this.logger.logInfo(`Created migration from entities: ${filePath}`);
     return filePath;
@@ -433,7 +434,16 @@ export class Migrator {
         delete filteredDiff.foreignKeysToAlter;
       }
 
-      delete filteredDiff.indexesToDrop;
+      if (filteredDiff.indexesToDrop?.length) {
+        // An index recreated under its old name is a drop and an add, held back together.
+        const dropped = new Set(filteredDiff.indexesToDrop.map((index) => index.name));
+        this.logger.logSkippedMigration(
+          `[AutoSync] Skipped dropping ${dropped.size} indexes in table '${diff.tableName}': ${[...dropped].join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
+        );
+        filteredDiff.indexesToAdd = filteredDiff.indexesToAdd?.filter((index) => !dropped.has(index.name));
+        delete filteredDiff.indexesToDrop;
+      }
+
       delete filteredDiff.foreignKeysToDrop;
     }
 

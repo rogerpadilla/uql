@@ -315,20 +315,31 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(sql[0]).toBe('DROP INDEX IF EXISTS "users__email_idx";');
   });
 
-  it('should add TODO comment for dropped columns/indexes', () => {
-    const sql1 = generator.generateAlterTableDown({
+  it('should add TODO comment for dropped columns', () => {
+    const sql = generator.generateAlterTableDown({
       tableName: 'users',
       type: 'alter',
       columnsToDrop: ['old_column'],
     });
-    expect(sql1[0]).toContain('TODO');
+    expect(sql[0]).toContain('TODO');
+  });
 
-    const sql2 = generator.generateAlterTableDown({
+  it('should drop an index before recreating one under its name, and reverse both on the way down', () => {
+    const diff: SchemaDiff = {
       tableName: 'users',
       type: 'alter',
-      indexesToDrop: ['old_idx'],
-    });
-    expect(sql2[0]).toContain('TODO');
+      indexesToDrop: [{ name: 'lookup', entries: [{ column: 'name' }], unique: false }],
+      indexesToAdd: [{ name: 'lookup', entries: [{ column: 'name' }, { column: 'email' }], unique: false }],
+    };
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'DROP INDEX IF EXISTS "lookup";',
+      'CREATE INDEX IF NOT EXISTS "lookup" ON "users" ("name", "email");',
+    ]);
+    expect(generator.generateAlterTableDown(diff)).toEqual([
+      'DROP INDEX IF EXISTS "lookup";',
+      'CREATE INDEX IF NOT EXISTS "lookup" ON "users" ("name");',
+    ]);
   });
 
   it('should generate ALTER TABLE statements for dropping columns and indexes', () => {
@@ -336,12 +347,14 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       tableName: 'users',
       type: 'alter',
       columnsToDrop: ['old_col'],
-      indexesToDrop: ['old_idx'],
+      indexesToDrop: [{ name: 'old_idx', entries: [{ column: 'old_col' }], unique: false }],
       indexesToAdd: [{ name: 'new_idx', entries: [{ column: 'name' }], unique: false }],
     });
-    expect(sql).toContain('ALTER TABLE "users" DROP COLUMN "old_col";');
-    expect(sql).toContain('DROP INDEX IF EXISTS "old_idx";');
-    expect(sql).toContain('CREATE INDEX IF NOT EXISTS "new_idx" ON "users" ("name");');
+    expect(sql).toEqual([
+      'DROP INDEX IF EXISTS "old_idx";',
+      'ALTER TABLE "users" DROP COLUMN "old_col";',
+      'CREATE INDEX IF NOT EXISTS "new_idx" ON "users" ("name");',
+    ]);
   });
 });
 
@@ -1197,7 +1210,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
       ],
       columnsToDrop: ['old_name'],
       indexesToAdd: [{ name: 'age_idx', entries: [{ column: 'age' }], unique: false }],
-      indexesToDrop: ['old_idx'],
+      indexesToDrop: [{ name: 'old_idx', entries: [{ column: 'old_name' }], unique: false }],
     });
 
     expect(sql).toContain('ALTER TABLE "users" ADD COLUMN "age" INTEGER;');

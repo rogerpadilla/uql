@@ -384,6 +384,6 @@ describe('CLI', () => {
     await cli.runDriftCheck(migrator, { entities: [Unindexed] });
 
     expect(console.log).toHaveBeenCalledWith('INFO:');
-    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Add @Field({ index })'));
+    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Declare it'));
   });
 });

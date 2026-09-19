@@ -20,6 +20,10 @@ describe('Migrator on MongoDB (integration)', () => {
 
   afterAll(() => pool.end());
 
+  /** A collection's index names, in the order MongoDB lists them. */
+  const indexNames = (collection: string) =>
+    pool.withQuerier(async ({ db }) => (await db.collection(collection).indexes()).map((it) => it.name));
+
   it('should apply a data migration, record it, and revert it', async () => {
     const migrator = new Migrator(pool);
     await pool.withQuerier((querier) =>
@@ -163,8 +167,6 @@ describe('Migrator on MongoDB (integration)', () => {
       @Field({ type: String, index: true }) label?: string | null;
     }
     const migrator = new Migrator(pool, { entities: [SyncMongoUser, SyncMongoTag] });
-    const indexNames = (collection: string) =>
-      pool.withQuerier(async (querier) => (await querier.db.collection(collection).indexes()).map((it) => it.name));
 
     await migrator.sync({ entity: SyncMongoUser });
     expect(await indexNames('SyncMongoUser')).toEqual(['_id_', 'SyncMongoUser__name_idx']);
@@ -174,6 +176,37 @@ describe('Migrator on MongoDB (integration)', () => {
 
     await migrator.sync();
     expect(await indexNames('SyncMongoTag')).toEqual(['_id_', 'SyncMongoTag__label_idx']);
+  });
+
+  it('should drop the index an entity replaced, only outside safe mode, and keep one named by hand', async () => {
+    @Index((row) => [row.kind, row.status])
+    @Entity()
+    class SyncMongoReindex {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String }) kind?: string | null;
+      @Field({ type: String }) status?: string | null;
+    }
+    await pool.withQuerier(async ({ db }) => {
+      await db.collection('SyncMongoReindex').createIndex({ status: 1 }, { name: 'SyncMongoReindex__status_idx' });
+      await db.collection('SyncMongoReindex').createIndex({ kind: 1 }, { name: 'hand_made_kind' });
+    });
+    const migrator = new Migrator(pool, { entities: [SyncMongoReindex] });
+
+    await migrator.sync();
+    expect((await indexNames('SyncMongoReindex')).toSorted()).toEqual([
+      'SyncMongoReindex__kind_status_idx',
+      'SyncMongoReindex__status_idx',
+      '_id_',
+      'hand_made_kind',
+    ]);
+
+    await migrator.sync({ safe: false });
+    expect((await indexNames('SyncMongoReindex')).toSorted()).toEqual([
+      'SyncMongoReindex__kind_status_idx',
+      '_id_',
+      'hand_made_kind',
+    ]);
+    expect(await migrator.getDiffs()).toEqual([]);
   });
 
   it('should scaffold a migration typed on the MongoDB querier', async () => {
