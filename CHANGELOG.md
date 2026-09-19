@@ -4,10 +4,9 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.74.1] - 2026-09-19
 
-- `generate:entities` and `sync({ safe: false })` drop an index the entity no longer declares, or whose columns changed, when uql named it or the entity still claims its name; the generated `down` recreates it. An index named by hand is left alone. On every engine, MongoDB included.
+- `generate:entities` and `sync({ safe: false })` drop an index the entity no longer declares, or whose columns changed, only when uql named it or the entity still claims its name. An index named by hand is left alone. On every engine, MongoDB included.
 - Fixed (MySQL, MariaDB, MSSQL): an index redeclared with new columns under its old name no longer fails as a duplicate.
-- Fixed: a generated migration's `down` undoes each table's changes in order; a changed foreign key was added back before the new one was dropped.
-- **Changed (types):** `SchemaDiff.indexesToDrop` holds each whole `IndexSchema`, not its name.
+- Fixed: a generated migration's `down` undoes each table's changes in order; a changed foreign key was added back before the new one was dropped..
 
 ## [0.74.0] - 2026-09-19
 
