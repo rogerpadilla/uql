@@ -79,6 +79,12 @@ export class Post {
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
 - `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })` states a partial index's filter as the predicate the query passes, never as `raw`: a planner matches the two by shape, so `raw` that means the same thing leaves the index unused.
+- `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, makes the column an
+  optimistic lock: every update payload must carry the version it read (a compile error otherwise), the update
+  matches on it and writes the next one, and a write against a row someone else moved on throws
+  `UqlOptimisticLockError` (`status` 409) instead of overwriting it. Save, upsert and `restoreMany` are refused on such
+  an entity (restore with `updateOneById`, `{ filters: { softDelete: false } }`); `updateMany` writes only the rows
+  still at the version it carries, and delete needs none.
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries

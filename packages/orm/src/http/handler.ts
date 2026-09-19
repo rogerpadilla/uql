@@ -9,7 +9,7 @@ import type {
   QueryWhere,
   RequestSuccessResponse,
   Type,
-  UpdatePayload,
+  UpdateWrite,
   UqlContext,
 } from '../type/index.js';
 import { whereIds } from '../util/dialect.util.js';
@@ -259,13 +259,13 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
             const count = await querier.updateMany(
               entity,
               buildIdQuery(meta, id, query),
-              hookCtx.body as UpdatePayload<E>,
+              hookCtx.body as UpdateWrite<E>,
             );
             return ok({ data: id, count });
           });
         case 'updateMany':
           return withTransaction(async (querier) => {
-            const count = await querier.updateMany(entity, query, hookCtx.body as UpdatePayload<E>);
+            const count = await querier.updateMany(entity, query, hookCtx.body as UpdateWrite<E>);
             return ok({ data: count, count });
           });
         case 'deleteOneById':

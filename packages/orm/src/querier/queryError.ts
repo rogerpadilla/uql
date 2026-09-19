@@ -18,7 +18,26 @@ export type QueryErrorKind =
   | 'foreignKeyViolation'
   | 'notNullViolation'
   | 'checkViolation'
+  | 'optimisticLock'
   | 'retryable';
+
+/**
+ * Thrown when an update's `@Field({ version })` no longer matches the row: another writer moved it on,
+ * or it is gone. `expected` is what the payload carried, `actual` what the row holds now, `undefined`
+ * where there is no row left. `status` is what an HTTP transport answers with.
+ */
+export class UqlOptimisticLockError extends Error {
+  override name = 'UqlOptimisticLockError';
+  readonly status = 409;
+
+  constructor(
+    message: string,
+    readonly expected: unknown,
+    readonly actual: unknown,
+  ) {
+    super(message);
+  }
+}
 
 /** The fields a driver reports its code on, each read as `unknown` since any driver may fill any one. */
 type DriverErrorFields = {
@@ -87,6 +106,9 @@ const SQLITE_MESSAGE_KINDS: readonly (readonly [string, QueryErrorKind])[] = [
 export function queryErrorKind(err: unknown): QueryErrorKind | undefined {
   if (typeof err !== 'object' || err === null) {
     return undefined;
+  }
+  if (err instanceof UqlOptimisticLockError) {
+    return 'optimisticLock';
   }
   const { code, errno, number, errorLabels, message }: DriverErrorFields = err;
   const text = typeof message === 'string' ? message : '';

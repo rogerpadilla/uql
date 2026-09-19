@@ -28,6 +28,15 @@ it('should report the option another option leaves unread', () => {
   expect(fieldOptionConflict({ type: String, isId: true, nullable: true })).toBe(
     "cannot use 'nullable': it is ignored on a primary key",
   );
+  expect(fieldOptionConflict({ type: Number, version: true, onUpdate: () => 1 })).toBe(
+    "cannot use 'onUpdate': it is ignored on a version field",
+  );
+  expect(fieldOptionConflict({ type: Number, version: true, nullable: true })).toBe(
+    "cannot use 'nullable': it is ignored on a version field",
+  );
+  expect(fieldOptionConflict({ type: String, version: true })).toBe(
+    "cannot use 'version': it applies to a numeric column, not to a string one",
+  );
 });
 
 it('should report the same option whichever order the field was written in', () => {

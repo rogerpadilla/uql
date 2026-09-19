@@ -3,6 +3,7 @@
  * `QueryConflictPaths`, typed against the entity as `$select` is. Type-checked by `bun run ts` only.
  */
 import type { Querier } from '../index.js';
+import { versionKey } from '../index.js';
 import { raw } from '../util/index.js';
 
 class Company {
@@ -127,4 +128,23 @@ export async function writePayloadsExcludeBehaviour(querier: Querier) {
   await querier.insertOne(Required, { namo: 'abc' });
   // @ts-expect-error a method is behaviour, not data to persist
   await querier.insertOne(Hooked, { title: 'x', generateSlug: () => {} });
+}
+
+/** An optimistic lock: the brand is what makes the payload carry the version. */
+class Versioned {
+  [versionKey]?: 'version';
+  id?: number;
+  title?: string | null;
+  version?: number;
+}
+
+export async function versionedWritesCarryTheVersion(querier: Querier) {
+  await querier.updateOneById(Versioned, 1, { title: 'edited', version: 3 });
+  await querier.updateMany(Versioned, { $where: { id: 1 } }, { title: 'edited', version: 3 });
+  // @ts-expect-error a versioned row is written against the version it was read at
+  await querier.updateOneById(Versioned, 1, { title: 'edited' });
+  // @ts-expect-error the version is still a column, so a typo is caught
+  await querier.updateOneById(Versioned, 1, { title: 'edited', versio: 3 });
+  // an entity with no version is untouched by any of it
+  await querier.updateOneById(Company, 1, { name: 'edited' });
 }

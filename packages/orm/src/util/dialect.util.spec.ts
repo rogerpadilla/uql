@@ -448,3 +448,23 @@ describe('findVectorIndex', () => {
     expect(findVectorIndex(getMeta(Expressed), 'embedding')).toBeUndefined();
   });
 });
+
+describe('fillOnFields', () => {
+  @Entity()
+  class Zeroed {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, onInsert: 0 }) count?: number | null;
+    @Field({ type: String, onInsert: '' }) note?: string | null;
+    @Field({ type: Boolean, onInsert: false }) flag?: boolean | null;
+  }
+
+  it('should fill a falsy value where the caller left the field unset', () => {
+    expect(fillOnFields(getMeta(Zeroed), { id: 1 }, 'onInsert')).toEqual([{ id: 1, count: 0, note: '', flag: false }]);
+  });
+
+  it('should keep a value the caller set', () => {
+    expect(fillOnFields(getMeta(Zeroed), { id: 1, count: 5, note: 'x', flag: true }, 'onInsert')).toEqual([
+      { id: 1, count: 5, note: 'x', flag: true },
+    ]);
+  });
+});

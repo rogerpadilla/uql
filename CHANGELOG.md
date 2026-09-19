@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.76.0] - 2026-09-19
+
+- `@Field({ version: true })` makes a column an optimistic lock, on every engine: an update carries the version it read and writes the next, and throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409) when the row has moved on instead of overwriting it. Leaving the version out of an update is a compile error; `save`, `upsert` and `restoreMany` are refused on such an entity.
+- Fixed: an `onInsert` or `onUpdate` of `0`, `''` or `false` is written instead of skipped.
+
 ## [0.75.0] - 2026-09-19
 
 - `$sort` says where nulls land - `'ascNullsFirst'`, `'ascNullsLast'`, `'descNullsFirst'`, `'descNullsLast'` - and answers the same order on every engine, emulated on MySQL, MariaDB, SQL Server and MongoDB, which have no placement of their own. Unqualified, each engine keeps its own: Postgres and CockroachDB sort nulls last on `asc`, the rest first.

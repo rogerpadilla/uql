@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
 import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
-import { idKey, type Json } from '../type/index.js';
+import { idKey, type Json, versionKey } from '../type/index.js';
 
 /**
  * an `abstract` class can (optionally) be used as the base "template" for the entities
@@ -137,6 +137,24 @@ export class UserWithNonUpdatableId {
 
   @Field({ type: String })
   name!: string | null;
+}
+
+/** The optimistic-lock fixture: the `versionKey` brand is what makes an update payload require it. */
+@Entity()
+export class VersionedNote {
+  [versionKey]?: 'version';
+
+  @Id({ type: 'uuid', onInsert: uuidv7 })
+  id?: string;
+
+  @Field({ type: String })
+  title?: string | null;
+
+  @Field({ type: Number, version: true })
+  version?: number;
+
+  @Field({ type: Number, softDelete: () => Date.now() })
+  deletedAt?: number | null;
 }
 
 @Entity()

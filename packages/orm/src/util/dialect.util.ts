@@ -136,7 +136,9 @@ export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   callbackKey: CallbackKey,
 ): R[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey]!) as FieldKey<E>[];
+  // By presence, not truthiness, as `addInsertFieldKeys` above reads it: `onInsert: 0` and `onInsert: ''`
+  // are values a caller meant, and a falsy one was silently never filled.
+  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey] !== undefined) as FieldKey<E>[];
   if (keys.length === 0) {
     return payloads;
   }

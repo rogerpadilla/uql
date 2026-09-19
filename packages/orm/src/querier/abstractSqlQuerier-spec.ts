@@ -11,6 +11,7 @@ import {
   type Spec,
   Tag,
   User,
+  VersionedNote,
 } from '../test/index.js';
 import type { QuerierPool, QuerySearch } from '../type/index.js';
 import { raw } from '../util/index.js';
@@ -661,6 +662,37 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     );
     expect(this.querier.all).toHaveBeenCalledTimes(0);
     expect(this.querier.run).toHaveBeenCalledTimes(1);
+  }
+
+  /** One statement: the next version in the SET, the one the payload carried in the WHERE. */
+  async shouldUpdateAVersionedRowInOneStatement() {
+    await this.querier.insertOne(VersionedNote, { title: 'first' });
+    vi.mocked(this.querier.run).mockClear();
+
+    await this.querier.updateMany(VersionedNote, { $where: { title: 'first' } }, { title: 'second', version: 0 });
+    expect(this.querier.run).toHaveBeenNthCalledWith(
+      1,
+      'UPDATE `VersionedNote` SET `title` = ?, `version` = ? WHERE (`title` = ? AND `version` = ?) AND `deletedAt` IS NULL',
+      ['second', 1, 'first', 0],
+    );
+    expect(this.querier.run).toHaveBeenCalledTimes(1);
+  }
+
+  /** The run-time half of the compile-time rule, for a payload that reached the querier as client JSON. */
+  async shouldRefuseAVersionedUpdateCarryingNoVersion() {
+    await this.querier.insertOne(VersionedNote, { title: 'unversioned write' });
+    await expect(
+      this.querier.updateMany(VersionedNote, { $where: { title: 'unversioned write' } }, {
+        title: 'x',
+      } as never),
+    ).rejects.toThrow("an update of 'VersionedNote' carries no 'version'");
+  }
+
+  /** A settled write is two statements, and the race lives in the gap between them. */
+  async shouldRefuseAVersionedUpdateThatWouldSettleFirst() {
+    await expect(
+      this.querier.updateMany(VersionedNote, { $where: { title: 'paged' }, $limit: 1 }, { title: 'x', version: 0 }),
+    ).rejects.toThrow("cannot update 'VersionedNote' this way");
   }
 
   async shouldUpdateOneById() {

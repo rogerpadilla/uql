@@ -293,6 +293,19 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
     (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
   }
 
+  // The optimistic lock, derived the same way and just as singular: one row has one version.
+  const versionKeys = getKeys(meta.fields).filter((key) => meta.fields[key]?.version) as FieldKey<E>[];
+  if (versionKeys.length > 1) {
+    throw TypeError(`'${entity.name}' must have at most one field with 'version'`);
+  }
+  if (versionKeys.length) {
+    meta.version = versionKeys[0];
+    // Implied rather than stated: the DDL default covers a row written around the ORM, and `onInsert`
+    // covers MongoDB, which has no DDL to default. Both, so every backend starts a row at the same 0.
+    const field = meta.fields[meta.version]!;
+    meta.fields[meta.version] = { ...field, nullable: false, defaultValue: 0, onInsert: 0 };
+  }
+
   const ids = getIdKeys(meta);
   if (!ids.length) {
     throw TypeError(

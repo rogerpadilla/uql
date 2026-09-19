@@ -18,10 +18,13 @@ import {
   VectorChunk,
   VectorCitation,
   VectorDoc,
+  VersionedNote,
 } from '../test/index.js';
 import type { Querier, QuerierPool, QuerySearch, QueryWhere } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
-import { queryErrorKind } from './queryError.js';
+import { queryErrorKind, UqlOptimisticLockError } from './queryError.js';
+
+const thrownValue = (thrown: unknown) => thrown;
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier!: Q;
@@ -200,6 +203,105 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   async shouldInsertManyEmpty() {
     const ids = await this.querier.insertMany(User, []);
     expect(ids).toEqual([]);
+  }
+
+  /**
+   * The lost update the version exists to stop: two writers read the same row and both write it. The
+   * first wins, the second finds its version gone and throws rather than overwriting the first.
+   */
+  async shouldRefuseAStaleVersion() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'first' });
+    const stale = (await this.querier.findOneById(VersionedNote, id))!.version!;
+
+    expect(await this.querier.updateOneById(VersionedNote, id, { title: 'winner', version: stale })).toBe(1);
+
+    const err = await this.querier
+      .updateOneById(VersionedNote, id, { title: 'loser', version: stale })
+      .catch(thrownValue);
+    expect(err).toBeInstanceOf(UqlOptimisticLockError);
+    expect(err).toMatchObject({ expected: stale, actual: stale + 1 });
+    expect(queryErrorKind(err)).toBe('optimisticLock');
+
+    const found = await this.querier.findOneById(VersionedNote, id);
+    expect(found?.title).toBe('winner');
+    expect(found?.version).toBe(stale + 1);
+  }
+
+  /** Two queriers writing at once: the same rule holds across connections, which is where it matters. */
+  async shouldLetOnlyOneOfTwoWritersWin() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'contested' });
+    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
+    const other = await this.pool.getQuerier();
+    try {
+      const results = await Promise.allSettled([
+        this.querier.updateOneById(VersionedNote, id, { title: 'a', version }),
+        other.updateOneById(VersionedNote, id, { title: 'b', version }),
+      ]);
+      const lost = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
+      expect(results).toHaveLength(2);
+      expect(lost).toHaveLength(1);
+      expect(queryErrorKind(lost[0].reason)).toBe('optimisticLock');
+    } finally {
+      await other.release();
+    }
+    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(version + 1);
+  }
+
+  /** A row that is gone reads differently from one that moved on, which is what the caller acts on. */
+  async shouldTellAGoneRowFromAMovedOne() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'doomed' });
+    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
+    await this.querier.deleteOneById(VersionedNote, id);
+
+    const err = await this.querier.updateOneById(VersionedNote, id, { title: 'ghost', version }).catch(thrownValue);
+    expect(queryErrorKind(err)).toBe('optimisticLock');
+    expect(err).toMatchObject({ expected: version, actual: undefined });
+  }
+
+  /** A filter is not an id: `updateMany` writes the rows still at the version it carries and leaves the rest. */
+  async shouldWriteOnlyTheRowsStillAtTheVersion() {
+    const first = await this.querier.insertOne(VersionedNote, { title: 'batch' });
+    const second = await this.querier.insertOne(VersionedNote, { title: 'batch' });
+    const version = (await this.querier.findOneById(VersionedNote, first))!.version!;
+    await this.querier.updateOneById(VersionedNote, second, { title: 'batch', version });
+
+    expect(
+      await this.querier.updateMany(VersionedNote, { $where: { title: 'batch' } }, { title: 'done', version }),
+    ).toBe(1);
+    expect((await this.querier.findOneById(VersionedNote, first))?.title).toBe('done');
+    expect((await this.querier.findOneById(VersionedNote, second))?.title).toBe('batch');
+  }
+
+  /** A delete removes the row whatever it holds, so it carries no version. */
+  async shouldDeleteAVersionedRowWithoutItsVersion() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'archived' });
+
+    expect(await this.querier.deleteOneById(VersionedNote, id)).toBe(1);
+    expect(await this.querier.deleteOneById(VersionedNote, id, { hardDelete: true })).toBe(1);
+  }
+
+  /** A restore is an update like any other, so it carries the version and the lock guards it. */
+  async shouldRestoreAVersionedRowByUpdatingIt() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'archived' });
+    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
+    await this.querier.deleteOneById(VersionedNote, id);
+
+    const restore = { deletedAt: null, version };
+    expect(await this.querier.updateOneById(VersionedNote, id, restore, { filters: { softDelete: false } })).toBe(1);
+    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(version + 1);
+  }
+
+  /** Every other write path says so rather than writing the row unguarded. */
+  async shouldRefuseAVersionedEntityWhereTheLockCannotRide() {
+    await expect(this.querier.saveOne(VersionedNote, { title: 'saved' })).rejects.toThrow(
+      "cannot 'saveOne' the versioned 'VersionedNote'",
+    );
+    await expect(this.querier.upsertOne(VersionedNote, { id: true }, { title: 'upserted' })).rejects.toThrow(
+      "cannot 'upsertOne' the versioned 'VersionedNote'",
+    );
+    await expect(this.querier.restoreOneById(VersionedNote, 'gone')).rejects.toThrow(
+      "cannot 'restoreMany' the versioned 'VersionedNote'",
+    );
   }
 
   /** The driver's own error, read as it reaches the caller, on every backend MongoDB included. */

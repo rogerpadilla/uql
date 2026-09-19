@@ -10,6 +10,7 @@ import type {
   HookEvent,
   IdValue,
   NamedIdKey,
+  VersionKey,
   RejectKeys,
   RelationManyToManyOptions,
   RelationManyToOneOptions,
@@ -63,9 +64,11 @@ type DeclaredValue<O> = O extends { readonly type: infer T extends FieldType }
 /**
  * The `null` a column reads back: every one holds it unless `nullable: false` says otherwise, so the
  * property admits it too. A key holds none, whether `@Id` or `@Field({ isId: true })` declares it, since
- * it is NOT NULL on every engine.
+ * it is NOT NULL on every engine, and neither does a version, which is NOT NULL DEFAULT 0.
  */
-type NullOf<O> = O extends { readonly nullable: false } | { readonly isId: true } ? never : null;
+type NullOf<O> = O extends { readonly nullable: false } | { readonly isId: true } | { readonly version: true }
+  ? never
+  : null;
 
 /** The enum's members, or a named complaint where they widened for lack of `as const`, which would check nothing. */
 type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enumNeedsAsConst: true } : Members;
@@ -81,7 +84,7 @@ export function Field<
     ({ type: FieldType } | { references: EntityGetter }) &
     RejectKeys<Exclude<keyof O, keyof FieldOptions>> &
     RejectIncompatible<O>,
->(opts: O): AdmittingDecorator<DeclaredValue<O> | NullOf<O>, NullOf<O>, This>;
+>(opts: O & VersionIsBranded<O, This>): AdmittingDecorator<DeclaredValue<O> | NullOf<O>, NullOf<O>, This>;
 
 /**
  * Declares a field a relation aggregate computes, `@Field({ computed: (user) => user.resources.count() })`.
@@ -119,6 +122,17 @@ type AggregateOptions<E> =
  * `EntityId` and every by-id method are then typed against a column that is not the key.
  */
 type KeyIsNamed<This> = [NamedIdKey<This>] extends [never] ? { readonly __keyNeedsIdKeyBrand: true } : unknown;
+
+/**
+ * An optimistic lock the type level cannot see. `version: true` is what makes the column a lock at run
+ * time; the `versionKey` brand is what makes an update payload require it, and a lock only half
+ * declared would be a guarantee nothing enforces, so the decorator asks for both.
+ */
+type VersionIsBranded<O, This> = O extends { readonly version: true }
+  ? [VersionKey<This>] extends [never]
+    ? { readonly __versionNeedsVersionKeyBrand: true }
+    : unknown
+  : unknown;
 
 /** {@link MemberDecorator} that also constrains the class, which is where a key is named. */
 type IdDecorator<V> = <This>(value: undefined, context: ClassFieldDecoratorContext<This, V> & KeyIsNamed<This>) => void;

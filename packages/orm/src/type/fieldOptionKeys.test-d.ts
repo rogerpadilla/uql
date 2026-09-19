@@ -1,5 +1,6 @@
 import { Entity, Field, Id } from '../entity/index.js';
 import { raw } from '../util/index.js';
+import { versionKey } from './entity.js';
 import type { Json } from './utility.js';
 
 /**
@@ -26,6 +27,9 @@ class RealOptionsStillCompile {
 /** An option the column cannot use is the same mistake one level deeper, so it reads the same way. */
 @Entity()
 class IncompatibleRejected {
+  // One brand satisfies the decorator's "a lock is declared in both halves" check for every case below.
+  [versionKey]?: 'j';
+
   @Id({ type: Number }) id?: number;
   // @ts-expect-error - a serial is a numeric column's
   @Field({ type: String, autoIncrement: true }) a?: string | null;
@@ -49,6 +53,24 @@ class IncompatibleRejected {
   @Id({ type: Number, nullable: true }) h?: number;
   // @ts-expect-error - the DDL default is the value the column holds
   @Field({ type: Number, defaultValue: 'hello' }) i?: number | null;
+  // @ts-expect-error - the querier writes the version on every update, so nothing else may decide it
+  @Field({ type: Number, version: true, onUpdate: () => 1 }) j?: number;
+  // @ts-expect-error - a version starts at 0 and the lock owns it from there
+  @Field({ type: Number, version: true, defaultValue: 7 }) k?: number;
+  // @ts-expect-error - a version is NOT NULL, since every row has to have one to be matched by it
+  @Field({ type: Number, version: true, nullable: true }) l?: number | null;
+  // @ts-expect-error - a version counts updates, which a string column cannot
+  @Field({ type: String, version: true }) m?: string;
+  // the lock itself, declared in both halves, compiles
+  @Field({ type: Number, version: true }) j2?: number;
+}
+
+/** Half a lock is no lock: `version: true` without the brand leaves an update payload free of it. */
+@Entity()
+class UnbrandedVersionRejected {
+  @Id({ type: Number }) id?: number;
+  // @ts-expect-error - the entity has to brand the property with 'versionKey' as well
+  @Field({ type: Number, version: true }) version?: number;
 }
 
 /** The combinations that do apply, including the ones the check must not read as contradictions. */
@@ -67,4 +89,10 @@ class CompatibleStillCompiles {
   @Field({ type: Date, softDelete: true, index: true }) deletedAt?: Date | null;
 }
 
-export type _ = [TypoRejected, RealOptionsStillCompile, IncompatibleRejected, CompatibleStillCompiles];
+export type _ = [
+  TypoRejected,
+  RealOptionsStillCompile,
+  IncompatibleRejected,
+  UnbrandedVersionRejected,
+  CompatibleStillCompiles,
+];

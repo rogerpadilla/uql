@@ -23,6 +23,7 @@ const FIELD_OPTION_FAMILY = {
   onInsert: '*',
   onUpdate: '*',
   softDelete: '*',
+  version: 'numeric',
   columnType: '*',
   length: 'string',
   precision: 'numeric',
@@ -52,12 +53,8 @@ const INLINE_READS = [
 
 type InlineRead = (typeof INLINE_READS)[number];
 
-/**
- * What a column the *database* writes cannot use. A stored computed column is a real column - it has
- * DDL, an index, a comment, a name - so only the write half is dead on one: the engine fills it, and
- * `GENERATED ALWAYS AS` and `DEFAULT` are mutually exclusive on every engine that has both.
- */
-const GENERATED_WRITES = [
+/** Every option that decides what a column holds, or whether it is written at all. */
+const VALUE_DECIDERS = [
   'updatable',
   'onInsert',
   'onUpdate',
@@ -66,18 +63,41 @@ const GENERATED_WRITES = [
   'autoIncrement',
 ] as const satisfies readonly (keyof FieldOptions)[];
 
+/**
+ * What a column the *database* writes cannot use. A stored computed column is a real column - it has
+ * DDL, an index, a comment, a name - so only the write half is dead on one: the engine fills it, and
+ * `GENERATED ALWAYS AS` and `DEFAULT` are mutually exclusive on every engine that has both.
+ */
+const GENERATED_WRITES = [...VALUE_DECIDERS, 'version'] as const;
+
 type GeneratedWrite = (typeof GENERATED_WRITES)[number];
 
 /**
- * Whatever leaves `key` unread, named for the message, or `undefined` where the field reads it. Only
- * `nullable: true` contradicts a key: `nullable: false` says what the key already is, and rejecting
- * an accurate statement teaches an author to distrust the check.
+ * What an optimistic lock cannot use: the querier writes the column on every update and matches the
+ * value the payload carried, so anything else deciding it would be fighting that, and the three that
+ * would make it another kind of column entirely. Its `nullable: false` and `DEFAULT 0` are implied.
  */
+const VERSION_WRITES = [...VALUE_DECIDERS, 'computed', 'stored', 'isId'] as const;
+
+type VersionWrite = (typeof VERSION_WRITES)[number];
+
+/**
+ * Whether `key` is the `nullable: true` a NOT NULL column contradicts. `nullable: false` says what
+ * such a column already is, and rejecting an accurate statement teaches an author to distrust the check.
+ */
+function contradictsNotNull(opts: FieldOptions, key: keyof FieldOptions): boolean {
+  return key === 'nullable' && opts.nullable === true;
+}
+
+/** Whatever leaves `key` unread, named for the message, or `undefined` where the field reads it. */
 function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined {
   if (isInlinedExpression(opts) && !INLINE_READS.some((read) => read === key)) return 'an inlined computed field';
   if (opts.stored === true && GENERATED_WRITES.some((write) => write === key)) return 'a stored computed column';
-  if (opts.isId === true && key === 'nullable' && opts.nullable === true) return 'a primary key';
+  if (opts.isId === true && contradictsNotNull(opts, key)) return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
+  if (opts.version === true && (VERSION_WRITES.some((write) => write === key) || contradictsNotNull(opts, key))) {
+    return 'a version field';
+  }
   return undefined;
 }
 
@@ -120,7 +140,9 @@ type DeadOptions<O> =
         ? Exclude<keyof FieldOptions, InlineRead>
         : never)
   | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)
-  | (O extends { readonly updatable: false } ? 'onUpdate' : never);
+  | (O extends { readonly updatable: false } ? 'onUpdate' : never)
+  | (O extends { readonly version: true } ? VersionWrite : never)
+  | (O extends { readonly version: true; readonly nullable: true } ? 'nullable' : never);
 
 type Given<O> = Extract<keyof O, keyof FieldOptions>;
 

@@ -8,6 +8,13 @@ import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vect
 /** Brands the property an entity is identified by, where it is not `id`, `_id` or `uuid`. */
 export const idKey = Symbol('idKey');
 
+/**
+ * Brands the property holding an entity's optimistic-lock version, which is what makes an update
+ * payload require it. No conventional name, unlike {@link idKey}: a field merely called `version`
+ * must not start demanding one.
+ */
+export const versionKey = Symbol('versionKey');
+
 /** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
 
@@ -42,8 +49,19 @@ export type WritableKey<E> = {
 /** A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write. */
 export type EntityWrite<E> = EntityData<E, WritableKey<E>>;
 
-/** A partial write as a caller supplies one: {@link UpdatePayload} without them. */
-export type UpdateWrite<E, Raw = QueryRaw> = UpdatePayload<E, Raw, WritableKey<E>>;
+/**
+ * The property an entity brands with {@link versionKey} as its optimistic lock, `never` where it
+ * brands none. The brand is what carries `@Field({ version: true })` to the type level, since a
+ * decorator's options never reach `E`.
+ */
+export type VersionKey<E> = E extends { [versionKey]?: infer K } ? K & FieldKey<E> : never;
+
+/**
+ * A partial write as a caller supplies one: {@link UpdatePayload} without the fields it cannot write,
+ * and with the version where the entity keeps one - a write that cannot say which row state it read
+ * is refused here rather than silently overwriting whatever is there now.
+ */
+export type UpdateWrite<E, Raw = QueryRaw> = UpdatePayload<E, Raw, WritableKey<E>> & Required<Pick<E, VersionKey<E>>>;
 
 /** The relation names of an entity: every key but its fields and its methods, so the two sets cannot drift. */
 export type RelationKey<E> = Exclude<Key<E>, FieldKey<E> | MethodKey<E>>;
@@ -375,6 +393,12 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
    * stamps `new Date()`, anything else is the value or callback stamped, `softDelete: () => Date.now()`.
    */
   readonly softDelete?: true | OnFieldCallback<V>;
+  /**
+   * Makes the column an optimistic lock: an update matches the version its payload carries and writes
+   * the next one, so a write against a row someone else moved on throws instead of overwriting it. The
+   * column is `NOT NULL DEFAULT 0`, and the entity brands the property with {@link versionKey}.
+   */
+  readonly version?: true;
 
   /** The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`. */
   readonly columnType?: ColumnType;
@@ -834,6 +858,8 @@ export type EntityMeta<E> = {
   /** Every column of the primary key, in declaration order. */
   ids: readonly IdKey<E>[];
   softDelete?: FieldKey<E>;
+  /** The optimistic lock's column, from `@Field({ version: true })`. */
+  version?: FieldKey<E>;
   /** Named, default-on `$where` filters applied to every query unless bypassed. */
   filters?: Record<string, FilterOptions<E>>;
   fields: {
