@@ -1,48 +1,26 @@
 # Roadmap
 
-The next feature block, in build order. Groundwork first, so the features on top stay small.
+What is next, in build order: groundwork first, so the features on top stay small. One rule on every engine, emulated where an engine lacks it, refused only where it cannot be done.
 
-## Foundational refactors
+## Groundwork
 
-Each is small on its own and gates something bigger. None is worth doing for its own sake.
+**R1: an entity with no key.** `meta.ids` cannot be empty yet, and a view often has no key. Every by-id path refuses one by name instead of taking the first column of none. _Unlocks views._
 
-**R1: an entity with no key.** `meta.ids` is a list that composite keys made plural; it cannot yet be empty. A view often identifies nothing, and every by-id path has to say so rather than take the first column of none. _Unlocks views._
-
-```ts
-defineView({ name: 'DailyTotals', ... }); // no @Id to give it
-```
-
-**R2: entity capabilities.** Whether an entity can be read, written or refreshed is not on its type, so nothing stops a write to something that has no table to write to. A `readable`/`writable`/`refreshable` set makes it a compile error instead of a runtime one. _Unlocks views._
+**R2: entity capabilities.** A `readable`/`writable`/`refreshable` set on the entity's type, so a write to something with no table is a compile error. _Unlocks views, read-only queriers._
 
 ```ts
-await pool.insertOne(WorkspaceUsage, { total: 1 });
-//                   ~~~~~~~~~~~~~~ not writable
+await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 ```
 
-**R5: `dialect.compile(query)`.** Building SQL and running it are one step today, so a caller cannot hold the text without executing it - and batching needs exactly that: several statements' text and values, gathered before any of them runs. It also makes the text a memoizable identity. _Unlocks batching._
+**R5: `dialect.compile(query)`.** The SQL and its values without running them, so several statements can be gathered first. _Unlocks batching._
 
-```ts
-const { sql, values } = dialect.compile(User, { $where: { id: 1 } });
-```
+**R6: one carried-out column rule.** `_uql_sort_<path>`, `_uql_total` and `_uql_value` are columns a statement adds and drops again, each written and stripped in its own place. Cursor pagination adds a fourth, the sort keys a cursor is minted from. _Unlocks cursor pagination._
 
-**R6: one carried-out column rule.** A statement adds columns to its own select list that the caller never asked for and never sees: `_uql_sort_<path>`, a relation's sort terms carried out for the aggregate ordering its rows; `_uql_total`, a paged read's own unpaged count, which the querier `delete`s off each row; `_uql_value`, what a capped aggregate's page hands the aggregate wrapping it. Each writes and drops its own, in its own place. Cursor pagination adds the sort keys it mints a cursor from, whether or not `$select` asked for them, so settle the rule once. _Unlocks cursor pagination._
+**R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). _Unlocks views, triggers._
 
-```ts
-SELECT "id", "_uql_sort_createdAt", COUNT(*) OVER () "_uql_total" FROM ... // two carried out, both dropped
-```
+## Features
 
-**R7: schema objects as a dependency-ordered graph.** Ordering is already generic: `createOrder` in `schema/dependencyGraph.ts` takes any node and a function returning its dependencies. What is not is the diff - `SchemaDiffResult` has a field per kind (`tablesToCreate`, `tablesToDrop`, `columnDiffs`, `indexDiffs`), so a view or a trigger each add three more and every consumer grows a branch. A `SchemaObject` vocabulary flattens it. _Unlocks views, triggers._
-
-```ts
-// now                          // after
-tablesToCreate: TableNode[]     create: SchemaObject[]
-indexDiffs: IndexDiff[]         drop: SchemaObject[]
-...one field per kind           alter: SchemaObjectDiff[]
-```
-
-The second kind that R7 waited for has arrived - generated columns in 0.46.0 - so the shape can be derived now rather than guessed.
-
-## Views and materialized views
+**Views and materialized views** (R1, R2, R7).
 
 ```ts
 export const WorkspaceUsage = defineView({
@@ -53,90 +31,39 @@ export const WorkspaceUsage = defineView({
 });
 ```
 
-R2, R7, and [grouping across relations](aggregate-across-relations.md), without which a reporting view cannot join. A view is an entity, just read-only, which dissolves the "relation with no entity" problem that makes CTEs a poor fit. Field types fall out of `QueryAggregateResult`; the definition is the migration. `REFRESH ... CONCURRENTLY` on Postgres/CockroachDB, refused elsewhere.
+A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction.
 
-## Cursor pagination
+**Cursor pagination** (R6). `findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after })`, as an OR-chain of `$gt`/`$lt` every dialect already compiles. It throws when the sort is not total, which `meta.ids` and the unique indexes prove. The real work is nulls: `$sort` takes a null placement, emulated where an engine has no `NULLS FIRST`, before any page is correct. [The design](cursor-pagination.md).
 
-```ts
-await pool.findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after: cursor });
-```
+**Stored triggers** (R7). Stored aggregates (`computed: (u) => u.resources.count(), stored: true`), then `stored: ['update']` stamps, then authored triggers. Postgres first, then a renderer per SQL engine; MongoDB has no triggers and refuses `stored`. [The design](triggers.md).
 
-R6. A lexicographic OR-chain over `$or`/`$gt`/`$lt`, which every dialect already compiles, so v1 needs no dialect code; row-value comparison is a later optimization, and only where every key sorts one way and none is nullable. **Throw when the sort is not total**: a keyset page that silently skips or repeats rows is worse than an error, and `meta.ids` plus the unique indexes prove it for free.
+**Batching** (R5). One round trip on D1, libSQL/Turso and Neon HTTP, a transaction elsewhere. The shape is undecided. Only reads, `count`, `exists` and a relation-free insert are reliably one statement each, so an entity-level `batch` would promise what the call site cannot show, while a statement-level one over `compile()` loses the typing.
 
-What gates it is nulls. A UQL column is nullable unless declared otherwise, the engines disagree about where nulls sort, and `col > x` never matches one - so `$sort` grows a placement and `DialectFeatures` a `nullsOrdering` knob before any of this pages correctly. MikroORM shipped cursor pagination in v6 and reworked exactly this in 7.2. [The design](cursor-pagination.md).
+**Read-only queriers** (R2). `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
 
-## Triggers
+**Optimistic locking.** `@Field({ version: true })`: an update matches the version the payload carries and bumps it, and a stale version throws rather than returning `0`. UQL tracks no entity state, so a payload without the version is refused.
 
-```ts
-@Field({ computed: (u) => u.resources.count() })               readonly resourceCount?: number; // read in the parent's statement
-@Field({ computed: (u) => u.resources.count(), stored: true }) readonly resourceCount?: number; // kept by triggers
-```
+## Later
 
-Two steps. The unstored aggregate needs no R7, runs on every engine, and speaks the query language's own operators. The stored arms - maintained aggregates, `stored: ['update']` stamps, then authored triggers - need R7 and ship on Postgres first. The maintained aggregate is the case worth declaring rather than authoring: it generates the reparent branch every hand-written counter forgets. [The design](triggers.md).
-
-## Batching
-
-```ts
-const [users, total] = await pool.batch((q) => [q.findMany(User, { $limit: 10 }), q.count(User)]);
-```
-
-R5. One round trip on D1, libSQL/Turso and Neon HTTP; `BEGIN`/`COMMIT` and N round trips elsewhere: correct, not faster.
-
-**The entity-level API cannot keep its promise.** Only reads, `count`, `exists` and an insert carrying no relation are reliably one statement: saving a relation needs the ids the insert generated, and `updateMany`/`deleteMany` run hooks and cascades. A caller cannot tell from the call site. The honest shape is statement-level over `compile()`, which gives up the typing that makes the rest of the API worth using. Decide before building either.
-
-## Read-only queriers
-
-```ts
-export const replica: ReadonlyQuerierPool<PgQuerier> = new PgQuerierPool({ ... });
-await replica.insertOne(User, { name: 'a' });
-//            ~~~~~~~~~ does not exist
-```
-
-R2 at the pool: [pool.md](https://uql-orm.dev/pool) recommends a second pool for a replica, and nothing stops a write reaching it. Types only - a `Pick` of the reads (`findOne`, `findMany`, `findManyStream`, `findManyAndCount`, `count`, `exists`, `all`) - as Kysely 0.29's `ReadonlyKysely`.
-
-## Optimistic locking
-
-```ts
-@Field({ version: true }) version?: number;
-
-await pool.updateOneById(Post, id, { title, version: 3 }); // WHERE version = 3, SET version = 4
-```
-
-No row matched throws a stale-version error rather than returning `0`, which a caller reads as "nothing to update"; no driver raises it, so it is not a `QueryErrorKind`. UQL tracks no entity state, so the version the caller read rides in the payload; a payload without one is refused on a versioned entity. A number increments; a timestamp is `onUpdate`'s `now()`. Lands beside `fillOnFields(..., 'onUpdate')`, and Mongo filters on the field the same way.
-
-## Smaller items
-
-- **Published on JSR.** Nearly free - a `jsr.json` and a publish step - and the only one here a user would notice from outside. Worth doing whenever someone wants it; nothing depends on it.
-- **Oracle.** SQL Server shipped; Oracle is the half still designed, and a differentiator only Prisma and Drizzle also lack. It needs no R5 - its generated ids ride in the values array - and inherits `MergeSqlDialect`'s paging and upsert. [The design](oracle-mssql.md).
-- **Ranked retrieval.** A weighted sum of vector distances, some over a relation's top rows: `avg` over a capped page of each parent's nearest rows, plus a root distance, each with its weight. The nearest-row `$sort` already renders every piece through `RelationAggregateSpec`; what is missing is arithmetic over several of them, and a way to spell a query-time aggregate without re-opening the one below. One caller so far (a Postgres RAG search), so it waits for a second.
-- **An agent skill in the tarball.** `skills/uql/` shipped inside `uql-orm`, stamped with its version so it never describes another release, as Prisma 8 and Drizzle v1 do. Mostly docs; the upgrade guide's per-version notes are its upgrading branch.
+- **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.
+- **Ranked retrieval.** A weighted sum of several vector distances, some over a relation's nearest rows. Each piece renders today; the arithmetic across them waits for a second caller.
+- **JSR.** A `jsr.json` and a publish step, whenever someone asks.
 
 ## Where a composite key still refuses
 
-Each refuses by name rather than taking the first key column ([the design](https://uql-orm.dev/blog/composite-primary-keys)).
+Each by name, never by taking the first key column: saving a relation (one child column per page), MongoDB (a compound `_id` compares by field order), and the HTTP `/:id` route (one path segment).
 
-1. **Saving a relation** writes one child column for a whole page; several columns is a statement per parent.
-2. **MongoDB**: a compound `_id` is a sub-document whose field order decides equality.
-3. **The HTTP `/:id` route**: one path segment, and the adapters disagree about percent-decoding. `buildIdQuery` calls `soleIdOf` first, so a composite is refused before it can under-specify a row.
+## Settled, not to re-litigate
 
-TypeScript cannot accumulate `@Id` across properties, so the key is named in the class body or not at all: `@Id` refuses one the `idKey` brand and the conventional names both leave unnamed, and `assertIdValue` checks the value at run time.
-
-## Shipped, and not worth re-litigating
-
-`defineEntity({ extends })`, the functional form of the base a class cannot extend, in 0.59.0; one id shape for every write in 0.50.0, upserts included in 0.51.0; per-parent `$limit`/`$skip` on a populated relation in 0.47.0; `computed`/`stored` generated columns in 0.46.0; foreign keys on sync in 0.45.0; composite keys in 0.42.0 and migrations for them in 0.42.1; enums and check constraints in 0.41.1; `raw` as a tagged template in 0.40.0.
-
-- **An id is accepted as either spelling and reported as one.** `EntityId` is the union a by-id method takes, because a caller holding one column's value has to reach the same parameter as one holding a map. `WrittenId` picks a branch, because a write knows which it produced. Merging the two was measured and is worse: it refuses `findOneById(X, 'abc')` on any entity whose key the type level cannot name. `WrittenId` falls back to the union there for the same reason. A `$where` takes neither spelling: it is a map, and `whereIds` is where an id becomes one.
-- **The key is a list with nothing beside it.** TypeORM keeps `primaryColumns[0]`, MikroORM a `compositePK` flag; either lets a path address every row agreeing on one column of two. `assertSoleId` is the only way past `meta.ids`, and it throws.
-- **Keys and indexes are compared by their columns, never by name.** Matching on names would rewrite every table the first time a naming convention changed.
-- **A check is never diffed.** It is SQL text, and a database reprints it from its parse tree. Created with its table; changing one is a hand-written migration. The sync path was built and reverted.
-- **An enum is a column check, not a native type.** `CREATE TYPE` needs its own ordering and `ALTER TYPE ... ADD VALUE` is irreversible. The cost: checks are never diffed, so **adding a value emits nothing and the column keeps rejecting it**. No fix spans the matrix: the accepted values would have to ride in the column's comment for the differ to see them, and SQLite and SQL Server carry no comment at all (`commentSyntax: 'none'`).
-- **A generated key is spelled from its declared type.** It was a fixed string per dialect, so `@Id({ columnType: 'int' })` emitted `BIGINT` while the column referencing it emitted `INT`. One rule decides whether a key is generated, and both the schema and the insert path ask it.
-- **A relation's `$limit` is each parent's share, not a slice of one page.** [The design](relations-in-one-statement.md).
-- **A column shape is derived, never listed field by field.** `ColumnSchema` is `ColumnNode` minus the graph links, and each conversion spreads. Five hand-written copies each dropped a different option - `enum`, then `generatedAs`, then `comment` - and a column reached the database without what the entity declared.
-- **A relation aggregate is declared on the entity, never spelled in a query.** `$max: { posts: { createdAt: true } }` beside `$count` was designed and dropped: each op captures its own generic, and `C extends RelationKey<E>` already threads through 36 signatures, so four more would take every read overload from six type parameters to ten - charged to every consuming project, including the ones that never write one. A `computed` field answers the same question and is strictly more capable: `$where`, `$sort` and a property type exactly as wide as the value. Prisma 8's `include(..., (posts) => posts.combine({ ... }))` is the feature not taken. `$sort` names the two a declaration cannot hold: `$count`, and a vector's nearest row, whose vector is the query's own.
-- **A nullable column's property admits `null`, and only that.** The decorator asks for the `null` the column holds, never for the whole declared value: a family type - `jsonb`, whose document the property shapes, or `numeric`, either number kind - is meant to be narrowed, and demanding the whole of it broke every JSON field. A list's mutability is normalized for the same reason, so a `number[]` property still matches the `readonly number[]` a vector declares.
-- **An unstored `computed` is written out by every clause that names it.** `$sort` used the output alias, so ordering by one you had not selected failed on the server.
-- **Every field option states where it applies, in one table.** `FIELD_OPTION_FAMILY` pairs each option with its column family, `deadOn` with what makes it dead. A new option cannot be added without answering both. Only a contradiction is rejected, never a redundancy.
-- **No computed vector distance on D1 or MySQL.** Both store a vector as JSON, so a distance can be spelled over `json_each`/`JSON_TABLE`, and it was built for D1. Measured at 1536 dimensions, a row costs ~10 ms on SQLite (~76 ms joining the two vectors by key) and ~230 ms on MySQL 9 even with the query vector parsed once (~860 ms joining by position), so a thousand rows take ten seconds to four minutes. MongoDB's pipeline arithmetic, kept for relation ranking, costs ~0.35 ms. D1 refuses and points at Vectorize; MySQL at HeatWave.
-- **No fuzzy-match operator.** Edit distance (`levenshtein_less_equal`) is a Postgres extension with nothing to emulate on MySQL, SQLite or MongoDB; `raw` in `$where` is the answer.
-- **No `$max`/`$min` update operator.** The case asking for one clamps a subtraction and has a second column read the first (`GREATEST(0, allowance - amount)`), which neither covers; `raw` with `refs` writes it in one statement.
+- **An id is either spelling in, one spelling out.** A by-id method takes `EntityId`, the union; `WrittenId` is the branch a write produced. Merging them refuses `findOneById(X, 'abc')` wherever the key cannot be named.
+- **The key is a list, and `assertSoleId` is the only way past it.** A first-column shortcut would address every row that agrees on one column of two.
+- **Keys and indexes compare by columns, not names**, so a naming-convention change rewrites nothing.
+- **Checks are never diffed.** Engines reprint them from a parse tree; changing one is a written migration.
+- **An enum is a column check, not a native type.** So adding a value emits nothing: no engine-wide place holds the list for the differ to compare.
+- **A relation's `$limit` is each parent's share.** [The design](relations-in-one-statement.md).
+- **A column shape is derived, never copied field by field.** Five hand copies each lost a different option.
+- **A relation aggregate is declared, not spelled in a query.** A query-time `$max: { posts: ... }` would add a type parameter per op to all 36 read signatures; a `computed` field does more (`$where`, `$sort`, an exact type) at no such cost. `$sort` keeps the two a declaration cannot: `$count`, and a relation's nearest row to a vector.
+- **A nullable column's property admits `null`, and only that.** Family types (`jsonb`, `numeric`) stay narrowable.
+- **Every field option states where it applies**, in `FIELD_OPTION_FAMILY`; only contradictions are rejected.
+- **No computed vector distance on D1 or MySQL.** Both store vectors as JSON, and a distance over it measured 10 ms to 230 ms a row. D1 points at Vectorize, MySQL at HeatWave.
+- **No fuzzy-match or `$max`/`$min` update operator.** Neither has a portable form or a caller `raw` does not already serve.
