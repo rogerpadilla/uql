@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.73.1] - 2026-09-19
+
+- Fixed: `uql-orm/migrate` loads without `mongodb` installed.
+
 ## [0.73.0] - 2026-09-18
 
 - **Breaking (types):** `WithDistance` and `WithScore` are one type, `WithProjection<E, K>`, for the row any `$sort` `$project` names.
@@ -35,7 +39,7 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - Vectors on SQLite, libSQL, Turso and MariaDB are stored and searched as float32 bytes, much faster.
 - MongoDB migrations create the Atlas vector search index a `type: 'vectorSearch'` `@Index` declares.
 - `@Index({ type: 'fulltext' })` works on PostgreSQL and CockroachDB too, so one declaration serves `$text` everywhere; `config` names its text-search configuration.
-- `uql-orm` ships an agent skill: `npx skills add ./node_modules/uql-orm`.
+- `uql-orm` ships an agent skill: point your `AGENTS.md` at `node_modules/uql-orm/skills/uql-orm/SKILL.md` and it follows every upgrade.
 
 ## [0.70.0] - 2026-09-18
 

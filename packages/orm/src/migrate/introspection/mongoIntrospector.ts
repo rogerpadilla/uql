@@ -1,4 +1,4 @@
-import { textConfigOf } from '../../mongo/mongoDialect.js';
+import { textConfigOf } from '../../mongo/textLanguage.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
 import type { TableNode } from '../../schema/types.js';

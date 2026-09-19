@@ -1,5 +1,6 @@
 import { getMeta } from '../../entity/index.js';
-import { MongoDialect, textLanguage } from '../../mongo/mongoDialect.js';
+import { MongoDialect } from '../../mongo/mongoDialect.js';
+import { textLanguage } from '../../mongo/textLanguage.js';
 import type { ForeignKeyAction, IndexType, TableNode } from '../../schema/types.js';
 import {
   type CreateSchemaOptions,

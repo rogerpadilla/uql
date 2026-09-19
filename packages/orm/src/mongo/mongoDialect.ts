@@ -88,6 +88,7 @@ import {
   textSortOf,
 } from '../util/index.js';
 import { decodeBigIntsExcept } from '../util/wideNumber.js';
+import { textLanguage } from './textLanguage.js';
 
 /**
  * Operators MongoDB already expresses natively. `Pick`'s constraint ties this back to
@@ -129,19 +130,6 @@ type UpdateGroups = {
   readonly arithmetic: Document;
   readonly unset: ReadonlySet<string>;
 };
-
-/**
- * A text-search config as MongoDB names the language: the same word for each language both know, and
- * `'none'` for the no-stemming parser Postgres calls `'simple'`. {@link textConfigOf} reads one back.
- */
-export function textLanguage(config: string): string {
-  return config === 'simple' ? 'none' : config;
-}
-
-/** A MongoDB language as the text-search config it is, the inverse of {@link textLanguage}. */
-export function textConfigOf(language: string): string {
-  return language === 'none' ? 'simple' : language;
-}
 
 /** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {

@@ -2,3 +2,4 @@ export { MongoSchemaGenerator } from '../migrate/generator/mongoSchemaGenerator.
 export * from './mongoDialect.js';
 export * from './mongodbQuerier.js';
 export * from './mongodbQuerierPool.js';
+export * from './textLanguage.js';

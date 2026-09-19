@@ -1,6 +1,6 @@
 # Agent instructions
 
-Repo-specific rules, read by Cursor directly and by Claude through `CLAUDE.md`. General coding preferences belong in your tool's user config, not here.
+Repo-specific rules, read directly by Claude Code, Cursor and other agents. General coding preferences belong in your tool's user config, not here.
 
 ## Conventions
 

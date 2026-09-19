@@ -1,7 +1,7 @@
 /**
  * Pre-publish gate: every path `package.json` promises exists and is non-empty, every browser-facing
  * entry graph is free of Node builtins, every entry point's declarations resolve in a project that has
- * no ambient types, and no entry exceeds its size budget.
+ * no ambient types and its driverless entries load there, and no entry exceeds its size budget.
  *
  * Runs at the end of `bun run build` and again from `prepack`, so a stale or broken `dist/` cannot be
  * published. See CHANGELOG's "uql-orm@0.10.0 shipped only the browser bundle", "uql-orm@0.13.0
@@ -9,7 +9,7 @@
  * incidents behind it.
  */
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { builtinModules } from 'node:module';
 import { tmpdir } from 'node:os';
@@ -166,7 +166,8 @@ async function checkSizeBudgets(): Promise<void> {
  * `dist` is copied to a directory of its own because `types: []` alone is not enough here: every driver
  * is a dev dependency of this repo, and `mongodb`'s or `better-sqlite3`'s declarations pull `@types/node`
  * into the program, which puts `Buffer` back in scope and hides the very thing being looked for. What has
- * to hold is the case of a consumer who installed `uql-orm` and no driver.
+ * to hold is the case of a consumer who installed `uql-orm` and no driver, which is also where
+ * {@link checkDriverlessEntries} loads them.
  */
 function checkDeclarationsStandalone(): void {
   const { checkDir, installed } = writeConsumerProject();
@@ -190,14 +191,55 @@ function checkDeclarationsStandalone(): void {
           'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
       );
     }
+    checkDriverlessEntries(checkDir);
   } finally {
     rmSync(checkDir, { recursive: true, force: true });
   }
 }
 
+const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
+
+/** Entries a consumer imports whatever driver they installed, or none. */
+const DRIVERLESS_ENTRIES = [
+  '.',
+  './dialect',
+  './entity',
+  './querier',
+  './type',
+  './util',
+  './namingStrategy',
+  './migrate',
+  './http',
+  './browser',
+];
+
+/**
+ * Each driverless entry, imported by Node where no optional peer is installed: `uql-orm@0.72.2` failed
+ * `import 'uql-orm/migrate'` with "Cannot find package 'mongodb'", reached through the MongoDB introspector.
+ */
+function checkDriverlessEntries(checkDir: string): void {
+  const unloadable = DRIVERLESS_ENTRIES.flatMap((entry) => {
+    const { status, stderr } = spawnSync(
+      'node',
+      ['--input-type=module', '-e', `await import('${specifierOf(entry)}')`],
+      {
+        cwd: checkDir,
+        encoding: 'utf8',
+      },
+    );
+    return status === 0 ? [] : [`${entry}: ${/^\w*Error.*$/m.exec(stderr)?.[0] ?? stderr.trim()}`];
+  });
+  if (unloadable.length) {
+    refuse(
+      'a driverless entrypoint needs an optional peer to load',
+      unloadable,
+      'Import driver code on use (`await import(...)`), or move what the entry needs out of the driver module.',
+    );
+  }
+}
+
 /** The temp project the check runs in: `dist` installed as the only package, one entry file per export. */
 function writeConsumerProject(): { checkDir: string; installed: string } {
-  const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
   const checkDir = mkdtempSync(join(tmpdir(), 'uql-dts-'));
   const installed = join(checkDir, 'node_modules', pkg.name);
 
@@ -326,5 +368,6 @@ settle();
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
     `${entries.length} entry points' types resolve with \`types: []\`; ` +
+    `${DRIVERLESS_ENTRIES.length} driverless entries load with no driver; ` +
     `${Object.keys(BUDGETS).length} entry budgets within limits)`,
 );
