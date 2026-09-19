@@ -918,7 +918,10 @@ export type IndexOptions = Except<EntityIndexMeta, 'columns' | 'where'> & {
  */
 export type EntityIndexOptions<E> = Except<IndexOptions, 'include' | 'where'> & {
   readonly include?: (refs: RefMap<E>) => readonly ColumnRef<FieldKey<E>>[];
-  /** Partial-index predicate. See {@link EntityWhere}. */
+  /**
+   * Partial-index predicate, written as the predicate the query passes: a planner matches the two by
+   * shape, so a hand-written `raw` that means the same thing leaves the index unused. See {@link EntityWhere}.
+   */
   readonly where?: EntityWhere<E>;
 };
 

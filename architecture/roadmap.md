@@ -58,7 +58,7 @@ Each by name, never by taking the first key column: saving a relation (one child
 - **An id is either spelling in, one spelling out.** A by-id method takes `EntityId`, the union; `WrittenId` is the branch a write produced. Merging them refuses `findOneById(X, 'abc')` wherever the key cannot be named.
 - **The key is a list, and `assertSoleId` is the only way past it.** A first-column shortcut would address every row that agrees on one column of two.
 - **Keys and indexes compare by columns, not names**, so a naming-convention change rewrites nothing.
-- **Checks are never diffed.** Engines reprint them from a parse tree; changing one is a written migration.
+- **Checks are never diffed, and neither is a partial index's predicate.** Engines reprint both from a parse tree; changing one is a written migration. So a predicate that drifts from the entity's is invisible, and a hand-written one that means the same thing but reads differently leaves the index unused: write an index's `where` as the predicate the query passes, never as `raw`.
 - **An enum is a column check, not a native type.** So adding a value emits nothing: no engine-wide place holds the list for the differ to compare.
 - **A relation's `$limit` is each parent's share.** [The design](relations-in-one-statement.md).
 - **A column shape is derived, never copied field by field.** Five hand copies each lost a different option.
