@@ -73,6 +73,6 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 
 ## ⭐ Like what we're doing? Give us a star
 
-It is how other people find the project.
+It will help other people find the project.
 
 [![Star UQL on GitHub](https://img.shields.io/github/stars/rogerpadilla/uql?style=flat&label=stars&color=3282b5)](https://github.com/rogerpadilla/uql)
