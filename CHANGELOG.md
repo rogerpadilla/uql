@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.77.0] - 2026-09-19
+
+- **Breaking:** a versioned update is named by its id, so `updateMany` over a filter matching many rows is refused: one version cannot say which row it belongs to.
+- `restoreMany` works on a versioned entity, carrying no version, as a delete already did: both move the row's lifecycle rather than its content.
+- A versioned update that matched nothing says which of three happened: the row is gone, its version moved on, or another `$where` condition excluded it.
+- A write that cannot carry the lock answers `400` over HTTP instead of `500`: a payload with no version, or `save` and `upsert` on a versioned entity.
+
 ## [0.76.0] - 2026-09-19
 
 - `@Field({ version: true })` makes a column an optimistic lock, on every engine: an update carries the version it read and writes the next, and throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409) when the row has moved on instead of overwriting it. Leaving the version out of an update is a compile error; `save`, `upsert` and `restoreMany` are refused on such an entity.

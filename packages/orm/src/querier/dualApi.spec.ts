@@ -294,23 +294,23 @@ describe('Dual API Pattern: $entity field support', () => {
 
   describe('restore', () => {
     it('should restore by setting the soft-delete field to null, with its filter off', async () => {
-      const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
+      const updateSpy = vi.spyOn(querier, 'internalUpdateMany').mockResolvedValue(1);
       await querier.restoreMany(MeasureUnitCategory, { $where: { id: '1' } });
       expect(updateSpy).toHaveBeenCalledWith(
         MeasureUnitCategory,
         expect.objectContaining({ $where: expect.objectContaining({ id: '1', deletedAt: { $ne: null } }) }),
-        { deletedAt: null },
+        expect.objectContaining({ deletedAt: null }),
         { filters: { softDelete: false } },
       );
     });
 
     it('should restore one row through restoreMany', async () => {
-      const updateSpy = vi.spyOn(querier, 'updateMany').mockResolvedValue(1);
+      const updateSpy = vi.spyOn(querier, 'internalUpdateMany').mockResolvedValue(1);
       await querier.restoreOneById(MeasureUnitCategory, '7');
       expect(updateSpy).toHaveBeenCalledWith(
         MeasureUnitCategory,
         expect.objectContaining({ $where: expect.objectContaining({ id: '7', deletedAt: { $ne: null } }) }),
-        { deletedAt: null },
+        expect.objectContaining({ deletedAt: null }),
         { filters: { softDelete: false } },
       );
     });

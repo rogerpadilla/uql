@@ -82,9 +82,7 @@ export class Post {
 - `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, makes the column an
   optimistic lock: every update payload must carry the version it read (a compile error otherwise), the update
   matches on it and writes the next one, and a write against a row someone else moved on throws
-  `UqlOptimisticLockError` (`status` 409) instead of overwriting it. Save, upsert and `restoreMany` are refused on such
-  an entity (restore with `updateOneById`, `{ filters: { softDelete: false } }`); `updateMany` writes only the rows
-  still at the version it carries, and delete needs none.
+  `UqlOptimisticLockError` (`status` 409) instead of overwriting it. Save and upsert are refused on such an entity; the update is named by its id, so `updateMany` over a many-row filter is refused too, and delete and restore carry no version.
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries

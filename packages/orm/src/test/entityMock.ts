@@ -157,6 +157,21 @@ export class VersionedNote {
   deletedAt?: number | null;
 }
 
+/** The lock on a wide counter: a `BigInt` version exercises each driver's own BIGINT decoding. */
+@Entity()
+export class WideVersionedNote {
+  [versionKey]?: 'version';
+
+  @Id({ type: 'uuid', onInsert: uuidv7 })
+  id?: string;
+
+  @Field({ type: String })
+  title?: string | null;
+
+  @Field({ type: BigInt, version: true })
+  version?: bigint;
+}
+
 @Entity()
 export class LedgerAccount extends BaseEntity {
   @Field({ type: String })

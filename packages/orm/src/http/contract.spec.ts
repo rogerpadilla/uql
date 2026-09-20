@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UqlOptimisticLockError } from '../querier/queryError.js';
+import { UqlLockUsageError, UqlOptimisticLockError } from '../querier/queryError.js';
 import { User } from '../test/index.js';
 import { entityPath, matchRoute, toErrorResponse } from './contract.js';
 
@@ -83,6 +83,7 @@ describe('toErrorResponse', () => {
     ],
     ['a foreign key violation', new Error('FOREIGN KEY constraint failed'), 409, 'Conflict'],
     ['a stale version', new UqlOptimisticLockError('moved on', 3, 4), 409, 'moved on'],
+    ['a payload with no version', new UqlLockUsageError('carries no version'), 400, 'carries no version'],
     [
       'a not-null violation',
       Object.assign(new Error("Column 'name' cannot be null"), { errno: 1048 }),

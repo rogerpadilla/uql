@@ -39,6 +39,17 @@ export class UqlOptimisticLockError extends Error {
   }
 }
 
+/**
+ * Thrown where a write cannot carry the optimistic lock: an update payload without its version, or a
+ * method with no version to match. A `TypeError` still, since the caller used the API wrong, but one
+ * carrying the `status` an HTTP transport answers with - the request is malformed, not the server's
+ * failure, and an untyped client is exactly who reaches this.
+ */
+export class UqlLockUsageError extends TypeError {
+  override name = 'UqlLockUsageError';
+  readonly status = 400;
+}
+
 /** The fields a driver reports its code on, each read as `unknown` since any driver may fill any one. */
 type DriverErrorFields = {
   readonly code?: unknown;

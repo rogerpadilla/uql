@@ -66,7 +66,7 @@ import {
   whereIds,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
-import { enrichError, UqlOptimisticLockError } from './queryError.js';
+import { enrichError, UqlLockUsageError, UqlOptimisticLockError } from './queryError.js';
 
 /**
  * Refuses a nullish id, which would reduce to no filter at all, and a composite id missing a column,
@@ -113,24 +113,26 @@ function assertNamesRows<E>(entity: Type<E>, method: string, q: QuerySearch<E> |
 }
 
 /**
- * An optimistic lock as one update applies it: the value the payload carried, out of the payload and
- * into the filter, and the next one back in its place. The bump is a plain value rather than SQL
- * arithmetic, since the filter pins what the column holds, which spares every engine a read-back.
+ * An optimistic lock as one update applies it: the version the payload carried, the one that replaces
+ * it, and the filter pinning what the column still holds. The bump is a plain value rather than SQL
+ * arithmetic, since that filter already pins it, which spares every engine a read-back.
  */
 function lockVersion<E extends object>(
   meta: EntityMeta<E>,
   key: FieldKey<E>,
   q: QuerySearch<E>,
   row: UpdatePayload<E>,
-): { readonly expected: unknown; readonly q: QuerySearch<E> } {
+): { readonly expected: number | bigint; readonly next: number | bigint; readonly q: QuerySearch<E> } {
   const expected = row[key];
-  if (expected === undefined || expected === null) {
-    throw new TypeError(
+  if (typeof expected !== 'number' && typeof expected !== 'bigint') {
+    throw new UqlLockUsageError(
       `an update of '${entityName(meta)}' carries no '${key}': a versioned row is written against the version it was read at`,
     );
   }
-  row[key] = (typeof expected === 'bigint' ? expected + 1n : Number(expected) + 1) as E[FieldKey<E>];
-  return { expected, q: { ...q, $where: { $and: [q.$where ?? {}, { [key]: expected }] } as QueryWhere<E> } };
+  const next = typeof expected === 'bigint' ? expected + 1n : expected + 1;
+  // Spread, as every other added predicate here is: one flat `AND`, and a caller already filtering on
+  // the version contradicts itself into matching nothing, which is what they asked for.
+  return { expected, next, q: { ...q, $where: { ...q.$where, [key]: expected } as QueryWhere<E> } };
 }
 
 /**
@@ -138,10 +140,26 @@ function lockVersion<E extends object>(
  * An upsert has no portable way to match a version - MySQL's `ON DUPLICATE KEY UPDATE` takes no
  * `WHERE` - and a write the library itself composes has no version to carry.
  */
-function assertUnversioned<E extends object>(meta: EntityMeta<E>, method: string): void {
+function assertUnversioned<E extends object>(meta: EntityMeta<E>, what: string): void {
   if (meta.version) {
-    throw new TypeError(
-      `cannot '${method}' the versioned '${entityName(meta)}': it carries no '${meta.version}' to match, so update it by id`,
+    throw new UqlLockUsageError(
+      `cannot ${what} the versioned '${entityName(meta)}': it carries no '${meta.version}' to match, so update it by id`,
+    );
+  }
+}
+
+/**
+ * What a versioned update has to be for its lock to hold: one row, named by its id, written by one
+ * statement. A filter naming more than one row cannot say which of them the payload's single version
+ * belongs to, and anything settled first - a page, a relation write, a filter an engine cannot read in
+ * an `UPDATE` - reads the ids and writes them separately, putting the race back in the gap between.
+ */
+function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySearch<E>, settles: boolean): void {
+  const where = q.$where as Record<string, unknown> | undefined;
+  const namesOneRow = meta.ids.every((key) => where?.[key] !== undefined && isScalarId(where[key]));
+  if (!namesOneRow || settles) {
+    throw new UqlLockUsageError(
+      `cannot update '${entityName(meta)}' this way: a versioned row is matched and written in one statement, so it is named by its ${meta.ids.map((id) => `'${id}'`).join(', ')}, takes no '$sort', '$limit' or '$skip', writes no relation, and filters by none`,
     );
   }
 }
@@ -540,63 +558,77 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number> {
     assertNamesRows(entity, 'updateMany', q, opts);
-    const meta = getMeta(entity);
-    return this.hooked(entity, 'Update', [payload], async ([row]) => {
-      fillOnFields(meta, [row], 'onUpdate');
-      const { version } = meta;
-      const lock = version && lockVersion(meta, version, q, row);
-      const relKeys = filterPersistableRelationKeys(meta, row, 'persist');
-      if (!relKeys.length && !this.settlesWrite(entity, q)) {
-        const changes = await this.updateColumns(entity, lock ? lock.q : q, row, opts, 0);
-        return lock && !changes ? this.throwStaleVersion(entity, version, q, lock.expected, opts) : changes;
-      }
-      if (lock) {
-        // Everything below reads the ids first and writes them in a second statement, which puts the
-        // race back in the gap between the two - the very thing the version is here to close.
-        // `settlesWrite` covers the paged forms, so `$sort`, `$limit` and `$skip` land here as well.
-        throw new TypeError(
-          `cannot update '${entityName(meta)}' this way: a versioned row is matched and written in one statement, so it takes no '$sort', '$limit' or '$skip', writes no relation, and filters by none`,
-        );
-      }
-      const ids = await this.settleIds(entity, q, opts);
-      if (!ids.length) {
-        return 0;
-      }
-      const changes = await this.updateColumns(entity, { $where: whereIds(meta, ids) }, row, opts, ids.length);
-      for (const relKey of relKeys) {
-        await this.saveRelation(
-          entity,
-          relKey,
-          ids.map((id) => ({ id, value: row[relKey] })),
-          true,
-        );
-      }
-      return changes;
-    });
+    return this.hooked(entity, 'Update', [payload], ([row]) =>
+      this.updateRows(entity, q, row, opts, getMeta(entity).version),
+    );
   }
 
   /**
-   * Why an update matched no row: another writer moved the version on, or the row is gone. One read
-   * without the version predicate answers it, and it runs only on the failure, so the happy path
+   * The write every update runs, matching the version `lockKey` names where one is being held. Only a
+   * restore passes none: it writes no content, so there is no update of anyone's to lose.
+   */
+  private async updateRows<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    row: UpdatePayload<E>,
+    opts: QueryOptions | undefined,
+    lockKey: FieldKey<E> | undefined,
+  ): Promise<number> {
+    const meta = getMeta(entity);
+    fillOnFields(meta, [row], 'onUpdate');
+    const relKeys = filterPersistableRelationKeys(meta, row, 'persist');
+    const settles = !!relKeys.length || this.settlesWrite(entity, q);
+    if (lockKey) {
+      assertLockableUpdate(meta, q, settles);
+      const lock = lockVersion(meta, lockKey, q, row);
+      row[lockKey] = lock.next as E[FieldKey<E>];
+      const changes = await this.updateColumns(entity, lock.q, row, opts, 0);
+      return changes || this.throwStaleVersion(entity, lockKey, q, lock.expected, opts);
+    }
+    if (!settles) {
+      return this.updateColumns(entity, q, row, opts, 0);
+    }
+    const ids = await this.settleIds(entity, q, opts);
+    if (!ids.length) {
+      return 0;
+    }
+    const changes = await this.updateColumns(entity, { $where: whereIds(meta, ids) }, row, opts, ids.length);
+    for (const relKey of relKeys) {
+      await this.saveRelation(
+        entity,
+        relKey,
+        ids.map((id) => ({ id, value: row[relKey] })),
+        true,
+      );
+    }
+    return changes;
+  }
+
+  /**
+   * Why an update matched no row. The filter named the row by its id, so reading by that id alone
+   * separates the three: the row is gone, another writer moved the version on, or the rest of the
+   * filter excluded a row still at that version. One read, only on the failure, so the happy path
    * still costs one statement. Best effort by nature - the row can change again while we ask.
    */
   private async throwStaleVersion<E extends object>(
     entity: Type<E>,
     key: FieldKey<E>,
     q: QuerySearch<E>,
-    expected: unknown,
+    expected: number | bigint,
     opts?: QueryOptions,
   ): Promise<never> {
     const meta = getMeta(entity);
-    const row = await this.findOne(entity, { $select: { [key]: true }, $where: q.$where } as Query<E>, opts);
+    const where = q.$where as Record<string, unknown>;
+    const byId = Object.fromEntries(meta.ids.map((id) => [id, where[id]])) as QueryWhere<E>;
+    const row = await this.findOne(entity, { $select: { [key]: true }, $where: byId } as Query<E>, opts);
     const actual = row?.[key];
-    throw new UqlOptimisticLockError(
+    const message =
       actual === undefined
-        ? `no row of '${entityName(meta)}' matched the update: it is gone, or the filter names none`
-        : `'${entityName(meta)}' moved on: the payload carries '${key}' ${String(expected)}, the row is at ${String(actual)}`,
-      expected,
-      actual,
-    );
+        ? `no row of '${entityName(meta)}' has that id any more: it is gone`
+        : actual === expected
+          ? `'${entityName(meta)}' is still at '${key}' ${String(actual)}: another condition of the update's '$where' excluded it`
+          : `'${entityName(meta)}' moved on: the payload carries '${key}' ${String(expected)}, the row is at ${String(actual)}`;
+    throw new UqlOptimisticLockError(message, expected, actual);
   }
 
   /** The UPDATE, skipped where the payload writes no column, reporting `unwritten` instead. */
@@ -649,11 +681,12 @@ export abstract class AbstractQuerier implements Querier {
     if (!meta.softDelete) {
       throw new TypeError(`'${entity.name}' has not enabled 'softDelete'`);
     }
-    assertUnversioned(meta, 'restoreMany');
     const $where = { ...q.$where, [meta.softDelete]: { $ne: null } } as QueryWhere<E>;
-    return this.updateMany(entity, { ...q, $where }, { [meta.softDelete]: null } as UpdateWrite<E>, {
-      filters: { softDelete: false },
-    });
+    // No version: a restore only undoes the stamp a delete left, which takes none either, and two of
+    // them racing agree on the result anyway. A lock is for content, and a restore writes none.
+    return this.hooked(entity, 'Update', [{ [meta.softDelete]: null } as UpdateWrite<E>], ([row]) =>
+      this.updateRows(entity, { ...q, $where }, row, { filters: { softDelete: false } }, undefined),
+    );
   }
 
   /** Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither the insert's nor the update's pair fits. */
@@ -663,7 +696,7 @@ export abstract class AbstractQuerier implements Querier {
     payload: EntityWrite<E>,
   ): Promise<QueryUpsertOneResult<E>> {
     const meta = getMeta(entity);
-    assertUnversioned(meta, 'upsertOne');
+    assertUnversioned(meta, "'upsertOne'");
     return this.hooked(entity, 'Upsert', [payload], async (rows) => {
       const { ids, changes, created } = await this.internalUpsertOne(entity, conflictPaths, rows[0]);
       adoptReportedIds(meta, rows, ids);
@@ -678,7 +711,7 @@ export abstract class AbstractQuerier implements Querier {
     payload: EntityWrite<E>[],
   ): Promise<QueryUpsertManyResult<E>> {
     const meta = getMeta(entity);
-    assertUnversioned(meta, 'upsertMany');
+    assertUnversioned(meta, "'upsertMany'");
     return this.hooked(entity, 'Upsert', payload, async (rows) => {
       const { ids, changes } = await this.internalUpsertMany(entity, conflictPaths, rows);
       adoptReportedIds(meta, rows, ids);
@@ -745,8 +778,6 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number>;
 
   async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined> {
-    // Named here as well as in `saveMany`, so the refusal names the method the caller reached for.
-    assertUnversioned(getMeta(entity), 'saveOne');
     const [id] = await this.saveMany(entity, [payload]);
     return id;
   }
@@ -758,7 +789,7 @@ export abstract class AbstractQuerier implements Querier {
    */
   async saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
-    assertUnversioned(meta, 'saveMany');
+    assertUnversioned(meta, "'save'");
     // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
     // passed, which concatenating the branches did not do.
     const toInsert: number[] = [];
