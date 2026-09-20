@@ -89,6 +89,7 @@ import {
   textSortOf,
   vectorDistanceOf,
 } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { decodeBigIntsExcept } from '../util/wideNumber.js';
 import { textLanguage } from './textLanguage.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
@@ -165,6 +166,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   supportsUnsigned: false,
   serverSideCursors: false,
   correlatedWrites: false,
+  rowLocks: false, // its concurrency control is the transaction plus atomic document updates
 };
 
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
@@ -261,7 +263,7 @@ export class MongoDialect extends AbstractDialect {
       } else if (meta.relations[key]) {
         this.assertNoRaw(val);
         if (!lookups) {
-          throw new TypeError(`filtering by relation '${key}' is not supported here on MongoDB`);
+          throw new UqlUsageError(`filtering by relation '${key}' is not supported here on MongoDB`);
         }
         this.appendRelationLookup(filter, meta, key, val, lookups);
       } else {
@@ -269,7 +271,7 @@ export class MongoDialect extends AbstractDialect {
         this.assertKnownPathRoot(meta, key);
         if (aggregateOf(meta.fields[key])) {
           if (!lookups) {
-            throw new TypeError(`filtering by relation aggregate '${key}' is not supported here on MongoDB`);
+            throw new UqlUsageError(`filtering by relation aggregate '${key}' is not supported here on MongoDB`);
           }
           this.appendAggregateField(meta, key, lookups);
         }
@@ -457,7 +459,7 @@ export class MongoDialect extends AbstractDialect {
           : [{ [op]: [count, bound] }],
       );
     if (!comparisons.length) {
-      throw new TypeError('$size needs at least one comparison');
+      throw new UqlUsageError('$size needs at least one comparison');
     }
     return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
   }
@@ -468,21 +470,10 @@ export class MongoDialect extends AbstractDialect {
     return at(exclude) === true || at(select) === false;
   }
 
-  /**
-   * MongoDB has no row-level lock to map `$lock` onto: its concurrency control is the transaction
-   * plus atomic document updates. Rejected rather than ignored, like `raw()` below, since a dropped
-   * lock silently removes the mutual exclusion the caller asked for.
-   */
-  assertNoLock<E>(q: Query<E>): void {
-    if (q.$lock) {
-      throw new TypeError('$lock (row-level locking) is not supported on MongoDB');
-    }
-  }
-
   /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
   private assertNoRaw<T>(value: T): asserts value is Exclude<T, QueryRaw> {
     if (value instanceof QueryRaw) {
-      throw new TypeError('raw() in $where is not supported on MongoDB');
+      throw new UqlUsageError('raw() in $where is not supported on MongoDB');
     }
   }
 
@@ -496,7 +487,7 @@ export class MongoDialect extends AbstractDialect {
     if (root === MongoDialect.ID_KEY || meta.fields[root]) {
       return;
     }
-    throw new TypeError(`path ${key} does not exist in ${entityName(meta)}`);
+    throw new UqlUsageError(`path ${key} does not exist in ${entityName(meta)}`);
   }
 
   /** String operators -> { pattern: (v) => regex, caseInsensitive } */
@@ -576,7 +567,7 @@ export class MongoDialect extends AbstractDialect {
         case '$near':
           // Atlas offers only a similarity threshold, on the index's own scale, which UQL neither emits nor
           // reads: converting a distance would mean guessing the metric, so this refuses.
-          throw new TypeError(
+          throw new UqlUsageError(
             '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
               "Project the score with $sort's $project and filter on it instead.",
           );
@@ -635,7 +626,7 @@ export class MongoDialect extends AbstractDialect {
       return {};
     }
     if (Array.isArray(select)) {
-      throw new TypeError('raw $select is not supported on MongoDB');
+      throw new UqlUsageError('raw $select is not supported on MongoDB');
     }
     const selectMap = asSelectMap(select);
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
@@ -721,7 +712,7 @@ export class MongoDialect extends AbstractDialect {
       const relation = meta.relations[key];
       if (key === '$text') {
         if (path) {
-          throw new TypeError(
+          throw new UqlUsageError(
             `$sort by $text is only supported on the queried entity, not on relation '${path.slice(0, -1)}'`,
           );
         }
@@ -734,7 +725,7 @@ export class MongoDialect extends AbstractDialect {
         // so one reaching it is a second. `sortDirection` would read the operator object as "ascending"
         // and order by the raw vector column instead, a silent answer where the caller asked for a rank.
         if (isVectorSearch(value)) {
-          throw new TypeError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
+          throw new UqlUsageError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
         }
         const docPath = path + this.pathOf(meta, key);
         const nulls = sortNulls(value);
@@ -756,7 +747,7 @@ export class MongoDialect extends AbstractDialect {
         // own pipeline has: a nested one is built inside its parent's `$lookup`, where there is no
         // parent document left to hang it off.
         if (path) {
-          throw new TypeError(
+          throw new UqlUsageError(
             `$sort by '${relPath}.${spec.field ?? '$count'}' is only supported on the queried entity`,
           );
         }
@@ -1055,12 +1046,12 @@ export class MongoDialect extends AbstractDialect {
     // that reads a lookup those columns do not carry. Refused rather than answered all-equal, and in
     // the same terms the SQL dialects refuse `SELECT DISTINCT` ordered by an unselected column.
     if (q.$distinct && aggregated.fields.length) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `cannot $sort by a relation's aggregate with $distinct: the grouping keeps only the columns it projects`,
       );
     }
     if (q.$distinct && sortOnly.length) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `cannot $sort by relation '${sortOnly[0]}' with $distinct unless '${sortOnly[0]}' is populated: the grouping keeps only the columns it projects`,
       );
     }
@@ -1510,7 +1501,7 @@ export class MongoDialect extends AbstractDialect {
     named: string[];
   } {
     if (!groupEntries.length) {
-      throw new TypeError('aggregate requires at least one $group column or $select function');
+      throw new UqlUsageError('aggregate requires at least one $group column or $select function');
     }
     const groupId: Record<string, string> = {};
     const accumulators: Record<string, Record<string, unknown>> = {};
@@ -1576,7 +1567,7 @@ export class MongoDialect extends AbstractDialect {
       return this.columnOf(meta, key);
     }
     if (aggregateOf(join.meta.fields[key])) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `cannot $group by '${path.join('.')}' on MongoDB: a joined row's relation aggregate is not read`,
       );
     }
@@ -1596,14 +1587,14 @@ export class MongoDialect extends AbstractDialect {
           const { join, negate } = MongoDialect.GROUP_OPS[key];
           const clauses = MongoDialect.groupClauses(key, where[key]).map((clause) => {
             if (clause instanceof QueryRaw) {
-              throw new TypeError('raw SQL is not supported in an aggregate $where on MongoDB');
+              throw new UqlUsageError('raw SQL is not supported in an aggregate $where on MongoDB');
             }
             return this.whereExpression(meta, clause, named);
           });
           return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
         }
         if (key.startsWith('$')) {
-          throw new TypeError(`aggregate $where operator '${key}' is not supported on MongoDB`);
+          throw new UqlUsageError(`aggregate $where operator '${key}' is not supported on MongoDB`);
         }
         const val: unknown = where[key];
         named.push(key);
@@ -1648,7 +1639,7 @@ export class MongoDialect extends AbstractDialect {
         case '$isNotNull':
           return operand ? present : MongoDialect.isNullExpr(ref);
         default:
-          throw new TypeError(`aggregate $where operator '${op}' is not supported on MongoDB`);
+          throw new UqlUsageError(`aggregate $where operator '${op}' is not supported on MongoDB`);
       }
     });
     return terms.length === 1 ? terms[0] : { $and: terms };
@@ -1713,14 +1704,14 @@ export class MongoDialect extends AbstractDialect {
     const meta = getMeta(entity);
     const field = meta.fields[key];
     if (!field) {
-      throw new TypeError(`Field '${key}' not found in entity '${meta.name}'`);
+      throw new UqlUsageError(`Field '${key}' not found in entity '${meta.name}'`);
     }
     const colName = this.resolveColumnName(key, field);
 
     const indexName = this.vectorSearchIndexName(findVectorIndex(meta, key)?.name, colName);
 
     if (!limit) {
-      throw new TypeError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);
+      throw new UqlUsageError(`$vectorSearch requires $limit (vector sort on '${key}' of '${meta.name}')`);
     }
 
     const stage: Record<string, unknown> = {

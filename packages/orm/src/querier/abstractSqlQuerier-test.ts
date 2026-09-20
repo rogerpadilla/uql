@@ -39,7 +39,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   declare protected pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>;
 
   requirements(): SpecRequirements<this> {
-    const { rowLocks } = this.pool.dialect.features;
+    const rowLocks = !!this.pool.dialect.features.rowLocks;
     // A held lock is only visible to another connection, which a shared-handle pool has not got.
     const connections = !(this.pool instanceof AbstractSharedHandleQuerierPool);
     // Every engine with vector functions ranks through a relation; MySQL has none outside HeatWave.
@@ -49,6 +49,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       shouldRankByTheNearestTargetOfAManyToMany: vectors,
       shouldRankByAToOneWithoutPopulatingIt: vectors,
       shouldRejectLockOutsideTransaction: rowLocks,
+      shouldRejectLockOutsideTransactionOnAStream: rowLocks,
       shouldRejectALockTheEngineLacks: !rowLocks,
       shouldFindManyAndCountUnderALock: rowLocks,
       shouldSkipOrRefuseLockedRows: rowLocks && connections,
@@ -58,6 +59,11 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
   async shouldRejectLockOutsideTransaction() {
     await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow('requires an open transaction');
+  }
+
+  /** A stream is a read like any other, so the same rule reaches it rather than only `findMany`. */
+  async shouldRejectLockOutsideTransactionOnAStream() {
+    expect(() => this.querier.findManyStream(LedgerAccount, { $lock: true })).toThrow('requires an open transaction');
   }
 
   async shouldRejectALockTheEngineLacks() {

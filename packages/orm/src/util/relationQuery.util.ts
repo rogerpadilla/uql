@@ -15,6 +15,7 @@ import {
   QUERY_STATEMENT_CLAUSES,
 } from '../type/query.js';
 import { getKeys, isRecord, someKey } from './object.util.js';
+import { UqlUsageError } from './uqlError.js';
 
 export type RelationRequestSummary<E> = {
   readonly requestedKeys: readonly RelationKey<E>[];
@@ -106,7 +107,9 @@ function assertJoinableRelationQuery(relKey: string, value: unknown): void {
   }
   for (const [key, reason] of JOINED_RELATION_REJECTED_KEYS) {
     if (key in value) {
-      throw new TypeError(`'${key}' is not supported inside $populate of the to-one relation '${relKey}': ${reason}.`);
+      throw new UqlUsageError(
+        `'${key}' is not supported inside $populate of the to-one relation '${relKey}': ${reason}.`,
+      );
     }
   }
 }
@@ -199,7 +202,7 @@ export function parseRelationQueryValue<E extends object = object>(value: unknow
   if (isRecord(value)) {
     const statementOnly = QUERY_STATEMENT_CLAUSES.find((clause) => clause in value);
     if (statementOnly) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `'${statementOnly}' applies to the whole statement, not to a populated relation. Move it to the top level of the query.`,
       );
     }
@@ -215,7 +218,7 @@ export function parseRelationQueryValue<E extends object = object>(value: unknow
     return { query: { $select: selectMap }, required: false, nested: false };
   }
   if (value !== undefined && value !== null && value !== true && value !== 1) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `Invalid relation query value '${String(value)}'. Expected true/1, relation query object, or relation $populate array.`,
     );
   }

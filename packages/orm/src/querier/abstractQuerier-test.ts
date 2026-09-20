@@ -23,7 +23,8 @@ import {
 } from '../test/index.js';
 import type { Querier, QuerierPool, QuerySearch, QueryWhere } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
-import { queryErrorKind, UqlOptimisticLockError } from './queryError.js';
+import { UqlOptimisticLockError } from '../util/uqlError.js';
+import { queryErrorKind } from './queryError.js';
 
 const thrownValue = (thrown: unknown) => thrown;
 
@@ -2681,6 +2682,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.updateMany(User, {}, { name: 'x' })).rejects.toThrow(
       "'updateMany' over 'User' names no rows",
     );
+
+    // The caller's mistake, so a `usage` a transport answers with a 400 rather than a 500.
+    const refused = await this.querier.deleteMany(User, {}).catch(thrownValue);
+    expect(queryErrorKind(refused)).toBe('usage');
 
     // Still there: the refusal happens before any statement runs.
     await expect(this.querier.count(User)).resolves.toBe(2);

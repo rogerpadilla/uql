@@ -296,15 +296,16 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   }
 
   requirements(): SpecRequirements<this> {
-    const { rowLocks, rowLockOf } = this.dialect.features;
+    const { rowLocks } = this.dialect.features;
+    const locks = !!rowLocks;
     return {
-      shouldFindWithLock: rowLocks,
-      shouldFindWithLockSkipLocked: rowLocks,
-      shouldFindWithLockNoWait: rowLocks,
-      shouldPlaceLockAfterLimitAndOffset: rowLocks,
-      shouldRejectALockTheEngineLacks: !rowLocks,
-      shouldNarrowLockToRootTableWhenPopulating: rowLocks && rowLockOf,
-      shouldRefuseToNarrowALockItCannot: rowLocks && !rowLockOf,
+      shouldFindWithLock: locks,
+      shouldFindWithLockSkipLocked: locks,
+      shouldFindWithLockNoWait: locks,
+      shouldPlaceLockAfterLimitAndOffset: locks,
+      shouldRejectALockTheEngineLacks: !locks,
+      shouldNarrowLockToRootTableWhenPopulating: locks && rowLocks.of,
+      shouldRefuseToNarrowALockItCannot: locks && !rowLocks.of,
     };
   }
 

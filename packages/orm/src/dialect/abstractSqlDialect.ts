@@ -102,6 +102,7 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import {
   AGGREGATE_PAGE_ALIAS,
   AGGREGATE_VALUE_ALIAS,
@@ -257,10 +258,10 @@ function projectedKeys<E>(
 
 export type { HydrateKind };
 
-/** `value`, where there is one; a `TypeError` saying `refusal` where there is none. */
+/** `value`, where there is one; a `UqlUsageError` saying `refusal` where there is none. */
 function orRefuse<T>(value: T | undefined, refusal: string): T {
   if (value === undefined) {
-    throw TypeError(refusal);
+    throw new UqlUsageError(refusal);
   }
   return value;
 }
@@ -268,7 +269,7 @@ function orRefuse<T>(value: T | undefined, refusal: string): T {
 /** An `$in`/`$nin` operand, which the types require to be an array but `/http` hands over untyped. */
 function inOperands(op: string, value: unknown): unknown[] {
   if (!Array.isArray(value)) {
-    throw TypeError(`${op} expects an array, got ${value === null ? 'null' : typeof value}`);
+    throw new UqlUsageError(`${op} expects an array, got ${value === null ? 'null' : typeof value}`);
   }
   return value;
 }
@@ -533,7 +534,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     _search: QueryTextSearchOptions<E>,
     _prefix: string | undefined,
   ): void {
-    throw new TypeError(`${this.dialectName} does not support $text full-text search`);
+    throw new UqlUsageError(`${this.dialectName} does not support $text full-text search`);
   }
 
   /**
@@ -577,7 +578,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     _keys: readonly string[],
     _prefix: string | undefined,
   ): void {
-    throw new TypeError(`${this.dialectName} does not support $text full-text search`);
+    throw new UqlUsageError(`${this.dialectName} does not support $text full-text search`);
   }
 
   /** The columns a `$text` over `keys` reads, qualified by `prefix` where the statement joins, as any column is. */
@@ -866,7 +867,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
 
     if (key.includes('.')) {
-      throw new TypeError(`path ${key} does not exist in ${meta.name}`);
+      throw new UqlUsageError(`path ${key} does not exist in ${meta.name}`);
     }
 
     const rel = meta.relations[key];
@@ -1265,7 +1266,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected jsonElemMatch(ctx: QueryContext, slot: JsonSlot, match: Record<string, unknown>): string {
     const keys = Object.keys(match);
     if (keys.some(isOperatorKey) && !keys.every(isOperatorKey)) {
-      throw TypeError(`$elemMatch cannot mix operators with field names: ${keys.join(', ')}`);
+      throw new UqlUsageError(`$elemMatch cannot mix operators with field names: ${keys.join(', ')}`);
     }
     const single = keys.length === 1;
     const { $eq: equal, $in: within } = match;
@@ -1344,7 +1345,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const keyPath = path ? `${path}.${key}` : key;
       if (key === '$text') {
         if (path) {
-          throw new TypeError(`$sort by $text is only supported on the queried entity, not on relation '${path}'`);
+          throw new UqlUsageError(`$sort by $text is only supported on the queried entity, not on relation '${path}'`);
         }
         // Where projected in the SELECT list, ordered by that alias rather than scored twice.
         const { order, project } = textSortOf(sort)!;
@@ -1359,7 +1360,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           // one value over them, and `SELECT DISTINCT` cannot order by an expression it did not select.
           const name = `${keyPath}.${spec.field ?? '$count'}`;
           if (opts.distinct) {
-            throw new TypeError(`cannot $sort by '${name}' with $distinct: it is not a selected column`);
+            throw new UqlUsageError(`cannot $sort by '${name}' with $distinct: it is not a selected column`);
           }
           const expr = this.buildFragment(ctx, (fragmentCtx) =>
             this.appendRelationAggregate(fragmentCtx, meta.entity, spec, prefix ?? ''),
@@ -1383,7 +1384,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         // `SELECT DISTINCT` can only order by what it selected, on every engine here, so a join
         // brought in for the sort alone has nothing to order by. Populating it selects its columns.
         if (opts.distinct && !join.projected) {
-          throw new TypeError(
+          throw new UqlUsageError(
             `cannot $sort by relation '${keyPath}' with $distinct unless '${keyPath}' is populated: SELECT DISTINCT orders only by selected columns`,
           );
         }
@@ -1461,26 +1462,25 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
   }
 
-  /** Validated before the querier checks for a transaction, so the clearer error wins. */
-  assertLockSupported<E>(entity: Type<E>, q: Query<E>, joins?: QueryJoins): void {
-    if (!parseQueryLock(q.$lock)) {
+  /** The engine's own refusal first, then what a lock over a join needs, which is SQL's alone. */
+  override assertLockSupported<E>(entity: Type<E>, q: Query<E>, joins?: QueryJoins): void {
+    super.assertLockSupported(entity, q);
+    const { rowLocks } = this.features;
+    if (!rowLocks || rowLocks.of || !parseQueryLock(q.$lock)) {
       return;
     }
-    if (!this.features.rowLocks) {
-      throw new TypeError(`${this.dialectName} does not support row-level locking ($lock)`);
-    }
     joins ??= resolveQueryJoins(getMeta(entity), q);
-    if (!this.features.rowLockOf && joins.size > 0) {
-      throw new TypeError(
+    if (joins.size > 0) {
+      throw new UqlUsageError(
         `${this.dialectName} cannot narrow a row lock to one table, so $lock cannot be combined with a joined relation`,
       );
     }
   }
 
   /**
-   * The lock as a hint on the table itself, for the engine that has no trailing `FOR UPDATE`. Empty
-   * everywhere else, which is where {@link appendLock} does the work instead - the two are the same
-   * lock spelled at opposite ends of the statement, so exactly one of them ever emits.
+   * The lock as a hint on the table itself, which a `'tableHint'` dialect states instead of the
+   * trailing clause {@link appendLock} emits. Empty everywhere else: `rowLocks.placement` is what
+   * decides which end of the statement spells the lock, so the two can never both emit.
    */
   protected lockHint<E>(_q: Query<E>): string {
     return '';
@@ -1497,6 +1497,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
     this.assertLockSupported(entity, q, joins);
+    const { rowLocks } = this.features;
+    if (rowLocks && rowLocks.placement === 'tableHint') {
+      return;
+    }
     const meta = getMeta(entity);
     // `OF` names the alias in the FROM, never the schema-qualified path it was aliased from.
     const target = joins.size > 0 ? ` OF ${this.escapeId(alias ?? this.resolveTableAlias(meta), true)}` : '';
@@ -1544,7 +1548,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * caller reached for this to avoid, and only say so by taking a long time.
    */
   estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
-    throw new TypeError(`${this.dialectName} does not support estimatedCount`);
+    throw new UqlUsageError(`${this.dialectName} does not support estimatedCount`);
   }
 
   /** `$group` aggregate operator to SQL function name, over ops `resolveAggregateOp` has already allowlisted. */
@@ -1565,7 +1569,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(entity);
     const entries = parseGroupMap(q.$group, q.$select);
     if (!entries.length) {
-      throw new TypeError('aggregate requires at least one $group column or $select function');
+      throw new UqlUsageError('aggregate requires at least one $group column or $select function');
     }
     const table = this.tableRef(meta, this.readOptions(ctx, meta).alias);
     const { joins, where } = resolveGroupJoins(meta, q, (path) => ctx.claimAlias(path));
@@ -2582,7 +2586,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const selected: readonly unknown[] = projectedKeys(meta, query.$select, query.$exclude, true);
     for (const key of getKeys(query.$sort)) {
       if (!selected.includes(key)) {
-        throw new TypeError(`cannot $sort the $distinct relation '${relKey}' by '${key}', which it does not select`);
+        throw new UqlUsageError(
+          `cannot $sort the $distinct relation '${relKey}' by '${key}', which it does not select`,
+        );
       }
     }
   }
@@ -2755,19 +2761,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         continue;
       }
       if (!AbstractSqlDialect.ORDERED_OPS.has(op)) {
-        throw TypeError(`unsupported $near bound: ${op}`);
+        throw new UqlUsageError(`unsupported $near bound: ${op}`);
       }
       bounds[op] = val;
     }
     if (!hasKeys(bounds)) {
       const boundOps = [...AbstractSqlDialect.ORDERED_OPS].join(', ');
-      throw TypeError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
+      throw new UqlUsageError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
     }
     // Required by the type, so this only fires for a query that never met it: `/http` casts client
     // JSON straight to `Query`. A `$near` never borrows the `$sort`'s vector, which is what keeps the
     // predicate meaning the same thing in a `count`, or in an entity filter merged into a `$where`.
     if (!near.$vector) {
-      throw TypeError(`$near on '${key}' needs its own $vector`);
+      throw new UqlUsageError(`$near on '${key}' needs its own $vector`);
     }
     const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, near, prefix);
     return this.boundConditions(

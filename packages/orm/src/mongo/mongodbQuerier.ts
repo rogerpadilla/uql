@@ -112,7 +112,6 @@ export class MongodbQuerier extends AbstractQuerier {
     q: Query<E>,
     opts?: QueryOptions,
   ): AggregationCursor<E> | FindCursor<E> {
-    this.dialect.assertNoLock(q);
     const vectorSort = this.dialect.extractVectorSort(q.$sort);
     const pipeline = vectorSort
       ? this.buildVectorPipeline(entity, q, vectorSort, opts)

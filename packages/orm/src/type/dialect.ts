@@ -143,16 +143,29 @@ export interface DialectFeatures {
    * such a write reads the ids of the rows it names first.
    */
   readonly correlatedWrites: boolean;
+  /**
+   * What the engine's row locks can do, or `false` where it has none: the SQLite family locks the
+   * database and MongoDB has no row lock at all, so both refuse `$lock` rather than ignoring it. One
+   * value rather than a flag each, since the details mean nothing without a lock.
+   */
+  readonly rowLocks: RowLockFeatures | false;
+}
+
+/** How a dialect spells a row lock, once {@link DialectFeatures.rowLocks} says it has one. */
+export interface RowLockFeatures {
+  /** Whether a lock can be narrowed to one table of a join, `FOR UPDATE OF`, which MariaDB lacks. */
+  readonly of: boolean;
+  /** Whether the lock may share a statement with a window function, which the Postgres family refuses. */
+  readonly withWindow: boolean;
+  /**
+   * Where the lock is spelled: after the statement (`FOR UPDATE`), or as a hint on the table it reads
+   * (`WITH (UPDLOCK)`, SQL Server). A dialect's `lockHint` states the hint itself.
+   */
+  readonly placement: 'suffix' | 'tableHint';
 }
 
 /** What a SQL engine can do beyond {@link DialectFeatures}, read where a statement is built. */
 export interface SqlDialectFeatures extends DialectFeatures {
-  /** Whether the engine has row locks at all. The SQLite family locks the database instead. */
-  readonly rowLocks: boolean;
-  /** Whether `FOR UPDATE` may share a statement with a window function, which the Postgres family refuses. */
-  readonly rowLockWithWindow: boolean;
-  /** Whether a lock can be narrowed to one table of a join, `FOR UPDATE OF`, which MariaDB lacks. */
-  readonly rowLockOf: boolean;
   /**
    * How a `$sort` states where nulls land: the `NULLS FIRST/LAST` clause, a leading `IS NULL` term
    * (MySQL, MariaDB), or a leading `CASE` (SQL Server, which has no orderable boolean).

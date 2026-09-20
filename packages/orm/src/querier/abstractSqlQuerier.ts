@@ -40,6 +40,7 @@ import {
   unflatObjects,
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
@@ -184,20 +185,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Refuses a `$lock` the engine lacks, then one outside a transaction, where the lock would drop as the
-   * statement commits; only the querier knows whether one is open.
-   */
-  protected assertLockable<E>(entity: Type<E>, q: Query<E>): void {
-    if (!q.$lock) {
-      return;
-    }
-    this.dialect.assertLockSupported(entity, q);
-    if (!this.hasOpenTransaction) {
-      throw new TypeError('$lock requires an open transaction');
-    }
-  }
-
-  /**
    * Runs the `SET`s tuning an ANN index for the query on its connection, refusing where they would apply to
    * nothing: a `SET LOCAL` outside a transaction.
    */
@@ -210,7 +197,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       return;
     }
     if (this.dialect.features.vectorTuningNeedsTransaction && !this.hasOpenTransaction) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `$candidates requires an open transaction on ${this.dialect.dialectName}; run the query inside pool.transaction(...)`,
       );
     }
@@ -240,7 +227,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: Query<E>,
     opts?: QueryOptions,
   ): Promise<[E[], number]> {
-    if (q.$distinct || (q.$lock && !this.dialect.features.rowLockWithWindow)) {
+    const { rowLocks } = this.dialect.features;
+    if (q.$distinct || (q.$lock && !(rowLocks && rowLocks.withWindow))) {
       return Promise.all([this.internalFindMany(entity, q, opts), this.countUnpaged(entity, q, opts)]);
     }
     const rows = await this.selectRows(entity, q, opts, TOTAL_ALIAS);
@@ -257,7 +245,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
     totalAlias?: string,
   ): Promise<RawRow[]> {
-    this.assertLockable(entity, q);
     // Guarded rather than awaited unconditionally, here and in the stream below: an `await` on this
     // path defers a microtask on every read, which reorders the two statements `findManyAndCount`
     // issues concurrently. Keep the guard at any new call site.
@@ -278,7 +265,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: Query<E>,
     opts?: QueryOptions,
   ) {
-    this.assertLockable(entity, q);
     // Guarded for the reason `selectRows` above spells out.
     if (q.$candidates !== undefined) {
       await this.applyVectorTuning(entity, q);

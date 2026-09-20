@@ -1,7 +1,7 @@
 import type { FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QuerySelect } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
-import type { ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
+import type { AtLeastOne, ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
 
 /**
@@ -109,12 +109,12 @@ export type QuerySizeComparisonOps = {
 
 /**
  * Filter by distance to a vector, `{ $near: { $vector: v, $lt: 0.35 } }`: ordered bounds only, since a
- * distance is a float. Each clause names its own `$vector`, and `$distance` falls back to the field's.
- * One with no bound is refused at run time, where `/http` input is checked anyway.
+ * distance is a float, and at least one, since none would filter nothing. Each clause names its own
+ * `$vector`, and `$distance` falls back to the field's. `/http` input is untyped, so the dialect
+ * checks it again at run time.
  */
-export type QueryVectorNear = QueryVectorQuery & {
-  [K in QueryOrderedOp]?: NonNullable<QueryWhereFieldOperatorMap<number>[K]>;
-};
+export type QueryVectorNear = QueryVectorQuery &
+  AtLeastOne<{ [K in QueryOrderedOp]: NonNullable<QueryWhereFieldOperatorMap<number>[K]> }>;
 
 export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
   /**

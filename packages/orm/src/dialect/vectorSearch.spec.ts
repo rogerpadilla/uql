@@ -300,8 +300,9 @@ describe.each(engines)(
     });
 
     // A `$near` with only a vector is a WHERE that is always true, which is a silent no-op rather than
-    // the filter the caller asked for. `/http` casts client JSON straight to `Query`, so it gets here.
+    // the filter the caller asked for. The type refuses it, and `/http` casts client JSON straight to `Query`.
     it('should reject a $near with no bound', () => {
+      // @ts-expect-error: a `$near` needs a bound
       expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3] } } } })).toThrow(
         "$near on 'vec' needs a bound",
       );

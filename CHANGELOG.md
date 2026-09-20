@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.77.1] - 2026-09-20
+
+- A call the API cannot carry out - a `$lock` outside a transaction or on an engine without row locks, an update naming no rows, a `$text` on an engine without full-text search - throws `UqlUsageError` (kind `usage`), so it answers `400` over HTTP instead of `500`. It is still a `TypeError`, and `queryErrorKind(err)` names it as it names a driver's error, so nothing needs `instanceof`.
+- **Deprecated:** `UqlLockUsageError` is `UqlUsageError` under its old name.
+- A `$near` with no bound (`$lt`, `$lte`, `$gt`, `$gte` or `$between`) is a compile error: it filtered nothing.
+- MongoDB refuses a `$lock` in the same words the SQLite family does, and a stream now needs a transaction for one as a find does.
+
 ## [0.77.0] - 2026-09-19
 
 - **Breaking:** a versioned update is named by its id, so `updateMany` over a filter matching many rows is refused: one version cannot say which row it belongs to.

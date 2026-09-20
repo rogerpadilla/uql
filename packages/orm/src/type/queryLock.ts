@@ -1,3 +1,5 @@
+import { UqlUsageError } from '../util/uqlError.js';
+
 const QUERY_LOCK_WAITS = ['nowait', 'skip'] as const;
 
 /**
@@ -30,7 +32,7 @@ export function parseQueryLock(lock: QueryLock | undefined): QueryLockWait | und
     return 'block';
   }
   if (!isOneOf(QUERY_LOCK_WAITS, lock.$wait)) {
-    throw new TypeError(`unknown $lock wait policy: ${String(lock.$wait)}`);
+    throw new UqlUsageError(`unknown $lock wait policy: ${String(lock.$wait)}`);
   }
   return lock.$wait;
 }

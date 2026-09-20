@@ -1,5 +1,6 @@
 import { SQLITE_FEATURES, SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { SqlDialectFeatures } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * SQLite Dialect specialization for Cloudflare D1.
@@ -31,7 +32,7 @@ export class D1SqliteDialect extends SqliteDialect {
    * message that names the product that does the job.
    */
   protected override appendVectorDistance(): never {
-    throw new TypeError(
+    throw new UqlUsageError(
       'Cloudflare D1 has no vector functions and cannot load sqlite-vec. Use Cloudflare Vectorize for vector search.',
     );
   }

@@ -49,6 +49,16 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   }
 
   /**
+   * MongoDB has no row lock to map `$lock` onto, and the querier refuses one in the words every engine
+   * without locks uses - the SQLite family included.
+   */
+  async shouldRejectARowLock() {
+    await expect(this.querier.findMany(Item, { $lock: true })).rejects.toThrow(
+      'mongodb does not support row-level locking ($lock)',
+    );
+  }
+
+  /**
    * A wide integer stays exact, as every SQL driver keeps it: a `BigInt` field reads back as one, `$inc`
    * included, and a number past 2^53 in any other field as its exact text rather than a rounded number.
    */

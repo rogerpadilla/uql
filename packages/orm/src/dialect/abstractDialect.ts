@@ -8,6 +8,7 @@ import type {
   FieldOptions,
   InsertIdSource,
   NamingStrategy,
+  Query,
   QueryGroupOp,
   QueryJoinOp,
   QueryOptions,
@@ -15,10 +16,12 @@ import type {
   QueryWhereArray,
   Type,
 } from '../type/index.js';
+import { parseQueryLock } from '../type/index.js';
 import { QueryRaw } from '../type/queryRaw.js';
 import { applyFilters, assertWhere } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * Options for initializing a dialect.
@@ -92,6 +95,17 @@ export abstract class AbstractDialect {
   }
 
   /**
+   * Refuses a `$lock` the engine cannot take, so a caller never believes rows are held that are not.
+   * The SQLite family locks the database rather than its rows and MongoDB has no row lock at all;
+   * {@link AbstractSqlDialect} adds what a lock over a join needs on top.
+   */
+  assertLockSupported<E>(_entity: Type<E>, q: Query<E>): void {
+    if (parseQueryLock(q.$lock) && !this.features.rowLocks) {
+      throw new UqlUsageError(`${this.dialectName} does not support row-level locking ($lock)`);
+    }
+  }
+
+  /**
    * Resolve the column/field name for a property, applying naming strategy if necessary.
    */
   resolveColumnName(key: string, field: FieldOptions | undefined): string {
@@ -117,18 +131,18 @@ export abstract class AbstractDialect {
    */
   assertProjectable<E>(meta: EntityMeta<E>, alias: string): void {
     if (!PLAIN_NAME.test(alias)) {
-      throw new TypeError(`$project '${alias}' is no plain name: letters, digits and '_', not led by a digit`);
+      throw new UqlUsageError(`$project '${alias}' is no plain name: letters, digits and '_', not led by a digit`);
     }
     if (alias === '_id' || alias.startsWith('_uql')) {
-      throw new TypeError(`$project '${alias}' is a name MongoDB or UQL reserves`);
+      throw new UqlUsageError(`$project '${alias}' is a name MongoDB or UQL reserves`);
     }
     if (
       definedEntries(meta.fields).some(([key, field]) => key === alias || this.resolveColumnName(key, field) === alias)
     ) {
-      throw new TypeError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
+      throw new UqlUsageError(`$project '${alias}' collides with a field of '${entityName(meta)}'`);
     }
     if (alias in meta.relations) {
-      throw new TypeError(`$project '${alias}' collides with a relation of '${entityName(meta)}'`);
+      throw new UqlUsageError(`$project '${alias}' collides with a relation of '${entityName(meta)}'`);
     }
   }
 
@@ -165,7 +179,7 @@ export abstract class AbstractDialect {
    */
   protected static groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | undefined): QueryWhereArray<E> {
     if (val !== undefined && !Array.isArray(val)) {
-      throw TypeError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
+      throw new UqlUsageError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
     }
     return val ?? [];
   }

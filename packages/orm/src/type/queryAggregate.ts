@@ -1,3 +1,4 @@
+import { UqlUsageError } from '../util/uqlError.js';
 import type { FieldKey, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
@@ -47,7 +48,7 @@ export function resolveAggregateOp(key: string): { op: QueryAggregateOp; distinc
   if (isQueryAggregateOp(key)) {
     return { op: key, distinct: false };
   }
-  throw new TypeError(`unsupported aggregate operator: ${key}`);
+  throw new UqlUsageError(`unsupported aggregate operator: ${key}`);
 }
 
 /**

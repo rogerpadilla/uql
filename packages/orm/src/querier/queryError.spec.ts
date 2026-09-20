@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { type QueryErrorKind, queryErrorKind } from './queryError.js';
+import { type QueryErrorKind, UqlLockUsageError, UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import { queryErrorKind } from './queryError.js';
 
 describe('queryErrorKind', () => {
   it.each<[string, unknown, QueryErrorKind]>([
@@ -47,6 +48,8 @@ describe('queryErrorKind', () => {
     ['a SQLite not-null violation', { message: 'NOT NULL constraint failed: User.name' }, 'notNullViolation'],
     ['a SQLite check violation', { message: 'CHECK constraint failed: price > 0' }, 'checkViolation'],
     ['a busy SQLite database', { message: 'SQLITE_BUSY: database is locked' }, 'retryable'],
+    ['a stale version', new UqlOptimisticLockError('moved on', 3, 4), 'optimisticLock'],
+    ['a misuse of the API', new UqlUsageError('$lock requires an open transaction'), 'usage'],
   ])('names %s', (_, err, kind) => {
     expect(queryErrorKind(err)).toBe(kind);
   });
@@ -60,5 +63,17 @@ describe('queryErrorKind', () => {
     ['null', null],
   ])('names nothing for %s', (_, err) => {
     expect(queryErrorKind(err)).toBeUndefined();
+  });
+});
+
+describe('UqlUsageError', () => {
+  it('is what the deprecated UqlLockUsageError names, so an existing instanceof keeps working', () => {
+    expect(new UqlLockUsageError('carries no version')).toBeInstanceOf(UqlUsageError);
+    expect(new UqlUsageError('carries no version')).toBeInstanceOf(TypeError);
+  });
+
+  it('answers 400, where a conflict answers 409', () => {
+    expect(new UqlUsageError('carries no version').status).toBe(400);
+    expect(new UqlOptimisticLockError('moved on', 3, 4).status).toBe(409);
   });
 });

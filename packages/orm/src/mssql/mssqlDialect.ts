@@ -23,6 +23,7 @@ import { parseQueryLock } from '../type/index.js';
 import { isAutoIncrement } from '../util/field.util.js';
 import { assertNonNegativeInteger } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /** What SQL Server has. */
 const MSSQL_FEATURES: SqlDialectFeatures = {
@@ -45,10 +46,8 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   supportsUnsigned: false,
   serverSideCursors: false,
   correlatedWrites: true,
-  rowLocks: true,
-  rowLockWithWindow: true,
+  rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
   nullsOrdering: 'case',
-  rowLockOf: true,
   textScoreIndexes: false,
   orderedUpsertReturning: false,
   orderedJsonAggregates: true,
@@ -207,14 +206,7 @@ export class MsSqlDialect extends MergeSqlDialect {
     return `OUTPUT ${expression}`;
   }
 
-  /**
-   * A row lock is a hint on the table here, not a clause at the end of the statement, so
-   * {@link lockHint} emits it and this only keeps the guard - see the base declaration.
-   */
-  protected override appendLock<E>(_ctx: QueryContext, entity: Type<E>, q: Query<E>): void {
-    this.assertLockSupported(entity, q);
-  }
-
+  /** A row lock is a hint on the table here, which `rowLocks.placement` says instead of a trailing clause. */
   protected override lockHint<E>(q: Query<E>): string {
     const wait = parseQueryLock(q.$lock);
     if (!wait) {
@@ -396,7 +388,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   ): string {
     for (const [key, value] of Object.entries(set)) {
       if (value === null) {
-        throw new TypeError(
+        throw new UqlUsageError(
           `mssql cannot $set '${key}' to null: JSON_MODIFY deletes the key instead. Use $unset, or store a JSON null through a whole-column write.`,
         );
       }

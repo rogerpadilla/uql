@@ -48,6 +48,7 @@ import {
   isWhereMap,
   someKey,
 } from './object.util.js';
+import { UqlUsageError } from './uqlError.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -281,7 +282,7 @@ export function findVectorSort<E>(
 export function vectorCandidates(q: { readonly $candidates?: number }): number | undefined {
   const candidates = q.$candidates;
   if (candidates !== undefined && (!Number.isInteger(candidates) || candidates < 1)) {
-    throw new TypeError(`$candidates must be a positive integer, got ${JSON.stringify(candidates)}`);
+    throw new UqlUsageError(`$candidates must be a positive integer, got ${JSON.stringify(candidates)}`);
   }
   return candidates;
 }
@@ -361,7 +362,7 @@ export function isFieldUpdateOp(value: unknown): value is FieldUpdateOp {
  */
 export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint] {
   if (value.$inc !== undefined && value.$mul !== undefined) {
-    throw new TypeError(`'${key}' takes one of $inc and $mul`);
+    throw new UqlUsageError(`'${key}' takes one of $inc and $mul`);
   }
   return value.$inc === undefined ? ['$mul', value.$mul] : ['$inc', value.$inc];
 }
@@ -383,7 +384,7 @@ export function whereIds<E>(meta: EntityMeta<E>, ids: EntityId<E> | EntityId<E>[
  */
 export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
   if (!isWhereMap(where)) {
-    throw new TypeError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
+    throw new UqlUsageError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
   }
 }
 
@@ -479,7 +480,7 @@ export function parseRelationSize(val: unknown): number | QuerySizeComparisonOps
   }
   const siblings = getKeys(val).filter((key) => key !== '$size');
   if (siblings.length) {
-    throw new TypeError(`$size on a relation cannot be combined with other conditions: ${siblings.join(', ')}`);
+    throw new UqlUsageError(`$size on a relation cannot be combined with other conditions: ${siblings.join(', ')}`);
   }
   return (val as { $size: number | QuerySizeComparisonOps }).$size;
 }
@@ -495,7 +496,7 @@ export function parseSortByCount(val: unknown): unknown {
   }
   const siblings = getKeys(val).filter((key) => key !== '$count');
   if (siblings.length) {
-    throw new TypeError(`$count in a $sort cannot be combined with other keys: ${siblings.join(', ')}`);
+    throw new UqlUsageError(`$count in a $sort cannot be combined with other keys: ${siblings.join(', ')}`);
   }
   return val.$count;
 }
@@ -521,13 +522,13 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
     const call: Readonly<Record<string, unknown>> = select[alias];
     const key = getKeys(call).find((name) => name !== '$where');
     if (key === undefined) {
-      throw new TypeError(`aggregate '${alias}' names no op, only a $where`);
+      throw new UqlUsageError(`aggregate '${alias}' names no op, only a $where`);
     }
     // `$countDistinct` normalizes to `$count` plus a `distinct` flag.
     const { op, distinct } = resolveAggregateOp(key);
     const field = aggregateField(alias, call[key]);
     if (field === undefined && (op !== '$count' || distinct)) {
-      throw new TypeError(`aggregate '${alias}' takes '*' only as a $count`);
+      throw new UqlUsageError(`aggregate '${alias}' takes '*' only as a $count`);
     }
     entries.push({ kind: 'fn', alias, op, distinct, ...(field && { field }), ...(hasKeys(where) ? { where } : {}) });
   }
@@ -538,7 +539,7 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
 function groupRefPath(alias: string, ref: unknown): string[] {
   const [key, ...rest] = isRecord(ref) ? getKeys(ref) : [];
   if (!isRecord(ref) || key === undefined || rest.length) {
-    throw new TypeError(`$group '${alias}' names one field by the path to it: got ${JSON.stringify(ref)}`);
+    throw new UqlUsageError(`$group '${alias}' names one field by the path to it: got ${JSON.stringify(ref)}`);
   }
   return ref[key] === true ? [key] : [key, ...groupRefPath(alias, ref[key])];
 }
@@ -550,7 +551,9 @@ function aggregateField(alias: string, arg: unknown): string | undefined {
   }
   const [field, ...rest] = namedKeys(arg);
   if (field === undefined || rest.length) {
-    throw new TypeError(`aggregate '${alias}' takes one field as { field: true }, or '*': got ${JSON.stringify(arg)}`);
+    throw new UqlUsageError(
+      `aggregate '${alias}' takes one field as { field: true }, or '*': got ${JSON.stringify(arg)}`,
+    );
   }
   return field;
 }
@@ -590,7 +593,7 @@ export function isJsonObject(value: unknown): value is Record<string, unknown> {
  */
 export function assertNonNegativeInteger(value: number, clause: string): number {
   if (!Number.isInteger(value) || value < 0) {
-    throw new TypeError(`${clause} must be a non-negative integer, got ${value}`);
+    throw new UqlUsageError(`${clause} must be a non-negative integer, got ${value}`);
   }
   return value;
 }
@@ -601,7 +604,7 @@ export function assertNonNegativeInteger(value: number, clause: string): number 
  * SQL and MongoDB refuse the same query with the same words.
  */
 export function throwUnknownAggregateColumn(key: string, clause: string): never {
-  throw new TypeError(`cannot ${clause} by '${key}': it is neither a $group column nor a $select alias`);
+  throw new UqlUsageError(`cannot ${clause} by '${key}': it is neither a $group column nor a $select alias`);
 }
 
 /** {@link throwUnknownAggregateColumn} over every key of a clause, for backends that check up front. */
@@ -683,7 +686,7 @@ export function textSortOf<E>(
  */
 export function rankedTextSearch<E>(where: QueryWhere<E> | undefined): QueryTextSearchOptions<E> {
   if (!where?.$text) {
-    throw new TypeError('$sort by $text ranks by the $text at the root of $where, which this query has none of');
+    throw new UqlUsageError('$sort by $text ranks by the $text at the root of $where, which this query has none of');
   }
   return where.$text;
 }
@@ -706,7 +709,7 @@ export function textSearchFields<E>(meta: EntityMeta<E>, search: QueryTextSearch
   const declared = fulltext.length
     ? `${fulltext.length} fulltext indexes to choose from`
     : 'no fulltext index to search';
-  throw new TypeError(
+  throw new UqlUsageError(
     `$text on '${name}' names no $fields, and '${name}' declares ${declared}. Name them with $fields.`,
   );
 }

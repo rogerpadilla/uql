@@ -67,6 +67,13 @@ export type ExactlyOne<T> = {
   [K in keyof T]: Readonly<Pick<T, K>> & Partial<Readonly<Record<Exclude<keyof T, K>, never>>>;
 }[keyof T];
 
+/**
+ * At least one key of `T` with its value, the rest optional: the looser sibling of {@link ExactlyOne},
+ * for options that combine but cannot all be left out. `Pick`, so every key stays linked to `T`'s own
+ * property and renames follow it through.
+ */
+export type AtLeastOne<T> = Partial<T> & { [K in keyof T]: Pick<T, K> }[keyof T];
+
 export type Unpacked<T> = T extends readonly (infer U)[]
   ? U
   : T extends (...args: unknown[]) => infer U

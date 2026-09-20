@@ -1,6 +1,6 @@
 import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
 import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
-import { MYSQL_FEATURES, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
+import { MYSQL_FEATURES, MYSQL_ROW_LOCKS, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
@@ -31,7 +31,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     vectorBytes: true,
     vectorIndexRequiresNotNull: true,
     indexIfNotExists: true,
-    rowLockOf: false,
+    rowLocks: { ...MYSQL_ROW_LOCKS, of: false },
   };
 
   /**

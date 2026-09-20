@@ -1,8 +1,9 @@
-import { type QueryErrorKind, queryErrorKind } from '../querier/queryError.js';
+import { queryErrorKind } from '../querier/queryError.js';
 import type { Type, UniversalQuerier } from '../type/index.js';
 // the specific util modules, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys } from '../util/object.util.js';
 import { kebabCase } from '../util/string.util.js';
+import type { QueryErrorKind } from '../util/uqlError.js';
 
 type RouteShape = {
   readonly method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE';

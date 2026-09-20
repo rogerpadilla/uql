@@ -82,7 +82,7 @@ export class Post {
 - `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, makes the column an
   optimistic lock: every update payload must carry the version it read (a compile error otherwise), the update
   matches on it and writes the next one, and a write against a row someone else moved on throws
-  `UqlOptimisticLockError` (`status` 409) instead of overwriting it. Save and upsert are refused on such an entity; the update is named by its id, so `updateMany` over a many-row filter is refused too, and delete and restore carry no version.
+  `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409) instead of overwriting it. Save and upsert are refused on such an entity; the update is named by its id, so `updateMany` over a many-row filter is refused too, and delete and restore carry no version.
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries
@@ -124,6 +124,12 @@ const users = await pool.findMany(User, {
 - An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0,
   so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$set`, `$unset`,
   `$push`, `$pull`.
+- `$lock: true` locks the rows a read returns (`{ $wait: 'skip' | 'nowait' }` says what to do about a row
+  someone else holds) and needs an open transaction; SQLite, libSQL, Turso, D1 and MongoDB have no row lock and
+  refuse it.
+- `queryErrorKind(err)` names any failure the same on every engine - `uniqueViolation`, `foreignKeyViolation`,
+  `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage` - so catch by kind rather than by
+  a driver's code or an `instanceof`.
 - `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`.
 
 ## Connections and transactions

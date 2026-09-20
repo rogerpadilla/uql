@@ -1,6 +1,7 @@
 import { AbstractSqliteQuerier, type SqliteBindValue } from '../sqlite/abstractSqliteQuerier.js';
 import type { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /** What a statement answers on D1: the rows it read, and how many rows it changed. */
 export interface D1Result<T = unknown> {
@@ -39,6 +40,6 @@ export class D1Querier extends AbstractSqliteQuerier {
 
   /** D1 answers `BEGIN` with `D1_ERROR: not authorized`: a single statement is its only atomic unit. */
   protected override async internalBegin(): Promise<void> {
-    throw new TypeError('Cloudflare D1 has no transactions: write the changes as one statement, or idempotently');
+    throw new UqlUsageError('Cloudflare D1 has no transactions: write the changes as one statement, or idempotently');
   }
 }

@@ -13,6 +13,7 @@ import type {
 } from '../type/index.js';
 import { unsupportedVectorMetric } from '../type/vector.js';
 import { findVectorIndex, findVectorSort, vectorCandidates, vectorDistanceOf } from '../util/dialect.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractDialect } from './abstractDialect.js';
 import { encodeFloat32s, type VectorCast } from './vectorCast.js';
 
@@ -109,7 +110,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     prefix: string | undefined,
   ): void {
     if (this.vectorMetrics.size === 0) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `${this.dialectName} does not support vector similarity search. Use raw() for vector queries.`,
       );
     }

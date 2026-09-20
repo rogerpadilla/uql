@@ -1398,15 +1398,16 @@ class MongoDialectSpec implements Spec {
     );
   }
 
+  /** The same refusal the SQLite family answers with: one rule, worded once. */
   shouldRejectARowLock() {
-    expect(() => this.dialect.assertNoLock({ $lock: true })).toThrow(
-      '$lock (row-level locking) is not supported on MongoDB',
+    expect(() => this.dialect.assertLockSupported(Item, { $lock: true })).toThrow(
+      'mongodb does not support row-level locking ($lock)',
     );
   }
 
   /** `false` takes no lock, so a query built conditionally runs here as it does on SQLite. */
   shouldAcceptALockOfFalse() {
-    expect(() => this.dialect.assertNoLock({ $lock: false })).not.toThrow();
+    expect(() => this.dialect.assertLockSupported(Item, { $lock: false })).not.toThrow();
   }
 
   shouldReadAnUndefinedGroupOperatorAsConstrainingNoRelation() {

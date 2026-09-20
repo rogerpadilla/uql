@@ -10,6 +10,7 @@ import type {
   QueryOptions,
   QueryPager,
   QueryTextSearchOptions,
+  RowLockFeatures,
   SqlDialectFeatures,
   Type,
 } from '../type/index.js';
@@ -33,6 +34,9 @@ import { aggregatesRelations } from './queryJoins.js';
 const MAX_LIMIT = BigInt.asUintN(64, -1n);
 
 /** What the MySQL-family engines have. */
+/** Declared apart so MariaDB, which has no `FOR UPDATE OF`, can restate that one part of it. */
+export const MYSQL_ROW_LOCKS: RowLockFeatures = { of: true, withWindow: true, placement: 'suffix' };
+
 export const MYSQL_FEATURES: SqlDialectFeatures = {
   ifNotExists: true,
   indexIfNotExists: false,
@@ -50,10 +54,8 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   supportsUnsigned: true,
   serverSideCursors: false,
   correlatedWrites: true,
-  rowLocks: true,
-  rowLockWithWindow: true,
+  rowLocks: MYSQL_ROW_LOCKS,
   nullsOrdering: 'expression',
-  rowLockOf: true,
   textScoreIndexes: true,
   orderedUpsertReturning: true,
   orderedJsonAggregates: true,

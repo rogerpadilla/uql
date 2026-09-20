@@ -26,6 +26,7 @@ import {
   parseRelationSize,
   parseSortByCount,
 } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * One relation a statement joins, keyed by the alias its columns are addressed by (`tax`,
@@ -126,7 +127,7 @@ export function groupPathField(
   }
   const join = joins.get(path.slice(0, -1).join('.'));
   if (!join) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `cannot $group by '${path.join('.')}': only a to-one relation's field groups, since a to-many multiplies the rows it joins`,
     );
   }
@@ -267,16 +268,16 @@ export function resolveSortableJoin(
   unjoinable: string,
 ): { readonly join: QueryJoin; readonly sort: QuerySortMap<object> } {
   if (isToManyRelation(relation)) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `cannot $sort by '${path}': a parent has many of them, so there is no single value to order by. Sort the relation's own rows inside $populate instead.`,
     );
   }
   if (!isSortMap(value)) {
-    throw new TypeError(`$sort by relation '${path}' expects a map of its fields, got ${String(value)}`);
+    throw new UqlUsageError(`$sort by relation '${path}' expects a map of its fields, got ${String(value)}`);
   }
   const join = joins.get(path);
   if (!join) {
-    throw new TypeError(unjoinable);
+    throw new UqlUsageError(unjoinable);
   }
   return { join, sort: value };
 }
@@ -305,7 +306,7 @@ export function relationSortTerms(
       return [];
     }
     if (search.$project !== undefined) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `cannot $project the distance of relation '${path}': it ranks the parent, and no one row answers under it`,
       );
     }

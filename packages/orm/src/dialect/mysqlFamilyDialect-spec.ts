@@ -90,7 +90,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
 
   /** InnoDB runs `FOR UPDATE` beside a window function, so a locked paged read stays one statement. */
   shouldRunAWindowUnderARowLock() {
-    expect(this.dialect.features.rowLockWithWindow).toBe(true);
+    expect(this.dialect.features.rowLocks).toMatchObject({ withWindow: true });
   }
 
   shouldHandleDate() {

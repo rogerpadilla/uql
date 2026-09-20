@@ -67,7 +67,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
 
   /** Neither runs `FOR UPDATE` beside a window function, so a locked paged read takes two. */
   shouldNotRunAWindowUnderARowLock() {
-    expect(this.dialect.features.rowLockWithWindow).toBe(false);
+    expect(this.dialect.features.rowLocks).toMatchObject({ withWindow: false });
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {

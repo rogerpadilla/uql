@@ -39,6 +39,7 @@ import type {
   UpdateWrite,
   WrittenId,
 } from '../type/index.js';
+import { parseQueryLock } from '../type/index.js';
 import {
   cascadesOnDelete,
   childrenOf,
@@ -66,7 +67,8 @@ import {
   whereIds,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
-import { enrichError, UqlLockUsageError, UqlOptimisticLockError } from './queryError.js';
+import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import { enrichError } from './queryError.js';
 
 /**
  * Refuses a nullish id, which would reduce to no filter at all, and a composite id missing a column,
@@ -74,7 +76,7 @@ import { enrichError, UqlLockUsageError, UqlOptimisticLockError } from './queryE
  */
 function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   if (id === undefined || id === null) {
-    throw new TypeError(`'${entity.name}' was addressed by id, but the id is ${String(id)}`);
+    throw new UqlUsageError(`'${entity.name}' was addressed by id, but the id is ${String(id)}`);
   }
   if (isScalarId(id)) {
     // One value names one column, which `whereIds` refuses on a composite.
@@ -87,7 +89,7 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   const { ids } = getMeta(entity);
   const missing = ids.filter((key) => given[key] == null);
   if (missing.length) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}' is addressed by an object carrying every key of its primary key (${ids.join(', ')}); missing ${missing.join(', ')}.`,
     );
   }
@@ -107,7 +109,7 @@ function assertNamesRows<E>(entity: Type<E>, method: string, q: QuerySearch<E> |
   if (opts?.unfiltered || hasKeys(q?.$where) || q?.$limit !== undefined) {
     return;
   }
-  throw new TypeError(
+  throw new UqlUsageError(
     `'${method}' over '${entity.name}' names no rows, so it would address every one: pass '{ unfiltered: true }' to mean it`,
   );
 }
@@ -125,7 +127,7 @@ function lockVersion<E extends object>(
 ): { readonly expected: number | bigint; readonly next: number | bigint; readonly q: QuerySearch<E> } {
   const expected = row[key];
   if (typeof expected !== 'number' && typeof expected !== 'bigint') {
-    throw new UqlLockUsageError(
+    throw new UqlUsageError(
       `an update of '${entityName(meta)}' carries no '${key}': a versioned row is written against the version it was read at`,
     );
   }
@@ -142,7 +144,7 @@ function lockVersion<E extends object>(
  */
 function assertUnversioned<E extends object>(meta: EntityMeta<E>, what: string): void {
   if (meta.version) {
-    throw new UqlLockUsageError(
+    throw new UqlUsageError(
       `cannot ${what} the versioned '${entityName(meta)}': it carries no '${meta.version}' to match, so update it by id`,
     );
   }
@@ -158,7 +160,7 @@ function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySea
   const where = q.$where as Record<string, unknown> | undefined;
   const namesOneRow = meta.ids.every((key) => where?.[key] !== undefined && isScalarId(where[key]));
   if (!namesOneRow || settles) {
-    throw new UqlLockUsageError(
+    throw new UqlUsageError(
       `cannot update '${entityName(meta)}' this way: a versioned row is matched and written in one statement, so it is named by its ${meta.ids.map((id) => `'${id}'`).join(', ')}, takes no '$sort', '$limit' or '$skip', writes no relation, and filters by none`,
     );
   }
@@ -215,8 +217,25 @@ export abstract class AbstractQuerier implements Querier {
     this.logger = queryLoggerFor(extra);
   }
 
-  protected validateProjectionQuery<E extends object>(entity: Type<E>, q: Query<E>): void {
+  /** What every read is checked for before it runs, whichever backend runs it. */
+  protected validateReadQuery<E extends object>(entity: Type<E>, q: Query<E>): void {
+    this.assertLockable(entity, q);
     this.validateProjectionQueryRecursive(entity, q, entityName(getMeta(entity)));
+  }
+
+  /**
+   * Refuses a `$lock` the engine cannot take, then one outside a transaction, where the lock would
+   * drop as the statement commits: only the querier knows whether one is open. Here rather than in
+   * each backend's read, so the rule reaches a find, a stream and a paged count alike.
+   */
+  private assertLockable<E extends object>(entity: Type<E>, q: Query<E>): void {
+    if (!parseQueryLock(q.$lock)) {
+      return;
+    }
+    this.dialect.assertLockSupported(entity, q);
+    if (!this.hasOpenTransaction) {
+      throw new UqlUsageError('$lock requires an open transaction');
+    }
   }
 
   private validateProjectionQueryRecursive<E extends object>(
@@ -228,7 +247,7 @@ export abstract class AbstractQuerier implements Querier {
     if (q.$select && q.$exclude) {
       for (const [key, value] of Object.entries(q.$select)) {
         if (key in meta.fields && value) {
-          throw new TypeError(
+          throw new UqlUsageError(
             `Cannot combine $select and $exclude when $select includes positive scalar fields (${key}) at ${path}. Use either $select (whitelist) or $exclude (subtractive) in a single query.`,
           );
         }
@@ -256,7 +275,7 @@ export abstract class AbstractQuerier implements Querier {
     }
     const q = entityOrQuery as Q & { $entity: Type<E> };
     if (!q.$entity) {
-      throw new TypeError('$entity is required when using query-object syntax');
+      throw new UqlUsageError('$entity is required when using query-object syntax');
     }
     const { $entity, ...query } = q;
     return [$entity, query as Q, maybeQueryOrOpts as QueryOptions | undefined];
@@ -349,7 +368,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<E[]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
-    this.validateProjectionQuery(entity, q);
+    this.validateReadQuery(entity, q);
     const founds = await this.internalFindMany(entity, q, opts);
     // Guarded here rather than only inside: awaiting a call that returns at once still costs every read
     // a promise and a turn of the microtask queue, and most reads hook nothing.
@@ -399,7 +418,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): AsyncIterable<E> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
-    this.validateProjectionQuery(entity, q);
+    this.validateReadQuery(entity, q);
     return this.internalFindManyStream(entity, q, opts);
   }
 
@@ -439,7 +458,7 @@ export abstract class AbstractQuerier implements Querier {
     maybeOpts?: QueryOptions,
   ): Promise<[E[], number]> {
     const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
-    this.validateProjectionQuery(entity, q);
+    this.validateReadQuery(entity, q);
     const [founds, count] = await this.internalFindManyAndCount(entity, q, opts);
     if (this.listensForLoad(entity, q.$populate)) {
       await this.emitLoaded(entity, founds, q.$populate);
@@ -679,7 +698,7 @@ export abstract class AbstractQuerier implements Querier {
   async restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
     const meta = getMeta(entity);
     if (!meta.softDelete) {
-      throw new TypeError(`'${entity.name}' has not enabled 'softDelete'`);
+      throw new UqlUsageError(`'${entity.name}' has not enabled 'softDelete'`);
     }
     const $where = { ...q.$where, [meta.softDelete]: { $ne: null } } as QueryWhere<E>;
     // No version: a restore only undoes the stamp a delete left, which takes none either, and two of

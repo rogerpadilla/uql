@@ -8,3 +8,4 @@ export { withDeleted } from './util/filters.util.js';
 export type { HookContext } from './util/hook.util.js';
 export { DefaultLogger } from './util/logger.js';
 export { raw, refs } from './util/raw.js';
+export * from './util/uqlError.js';

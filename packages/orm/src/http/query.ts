@@ -12,6 +12,8 @@ import {
 import { RAW_VALUE } from '../type/queryRaw.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
 import { getKeys, isWhereMap } from '../util/object.util.js';
+// the error class alone, from its own leaf module: `queryError.ts` carries every driver's code map
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * Keys accepted from the wire - query structure ({@link Query}) plus the `hardDelete`/`count` scalar
@@ -45,7 +47,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): WireQuer
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
     if (REJECTED_QUERY_KEYS.has(key)) {
-      throw Object.assign(new TypeError(`'${key}' is not supported over HTTP`), { status: 400 });
+      throw new UqlUsageError(`'${key}' is not supported over HTTP`);
     }
     if (ALLOWED_QUERY_KEYS.has(key)) {
       query[key] = params[key];
@@ -65,7 +67,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): WireQuer
 
   query['$where'] ??= {};
   if (!isWhereMap(query['$where'])) {
-    throw Object.assign(new TypeError("'$where' must be a JSON object"), { status: 400 });
+    throw new UqlUsageError("'$where' must be a JSON object");
   }
 
   // A query string carries every value as text, so what decodes a clause is the shape its group

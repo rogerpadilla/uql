@@ -1,4 +1,5 @@
 import type { LoggerWrapper } from '../util/logger.js';
+import { type QueryErrorKind, UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 
 /**
  * A driver error tagged by {@link enrichError}: `query` always, `values` only when the logger already
@@ -7,47 +8,6 @@ import type { LoggerWrapper } from '../util/logger.js';
 export interface QueryError extends Error {
   query?: string;
   values?: unknown[];
-}
-
-/**
- * What a failed query ran into, named the same on every engine. `retryable` is a deadlock, a
- * serialization failure, a lock timeout or a busy database: the transaction can simply run again.
- */
-export type QueryErrorKind =
-  | 'uniqueViolation'
-  | 'foreignKeyViolation'
-  | 'notNullViolation'
-  | 'checkViolation'
-  | 'optimisticLock'
-  | 'retryable';
-
-/**
- * Thrown when an update's `@Field({ version })` no longer matches the row: another writer moved it on,
- * or it is gone. `expected` is what the payload carried, `actual` what the row holds now, `undefined`
- * where there is no row left. `status` is what an HTTP transport answers with.
- */
-export class UqlOptimisticLockError extends Error {
-  override name = 'UqlOptimisticLockError';
-  readonly status = 409;
-
-  constructor(
-    message: string,
-    readonly expected: unknown,
-    readonly actual: unknown,
-  ) {
-    super(message);
-  }
-}
-
-/**
- * Thrown where a write cannot carry the optimistic lock: an update payload without its version, or a
- * method with no version to match. A `TypeError` still, since the caller used the API wrong, but one
- * carrying the `status` an HTTP transport answers with - the request is malformed, not the server's
- * failure, and an untyped client is exactly who reaches this.
- */
-export class UqlLockUsageError extends TypeError {
-  override name = 'UqlLockUsageError';
-  readonly status = 400;
 }
 
 /** The fields a driver reports its code on, each read as `unknown` since any driver may fill any one. */
@@ -118,8 +78,8 @@ export function queryErrorKind(err: unknown): QueryErrorKind | undefined {
   if (typeof err !== 'object' || err === null) {
     return undefined;
   }
-  if (err instanceof UqlOptimisticLockError) {
-    return 'optimisticLock';
+  if (err instanceof UqlOptimisticLockError || err instanceof UqlUsageError) {
+    return err.kind;
   }
   const { code, errno, number, errorLabels, message }: DriverErrorFields = err;
   const text = typeof message === 'string' ? message : '';
