@@ -3,8 +3,9 @@
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
 import type { ColumnType, FieldOptions } from '../type/entity.js';
-import type { DialectFeatures, DialectName } from '../type/index.js';
+import { type DialectFeatures, type DialectName, QueryRaw } from '../type/index.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
+import { constantSql } from '../util/raw.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
 
 /** Whether a category is one of the vector types, narrowing it to the cast pgvector names use. */
@@ -313,15 +314,28 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
  */
 export function canonicalColumnType(
   sqlType: string,
-  reported: { length?: number; precision?: number; scale?: number } = {},
+  reported: { length?: number; precision?: number; scale?: number; dimensions?: number } = {},
 ): CanonicalType {
   const base = sqlToCanonical(sqlType);
   return {
     ...base,
-    length: reported.length ?? base.length,
+    // A vector states its length as `dimensions`, and only a vector may: one bound, named from either side.
+    length: reported.dimensions ?? reported.length ?? base.length,
     precision: reported.precision ?? base.precision,
     scale: reported.scale ?? base.scale,
   };
+}
+
+/**
+ * The SQL type a field declares, however it named one: `columnType`, the engine's own as a `raw`
+ * constant, or a `type` that is a SQL string rather than a constructor.
+ */
+function declaredSqlType(options: FieldOptions): string | undefined {
+  const { columnType, type } = options;
+  if (columnType instanceof QueryRaw) {
+    return constantSql(columnType);
+  }
+  return columnType ?? (typeof type === 'string' ? type : undefined);
 }
 
 /**
@@ -392,24 +406,14 @@ export function engineType(dialect: AbstractDialect): (type: CanonicalType) => C
  * Convert UQL FieldOptions to a canonical type.
  */
 export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
-  // An explicit column type is read exactly as an introspected one is: the SQL type, plus whatever
-  // bounds are stated beside it.
-  if (options.columnType) {
-    return canonicalColumnType(options.columnType, options);
+  // A SQL type is read exactly as an introspected one is, whichever option named it, so a bound stated
+  // beside it is read the same way either way.
+  const declared = declaredSqlType(options);
+  if (declared !== undefined) {
+    return canonicalColumnType(declared, options);
   }
 
-  // Infer from type, which is a SQL type string or one of the constructors.
-  const { type } = options;
-
-  if (typeof type === 'string') {
-    const canonical = sqlToCanonical(type);
-    // Propagate explicit dimensions into CanonicalType.length for vector types
-    return options.dimensions && isVectorCategory(canonical.category)
-      ? { ...canonical, length: options.dimensions }
-      : canonical;
-  }
-
-  switch (columnFamily(type)) {
+  switch (columnFamily(options.type)) {
     case 'numeric':
       // BIGINT for every `Number` without a scale, key or not: a 32-bit column is a migration waiting
       // to happen, and the pools decode it back to a JS number at the wire (see `pgNumericTypes`).

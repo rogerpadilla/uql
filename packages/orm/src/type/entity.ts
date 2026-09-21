@@ -400,8 +400,12 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
    */
   readonly version?: true;
 
-  /** The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`. */
-  readonly columnType?: ColumnType;
+  /**
+   * The SQL type, where it differs from the one `type` implies: `type: String, columnType: 'decimal'`.
+   * An engine's own type is a `raw` constant, `columnType: raw`tsvector``, rendered verbatim and
+   * never translated, so a column declaring one is yours to keep portable.
+   */
+  readonly columnType?: ColumnType | QueryRaw;
   /** A string column's length. */
   readonly length?: number;
   /** A decimal column's precision. */

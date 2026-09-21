@@ -6,6 +6,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { type ColumnFamily, COLUMN_TYPES } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import {
   engineType,
   areTypesEqual,
@@ -212,6 +213,27 @@ describe('canonicalType', () => {
       const result = fieldOptionsToCanonical({ columnType: 'varchar', length: 100 });
       expect(result.category).toBe('string');
       expect(result.length).toBe(100);
+    });
+
+    // `type` and `columnType` are two ways to name one SQL type, so a bound stated beside either has
+    // to be read the same way; each door used to drop a different one.
+    it('should read a bound the same way whichever option named the type', () => {
+      expect(fieldOptionsToCanonical({ type: 'varchar', length: 50 }).length).toBe(50);
+      expect(fieldOptionsToCanonical({ type: String, columnType: 'varchar', length: 50 }).length).toBe(50);
+      expect(fieldOptionsToCanonical({ type: 'vector', dimensions: 3 }).length).toBe(3);
+      expect(fieldOptionsToCanonical({ type: String, columnType: 'vector', dimensions: 3 }).length).toBe(3);
+      expect(fieldOptionsToCanonical({ type: 'decimal', precision: 10, scale: 2 })).toMatchObject({
+        precision: 10,
+        scale: 2,
+      });
+    });
+
+    // An engine's own type: rendered verbatim, so nothing downstream translates it.
+    it('should carry an engine type a `raw` column type names', () => {
+      expect(fieldOptionsToCanonical({ type: String, columnType: raw`tsvector` })).toEqual({
+        category: 'string',
+        raw: 'tsvector',
+      });
     });
 
     it('should infer from TypeScript type', () => {

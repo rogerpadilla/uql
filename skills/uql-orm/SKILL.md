@@ -76,6 +76,7 @@ export class Post {
 
 - Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
+- An engine's own column type is a `raw` constant, `columnType: raw`tsvector``, rendered verbatim: never a bare string, so a misspelling cannot pass for one, and `length`/`precision`/`scale`/`dimensions` are refused beside it, the text carrying its own.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
 - `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })` states a partial index's filter as the predicate the query passes, never as `raw`: a planner matches the two by shape, so `raw` that means the same thing leaves the index unused.

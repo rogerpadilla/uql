@@ -1,6 +1,7 @@
-import type { ColumnFamily, FamilyOf, FieldOptions, QueryRaw } from '../type/index.js';
+import { type ColumnFamily, type FamilyOf, type FieldOptions, QueryRaw } from '../type/index.js';
 import { columnFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
+import { constantSql } from './raw.js';
 
 /**
  * The column family each field option means anything on, or `'*'` where it applies to every column.
@@ -82,6 +83,14 @@ const VERSION_WRITES = [...VALUE_DECIDERS, 'computed', 'stored', 'isId'] as cons
 type VersionWrite = (typeof VERSION_WRITES)[number];
 
 /**
+ * What bounds a type: stated separately where uql spells the type, and part of the text where the
+ * engine's own is written out, which renders verbatim and leaves these unread.
+ */
+const TYPE_BOUNDS = ['length', 'precision', 'scale', 'dimensions'] as const satisfies readonly (keyof FieldOptions)[];
+
+type TypeBound = (typeof TYPE_BOUNDS)[number];
+
+/**
  * Whether `key` is the `nullable: true` a NOT NULL column contradicts. `nullable: false` says what
  * such a column already is, and rejecting an accurate statement teaches an author to distrust the check.
  */
@@ -95,6 +104,9 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
   if (opts.stored === true && GENERATED_WRITES.some((write) => write === key)) return 'a stored computed column';
   if (opts.isId === true && contradictsNotNull(opts, key)) return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
+  if (opts.columnType instanceof QueryRaw && TYPE_BOUNDS.some((bound) => bound === key)) {
+    return 'a column type written out as SQL, which carries its own bounds';
+  }
   if (opts.version === true && (VERSION_WRITES.some((write) => write === key) || contradictsNotNull(opts, key))) {
     return 'a version field';
   }
@@ -107,6 +119,11 @@ function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined
  * plain JavaScript reach the same answer.
  */
 export function fieldOptionConflict(opts: FieldOptions): string | undefined {
+  // Caught here rather than where the type is resolved, which is a migration on most engines and a
+  // query on SQL Server, and which knows no field to name.
+  if (opts.columnType instanceof QueryRaw && constantSql(opts.columnType) === undefined) {
+    return "cannot use 'columnType': a `raw` one names a constant type, so it can bind no value and read no column";
+  }
   const family = columnFamily(opts.columnType ?? opts.type);
   // Walked in table order, not in the order the field happened to be written, so a field with two
   // conflicts always reports the same one. An option no rule knows is a typo, which `@Field`'s own check
@@ -141,6 +158,7 @@ type DeadOptions<O> =
         : never)
   | (O extends { readonly isId: true; readonly nullable: true } ? 'nullable' : never)
   | (O extends { readonly updatable: false } ? 'onUpdate' : never)
+  | (O extends { readonly columnType: QueryRaw } ? TypeBound : never)
   | (O extends { readonly version: true } ? VersionWrite : never)
   | (O extends { readonly version: true; readonly nullable: true } ? 'nullable' : never);
 

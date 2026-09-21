@@ -7,6 +7,7 @@ import {
   type EntityWhereMeta,
   QueryRaw,
   type QueryRawFn,
+  RAW_TEXT,
   type AggregatePage,
   type ComputedRefs,
   type QueryRawRenderOptions,
@@ -30,18 +31,30 @@ export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly 
   if (!isTemplateStrings(value)) {
     return new QueryRaw(value);
   }
-  return new QueryRaw((opts) => {
-    const { ctx } = opts;
-    ctx.append(value[0]);
-    rest.forEach((interpolated, i) => {
-      if (interpolated instanceof QueryRaw) {
-        interpolated.render(opts);
-      } else {
-        ctx.addValue(interpolated);
-      }
-      ctx.append(value[i + 1]);
-    });
-  });
+  return new QueryRaw(
+    (opts) => {
+      const { ctx } = opts;
+      ctx.append(value[0]);
+      rest.forEach((interpolated, i) => {
+        if (interpolated instanceof QueryRaw) {
+          interpolated.render(opts);
+        } else {
+          ctx.addValue(interpolated);
+        }
+        ctx.append(value[i + 1]);
+      });
+    },
+    undefined,
+    rest.length === 0 ? value[0] : undefined,
+  );
+}
+
+/**
+ * The SQL of a `raw` that names a constant, for a DDL clause with no dialect to render against and
+ * nowhere to bind a value; `undefined` where it interpolates and so needs one.
+ */
+export function constantSql(value: QueryRaw): string | undefined {
+  return value[RAW_TEXT];
 }
 
 /**

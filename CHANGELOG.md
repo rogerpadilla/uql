@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.79.0] - 2026-09-21
+
+- `columnType` takes an engine's own type as a `raw` constant, `columnType: raw`tsvector``, rendered verbatim, so `ltree`, `inet`, `citext`, geometry and ranges reach a column and a stored computed one can hold a search vector. A bare unknown string stays a compile error, and a `length`, `precision`, `scale` or `dimensions` beside one is refused: the text carries its own.
+- **Fixed:** a bound is read whichever option named the type. `type: 'varchar'` with `length` and `type: 'decimal'` with `precision`/`scale` dropped it for the engine's default width, and `columnType: 'vector'` dropped `dimensions`. A column created before this reads as drift and is altered to the width it declares.
+
 ## [0.78.0] - 2026-09-21
 
 - `generate:from-db` carries a stored generated column over as `computed` plus `stored: true`, on every SQL engine, where it scaffolded a plain writable field before. One the engine recomputes per read instead (SQL Server's unpersisted column, SQLite's `VIRTUAL`) has no spelling in uql and still scaffolds plain.

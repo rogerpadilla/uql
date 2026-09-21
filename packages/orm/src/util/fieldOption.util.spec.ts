@@ -3,6 +3,20 @@ import { defineEntity, defineField } from '../entity/index.js';
 import { fieldOptionConflict } from './fieldOption.util.js';
 import { raw } from './raw.js';
 
+// It would otherwise surface wherever the schema is next built, which on SQL Server is a query.
+it('should report a column type written out as SQL that interpolates', () => {
+  expect(fieldOptionConflict({ type: String, columnType: raw`numeric(${10})` })).toBe(
+    "cannot use 'columnType': a `raw` one names a constant type, so it can bind no value and read no column",
+  );
+  expect(fieldOptionConflict({ type: String, columnType: raw`tsvector` })).toBe(undefined);
+});
+
+it('should report a bound stated beside a column type written out as SQL', () => {
+  expect(fieldOptionConflict({ type: String, columnType: raw`ltree`, length: 100 })).toBe(
+    "cannot use 'length': it is ignored on a column type written out as SQL, which carries its own bounds",
+  );
+});
+
 it('should report the option a column cannot use', () => {
   expect(fieldOptionConflict({ type: String, autoIncrement: true })).toBe(
     "cannot use 'autoIncrement': it applies to a numeric column, not to a string one",

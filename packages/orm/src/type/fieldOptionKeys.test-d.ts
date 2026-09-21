@@ -87,9 +87,25 @@ class CompatibleStillCompiles {
   @Field({ type: Number, computed: raw`1`, eager: false }) computed?: number | null;
   @Field({ type: Number, computed: (row) => raw`${row.computed} + 1`, stored: true }) next?: number | null;
   @Field({ type: Date, softDelete: true, index: true }) deletedAt?: Date | null;
+  // An engine's own type, which no family models: a `raw` constant, never a bare string, so a
+  // misspelling cannot pass for one.
+  @Field({ type: String, columnType: raw`tsvector`, eager: false }) searchVector?: string | null;
+}
+
+/** A column type uql does not model is spelled `raw`, which is what keeps a typo from becoming one. */
+@Entity()
+class UnknownColumnTypeRejected {
+  @Id({ type: Number }) id?: number;
+  // @ts-expect-error a bare string names one of the types uql models, and this is not one
+  @Field({ type: String, columnType: 'tsvector' }) vector?: string | null;
+  // @ts-expect-error which is what catches a misspelling of one that is
+  @Field({ type: String, columnType: 'varchr' }) typo?: string | null;
+  // @ts-expect-error a type written out carries its own bounds, so one stated beside it is unread
+  @Field({ type: String, columnType: raw`ltree`, length: 100 }) bounded?: string | null;
 }
 
 export type _ = [
+  UnknownColumnTypeRejected,
   TypoRejected,
   RealOptionsStillCompile,
   IncompatibleRejected,

@@ -31,19 +31,27 @@ export type QueryRawFn = (opts: QueryRawRenderOptions) => unknown;
 
 export const RAW_VALUE: unique symbol = Symbol('rawValue');
 export const RAW_ALIAS: unique symbol = Symbol('rawAlias');
+export const RAW_TEXT: unique symbol = Symbol('rawText');
 
 export class QueryRaw {
   readonly [RAW_VALUE]: QueryRawFn;
   readonly [RAW_ALIAS]?: string;
+  /**
+   * The SQL verbatim, set only where it is a constant: a template that interpolates nothing binds no
+   * value and reads no column, so it needs no dialect to render. What a DDL clause with nowhere to
+   * bind reads - see {@link constantSql}.
+   */
+  readonly [RAW_TEXT]?: string;
 
-  constructor(value: QueryRawFn, alias?: string) {
+  constructor(value: QueryRawFn, alias?: string, text?: string) {
     this[RAW_VALUE] = value;
     this[RAW_ALIAS] = alias;
+    this[RAW_TEXT] = text;
   }
 
   /** The same expression under an alias, for a `$select` projection. */
   as(alias: string): QueryRaw {
-    return new QueryRaw(this[RAW_VALUE], alias);
+    return new QueryRaw(this[RAW_VALUE], alias, this[RAW_TEXT]);
   }
 
   /** Writes the expression into `opts.ctx`. The alias is the projection's to write, after the term. */
