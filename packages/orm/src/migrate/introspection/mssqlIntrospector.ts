@@ -56,12 +56,14 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.is_identity as is_identity,
         d.definition as column_default,
         f.is_primary_key,
-        f.is_unique
+        f.is_unique,
+        CASE WHEN cc.is_persisted = 1 THEN cc.definition END as generated_as
       FROM sys.columns c
       JOIN sys.objects o ON o.object_id = c.object_id
       JOIN sys.schemas s ON s.schema_id = o.schema_id
       JOIN sys.types t ON t.user_type_id = c.user_type_id
       LEFT JOIN sys.default_constraints d ON d.object_id = c.default_object_id
+      LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
       OUTER APPLY (
         SELECT
           MAX(CAST(i.is_primary_key AS INT)) as is_primary_key,
@@ -153,6 +155,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         length: widthOf(type, bytes),
         precision: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_precision) : undefined,
         scale: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_scale) : undefined,
+        generatedAs: row.generated_as ?? undefined,
       };
     });
   }
@@ -232,4 +235,5 @@ type MsSqlColumnRow = {
   column_default: string | null;
   is_primary_key: number | null;
   is_unique: number | null;
+  generated_as: string | null;
 };

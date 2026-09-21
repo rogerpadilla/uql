@@ -50,6 +50,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * the live catalogue while `information_schema` answers from this statement's snapshot, so a table
    * another connection has just dropped is still listed here and the cast would raise on it. Whole
    * database scans meet that table every time something else is migrating.
+   *
+   * `attgenerated` rather than `is_generated`, which cannot part a stored generated column from the
+   * virtual one Postgres 18 added and uql never declares. CockroachDB states it too.
    */
   protected getColumnsQuery(_tableName: string): string {
     return /*sql*/ `
@@ -64,6 +67,11 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.numeric_scale,
         c.is_identity,
         c.identity_generation,
+        CASE WHEN (
+          SELECT a.attgenerated FROM pg_catalog.pg_attribute a
+          WHERE a.attrelid = to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
+            AND a.attname = c.column_name
+        ) = 's' THEN c.generation_expression END AS generated_as,
         EXISTS (
           SELECT 1 FROM information_schema.table_constraints tc
           JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
@@ -203,6 +211,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       precision: row.numeric_precision ?? undefined,
       scale: row.numeric_scale ?? undefined,
       comment: row.column_comment ?? undefined,
+      generatedAs: row.generated_as ?? undefined,
     }));
   }
 
@@ -395,4 +404,5 @@ type PostgresColumnRow = {
   numeric_precision: number | null;
   numeric_scale: number | null;
   column_comment: string | null;
+  generated_as: string | null;
 };

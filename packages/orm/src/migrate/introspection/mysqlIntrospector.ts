@@ -50,6 +50,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         NUMERIC_SCALE as numeric_scale,
         COLUMN_KEY as column_key,
         EXTRA as extra,
+        CASE WHEN EXTRA LIKE '%STORED GENERATED%' THEN GENERATION_EXPRESSION END as generated_as,
         COLUMN_COMMENT as column_comment
       FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -122,6 +123,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       precision: this.toNumber(row.numeric_precision),
       scale: this.toNumber(row.numeric_scale),
       comment: row.column_comment || undefined,
+      generatedAs: row.generated_as ?? undefined,
     }));
   }
 
@@ -185,6 +187,7 @@ type MysqlColumnRow = {
   numeric_precision: number | bigint | null;
   numeric_scale: number | null;
   column_comment: string | null;
+  generated_as: string | null;
 };
 
 /**

@@ -96,6 +96,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
       t.id();
       t.bigint('b_id').nullable().references(INTROSPECT_TABLES.B).onDelete('SET NULL').onUpdate('CASCADE');
       t.integer('priority').notNullable();
+      t.integer('doubled').nullable().computed('priority * 2');
     });
 
     // Composite primary key table
@@ -181,6 +182,11 @@ export abstract class AbstractIntrospectorIt implements Spec {
   /** The `ON DELETE` of the two references to A, e.g. `NO ACTION` where there is no `RESTRICT`. */
   protected restrictOnDelete(): ForeignKeyAction {
     return 'RESTRICT';
+  }
+
+  /** A column definition the engine recomputes per read, which SQL Server spells by leaving `PERSISTED` off. */
+  protected virtualGeneratedColumn(): string {
+    return 'doubled INTEGER GENERATED ALWAYS AS (qty * 2) VIRTUAL';
   }
 
   /** Dialect-specific columns added to table A, e.g. Postgres's array columns. */
@@ -290,6 +296,35 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
     const nameCol = this.getColumn(schema, 'name');
     expect(nameCol.nullable).toBe(true);
+  }
+
+  async shouldIntrospectAStoredGeneratedColumn() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
+
+    // Every engine reprints the expression its own way, parenthesising and quoting as it pleases, so
+    // what is portable is the operands and the operator between them.
+    const { generatedAs } = this.getColumn(schema, 'doubled');
+    assertDefined(generatedAs, `'doubled' came back without its expression`);
+    expect(generatedAs.replace(/[\s"`[\]()]/g, '')).toBe('priority*2');
+  }
+
+  async shouldLeaveAPlainColumnUngenerated() {
+    const schema = await this.getTableSchema(INTROSPECT_TABLES.C);
+
+    expect(this.getColumn(schema, 'priority').generatedAs).toBe(undefined);
+  }
+
+  /**
+   * A column the engine recomputes per read has no `stored` to declare it with, and reporting one as
+   * stored would have a generated entity ask for a column the database does not hold. SQL Server and
+   * SQLite make this the default form, so real databases are full of them.
+   */
+  async shouldLeaveAVirtualGeneratedColumnOut() {
+    const schema = await this.probe('introspect_virtual', (querier, table) =>
+      querier.run(`CREATE TABLE ${table} (qty INTEGER, ${this.virtualGeneratedColumn()})`),
+    );
+
+    expect(this.getColumn(schema, 'doubled').generatedAs).toBe(undefined);
   }
 
   async shouldIntrospectNotNullColumns() {

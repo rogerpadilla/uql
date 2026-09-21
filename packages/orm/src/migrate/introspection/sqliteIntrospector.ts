@@ -88,6 +88,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     const uniqueColumns = await this.getUniqueColumns(read, tableName);
     // Only a sole `INTEGER PRIMARY KEY` is the rowid, which is what numbers itself.
     const soleKey = results.filter((row) => row.pk > 0).length === 1;
+    const ddl = results.some((row) => row.hidden === STORED_GENERATED) ? await this.getTableDdl(read, tableName) : '';
 
     return results.map((row): ColumnSchema => ({
       name: row.name,
@@ -101,6 +102,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       precision: undefined,
       scale: undefined,
       comment: undefined, // SQLite doesn't support column comments
+      generatedAs: row.hidden === STORED_GENERATED ? generatedExpression(ddl, row.name) : undefined,
     }));
   }
 
@@ -217,6 +219,15 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return { name: indexName, entries: [{ column }], unique: false, type: 'vector', distance: distances.get(metric) };
   }
 
+  /** The statement that created the table, which is where SQLite keeps every expression it was given. */
+  private async getTableDdl(read: TableRowReader, tableName: string): Promise<string> {
+    const [row] = await read<{ sql: string }>(
+      /*sql*/ `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`,
+      [tableName],
+    );
+    return row.sql;
+  }
+
   private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {
     return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.escapeId(indexName)})`);
   }
@@ -261,6 +272,82 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 }
 
+/** `PRAGMA table_xinfo`'s `hidden` for a column the engine stores rather than recomputes on each read. */
+const STORED_GENERATED = 3;
+
+const GENERATED_AS = /\b(?:GENERATED\s+ALWAYS\s+)?AS\s*\(/i;
+
+/**
+ * The expression a generated column is computed from, read out of the `CREATE TABLE` itself: no PRAGMA
+ * reports one, and SQLite keeps the statement's text exactly as it was given.
+ */
+export function generatedExpression(ddl: string, column: string): string | undefined {
+  const entry = tableEntries(ddl).find((it) => leadingIdentifier(it) === column);
+  if (entry === undefined) {
+    return undefined;
+  }
+  const at = GENERATED_AS.exec(entry);
+  return at === null ? undefined : parenthesized(entry.slice(at.index + at[0].length - 1));
+}
+
+/** A `CREATE TABLE` body split at each comma outside any parentheses or quotes: one entry per column or constraint. */
+function tableEntries(ddl: string): string[] {
+  const body = ddl.slice(ddl.indexOf('(') + 1, ddl.lastIndexOf(')'));
+  const entries: string[] = [];
+  let start = 0;
+  scan(body, (char, index, depth) => {
+    if (char === ',' && depth === 0) {
+      entries.push(body.slice(start, index));
+      start = index + 1;
+    }
+  });
+  return [...entries, body.slice(start)];
+}
+
+/** What a leading `(` encloses, its own nesting and quoting respected. */
+function parenthesized(text: string): string {
+  let end = text.length;
+  scan(text, (char, index, depth) => {
+    const closes = char === ')' && depth === 0;
+    if (closes) {
+      end = index;
+    }
+    return closes;
+  });
+  return text.slice(1, end).trim();
+}
+
+/**
+ * Walk SQL, reporting each character outside a string or a quoted identifier along with the nesting
+ * depth that follows it. A truthy `visit` stops the walk.
+ */
+function scan(sql: string, visit: (char: string, index: number, depth: number) => unknown): void {
+  let depth = 0;
+  let quote = '';
+  for (let index = 0; index < sql.length; index++) {
+    const char = sql[index];
+    if (quote !== '') {
+      quote = char === quote ? '' : quote;
+      continue;
+    }
+    if (char === '"' || char === "'" || char === '`') {
+      quote = char;
+      continue;
+    }
+    depth += char === '(' || char === '[' ? 1 : 0;
+    depth -= char === ')' || char === ']' ? 1 : 0;
+    if (visit(char, index, depth)) {
+      return;
+    }
+  }
+}
+
+/** The name a column definition opens with, however it was quoted. */
+function leadingIdentifier(entry: string): string {
+  const [token = ''] = /^\s*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|[^\s(]+)/.exec(entry) ?? [];
+  return token.trim().replace(/^["`[]|["`\]]$/g, '');
+}
+
 type SqliteCountRow = {
   count: number | bigint;
 };
@@ -271,6 +358,8 @@ type SqliteColumnRow = {
   notnull: number;
   dflt_value: string | null;
   pk: number;
+  /** `PRAGMA table_xinfo`'s flag: 0 ordinary, 1 a hidden `VIRTUAL` table column, 2 virtual, 3 stored. Absent from `table_info`. */
+  hidden?: number;
 };
 
 type SqliteIndexRow = {

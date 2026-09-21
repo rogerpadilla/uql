@@ -11,6 +11,11 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
     super(pool, new MsSqlSchemaIntrospector(pool));
   }
 
+  /** SQL Server takes no type on a computed column, and recomputes one per read unless told to persist it. */
+  protected override virtualGeneratedColumn(): string {
+    return 'doubled AS (qty * 2)';
+  }
+
   /** A cascading self-reference is a cycle, which SQL Server refuses (error 1785). */
   protected override selfReferenceOnDelete(): ForeignKeyAction {
     return 'NO ACTION';

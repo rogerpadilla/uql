@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.78.0] - 2026-09-21
+
+- `generate:from-db` carries a stored generated column over as `computed` plus `stored: true`, on every SQL engine, where it scaffolded a plain writable field before. One the engine recomputes per read instead (SQL Server's unpersisted column, SQLite's `VIRTUAL`) has no spelling in uql and still scaffolds plain.
+
 ## [0.77.1] - 2026-09-20
 
 - A call the API cannot carry out: a `$lock` outside a transaction or on an engine without row locks, etc, throws `UqlUsageError` (kind `usage`), so it answers `400` over HTTP instead of `500`. It is still a `TypeError`, and `queryErrorKind(err)` names it as it names a driver's error.

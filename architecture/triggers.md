@@ -21,7 +21,7 @@ What `stored` adds beyond the generated column: an aggregate the database keeps,
 
 - **Flipping `stored` edits no call site.** Every clause reads the field the same way and its type does not move. Start unstored; store what profiling names.
 - **An event list is what selects a stamp.** `GENERATED ALWAYS AS (now())` is rejected as not immutable, and UQL cannot tell whether a `raw` is.
-- **The types are in place.** `stored: true` compiles only on a `count` or `sum` with no page, the property must equal the aggregate's value, and a write refuses a `readonly` field. What remains is `stored` taking an event list on a column.
+- **The types are in place, ahead of the mechanism.** `stored: true` compiles only on a `count` or `sum` with no page, the property must equal the aggregate's value, and a write refuses a `readonly` field - but registration still throws on one, since no engine keeps a subquery in a generated column. That throw is what this design replaces. What remains on the type side is `stored` taking an event list on a column.
 
 ## The maintained aggregate
 
@@ -76,14 +76,14 @@ const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector
 ## Ownership and drift
 
 - **UQL diffs only what it owns**, named `_uql`, so a hand-written trigger is never offered for dropping. It warns about one on a table it keeps an aggregate from: a second writer.
-- **It compares what it rendered**, never the engine's reprint: a Postgres function carries its body's hash in `COMMENT ON FUNCTION`; SQLite keeps the text verbatim. A body change is `CREATE OR REPLACE FUNCTION`, which locks no table.
+- **It compares what it rendered**, never the engine's reprint, through [R7b's fingerprints](roadmap.md) - the same mechanism that makes a check, an index predicate and a generated column's expression diffable, so a trigger body is the fourth user of it rather than a fifth answer. A body change is `CREATE OR REPLACE FUNCTION`, which locks no table.
 - **`sync` creates them too**, so test databases match production. PGlite runs PL/pgSQL, so in-process tests exercise real ones.
 - **Storing is two steps:** the column and triggers commit together, then a backfill outside the migration's transaction (`transaction: false`) locks each parent `FOR UPDATE` and recounts it, which is exact under READ COMMITTED. Unstoring drops both.
 - **`aggregate:check`** compares each stored value with its recount, and `--repair` fixes it: the answer to what no row trigger sees, such as `TRUNCATE` or `session_replication_role = replica`.
 
 ## Build order
 
-After R7, on Postgres: stored aggregates, then stamps, then authored triggers. Still missing:
+After R7 and R7b, on Postgres: stored aggregates, then stamps, then authored triggers. Still missing:
 
 - a `pg_trigger`/`pg_proc` introspector;
 - row-qualified refs (`row`/`old`) in `compileDdl`;
