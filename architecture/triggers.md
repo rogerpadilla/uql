@@ -54,23 +54,53 @@ UQL generates the column (`bigint NOT NULL DEFAULT 0` for a count, the field's t
 
 `onUpdate` stamps only UQL's own writes; an event list makes the database the one writer, so a raw `UPDATE` or a second service stamps too. Postgres takes a `BEFORE` trigger, and the MySQL family its native `ON UPDATE CURRENT_TIMESTAMP` where the stamp is the clock. The next read returns it, as for a generated column.
 
+## The schema-scoped object
+
+An extension, a function, a domain: declared once beside the entities, applied by `sync`, by `up` and by
+whatever a test bootstraps with.
+
+```ts
+export default {
+  pool,
+  entities: [Caption, Resource],
+  objects: [
+    { kind: 'extension', name: 'pg_trgm' },
+    {
+      kind: 'function',
+      name: 'immutable_unaccent(text)',
+      run: raw`RETURNS text LANGUAGE sql IMMUTABLE PARALLEL SAFE STRICT
+               AS $$ SELECT public.unaccent('public.unaccent', $1) $$`,
+    },
+  ],
+} satisfies Config;
+```
+
+- **A function is identified by its signature, not its name.** `immutable_unaccent(text)` and
+  `immutable_unaccent(text, text)` are two functions that coexist, so the argument types are part of what
+  names one.
+- **They hang off no table**, which is why a derived object's ref carries an optional one rather than a
+  required one: the same identity covers a check on `Post` and an extension on nothing.
+- **They are created before the tables that use them**, an extension before the function wrapping it and
+  the function before an index calling it, through the ordering `createOrder` already does for tables.
+
 ## The authored trigger
 
-The escape hatch, built last.
+The escape hatch, and what most of the demand is actually for.
 
 ```ts
 const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector('english', ${row.body});`;
 
 @Entity({
-  triggers: {
-    beforeInsert: { run: tsvectorOf },
-    beforeUpdate: { changed: (post) => [post.body], run: tsvectorOf },
-    afterUpdate: { changed: (post) => [post.status], run: (row) => raw`PERFORM pg_notify('post_status', ${row.id}::text);` },
-  },
+  triggers: [
+    { on: 'beforeInsert', run: tsvectorOf },
+    { on: 'beforeUpdate', changed: (post) => [post.body], run: tsvectorOf },
+    { on: 'afterUpdate', changed: (post) => [post.status], run: (row) => raw`PERFORM pg_notify('post_status', ${row.id}::text);` },
+  ],
 })
 ```
 
-- **Keyed by the hook event names.** No upsert key: `ON CONFLICT` fires the insert or update triggers. A key takes one trigger or a list, fired in order.
+- **A list, as `checks` and `indexes` are**, not a map keyed by event. A trigger is a table-level object that is named, diffed and dropped by name, and several can share an event; keying by event would need a `Trigger | Trigger[]` union at every key and leave the firing order implicit. `on` is a value rather than a member name, so it also discriminates the union that types `run`'s parameters, and it gives a `@Trigger(...)` decorator mirroring `@Index`. No upsert event: `ON CONFLICT` fires the insert or update triggers.
+- **Entity level, never field level.** A trigger is a table object; hanging one off a field would either merge several fields' declarations behind the author's back or fire one trigger per field. The field-shaped case is the generated column above, which needs no trigger at all.
 - **The event types `run`'s parameters:** `(row)` on insert, `(row, old)` on update, `(old)` on delete, rendering `NEW."col"` and `OLD."col"`. Reading `old` on an insert does not compile.
 - **`changed`, on update only,** emits `UPDATE OF` plus `WHEN (OLD.c IS DISTINCT FROM NEW.c ...)`. **`when`** is an `EntityPredicate<E>` or a SQL callback.
 - **`run` is raw SQL** for its engine; the generator adds the function wrapper and `RETURN NEW`/`NULL`. Reuse is a plain function over refs, like `tsvectorOf`.
@@ -89,13 +119,41 @@ const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector
 
 Two of R7b's prerequisites shipped in 0.79.0: `constantSql` reads a `raw`'s text back, so what UQL rendered can be hashed, and the SQLite introspector's `generatedExpression` parses the verbatim DDL. What is left is where the hash lives and who compares it.
 
-**One decision R7b owes this design:** the storage, per kind, on the Postgres family. `COMMENT ON TABLE` and `COMMENT ON COLUMN` already carry the user's `comment`, so a check, an index predicate and a generated column cannot take that slot without sharing it with something a user wrote. A trigger can take it outright: `COMMENT ON TRIGGER` and `COMMENT ON FUNCTION` are unclaimed, and UQL owns every object it names `_uql`. Settle the shared kinds first; triggers then inherit the answer instead of inventing a second one.
+**The storage is settled: a `uql_schema_objects` table**, beside `uql_migrations` and owned the same way, holding the SQL each derived object was last created from. A comment on each object was the alternative and loses twice: `COMMENT ON TABLE` and `COMMENT ON COLUMN` already carry the user's own `comment`, and MySQL can comment an index and a column but not a `CHECK`, so that route needs a table as its fallback anyway. One mechanism on every engine is the rule everywhere else here, and this one reaches MongoDB unchanged.
 
-**R7 is not a blocker, only cheaper before than after.** Triggers without it cost one more field on `SchemaDiffResult` and a branch in each of its two consumers, `schemaGenerator` and `driftDetector` - small enough to pay. The reason to flatten first is that flattening later has to cover the trigger code too.
+**An object with no record is assumed to match**, and is recorded on the next write. This is the baselining
+every migration tool has, and without it the first upgrade to a version that compares renders would emit a
+`CREATE` for every object that already exists and fail on every existing database. It trusts what is there,
+which is the same bargain a baseline migration makes.
+
+**A rollback re-records the previous render.** The differ holds both sides, so `down` carries the old text as
+`up` carries the new. Without it a rollback leaves the table describing a schema the database no longer has,
+and since the table is now the only thing compared, that drift never surfaces again.
+
+**It stores the render, not a hash of it.** A hash was the plan while the text had to fit in a comment; in a table the bytes are free, and the text pays for itself: the comparison is exact, and `drift:check` can show the expression that drifted against the one the entity declares rather than two hex strings. The cost is a row outliving an object dropped around UQL, which a drop reconciles by key.
+
+**R7 comes first, because it owns the identity R7b hangs text off.** Flattening `SchemaDiffResult` gives a `SchemaObject` named by its table, its kind and its name - which is exactly the key a stored render is read back under. Built the other way round, R7b invents that identity and R7 then has to absorb or duplicate it. The roadmap's own reason for R7, one fewer field per kind, is the smaller half.
 
 ## Build order
 
-After R7b, on Postgres: stored aggregates, then stamps, then authored triggers. Still missing:
+Schema-scoped objects first, then authored triggers, then stamps, then aggregates - close to the reverse
+of what this design was first written in, because the demand runs that way:
+
+- **Extensions and functions have a caller already.** Variability hand-rolls them as a `databasePrerequisites`
+  array in its config, replayed in three places and written a fourth time inside a migration, where nothing
+  keeps the two copies in step. They are also the cheapest arm: `CREATE EXTENSION IF NOT EXISTS` and
+  `CREATE OR REPLACE FUNCTION` are idempotent and lock nothing, so `sync` just re-emits them and only
+  `generate:entities` needs the recorded render at all. And a declarable function is what lets an
+  expression index over one move onto the entity.
+- **Authored triggers are what the demand is for.** The loudest comment on the ecosystem's top-voted
+  trigger issue asks for arbitrarily defining them in the schema, and the proposal beside it asks for
+  opaque named DDL artifacts covering functions, triggers, extensions and domains.
+- **Stamps are mostly already shipped.** `@Field({ onUpdate })` stamps every write UQL makes, which is
+  the whole ask minus one case. `stored: ['update']` only adds writes that bypass UQL, and the MySQL
+  family gets it natively.
+- **Aggregates stay last.** Still the one thing nothing else offers, and still the one nobody has asked for.
+
+On Postgres first. Still missing:
 
 - a `pg_trigger`/`pg_proc` introspector;
 - row-qualified refs (`row`/`old`) in `compileDdl`;
