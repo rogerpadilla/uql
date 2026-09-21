@@ -35,7 +35,7 @@ A view is a read-only entity whose definition is its migration, and its field ty
 
 **Cursor pagination.** `findManyPage(Order, { $sort: { createdAt: -1, id: -1 }, $limit: 50, $after })`, throwing when the sort is not total, which `meta.ids` and the unique indexes prove. The condition is a row-value comparison where the engine has one and a bounded OR chain where it does not: measured, since the plain OR chain scans Postgres from the top and would page no faster than the `$skip` it replaces. `$sort`'s null placements shipped first; what is left is the null arms, `sortsNullsLowest`, and carrying the sort values out to mint a cursor. [The design](cursor-pagination.md).
 
-**Stored triggers** (R7, R7b). Stored aggregates (`computed: (u) => u.resources.count(), stored: true`), then `stored: ['update']` stamps, then authored triggers. Postgres first, then a renderer per SQL engine; MongoDB has no triggers and refuses `stored`. [The design](triggers.md).
+**Stored triggers** (R7b; R7 only to keep them small). Stored aggregates (`computed: (u) => u.resources.count(), stored: true`), then `stored: ['update']` stamps, then authored triggers. Postgres first, then a renderer per SQL engine; MongoDB has no triggers and refuses `stored`. [The design](triggers.md).
 
 **Batching** (R5). One round trip on D1, libSQL/Turso and Neon HTTP, a transaction elsewhere. The shape is undecided. Only reads, `count`, `exists` and a relation-free insert are reliably one statement each, so an entity-level `batch` would promise what the call site cannot show, while a statement-level one over `compile()` loses the typing.
 

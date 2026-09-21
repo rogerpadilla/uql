@@ -1,6 +1,6 @@
 # Triggers
 
-What `stored` adds beyond the generated column: an aggregate the database keeps, a stamp the database writes, and a trigger you author. The unstored relation aggregate shipped in 0.69.0; everything here needs [R7](roadmap.md) and ships on Postgres first, then a renderer per SQL engine. MongoDB has no triggers, so it refuses `stored` and keeps reading every aggregate unstored.
+What `stored` adds beyond the generated column: an aggregate the database keeps, a stamp the database writes, and a trigger you author. The unstored relation aggregate shipped in 0.69.0; everything here rests on [R7b](roadmap.md) and ships on Postgres first, then a renderer per SQL engine. MongoDB has no triggers, so it refuses `stored` and keeps reading every aggregate unstored.
 
 ## One dial
 
@@ -26,6 +26,8 @@ What `stored` adds beyond the generated column: an aggregate the database keeps,
 ## The maintained aggregate
 
 UQL generates the column (`bigint NOT NULL DEFAULT 0` for a count, the field's type for a sum), the function and its triggers, the backfill, and the check that finds drift. It loads only where a query names it, stored or not.
+
+**Its `bigint NOT NULL DEFAULT 0` is implied, not stated.** Derived in `definition.ts` once the entity is whole, the way `version: true` already implies its own, so it lands after `fieldOptionConflict` has run and `stored: true` keeps refusing a written `defaultValue`.
 
 **Only `count` and `sum` store**, since only they turn a row change into a delta: `+1`/`-1`, `+x`/`-x`. A `min` or `max` must rescan when the extreme is deleted, and an `avg` is two columns. A lifetime tally, deleted rows included, is not an aggregate: count a soft-deleting table through `withDeleted` instead.
 
@@ -76,18 +78,28 @@ const tsvectorOf = (row: RefMap<Post>) => raw`${row.searchVector} := to_tsvector
 ## Ownership and drift
 
 - **UQL diffs only what it owns**, named `_uql`, so a hand-written trigger is never offered for dropping. It warns about one on a table it keeps an aggregate from: a second writer.
-- **It compares what it rendered**, never the engine's reprint, through [R7b's fingerprints](roadmap.md) - the same mechanism that makes a check, an index predicate and a generated column's expression diffable, so a trigger body is the fourth user of it rather than a fifth answer. A body change is `CREATE OR REPLACE FUNCTION`, which locks no table.
+- **It compares what it rendered**, never the engine's reprint, through [R7b's fingerprints](roadmap.md) - the same mechanism that makes a check, an index predicate and a generated column's expression diffable, so a trigger body is the fourth user of it rather than a fourth answer. A body change is `CREATE OR REPLACE FUNCTION`, which locks no table.
 - **`sync` creates them too**, so test databases match production. PGlite runs PL/pgSQL, so in-process tests exercise real ones.
 - **Storing is two steps:** the column and triggers commit together, then a backfill outside the migration's transaction (`transaction: false`) locks each parent `FOR UPDATE` and recounts it, which is exact under READ COMMITTED. Unstoring drops both.
 - **`aggregate:check`** compares each stored value with its recount, and `--repair` fixes it: the answer to what no row trigger sees, such as `TRUNCATE` or `session_replication_role = replica`.
 
+## What it rests on
+
+**R7b is the blocker**, and the only one. Without a fingerprint a body changes and `planSync` emits nothing, which is the failure this design exists to prevent rather than a rough edge on it: the trigger that aborted every search insert for months was invisible to exactly this comparison. `schemaASTDiffer` names the same gap in one line - `isAutoIncrement`, `enum`, `generatedAs` and `comment` are "not compared, since no statement this generator emits could settle a difference" - and a trigger body joins that list the day it is written.
+
+Two of R7b's prerequisites shipped in 0.79.0: `constantSql` reads a `raw`'s text back, so what UQL rendered can be hashed, and the SQLite introspector's `generatedExpression` parses the verbatim DDL. What is left is where the hash lives and who compares it.
+
+**One decision R7b owes this design:** the storage, per kind, on the Postgres family. `COMMENT ON TABLE` and `COMMENT ON COLUMN` already carry the user's `comment`, so a check, an index predicate and a generated column cannot take that slot without sharing it with something a user wrote. A trigger can take it outright: `COMMENT ON TRIGGER` and `COMMENT ON FUNCTION` are unclaimed, and UQL owns every object it names `_uql`. Settle the shared kinds first; triggers then inherit the answer instead of inventing a second one.
+
+**R7 is not a blocker, only cheaper before than after.** Triggers without it cost one more field on `SchemaDiffResult` and a branch in each of its two consumers, `schemaGenerator` and `driftDetector` - small enough to pay. The reason to flatten first is that flattening later has to cover the trigger code too.
+
 ## Build order
 
-After R7 and R7b, on Postgres: stored aggregates, then stamps, then authored triggers. Still missing:
+After R7b, on Postgres: stored aggregates, then stamps, then authored triggers. Still missing:
 
 - a `pg_trigger`/`pg_proc` introspector;
 - row-qualified refs (`row`/`old`) in `compileDdl`;
-- trigger-backed rows in `FIELD_OPTION_FAMILY`, since `computed` now kills `defaultValue`, which a stored aggregate needs;
+- lifting the registration throw on a stored relation aggregate (`definition.ts`), the line this design replaces;
 - an integration suite on Postgres and PGlite: insert, delete, reparent, a filter flip, soft delete, a backfill racing writes, and `aggregate:check` after `TRUNCATE`.
 
 Then a renderer per engine.
