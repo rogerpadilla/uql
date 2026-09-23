@@ -4,6 +4,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineEntity } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
+import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
@@ -161,7 +162,7 @@ describe('schema against postgres', () => {
       const [diff] = await new Migrator(driftPool, { entities: [Drifted] }).getDiffs();
       expect(diff?.type).toBe('alter');
       expect(diff?.tableName).toBe('crm.Customer');
-      expect(diff?.columnsToAdd?.map((column) => column.name)).toEqual(['age']);
+      expect(added(diff?.columns).map((column) => column.name)).toEqual(['age']);
     });
 
     it('should emit the ALTER against the qualified table', async () => {

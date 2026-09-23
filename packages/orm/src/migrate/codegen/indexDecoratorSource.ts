@@ -1,27 +1,6 @@
 import type { IndexNode } from '../../schema/types.js';
-import { type IndexColumnSchema, isVectorIndexType, type VectorDistance } from '../../type/index.js';
+import { type IndexColumnSchema, isVectorIndexType } from '../../type/index.js';
 import { memberSource, rawTag } from './sourceLiteral.js';
-
-/**
- * A vector index carries its metric in the operator class pgvector names after it
- * (`vector_cosine_ops`), which is the only place introspection can recover it from. `@Index` requires
- * a `distance` beside a vector `type`, so emitting the type without one would not compile.
- */
-const DISTANCE_BY_OPS_SUFFIX = new Map<string, VectorDistance>([
-  ['cosine', 'cosine'],
-  ['l2', 'l2'],
-  ['ip', 'inner'],
-  ['l1', 'l1'],
-]);
-
-function vectorDistance(index: IndexNode): VectorDistance | undefined {
-  if (index.distance) {
-    return index.distance;
-  }
-  const opsClass = index.entries.map((entry) => entry.opsClass).find(Boolean);
-  const suffix = opsClass?.match(/_(\w+)_ops$/)?.[1];
-  return suffix === undefined ? undefined : DISTANCE_BY_OPS_SUFFIX.get(suffix);
-}
 
 /**
  * The per-entry modifiers worth writing into an entity, which is not everything introspection reports.
@@ -39,8 +18,9 @@ function significantModifiers(entry: IndexColumnSchema): string[] {
 
 /**
  * Whether `@Field({ index })` can carry the whole index. It says only "this column is indexed under
- * this name", so anything else the index declares - an expression, a predicate, uniqueness, an access
- * method, stored columns, a stored order - has to be written out as an `@Index` instead.
+ * this name", and `unique` beside it that the index is unique, so anything else the index declares - an
+ * expression, a predicate, an access method, stored columns, a stored order - has to be written out as
+ * an `@Index` instead.
  */
 export function isPlainFieldIndex(index: IndexNode): boolean {
   const entries = index.entries;
@@ -49,7 +29,6 @@ export function isPlainFieldIndex(index: IndexNode): boolean {
     entries.length === 1 &&
     entry !== undefined &&
     !entry.expression &&
-    !index.unique &&
     index.where === undefined &&
     // Postgres names an access method on every index, so the default one still counts as plain.
     (index.type === undefined || index.type === 'btree') &&
@@ -70,8 +49,9 @@ export function buildIndexDecoratorSource(
 ): string {
   const entries = index.entries.map((entry) => indexEntrySource(entry, propertyName, param)).join(', ');
 
+  // `@Index` requires a `distance` beside a vector `type`, as the introspector reads it back.
   const isVector = isVectorIndexType(index.type);
-  const distance = isVector ? vectorDistance(index) : undefined;
+  const distance = isVector ? index.distance : undefined;
   const options: string[] = [];
   if (index.name) options.push(`name: '${index.name}'`);
   if (index.unique) options.push('unique: true');

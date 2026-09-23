@@ -84,7 +84,7 @@ describe('MySQL JSON path index', () => {
     const actual = await introspector.introspect([TABLE]);
     const expected = buildSchemaAST([JsonPathIndexed], { namingStrategy: dialect.namingStrategy });
 
-    const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
+    const report = detectDrift(expected, actual, { dialect });
 
     expect(report.drifts.filter((drift) => drift.table === TABLE)).toEqual([]);
   });

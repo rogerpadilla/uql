@@ -72,8 +72,8 @@ describe('buildIndexDecoratorSource', () => {
     );
   });
 
-  it('should give a vector index the distance its operator class carries', () => {
-    const index = indexNode([{ column: 'embedding', opsClass: 'vector_cosine_ops' }], { type: 'hnsw' });
+  it('should give a vector index the distance it was read back with', () => {
+    const index = indexNode([{ column: 'embedding' }], { type: 'hnsw', distance: 'cosine' });
 
     expect(buildIndexDecoratorSource(index, asIs, 't')).toContain("type: 'hnsw', distance: 'cosine'");
   });
@@ -94,8 +94,12 @@ describe('isPlainFieldIndex', () => {
     expect(isPlainFieldIndex(indexNode([{ column: 'email' }], { type: 'btree' }))).toBe(true);
   });
 
+  /** A unique column is a unique index, which `@Field({ unique, index })` declares whole. */
+  it('should carry a unique index on the field, as the uniqueness it is', () => {
+    expect(isPlainFieldIndex(indexNode([{ column: 'email' }], { unique: true }))).toBe(true);
+  });
+
   it.each([
-    ['unique', { unique: true }],
     ['a predicate', { where: 'x IS NULL' }],
     ['stored columns', { include: ['a'] }],
     ['another access method', { type: 'gin' as const }],

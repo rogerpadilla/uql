@@ -1,7 +1,7 @@
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
 import type { IndexType } from '../../schema/types.js';
 import type { IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
-import { unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
+import { indexDistance, isVectorIndexType, unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
 /**
@@ -103,15 +103,16 @@ export class MariaIndexDdl extends MysqlLikeIndexDdl {
 
   /**
    * `M=n DISTANCE=metric`, trailing its `CREATE VECTOR INDEX`. The metric names are MariaDB's own
-   * (`euclidean`, not `l2`), and an unsupported one throws rather than being dropped, which would
-   * silently build the index on euclidean - its default - instead of what the entity asked for.
+   * (`euclidean`, not `l2`), stated even for the default distance, cosine, since MariaDB's own is
+   * euclidean; and an unsupported one throws rather than silently building on euclidean.
    */
   protected override indexTuning(index: IndexSchema): string {
     let tuning = super.indexTuning(index) + (index.m === undefined ? '' : ` M=${index.m}`);
-    if (index.distance) {
-      const metric = this.dialect.vectorMetrics.get(index.distance)?.index;
+    if (isVectorIndexType(index.type)) {
+      const distance = indexDistance(index);
+      const metric = this.dialect.vectorMetrics.get(distance)?.index;
       if (!metric) {
-        throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
+        throw unsupportedVectorMetric(this.dialect.dialectName, distance, index.name);
       }
       tuning += ` DISTANCE=${metric}`;
     }

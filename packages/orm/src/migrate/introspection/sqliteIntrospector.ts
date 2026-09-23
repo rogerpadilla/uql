@@ -9,12 +9,12 @@ import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSq
 export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** Whether an index is libSQL's vector index, where the engine has one; elsewhere a declared one is built plain. */
   override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(
-    this.dialect.hasVectorIndex() ? ['vector'] : [],
+    this.dialect.hasVectorIndex() ? ['vector', 'distance'] : [],
   );
 
   /** Not SQLite's own tables, nor the ones libSQL keeps a vector index in: its metadata and `<index>_shadow`. */
   protected triggersQuery(): string {
-    return /*sql*/ `SELECT tbl_name AS \`table\`, name, sql AS definition FROM sqlite_master WHERE type = 'trigger'`;
+    return /*sql*/ `SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?`;
   }
 
   protected getTableNamesQuery(): string {
@@ -120,17 +120,14 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     for (const index of results) {
       const columns = await this.getIndexColumns(read, index.name);
 
-      // Include user-created indexes ('c') and multi-column unique constraints ('u')
-      // Skip primary key indexes ('pk') and single-column unique constraints
-      const isUserCreated = index.origin === 'c';
-      const isCompositeUnique = index.origin === 'u' && columns.length > 1;
+      // A unique constraint's index ('u') is reported as every engine reports it, and only the key's ('pk') left out.
 
       // `PRAGMA index_info` names an expression entry `null` (its `cid` is -2), and the expression text
       // lives only in `sqlite_master.sql`. Reporting `{ column: null }` put a column literally named
       // `null` into the diff, so an index UQL cannot describe is left out, libSQL's vector index aside.
       const named = columns.filter((column): column is { name: string } => column.name !== null);
 
-      if (!isUserCreated && !isCompositeUnique) {
+      if (index.origin === 'pk') {
         continue;
       }
       if (named.length === columns.length) {
@@ -219,8 +216,13 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       return undefined;
     }
     const metric = row.sql?.match(/'metric=(\w+)'/i)?.[1]?.toLowerCase();
-    const distances = new Map([...this.dialect.vectorMetrics].map(([distance, { index }]) => [index, distance]));
-    return { name: indexName, entries: [{ column }], unique: false, type: 'vector', distance: distances.get(metric) };
+    return {
+      name: indexName,
+      entries: [{ column }],
+      unique: false,
+      type: 'vector',
+      distance: this.dialect.indexedDistance(metric),
+    };
   }
 
   /** The statement that created the table, which is where SQLite keeps every expression it was given. */

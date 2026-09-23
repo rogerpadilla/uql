@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import { expr } from '../builder/expressions.js';
+import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {
@@ -36,6 +38,31 @@ describe('PostgresSchemaGenerator Specifics', () => {
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER;');
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET NOT NULL;');
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET DEFAULT 18;');
+  });
+
+  /** Postgres alters each part apart, so a part unchanged as the engine reprints it is not restated. */
+  it('should alter only what changed in a column, both ways', () => {
+    const from = {
+      name: 'createdAt',
+      type: 'TIMESTAMP',
+      nullable: true,
+      defaultValue: 'CURRENT_TIMESTAMP',
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+    const diff = {
+      tableName: 'users',
+      type: 'alter' as const,
+      columns: [{ from, to: { ...from, type: 'TIMESTAMPTZ', defaultValue: expr.now() } }],
+    };
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMPTZ;',
+    ]);
+    expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMP;',
+    ]);
   });
 
   it('should return empty string for generateColumnComment', () => {

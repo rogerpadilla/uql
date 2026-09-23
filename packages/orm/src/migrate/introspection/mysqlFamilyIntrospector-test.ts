@@ -137,7 +137,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
       const named = await this.introspectorOf(this.otherDatabase).getTableSchema(INTROSPECT_TABLES.A);
 
       expect(named).toMatchObject({
-        primaryKey: ['id'],
+        primaryKey: { columns: ['id'] },
         indexes: [{ name: 'code' }, { name: 'probe_note_idx' }],
         foreignKeys: [],
       });

@@ -9,7 +9,7 @@ import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
-import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
+import { createTableNode, keyOfColumns, SchemaAST } from '../schema/schemaAST.js';
 import type { CanonicalType, ColumnNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined, createMockQuerier, createMockQuerierPool } from '../test/index.js';
@@ -198,7 +198,6 @@ describe('Migrator Core Methods', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     vi.spyOn(generator, 'diffSchema').mockReturnValue({ tableName: 'DiffUser', type: 'alter' });
     vi.spyOn(generator, 'generateAlterTable').mockReturnValue(['ALTER TABLE "DiffUser" ADD COLUMN "age" INTEGER;']);
-    vi.spyOn(generator, 'generateAlterTableDown').mockReturnValue(['ALTER TABLE "DiffUser" DROP COLUMN "age";']);
     migrator.schemaGenerator = generator;
     vi.spyOn(migrator.schemaIntrospector, 'introspect').mockResolvedValue(new SchemaAST());
     vi.spyOn(migrator.schemaIntrospector, 'tableExists').mockResolvedValue(true);
@@ -471,11 +470,19 @@ describe('Migrator Core Methods', () => {
     });
 
     it("should respect sync's safe and drop options", async () => {
+      const oldCol = {
+        name: 'old_col',
+        type: 'TEXT',
+        nullable: true,
+        isPrimaryKey: false,
+        isAutoIncrement: false,
+        isUnique: false,
+      };
       const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'User',
-        columnsToDrop: ['old_col'],
-        indexesToDrop: [{ name: 'old_idx', entries: [{ column: 'old_col' }], unique: false }],
+        columns: [{ from: oldCol }],
+        indexes: [{ from: { name: 'old_idx', entries: [{ column: 'old_col' }], unique: false } }],
       };
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       vi.spyOn(await migrator.getSchemaGenerator(), 'generateAlterTable').mockReturnValue([]);
@@ -483,14 +490,14 @@ describe('Migrator Core Methods', () => {
       // Safe mode (default)
       await migrator.sync();
       expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.not.objectContaining({ columnsToDrop: expect.anything() }),
+        expect.not.objectContaining({ columns: expect.anything() }),
       );
 
       // Unsafe mode with drop
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       await migrator.sync({ safe: false, drop: true });
       expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.objectContaining({ columnsToDrop: ['old_col'] }),
+        expect.objectContaining({ columns: [{ from: oldCol }] }),
       );
     });
 
@@ -509,28 +516,24 @@ describe('Migrator Core Methods', () => {
       const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'User',
-        foreignKeysToAdd: [companyFk],
-        foreignKeysToDrop: ['User_legacy_fk'],
-        foreignKeysToAlter: [{ from: { ...companyFk, onDelete: 'NO ACTION' }, to: companyFk }],
+        foreignKeys: [
+          { to: companyFk },
+          { from: { ...companyFk, name: 'User_legacy_fk' } },
+          { from: { ...companyFk, name: undefined, onDelete: 'NO ACTION' }, to: companyFk },
+        ],
       };
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       vi.spyOn(await migrator.getSchemaGenerator(), 'generateAlterTable').mockReturnValue([]);
 
       await migrator.sync();
       expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.objectContaining({ foreignKeysToAdd: [companyFk] }),
-      );
-      expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.not.objectContaining({ foreignKeysToDrop: expect.anything() }),
-      );
-      expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.not.objectContaining({ foreignKeysToAlter: expect.anything() }),
+        expect.objectContaining({ foreignKeys: [{ to: companyFk }] }),
       );
 
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       await migrator.sync({ safe: false });
       expect(migrator.schemaGenerator?.generateAlterTable).toHaveBeenCalledWith(
-        expect.objectContaining({ foreignKeysToDrop: ['User_legacy_fk'] }),
+        expect.objectContaining({ foreignKeys: diff.foreignKeys }),
       );
     });
 
@@ -543,7 +546,7 @@ describe('Migrator Core Methods', () => {
       const diff: SchemaDiff = {
         type: 'alter',
         tableName: 'Member',
-        primaryKey: { from: ['userId'], to: ['userId', 'groupId'], fromName: 'Member_pkey' },
+        primaryKey: { from: { columns: ['userId'], name: 'Member_pkey' }, to: { columns: ['userId', 'groupId'] } },
       };
       vi.spyOn(migrator, 'getDiffs').mockResolvedValueOnce([diff]);
       vi.spyOn(await migrator.getSchemaGenerator(), 'generateAlterTable').mockReturnValue([]);
@@ -633,52 +636,56 @@ describe('Migrator Core Methods', () => {
       vi.spyOn(generator, 'generateCreateSchema').mockReturnValue(['CREATE']);
       vi.spyOn(generator, 'generateDropTable').mockReturnValue('DROP');
       vi.spyOn(generator, 'generateAlterTable').mockReturnValue(['ALTER UP']);
-      vi.spyOn(generator, 'generateAlterTableDown').mockReturnValue(['ALTER DOWN']);
 
       const result = await m.generateFromEntities('test-full');
       expect(result).toContain('test_full');
     });
 
-    it("should roll back the latest diff first, keeping each diff's own statement order", async () => {
+    /** The down is each diff reversed, the latest first, each in the one order its generator writes. */
+    it('should roll back the latest diff first, each as its reverse', async () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const m = new Migrator(pool, { storage, schemaGenerator: generator });
+      const column = { type: 'TEXT', nullable: true, isPrimaryKey: false, isAutoIncrement: false, isUnique: false };
       vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([
-        { type: 'alter', tableName: 'First' },
-        { type: 'alter', tableName: 'Second' },
-      ]);
-      vi.spyOn(generator, 'generateAlterTable').mockReturnValue(['UP']);
-      vi.spyOn(generator, 'generateAlterTableDown').mockImplementation((diff) => [
-        `${diff.tableName} DROP NEW`,
-        `${diff.tableName} RESTORE OLD`,
+        { type: 'alter', tableName: 'First', columns: [{ to: { ...column, name: 'a' } }] },
+        { type: 'alter', tableName: 'Second', columns: [{ from: { ...column, name: 'b' } }] },
       ]);
 
       await m.generateFromEntities('reorder');
 
       const down = lastWrittenFile().split('async down')[1];
       expect([...down.matchAll(/querier\.run\("(.+?)"\)/g)].map(([, sql]) => sql)).toEqual([
-        'Second DROP NEW',
-        'Second RESTORE OLD',
-        'First DROP NEW',
-        'First RESTORE OLD',
+        'ALTER TABLE \\"Second\\" ADD COLUMN \\"b\\" TEXT;',
+        'ALTER TABLE \\"First\\" DROP COLUMN \\"a\\";',
       ]);
     });
 
-    it('should hold back, in safe mode, an index recreated under the name of one it would drop', async () => {
+    /** A rebuild is a drop and an add, under its old name or paired by columns under another: neither goes alone. */
+    it('should hold back, in safe mode, an index it would rebuild, and still add a new one', async () => {
       const m = new Migrator(pool, { storage });
-      const lookup = { name: 'lookup', entries: [{ column: 'kind' }], unique: false };
-      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([
-        {
-          type: 'alter',
-          tableName: 'User',
-          indexesToDrop: [lookup],
-          indexesToAdd: [
-            { ...lookup, entries: [{ column: 'kind' }, { column: 'status' }] },
-            { ...lookup, name: 'other' },
-          ],
-        },
-      ]);
+      const legacy = { name: 'legacy_kind', entries: [{ column: 'kind' }], unique: false };
+      const diff: SchemaDiff = {
+        type: 'alter',
+        tableName: 'User',
+        indexes: [
+          {
+            from: legacy,
+            to: { ...legacy, name: 'User__kind_idx', entries: [{ column: 'kind', order: 'desc' }] },
+          },
+          { from: { ...legacy, name: 'lookup' }, to: { ...legacy, name: 'lookup', entries: [{ column: 'status' }] } },
+          { to: { ...legacy, name: 'other' } },
+        ],
+      };
+      vi.spyOn(m, 'getDiffs').mockResolvedValueOnce([diff]).mockResolvedValueOnce([diff]);
 
       expect(await m.planSync()).toEqual(['CREATE INDEX IF NOT EXISTS "other" ON "User" ("kind");']);
+      expect(await m.planSync({ safe: false })).toEqual([
+        'DROP INDEX IF EXISTS "legacy_kind";',
+        'DROP INDEX IF EXISTS "lookup";',
+        'CREATE INDEX IF NOT EXISTS "User__kind_idx" ON "User" ("kind" DESC);',
+        'CREATE INDEX IF NOT EXISTS "lookup" ON "User" ("status");',
+        'CREATE INDEX IF NOT EXISTS "other" ON "User" ("kind");',
+      ]);
     });
 
     it('should skip a table with no entity on generate and sync', async () => {
@@ -728,10 +735,8 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
         referencedBy: [],
       };
       table.columns.set(columnName, column);
-      if (isPrimaryKey) {
-        table.primaryKey.push(column);
-      }
     }
+    table.primaryKey = keyOfColumns(table.columns.values());
     ast.addTable(table);
   }
 
@@ -741,7 +746,7 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
     getTableNames: vi.fn().mockResolvedValue(Object.keys(tables)),
     getTableSchema: vi.fn().mockResolvedValue(undefined),
     tableExists: vi.fn().mockImplementation((name: string) => Promise.resolve(name in tables)),
-    ownedTriggers: vi.fn().mockResolvedValue(new Map()),
+    ownedTriggers: vi.fn(async () => new Map()),
   };
 }
 

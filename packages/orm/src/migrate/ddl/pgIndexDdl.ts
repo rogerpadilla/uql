@@ -1,6 +1,6 @@
 import type { IndexType } from '../../schema/types.js';
 import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/index.js';
-import { unsupportedVectorMetric } from '../../type/vector.js';
+import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { IndexDdl } from './indexDdl.js';
 
 /** `CREATE INDEX ... USING hnsw ("embedding" vector_cosine_ops) WITH (m = ...)`, pgvector's form. */
@@ -40,20 +40,22 @@ export class PgIndexDdl extends IndexDdl {
 
   /**
    * A vector index's operator class, `{type}_{metric}_ops` (`halfvec_cosine_ops`), refusing a metric it
-   * lacks rather than build with the default; any other entry takes the class it declares.
+   * lacks rather than build with the default; any other entry takes the class it declares. Stated even
+   * for the default distance: pgvector's own default class is L2, which a cosine search never uses.
    */
   protected override indexColumnOpsClass(entry: IndexColumnSchema, index: IndexSchema): string {
-    if (!this.isVectorIndex(index) || !index.distance) {
+    if (!this.isVectorIndex(index)) {
       return entry.opsClass ? ` ${entry.opsClass}` : '';
     }
-    const metric = this.dialect.vectorMetrics.get(index.distance)?.index;
+    const distance = indexDistance(index);
+    const metric = this.dialect.vectorMetrics.get(distance)?.index;
     if (!metric) {
-      throw unsupportedVectorMetric(this.dialect.dialectName, index.distance, index.name);
+      throw unsupportedVectorMetric(this.dialect.dialectName, distance, index.name);
     }
     const vectorType = this.dialect.supportedVectorType(index.vectorType ?? 'vector');
     const opsClass = `${vectorType}_${metric}_ops`;
     // IVFFlat has neither a sparsevec nor an L1 operator class; HNSW has all of them (pgvector 0.8.2).
-    if (index.type === 'ivfflat' && (vectorType === 'sparsevec' || index.distance === 'l1')) {
+    if (index.type === 'ivfflat' && (vectorType === 'sparsevec' || distance === 'l1')) {
       throw new TypeError(`ivfflat has no ${opsClass} operator class (index "${index.name}"); use hnsw`);
     }
     return ` ${opsClass}`;

@@ -346,6 +346,19 @@ describe('CREATE INDEX', () => {
     );
   });
 
+  /** pgvector's default class is L2, which a search measuring the default cosine would never use. */
+  it('should build an HNSW index with no distance for the default one', () => {
+    const sql = pgDdl.getCreateIndexStatement('articles', {
+      name: 'articles_embedding_hnsw_idx',
+      entries: [{ column: 'embedding' }],
+      unique: false,
+      type: 'hnsw',
+    });
+    expect(sql).toBe(
+      'CREATE INDEX IF NOT EXISTS "articles_embedding_hnsw_idx" ON "articles" USING hnsw ("embedding" vector_cosine_ops);',
+    );
+  });
+
   it('should generate CREATE INDEX for HNSW with tuning params', () => {
     const sql = pgDdl.getCreateIndexStatement('articles', {
       name: 'embedding_idx',

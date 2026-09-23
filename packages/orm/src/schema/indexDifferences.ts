@@ -1,15 +1,25 @@
-import type { IndexColumnSchema } from '../type/index.js';
-import { isVectorIndexType } from '../type/vector.js';
+import type { IndexColumnSchema, IndexSchema } from '../type/index.js';
+import { indexDistance, isVectorIndexType } from '../type/vector.js';
 import { fulltextConfig } from '../util/dialect.util.js';
 import { derivedIndexName } from '../util/sql.util.js';
+import { matchByKey } from './matchByKey.js';
 import type { IndexNode } from './types.js';
 
 /**
  * What an introspector reports about an index, and so all a diff may compare; apart from `IndexFeature`, what an engine emits.
- * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it.
+ * `vector` is whether it is a vector index at all, for an engine with one vector index whatever type declared it;
+ * `distance` is the metric a vector index was built for.
  * `textIndex` is a text index's weights and language, kept by an engine that lists its fields in no declared order.
  */
-export type IndexFacet = 'order' | 'nulls' | 'opsClass' | 'accessMethod' | 'include' | 'vector' | 'textIndex';
+export type IndexFacet =
+  | 'order'
+  | 'nulls'
+  | 'opsClass'
+  | 'accessMethod'
+  | 'include'
+  | 'vector'
+  | 'distance'
+  | 'textIndex';
 
 type ComparableIndex = Pick<IndexNode, 'name' | 'entries' | 'unique'>;
 
@@ -41,22 +51,37 @@ export function indexNameStem(name: string): string {
 }
 
 /**
- * The indexes a table lacks and the ones it no longer needs, matched by `keyOf`. Only an index uql
- * named, or whose name the entity claims, is dropped: any other may have been made outside the ORM.
+ * Pairs by name, then what is left by shape: an index the database has under another name is still
+ * the one asked for. What stays unpaired is created or dropped.
  */
-export function indexChanges<I extends ComparableIndex>(
+export function pairIndexes<S extends ComparableIndex, T extends ComparableIndex>(
+  source: readonly S[],
+  target: readonly T[],
+  normalizeName: (name: string) => string = (name) => name,
+) {
+  const byName = matchByKey(source, target, (index) => normalizeName(indexNameStem(index.name)));
+  const byShape = matchByKey(byName.created, byName.dropped, indexSignature);
+  return { created: byShape.created, dropped: byShape.dropped, matched: [...byName.matched, ...byShape.matched] };
+}
+
+/**
+ * The indexes a table lacks, the ones it no longer needs, and the ones to rebuild, differing in what
+ * `facets` let the engine report. Only an unpaired index uql named, or whose name the entity claims, is
+ * dropped: any other may have been made outside the ORM.
+ */
+export function indexChanges<I extends IndexSchema>(
   table: string,
   declared: readonly I[],
   current: readonly IndexNode[],
-  keyOf: (index: ComparableIndex) => string = indexSignature,
-): { toAdd: I[]; toDrop: IndexNode[] } {
-  const present = new Set(current.map(keyOf));
-  const wanted = new Set(declared.map(keyOf));
+  facets: ReadonlySet<IndexFacet>,
+): { toAdd: I[]; toDrop: IndexNode[]; toAlter: { from: IndexNode; to: I }[] } {
+  const { created, dropped, matched } = pairIndexes(declared, current);
   const claimed = new Set(declared.map((index) => index.name));
   const owned = (index: IndexNode) => claimed.has(index.name) || hasDerivedName(table, index);
   return {
-    toAdd: declared.filter((index) => !present.has(keyOf(index))),
-    toDrop: current.filter((index) => !wanted.has(keyOf(index)) && owned(index)),
+    toAdd: created,
+    toDrop: dropped.filter(owned),
+    toAlter: matched.flatMap(([to, from]) => (describeIndexDifferences(to, from, facets).length ? [{ from, to }] : [])),
   };
 }
 
@@ -89,8 +114,8 @@ const KIND_PREFIX = /^(?:idx|fk|ck|pk|uk|uq)_/i;
  * path or a predicate is reprinted by the engine, so never compared.
  */
 export function describeIndexDifferences(
-  source: IndexNode,
-  target: IndexNode,
+  source: IndexSchema,
+  target: IndexSchema,
   facets: ReadonlySet<IndexFacet>,
 ): string[] {
   const differences: string[] = [];
@@ -122,6 +147,11 @@ export function describeIndexDifferences(
 
   if (facets.has('accessMethod') && (source.type ?? 'btree') !== (target.type ?? 'btree')) {
     differences.push(`type: ${target.type ?? 'btree'} -> ${source.type ?? 'btree'}`);
+  }
+
+  const bothVector = isVectorIndexType(source.type) && isVectorIndexType(target.type);
+  if (facets.has('distance') && bothVector && indexDistance(source) !== indexDistance(target)) {
+    differences.push(`distance: ${indexDistance(target)} -> ${indexDistance(source)}`);
   }
 
   if (facets.has('vector') && isVectorIndexType(source.type) !== isVectorIndexType(target.type)) {

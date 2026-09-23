@@ -1,5 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
+import { MariadbSchemaIntrospector } from '../migrate/introspection/mysqlIntrospector.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mariadbConnection, provisioningTimeout } from '../test/index.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
@@ -98,6 +99,23 @@ describe('MariaDB vector index', () => {
     expect(rows.map((row) => row.vec)).toEqual([
       [0, 1, 0],
       [1, 0, 0],
+    ]);
+  });
+
+  /** MariaDB keeps a vector index's distance only in the table's definition, and leaves its own default, euclidean, out. */
+  it('should read a vector index built without a distance as euclidean, beside a plain index', async () => {
+    await drop();
+    await pool.withQuerier(async (querier) => {
+      await querier.run(
+        `CREATE TABLE \`${TABLE}\` (id INT PRIMARY KEY, n INT, vec VECTOR(3) NOT NULL, VECTOR INDEX ix_maria_vec (vec), INDEX ix_maria_n (n))`,
+      );
+    });
+
+    const schema = await new MariadbSchemaIntrospector(pool).getTableSchema(TABLE);
+
+    expect(schema?.indexes?.map(({ name, type, distance }) => ({ name, type, distance }))).toEqual([
+      { name: 'ix_maria_n', type: undefined, distance: undefined },
+      { name: 'ix_maria_vec', type: 'vector', distance: 'l2' },
     ]);
   });
 });

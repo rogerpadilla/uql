@@ -131,15 +131,17 @@ describe('enum fields', () => {
     const [sql] = new SqlSchemaGenerator(new PostgresDialect()).generateAlterTable({
       type: 'alter',
       tableName: 'Invoice',
-      columnsToAdd: [
+      columns: [
         {
-          name: 'status',
-          type: 'VARCHAR(20)',
-          nullable: true,
-          isPrimaryKey: false,
-          isAutoIncrement: false,
-          isUnique: false,
-          enum: ['draft', 'paid'],
+          to: {
+            name: 'status',
+            type: 'VARCHAR(20)',
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+            enum: ['draft', 'paid'],
+          },
         },
       ],
     });
@@ -180,16 +182,18 @@ describe('enum fields', () => {
     const [sql] = new SqlSchemaGenerator(new MariaDialect()).generateAlterTable({
       type: 'alter',
       tableName: 'Invoice',
-      columnsToAdd: [
+      columns: [
         {
-          name: 'status',
-          type: 'VARCHAR(20)',
-          nullable: true,
-          isPrimaryKey: false,
-          isAutoIncrement: false,
-          isUnique: false,
-          defaultValue: 'draft',
-          enum: ['draft', 'paid'],
+          to: {
+            name: 'status',
+            type: 'VARCHAR(20)',
+            nullable: true,
+            isPrimaryKey: false,
+            isAutoIncrement: false,
+            isUnique: false,
+            defaultValue: 'draft',
+            enum: ['draft', 'paid'],
+          },
         },
       ],
     });

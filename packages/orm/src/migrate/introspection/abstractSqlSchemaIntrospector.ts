@@ -5,6 +5,7 @@ import type {
   InstalledTriggers,
   ForeignKeySchema,
   IndexSchema,
+  PrimaryKeySchema,
   QuerierPool,
   RawRow,
   SchemaIntrospector,
@@ -79,8 +80,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
       return {
         name: tableName,
         columns,
-        primaryKey: primaryKey.columns,
-        primaryKeyName: primaryKey.name,
+        primaryKey,
         indexes,
         foreignKeys,
       };
@@ -99,20 +99,15 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
    * it: the whole schema in one read, since a table whose entity stopped declaring one still has one to
    * drop. Ownership is matched here rather than with `LIKE`, whose `_` wildcard would take in a hand-written one.
    */
-  async ownedTriggers(): Promise<Map<string, InstalledTriggers>> {
-    return this.withSqlQuerier(async (querier) => {
-      const byTable = new Map<string, Map<string, string[]>>();
-      for (const row of await querier.all<RawRow>(this.triggersQuery())) {
+  async ownedTriggers(table: string): Promise<InstalledTriggers> {
+    const rows = await this.withSqlQuerier((querier) => querier.all<RawRow>(this.triggersQuery(), [table]));
+    return new Map(
+      rows.flatMap((row) => {
         const name = String(row['name']);
-        if (!isOwnedName(name)) {
-          continue;
-        }
-        const table = String(row['table']);
         const statements = [row['requires'], row['definition']].filter(Boolean).map((sql) => String(sql));
-        byTable.set(table, (byTable.get(table) ?? new Map()).set(name, statements));
-      }
-      return byTable;
-    });
+        return isOwnedName(name) ? [[name, statements] as const] : [];
+      }),
+    );
   }
 
   async tableExists(tableName: string): Promise<boolean> {
@@ -152,12 +147,10 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return this.mapForeignKeysResult(read, tableName, results);
   }
 
-  protected async getPrimaryKey(
-    read: TableRowReader,
-    tableName: string,
-  ): Promise<{ columns?: string[]; name?: string }> {
+  protected async getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     const results = await read<RawRow>(this.getPrimaryKeyQuery(tableName), this.getPrimaryKeyParams(tableName));
-    return { columns: this.mapPrimaryKeyResult(results), name: this.mapPrimaryKeyName(results) };
+    const columns = this.mapPrimaryKeyResult(results);
+    return columns && { columns, name: this.mapPrimaryKeyName(results) };
   }
 
   protected tableExistsParams(tableName: string): unknown[] {
@@ -233,6 +226,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
    * `definition`, and where the body lives apart, the `requires` recreated first: what is installed, not
    * what uql wrote, which is exactly what a rollback puts back.
    */
+  /** The triggers on the table its one parameter names: each one's `name`, `definition`, and what it `requires`. */
   protected abstract triggersQuery(): string;
 
   /**
@@ -279,7 +273,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
 
   /**
    * What the engine calls the key's constraint, where the query reported one. Only a `DROP` needs it,
-   * and only the reported name will do - see {@link TableSchema.primaryKeyName}.
+   * and only the reported name will do - see {@link PrimaryKeySchema.name}.
    */
   protected mapPrimaryKeyName(results: RawRow[]): string | undefined {
     const name = results[0]?.['constraint_name'];

@@ -43,7 +43,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   constructor(private readonly pool: QuerierPool) {}
 
   /** MongoDB has no triggers, so none is ever installed. */
-  async ownedTriggers(): Promise<Map<string, InstalledTriggers>> {
+  async ownedTriggers(): Promise<InstalledTriggers> {
     return new Map();
   }
 
@@ -54,7 +54,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
     for (const name of tableNames) {
       const schema = await this.getTableSchema(name);
       if (schema) {
-        ast.addTable(buildTable(schema));
+        ast.addTable(buildTable(schema, this.indexFacets));
       }
     }
 
@@ -149,8 +149,8 @@ async function hasCollection(db: MongoQuerier['db'], name: string): Promise<bool
 }
 
 /** Mongo has no columns to read, so a table's are the fields its indexes name, one node per field. */
-function buildTable({ name, indexes = [] }: TableSchema): TableNode {
-  const table = createTableNode(name);
+function buildTable({ name, indexes = [] }: TableSchema, indexFacets: ReadonlySet<IndexFacet>): TableNode {
+  const table = createTableNode(name, undefined, indexFacets);
 
   for (const index of indexes) {
     for (const { column } of index.entries) {

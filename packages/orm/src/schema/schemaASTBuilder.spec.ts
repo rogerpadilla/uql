@@ -465,7 +465,7 @@ describe('SchemaASTBuilder', () => {
       expect(indexedColumns(ast, 'FkFieldIndexed')).toEqual([['fkBlogId']]);
     });
 
-    it('should not index a foreign key the primary key or a unique constraint already leads with', () => {
+    it('should not index a foreign key the primary key or a unique column already leads with', () => {
       @Entity()
       class FkBlogTag {
         [idKey]?: 'fkBlogId' | 'fkTagId';
@@ -481,9 +481,12 @@ describe('SchemaASTBuilder', () => {
 
       const ast = buildSchemaAST([FkBlog, FkTag, FkBlogTag, FkBlogOwner]);
 
-      // The key leads with its first column alone, so the second still needs an index of its own.
+      // The key leads with its first column alone, so the second still needs an index of its own. A
+      // unique column is its own unique index, which serves the key.
       expect(indexedColumns(ast, 'FkBlogTag')).toEqual([['fkTagId']]);
-      expect(indexedColumns(ast, 'FkBlogOwner')).toEqual([]);
+      expect(ast.getTable('FkBlogOwner')?.indexes.map(({ name, unique }) => ({ name, unique }))).toEqual([
+        { name: 'FkBlogOwner__fkBlogId_idx', unique: true },
+      ]);
     });
 
     it('should leave a foreign key unindexed when its field opts out', () => {

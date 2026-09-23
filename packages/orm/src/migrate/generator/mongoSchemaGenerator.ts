@@ -23,6 +23,7 @@ import { fulltextConfig, fulltextWeights } from '../../util/dialect.util.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
+import { sides } from '../schemaChange.js';
 import { renderIndexDefinition } from './definitionToNode.js';
 import { indexNodeToSchema } from './indexNodeToSchema.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
@@ -141,17 +142,11 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     return serializeMongoCommand({ action: 'dropCollection', name: tableName });
   }
 
+  /** A collection's indexes: each dropped, then each created, an alter as both. */
   generateAlterTable(diff: SchemaDiff): string[] {
     return [
-      ...(diff.indexesToDrop ?? []).map((index) => this.dropIndexCommand(diff.tableName, index)),
-      ...(diff.indexesToAdd ?? []).map((index) => this.generateCreateIndex(diff.tableName, index)),
-    ];
-  }
-
-  generateAlterTableDown(diff: SchemaDiff): string[] {
-    return [
-      ...(diff.indexesToAdd ?? []).map((index) => this.dropIndexCommand(diff.tableName, index)),
-      ...(diff.indexesToDrop ?? []).map((index) => this.generateCreateIndex(diff.tableName, index)),
+      ...sides(diff.indexes, 'from').map((index) => this.dropIndexCommand(diff.tableName, index)),
+      ...sides(diff.indexes, 'to').map((index) => this.generateCreateIndex(diff.tableName, index)),
     ];
   }
 
@@ -268,24 +263,18 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       return { tableName: collectionName, type: 'create' };
     }
 
-    // By name: MongoDB lists a text index's fields alphabetically, so a shape would not match its own.
-    const { toAdd, toDrop } = indexChanges(
+    const { toAdd, toDrop, toAlter } = indexChanges(
       collectionName,
       this.indexesOf(meta, collectionName),
       currentTable.indexes,
-      (index) => index.name,
+      currentTable.indexFacets,
     );
-
-    if (!toAdd.length && !toDrop.length) {
-      return undefined;
-    }
-
-    return {
-      tableName: collectionName,
-      type: 'alter',
-      indexesToAdd: toAdd.length ? toAdd : undefined,
-      indexesToDrop: toDrop.length ? toDrop.map(indexNodeToSchema) : undefined,
-    };
+    const indexes = [
+      ...toAdd.map((to) => ({ to })),
+      ...toDrop.map((from) => ({ from: indexNodeToSchema(from) })),
+      ...toAlter.map(({ from, to }) => ({ from: indexNodeToSchema(from), to })),
+    ];
+    return indexes.length ? { tableName: collectionName, type: 'alter', indexes } : undefined;
   }
 }
 

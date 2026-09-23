@@ -52,8 +52,7 @@ describe.each(SQL_POOLS)('a trigger on %s', (_engine, connect) => {
 
   /** What uql has installed on the post table, read through the introspector every engine implements. */
   const installed = async () => {
-    const byTable = (await introspectorFor(pool).ownedTriggers?.()) ?? new Map();
-    return [...(byTable.get('TgPost') ?? new Map()).keys()];
+    return [...(await introspectorFor(pool).ownedTriggers('TgPost')).keys()];
   };
 
   const escapeId = (name: string) => pool.dialect.escapeId(name);

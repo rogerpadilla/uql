@@ -1,5 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
+import { buildIndexDecoratorSource } from '../migrate/codegen/indexDecoratorSource.js';
+import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
 import { Migrator } from '../migrate/migrator.js';
 import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
@@ -81,5 +83,14 @@ describe('pgvector index', () => {
 
     expect(await migrator.planSync()).toEqual([]);
     expect((await indexesOf()).map((it) => it.indexname)).toEqual(['ix_pg_vec']);
+  });
+
+  /** `@Index` requires the distance beside a vector type, so an entity without it would not compile. */
+  it('should read the distance back into the entity generate:from-db writes', async () => {
+    const [index] = (await new PostgresSchemaIntrospector(pool).introspect([TABLE])).getTable(TABLE)?.indexes ?? [];
+
+    expect(buildIndexDecoratorSource(index, (column) => column, 'row')).toBe(
+      "@Index((row) => [row.vec], { name: 'ix_pg_vec', type: 'hnsw', distance: 'cosine' })",
+    );
   });
 });

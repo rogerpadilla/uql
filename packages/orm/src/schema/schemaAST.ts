@@ -1,20 +1,33 @@
+import type { PrimaryKeySchema } from '../type/migration.js';
 import { qualifyName } from '../util/sql.util.js';
 import { createOrder, dropOrder } from './dependencyGraph.js';
-import type { IndexNode, RelationshipNode, TableNode } from './types.js';
+import type { IndexFacet } from './indexDifferences.js';
+import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from './types.js';
 
 /** A table node with its collections empty, ready to be filled. */
-export function createTableNode(name: string, schema?: string, comment?: string): TableNode {
+export function createTableNode(
+  name: string,
+  schema?: string,
+  indexFacets: ReadonlySet<IndexFacet> = new Set(),
+): TableNode {
   return {
     name,
     schema,
-    comment,
+    indexFacets,
     columns: new Map(),
-    primaryKey: [],
     indexes: [],
     checks: [],
     incomingRelations: [],
     outgoingRelations: [],
   };
+}
+
+/** The key the columns' own flags say, in their order, for a source that reports no key of its own. */
+export function keyOfColumns(
+  columns: Iterable<Pick<ColumnNode, 'name' | 'isPrimaryKey'>>,
+): PrimaryKeySchema | undefined {
+  const keyColumns = [...columns].filter((column) => column.isPrimaryKey).map((column) => column.name);
+  return keyColumns.length ? { columns: keyColumns } : undefined;
 }
 
 /** A database schema as a graph: tables, the foreign keys between them, and their indexes. */

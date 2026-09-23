@@ -133,9 +133,11 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
       await querier.run(`CREATE INDEX probe_indexes_v_idx ON ${table} (v)`);
     });
 
+    // Each unique constraint's index, a one-column one too, as every engine reports it; never the key's.
     expect(schema.indexes).toEqual([
       { name: 'probe_indexes_v_idx', entries: [{ column: 'v' }], unique: false },
       { name: 'sqlite_autoindex_probe_indexes_3', entries: [{ column: 'v' }, { column: 'w' }], unique: true },
+      { name: 'sqlite_autoindex_probe_indexes_2', entries: [{ column: 'w' }], unique: true },
     ]);
     expect(schema.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
       { name: 'code', isUnique: false },
@@ -156,7 +158,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
       querier.run(`CREATE TABLE ${escapedTable} (id INTEGER PRIMARY KEY)`),
     );
 
-    expect(schema).toMatchObject({ name: table, primaryKey: ['id'] });
+    expect(schema).toMatchObject({ name: table, primaryKey: { columns: ['id'] } });
   }
 }
 

@@ -37,6 +37,24 @@ describe('DriftDetector', () => {
       expect(drifts[0].details).toContain('Default mismatch');
     });
 
+    /** The generator's own equality, so drift reports exactly the defaults a generated migration would change. */
+    it('should compare defaults with the equality it is given, which turns the check on', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(mockTableNode('users', [{ name: 'at', defaultValue: 'now' }, { name: 'id' }]));
+      actual.addTable(
+        mockTableNode('users', [
+          { name: 'at', defaultValue: 'now()' },
+          { name: 'id', defaultValue: 'uuidv7()' },
+        ]),
+      );
+      const defaultsEqual = (wanted: unknown, found: unknown) => String(found).replace('()', '') === String(wanted);
+
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect(), defaultsEqual }).drifts;
+
+      expect(drifts.map((drift) => [drift.column, drift.expected, drift.actual])).toEqual([['id', 'NULL', 'uuidv7()']]);
+    });
+
     it('should compare a missing default as NULL, and pass over an equal one', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
@@ -561,13 +579,13 @@ describe('DriftDetector', () => {
     it('should detect missing/unexpected indexes', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
-      const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
+      const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }, { name: 'name' }]);
       expected.addTable(t1);
-      expected.addIndex({ name: '1_idx', table: t1, entries: [], unique: false });
+      expected.addIndex({ name: '1_idx', table: t1, entries: [{ column: 'email' }], unique: false });
 
-      const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
+      const t2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }, { name: 'name' }]);
       actual.addTable(t2);
-      actual.addIndex({ name: '2_idx', table: t2, entries: [], unique: false });
+      actual.addIndex({ name: '2_idx', table: t2, entries: [{ column: 'name' }], unique: false });
 
       const report = detectDrift(expected, actual);
       expect(report.drifts.some((d) => d.type === 'missing_index')).toBe(true);

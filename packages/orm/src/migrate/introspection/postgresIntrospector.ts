@@ -1,6 +1,7 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexColumnSchema, IndexSchema, RawRow } from '../../type/index.js';
+import { isVectorIndexType } from '../../type/vector.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
@@ -19,16 +20,16 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     'opsClass',
     'accessMethod',
     'include',
+    'distance',
   ]);
 
   protected triggersQuery(): string {
     return /*sql*/ `
-      SELECT c.relname AS "table", t.tgname AS name, pg_get_triggerdef(t.oid) AS definition,
-        pg_get_functiondef(t.tgfoid) AS requires
+      SELECT t.tgname AS name, pg_get_triggerdef(t.oid) AS definition, pg_get_functiondef(t.tgfoid) AS requires
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr}
+      WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr} AND c.relname = ${this.dialect.placeholder(1)}
     `;
   }
 
@@ -63,7 +64,11 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * database scans meet that table every time something else is migrating.
    *
    * `attgenerated` rather than `is_generated`, which cannot part a stored generated column from the
-   * virtual one Postgres 18 added and uql never declares. CockroachDB states it too.
+   * virtual one Postgres 18 added and uql never declares. CockroachDB states it too. `format_type` for an
+   * extension type's modifier, which `information_schema` drops: a `vector(256)` read back as `vector`.
+   * CockroachDB names that type `vector` where Postgres says `USER-DEFINED`.
+   *
+   * A column is unique by a unique index over it alone, a constraint's or its own, as every engine reads it.
    */
   protected getColumnsQuery(_tableName: string): string {
     return /*sql*/ `
@@ -78,11 +83,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.numeric_scale,
         c.is_identity,
         c.identity_generation,
-        CASE WHEN (
-          SELECT a.attgenerated FROM pg_catalog.pg_attribute a
-          WHERE a.attrelid = to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
-            AND a.attname = c.column_name
-        ) = 's' THEN c.generation_expression END AS generated_as,
+        CASE WHEN a.attgenerated = 's' THEN c.generation_expression END AS generated_as,
+        CASE WHEN c.data_type IN ('USER-DEFINED', 'vector') AND a.atttypmod > -1
+          THEN format_type(a.atttypid, a.atttypmod) END AS formatted_type,
         EXISTS (
           SELECT 1 FROM information_schema.table_constraints tc
           JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
@@ -92,19 +95,19 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
             AND kcu.column_name = c.column_name
         ) AS is_primary_key,
         EXISTS (
-          SELECT 1 FROM information_schema.table_constraints tc
-          JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
-          WHERE tc.table_schema = c.table_schema
-            AND tc.table_name = c.table_name
-            AND tc.constraint_type = 'UNIQUE'
-          GROUP BY tc.constraint_name
-          HAVING COUNT(*) = 1 AND MIN(kcu.column_name) = c.column_name
+          SELECT 1 FROM pg_catalog.pg_index ix
+          WHERE ix.indrelid = a.attrelid AND ix.indisunique AND NOT ix.indisprimary
+            AND ix.indnkeyatts = 1 AND ix.indkey[0] = a.attnum
+            AND ix.indpred IS NULL AND ix.indexprs IS NULL
         ) AS is_unique,
         pg_catalog.col_description(
           to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name)),
           c.ordinal_position
         ) AS column_comment
       FROM information_schema.columns c
+      LEFT JOIN pg_catalog.pg_attribute a
+        ON a.attrelid = to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
+        AND a.attname = c.column_name
       WHERE c.table_schema = ${this.schemaExpr}
         AND c.table_name = $1
       ORDER BY c.ordinal_position
@@ -118,23 +121,23 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * while `pg_get_indexdef` reprints an identifier *quoted*, so a camelCase column came back as
    * `"tenantId"` and matched no column of the table. Prisma and drizzle-kit both split it this way.
    *
-   * Indexes backing a constraint are left out, primary keys among them: `@Field({ unique })` emits a
-   * `UNIQUE` constraint and no index, so reporting the index Postgres builds underneath it told every
-   * project it had an index its entities never asked for.
+   * The key's index and an `EXCLUDE`'s are left out. A `UNIQUE` constraint's index stays, as SQL Server
+   * and the MySQL family report theirs: the diff reads one over a single column as that column's
+   * uniqueness, and one over several as the unique `@Index` it is.
    */
   protected getIndexesQuery(_tableName: string): string {
     return /*sql*/ `
       SELECT
         i.relname AS index_name,
         ix.indisunique AS is_unique,
-        am.amname AS method,
+        ${this.indexMethodSql} AS method,
         pg_get_expr(ix.indpred, ix.indrelid, true) AS predicate,
         k.n <= ix.indnkeyatts AS is_key,
         k.attnum = 0 AS is_expression,
         COALESCE(a.attname::text, pg_get_indexdef(ix.indexrelid, k.n::int, true)) AS entry,
         (ix.indoption[k.n - 1] & 1) <> 0 AS descending,
-        (ix.indoption[k.n - 1] & 2) <> 0 AS nulls_first,
-        CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END AS ops_class
+        ${this.nullsFirstSql} AS nulls_first,
+        ${this.opsClassSql} AS ops_class
       FROM pg_class t
       JOIN pg_index ix ON t.oid = ix.indrelid
       JOIN pg_class i ON i.oid = ix.indexrelid
@@ -147,23 +150,20 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND n.nspname = ${this.schemaExpr}
         AND NOT ix.indisprimary
         AND NOT EXISTS (
-          SELECT 1 FROM pg_constraint con
-          WHERE con.conindid = ix.indexrelid
-            AND con.contype IN (${this.constraintIndexTypes.map((type) => `'${type}'`).join(', ')})
+          SELECT 1 FROM pg_constraint con WHERE con.conindid = ix.indexrelid AND con.contype = 'x'
         )
       ORDER BY i.relname, k.n
     `;
   }
 
-  /**
-   * Constraint kinds whose backing index is the constraint itself rather than an index anyone asked
-   * for. Postgres builds one for `PRIMARY KEY`, `UNIQUE` and `EXCLUDE`, and only for those: a plain
-   * `CREATE UNIQUE INDEX` has no `pg_constraint` row at all, so it survives.
-   *
-   * Nothing to do with {@link indexFacets}, which says which *attributes* of an index diffing may
-   * compare. This one decides which indexes are reported at all.
-   */
-  protected readonly constraintIndexTypes: readonly string[] = ['p', 'u', 'x'];
+  /** Whether an entry sorts nulls first, which Postgres states on every entry. */
+  protected readonly nullsFirstSql: string = '(ix.indoption[k.n - 1] & 2) <> 0';
+
+  /** An index's access method, which is the type it declares. */
+  protected readonly indexMethodSql: string = 'am.amname';
+
+  /** An entry's operator class, where it is not the default for its type. */
+  protected readonly opsClassSql: string = 'CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END';
 
   /** From `pg_constraint`, whose key arrays keep each column paired with the one it references. */
   protected getForeignKeysQuery(_tableName: string): string {
@@ -212,7 +212,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   ): Promise<ColumnSchema[]> {
     return results.map((row) => ({
       name: row.column_name,
-      type: this.normalizeType(row.data_type, row.udt_name),
+      type: row.formatted_type?.toUpperCase() ?? this.normalizeType(row.data_type, row.udt_name),
       nullable: row.is_nullable === 'YES',
       defaultValue: this.parseDefaultValue(row.column_default),
       isPrimaryKey: row.is_primary_key,
@@ -226,6 +226,21 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     }));
   }
 
+  /**
+   * A vector index keeps its distance as its vector column's operator class, `{type}_{metric}_ops`, which
+   * is how `PgIndexDdl` writes the entity's `distance`; read back as that `distance`, so the two compare.
+   * No class named is the engine's default, L2.
+   */
+  private withVectorDistance(index: IndexSchema): IndexSchema {
+    if (!isVectorIndexType(index.type)) {
+      return index;
+    }
+    const opsClass = index.entries.find((entry) => entry.opsClass)?.opsClass;
+    const distance = this.dialect.indexedDistance(opsClass ? /_([a-z0-9]+)_ops$/.exec(opsClass)?.[1] : 'l2');
+    const entries = index.entries.map(({ opsClass: _opsClass, ...entry }) => entry);
+    return distance ? { ...index, distance, entries } : index;
+  }
+
   protected async mapIndexesResult(
     _read: TableRowReader,
     _tableName: string,
@@ -234,7 +249,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     // One row per index entry, ordered by position, so the rows of an index are its entries in order.
     return [...Map.groupBy(results, (row) => row.index_name)].map(([name, rows]) => {
       const include = rows.filter((row) => !row.is_key).map((row) => row.entry);
-      return {
+      return this.withVectorDistance({
         name,
         entries: rows.filter((row) => row.is_key).map(mapIndexEntry),
         unique: rows[0].is_unique,
@@ -242,7 +257,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         where: rows[0].predicate ?? undefined,
         include: include.length > 0 ? include : undefined,
         ...fulltextIndex(rows),
-      };
+      });
     });
   }
 
@@ -355,7 +370,7 @@ function mapIndexEntry(row: PostgresIndexRow): IndexColumnSchema {
     column: row.entry,
     ...(row.is_expression && { expression: true }),
     order: row.descending ? 'desc' : 'asc',
-    nulls: row.nulls_first ? 'first' : 'last',
+    ...(row.nulls_first !== null && { nulls: row.nulls_first ? 'first' : 'last' }),
     ...(row.ops_class && { opsClass: row.ops_class }),
   };
 }
@@ -364,19 +379,26 @@ function mapIndexEntry(row: PostgresIndexRow): IndexColumnSchema {
  * CockroachDB answers the same catalogue queries and differs only in what it can express: v26.2.5
  * still rejects `NULLS FIRST/LAST` and operator classes as "unimplemented", and it sorts nulls first
  * on an ASC column where Postgres sorts them last. Reading a nulls order back would therefore report
- * every ascending index as drifted, against an entity that could not have asked for one. Its access
- * method, `prefix`, needs nothing: a method that is not a known index type is reported as no type.
+ * every ascending index as drifted, against an entity that could not have asked for one.
  */
 export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
-  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['order', 'include']);
+  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
+    'order',
+    'include',
+    'vector',
+    'distance',
+  ]);
+
+  /** None: it rejects a stated nulls order, so reading one back gives an index it would refuse to rebuild. */
+  protected override readonly nullsFirstSql = 'NULL::BOOL';
 
   /**
-   * `'u'` is missing on purpose. CockroachDB registers a `UNIQUE` constraint for a plain `CREATE
-   * UNIQUE INDEX` too, naming it after the index, so filtering on it would hide every unique index a
-   * user asked for and report it missing forever. It leaves no way to tell the two apart, so the
-   * index a `@Field({ unique })` builds underneath itself stays visible there.
+   * Every index reports the access method `prefix` and no operator class, so a vector index is read off
+   * its definition, `USING cspann (vec vector_cosine_ops)`: its type, and its last key's class.
    */
-  protected override readonly constraintIndexTypes: readonly string[] = ['p', 'x'];
+  protected override readonly indexMethodSql = `CASE WHEN pg_get_indexdef(ix.indexrelid) LIKE '% USING cspann %' THEN 'vector' ELSE am.amname END`;
+
+  protected override readonly opsClassSql = `CASE WHEN k.n = ix.indnkeyatts THEN substring(pg_get_indexdef(ix.indexrelid) from '(\\w+_ops)\\)') END`;
 }
 
 type PostgresForeignKeyRow = {
@@ -398,7 +420,7 @@ type PostgresIndexRow = {
   is_expression: boolean;
   entry: string;
   descending: boolean;
-  nulls_first: boolean;
+  nulls_first: boolean | null;
   ops_class: string | null;
 };
 
@@ -406,6 +428,7 @@ type PostgresColumnRow = {
   column_name: string;
   data_type: string;
   udt_name: string;
+  formatted_type: string | null;
   is_nullable: string;
   column_default: string | null;
   is_primary_key: boolean;

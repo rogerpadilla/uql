@@ -19,10 +19,14 @@ export function normalizeIndexColumn(entry: IndexColumnInput): EntityIndexColumn
   return { ...modifiers, column: column instanceof ColumnRef ? column.key : column };
 }
 
-/** Every index an entity declares: each `@Field({ index })` as the one-column `@Index` it is, then its `@Index`es. */
+/**
+ * Every index an entity declares: each `@Field({ index })` or `@Field({ unique })` as the one-column
+ * `@Index` it is, then its `@Index`es. A unique column is a unique index, the one spelling of uniqueness
+ * every engine can add and drop.
+ */
 export function declaredIndexes<E>(meta: EntityMeta<E>): EntityIndexMeta<E>[] {
   const fieldIndexes = definedEntries(meta.fields).flatMap(([key, field]) =>
-    field.index
+    field.index || field.unique
       ? [
           {
             columns: [{ column: key }],

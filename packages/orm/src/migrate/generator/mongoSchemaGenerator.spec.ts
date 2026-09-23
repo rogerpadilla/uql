@@ -5,6 +5,7 @@ import type { TableNode } from '../../schema/types.js';
 import { assertDefined } from '../../test/index.js';
 import type { EntityWhere, Type } from '../../type/index.js';
 import { raw } from '../../util/index.js';
+import { added, reverseDiff } from '../schemaChange.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
@@ -70,7 +71,7 @@ describe('MongoSchemaGenerator', () => {
   it('should alter nothing, either way, where no index is missing', () => {
     const diff = { tableName: 'MongoUser', type: 'alter' as const };
     expect(generator.generateAlterTable(diff)).toEqual([]);
-    expect(generator.generateAlterTableDown(diff)).toEqual([]);
+    expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([]);
   });
 
   /**
@@ -95,6 +96,30 @@ describe('MongoSchemaGenerator', () => {
         name: 'email_idx',
         key: { email: 1 },
         options: { name: 'email_idx', unique: true },
+      },
+    ]);
+  });
+
+  /** MongoDB enforces uniqueness only through an index, so a unique field is one whether or not it names it. */
+  it('should build a unique field as a unique index, with no index option of its own', () => {
+    @Entity()
+    class MongoHandle {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String, unique: true }) handle?: string | null;
+    }
+
+    expect(
+      generator
+        .generateCreateTable(MongoHandle)
+        .map((json) => JSON.parse(json))
+        .slice(1),
+    ).toEqual([
+      {
+        action: 'createIndex',
+        collection: 'MongoHandle',
+        name: 'MongoHandle__handle_idx',
+        key: { handle: 1 },
+        options: { name: 'MongoHandle__handle_idx', unique: true },
       },
     ]);
   });
@@ -183,7 +208,7 @@ describe('MongoSchemaGenerator', () => {
       const diff = generator.diffSchema(MongoChunk, createTableNode('MongoChunk'));
       assertDefined(diff);
 
-      expect(generator.generateAlterTableDown(diff).map((json) => JSON.parse(json))).toEqual([
+      expect(generator.generateAlterTable(reverseDiff(diff)).map((json) => JSON.parse(json))).toEqual([
         { action: 'dropSearchIndex', collection: 'MongoChunk', name: 'embedding_index' },
       ]);
     });
@@ -339,7 +364,7 @@ describe('MongoSchemaGenerator', () => {
     );
 
     expect(diff).toMatchObject({ tableName: 'MongoUser', type: 'alter' });
-    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['email_idx']);
+    expect(added(diff?.indexes).map((index) => index.name)).toEqual(['email_idx']);
   });
 
   it('should plan nothing where the collection is in sync', () => {
@@ -352,32 +377,39 @@ describe('MongoSchemaGenerator', () => {
     expect(generator.diffSchema(MongoUser, current)).toBeUndefined();
   });
 
-  it('should generate alter statements', () => {
-    const diff = {
-      tableName: 'MongoUser',
-      type: 'alter' as const,
-      indexesToAdd: [{ name: 'test_idx', entries: [{ column: 'test' }], unique: false }],
-    };
-    const statements = generator.generateAlterTable(diff);
-    expect(statements).toHaveLength(1);
-    expect(statements[0]).toContain('"action":"createIndex"');
-  });
+  /** No engine alters an index, so one that changed is dropped and created anew, and back on the way down. */
+  it('should rebuild an index that changed, and restore it on the way down', () => {
+    const current = collectionWith(
+      'MongoUser',
+      { name: 'MongoUser__username_idx', unique: false },
+      { name: 'email_idx', unique: false },
+    );
+    const diff = generator.diffSchema(MongoUser, current);
+    assertDefined(diff);
+    const commands = (statements: string[]) =>
+      statements.map((statement) => {
+        const { action, name, options } = JSON.parse(statement);
+        return [action, name, options?.unique];
+      });
 
-  it('should generate alter down statements', () => {
-    const diff = {
-      tableName: 'MongoUser',
-      type: 'alter' as const,
-      indexesToAdd: [{ name: 'test_idx', entries: [{ column: 'test' }], unique: false }],
-    };
-    const statements = generator.generateAlterTableDown(diff);
-    expect(statements).toHaveLength(1);
-    expect(statements[0]).toContain('"action":"dropIndex"');
+    expect(commands(generator.generateAlterTable(diff))).toEqual([
+      ['dropIndex', 'email_idx', undefined],
+      ['createIndex', 'email_idx', true],
+    ]);
+    expect(commands(generator.generateAlterTable(reverseDiff(diff)))).toEqual([
+      ['dropIndex', 'email_idx', undefined],
+      ['createIndex', 'email_idx', false],
+    ]);
   });
 });
 
-/** A collection as the database holds it: the indexes named, over no columns it could report. */
+/**
+ * A collection as the database holds it: each index over the one field it is named after, `<field>_idx`
+ * or `<Collection>__<field>_idx`.
+ */
 function collectionWith(name: string, ...indexes: { name: string; unique: boolean }[]): TableNode {
   const table = createTableNode(name);
-  table.indexes.push(...indexes.map((index) => ({ ...index, table, entries: [] })));
+  const field = (index: string) => index.replace(/^.*__/, '').replace(/_idx$/, '');
+  table.indexes.push(...indexes.map((index) => ({ ...index, table, entries: [{ column: field(index.name) }] })));
   return table;
 }

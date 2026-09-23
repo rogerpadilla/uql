@@ -147,14 +147,7 @@ export interface ColumnSchema extends Omit<ColumnNode, 'type' | 'table' | 'refer
 export interface TableSchema {
   readonly name: string;
   readonly columns: ColumnSchema[];
-  /** The key's columns **in order**, which is what a composite is: `(a, b)` is not `(b, a)`. */
-  readonly primaryKey?: string[];
-  /**
-   * What the engine calls the key's constraint, where it names one at all - Postgres's `Member_pkey`,
-   * MySQL's literal `PRIMARY`, nothing on SQLite. Only a `DROP` needs it, and only the name the
-   * database actually reported will do: a derived one would name a constraint that is not there.
-   */
-  readonly primaryKeyName?: string;
+  readonly primaryKey?: PrimaryKeySchema;
   readonly indexes?: IndexSchema[];
   readonly foreignKeys?: ForeignKeySchema[];
 }
@@ -205,8 +198,28 @@ export interface ForeignKeySchema {
 }
 
 /**
- * Represents a difference between current and desired schema
+ * One object's change: added (`to` alone), dropped (`from` alone), or altered (both), each whole so the
+ * change is undone by swapping its ends. No engine alters an index, a key or a foreign key in place, so
+ * an alter of one is its drop and its add, which safe mode holds back together.
  */
+export interface Change<T> {
+  readonly from?: T;
+  readonly to?: T;
+}
+
+/** A primary key, whichever side it is read from: the entities, the database, or a diff between them. */
+export interface PrimaryKeySchema {
+  /** Its columns **in order**, which is what a composite is: `(a, b)` is not `(b, a)`. */
+  readonly columns: readonly string[];
+  /**
+   * What the engine calls its constraint, where it names one at all - Postgres's `Member_pkey`, MySQL's
+   * literal `PRIMARY`, nothing on SQLite. Only a `DROP` needs it, and only the name the database
+   * reported will do: a derived one would name a constraint that is not there.
+   */
+  readonly name?: string;
+}
+
+/** A table's differences from what its entity declares, or the table to create or drop. */
 export interface SchemaDiff {
   /** Qualified where the table has a schema, since it is also the key the table is found under. */
   readonly tableName: string;
@@ -216,26 +229,10 @@ export interface SchemaDiff {
    */
   readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
-  /**
-   * The table's key against the entity's, where their columns differ; `fromName` is the name the
-   * database reported, which is what a `DROP` needs.
-   */
-  readonly primaryKey?: { readonly from: string[]; readonly to: string[]; readonly fromName?: string };
-  readonly columnsToAdd?: ColumnSchema[];
-  readonly columnsToAlter?: { from: ColumnSchema; to: ColumnSchema }[];
-  readonly columnsToDrop?: string[];
-  readonly indexesToAdd?: IndexSchema[];
-  /** Whole rather than by name, so the rollback can create each again. */
-  readonly indexesToDrop?: IndexSchema[];
-  readonly foreignKeysToAdd?: ForeignKeySchema[];
-  /** Dropped under the name the *database* reported, which is the only name a `DROP` can use. */
-  readonly foreignKeysToDrop?: string[];
-  /**
-   * A constraint whose referential actions changed. Its own field rather than a pair of entries in
-   * the two above, because no engine alters an action in place: it is a drop and an add that have to
-   * travel together, and safe mode has to hold back both or neither.
-   */
-  readonly foreignKeysToAlter?: { readonly from: ForeignKeySchema; readonly to: ForeignKeySchema }[];
+  readonly primaryKey?: Change<PrimaryKeySchema>;
+  readonly columns?: readonly Change<ColumnSchema>[];
+  readonly indexes?: readonly Change<IndexSchema>[];
+  readonly foreignKeys?: readonly Change<ForeignKeySchema>[];
 }
 
 /**
@@ -278,6 +275,9 @@ export type InstalledTriggers = ReadonlyMap<string, readonly string[]>;
  * Interface for generating DDL statements from entity metadata
  */
 export interface SchemaGenerator {
+  /** Whether a column's stored default is the one the entity declares, as the engine reprints it. Absent where columns are not compared. */
+  readonly defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
+
   /** The whole schema for `entities`, tables then the foreign keys between them, which need every entity at once. */
   generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[];
 
@@ -303,15 +303,8 @@ export interface SchemaGenerator {
   /** A `DROP` for each trigger uql owns among `names` on `entity`'s table, whatever the entity declares. */
   generateTriggerDrops(entity: Type<object>, names: readonly string[]): string[];
 
-  /**
-   * Generate ALTER TABLE statements based on schema diff
-   */
+  /** The statements taking a table through `diff`; its rollback is the diff reversed, see `reverseDiff`. */
   generateAlterTable(diff: SchemaDiff): string[];
-
-  /**
-   * Generate rollback (down) statements for ALTER TABLE based on schema diff
-   */
-  generateAlterTableDown(diff: SchemaDiff): string[];
 
   /**
    * Generate CREATE INDEX statement
@@ -376,11 +369,12 @@ export interface SchemaGenerator {
  */
 export interface SchemaIntrospector {
   /**
-   * Every trigger uql installed in this schema, by table and then by name, each with the statements that
-   * recreate it as it stands. The names say which to drop once an entity no longer declares them; the
-   * statements are what a rollback puts back, read off the engine rather than recorded anywhere by uql.
+   * Every trigger uql installed on `table`, by name, each with the statements that recreate it as it
+   * stands. The names say which to drop once an entity no longer declares them; the statements are what
+   * a rollback puts back, read off the engine rather than recorded anywhere by uql. One table's alone,
+   * so reading it never meets a trigger another writer is dropping from some other table.
    */
-  ownedTriggers(): Promise<Map<string, InstalledTriggers>>;
+  ownedTriggers(table: string): Promise<InstalledTriggers>;
 
   /**
    * What this introspector can read back about an index, and so all that diffing may compare.

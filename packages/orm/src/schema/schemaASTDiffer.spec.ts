@@ -57,15 +57,15 @@ describe('SchemaASTDiffer', () => {
       const target = new SchemaAST();
       // A generated key: its type is the dialect's own serial spelling, which does not round trip
       // (`BIGINT AUTO_INCREMENT` reads back as `BIGINT(20)`), so the diff skips it. The column still
-      // differs - it is unique on one side - and that difference loses nothing.
+      // differs - in its default - and that difference loses nothing.
       const key = { name: 'id', isPrimaryKey: true, isAutoIncrement: true } as const;
-      source.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer' }, isUnique: true }]));
+      source.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer' }, defaultValue: 1 }]));
       target.addTable(mockTableNode('users', [{ ...key, type: { category: 'integer', size: 'big' } }]));
 
       const diff = diffSchemas(source, target);
 
       expect(diff.columnDiffs).toHaveLength(1);
-      expect(diff.columnDiffs[0].description).toContain('unique');
+      expect(diff.columnDiffs[0].description).toContain('default');
       expect(diff.columnDiffs[0].description).not.toContain('type');
       expect(diff.columnDiffs[0].isBreaking).toBe(false);
     });
@@ -214,7 +214,8 @@ describe('SchemaASTDiffer', () => {
       expect(result.columnDiffs[0].description).toContain('default: 20 -> 30');
     });
 
-    it('should detect unique constraint changes', () => {
+    /** A unique column is a unique index, compared with the indexes, so the column alone differs in nothing. */
+    it('should leave uniqueness to the indexes', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();
       source.addTable(
@@ -229,8 +230,7 @@ describe('SchemaASTDiffer', () => {
           { name: 'email', isUnique: false },
         ]),
       );
-      const result = diffSchemas(source, target);
-      expect(result.columnDiffs[0].description).toContain('unique: false -> true');
+      expect(diffSchemas(source, target).columnDiffs).toEqual([]);
     });
 
     it('should use case-insensitive comparison when configured', () => {
@@ -353,6 +353,64 @@ describe('SchemaASTDiffer', () => {
       expect(diff.indexDiffs.some((i) => i.name === 'users__email_idx' && i.type === 'drop')).toBe(true);
     });
 
+    /** The generator already takes an index of the same shape as the one it wants; drift must agree. */
+    it('should match an index of the same shape under another name', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const sourceTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      const targetTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      source.addIndex({ name: 'users__email_idx', table: sourceTable, entries: [{ column: 'email' }], unique: false });
+      target.addIndex({ name: 'legacy_email', table: targetTable, entries: [{ column: 'email' }], unique: false });
+      source.addTable(sourceTable);
+      target.addTable(targetTable);
+
+      const diff = diffSchemas(source, target, { compareIndexes: true });
+
+      expect(diff.indexDiffs).toEqual([]);
+    });
+
+    it('should report a duplicate of an index the entity asked for', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const sourceTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      const targetTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      source.addIndex({ name: 'users__email_idx', table: sourceTable, entries: [{ column: 'email' }], unique: true });
+      for (const name of ['users__email_uk', 'users_email_uq']) {
+        target.addIndex({ name, table: targetTable, entries: [{ column: 'email' }], unique: true });
+      }
+      source.addTable(sourceTable);
+      target.addTable(targetTable);
+
+      const diff = diffSchemas(source, target, { compareIndexes: true });
+
+      expect(diff.indexDiffs.map((index) => [index.name, index.type])).toEqual([['users_email_uq', 'drop']]);
+    });
+
+    it('should still report a same-shape index that differs in a compared attribute', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const sourceTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      const targetTable = mockTableNode(
+        'users',
+        [{ name: 'id', isPrimaryKey: true }, { name: 'email' }],
+        undefined,
+        new Set(['order']),
+      );
+      source.addIndex({
+        name: 'users__email_idx',
+        table: sourceTable,
+        entries: [{ column: 'email', order: 'desc' }],
+        unique: false,
+      });
+      target.addIndex({ name: 'legacy_email', table: targetTable, entries: [{ column: 'email' }], unique: false });
+      source.addTable(sourceTable);
+      target.addTable(targetTable);
+
+      const diff = diffSchemas(source, target, { compareIndexes: true });
+
+      expect(diff.indexDiffs.map((index) => [index.name, index.type])).toEqual([['users__email_idx', 'alter']]);
+    });
+
     it('should detect altered index', () => {
       const source = new SchemaAST();
       const target = new SchemaAST();
@@ -417,7 +475,12 @@ describe('SchemaASTDiffer', () => {
       const target = new SchemaAST();
 
       const table1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
-      const table2 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      const table2 = mockTableNode(
+        'users',
+        [{ name: 'id', isPrimaryKey: true }, { name: 'email' }],
+        undefined,
+        new Set(['accessMethod']),
+      );
 
       source.addTable(table1);
       target.addTable(table2);
@@ -437,7 +500,7 @@ describe('SchemaASTDiffer', () => {
         unique: true,
         type: 'hash', // Changed type
       });
-      const diff = diffSchemas(source, target, { compareIndexes: true, indexFacets: new Set(['accessMethod']) });
+      const diff = diffSchemas(source, target, { compareIndexes: true });
 
       expect(diff.indexDiffs.some((i) => i.type === 'alter')).toBe(true);
     });
@@ -684,7 +747,12 @@ describe('SchemaASTDiffer', () => {
       const sourceSchema = new SchemaAST();
       const targetSchema = new SchemaAST();
       const sourceTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
-      const targetTable = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'email' }]);
+      const targetTable = mockTableNode(
+        'users',
+        [{ name: 'id', isPrimaryKey: true }, { name: 'email' }],
+        undefined,
+        new Set(facets),
+      );
       sourceSchema.addTable(sourceTable);
       targetSchema.addTable(targetTable);
       sourceSchema.addIndex({
@@ -701,10 +769,7 @@ describe('SchemaASTDiffer', () => {
         unique: false,
         ...target,
       });
-      return diffSchemas(sourceSchema, targetSchema, {
-        compareIndexes: true,
-        indexFacets: new Set(facets),
-      }).indexDiffs;
+      return diffSchemas(sourceSchema, targetSchema, { compareIndexes: true }).indexDiffs;
     };
 
     it('should leave the entries of an expression index uncompared, whatever the text says', () => {

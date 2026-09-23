@@ -68,6 +68,11 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     return [...this.vectorMetrics.values()].some((metric) => metric.index);
   }
 
+  /** The distance a vector index built for `metric`, as {@link vectorMetrics} names it for an index, measures. */
+  indexedDistance(metric: string | undefined): VectorDistance | undefined {
+    return [...this.vectorMetrics].find(([, { index }]) => index === metric)?.[0];
+  }
+
   /** Quotes an identifier; supplied by the SQL dialect built on top of this layer. */
   abstract escapeId(val: string | undefined, forbidQualified?: boolean, addDot?: boolean): string;
 

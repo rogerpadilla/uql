@@ -1,12 +1,13 @@
 import { beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, idOf, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { reverseDiff } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
-import { assertDefined, columnsOf } from '../test/index.js';
+import { assertDefined } from '../test/index.js';
 import type { SchemaDiff, Type } from '../type/index.js';
 import { idKey } from '../type/index.js';
 import { whereIds } from '../util/index.js';
@@ -306,9 +307,7 @@ describe('a composite primary key in DDL', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     const existing = tableOf(Enrolment, 'Enrolment');
     existing.columns.delete('courseId');
-    existing.primaryKey.length = 0;
-    existing.primaryKey.push(...columnsOf(existing, 'studentId'));
-    existing.primaryKeyName = 'Enrolment_pkey'; // as introspection reports it
+    existing.primaryKey = { columns: ['studentId'], name: 'Enrolment_pkey' }; // as introspection reports it
 
     const statements = generator.generateAlterTable(diffOf(generator, Enrolment, existing));
 
@@ -323,7 +322,7 @@ describe('a composite primary key in DDL', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     const existing = tableOf(Note, 'Note');
     existing.columns.delete('id');
-    existing.primaryKey.length = 0;
+    existing.primaryKey = undefined;
 
     const statements = generator.generateAlterTable(diffOf(generator, Note, existing));
 
@@ -352,7 +351,7 @@ describe('changing the primary key of an existing table', () => {
   /** As introspection reports it: the columns it has, under the name the engine gave the constraint. */
   const existingTable = () => {
     const table = tableOf(MemberBefore, 'Member');
-    table.primaryKeyName = 'Member_pkey';
+    table.primaryKey = { columns: ['userId'], name: 'Member_pkey' };
     return table;
   };
 
@@ -360,7 +359,10 @@ describe('changing the primary key of an existing table', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     const diff = diffOf(generator, MemberAfter, existingTable());
 
-    expect(diff.primaryKey).toEqual({ from: ['userId'], to: ['userId', 'groupId'], fromName: 'Member_pkey' });
+    expect(diff.primaryKey).toEqual({
+      from: { columns: ['userId'], name: 'Member_pkey' },
+      to: { columns: ['userId', 'groupId'], name: 'Member__userId_groupId_pk' },
+    });
     expect(generator.generateAlterTable(diff)).toEqual([
       // The drop comes first: a column the new key names does not exist yet, and the old key has to
       // be gone before the table can take another.
@@ -385,7 +387,7 @@ describe('changing the primary key of an existing table', () => {
   it('should say nothing about a key whose columns are unchanged, whatever it is called', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     const table = tableOf(MemberBefore, 'Member');
-    table.primaryKeyName = 'some_legacy_name';
+    table.primaryKey = { columns: ['userId'], name: 'some_legacy_name' };
 
     expect(generator.diffSchema(MemberBefore, table)).toBeUndefined();
   });
@@ -394,7 +396,7 @@ describe('changing the primary key of an existing table', () => {
     const generator = new SqlSchemaGenerator(new PostgresDialect());
     const diff = diffOf(generator, MemberAfter, existingTable());
 
-    expect(generator.generateAlterTableDown(diff)).toEqual([
+    expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
       'ALTER TABLE "Member" DROP CONSTRAINT "Member__userId_groupId_pk";',
       'ALTER TABLE "Member" DROP COLUMN "groupId";',
       'ALTER TABLE "Member" ADD CONSTRAINT "Member_pkey" PRIMARY KEY ("userId");',

@@ -1,8 +1,8 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { canonicalColumnType } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
-import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import { createTableNode, keyOfColumns, SchemaAST } from '../../schema/schemaAST.js';
+import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
 import { derivedForeignKeyName } from '../../util/sql.util.js';
@@ -69,7 +69,7 @@ export abstract class BaseSqlIntrospector {
   }
 
   private buildTable(schema: TableSchema): TableNode {
-    const table = createTableNode(schema.name, this.schema);
+    const table = createTableNode(schema.name, this.schema, this.indexFacets);
     const { columns } = table;
 
     for (const col of schema.columns) {
@@ -86,12 +86,10 @@ export abstract class BaseSqlIntrospector {
       columns.set(col.name, column);
     }
 
-    // From the ordered list the query returned, not from the per-column flags: `(a, b)` is a
-    // different key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back
-    // to the flags for an introspector that reports no key of its own.
-    const keyColumns = schema.primaryKey ?? schema.columns.filter((col) => col.isPrimaryKey).map((col) => col.name);
-    table.primaryKey.push(...keyColumns.flatMap((name) => columns.get(name) ?? []));
-    table.primaryKeyName = schema.primaryKeyName;
+    // From the ordered key the query returned, not from the per-column flags: `(a, b)` is a different
+    // key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back to the flags
+    // for an introspector that reports no key of its own.
+    table.primaryKey = schema.primaryKey ?? keyOfColumns(schema.columns);
 
     return table;
   }
@@ -129,16 +127,7 @@ export abstract class BaseSqlIntrospector {
       // does not have, and the index if that leaves none, is what the entity side does too.
       const entries = idx.entries.filter((entry) => entry.expression || table.columns.has(entry.column));
       if (entries.length > 0) {
-        const index: IndexNode = {
-          name: idx.name,
-          table,
-          entries,
-          unique: idx.unique,
-          type: idx.type,
-          where: idx.where,
-          include: idx.include,
-        };
-        ast.addIndex(index);
+        ast.addIndex({ ...idx, table, entries });
       }
     }
   }

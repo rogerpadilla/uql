@@ -84,7 +84,7 @@ describe('MySQL JSON array index', () => {
     const actual = await introspector.introspect();
     const expected = buildSchemaAST([JsonArrayIndexed], { namingStrategy: dialect.namingStrategy });
 
-    const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
+    const report = detectDrift(expected, actual, { dialect });
 
     expect(report.drifts.filter((drift) => drift.table === TABLE)).toEqual([]);
   });

@@ -173,12 +173,12 @@ export function describeMigratorSync(db: DatabaseConfig) {
       );
 
       const before = await introspector.getTableSchema(tableName);
-      expect(before?.primaryKey).toEqual(['userId']);
+      expect(before?.primaryKey?.columns).toEqual(['userId']);
 
       await new Migrator(pool, { entities: [AutoSyncKeyTest] }).sync({ safe: false });
 
       const after = await introspector.getTableSchema(tableName);
-      expect(after?.primaryKey).toEqual(['userId', 'groupId']);
+      expect(after?.primaryKey?.columns).toEqual(['userId', 'groupId']);
     });
 
     /** SQLite can only rebuild the table, so it refuses by name rather than emitting DDL. */
@@ -827,7 +827,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
         await new Migrator(pool, { entities: [AutoSyncLogTest], logger: true }).sync({ logging: true });
 
         expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('skipped migration:'));
-        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped dropping 1 columns'));
+        expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Skipped 1 column changes'));
       } finally {
         consoleSpy.mockRestore();
       }

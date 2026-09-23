@@ -1,3 +1,4 @@
+import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
@@ -16,11 +17,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected triggersQuery(): string {
     return /*sql*/ `
-      SELECT EVENT_OBJECT_TABLE AS \`table\`, TRIGGER_NAME AS name,
+      SELECT TRIGGER_NAME AS name,
         CONCAT('CREATE TRIGGER \`', TRIGGER_SCHEMA, '\`.\`', TRIGGER_NAME, '\` ', ACTION_TIMING, ' ', EVENT_MANIPULATION,
           ' ON \`', EVENT_OBJECT_SCHEMA, '\`.\`', EVENT_OBJECT_TABLE, '\` FOR EACH ROW ', ACTION_STATEMENT) AS definition
       FROM information_schema.TRIGGERS
-      WHERE TRIGGER_SCHEMA = ${this.schemaExpr}
+      WHERE TRIGGER_SCHEMA = ${this.schemaExpr} AND EVENT_OBJECT_TABLE = ${this.dialect.placeholder(1)}
     `;
   }
 
@@ -74,7 +75,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       SELECT
         INDEX_NAME as index_name,
         GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
-        NOT NON_UNIQUE as is_unique
+        NOT NON_UNIQUE as is_unique,
+        MAX(INDEX_TYPE) as method
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
@@ -129,7 +131,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       isPrimaryKey: row.column_key === 'PRI',
       isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
-      length: this.toNumber(row.character_maximum_length),
+      // A `VECTOR`'s is its bytes, four a dimension, which `column_type` already states as dimensions.
+      length: /^vector/i.test(row.column_type) ? undefined : this.toNumber(row.character_maximum_length),
       precision: this.toNumber(row.numeric_precision),
       scale: this.toNumber(row.numeric_scale),
       comment: row.column_comment || undefined,
@@ -140,10 +143,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected async mapIndexesResult(
     _read: TableRowReader,
     _tableName: string,
-    results: { index_name: string; columns: string; is_unique: number }[],
+    results: MysqlIndexRow[],
   ): Promise<IndexSchema[]> {
     return results.map((row) => ({
       name: row.index_name,
+      ...(row.method === 'VECTOR' && { type: 'vector' as const }),
       // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
       // place in the list, and it is reported as the expression it is, which is what stops diffing
       // from comparing an entry list the server cannot state against the entity's own.
@@ -209,6 +213,37 @@ type MysqlColumnRow = {
  * JSON, got LONGTEXT", flagged as data loss) on a table uql created itself.
  */
 export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
+  /** Whether an index is MariaDB's vector index, and the distance it was built for. */
+  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['vector', 'distance']);
+
+  /**
+   * A vector index's distance is kept only in the table's own definition, ``VECTOR KEY `ix` (`vec`)
+   * `DISTANCE`='cosine'``, and left out there for MariaDB's default, euclidean.
+   */
+  protected override async mapIndexesResult(
+    read: TableRowReader,
+    tableName: string,
+    results: MysqlIndexRow[],
+  ): Promise<IndexSchema[]> {
+    const indexes = await super.mapIndexesResult(read, tableName, results);
+    if (!indexes.some((index) => index.type === 'vector')) {
+      return indexes;
+    }
+    const qualified = [this.schema, tableName]
+      .filter((name) => name !== undefined)
+      .map((name) => this.dialect.escapeId(name));
+    const [row] = await read<{ 'Create Table': string }>(/*sql*/ `SHOW CREATE TABLE ${qualified.join('.')}`);
+    const lines = row['Create Table'].split('\n');
+    return indexes.map((index) => {
+      if (index.type !== 'vector') {
+        return index;
+      }
+      const line = lines.find((it) => it.includes(`VECTOR KEY \`${index.name}\``));
+      const metric = line?.match(/`DISTANCE`='(\w+)'/)?.[1] ?? 'euclidean';
+      return { ...index, distance: this.dialect.indexedDistance(metric) };
+    });
+  }
+
   protected override async mapColumnsResult(
     read: TableRowReader,
     tableName: string,
@@ -232,3 +267,5 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
     );
   }
 }
+
+type MysqlIndexRow = { index_name: string; columns: string; is_unique: number; method: string };

@@ -1,14 +1,20 @@
 import { sqlToCanonical } from '../schema/canonicalType.js';
-import { createTableNode } from '../schema/schemaAST.js';
+import type { IndexFacet } from '../schema/indexDifferences.js';
+import { createTableNode, keyOfColumns } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
 import { assertDefined } from './spec.util.js';
 
 /**
  * A table node built from the little each test cares about, with the rest defaulted. `schema` is the
- * namespace it sits in, left out for the ordinary unqualified table.
+ * namespace it sits in, left out for the ordinary unqualified table; `indexFacets` what its reader reports.
  */
-export function mockTableNode(name: string, columns: Partial<ColumnNode>[], schema?: string): TableNode {
-  const table = createTableNode(name, schema);
+export function mockTableNode(
+  name: string,
+  columns: Partial<ColumnNode>[],
+  schema?: string,
+  indexFacets?: ReadonlySet<IndexFacet>,
+): TableNode {
+  const table = createTableNode(name, schema, indexFacets);
 
   for (const col of columns) {
     const column: ColumnNode = {
@@ -23,10 +29,8 @@ export function mockTableNode(name: string, columns: Partial<ColumnNode>[], sche
       ...col,
     };
     table.columns.set(column.name, column);
-    if (column.isPrimaryKey) {
-      table.primaryKey.push(column);
-    }
   }
+  table.primaryKey = keyOfColumns(table.columns.values());
 
   return table;
 }

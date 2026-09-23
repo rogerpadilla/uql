@@ -7,9 +7,8 @@
 
 import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql, engineType } from '../../schema/canonicalType.js';
-import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
-import { diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
+import { defaultsEqualAsWritten, diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
   ColumnDiff,
@@ -19,6 +18,7 @@ import type {
   RelationshipNode,
   SchemaDiffResult,
 } from '../../schema/types.js';
+import type { PrimaryKeySchema } from '../../type/migration.js';
 import type { Except } from '../../type/utility.js';
 
 /**
@@ -31,15 +31,15 @@ export interface DriftDetectorOptions {
   checkNullable?: boolean;
   /** Include index differences */
   checkIndexes?: boolean;
-  /** `indexFacets` of the introspector that produced the actual schema; anything else goes uncompared. */
-  indexFacets?: ReadonlySet<IndexFacet>;
   /** Include foreign key differences */
   checkForeignKeys?: boolean;
   /**
-   * Include default value differences. Off by default: an engine reports a default as it stored it
-   * (`now()`, `CURRENT_TIMESTAMP`, `'active'::text`), which rarely matches the entity's literal.
+   * Include default value differences. Off unless {@link defaultsEqual} is given: without it defaults
+   * compare as written, and an engine reports one as it stored it (`now()`, `'active'::text`).
    */
   checkDefaults?: boolean;
+  /** How the engine's generator compares a default, so drift reports the ones a migration would change. */
+  defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
   /**
    * Tables to leave out of the comparison. The migrations bookkeeping table belongs here - it exists in
    * the database by design and has no entity, so reporting it as unexpected told every project to
@@ -58,9 +58,9 @@ function resolveOptions(options: DriftDetectorOptions): DriftDetectorSettings {
     checkTypes: options.checkTypes ?? true,
     checkNullable: options.checkNullable ?? true,
     checkIndexes: options.checkIndexes ?? true,
-    indexFacets: options.indexFacets ?? new Set(),
     checkForeignKeys: options.checkForeignKeys ?? true,
-    checkDefaults: options.checkDefaults ?? false,
+    checkDefaults: options.checkDefaults ?? options.defaultsEqual !== undefined,
+    defaultsEqual: options.defaultsEqual ?? defaultsEqualAsWritten,
     excludeTables: options.excludeTables ?? [],
     dialect: options.dialect,
   };
@@ -79,9 +79,9 @@ export function detectDrift(
   const { dialect } = opts;
   const diff = diffSchemas(expectedAST, actualAST, {
     compareIndexes: opts.checkIndexes,
-    indexFacets: opts.indexFacets,
     compareRelationships: opts.checkForeignKeys,
     excludeTables: opts.excludeTables,
+    defaultsEqual: opts.defaultsEqual,
     // Without a dialect there is no engine to compare through, and `formatType` below then reports no
     // type drift at all.
     ...(dialect && { normalizeType: engineType(dialect) }),
@@ -114,9 +114,14 @@ function detectPrimaryKeyDrifts(diff: SchemaDiffResult): Drift[] {
     type: 'constraint_mismatch' as const,
     severity: 'critical' as const,
     table: pkDiff.table,
-    details: `Primary key of "${pkDiff.table}" is (${pkDiff.actual.join(', ') || 'none'}) in the database but (${pkDiff.expected.join(', ') || 'none'}) in the entity`,
+    details: `Primary key of "${pkDiff.table}" is (${keyColumns(pkDiff.actual)}) in the database but (${keyColumns(pkDiff.expected)}) in the entity`,
     suggestion: 'Generate a migration to change the primary key',
   }));
+}
+
+/** A key's columns as a drift names them, `none` where there is no key. */
+function keyColumns(key: PrimaryKeySchema | undefined): string {
+  return key?.columns.join(', ') || 'none';
 }
 
 /**
@@ -182,7 +187,7 @@ function detectColumnDrifts(diff: SchemaDiffResult, opts: DriftDetectorSettings)
 }
 
 /**
- * Add drifts for column alterations (type/nullable mismatches).
+ * Add drifts for column alterations: type, nullability and default.
  */
 function addAlterColumnDrifts(
   colDiff: Extract<ColumnDiff, { type: 'alter' }>,
@@ -227,21 +232,17 @@ function addAlterColumnDrifts(
     });
   }
 
-  if (opts.checkDefaults) {
-    const expected = String(colDiff.expected.defaultValue ?? 'NULL');
-    const actual = String(colDiff.actual.defaultValue ?? 'NULL');
-    if (expected !== actual) {
-      drifts.push({
-        type: 'constraint_mismatch',
-        severity: 'info',
-        table: colDiff.table,
-        column: colDiff.column,
-        expected,
-        actual,
-        details: `Default mismatch for "${colDiff.column}"`,
-        suggestion: 'Align the default in the entity or the database',
-      });
-    }
+  if (opts.checkDefaults && !opts.defaultsEqual(colDiff.expected.defaultValue, colDiff.actual.defaultValue)) {
+    drifts.push({
+      type: 'constraint_mismatch',
+      severity: 'info',
+      table: colDiff.table,
+      column: colDiff.column,
+      expected: String(colDiff.expected.defaultValue ?? 'NULL'),
+      actual: String(colDiff.actual.defaultValue ?? 'NULL'),
+      details: `Default mismatch for "${colDiff.column}"`,
+      suggestion: 'Align the default in the entity or the database',
+    });
   }
 }
 

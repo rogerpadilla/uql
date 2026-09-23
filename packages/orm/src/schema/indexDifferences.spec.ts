@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { mockTableNode } from '../test/index.js';
-import { describeIndexDifferences, indexNameStem, indexSignature } from './indexDifferences.js';
+import { describeIndexDifferences, indexChanges, indexNameStem, indexSignature } from './indexDifferences.js';
 import type { IndexNode } from './types.js';
 
 describe('describeIndexDifferences', () => {
@@ -46,11 +46,39 @@ describe('describeIndexDifferences', () => {
     expect(describeIndexDifferences(text(), text('english'), new Set())).toEqual([]);
   });
 
+  /** An unstated distance is the default one; an engine that cannot read it back compares none. */
+  it('should compare a vector index distance only where the engine reads it back', () => {
+    const cosine = index({ type: 'hnsw' });
+    const l2 = index({ type: 'hnsw', distance: 'l2' });
+
+    expect(describeIndexDifferences(cosine, l2, new Set(['distance']))).toEqual(['distance: l2 -> cosine']);
+    expect(
+      describeIndexDifferences(cosine, index({ type: 'hnsw', distance: 'cosine' }), new Set(['distance'])),
+    ).toEqual([]);
+    expect(describeIndexDifferences(cosine, l2, new Set())).toEqual([]);
+  });
+
   /** A vector index of any type is the one index an engine has, so only a plain one standing in for it differs. */
   it('should report a plain index where a vector index is declared, and no vector type against another', () => {
     const vector = new Set(['vector'] as const);
     expect(describeIndexDifferences(index({ type: 'hnsw' }), index({}), vector)).toEqual(['vector index: no -> yes']);
     expect(describeIndexDifferences(index({ type: 'hnsw' }), index({ type: 'vector' }), vector)).toEqual([]);
+  });
+});
+
+describe('indexChanges', () => {
+  const table = mockTableNode('users', [{ name: 'email' }]);
+  const emailIndex = (name: string) => ({ name, table, entries: [{ column: 'email' }], unique: true });
+
+  /** A unique column is a unique index: its legacy `_uk` spelling is the same one, and a second is a duplicate uql made. */
+  it('should keep the index a unique column is, and drop a duplicate of it', () => {
+    const current = [emailIndex('users__email_uk'), emailIndex('idx_users_email')];
+
+    expect(indexChanges('users', [emailIndex('users__email_idx')], current, new Set())).toEqual({
+      toAdd: [],
+      toDrop: [emailIndex('idx_users_email')],
+      toAlter: [],
+    });
   });
 });
 

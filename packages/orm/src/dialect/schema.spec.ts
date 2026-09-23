@@ -5,6 +5,7 @@
 import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
 import { MongoSchemaGenerator } from '../migrate/generator/mongoSchemaGenerator.js';
+import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -189,7 +190,7 @@ describe('schema', () => {
   it('should find the indexes an entity declares for a table that lives in a schema', () => {
     const current = mockTableNode('Customer', [{ name: 'id', isPrimaryKey: true }, { name: 'name' }], 'crm');
     const diff = new SqlSchemaGenerator(dialect).diffSchema(Customer, current);
-    expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['Customer__name_idx']);
+    expect(added(diff?.indexes).map((index) => index.name)).toEqual(['Customer__name_idx']);
   });
 
   // A Postgres index lives in its table's schema and is dropped as `schema.index`. Bare, it resolved

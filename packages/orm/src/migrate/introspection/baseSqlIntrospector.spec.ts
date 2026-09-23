@@ -33,7 +33,7 @@ function column(overrides: Partial<ColumnSchema> & { name: string }): ColumnSche
 const users: TableSchema = {
   name: 'users',
   columns: [column({ name: 'id', isPrimaryKey: true, isAutoIncrement: true })],
-  primaryKey: ['id'],
+  primaryKey: { columns: ['id'] },
 };
 
 /** `posts.authorId` referencing `users.id`, with the foreign key parts under test overridden. */
@@ -124,8 +124,7 @@ describe('BaseSqlIntrospector primary keys', () => {
       column({ name: 'studentId', isPrimaryKey: true }),
       column({ name: 'grade' }),
     ],
-    primaryKey: ['studentId', 'courseId'],
-    primaryKeyName: 'enrolments_pkey',
+    primaryKey: { columns: ['studentId', 'courseId'], name: 'enrolments_pkey' },
   };
 
   /**
@@ -136,22 +135,21 @@ describe('BaseSqlIntrospector primary keys', () => {
   it('should keep the key in the order the database reported, not the column order', async () => {
     const ast = await introspect([composite]);
 
-    expect(ast.getTable('enrolments')?.primaryKey.map((column) => column.name)).toEqual(['studentId', 'courseId']);
+    expect(ast.getTable('enrolments')?.primaryKey?.columns).toEqual(['studentId', 'courseId']);
   });
 
   /** Only the name the engine gave the constraint can drop it; a derived one names nothing. */
   it('should carry the constraint name the database reported', async () => {
     const ast = await introspect([composite]);
 
-    expect(ast.getTable('enrolments')?.primaryKeyName).toBe('enrolments_pkey');
+    expect(ast.getTable('enrolments')?.primaryKey?.name).toBe('enrolments_pkey');
   });
 
   /** SQLite reports no key of its own, so the per-column flags are all there is to read. */
   it('should fall back to the flagged columns where no key is reported', async () => {
-    const ast = await introspect([{ ...composite, primaryKey: undefined, primaryKeyName: undefined }]);
+    const ast = await introspect([{ ...composite, primaryKey: undefined }]);
 
-    expect(ast.getTable('enrolments')?.primaryKey.map((column) => column.name)).toEqual(['courseId', 'studentId']);
-    expect(ast.getTable('enrolments')?.primaryKeyName).toBeUndefined();
+    expect(ast.getTable('enrolments')?.primaryKey).toEqual({ columns: ['courseId', 'studentId'] });
   });
 });
 

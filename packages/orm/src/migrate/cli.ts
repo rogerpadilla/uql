@@ -294,7 +294,7 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
     // `unknown` and type drift compares equal, silently reporting a mismatched column as in sync.
     const report = detectDrift(expectedAST, actualAST, {
       dialect: config.pool?.dialect,
-      indexFacets: migrator.schemaIntrospector.indexFacets,
+      defaultsEqual: generator.defaultsEqual,
       excludeTables: [config.tableName ?? DEFAULT_MIGRATIONS_TABLE],
     });
 

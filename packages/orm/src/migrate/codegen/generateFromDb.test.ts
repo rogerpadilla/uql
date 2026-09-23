@@ -55,7 +55,7 @@ describe('generate:from-db (PostgreSQL)', () => {
 
   it('should carry a plain index on the field and everything else in its own decorator', () => {
     expect(code).toContain("index: 'cfd_plain'");
-    expect(code).toContain("{ name: 'cfd_unique', unique: true }");
+    expect(code).toContain("unique: true, index: 'cfd_unique'");
   });
 
   // `btree` is reported on every index Postgres has, so writing it would put it in every entity.

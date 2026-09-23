@@ -1,5 +1,6 @@
 // Re-export core types for convenience
 export type {
+  Change,
   ColumnSchema,
   DialectName,
   ForeignKeySchema,
@@ -10,6 +11,7 @@ export type {
   MigrationStorage,
   MigratorOptions,
   MongoQuerier,
+  PrimaryKeySchema,
   SchemaDiff,
   SchemaGenerator,
   SchemaIntrospector,
@@ -40,6 +42,7 @@ export * from './introspection/index.js';
 export { migrationBuilderFor } from './migrationTarget.js';
 export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 // Schema generators
+export { reverseDiff } from './schemaChange.js';
 export { SqlSchemaGenerator } from './schemaGenerator.js';
 
 // Storage implementations

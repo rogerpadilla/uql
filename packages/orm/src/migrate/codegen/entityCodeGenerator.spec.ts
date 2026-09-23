@@ -456,11 +456,12 @@ describe('EntityCodeGenerator', () => {
 
     // `@Field({ index })` builds a plain index, so writing a unique one there would silently drop the
     // uniqueness the database has.
-    it('should write a unique single-column index as its own decorator', () => {
+    /** A unique column is a unique index, so the field declares both, and no `@Index` declares it again. */
+    it('should carry a unique single-column index on its unique field', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-        { name: 'email', type: { category: 'string' } },
+        { name: 'email', type: { category: 'string' }, isUnique: true },
       ]);
       ast.addTable(table);
       ast.addIndex({ name: 'email_idx', table, entries: [{ column: 'email' }], unique: true });
@@ -469,8 +470,8 @@ describe('EntityCodeGenerator', () => {
 
       assertDefined(result);
 
-      expect(result.code).toContain("@Index((user) => [user.email], { name: 'email_idx', unique: true })");
-      expect(result.code).not.toContain("index: 'email_idx'");
+      expect(result.code).toContain("unique: true, index: 'email_idx'");
+      expect(result.code).not.toContain('@Index');
     });
 
     it('should generate composite index', () => {

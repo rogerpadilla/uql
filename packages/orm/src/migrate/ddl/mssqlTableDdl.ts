@@ -2,21 +2,25 @@ import type { ColumnSchema } from '../../type/index.js';
 import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
 import { sizedType, TableDdl } from './tableDdl.js';
 
-/** The constraints of each kind on column `c`, the `sys.columns` row {@link MsSqlTableDdl} reads. */
-const CONSTRAINTS_ON = {
-  default: /*sql*/ `SELECT d.name FROM sys.default_constraints d
+/** What pins column `c`, the `sys.columns` row {@link MsSqlTableDdl} reads: each constraint, then each index, by kind. */
+const PINNED_BY = {
+  default: /*sql*/ `SELECT d.name, 0 AS is_index FROM sys.default_constraints d
     WHERE d.parent_object_id = c.object_id AND d.parent_column_id = c.column_id`,
-  check: /*sql*/ `SELECT k.name FROM sys.check_constraints k
+  check: /*sql*/ `SELECT k.name, 0 AS is_index FROM sys.check_constraints k
     WHERE k.parent_object_id = c.object_id AND k.parent_column_id = c.column_id`,
-  unique: /*sql*/ `SELECT u.name FROM sys.key_constraints u
+  unique: /*sql*/ `SELECT u.name, 0 AS is_index FROM sys.key_constraints u
     JOIN sys.index_columns ic ON ic.object_id = u.parent_object_id AND ic.index_id = u.unique_index_id
     WHERE u.parent_object_id = c.object_id AND u.type = 'UQ' AND ic.column_id = c.column_id`,
+  index: /*sql*/ `SELECT DISTINCT i.name, 1 AS is_index FROM sys.indexes i
+    JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
+    WHERE i.object_id = c.object_id AND ic.column_id = c.column_id
+      AND i.is_primary_key = 0 AND i.is_unique_constraint = 0`,
 };
 
 /**
  * SQL Server keeps a column's `DEFAULT`, `CHECK` and `UNIQUE` as constraints under names it picks, and
- * refuses to drop or retype the column past one, so they go first - looked up by column, as no two
- * databases name them alike. Renames are `sp_rename`, T-SQL having no `RENAME` clause.
+ * refuses to drop or retype the column past one or past an index over it, so they go first - looked up
+ * by column, as no two databases name them alike. Renames are `sp_rename`, T-SQL having no `RENAME` clause.
  */
 export class MsSqlTableDdl extends TableDdl {
   /** T-SQL has no `IF NOT EXISTS` on a table, so the create is guarded by a lookup in the same statement. */
@@ -30,9 +34,9 @@ export class MsSqlTableDdl extends TableDdl {
     return /*sql*/ `ALTER TABLE ${this.dialect.escapeId(table)} ADD ${definition};`;
   }
 
-  /** Its constraints go with the column, as they do on every other engine. */
+  /** Its constraints and indexes go with the column, as they do on every other engine. */
   override dropColumn(table: string, column: string): string[] {
-    return [this.dropConstraints(table, column, Object.values(CONSTRAINTS_ON)), ...super.dropColumn(table, column)];
+    return [this.dropPinning(table, column, Object.values(PINNED_BY)), ...super.dropColumn(table, column)];
   }
 
   /**
@@ -43,7 +47,7 @@ export class MsSqlTableDdl extends TableDdl {
     const target = this.dialect.escapeId(table);
     const name = this.dialect.escapeId(column.name);
     const statements = [
-      this.dropConstraints(table, column.name, [CONSTRAINTS_ON.default]),
+      this.dropPinning(table, column.name, [PINNED_BY.default]),
       /*sql*/ `ALTER TABLE ${target} ALTER COLUMN ${name} ${sizedType(column)} ${column.nullable ? 'NULL' : 'NOT NULL'};`,
     ];
     if (column.defaultValue !== undefined) {
@@ -66,11 +70,13 @@ export class MsSqlTableDdl extends TableDdl {
   }
 
   /** One statement, so a split on `;` cannot part the lookup from the `EXEC` it feeds. */
-  private dropConstraints(table: string, column: string, kinds: readonly string[]): string {
-    const target = this.dialect.escapeId(table);
+  private dropPinning(table: string, column: string, kinds: readonly string[]): string {
+    const target = escapeSingleQuotes(this.dialect.escapeId(table));
     return (
-      `DECLARE @drop nvarchar(max) = (SELECT STRING_AGG(N'ALTER TABLE ${escapeSingleQuotes(target)} DROP CONSTRAINT ' ` +
-      `+ QUOTENAME(pinned.name), N'; ') FROM sys.columns c CROSS APPLY (${kinds.join(' UNION ALL ')}) pinned ` +
+      `DECLARE @drop nvarchar(max) = (SELECT STRING_AGG(CASE pinned.is_index ` +
+      `WHEN 1 THEN N'DROP INDEX ' + QUOTENAME(pinned.name) + N' ON ${target}' ` +
+      `ELSE N'ALTER TABLE ${target} DROP CONSTRAINT ' + QUOTENAME(pinned.name) END, N'; ') ` +
+      `FROM sys.columns c CROSS APPLY (${kinds.join(' UNION ALL ')}) pinned ` +
       `WHERE c.object_id = OBJECT_ID(${this.dialect.escape(target)}) AND c.name = ${this.dialect.escape(column)}) ` +
       'EXEC (@drop);'
     );

@@ -48,3 +48,60 @@ describe('column introspection (CockroachDB)', () => {
     expect((await column('qty')).generatedAs).toBe(undefined);
   });
 });
+
+const VECTOR_TABLE = 'crdb_introspect_vector';
+
+/**
+ * CockroachDB reports every index's access method as `prefix` and no operator class, so a vector index,
+ * its distance and its prefix columns are read off its definition instead.
+ */
+describe('vector index introspection (CockroachDB)', () => {
+  const pool = new CrdbQuerierPool(cockroachConnection());
+
+  afterAll(async () => {
+    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${VECTOR_TABLE}"`));
+    await pool.end();
+  }, provisioningTimeout);
+
+  it(
+    'should read a vector index as one, its distance its class names or else the default L2',
+    async () => {
+      await pool.withQuerier(async (querier) => {
+        await querier.run(`DROP TABLE IF EXISTS "${VECTOR_TABLE}"`);
+        await querier.run(
+          `CREATE TABLE "${VECTOR_TABLE}" (id INT PRIMARY KEY, k INT, v VECTOR(3), w VECTOR(3), t STRING)`,
+        );
+        await querier.run(`CREATE VECTOR INDEX crdb_vec_cosine ON "${VECTOR_TABLE}" (k, v vector_cosine_ops)`);
+        await querier.run(`CREATE VECTOR INDEX crdb_vec_default ON "${VECTOR_TABLE}" (w)`);
+        await querier.run(`CREATE INDEX crdb_plain ON "${VECTOR_TABLE}" (t)`);
+      });
+
+      const schema = await new CockroachSchemaIntrospector(pool).getTableSchema(VECTOR_TABLE);
+
+      expect(schema?.indexes?.map(({ name, type, distance, entries }) => ({ name, type, distance, entries }))).toEqual([
+        {
+          name: 'crdb_plain',
+          type: undefined,
+          distance: undefined,
+          entries: [{ column: 't', order: 'asc' }],
+        },
+        {
+          name: 'crdb_vec_cosine',
+          type: 'vector',
+          distance: 'cosine',
+          entries: [
+            { column: 'k', order: 'asc' },
+            { column: 'v', order: 'asc' },
+          ],
+        },
+        {
+          name: 'crdb_vec_default',
+          type: 'vector',
+          distance: 'l2',
+          entries: [{ column: 'w', order: 'asc' }],
+        },
+      ]);
+    },
+    provisioningTimeout,
+  );
+});

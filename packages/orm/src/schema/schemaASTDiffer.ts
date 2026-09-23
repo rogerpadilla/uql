@@ -1,5 +1,6 @@
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
-import { describeIndexDifferences, type IndexFacet, indexNameStem } from './indexDifferences.js';
+import { describeIndexDifferences, type IndexFacet, pairIndexes } from './indexDifferences.js';
+import { matchByKey } from './matchByKey.js';
 import type { SchemaAST } from './schemaAST.js';
 import type { CanonicalType } from './types.js';
 import type {
@@ -23,8 +24,6 @@ import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
 export interface DiffOptions {
   /** Compare indexes */
   compareIndexes?: boolean;
-  /** What the target side can report about an index, normally an introspector's `indexFacets`. Anything left out is not compared. */
-  indexFacets?: ReadonlySet<IndexFacet>;
   /** Compare foreign keys/relationships */
   compareRelationships?: boolean;
   /** Ignore case differences in names */
@@ -45,34 +44,15 @@ export interface DiffOptions {
  */
 const DEFAULT_OPTIONS: Required<DiffOptions> = {
   compareIndexes: true,
-  indexFacets: new Set(),
   compareRelationships: true,
   normalizeType: (type) => type,
-  defaultsEqual: (expected, actual) => normalizeDefault(expected) === normalizeDefault(actual),
+  defaultsEqual: defaultsEqualAsWritten,
   ignoreCase: false,
   excludeTables: [],
 };
 
 function nameNormalizer(opts: Required<DiffOptions>): (name: string) => string {
   return opts.ignoreCase ? (name) => name.toLowerCase() : (name) => name;
-}
-
-/**
- * The only three ways two keyed collections can differ, which is the shape of every comparison here:
- * tables, columns, indexes and relationships all key by name and then split the same way.
- */
-function matchByKey<T>(source: Iterable<T>, target: Iterable<T>, key: (item: T) => string) {
-  const sourceByKey = new Map([...source].map((item) => [key(item), item] as const));
-  const targetByKey = new Map([...target].map((item) => [key(item), item] as const));
-
-  return {
-    created: [...sourceByKey].filter(([at]) => !targetByKey.has(at)).map(([, item]) => item),
-    dropped: [...targetByKey].filter(([at]) => !sourceByKey.has(at)).map(([, item]) => item),
-    matched: [...sourceByKey].flatMap(([at, item]) => {
-      const counterpart = targetByKey.get(at);
-      return counterpart ? [[item, counterpart] as const] : [];
-    }),
-  };
 }
 
 /** How a relationship diff names the pair it is about, whichever way it differs. */
@@ -151,12 +131,12 @@ export function diffTable(
 
 /** The two keys where they hold different columns, compared in order and never by the name the engine gave them. */
 function diffPrimaryKey(source: TableNode, target: TableNode): PrimaryKeyDiff | undefined {
-  const expected = source.primaryKey.map((column) => column.name);
-  const actual = target.primaryKey.map((column) => column.name);
+  const expected = source.primaryKey?.columns ?? [];
+  const actual = target.primaryKey?.columns ?? [];
   if (expected.length === actual.length && expected.every((column, i) => column === actual[i])) {
     return undefined;
   }
-  return { table: source.name, expected, actual, actualName: target.primaryKeyName };
+  return { table: source.name, expected: source.primaryKey, actual: target.primaryKey };
 }
 
 /**
@@ -190,20 +170,15 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
   ];
 }
 
-/**
- * Compare indexes between two tables.
- */
+/** Compare indexes between two tables, paired by {@link pairIndexes}, in what the target's reader reports. */
 function diffTableIndexes(source: TableNode, target: TableNode, opts: Required<DiffOptions>): IndexDiff[] {
-  const normalizeName = nameNormalizer(opts);
-  const { created, dropped, matched } = matchByKey(source.indexes, target.indexes, (index) =>
-    normalizeName(indexNameStem(index.name)),
-  );
+  const { created, dropped, matched } = pairIndexes(source.indexes, target.indexes, nameNormalizer(opts));
 
   return [
     ...created.map<IndexDiff>((index) => ({ name: index.name, table: source.name, type: 'create', expected: index })),
     ...dropped.map<IndexDiff>((index) => ({ name: index.name, table: target.name, type: 'drop', actual: index })),
     ...matched
-      .map(([sourceIndex, targetIndex]) => diffIndex(source.name, sourceIndex, targetIndex, opts.indexFacets))
+      .map(([sourceIndex, targetIndex]) => diffIndex(source.name, sourceIndex, targetIndex, target.indexFacets))
       .filter((diff) => diff !== undefined),
   ];
 }
@@ -243,13 +218,9 @@ function diffColumn(
     differences.push(`nullable: ${target.nullable} -> ${source.nullable}`);
   }
 
-  // Compare unique constraint
-  if (source.isUnique !== target.isUnique) {
-    differences.push(`unique: ${target.isUnique} -> ${source.isUnique}`);
-  }
-
   // Not compared, since no statement this generator emits could settle a difference: `isAutoIncrement`,
-  // `enum` (a check the database reprints), `generatedAs`, and `comment`.
+  // `enum` (a check the database reprints), `generatedAs`, and `comment`. Nor `isUnique`: a unique
+  // column is a unique index, compared with the indexes.
 
   // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {
@@ -372,9 +343,11 @@ function formatType(type: ColumnNode['type']): string {
   return result;
 }
 
-/**
- * Normalize default values for comparison.
- */
+/** Two defaults compared as written, where no dialect reprints them: `now()` and `CURRENT_TIMESTAMP` are one. */
+export function defaultsEqualAsWritten(expected: unknown, actual: unknown): boolean {
+  return normalizeDefault(expected) === normalizeDefault(actual);
+}
+
 function normalizeDefault(value: unknown): string {
   if (value === undefined || value === null) return '';
   if (typeof value === 'string') {

@@ -2,6 +2,19 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.81.0] - 2026-09-23
+
+- **Breaking:** for code driving the migrator directly, `SchemaDiff` lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields, and a rollback is `generateAlterTable(reverseDiff(diff))`, `generateAlterTableDown` gone. `TableSchema.primaryKey` is `{ columns, name }`, `detectDrift` takes `defaultsEqual` and no `indexFacets`, and `SchemaIntrospector.ownedTriggers` takes the table.
+- A unique column is a unique index on every engine: `@Field({ unique: true })` and a builder's `.unique()` create `<table>__<column>_idx` beside the table rather than a `UNIQUE` constraint in it, so `sync` and `generate:entities` add and drop uniqueness like any index. `generate:from-db` writes one as `unique: true, index: '<name>'`.
+- `sync` (outside safe mode) and `generate:entities` rebuild an index that differs in anything the database reports: order, nulls, operator class, included columns or vector distance. Safe mode holds a rebuild back whole.
+- A generated migration's `down` restores a dropped column or foreign key, where it left a TODO, and `generate:entities` alters on Postgres only what changed in a column.
+- `drift:check` compares defaults the way `generate:entities` does, and a vector index's `distance` (Postgres, CockroachDB, MariaDB, libSQL).
+- **Fixed:** indexes pair by name, then by columns, so one under a legacy name is no longer reported both missing and unexpected, while a duplicate still is. A unique field's own index is no longer unexpected (CockroachDB, MySQL, MariaDB, SQL Server).
+- **Fixed (MongoDB):** `@Field({ unique: true })` without `index` builds a unique index, where it enforced nothing.
+- **Fixed (Postgres, CockroachDB, MariaDB):** a vector index a migration builds without `distance` is built for cosine, the distance a search defaults to, not the engine's L2. `drift:check` reads a vector column's dimensions back, and MariaDB's indexed vector column as the `NOT NULL` it is built.
+- **Fixed (SQL Server):** dropping a column drops the indexes over it first, which the server otherwise refuses.
+- **Fixed (Postgres):** `sync` reads the triggers of the tables it changes alone, where another connection dropping one elsewhere failed it with `cache lookup failed for function`.
+
 ## [0.80.0] - 2026-09-23
 
 - `@Trigger({ on, of, where, run })` declares triggers the database runs, on every SQL engine: `of: (post) => [post.body]` fires only when a watched column moved, and `where` is a predicate per row, `{ $old: { status: 'draft' }, $new: { status: 'published' } }`, or SQL. `run` is the engine's own SQL, one body for every engine or a map naming one per engine. SQL Server takes only the after events and no `where`, since it fires once per statement.

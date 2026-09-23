@@ -78,7 +78,7 @@ describe('index drift (PostgreSQL)', () => {
       namingStrategy: dialect.namingStrategy,
       compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
     });
-    const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
+    const report = detectDrift(expected, actual, { dialect });
     return report.drifts.filter((drift) => drift.table === TABLE);
   };
 
@@ -160,7 +160,7 @@ describe('index drift (CockroachDB)', () => {
       namingStrategy: dialect.namingStrategy,
       compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
     });
-    const report = detectDrift(expected, actual, { dialect, indexFacets: introspector.indexFacets });
+    const report = detectDrift(expected, actual, { dialect });
     expect(report.drifts.filter((drift) => drift.table === CRDB_TABLE)).toEqual([]);
   });
 });

@@ -116,6 +116,30 @@ export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, 
   return columnType !== undefined && wrapTypes?.test(columnType) ? `(${sql})` : sql;
 }
 
+/** Whether a stored default is the declared one, as the engine reprints it: `'a'::character varying` is `'a'`. */
+export function sameDefault(desired: unknown, current: unknown, dialect: AbstractSqlDialect): boolean {
+  if (current === desired) return true;
+  // Both spellings of "no default" are the same fact, and engines disagree on which they report:
+  // MariaDB says `null` where MySQL says nothing at all. Reading them as different values asked to
+  // `MODIFY` every nullable column, on every sync, forever.
+  if (current == null || desired == null) return current == null && desired == null;
+
+  const normalize = (value: unknown): string => {
+    // Render first: the desired side may be a symbolic expression, the current side is always the
+    // engine's own text, and `{"kind":"now"}` matches no spelling of `CURRENT_TIMESTAMP`.
+    const val = SqlExpression.isExpression(value) ? formatDefaultValue(value, dialect) : value;
+    if (typeof val === 'string') {
+      let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
+      s = s.replace(/^'(.*)'$/, '$1');
+      if (s.toLowerCase() === 'null') return 'null';
+      return s;
+    }
+    return typeof val === 'object' ? JSON.stringify(val) : String(val);
+  };
+
+  return normalize(current) === normalize(desired);
+}
+
 /**
  * Quoting is the dialect's `escape`, so a backslash in a default is escaped the way the engine reads
  * it - MySQL takes `'a\b'` as a backspace where Postgres takes it literally. Only the cases `escape`

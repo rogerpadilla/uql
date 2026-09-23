@@ -5,6 +5,7 @@ import { getEntities, getMeta } from '../entity/index.js';
 import { SchemaAST } from '../schema/index.js';
 import type { TableNode } from '../schema/types.js';
 import type {
+  Change,
   EntityMeta,
   InstalledTriggers,
   LoggingOptions,
@@ -29,6 +30,7 @@ import type { IMigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
 import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
+import { dropped, nonEmpty, reverseDiff, sides } from './schemaChange.js';
 
 /** An entity with triggers, beside the ones uql has installed on its table right now. */
 type TriggerState = { readonly entity: Type<object>; readonly installed: InstalledTriggers };
@@ -281,17 +283,12 @@ export class Migrator {
     // Tables this plan creates are left out: their `CREATE` carries their triggers, and asking the
     // catalogue about a table that is not there yet fails outright on some engines.
     const wanted = entities.filter((entity) => !fresh.has(this.tableOf(entity)));
-    const bySchema = new Map<string | undefined, Map<string, InstalledTriggers>>();
     const state: TriggerState[] = [];
     for (const entity of wanted) {
       const meta = getMeta(entity);
-      const schema = dialect.resolveSchema(meta);
-      let owned = bySchema.get(schema);
-      if (!owned) {
-        owned = await this.schemaIntrospectorFor(schema).ownedTriggers();
-        bySchema.set(schema, owned);
-      }
-      const installed = owned.get(dialect.resolveTableAlias(meta)) ?? new Map();
+      const installed = await this.schemaIntrospectorFor(dialect.resolveSchema(meta)).ownedTriggers(
+        dialect.resolveTableAlias(meta),
+      );
       // An installed trigger alone keeps it: an entity that stopped declaring one has it to drop.
       if (installed.size || hasTriggers(meta)) {
         state.push({ entity, installed });
@@ -307,7 +304,7 @@ export class Migrator {
    */
   private alterPlan(generator: SchemaGenerator, altered: readonly SchemaDiff[], state: readonly TriggerState[]) {
     const changing = new Set(
-      altered.filter((diff) => diff.columnsToAlter?.length || diff.columnsToDrop?.length).map((diff) => diff.tableName),
+      altered.filter((diff) => sides(diff.columns, 'from').length).map((diff) => diff.tableName),
     );
     const cleared = state.filter(({ entity }) => changing.has(this.tableOf(entity)));
     const after = state.map((it) => (cleared.includes(it) ? { entity: it.entity, installed: new Map() } : it));
@@ -319,7 +316,7 @@ export class Migrator {
       ],
       down: () => [
         ...this.revertedTriggers(generator, after),
-        ...altered.toReversed().flatMap((diff) => generator.generateAlterTableDown(diff)),
+        ...altered.toReversed().flatMap((diff) => generator.generateAlterTable(reverseDiff(diff))),
         ...cleared.flatMap(({ installed }) => [...installed.values()].flat().map((sql) => `${sql};`)),
       ],
     };
@@ -490,65 +487,51 @@ export class Migrator {
     };
   }
 
+  /**
+   * Safe mode only adds: a change with a `from` drops or rebuilds what the table holds, so it is held,
+   * and so is a key whole, which rebuilds an index over every row and fails where a column holds a null.
+   * Without `drop`, a column's drop is held too.
+   */
   protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
-    const filteredDiff: { -readonly [K in keyof SchemaDiff]: SchemaDiff[K] } = { ...diff };
-    if (options.safe !== false) {
-      // In safe mode, we only allow additions (creating tables/columns)
-      // We block drops and alterations to prevent accidental data loss
-
-      if (filteredDiff.columnsToDrop?.length) {
+    const safe = options.safe !== false;
+    const skip = (what: string, names: readonly string[], fix: string) => {
+      if (names.length) {
         this.logger.logSkippedMigration(
-          `[AutoSync] Skipped dropping ${filteredDiff.columnsToDrop.length} columns in table '${diff.tableName}': ${filteredDiff.columnsToDrop.join(', ')} (safe mode active)`,
+          `[AutoSync] Skipped ${names.length} ${what} in table '${diff.tableName}': ${names.join(', ')} (${fix}).`,
         );
-        delete filteredDiff.columnsToDrop;
       }
-
-      if (filteredDiff.columnsToAlter?.length) {
-        this.logger.logSkippedMigration(
-          `[AutoSync] Skipped altering ${filteredDiff.columnsToAlter.length} columns in table '${diff.tableName}': ${filteredDiff.columnsToAlter.map((c) => c.to.name).join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
-        );
-        delete filteredDiff.columnsToAlter;
+    };
+    const safeFix = 'safe mode active. Use a migration or { safe: false } to apply';
+    const additive = <T>(what: string, changes: readonly Change<T>[] | undefined, nameOf: (item: T) => string) => {
+      if (!safe) {
+        return changes;
       }
+      skip(`${what} changes`, sides(changes, 'from').map(nameOf), safeFix);
+      return nonEmpty((changes ?? []).filter((change) => change.from === undefined));
+    };
 
-      if (filteredDiff.primaryKey) {
-        // Rewriting a key drops a constraint and rebuilds an index over the whole table, and fails
-        // outright where the new columns are null on rows that already exist. Firmly not additive.
-        this.logger.logSkippedMigration(
-          `[AutoSync] Skipped changing the primary key of '${diff.tableName}' from (${filteredDiff.primaryKey.from.join(', ')}) to (${filteredDiff.primaryKey.to.join(', ')}) (safe mode active). Use a migration or { safe: false } to apply.`,
-        );
-        delete filteredDiff.primaryKey;
-      }
-
-      if (filteredDiff.foreignKeysToAlter?.length) {
-        // Altering one is dropping it and adding it back, so letting the add through while the drop
-        // is held would emit `ADD CONSTRAINT` for a constraint the table still has.
-        this.logger.logSkippedMigration(
-          `[AutoSync] Skipped altering ${filteredDiff.foreignKeysToAlter.length} foreign keys in table '${diff.tableName}': ${filteredDiff.foreignKeysToAlter.map((fk) => fk.to.name).join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
-        );
-        delete filteredDiff.foreignKeysToAlter;
-      }
-
-      if (filteredDiff.indexesToDrop?.length) {
-        // An index recreated under its old name is a drop and an add, held back together.
-        const dropped = new Set(filteredDiff.indexesToDrop.map((index) => index.name));
-        this.logger.logSkippedMigration(
-          `[AutoSync] Skipped dropping ${dropped.size} indexes in table '${diff.tableName}': ${[...dropped].join(', ')} (safe mode active). Use a migration or { safe: false } to apply.`,
-        );
-        filteredDiff.indexesToAdd = filteredDiff.indexesToAdd?.filter((index) => !dropped.has(index.name));
-        delete filteredDiff.indexesToDrop;
-      }
-
-      delete filteredDiff.foreignKeysToDrop;
+    const columns = additive('column', diff.columns, (column) => column.name);
+    if (safe && diff.primaryKey) {
+      skip('primary key changes', [diff.tableName], safeFix);
     }
-
-    if (!options.drop && filteredDiff.columnsToDrop?.length) {
-      this.logger.logSkippedMigration(
-        `[AutoSync] Skipped dropping ${filteredDiff.columnsToDrop.length} columns in table '${diff.tableName}' (drop: false). Use { drop: true } to apply.`,
+    if (!options.drop) {
+      skip(
+        'column drops',
+        dropped(columns).map((column) => column.name),
+        'drop: false. Use { drop: true } to apply',
       );
-      delete filteredDiff.columnsToDrop;
     }
-
-    return filteredDiff;
+    return {
+      ...diff,
+      primaryKey: safe ? undefined : diff.primaryKey,
+      columns: options.drop ? columns : nonEmpty((columns ?? []).filter((change) => change.to !== undefined)),
+      indexes: additive('index', diff.indexes, (index) => index.name),
+      foreignKeys: additive(
+        'foreign key',
+        diff.foreignKeys,
+        (foreignKey) => foreignKey.name ?? foreignKey.columns.join(', '),
+      ),
+    };
   }
 
   /** Runs the statements a generator wrote, in one transaction where the engine takes DDL in one. */

@@ -336,8 +336,8 @@ export class EntityCodeGenerator {
     const member = (param: string, column: ColumnNode) =>
       memberSource(param, this.options.propertyNameTransformer(column.name));
     const own = lowerFirst(this.options.classNameTransformer(rel.from.table.name));
-    const key = rel.to.table.primaryKey;
-    if (rel.from.columns.length === 1 && key.length === 1 && rel.to.columns[0].name === key[0].name) {
+    const key = rel.to.table.primaryKey?.columns ?? [];
+    if (rel.from.columns.length === 1 && key.length === 1 && rel.to.columns[0].name === key[0]) {
       return `(${own}) => ${member(own, rel.from.columns[0])}`;
     }
     const target = lowerFirst(relatedClassName);

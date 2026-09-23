@@ -46,15 +46,31 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     expect(index.entries[0].column).toBe("to_tsvector('english'::regconfig, (name || ' '::text) || status::text)");
   }
 
-  async shouldNotReportTheIndexBehindAUniqueConstraint() {
+  /** Reported as SQL Server and the MySQL family report theirs; the diff reads it as the column's uniqueness. */
+  async shouldReportTheIndexBehindAUniqueConstraint() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-    // `@Field({ unique })` emits the constraint, never the index Postgres builds to enforce it.
-    expect(schema.indexes?.map((index) => index.name)).toEqual([
-      'a_live_status_idx',
-      'a_long_expression_idx',
-      'a_lower_name_idx',
-      'a_score_covering_idx',
+    expect(schema.indexes?.map((index) => index.name)).toContain(`${INTROSPECT_TABLES.A}_slug_key`);
+  }
+
+  /** No column can carry a unique constraint over two, so its index is the only place it shows. */
+  async shouldReportACompositeUniqueConstraintAsAUniqueIndex() {
+    const schema = await this.probe('probe_composite_unique', async (querier, table) => {
+      await querier.run(
+        `CREATE TABLE ${table} (owner TEXT, name TEXT, CONSTRAINT probe_owner_name_uk UNIQUE (owner, name))`,
+      );
+    });
+
+    expect(schema.indexes).toEqual([
+      {
+        name: 'probe_owner_name_uk',
+        unique: true,
+        type: 'btree',
+        entries: [
+          { column: 'owner', order: 'asc', nulls: 'last' },
+          { column: 'name', order: 'asc', nulls: 'last' },
+        ],
+      },
     ]);
   }
 
@@ -199,9 +215,8 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
       const own = await this.getTableSchema(INTROSPECT_TABLES.A);
 
       expect(named).toMatchObject({
-        primaryKey: ['id'],
-        primaryKeyName: 'probe_pk',
-        indexes: [{ name: 'probe_note_idx' }],
+        primaryKey: { columns: ['id'], name: 'probe_pk' },
+        indexes: [{ name: 'probe_note_idx' }, { name: `${INTROSPECT_TABLES.A}_code_key` }],
         foreignKeys: [],
       });
       expect(named?.columns.map(({ name, isUnique, comment }) => ({ name, isUnique, comment }))).toEqual([

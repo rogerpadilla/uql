@@ -1,6 +1,7 @@
 // A database schema as a graph, whichever side it came from: the entities or the database itself.
 
-import type { IndexSchema } from '../type/migration.js';
+import type { IndexSchema, PrimaryKeySchema } from '../type/migration.js';
+import type { IndexFacet } from './indexDifferences.js';
 
 /**
  * Type categories universal across SQL dialects.
@@ -151,18 +152,17 @@ export interface TableNode {
   readonly schema?: string;
   /** Map of column name to column node */
   readonly columns: Map<string, ColumnNode>;
-  /** Primary key columns, in key order (supports composite keys) */
-  readonly primaryKey: ColumnNode[];
-  /**
-   * What the constraint is called, where a name is known: read back from the database on an
-   * introspected table, absent on one built from entities, where nothing has named it yet. A `DROP`
-   * is the only thing that needs it - see {@link TableSchema.primaryKeyName}.
-   */
-  primaryKeyName?: string;
+  /** The table's key, named where the database reported a name; none on a table without one. */
+  primaryKey?: PrimaryKeySchema;
   /** Indexes on this table */
   readonly indexes: IndexNode[];
-  /** `CHECK` constraints on this table. Optional: a node can be built without ever naming one. */
-  readonly checks?: CheckSchema[];
+  /**
+   * What the introspector that read this table reports about an index, and so all an index diff against
+   * it may compare. None on a table built from entities.
+   */
+  readonly indexFacets: ReadonlySet<IndexFacet>;
+  /** `CHECK` constraints on this table. */
+  readonly checks: CheckSchema[];
   /** Optional table comment */
   readonly comment?: string;
 
@@ -262,10 +262,9 @@ export interface TableDiff {
  */
 export interface PrimaryKeyDiff {
   readonly table: string;
-  readonly expected: string[];
-  readonly actual: string[];
-  /** What the *actual* side calls its constraint, which is the only name a `DROP` can use. */
-  readonly actualName?: string;
+  readonly expected?: PrimaryKeySchema;
+  /** Named as the database reported it, which is the only name a `DROP` can use. */
+  readonly actual?: PrimaryKeySchema;
 }
 
 /**

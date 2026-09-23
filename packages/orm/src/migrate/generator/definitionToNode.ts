@@ -1,3 +1,4 @@
+import { createTableNode, keyOfColumns } from '../../schema/schemaAST.js';
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QueryRaw } from '../../type/queryRaw.js';
@@ -16,33 +17,18 @@ function unresolvedTable(name: string): TableNode {
  * `render`. Free functions and not generator methods: the dialect reaches them only through `render`.
  */
 export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryRaw) => string): TableNode {
-  const columns = new Map<string, ColumnNode>();
-  const pkNodes: ColumnNode[] = [];
-
-  const table: TableNode = {
-    name: def.name,
-    columns,
-    primaryKey: [], // placeholder
-    indexes: [],
-    incomingRelations: [],
-    outgoingRelations: [],
-    comment: def.comment,
-  };
+  const table: TableNode = { ...createTableNode(def.name), comment: def.comment };
+  const { columns } = table;
 
   for (const colDef of def.columns) {
     const node = fullColumnDefinitionToNode(colDef, def.name);
     (node as { table: TableNode }).table = table;
     columns.set(node.name, node);
-    if (node.isPrimaryKey) {
-      pkNodes.push(node);
-    }
   }
-
-  const finalPrimaryKey = def.primaryKey
-    ? def.primaryKey.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined)
-    : pkNodes;
-
-  (table as { primaryKey: ColumnNode[] }).primaryKey = finalPrimaryKey;
+  // A declared key keeps only the columns the table has, in its own order.
+  table.primaryKey = def.primaryKey
+    ? { columns: def.primaryKey.filter((name) => columns.has(name)) }
+    : keyOfColumns(columns.values());
 
   for (const idxDef of def.indexes) {
     table.indexes.push({ ...renderIndexDefinition(idxDef, render), table });
@@ -79,7 +65,7 @@ export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName:
 }
 
 /**
- * The index a column-level `index` declares, or nothing.
+ * The index a column-level `index` or `unique` declares, or nothing: a unique column is a unique index.
  *
  * Shared with `TableBuilder.build`, which lifts these into the table it is creating: written twice,
  * `addColumn` had no lift at all and silently emitted a column with no index.
@@ -88,7 +74,7 @@ export function columnIndex(
   tableName: string,
   col: FullColumnDefinition,
 ): Pick<IndexSchema, 'name' | 'entries' | 'unique'> | undefined {
-  if (!col.index) {
+  if (!col.index && !col.isUnique) {
     return undefined;
   }
   return {

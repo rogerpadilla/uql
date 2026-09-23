@@ -345,6 +345,16 @@ describe('TableBuilder', () => {
 
       expect(def.indexes[0].name).toBe('users__email_idx');
     });
+
+    /** A unique column is a unique index, the one spelling of uniqueness every engine can add and drop. */
+    it('should make a unique column a unique index', () => {
+      const table = new TableBuilder('users');
+      table.string('email').unique();
+
+      expect(table.build().indexes).toEqual([
+        { name: 'users__email_idx', entries: [{ column: 'email' }], unique: true },
+      ]);
+    });
   });
 
   describe('table comment', () => {

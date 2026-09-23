@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import type { ColumnSchema } from '../../type/index.js';
-import { formatDefaultValue } from '../builder/expressions.js';
+import { formatDefaultValue, sameDefault } from '../builder/expressions.js';
 
 /**
  * A column's type with the size it was read back with, unless its spelling already carries one:
@@ -39,9 +39,10 @@ export class TableDdl {
 
   /**
    * What changes `column` to what it now declares. `definition` is the whole column, which MySQL's
-   * `MODIFY COLUMN` restates; Postgres takes each change as a clause of its own.
+   * `MODIFY COLUMN` restates; Postgres takes each change as a clause of its own, so given what the
+   * column was (`from`), only the clauses that changed.
    */
-  alterColumn(table: string, column: ColumnSchema, definition: string): string[] {
+  alterColumn(table: string, column: ColumnSchema, definition: string, from?: ColumnSchema): string[] {
     if (this.dialect.alterColumnSyntax === 'none') {
       throw new TypeError(
         `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
@@ -54,10 +55,11 @@ export class TableDdl {
     }
     const alter = `ALTER TABLE ${target} ALTER COLUMN ${this.dialect.escapeId(column.name)}`;
     return [
-      `${alter} TYPE ${column.type};`,
-      `${alter} ${column.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`,
-      column.defaultValue === undefined ? `${alter} DROP DEFAULT;` : `${alter} SET${this.defaultClause(column)};`,
-    ];
+      (!from || from.type !== column.type) && `${alter} TYPE ${column.type};`,
+      (!from || from.nullable !== column.nullable) && `${alter} ${column.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`,
+      (!from || !sameDefault(column.defaultValue, from.defaultValue, this.dialect)) &&
+        (column.defaultValue === undefined ? `${alter} DROP DEFAULT;` : `${alter} SET${this.defaultClause(column)};`),
+    ].filter((statement) => statement !== false);
   }
 
   renameColumn(table: string, oldName: string, newName: string): string {

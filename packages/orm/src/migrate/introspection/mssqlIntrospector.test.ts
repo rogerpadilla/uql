@@ -96,7 +96,7 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
       const named = await new MsSqlSchemaIntrospector(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
       const own = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-      expect(named).toMatchObject({ primaryKey: ['id'], primaryKeyName: 'probe_pk', foreignKeys: [] });
+      expect(named).toMatchObject({ primaryKey: { columns: ['id'], name: 'probe_pk' }, foreignKeys: [] });
       expect(named?.indexes?.map((index) => index.name)).toContain('probe_note_idx');
       expect(named?.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
         { name: 'id', isUnique: false },

@@ -14,7 +14,7 @@ import { isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/fie
 import { definedEntries } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
-import { createTableNode, SchemaAST } from './schemaAST.js';
+import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
 import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
 
 /**
@@ -40,6 +40,8 @@ export interface BuildSchemaASTOptions {
   compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
   /** Whether a weighted fulltext index declares one of its own for each heavier column, as MySQL scores through one. */
   textScoreIndexes?: boolean;
+  /** Whether a column a vector index covers is `NOT NULL` whatever the entity declares, as MariaDB demands. */
+  vectorIndexRequiresNotNull?: boolean;
 }
 
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
@@ -52,6 +54,7 @@ type BuildContext = {
   readonly compileDdl: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
   readonly compileIndexPredicate: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
   readonly textScoreIndexes: boolean;
+  readonly vectorIndexRequiresNotNull: boolean;
 };
 
 /**
@@ -74,6 +77,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     compileDdl,
     compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
     textScoreIndexes: options.textScoreIndexes ?? false,
+    vectorIndexRequiresNotNull: options.vectorIndexRequiresNotNull ?? false,
   };
 
   for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
@@ -92,6 +96,15 @@ function refuseDdl(): string {
   );
 }
 
+/** The entries a vector index of `meta` covers: the members it names, and any expression. */
+function vectorIndexedEntries(meta: EntityMeta<object>): Set<EntityIndexColumn['column']> {
+  return new Set(
+    (meta.indexes ?? [])
+      .filter((index) => index.type === 'vector')
+      .flatMap((index) => index.columns.map((entry) => entry.column)),
+  );
+}
+
 /**
  * Add a table from entity metadata.
  */
@@ -99,10 +112,12 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   const tableName = ctx.resolveTableName(meta);
 
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
-  const { columns, primaryKey } = table;
-  table.checks?.push(
+  const { columns } = table;
+  table.checks.push(
     ...(meta.checks ?? []).map(({ name, where }) => ({ name, expression: ctx.compileDdl(where, meta.entity) })),
   );
+
+  const notNull = ctx.vectorIndexRequiresNotNull ? vectorIndexedEntries(meta) : new Set<string>();
 
   // Add columns from fields
   for (const [key, field] of definedEntries(meta.fields)) {
@@ -119,7 +134,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
       type,
       // A primary key is NOT NULL in every engine, whatever the entity's property says: `id?: number`
       // is optional because the database assigns it, not because the column accepts a null.
-      nullable: isPrimaryKey ? false : (field.nullable ?? true),
+      nullable: isPrimaryKey || notNull.has(key) ? false : (field.nullable ?? true),
       defaultValue: field.defaultValue,
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
@@ -134,11 +149,8 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
     };
 
     columns.set(columnName, column);
-
-    if (field.isId) {
-      primaryKey.push(column);
-    }
   }
+  table.primaryKey = keyOfColumns(columns.values());
 
   ctx.ast.addTable(table);
 }
@@ -235,12 +247,11 @@ function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<object>, table
   }
 }
 
-/** Whether the key, a unique column or an index already leads with `columns`, which is all a lookup needs. */
+/** Whether the key or an index already leads with `columns`, which is all a lookup needs. */
 function isIndexedBy(table: TableNode, columns: readonly string[]): boolean {
   const leads = (indexed: readonly (string | undefined)[]) => columns.every((column, at) => indexed[at] === column);
   return (
-    leads(table.primaryKey.map((column) => column.name)) ||
-    (columns.length === 1 && table.columns.get(columns[0])?.isUnique === true) ||
+    leads(table.primaryKey?.columns ?? []) ||
     table.indexes.some((index) =>
       leads(
         index.entries.map((entry) =>

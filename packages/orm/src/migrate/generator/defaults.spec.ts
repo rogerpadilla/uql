@@ -124,17 +124,12 @@ describe('Default value expressions', () => {
 
   /** Drift compares the entity's desired default against the engine's own text for the column. */
   it('should not report drift for a symbolic default the engine echoes back', () => {
-    class DriftProbe extends SqlSchemaGenerator {
-      defaultsMatch(current: unknown, desired: unknown): boolean {
-        return this.isDefaultValueEqual(current, desired);
-      }
-    }
-    const probe = new DriftProbe(postgres);
+    const generator = new SqlSchemaGenerator(postgres);
 
-    expect(probe.defaultsMatch('CURRENT_TIMESTAMP', expr.now())).toBe(true);
-    expect(probe.defaultsMatch('gen_random_uuid()', expr.uuid())).toBe(true);
-    expect(probe.defaultsMatch("'{}'::jsonb", {})).toBe(true);
-    expect(probe.defaultsMatch('CURRENT_DATE', expr.now())).toBe(false);
+    expect(generator.defaultsEqual(expr.now(), 'CURRENT_TIMESTAMP')).toBe(true);
+    expect(generator.defaultsEqual(expr.uuid(), 'gen_random_uuid()')).toBe(true);
+    expect(generator.defaultsEqual({}, "'{}'::jsonb")).toBe(true);
+    expect(generator.defaultsEqual(expr.now(), 'CURRENT_DATE')).toBe(false);
   });
 
   /** `expr` holds only what a plain value cannot express; `raw` is exempt, being the escape hatch. */

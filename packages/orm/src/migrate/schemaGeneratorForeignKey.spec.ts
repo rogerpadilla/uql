@@ -9,7 +9,8 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { ForeignKeyAction, RelationshipNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { columnsOf, mockSqlTableNode } from '../test/index.js';
-import type { ForeignKeySchema, SchemaDiff } from '../type/migration.js';
+import type { ColumnSchema, ForeignKeySchema, SchemaDiff } from '../type/migration.js';
+import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity()
@@ -65,17 +66,17 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const diff = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
 
       expect(diff?.type).toBe('alter');
-      expect(diff?.foreignKeysToAdd).toEqual([
+      expect(diff?.foreignKeys).toEqual([
         {
-          name: 'FkEmployee__companyId_fk',
-          columns: ['companyId'],
-          references: { table: 'FkCompany', columns: ['id'] },
-          onDelete: 'CASCADE',
-          onUpdate: 'NO ACTION',
+          to: {
+            name: 'FkEmployee__companyId_fk',
+            columns: ['companyId'],
+            references: { table: 'FkCompany', columns: ['id'] },
+            onDelete: 'CASCADE',
+            onUpdate: 'NO ACTION',
+          },
         },
       ]);
-      expect(diff?.foreignKeysToDrop).toBeUndefined();
-      expect(diff?.foreignKeysToAlter).toBeUndefined();
     });
 
     it('should report nothing where the table already has the foreign key the entity declares', () => {
@@ -95,9 +96,8 @@ describe('SqlSchemaGenerator foreign keys', () => {
 
       const diff = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
 
-      expect(diff?.indexesToAdd?.map((index) => index.name)).toEqual(['FkEmployee__companyId_idx']);
-      expect(diff?.foreignKeysToAdd).toBeUndefined();
-      expect(diff?.foreignKeysToAlter).toBeUndefined();
+      expect(diff?.indexes?.map(({ to }) => to?.name)).toEqual(['FkEmployee__companyId_idx']);
+      expect(diff?.foreignKeys).toBeUndefined();
     });
 
     /** A changed `onDelete` on a shipped relation is a statement, or the database keeps the old rule. */
@@ -107,14 +107,10 @@ describe('SqlSchemaGenerator foreign keys', () => {
 
       const diff = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
 
-      expect(diff?.foreignKeysToAlter).toHaveLength(1);
       // Dropped under the name the database gave it, added under the one the entity derives.
-      expect(diff?.foreignKeysToAlter?.[0].from.name).toBe('employee_company_fk');
-      expect(diff?.foreignKeysToAlter?.[0].from.onDelete).toBe('NO ACTION');
-      expect(diff?.foreignKeysToAlter?.[0].to.name).toBe('FkEmployee__companyId_fk');
-      expect(diff?.foreignKeysToAlter?.[0].to.onDelete).toBe('CASCADE');
-      expect(diff?.foreignKeysToAdd).toBeUndefined();
-      expect(diff?.foreignKeysToDrop).toBeUndefined();
+      expect(diff?.foreignKeys?.map(({ from, to }) => [from?.name, from?.onDelete, to?.name, to?.onDelete])).toEqual([
+        ['employee_company_fk', 'NO ACTION', 'FkEmployee__companyId_fk', 'CASCADE'],
+      ]);
     });
 
     it('should drop a foreign key the entity does not declare', () => {
@@ -128,8 +124,9 @@ describe('SqlSchemaGenerator foreign keys', () => {
 
       const diff = generator.diffSchema(FkStandalone, standalone, generator.buildAST(ENTITIES));
 
-      expect(diff?.foreignKeysToDrop).toEqual(['standalone_company_fk']);
-      expect(diff?.foreignKeysToAdd).toBeUndefined();
+      expect(diff?.foreignKeys?.map(({ from, to }) => [from?.name, to])).toEqual([
+        ['standalone_company_fk', undefined],
+      ]);
     });
 
     /**
@@ -143,8 +140,8 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const spanning = generator.diffSchema(FkEmployee, employee, generator.buildAST(ENTITIES));
       const alone = generator.diffSchema(FkEmployee, employee, generator.buildAST([FkEmployee]));
 
-      expect(spanning?.foreignKeysToAdd).toHaveLength(1);
-      expect(alone?.foreignKeysToAdd).toBeUndefined();
+      expect(spanning?.foreignKeys).toHaveLength(1);
+      expect(alone?.foreignKeys).toBeUndefined();
     });
 
     /**
@@ -157,7 +154,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const sqlite = new SqlSchemaGenerator(new SqliteDialect());
 
       expect(sqlite.features.foreignKeyAlter).toBe(false);
-      expect(sqlite.diffSchema(FkEmployee, employee, sqlite.buildAST(ENTITIES))?.foreignKeysToAdd).toBeUndefined();
+      expect(sqlite.diffSchema(FkEmployee, employee, sqlite.buildAST(ENTITIES))?.foreignKeys).toBeUndefined();
     });
 
     /**
@@ -200,7 +197,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const statements = generator.generateAlterTable({
         type: 'alter',
         tableName: 'FkEmployee',
-        foreignKeysToAdd: [companyFk('FkEmployee__companyId_fk', 'CASCADE')],
+        foreignKeys: [{ to: companyFk('FkEmployee__companyId_fk', 'CASCADE') }],
       });
 
       expect(statements).toEqual([
@@ -213,7 +210,7 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const statements = generator.generateAlterTable({
         type: 'alter',
         tableName: 'FkEmployee',
-        foreignKeysToDrop: ['employee_company_fk'],
+        foreignKeys: [{ from: companyFk('employee_company_fk', 'NO ACTION') }],
       });
 
       expect(statements).toEqual(['ALTER TABLE "FkEmployee" DROP CONSTRAINT "employee_company_fk";']);
@@ -238,19 +235,11 @@ describe('SqlSchemaGenerator foreign keys', () => {
       const statements = generator.generateAlterTable({
         type: 'alter',
         tableName: 'FkEmployee',
-        columnsToAdd: [
-          {
-            name: 'companyId',
-            type: 'integer',
-            nullable: true,
-            isPrimaryKey: false,
-            isAutoIncrement: false,
-            isUnique: false,
-          },
+        columns: [{ to: companyColumn('companyId') }, { from: companyColumn('legacyCompanyId') }],
+        foreignKeys: [
+          { from: companyFk('employee_legacy_fk', 'NO ACTION') },
+          { to: companyFk('FkEmployee__companyId_fk', 'CASCADE') },
         ],
-        columnsToDrop: ['legacyCompanyId'],
-        foreignKeysToDrop: ['employee_legacy_fk'],
-        foreignKeysToAdd: [companyFk('FkEmployee__companyId_fk', 'CASCADE')],
       });
 
       const dropFk = statements.findIndex((it) => it.includes('DROP CONSTRAINT "employee_legacy_fk"'));
@@ -272,39 +261,48 @@ describe('SqlSchemaGenerator foreign keys', () => {
         references: { table: 'FkCompany', columns: ['id'] },
       };
 
-      const [added] = generator.generateAlterTable({
-        type: 'alter',
-        tableName: 'FkEmployee',
-        foreignKeysToAdd: [unnamed],
-      });
-      const [dropped] = generator.generateAlterTableDown({
-        type: 'alter',
-        tableName: 'FkEmployee',
-        foreignKeysToAdd: [unnamed],
-      });
+      const diff: SchemaDiff = { type: 'alter', tableName: 'FkEmployee', foreignKeys: [{ to: unnamed }] };
+      const [added] = generator.generateAlterTable(diff);
+      const [dropped] = generator.generateAlterTable(reverseDiff(diff));
 
       expect(added).toContain('ADD CONSTRAINT "FkEmployee__companyId_fk"');
       expect(dropped).toBe('ALTER TABLE "FkEmployee" DROP CONSTRAINT "FkEmployee__companyId_fk";');
     });
   });
 
-  describe('generateAlterTableDown', () => {
+  describe('reversed', () => {
     it('should reverse an added foreign key by dropping it', () => {
-      const statements = generator.generateAlterTableDown({
-        type: 'alter',
-        tableName: 'FkEmployee',
-        foreignKeysToAdd: [companyFk('FkEmployee__companyId_fk', 'CASCADE')],
-      });
+      const statements = generator.generateAlterTable(
+        reverseDiff({
+          type: 'alter',
+          tableName: 'FkEmployee',
+          foreignKeys: [{ to: companyFk('FkEmployee__companyId_fk', 'CASCADE') }],
+        }),
+      );
 
       expect(statements).toEqual(['ALTER TABLE "FkEmployee" DROP CONSTRAINT "FkEmployee__companyId_fk";']);
     });
 
+    /** A drop keeps the whole constraint, so its rollback restores it. */
+    it('should reverse a dropped foreign key by restoring it', () => {
+      const statements = generator.generateAlterTable(
+        reverseDiff({
+          type: 'alter',
+          tableName: 'FkEmployee',
+          foreignKeys: [{ from: companyFk('employee_company_fk', 'NO ACTION') }],
+        }),
+      );
+
+      expect(statements).toEqual([
+        'ALTER TABLE "FkEmployee" ADD CONSTRAINT "employee_company_fk" ' +
+          'FOREIGN KEY ("companyId") REFERENCES "FkCompany" ("id") ON DELETE NO ACTION ON UPDATE NO ACTION;',
+      ]);
+    });
+
     it('should reverse an altered foreign key by restoring the one the database had', () => {
-      const statements = generator.generateAlterTableDown({
-        type: 'alter',
-        tableName: 'FkEmployee',
-        ...alterFk(),
-      });
+      const statements = generator.generateAlterTable(
+        reverseDiff({ type: 'alter', tableName: 'FkEmployee', ...alterFk() }),
+      );
 
       expect(statements).toEqual([
         'ALTER TABLE "FkEmployee" DROP CONSTRAINT "FkEmployee__companyId_fk";',
@@ -326,12 +324,16 @@ function companyFk(name: string, onDelete: ForeignKeyAction): ForeignKeySchema {
 }
 
 /** The `from`/`to` pair every alter assertion above shares. */
-function alterFk(): Pick<SchemaDiff, 'foreignKeysToAlter'> {
+function alterFk(): Pick<SchemaDiff, 'foreignKeys'> {
   return {
-    foreignKeysToAlter: [
+    foreignKeys: [
       { from: companyFk('employee_company_fk', 'NO ACTION'), to: companyFk('FkEmployee__companyId_fk', 'CASCADE') },
     ],
   };
+}
+
+function companyColumn(name: string): ColumnSchema {
+  return { name, type: 'integer', nullable: true, isPrimaryKey: false, isAutoIncrement: false, isUnique: false };
 }
 
 function tables() {

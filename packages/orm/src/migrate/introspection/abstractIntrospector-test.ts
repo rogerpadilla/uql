@@ -235,7 +235,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
     expect(schema.primaryKey).toBeDefined();
-    expect(schema.primaryKey).toContain('id');
+    expect(schema.primaryKey?.columns).toContain('id');
 
     const idCol = this.getColumn(schema, 'id');
     expect(idCol.isPrimaryKey).toBe(true);
@@ -425,9 +425,9 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.COMPOSITE_PK);
 
     expect(schema.primaryKey).toBeDefined();
-    expect(schema.primaryKey).toHaveLength(2);
-    expect(schema.primaryKey).toContain('tenant_id');
-    expect(schema.primaryKey).toContain('entity_id');
+    expect(schema.primaryKey?.columns).toHaveLength(2);
+    expect(schema.primaryKey?.columns).toContain('tenant_id');
+    expect(schema.primaryKey?.columns).toContain('entity_id');
   }
 
   async shouldMarkAllCompositePKColumnsAsPrimaryKey() {

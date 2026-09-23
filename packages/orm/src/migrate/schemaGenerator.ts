@@ -15,6 +15,7 @@ import type {
   TableNode,
 } from '../schema/types.js';
 import type {
+  Change,
   ColumnSchema,
   CreateSchemaOptions,
   DialectFeatures,
@@ -26,6 +27,7 @@ import type {
   FieldOptions,
   ForeignKeySchema,
   IndexSchema,
+  PrimaryKeySchema,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -33,7 +35,7 @@ import type {
 } from '../type/index.js';
 import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
-import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
+import { sameDefault } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
@@ -47,6 +49,7 @@ import {
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
+import { added, alterations, dropped, nonEmpty, sides } from './schemaChange.js';
 import { dropTrigger, type RenderedTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
 /**
@@ -128,6 +131,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return buildEntityAST(this, entities, {
       defaultForeignKeyAction: this.defaultForeignKeyAction,
       textScoreIndexes: this.dialect.features.textScoreIndexes,
+      vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
   }
 
@@ -263,60 +267,30 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return `DROP TABLE ${ifExists}${this.escapeId(tableName)}${cascade};`;
   }
 
+  /**
+   * The statements taking a table through `diff`, in the one order both directions need: whatever holds
+   * something down goes before it and comes back after it. A foreign key holds its columns and the key it
+   * points at, so it goes first and comes back last; the key holds its columns; and some engines drop an
+   * index along with its column, which would leave nothing to name. An alter is its drop, then its add.
+   */
   generateAlterTable(diff: SchemaDiff): string[] {
-    const statements: string[] = [];
-
-    // Before the columns, because a key column being added cannot be part of the old key, and after
-    // it is dropped the table is free to take the new one below.
-    if (diff.primaryKey?.from.length) {
-      statements.push(this.generateDropPrimaryKeySql(diff.tableName, diff.primaryKey.fromName));
-    }
-
-    // Before the columns: a constraint holds its columns down, so one the entity dropped cannot go
-    // while a foreign key still names it. An alter is a drop and an add, and this is its drop half.
-    statements.push(
-      ...this.dropForeignKeyStatements(diff.tableName, [
-        ...(diff.foreignKeysToDrop ?? []),
-        ...(diff.foreignKeysToAlter ?? []).map((it) => constraintNameOf(diff.tableName, it.from)),
-      ]),
-    );
-
-    // Before the adds, which may reuse a dropped index's name, and before the columns: some engines
-    // drop an index along with its column, which would leave nothing here to name.
-    statements.push(...this.dropIndexStatements(diff.tableName, diff.indexesToDrop, diff.schema));
-
-    for (const column of diff.columnsToAdd ?? []) {
-      this.assertColumnAddable(diff.tableName, column);
-      statements.push(this.tableDdl.addColumn(diff.tableName, this.generateColumnDefinitionFromSchema(column)));
-      statements.push(...this.generateColumnCommentStatement(diff.tableName, column, diff.schema));
-    }
-    statements.push(
-      ...this.alterColumnStatements(
-        diff.tableName,
-        (diff.columnsToAlter ?? []).map((it) => it.to),
+    const { tableName, schema, primaryKey } = diff;
+    const { columns } = diff;
+    return [
+      ...sides(diff.foreignKeys, 'from').map((foreignKey) =>
+        this.generateDropForeignKeySql(tableName, constraintNameOf(tableName, foreignKey)),
       ),
-    );
-    for (const columnName of diff.columnsToDrop ?? []) {
-      statements.push(...this.tableDdl.dropColumn(diff.tableName, columnName));
-    }
-
-    statements.push(...this.addIndexStatements(diff.tableName, diff.indexesToAdd));
-
-    // Last, so every column it names exists by now.
-    if (diff.primaryKey?.to.length) {
-      statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.to));
-    }
-
-    // After the columns, for the same reason the key is: a constraint cannot name one that is not
-    // there yet. The add half of an alter rides along, its drop having gone out above.
-    statements.push(
-      ...this.addForeignKeyStatements(diff.tableName, [
-        ...(diff.foreignKeysToAdd ?? []),
-        ...(diff.foreignKeysToAlter ?? []).map((it) => it.to),
-      ]),
-    );
-
-    return statements;
+      ...(primaryKey?.from ? [this.generateDropPrimaryKeySql(tableName, primaryKey.from.name)] : []),
+      ...sides(diff.indexes, 'from').map((index) => this.generateDropIndex(tableName, index.name, schema)),
+      ...added(columns).flatMap((column) => this.addColumnStatements(tableName, column, schema)),
+      ...alterations(columns).flatMap(({ from, to }) =>
+        this.tableDdl.alterColumn(tableName, to, this.generateColumnDefinitionFromSchema(to), from),
+      ),
+      ...dropped(columns).flatMap((column) => this.tableDdl.dropColumn(tableName, column.name)),
+      ...this.addIndexStatements(tableName, sides(diff.indexes, 'to')),
+      ...(primaryKey?.to ? [this.generateAddPrimaryKeySql(tableName, primaryKey.to.columns, primaryKey.to.name)] : []),
+      ...this.addForeignKeyStatements(tableName, sides(diff.foreignKeys, 'to')),
+    ];
   }
 
   /** `ADD CONSTRAINT` for each of `foreignKeys`. */
@@ -324,83 +298,21 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return foreignKeys.map((foreignKey) => this.generateAddForeignKeySql(tableName, foreignKey));
   }
 
-  /** `DROP CONSTRAINT` for each of `constraintNames`, the mirror of {@link addForeignKeyStatements}. */
-  private dropForeignKeyStatements(tableName: string, constraintNames: readonly string[]): string[] {
-    return constraintNames.map((name) => this.generateDropForeignKeySql(tableName, name));
-  }
-
-  /** The `ALTER COLUMN` restating each of `columns`. */
-  private alterColumnStatements(tableName: string, columns: readonly ColumnSchema[]): string[] {
-    return columns.flatMap((column) =>
-      this.generateAlterColumnStatements(tableName, column, this.generateColumnDefinitionFromSchema(column)),
-    );
-  }
-
   /** An index added to a table that may already have rows: its `CREATE`, then what the engine needs after. */
-  private addIndexStatements(tableName: string, indexes: readonly IndexSchema[] = []): string[] {
+  private addIndexStatements(tableName: string, indexes: readonly IndexSchema[]): string[] {
     return indexes.flatMap((index) => [
       this.generateCreateIndex(tableName, index),
       ...this.indexDdl.settleStatements(tableName, index),
     ]);
   }
 
-  /** `DROP INDEX` for each of `indexes`, the mirror of {@link addIndexStatements}. */
-  private dropIndexStatements(tableName: string, indexes: readonly IndexSchema[] = [], schema?: string): string[] {
-    return indexes.map((index) => this.generateDropIndex(tableName, index.name, schema));
-  }
-
-  generateAlterTableDown(diff: SchemaDiff): string[] {
-    const statements: string[] = [];
-
-    // Constraints first, mirroring the up direction: the up added them last, so the down drops them
-    // first, and a column it is about to drop is then free of anything naming it.
-    statements.push(
-      ...this.dropForeignKeyStatements(diff.tableName, [
-        ...(diff.foreignKeysToAdd ?? []).map((it) => constraintNameOf(diff.tableName, it)),
-        ...(diff.foreignKeysToAlter ?? []).map((it) => constraintNameOf(diff.tableName, it.to)),
-      ]),
-    );
-
-    // The key next, for the same reason: a column the up added cannot be dropped below while the new
-    // key still names it. Restored under the name the database gave it, which is what the table had
-    // before, rather than a derived one that was never on it.
-    if (diff.primaryKey?.to.length) {
-      statements.push(
-        this.generateDropPrimaryKeySql(diff.tableName, derivedPrimaryKeyName(diff.tableName, diff.primaryKey.to)),
-      );
-    }
-
-    for (const column of diff.columnsToAdd ?? []) {
-      statements.push(...this.tableDdl.dropColumn(diff.tableName, column.name));
-    }
-    statements.push(
-      ...this.alterColumnStatements(
-        diff.tableName,
-        (diff.columnsToAlter ?? []).map((it) => it.from),
-      ),
-    );
-
-    statements.push(...this.dropIndexStatements(diff.tableName, diff.indexesToAdd, diff.schema));
-    statements.push(...this.addIndexStatements(diff.tableName, diff.indexesToDrop));
-
-    if (diff.primaryKey?.from.length) {
-      statements.push(this.generateAddPrimaryKeySql(diff.tableName, diff.primaryKey.from, diff.primaryKey.fromName));
-    }
-
-    // The constraint the up replaced, back under the name the database had for it. A foreign key the
-    // up *dropped* is not restored: only its name survived the diff, never what it pointed at.
-    statements.push(
-      ...this.addForeignKeyStatements(
-        diff.tableName,
-        (diff.foreignKeysToAlter ?? []).map((it) => it.from),
-      ),
-    );
-
-    if (diff.columnsToDrop?.length || diff.foreignKeysToDrop?.length) {
-      statements.push(`-- TODO: Manual reversal needed for dropped columns/foreign keys`);
-    }
-
-    return statements;
+  /** A column added to a table that exists, and its comment where the engine keeps one apart. */
+  private addColumnStatements(tableName: string, column: ColumnSchema, schema?: string): string[] {
+    this.assertColumnAddable(tableName, column);
+    return [
+      this.tableDdl.addColumn(tableName, this.generateColumnDefinitionFromSchema(column)),
+      ...this.generateColumnCommentStatement(tableName, column, schema),
+    ];
   }
 
   generateCreateIndex(tableName: string, index: IndexSchema, options: { ifNotExists?: boolean } = {}): string {
@@ -429,8 +341,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   /**
    * The one place a column definition is spelled, so the `ColumnSchema` and `ColumnNode` paths cannot
    * drift. A key column states `NOT NULL` rather than leave it to the key: SQLite lets a key column hold
-   * NULL otherwise, and SQL Server adds no key over a nullable column. `UNIQUE` is left to the key. An
-   * enum's `CHECK` comes last, the only place MariaDB takes it.
+   * NULL otherwise, and SQL Server adds no key over a nullable column. Never `UNIQUE`: a unique column is
+   * a unique index, which the table creates beside it. An enum's `CHECK` comes last, the only place MariaDB takes it.
    */
   private renderColumn(column: {
     name: string;
@@ -450,9 +362,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
     if (!column.nullable) {
       def += ' NOT NULL';
-    }
-    if (column.isUnique && !column.isPrimaryKey) {
-      def += ' UNIQUE';
     }
     def += this.tableDdl.defaultClause(column);
     if (column.comment) {
@@ -537,36 +446,34 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       return undefined;
     }
 
-    // Indexes are matched here rather than by the differ, which pairs them by name so that a changed
-    // one reads as one index that altered. A migration needs the opposite: an index already in the
-    // table, under whatever name, must not be created again, and one whose shape differs is dropped
-    // and created anew - no engine alters an index's columns or uniqueness.
     const tableDiff = diffTable(desired, currentTable, { ...this.diffOptions(), compareIndexes: false });
-    const indexes = indexChanges(currentTable.name, desired.indexes, currentTable.indexes);
-    const indexesToAdd = indexes.toAdd.map(indexNodeToSchema);
-    const indexesToDrop = indexes.toDrop.map(indexNodeToSchema);
+    const indexes = indexChanges(currentTable.name, desired.indexes, currentTable.indexes, currentTable.indexFacets);
 
-    const columnDiffs = tableDiff?.columnDiffs ?? [];
-    const columnsToAdd = columnDiffs.flatMap((it) => (it.type === 'add' ? [this.columnNodeToSchema(it.expected)] : []));
-    const columnsToDrop = columnDiffs.flatMap((it) => (it.type === 'drop' ? [it.column] : []));
-    // Without its values: an alter restates the whole column, and MySQL answers a restated `CHECK` by
-    // adding a *second* constraint rather than replacing the first, so the column would accumulate one
-    // per alter. An enum's values reach the database with the column and are never restated - which is
-    // also why changing them is a hand-written migration. See architecture/roadmap.md.
-    const columnsToAlter = columnDiffs.flatMap((it) =>
-      it.type === 'alter'
-        ? [
-            {
-              from: this.columnNodeToSchema(it.actual),
-              to: { ...this.columnNodeToSchema(it.expected), enum: undefined },
-            },
-          ]
-        : [],
-    );
-    const primaryKey = tableDiff?.primaryKeyDiff && {
-      from: tableDiff.primaryKeyDiff.actual,
-      to: tableDiff.primaryKeyDiff.expected,
-      fromName: tableDiff.primaryKeyDiff.actualName,
+    // An alter's `to` without its values: an alter restates the whole column, and MySQL answers a
+    // restated `CHECK` by adding a *second* constraint rather than replacing the first, so the column
+    // would accumulate one per alter. An enum's values reach the database with the column and are never
+    // restated - which is also why changing them is a hand-written migration. See architecture/roadmap.md.
+    const columns = (tableDiff?.columnDiffs ?? []).map((it): Change<ColumnSchema> => {
+      if (it.type === 'add') {
+        return { to: this.columnNodeToSchema(it.expected) };
+      }
+      if (it.type === 'drop') {
+        return { from: this.columnNodeToSchema(it.actual) };
+      }
+      return {
+        from: this.columnNodeToSchema(it.actual),
+        to: { ...this.columnNodeToSchema(it.expected), enum: undefined },
+      };
+    });
+
+    const keyDiff = tableDiff?.primaryKeyDiff;
+    // The key added named as this generator names it, so the rollback can drop it by that name.
+    const primaryKey: Change<PrimaryKeySchema> | undefined = keyDiff && {
+      from: keyDiff.actual,
+      to: keyDiff.expected && {
+        columns: keyDiff.expected.columns,
+        name: derivedPrimaryKeyName(tableName, keyDiff.expected.columns),
+      },
     };
 
     // This table's own foreign keys. None where the engine cannot alter one (SQLite, short of rebuilding
@@ -574,46 +481,31 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const relationDiffs = this.features.foreignKeyAlter
       ? diffRelationshipNodes(desired.outgoingRelations, currentTable.outgoingRelations, this.diffOptions())
       : [];
-    const foreignKeysToAdd = relationDiffs.flatMap((it) => (it.type === 'create' ? [foreignKeyOf(it.expected)] : []));
-    const foreignKeysToDrop = relationDiffs.flatMap((it) => (it.type === 'drop' ? [it.name] : []));
-    const foreignKeysToAlter = relationDiffs.flatMap((it) =>
-      it.type === 'alter' ? [{ from: foreignKeyOf(it.actual), to: foreignKeyOf(it.expected) }] : [],
-    );
+    const foreignKeys = relationDiffs.map(({ actual, expected }) => ({
+      from: actual && foreignKeyOf(actual),
+      to: expected && foreignKeyOf(expected),
+    }));
 
-    if (
-      !columnsToAdd.length &&
-      !columnsToAlter.length &&
-      !columnsToDrop.length &&
-      !indexesToAdd.length &&
-      !indexesToDrop.length &&
-      !foreignKeysToAdd.length &&
-      !foreignKeysToDrop.length &&
-      !foreignKeysToAlter.length &&
-      !primaryKey
-    ) {
-      return undefined;
-    }
-
-    return {
+    const alter: SchemaDiff = {
       tableName,
       schema,
       type: 'alter',
       primaryKey,
-      columnsToAdd: columnsToAdd.length ? columnsToAdd : undefined,
-      columnsToAlter: columnsToAlter.length ? columnsToAlter : undefined,
-      columnsToDrop: columnsToDrop.length ? columnsToDrop : undefined,
-      indexesToAdd: indexesToAdd.length ? indexesToAdd : undefined,
-      indexesToDrop: indexesToDrop.length ? indexesToDrop : undefined,
-      foreignKeysToAdd: foreignKeysToAdd.length ? foreignKeysToAdd : undefined,
-      foreignKeysToDrop: foreignKeysToDrop.length ? foreignKeysToDrop : undefined,
-      foreignKeysToAlter: foreignKeysToAlter.length ? foreignKeysToAlter : undefined,
+      columns: nonEmpty(columns),
+      indexes: nonEmpty([
+        ...indexes.toAdd.map((to) => ({ to: indexNodeToSchema(to) })),
+        ...indexes.toDrop.map((from) => ({ from: indexNodeToSchema(from) })),
+        ...indexes.toAlter.map(({ from, to }) => ({ from: indexNodeToSchema(from), to: indexNodeToSchema(to) })),
+      ]),
+      foreignKeys: nonEmpty(foreignKeys),
     };
+    return alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys ? alter : undefined;
   }
 
   protected diffOptions(): DiffOptions {
     return {
       normalizeType: engineType(this.dialect),
-      defaultsEqual: (expected, actual) => this.isDefaultValueEqual(actual, expected),
+      defaultsEqual: this.defaultsEqual,
     };
   }
 
@@ -623,67 +515,33 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return { ...column, type: this.columnSqlType(col) };
   }
 
-  /**
-   * Compare two default values for equality
-   */
-  protected isDefaultValueEqual(current: unknown, desired: unknown): boolean {
-    if (current === desired) return true;
-    // Both spellings of "no default" are the same fact, and engines disagree on which they report:
-    // MariaDB says `null` where MySQL says nothing at all. Reading them as different values asked to
-    // `MODIFY` every nullable column, on every sync, forever.
-    if (current == null || desired == null) return current == null && desired == null;
-
-    const normalize = (value: unknown): string => {
-      // Render first: the desired side may be a symbolic expression, the current side is always the
-      // engine's own text, and `{"kind":"now"}` matches no spelling of `CURRENT_TIMESTAMP`.
-      const val = SqlExpression.isExpression(value) ? formatDefaultValue(value, this.dialect) : value;
-      if (typeof val === 'string') {
-        let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
-        s = s.replace(/^'(.*)'$/, '$1');
-        if (s.toLowerCase() === 'null') return 'null';
-        return s;
-      }
-      return typeof val === 'object' ? JSON.stringify(val) : String(val);
-    };
-
-    return normalize(current) === normalize(desired);
-  }
+  /** Whether a column's stored default is the one the entity declares, as this engine reprints it. */
+  readonly defaultsEqual = (desired: unknown, current: unknown): boolean => sameDefault(desired, current, this.dialect);
 
   generateCreateTableFromNode(table: TableNode, options: { ifNotExists?: boolean } = {}): string[] {
     const columns: string[] = [];
     const constraints: string[] = [];
 
-    // MariaDB rejects a `VECTOR INDEX` whose column is nullable ("All parts of a VECTOR index must
-    // be NOT NULL"), so being indexed decides it rather than the entity's own nullability.
-    const indexedVectorColumns = new Set(
-      this.features.vectorIndexRequiresNotNull
-        ? table.indexes.filter((index) => index.type === 'vector').flatMap((idx) => idx.entries.map((e) => e.column))
-        : [],
-    );
-
     for (const col of table.columns.values()) {
-      const colDef = this.generateColumnFromNode(
-        indexedVectorColumns.has(col.name) ? { ...col, nullable: false } : col,
-      );
-      columns.push(colDef);
+      columns.push(this.generateColumnFromNode(col));
     }
 
     // Every key, of any width, as one named constraint beside the checks and foreign keys - so a
     // later `DROP` has something to name. The exception is a dialect whose serial type states the key
     // itself (SQLite's `INTEGER PRIMARY KEY AUTOINCREMENT`, which cannot be split): there the column
     // has already declared it, and saying it again is a second primary key.
+    const key = table.primaryKey;
     const declaredByColumn =
       this.dialect.features.serialDeclaresPrimaryKey &&
-      table.primaryKey.length === 1 &&
-      table.primaryKey[0].isAutoIncrement;
-    if (table.primaryKey.length && !declaredByColumn) {
-      const pkColumns = table.primaryKey.map((c) => c.name);
-      const pkName = table.primaryKeyName ?? derivedPrimaryKeyName(table.name, pkColumns);
-      const pkCols = pkColumns.map((c) => this.escapeId(c)).join(', ');
-      constraints.push(`CONSTRAINT ${this.escapeId(pkName)} PRIMARY KEY (${pkCols})`);
+      key?.columns.length === 1 &&
+      table.columns.get(key.columns[0])?.isAutoIncrement;
+    if (key && !declaredByColumn) {
+      const name = key.name ?? derivedPrimaryKeyName(table.name, key.columns);
+      const columns = key.columns.map((column) => this.escapeId(column)).join(', ');
+      constraints.push(`CONSTRAINT ${this.escapeId(name)} PRIMARY KEY (${columns})`);
     }
 
-    (table.checks ?? []).forEach((check, i) => {
+    table.checks.forEach((check, i) => {
       const name = check.name ?? derivedCheckName(table.name, i + 1);
       constraints.push(`CONSTRAINT ${this.escapeId(name)} CHECK (${check.expression})`);
     });
@@ -962,7 +820,10 @@ export function buildEntityAST(
     'resolveTableAlias' | 'resolveSchema' | 'resolveColumnName' | 'compileDdl' | 'compileIndexPredicate'
   >,
   entities: readonly Type<object>[],
-  options: Pick<BuildSchemaASTOptions, 'defaultForeignKeyAction' | 'textScoreIndexes'> = {},
+  options: Pick<
+    BuildSchemaASTOptions,
+    'defaultForeignKeyAction' | 'textScoreIndexes' | 'vectorIndexRequiresNotNull'
+  > = {},
 ): SchemaAST {
   return buildSchemaAST(entities, {
     // The alias, not `resolveTableName`: a node holds its schema separately, so that a name derived

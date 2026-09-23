@@ -18,10 +18,11 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected triggersQuery(): string {
     return /*sql*/ `
-      SELECT OBJECT_NAME(t.parent_id) AS [table], t.name AS name, m.definition AS definition
+      SELECT t.name AS name, m.definition AS definition
       FROM sys.triggers t
       JOIN sys.sql_modules m ON m.object_id = t.object_id
       WHERE t.parent_id <> 0 AND OBJECT_SCHEMA_NAME(t.parent_id) = ${this.schemaExpr}
+        AND OBJECT_NAME(t.parent_id) = ${this.dialect.placeholder(1)}
     `;
   }
 
