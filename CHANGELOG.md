@@ -4,16 +4,13 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.81.0] - 2026-09-23
 
-- **Breaking:** for code driving the migrator directly, `SchemaDiff` lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields, and a rollback is `generateAlterTable(reverseDiff(diff))`, `generateAlterTableDown` gone. `TableSchema.primaryKey` is `{ columns, name }`, `detectDrift` takes `defaultsEqual` and no `indexFacets`, and `SchemaIntrospector.ownedTriggers` takes the table.
+- **Breaking:** for code driving the migrator directly, `SchemaDiff` lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields.
 - A unique column is a unique index on every engine: `@Field({ unique: true })` and a builder's `.unique()` create `<table>__<column>_idx` beside the table rather than a `UNIQUE` constraint in it, so `sync` and `generate:entities` add and drop uniqueness like any index. `generate:from-db` writes one as `unique: true, index: '<name>'`.
 - `sync` (outside safe mode) and `generate:entities` rebuild an index that differs in anything the database reports: order, nulls, operator class, included columns or vector distance. Safe mode holds a rebuild back whole.
-- A generated migration's `down` restores a dropped column or foreign key, where it left a TODO, and `generate:entities` alters on Postgres only what changed in a column.
+- A generated migration's `down` restores a dropped column or foreign key.
 - `drift:check` compares defaults the way `generate:entities` does, and a vector index's `distance` (Postgres, CockroachDB, MariaDB, libSQL).
-- **Fixed:** indexes pair by name, then by columns, so one under a legacy name is no longer reported both missing and unexpected, while a duplicate still is. A unique field's own index is no longer unexpected (CockroachDB, MySQL, MariaDB, SQL Server).
-- **Fixed (MongoDB):** `@Field({ unique: true })` without `index` builds a unique index, where it enforced nothing.
-- **Fixed (Postgres, CockroachDB, MariaDB):** a vector index a migration builds without `distance` is built for cosine, the distance a search defaults to, not the engine's L2. `drift:check` reads a vector column's dimensions back, and MariaDB's indexed vector column as the `NOT NULL` it is built.
+- **Fixed:** indexes pair by name, then by columns, so one under a legacy name is no longer reported both missing and unexpected, while a duplicate still is.
 - **Fixed (SQL Server):** dropping a column drops the indexes over it first, which the server otherwise refuses.
-- **Fixed (Postgres):** `sync` reads the triggers of the tables it changes alone, where another connection dropping one elsewhere failed it with `cache lookup failed for function`.
 
 ## [0.80.0] - 2026-09-23
 
@@ -21,9 +18,6 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 - `@Field({ computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] })` makes a column a stamp, filled by a trigger on each event named whoever writes the row: psql, a data migration, another service. `onUpdate` still covers uql's own writes.
 - `sync` and `generate:entities` install the triggers an entity declares and drop the ones it no longer does, leaving an unchanged or hand-written one alone; a generated migration's `down` restores what stood before. MongoDB has no triggers, so it refuses a write to an entity declaring one.
 - **Breaking:** NULL compares the way each engine compares it. `$ne` renders the plain `<>` again, as `$nin`, `$not` and `$nor` render `NOT IN` and `NOT`, so a SQL engine leaves out a row whose column is NULL, where MongoDB keeps it. Name NULL where you want it: `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`.
-- **Fixed:** a `$between` that is not two bounds and a `$near` that is not an object are refused with a usage error.
-- **Fixed (MongoDB):** `$not` translates the operators inside it, where `$not: { $isNull: true }` reached the server as unknown.
-- **Fixed (SQL Server):** an insert or upsert on a table with a trigger reads its ids back, an upsert naming an identity key runs, `uql-migrate up` and `down` run, and `estimatedCount` reads the connection's default schema rather than `dbo`.
 
 ## [0.79.0] - 2026-09-21
 
