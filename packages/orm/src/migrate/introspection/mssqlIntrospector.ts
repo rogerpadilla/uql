@@ -16,6 +16,15 @@ import {
 export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected override readonly defaultSchemaExpr = 'SCHEMA_NAME()';
 
+  protected triggersQuery(): string {
+    return /*sql*/ `
+      SELECT OBJECT_NAME(t.parent_id) AS [table], t.name AS name, m.definition AS definition
+      FROM sys.triggers t
+      JOIN sys.sql_modules m ON m.object_id = t.object_id
+      WHERE t.parent_id <> 0 AND OBJECT_SCHEMA_NAME(t.parent_id) = ${this.schemaExpr}
+    `;
+  }
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT TABLE_NAME as table_name

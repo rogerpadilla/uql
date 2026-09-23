@@ -24,6 +24,11 @@ export function sizedType(column: Pick<ColumnSchema, 'type' | 'length' | 'precis
 export class TableDdl {
   constructor(protected readonly dialect: AbstractSqlDialect) {}
 
+  /** A `CREATE TABLE` up to its column list, a no-op where `ifNotExists` and the table is already there. */
+  createTable(target: string, ifNotExists: boolean): string {
+    return `CREATE TABLE ${ifNotExists ? 'IF NOT EXISTS ' : ''}${target}`;
+  }
+
   addColumn(table: string, definition: string): string {
     return `ALTER TABLE ${this.dialect.escapeId(table)} ADD COLUMN ${definition};`;
   }

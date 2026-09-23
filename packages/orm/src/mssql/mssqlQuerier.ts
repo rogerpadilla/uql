@@ -64,8 +64,8 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
   override async internalRun(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
     const res = await this.#request(values).query(query);
     return this.buildUpdateResult({
-      // `rowsAffected` carries one entry per statement, and a `MERGE` upsert emits its `OUTPUT`
-      // alongside the write, so the counts are summed rather than read at [0].
+      // `rowsAffected` carries one entry per statement, and a write runs in a batch of several - the table
+      // variable its ids go through, the read handing them back uncounted - so the counts are summed.
       changes: res.rowsAffected.reduce((total, count) => total + count, 0),
       rows: decodeWireTypes(res.recordset, res.recordset?.columns),
     });

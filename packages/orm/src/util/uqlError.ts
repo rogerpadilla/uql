@@ -27,6 +27,11 @@ export class UqlUsageError extends TypeError {
   readonly status = 400;
 }
 
+/** What a value is, for a refusal naming what `/http` handed over instead of what the types require. */
+export function kindOf(value: unknown): string {
+  return value === null ? 'null' : Array.isArray(value) ? 'array' : typeof value;
+}
+
 /**
  * @deprecated since 0.77.1 - use {@link UqlUsageError}, which every misuse throws, lock or not. The
  * same class under both names, so an existing `instanceof` keeps working.

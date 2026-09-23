@@ -5,10 +5,11 @@ import {
   type FieldKey,
   type FieldOptions,
   type NumericColumnType,
+  type StampEvent,
   RelationAggregate,
   type RelationAggregateSpec,
 } from '../type/index.js';
-import { getKeys } from './object.util.js';
+import { definedEntries, getKeys } from './object.util.js';
 
 // Constructors and type strings in one map: a logical type is either, and every caller asks the same
 // question of both.
@@ -53,7 +54,21 @@ export function isIntegerColumn(field: Pick<FieldOptions, 'type' | 'columnType' 
  * because an inlined field has no column to name, while a stored one is read like any other.
  */
 export function isInlinedExpression<F extends FieldOptions>(field: F): field is F & Required<Pick<F, 'computed'>> {
-  return field.computed !== undefined && field.stored !== true;
+  return field.computed !== undefined && !field.stored;
+}
+
+/** Whether the entity puts anything on its table the database runs: an authored trigger, or a stamp. */
+export function hasTriggers<E>(meta: EntityMeta<E>): boolean {
+  return Boolean(meta.triggers?.length) || definedEntries(meta.fields).some(([, field]) => stampEvents(field));
+}
+
+/**
+ * The events the database writes this field on, or `undefined` where it is not a stamp. A stamp is a
+ * real column the engine fills on each event, which is how an expression too volatile for a generated
+ * column - `now()` - is still kept by the database rather than by whoever happens to write the row.
+ */
+export function stampEvents(field: FieldOptions): readonly StampEvent[] | undefined {
+  return Array.isArray(field.stored) ? field.stored : undefined;
 }
 
 /**

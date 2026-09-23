@@ -1,5 +1,5 @@
 import type { EntityMeta, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryOptions, QueryPage, QuerySearch, RelationQuery } from './query.js';
+import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
@@ -8,7 +8,7 @@ import type { QueryVectorQuery } from './vector.js';
 /**
  * comparison options.
  */
-export type QueryComparisonOptions = QueryOptions & {
+export type QueryComparisonOptions = QueryRenderOptions & {
   /**
    * Whether this fragment is rendered as an operand of an enclosing `AND`/`OR`/`NOT`. An operand
    * parenthesizes itself when it emits more than one term, so no fragment ever depends on the
@@ -86,7 +86,6 @@ export type InsertIdSource = 'returning' | 'firstId';
  * Features of the database engine (SQL syntax layer).
  */
 export interface DialectFeatures {
-  readonly ifNotExists: boolean;
   readonly indexIfNotExists: boolean;
   /**
    * Whether the engine has namespaces a table can sit behind. `false` leaves every table
@@ -186,6 +185,63 @@ export interface SqlDialectFeatures extends DialectFeatures {
   readonly vectorTuningNeedsTransaction: boolean;
   /** Whether the serial column type states `PRIMARY KEY` itself, as SQLite's `AUTOINCREMENT` must. */
   readonly serialDeclaresPrimaryKey: boolean;
+  /** How the engine spells a trigger. One value rather than a flag each, as {@link rowLocks} is. */
+  readonly triggers: TriggerFeatures;
+}
+
+/**
+ * What a trigger body calls the rows it reads. Row-based engines hand it a record on each side; SQL
+ * Server hands it the two tables of the set it touched.
+ */
+export type TriggerRowName = 'NEW' | 'OLD' | 'inserted' | 'deleted';
+
+/** How a dialect spells a trigger, once {@link SqlDialectFeatures.triggers} names its shape. */
+export interface TriggerFeatures {
+  /**
+   * Where the body lives: a function of its own that the trigger names (the Postgres family), or inside
+   * the `CREATE TRIGGER` itself (everywhere else).
+   */
+  readonly body: 'function' | 'inline';
+  /**
+   * How it states which rows it fires for: `UPDATE OF` beside a `WHEN` (`'clause'`), or, where there is
+   * no usable `WHEN` - the MySQL family, CockroachDB, SQL Server - the same condition wrapping the body,
+   * as `IF c THEN ... END IF;` (`'thenEndIf'`) or T-SQL's `IF c BEGIN ... END` (`'beginEnd'`).
+   */
+  readonly guards: 'clause' | 'thenEndIf' | 'beginEnd';
+  /**
+   * Whether it fires once per row, with a row on each side, or once per statement over the set it
+   * touched. SQL Server is the only one here that is set-based, reading `inserted` and `deleted`.
+   */
+  readonly rows: 'row' | 'set';
+  /**
+   * Where a trigger's name is unique, and so what a `DROP` has to name: per table on the Postgres
+   * family, which spells `DROP TRIGGER x ON t`, and per schema everywhere else, which spells
+   * `DROP TRIGGER x`. Two tables may carry the same trigger name only under `'table'`.
+   */
+  readonly scope: 'table' | 'schema';
+  /**
+   * Where the table sits in the statement: after the timing, `BEFORE UPDATE ON t`, or ahead of it and
+   * behind an `AS`, `ON t AFTER UPDATE AS` - which is T-SQL's shape and nobody else's.
+   */
+  readonly layout: 'timingFirst' | 'tableFirst';
+  /**
+   * What every body opens with, or `''`. T-SQL wants `SET NOCOUNT ON`: a trigger running its own DML
+   * otherwise sends a rowcount of its own back, and the client reads that as what the original statement
+   * affected. Nothing else here needs a preamble.
+   */
+  readonly preamble: string;
+  /**
+   * Whether a body may assign to the row it was handed, `NEW."col" := ...`. SQLite forbids writing `NEW`
+   * at all, and SQL Server is handed a set rather than a row, so on both a trigger that fills a column
+   * has to restate the row as an `UPDATE` after the write instead.
+   */
+  readonly assignsRow: boolean;
+  /**
+   * Whether it can fire before the write, which is what a stamp needs. SQL Server has only `AFTER` and
+   * `INSTEAD OF`, and `INSTEAD OF` would make the trigger responsible for performing the write itself,
+   * so a `before*` event is refused there rather than silently made to mean something else.
+   */
+  readonly before: boolean;
 }
 
 /**
@@ -197,6 +253,12 @@ export interface SqlQueryDialect {
    * The SQL dialect name.
    */
   readonly dialectName: SqlDialectName;
+  /**
+   * The engine whose SQL this one also accepts, which is itself unless it is a fork: CockroachDB runs
+   * Postgres's PL/pgSQL and MariaDB runs MySQL's. What lets a body, or any other hand-written SQL, be
+   * declared once for a family rather than copied per member.
+   */
+  readonly dialectFamily: SqlDialectName;
 
   /**
    * the escape character for identifiers.
@@ -207,13 +269,13 @@ export interface SqlQueryDialect {
   readonly features: SqlDialectFeatures;
 
   /** A read; with `totalAlias`, every row also carries the unpaged match count under that alias. */
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions, totalAlias?: string): void;
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions, totalAlias?: string): void;
 
   /** A count of the records matching the filter, or of those a page of it takes. */
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions): void;
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void;
 
   /** An insert of one record or many. */
-  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void;
+  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void;
 
   /** An update of the records the query matches. */
   update<E>(
@@ -221,14 +283,14 @@ export interface SqlQueryDialect {
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: QueryRenderOptions,
   ): void;
 
   /** An upsert of one record or many by their conflict paths. */
   upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void;
 
   /** A delete of the records the query matches, a soft delete where the entity has one. */
-  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): void;
+  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;
 
   /**
    * escape an identifier.
@@ -273,7 +335,7 @@ export interface SqlQueryDialect {
     ctx: QueryContext,
     entity: Type<E>,
     q: QueryAggregate<E, G, A>,
-    opts?: QueryOptions,
+    opts?: QueryRenderOptions,
   ): void;
 
   /**

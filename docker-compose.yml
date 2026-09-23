@@ -10,6 +10,9 @@ services:
     ports:
       - 3316:3306
     container_name: uql-mysql-26
+    # Binary logging is on by default, and with it MySQL refuses `CREATE TRIGGER` from a user without
+    # SUPER unless trusted to - as a managed MySQL is by its parameter group. A flag, so a restart keeps it.
+    command: ['--log-bin-trust-function-creators=1']
     healthcheck:
       # Over the socket, the temporary server the entrypoint runs while initializing answers too (it
       # listens on `port: 0`), so the container reported healthy with nothing on 3306 yet, `--wait`

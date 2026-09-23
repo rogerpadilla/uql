@@ -1,4 +1,5 @@
 import type { IndexType } from '../schema/types.js';
+import type { SqlDialectName } from '../type/index.js';
 import {
   type DriverCapabilities,
   type EntityMeta,
@@ -39,7 +40,6 @@ const HNSW_EF_SEARCH = 'hnsw.ef_search';
 
 /** What the Postgres-wire engines have. */
 export const PG_FEATURES: SqlDialectFeatures = {
-  ifNotExists: true,
   indexIfNotExists: true,
   schemas: true,
   dropTableCascade: true,
@@ -63,10 +63,25 @@ export const PG_FEATURES: SqlDialectFeatures = {
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: true,
   serialDeclaresPrimaryKey: false,
+  triggers: {
+    preamble: '',
+    assignsRow: true,
+    body: 'function',
+    guards: 'clause',
+    layout: 'timingFirst',
+    rows: 'row',
+    scope: 'table',
+    before: true,
+  },
 };
 
 /** What Postgres and CockroachDB share: JSONB, full-text search, pgvector's operators, and the upsert. */
 export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
+  /** Every member of this family runs the same SQL, so a body written once serves them all. */
+  override get dialectFamily(): SqlDialectName {
+    return 'postgres';
+  }
+
   /** How the driver binds a parameter: node-`pg`'s, unless the pool states its own. */
   readonly driverCapabilities: DriverCapabilities;
 
@@ -280,8 +295,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
 
   protected override readonly caseInsensitiveMatch = 'ilike';
 
-  protected override get neOp(): string {
-    return 'IS DISTINCT FROM';
+  override neExpr(field: string, ph: string): string {
+    return `${field} IS DISTINCT FROM ${ph}`;
   }
 
   /**

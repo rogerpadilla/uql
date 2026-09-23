@@ -48,7 +48,6 @@ function ftsQuery(columns: readonly string[], value: string): string {
 
 /** What SQLite and the engines derived from it have. */
 export const SQLITE_FEATURES: SqlDialectFeatures = {
-  ifNotExists: true,
   indexIfNotExists: true,
   schemas: false, // SQLite's namespaces are attached database files, not declared objects
   dropTableCascade: false,
@@ -72,6 +71,16 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: true,
+  triggers: {
+    preamble: '',
+    assignsRow: false,
+    body: 'inline',
+    guards: 'clause',
+    layout: 'timingFirst',
+    rows: 'row',
+    scope: 'schema',
+    before: true,
+  },
 };
 
 export class SqliteDialect extends AbstractSqlDialect {
@@ -166,8 +175,8 @@ export class SqliteDialect extends AbstractSqlDialect {
   // `NOCASE`, so folding the pattern here would break the accented text the engine leaves alone.
   protected override readonly caseInsensitiveMatch = 'native';
 
-  protected override get neOp(): string {
-    return 'IS NOT';
+  override neExpr(field: string, ph: string): string {
+    return `${field} IS NOT ${ph}`;
   }
 
   override normalizeValue(value: unknown): unknown {

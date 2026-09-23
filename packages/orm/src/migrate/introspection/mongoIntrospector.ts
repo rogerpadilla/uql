@@ -4,6 +4,7 @@ import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
 import type { TableNode } from '../../schema/types.js';
 import {
   isMongoQuerier,
+  type InstalledTriggers,
   type MongoQuerier,
   type QuerierPool,
   type SchemaIntrospector,
@@ -40,6 +41,11 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textIndex']);
 
   constructor(private readonly pool: QuerierPool) {}
+
+  /** MongoDB has no triggers, so none is ever installed. */
+  async ownedTriggers(): Promise<Map<string, InstalledTriggers>> {
+    return new Map();
+  }
 
   async introspect(tables?: readonly string[]): Promise<SchemaAST> {
     const tableNames = tables ?? (await this.getTableNames());

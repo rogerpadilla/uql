@@ -198,7 +198,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     });
     expect(ctx.sql).toContain(`EXISTS (${this.elemSelect} FROM ${this.elemFrom}`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('price')} AS DOUBLE) >= CAST(? AS DOUBLE)`);
-    expect(ctx.sql).toContain(`NOT (${this.elemPath('active', true)} <=> ${this.jsonCastText('?')})`);
+    expect(ctx.sql).toContain(`${this.elemPath('active', true)} <> ${this.jsonCastText('?')}`);
   }
 
   shouldFind$elemMatchWithAllOperators() {

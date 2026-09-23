@@ -1016,6 +1016,20 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(descLast.map(({ name }) => name)).toEqual([names[2], names[0], names[1]]);
   }
 
+  /** An operator inside `$not` is translated like any other, on MongoDB too, where `$isNull` is uql's own. */
+  async shouldNegateAnIsNull() {
+    const names = ['ni null', 'ni valued'];
+    await this.querier.insertMany(Item, [
+      { name: names[0], code: null },
+      { name: names[1], code: 'a' },
+    ]);
+    const found = await this.querier.findMany(Item, {
+      $select: { name: true },
+      $where: { name: { $in: names }, code: { $not: { $isNull: true } } },
+    });
+    expect(found.map(({ name }) => name)).toEqual([names[1]]);
+  }
+
   /** Filtering and sorting by a JSON dot-path, which MySQL reads through a full JSON path (`'$.public'`). */
   async shouldFindAndSortByJsonDotPath() {
     await this.querier.insertOne(Company, { name: 'JSON Scalar One', kind: { public: 1 } });

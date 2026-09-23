@@ -26,7 +26,11 @@ export class CockroachDialect extends PgLikeSqlDialect {
   ]);
 
   /** An upsert batch mixing an update and an insert returns the update first (verified on v26.2). */
-  override readonly features: SqlDialectFeatures = { ...PG_FEATURES, orderedUpsertReturning: false };
+  override readonly features: SqlDialectFeatures = {
+    ...PG_FEATURES,
+    orderedUpsertReturning: false,
+    triggers: { ...PG_FEATURES.triggers, guards: 'thenEndIf' },
+  };
 
   /**
    * Not Postgres' `pg_class.reltuples`, which CockroachDB answers `NULL` for even straight after an

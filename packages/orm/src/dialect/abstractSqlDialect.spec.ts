@@ -15,7 +15,6 @@ class TestSqlDialect extends AbstractSqlDialect {
   override readonly features: SqlDialectFeatures = {
     ...MYSQL_FEATURES,
     schemas: true,
-    ifNotExists: true,
     indexIfNotExists: false,
     dropTableCascade: false,
     foreignKeyAlter: true,
@@ -32,6 +31,10 @@ class TestSqlDialect extends AbstractSqlDialect {
 
   get escapeIdChar() {
     return '`' as const;
+  }
+
+  override neExpr(field: string, ph: string): string {
+    return `NOT (${field} <=> ${ph})`;
   }
 
   get serialType() {
@@ -309,6 +312,18 @@ describe('AbstractSqlDialect', () => {
     });
   });
   describe('raw() prefixing', () => {
+    // A trigger reads its row as `NEW.`: every nested group and raw term is the same scope, so keeps it.
+    it('should keep an escaped prefix through nested groups and their raw terms', () => {
+      const ctx = dialect.createContext();
+      dialect.where(
+        ctx,
+        Company,
+        { $or: [{ name: 'a' }, { $not: [{ name: 'b' }] }, raw(({ escapedPrefix }) => `${escapedPrefix}kind IS NULL`)] },
+        { clause: false, escapedPrefix: 'NEW.' },
+      );
+      expect(ctx.sql).toBe('NEW.`name` = ? OR NOT NEW.`name` = ? OR NEW.kind IS NULL');
+    });
+
     it('should leave a raw string in $and unprefixed', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {

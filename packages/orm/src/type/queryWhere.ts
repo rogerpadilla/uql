@@ -243,6 +243,9 @@ export type QueryWhereElemMatch<U, Raw = QueryRaw> = unknown extends U
     ? QueryWhereFieldOperators<NonNullable<U>, Raw>
     : { [K in keyof NonNullable<U>]?: QueryWhereFieldValue<NonNullable<U>[K], Raw> };
 
+/** Every operator a field condition takes, which is what a key of one is once checked. */
+export type QueryWhereFieldOp = keyof QueryWhereFieldOperatorMap<unknown>;
+
 /**
  * Simple relational comparison operators. `Pick`'s constraint ties this back to
  * {@link QueryWhereFieldOperatorMap} so a rename there breaks this union at compile time.
@@ -279,7 +282,7 @@ type QueryArrayOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$all' | '$s
 /**
  * Ordering operators: {@link QueryCompareOp} plus `$between`.
  */
-type QueryOrderedOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$between'>;
+export type QueryOrderedOp = QueryCompareOp | keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$between'>;
 
 /**
  * Vector-only operators. `Pick`'s constraint ties this back to {@link QueryWhereFieldOperatorMap}
@@ -291,10 +294,7 @@ type QueryVectorOp = keyof Pick<QueryWhereFieldOperatorMap<unknown>, '$near'>;
  * The operators every field takes. A subtraction, so an operator added to the map without being
  * classified above is offered on every field: classify it first.
  */
-type QueryCommonOp = Exclude<
-  keyof QueryWhereFieldOperatorMap<unknown>,
-  QueryStringOp | QueryArrayOp | QueryOrderedOp | QueryVectorOp
->;
+type QueryCommonOp = Exclude<QueryWhereFieldOp, QueryStringOp | QueryArrayOp | QueryOrderedOp | QueryVectorOp>;
 
 /**
  * Operator keys applicable to a field of type `T`. Brackets prevent union distribution so an

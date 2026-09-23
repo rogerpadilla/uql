@@ -6,6 +6,15 @@ import { idKey, type QueryLockWait } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 
+/** A composite key, which hands no single id back. */
+@Entity()
+class StockLevel {
+  [idKey]?: 'warehouseId' | 'productId';
+  @Id({ type: Number }) warehouseId?: number;
+  @Id({ type: Number }) productId?: number;
+  @Field({ type: Number }) quantity?: number | null;
+}
+
 /**
  * SQL Server's share of the shared dialect spec. What it overrides is what T-SQL genuinely spells
  * differently - the lock, the returning clause, the upsert and the JSON operators - which is the
@@ -90,7 +99,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toContain('FROM sys.partitions p');
     expect(sql).toContain('p.index_id IN (0, 1)');
-    expect(values).toEqual(['User', 'dbo']);
+    // The connection's own default schema, which need not be `dbo`, where the entity names none.
+    expect(sql).toContain('AND s.name = SCHEMA_NAME()');
+    expect(values).toEqual(['User']);
   }
 
   /** The hint precedes the page rather than following it, so the base ordering assertion inverts. */
@@ -106,8 +117,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.insert(ctx, User, { name: 'Some Name', email: 'someemail@example.com', id: '123' }),
     );
     expect(sql).toBe(
-      'INSERT INTO "User" ("name", "email", "id", "createdAt") OUTPUT INSERTED."id" "id"' +
-        ' VALUES (@p1, @p2, @p3, @p4)',
+      'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); ' +
+        'INSERT INTO "User" ("name", "email", "id", "createdAt") OUTPUT INSERTED."id" "id" INTO @_uql_output' +
+        ' VALUES (@p1, @p2, @p3, @p4); SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
     );
   }
 
@@ -120,8 +132,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO "User" ("name", "email", "id", "createdAt") OUTPUT INSERTED."id" "id"' +
-        ' VALUES (@p1, @p2, @p3, @p4), (@p5, @p6, @p7, @p8), (@p9, @p10, @p11, @p12)',
+      'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); ' +
+        'INSERT INTO "User" ("name", "email", "id", "createdAt") OUTPUT INSERTED."id" "id" INTO @_uql_output' +
+        ' VALUES (@p1, @p2, @p3, @p4), (@p5, @p6, @p7, @p8), (@p9, @p10, @p11, @p12); SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
     );
   }
 
@@ -134,16 +147,17 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toBe(
-      'INSERT INTO "User" ("id", "name", "createdAt", "email") OUTPUT INSERTED."id" "id"' +
-        ' VALUES (@p1, @p2, @p3, DEFAULT), (@p4, @p5, @p6, @p7)',
+      'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); ' +
+        'INSERT INTO "User" ("id", "name", "createdAt", "email") OUTPUT INSERTED."id" "id" INTO @_uql_output' +
+        ' VALUES (@p1, @p2, @p3, DEFAULT), (@p4, @p5, @p6, @p7); SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
     );
   }
 
   /** The key column is named by the entity, so `OUTPUT` aliases whatever it is back to `id`. */
   override shouldInsertWithOnInsertId() {
     const { sql } = this.exec((ctx) => this.dialect.insert(ctx, TaxCategory, { name: 'a' }));
-    expect(sql).toBe(
-      'INSERT INTO "TaxCategory" ("name", "createdAt", "pk") OUTPUT INSERTED."pk" "id" VALUES (@p1, @p2, @p3)',
+    expect(sql).toContain(
+      'INSERT INTO "TaxCategory" ("name", "createdAt", "pk") OUTPUT INSERTED."pk" "id" INTO @_uql_output VALUES (@p1, @p2, @p3);',
     );
   }
 
@@ -151,9 +165,9 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     const { sql } = this.exec((ctx) =>
       this.dialect.insert(ctx, TaxCategory, [{ name: 'a' }, { name: 'b' }, { name: 'c' }, { name: 'd' }]),
     );
-    expect(sql).toBe(
-      'INSERT INTO "TaxCategory" ("name", "createdAt", "pk") OUTPUT INSERTED."pk" "id"' +
-        ' VALUES (@p1, @p2, @p3), (@p4, @p5, @p6), (@p7, @p8, @p9), (@p10, @p11, @p12)',
+    expect(sql).toContain(
+      'INSERT INTO "TaxCategory" ("name", "createdAt", "pk") OUTPUT INSERTED."pk" "id" INTO @_uql_output' +
+        ' VALUES (@p1, @p2, @p3), (@p4, @p5, @p6), (@p7, @p8, @p9), (@p10, @p11, @p12);',
     );
   }
 
@@ -168,13 +182,13 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(ctx, User, { email: true }, { name: 'a', email: 'a@b.c', id: '1' }),
     );
     expect(sql).toBe(
-      'MERGE INTO "User" WITH (HOLDLOCK) USING (VALUES (@p2, @p3, @p4, @p5)) AS "_uql_src"' +
+      'DECLARE @_uql_output TABLE ("id" NVARCHAR(255)); MERGE INTO "User" WITH (HOLDLOCK) USING (VALUES (@p2, @p3, @p4, @p5)) AS "_uql_src"' +
         ' ("name", "email", "id", "createdAt") ON "User"."email" = "_uql_src"."email"' +
         ' WHEN MATCHED THEN UPDATE SET "name" = "_uql_src"."name", "id" = "_uql_src"."id",' +
         ' "updatedAt" = @p1' +
         ' WHEN NOT MATCHED THEN INSERT ("name", "email", "id", "createdAt")' +
         ' VALUES ("_uql_src"."name", "_uql_src"."email", "_uql_src"."id", "_uql_src"."createdAt")' +
-        ' OUTPUT INSERTED."id" "id";',
+        ' OUTPUT INSERTED."id" "id" INTO @_uql_output; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
     );
     expect(values.length).toBe(5);
   }
@@ -187,7 +201,11 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       ]),
     );
     expect(sql).toContain('USING (VALUES (@p2, @p3, @p4, @p5), (@p6, @p7, @p8, @p9))');
-    expect(sql.endsWith(' OUTPUT INSERTED."id" "id";')).toBe(true);
+    expect(
+      sql.endsWith(
+        ' OUTPUT INSERTED."id" "id" INTO @_uql_output; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;',
+      ),
+    ).toBe(true);
   }
 
   /** A function, not an operator - and 2025 at compatibility level 170, which the server enforces. */
@@ -256,7 +274,22 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** The insert reports its generated id through `OUTPUT`, which the base case has no clause for. */
   override shouldBeSecure() {
     const { sql } = this.exec((ctx) => this.dialect.insert(ctx, User, { name: 'a', id: '1' }));
-    expect(sql).toContain('OUTPUT INSERTED."id" "id" VALUES');
+    expect(sql).toContain('OUTPUT INSERTED."id" "id" INTO @_uql_output VALUES');
+  }
+
+  // A table carrying a trigger refuses an `OUTPUT` straight to the client, so the id always goes through a table.
+  shouldReadTheIdBackThroughATableVariableTypedAsTheKey() {
+    const { sql } = this.exec((ctx) => this.dialect.insert(ctx, Invoice, { description: 'a' }));
+    expect(sql.startsWith('DECLARE @_uql_output TABLE ("id" BIGINT); INSERT INTO "Invoice"')).toBe(true);
+    expect(sql.endsWith('; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;')).toBe(true);
+  }
+
+  shouldReadNoIdBackOnACompositeKey() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.insert(ctx, StockLevel, { warehouseId: 1, productId: 2, quantity: 3 }),
+    );
+    expect(sql).not.toContain('OUTPUT');
+    expect(sql).not.toContain('DECLARE');
   }
 
   /**
@@ -323,8 +356,15 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** Writing a key the engine would have generated is refused unless the session allows it. */
   shouldToggleIdentityInsertForAnExplicitKey() {
     const { sql } = this.exec((ctx) => this.dialect.insert(ctx, Invoice, { id: 5, description: 'a' }));
-    expect(sql.startsWith('SET IDENTITY_INSERT "Invoice" ON; INSERT INTO "Invoice"')).toBe(true);
-    expect(sql.endsWith('; SET IDENTITY_INSERT "Invoice" OFF')).toBe(true);
+    expect(sql).toContain('SET IDENTITY_INSERT "Invoice" ON; INSERT INTO "Invoice"');
+    expect(sql).toContain('; SET IDENTITY_INSERT "Invoice" OFF;');
+  }
+
+  // A `MERGE` naming an identity key inserts it too, where the engine refuses it just the same.
+  shouldToggleIdentityInsertForAnUpsertNamingAKey() {
+    const { sql } = this.exec((ctx) => this.dialect.upsert(ctx, Invoice, { id: true }, { id: 5, description: 'a' }));
+    expect(sql).toContain('SET IDENTITY_INSERT "Invoice" ON; MERGE INTO "Invoice"');
+    expect(sql).toContain('; SET IDENTITY_INSERT "Invoice" OFF;');
   }
 
   shouldNotToggleIdentityInsertWhenTheEngineFillsTheKey() {

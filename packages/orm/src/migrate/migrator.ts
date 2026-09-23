@@ -6,6 +6,7 @@ import { SchemaAST } from '../schema/index.js';
 import type { TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
+  InstalledTriggers,
   LoggingOptions,
   Migration,
   MigrationDefinition,
@@ -22,11 +23,15 @@ import type {
   SyncOptions,
   Type,
 } from '../type/index.js';
+import { hasTriggers } from '../util/field.util.js';
 import { LoggerWrapper } from '../util/index.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
 import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
+
+/** An entity with triggers, beside the ones uql has installed on its table right now. */
+type TriggerState = { readonly entity: Type<object>; readonly installed: InstalledTriggers };
 
 /**
  * Main class for managing database migrations
@@ -237,10 +242,8 @@ export class Migrator {
   async generateFromEntities(name: string): Promise<string> {
     const generator = await this.getSchemaGenerator();
     const { created, altered } = await this.pendingChanges();
-    const up = [
-      ...this.createSchema(generator, created),
-      ...altered.flatMap((diff) => generator.generateAlterTable(diff)),
-    ];
+    const plan = this.alterPlan(generator, altered, await this.installedTriggers(created));
+    const up = [...this.createSchema(generator, created), ...plan.up];
 
     if (up.length === 0) {
       this.logger.logInfo('No schema changes detected.');
@@ -249,7 +252,9 @@ export class Migrator {
 
     // Diff by diff in reverse, each rolled back in the order its generator wrote it.
     const down = [
-      ...altered.toReversed().flatMap((diff) => generator.generateAlterTableDown(diff)),
+      ...plan.down(),
+      // A table's drop takes its triggers along, but not the function the Postgres family keeps each body in.
+      ...this.createdEntities(created).flatMap((entity) => generator.generateTriggersDown(entity)),
       ...created.toReversed().map((tableName) => generator.generateDropTable(tableName, { ifExists: true })),
     ];
     const { emit } = this.target.source;
@@ -260,6 +265,92 @@ export class Migrator {
     });
     this.logger.logInfo(`Created migration from entities: ${filePath}`);
     return filePath;
+  }
+
+  /**
+   * Each entity on a table this plan does not create - a new one carries its triggers in its `CREATE` -
+   * beside the triggers uql has installed there, read once per schema. Kept only where either side has
+   * any: one declaring none on a table holding none has nothing to reconcile.
+   */
+  private async installedTriggers(
+    created: readonly string[],
+    entities: readonly Type<object>[] = this.entities,
+  ): Promise<TriggerState[]> {
+    const { dialect } = this.pool;
+    const fresh = new Set(created);
+    // Tables this plan creates are left out: their `CREATE` carries their triggers, and asking the
+    // catalogue about a table that is not there yet fails outright on some engines.
+    const wanted = entities.filter((entity) => !fresh.has(this.tableOf(entity)));
+    const bySchema = new Map<string | undefined, Map<string, InstalledTriggers>>();
+    const state: TriggerState[] = [];
+    for (const entity of wanted) {
+      const meta = getMeta(entity);
+      const schema = dialect.resolveSchema(meta);
+      let owned = bySchema.get(schema);
+      if (!owned) {
+        owned = await this.schemaIntrospectorFor(schema).ownedTriggers();
+        bySchema.set(schema, owned);
+      }
+      const installed = owned.get(dialect.resolveTableAlias(meta)) ?? new Map();
+      // An installed trigger alone keeps it: an entity that stopped declaring one has it to drop.
+      if (installed.size || hasTriggers(meta)) {
+        state.push({ entity, installed });
+      }
+    }
+    return state;
+  }
+
+  /**
+   * The alters, with the triggers reconciled around them. Postgres refuses to retype or drop a column a
+   * trigger names, so every trigger on a table whose columns change comes off before the alters and what
+   * its entity declares goes back on after. `down` is lazy: SQLite cannot express every alter's inverse.
+   */
+  private alterPlan(generator: SchemaGenerator, altered: readonly SchemaDiff[], state: readonly TriggerState[]) {
+    const changing = new Set(
+      altered.filter((diff) => diff.columnsToAlter?.length || diff.columnsToDrop?.length).map((diff) => diff.tableName),
+    );
+    const cleared = state.filter(({ entity }) => changing.has(this.tableOf(entity)));
+    const after = state.map((it) => (cleared.includes(it) ? { entity: it.entity, installed: new Map() } : it));
+    return {
+      up: [
+        ...cleared.flatMap(({ entity, installed }) => generator.generateTriggerDrops(entity, [...installed.keys()])),
+        ...altered.flatMap((diff) => generator.generateAlterTable(diff)),
+        ...this.reconcileTriggers(generator, after),
+      ],
+      down: () => [
+        ...this.revertedTriggers(generator, after),
+        ...altered.toReversed().flatMap((diff) => generator.generateAlterTableDown(diff)),
+        ...cleared.flatMap(({ installed }) => [...installed.values()].flat().map((sql) => `${sql};`)),
+      ],
+    };
+  }
+
+  /**
+   * Each entity's triggers taken from what the catalogue holds to what it declares. Against the catalogue
+   * rather than a diff, because a trigger hangs off a table whose columns may be unchanged: a body edited
+   * on a settled table appears in no diff at all.
+   */
+  private reconcileTriggers(generator: SchemaGenerator, state: readonly TriggerState[]): string[] {
+    return state.flatMap(({ entity, installed }) => generator.generateTriggers(entity, installed));
+  }
+
+  /**
+   * The inverse: what the reconcile created dropped, and what it dropped restored as the engine reprints
+   * it. Read off the catalogue rather than recorded by uql, and exactly right for restoring one.
+   */
+  private revertedTriggers(generator: SchemaGenerator, state: readonly TriggerState[]): string[] {
+    return state.flatMap(({ entity, installed }) => generator.generateTriggersDown(entity, installed));
+  }
+
+  /** The entities whose tables are among `created`. */
+  private createdEntities(created: readonly string[]): Type<object>[] {
+    const fresh = new Set(created);
+    return this.entities.filter((entity) => fresh.has(this.tableOf(entity)));
+  }
+
+  /** The table `entity` maps to, as a diff names it. */
+  private tableOf(entity: Type<object>): string {
+    return this.pool.dialect.resolveTableName(getMeta(entity));
   }
 
   /**
@@ -332,20 +423,22 @@ export class Migrator {
     }
     // With the tables it references, which its foreign keys resolve against.
     const ast = await this.introspectEntities([entity, ...referencedEntities(meta)]);
-    return this.alterFromEntity(generator, entity, ast.getTable(tableName), options);
+    // The table is already there, so its triggers are reconciled rather than carried by a `CREATE`.
+    const altered = this.alterFromEntity(generator, entity, ast.getTable(tableName), options);
+    return this.alterPlan(generator, altered, await this.installedTriggers([], [entity])).up;
   }
 
-  /** The same for one entity against the table it already has, and nothing where the two agree. */
+  /** The diff for one entity against the table it already has, and none where the two agree. */
   private alterFromEntity(
     generator: SchemaGenerator,
     entity: Type<object>,
     table: TableNode | undefined,
     options: SyncOptions,
-  ): string[] {
+  ): SchemaDiff[] {
     // Spanning the set for the reason `planEntity` spells out: a foreign key needs the table it
     // points at, which a sync of one entity outside the configured list would not otherwise have.
     const diff = generator.diffSchema(entity, table, generator.buildAST?.(this.entitiesWith(entity)));
-    return diff?.type === 'alter' ? generator.generateAlterTable(this.filterDiff(diff, options)) : [];
+    return diff?.type === 'alter' ? [this.filterDiff(diff, options)] : [];
   }
 
   /** The configured entities, with `entity` among them however the migrator was built. */
@@ -372,9 +465,10 @@ export class Migrator {
       return this.planEntity(generator, options.entity, options);
     }
     const { created, altered } = await this.pendingChanges();
+    const filtered = altered.map((diff) => this.filterDiff(diff, options));
     return [
       ...this.createSchema(generator, created),
-      ...altered.flatMap((diff) => generator.generateAlterTable(this.filterDiff(diff, options))),
+      ...this.alterPlan(generator, filtered, await this.installedTriggers(created)).up,
     ];
   }
 

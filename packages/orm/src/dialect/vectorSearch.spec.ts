@@ -308,6 +308,13 @@ describe.each(engines)(
       );
     });
 
+    it('should reject a $near that is not an object', () => {
+      for (const near of [null, 5, 'x', [0.1]]) {
+        // @ts-expect-error: `/http` passes client JSON on as it came
+        expect(() => find(VectorItem, { $where: { vec: { $near: near } } })).toThrow("$near on 'vec' expects");
+      }
+    });
+
     it('should reject a bound that is not an ordering comparison', () => {
       // @ts-expect-error: a distance takes ordered bounds only
       expect(() => find(VectorItem, { $where: { vec: { $near: { $vector: [1, 2, 3], $like: 'x' } } } })).toThrow(

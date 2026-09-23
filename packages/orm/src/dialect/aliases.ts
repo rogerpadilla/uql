@@ -3,6 +3,12 @@ import type { RelationAggregateSpec } from '../type/index.js';
 // Every identifier UQL invents, `_uql`-prefixed to stay off a user's own, collected in one place:
 // the ends writing and reading one sit in different modules, and a drift between them fails silently.
 
+/**
+ * What every schema object uql creates is named from, so a hand-written trigger or function is never
+ * offered for dropping: ownership is the name, since no engine records who created one.
+ */
+export const OWNED_PREFIX = '_uql';
+
 /** The column a paged read carries its own unpaged total in, from `COUNT(*) OVER ()`. */
 export const TOTAL_ALIAS = '_uql_total';
 

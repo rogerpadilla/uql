@@ -3,7 +3,7 @@ name: uql-orm
 description: >
   Write code with UQL (the uql-orm package), the TypeScript ORM whose queries are plain JSON objects,
   on PostgreSQL, MySQL, MariaDB, SQLite, CockroachDB, SQL Server, MongoDB, Turso, Neon, D1 and PGlite.
-  Use when a project imports uql-orm, or when defining entities, querying, populating relations,
+  Use when a project imports uql-orm, or when defining entities or triggers, querying, populating relations,
   writing transactions, raw SQL or migrations with it. UQL is not Prisma, Drizzle, TypeORM or MikroORM:
   their APIs do not carry over.
 ---
@@ -76,14 +76,15 @@ export class Post {
 
 - Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
-- An engine's own column type is a `raw` constant, `columnType: raw`tsvector``, rendered verbatim: never a bare string, so a misspelling cannot pass for one, and `length`/`precision`/`scale`/`dimensions` are refused beside it, the text carrying its own.
+- An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
 - `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })` states a partial index's filter as the predicate the query passes, never as `raw`: a planner matches the two by shape, so `raw` that means the same thing leaves the index unused.
-- `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, makes the column an
-  optimistic lock: every update payload must carry the version it read (a compile error otherwise), the update
-  matches on it and writes the next one, and a write against a row someone else moved on throws
-  `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409) instead of overwriting it. Save and upsert are refused on such an entity; the update is named by its id, so `updateMany` over a many-row filter is refused too, and delete and restore carry no version.
+- `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, is an optimistic lock:
+  an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
+- `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`.
+  `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, a trigger writing it on those events whoever writes the row (``computed: raw`CURRENT_TIMESTAMP` ``), where `onUpdate` covers only uql's own writes.
+- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires; `where` holds a `$where` predicate per row it names, or SQL off the rows. `run` reads `{ newRow }` on insert, `{ newRow, oldRow }` on update, `{ oldRow }` on delete, and returns the engine's own SQL, one body for every engine or `{ postgres, mssql, ... }` where they differ (SQL Server fires per statement, reading `inserted`/`deleted` as tables, with no `before*` and no `where`). MongoDB has none, and refuses a write to an entity declaring one.
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries
@@ -111,6 +112,7 @@ const users = await pool.findMany(User, {
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
   `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
   `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
+- NULL compares the way the engine compares it: on SQL, `$ne`, `$nin`, `$not` and `$nor` leave out a NULL row, where MongoDB keeps it. Name NULL where you want it, `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`; ask for NULL with `{ col: null }` and its absence with `{ col: { $ne: null } }`.
 - `$text: { $value }` in `$where` searches text on every engine with full-text search, through the entity's
   `@Index(..., { type: 'fulltext', config })`, whose columns may carry a `weight`. `$sort: { $text: 'desc' }` ranks by
   relevance, and `{ $text: { $project: 'score' } }` also returns it, typed with `WithProjection<E, 'score'>`.
@@ -153,11 +155,14 @@ transaction. A querier from `pool.getQuerier()` is yours to release: bind it wit
 `npx uql-migrate` reads `uql.config.ts`. `sync` creates what the entities imply (development only);
 `generate:entities` writes the diff as a migration file to review; `up` applies migrations; `generate:from-db`
 writes entity classes from an existing database; `drift:check` fails when the database no longer matches.
+Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names and never touches another.
 
 ## Where to read more
 
 - Operators, per-dialect SQL: https://uql-orm.dev/querying/comparison-operators.md
 - Relations and deep `$populate`: https://uql-orm.dev/querying/relations.md
+- Computed fields and stamps: https://uql-orm.dev/entities/computed-fields.md
+- Triggers: https://uql-orm.dev/entities/triggers.md
 - Every method's signature: https://uql-orm.dev/querying/methods.md
 - Coming from Prisma, Drizzle, TypeORM or MikroORM: https://uql-orm.dev/switching-to-uql.md
 - Breaking changes by version: https://uql-orm.dev/upgrade-guide.md

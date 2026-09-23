@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.80.0] - 2026-09-23
+
+- `@Trigger({ on, of, where, run })` declares triggers the database runs, on every SQL engine: `of: (post) => [post.body]` fires only when a watched column moved, and `where` is a predicate per row, `{ $old: { status: 'draft' }, $new: { status: 'published' } }`, or SQL. `run` is the engine's own SQL, one body for every engine or a map naming one per engine. SQL Server takes only the after events and no `where`, since it fires once per statement.
+- `@Field({ computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] })` makes a column a stamp, filled by a trigger on each event named whoever writes the row: psql, a data migration, another service. `onUpdate` still covers uql's own writes.
+- `sync` and `generate:entities` install the triggers an entity declares and drop the ones it no longer does, leaving an unchanged or hand-written one alone; a generated migration's `down` restores what stood before. MongoDB has no triggers, so it refuses a write to an entity declaring one.
+- **Breaking:** NULL compares the way each engine compares it. `$ne` renders the plain `<>` again, as `$nin`, `$not` and `$nor` render `NOT IN` and `NOT`, so a SQL engine leaves out a row whose column is NULL, where MongoDB keeps it. Name NULL where you want it: `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`.
+- **Fixed:** a `$between` that is not two bounds and a `$near` that is not an object are refused with a usage error.
+- **Fixed (MongoDB):** `$not` translates the operators inside it, where `$not: { $isNull: true }` reached the server as unknown.
+- **Fixed (SQL Server):** an insert or upsert on a table with a trigger reads its ids back, an upsert naming an identity key runs, `uql-migrate up` and `down` run, and `estimatedCount` reads the connection's default schema rather than `dbo`.
+
 ## [0.79.0] - 2026-09-21
 
 - `columnType` takes an engine's own type as a `raw` constant, `columnType: raw`tsvector``, rendered verbatim, so `ltree`, `inet`, `citext`, geometry and ranges reach a column and a stored computed one can hold a search vector. A bare unknown string stays a compile error, and a `length`, `precision`, `scale` or `dimensions` beside one is refused: the text carries its own.

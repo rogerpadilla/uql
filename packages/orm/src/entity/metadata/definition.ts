@@ -19,6 +19,7 @@ import type {
   RelationOptions,
   RelationReferences,
   RelationRegistration,
+  TriggerOptions,
   Type,
   WrittenId,
 } from '../../type/index.js';
@@ -177,6 +178,23 @@ export function defineIndex<E>(entity: Type<E>, index: EntityIndexInput<E>): Ent
   return meta;
 }
 
+/**
+ * Registers a trigger, its watched columns read off the entity's refs so a rename reaches them and a
+ * column the entity has not got does not compile. Appended, since triggers fire in the order written.
+ */
+export function defineTrigger<E>(entity: Type<E>, trigger: TriggerOptions<E>): EntityMeta<E> {
+  const meta = ensureWritableMeta(entity);
+  // The type already refuses an empty map; this is the same answer for plain JavaScript.
+  if (typeof trigger.run !== 'function' && !hasKeys(trigger.run)) {
+    throw new TypeError(`'${entity.name}' has a trigger whose body names at least one engine to run on`);
+  }
+  if (trigger.name && meta.triggers?.some((it) => it.name === trigger.name)) {
+    throw new TypeError(`'${entity.name}' already has a trigger named '${trigger.name}'`);
+  }
+  (meta.triggers ??= []).push({ ...trigger, of: trigger.of?.(memberRefs<E>()).map((ref) => ref.key) });
+  return meta;
+}
+
 export function defineFilter<E, N extends string>(
   entity: Type<E>,
   name: FilterName<N>,
@@ -254,6 +272,9 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   }
   for (const index of opts.indexes ?? []) {
     defineIndex(entity, index);
+  }
+  for (const trigger of opts.triggers ?? []) {
+    defineTrigger(entity, trigger);
   }
   for (const [name, filter] of definedEntries(opts.filters ?? {})) {
     defineFilter(entity, name, filter);

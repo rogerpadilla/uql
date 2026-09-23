@@ -36,6 +36,7 @@ import {
   getKeys,
   getSoftDeleteValue,
   hasKeys,
+  hasTriggers,
   populatesRelations,
   textSortOf,
   throwNoPendingTransaction,
@@ -43,6 +44,7 @@ import {
   vectorCandidates,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 import type { ExtractedVectorSort, MongoAggregationPipelineEntry, MongoDialect } from './mongoDialect.js';
 
@@ -53,6 +55,19 @@ import type { ExtractedVectorSort, MongoAggregationPipelineEntry, MongoDialect }
  */
 function asksForNoRows(q: QueryPager): boolean {
   return q.$limit === 0;
+}
+
+/**
+ * MongoDB has no triggers, so a write to an entity declaring one - a stamp included - would skip it
+ * silently. Refused instead, as a query naming SQL is.
+ */
+function refuseTriggers(entity: Type<object>): void {
+  if (hasTriggers(getMeta(entity))) {
+    throw new UqlUsageError(
+      `'${entity.name}' declares triggers, which MongoDB has none of: a write here would skip them. ` +
+        'Keep the entity on a SQL engine, or drop its triggers and stamps.',
+    );
+  }
 }
 
 export class MongodbQuerier extends AbstractQuerier {
@@ -272,6 +287,7 @@ export class MongodbQuerier extends AbstractQuerier {
   }
 
   override async internalInsertMany<E extends Document>(entity: Type<E>, rows: EntityData<E>[]) {
+    refuseTriggers(entity);
     return this.timed('internalInsertMany', undefined, async () => {
       const meta = getMeta(entity);
       const persistables = this.dialect.getPersistables(meta, rows, 'onInsert') as OptionalUnlessRequiredId<E>[];
@@ -297,6 +313,7 @@ export class MongodbQuerier extends AbstractQuerier {
     payload: UpdatePayload<E>,
     opts?: QueryOptions,
   ) {
+    refuseTriggers(entity);
     return this.timed('internalUpdateMany', undefined, async () => {
       const persistable = this.dialect.getPersistable(getMeta(entity), payload as E, 'onUpdate');
       const filter = this.dialect.where(entity, qm.$where, opts);
@@ -341,6 +358,7 @@ export class MongodbQuerier extends AbstractQuerier {
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>,
   ) {
+    refuseTriggers(entity);
     return this.timed('upsertOne', undefined, async () => {
       payload = clone(payload);
 
@@ -372,6 +390,7 @@ export class MongodbQuerier extends AbstractQuerier {
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityData<E>[],
   ) {
+    refuseTriggers(entity);
     return this.timed('upsertMany', undefined, async () => {
       if (!payload?.length) {
         return { changes: 0 };
@@ -418,6 +437,7 @@ export class MongodbQuerier extends AbstractQuerier {
     qm: QuerySearch<E>,
     opts: QueryOptions = {},
   ) {
+    refuseTriggers(entity);
     return this.timed('internalDeleteMany', undefined, async () => {
       const meta = getMeta(entity);
       // Soft-delete (stamp) unless `hardDelete` is requested or the entity has no soft-delete field.

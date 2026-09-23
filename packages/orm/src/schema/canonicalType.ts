@@ -2,7 +2,8 @@
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import type { VectorCast } from '../dialect/vectorCast.js';
-import type { ColumnType, FieldOptions } from '../type/entity.js';
+import { fieldOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
+import type { ColumnType, EntityGetter, FieldMeta, FieldOptions } from '../type/entity.js';
 import { type DialectFeatures, type DialectName, QueryRaw } from '../type/index.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 import { constantSql } from '../util/raw.js';
@@ -514,4 +515,18 @@ export function canonicalToColumnType(type: CanonicalType): ColumnType {
     case 'sparsevec':
       return 'sparsevec';
   }
+}
+
+/**
+ * A field's canonical type, taken from the referenced key where the field gave `references` and no
+ * `type` (`typeFromReference`), so a foreign key matches the key it points at; `columnType` always wins.
+ */
+export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
+  const hasExplicitType = !!field.columnType || !field.typeFromReference;
+  if (!hasExplicitType && field.references && !seen.has(field.references)) {
+    seen.add(field.references);
+    const referencedMeta = getMeta(field.references());
+    return resolveColumnCanonicalType(fieldOf(referencedMeta, soleIdOf(referencedMeta, 'a foreign key')), seen);
+  }
+  return fieldOptionsToCanonical(field);
 }

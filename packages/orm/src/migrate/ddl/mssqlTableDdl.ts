@@ -19,6 +19,12 @@ const CONSTRAINTS_ON = {
  * databases name them alike. Renames are `sp_rename`, T-SQL having no `RENAME` clause.
  */
 export class MsSqlTableDdl extends TableDdl {
+  /** T-SQL has no `IF NOT EXISTS` on a table, so the create is guarded by a lookup in the same statement. */
+  override createTable(target: string, ifNotExists: boolean): string {
+    const guard = ifNotExists ? `IF OBJECT_ID(${this.dialect.escape(target)}, N'U') IS NULL ` : '';
+    return `${guard}${super.createTable(target, false)}`;
+  }
+
   /** T-SQL rejects the optional `COLUMN` keyword after `ADD`. */
   override addColumn(table: string, definition: string): string {
     return /*sql*/ `ALTER TABLE ${this.dialect.escapeId(table)} ADD ${definition};`;

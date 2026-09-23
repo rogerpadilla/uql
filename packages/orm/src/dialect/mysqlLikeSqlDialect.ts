@@ -12,6 +12,7 @@ import type {
   QueryTextSearchOptions,
   RowLockFeatures,
   SqlDialectFeatures,
+  SqlDialectName,
   Type,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
@@ -38,7 +39,6 @@ const MAX_LIMIT = BigInt.asUintN(64, -1n);
 export const MYSQL_ROW_LOCKS: RowLockFeatures = { of: true, withWindow: true, placement: 'suffix' };
 
 export const MYSQL_FEATURES: SqlDialectFeatures = {
-  ifNotExists: true,
   indexIfNotExists: false,
   schemas: true,
   dropTableCascade: false,
@@ -62,6 +62,16 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   narrowVectorTypes: false,
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: false,
+  triggers: {
+    preamble: '',
+    assignsRow: true,
+    body: 'inline',
+    guards: 'thenEndIf',
+    layout: 'timingFirst',
+    rows: 'row',
+    scope: 'schema',
+    before: true,
+  },
 };
 
 /** The one `JSON_TABLE` column an exploded array reads each element through, as a JSON document. */
@@ -69,6 +79,11 @@ const ELEM_COLUMN = 'v';
 
 /** What MySQL and MariaDB share, their JSON functions above all: `JSON_LENGTH`, `JSON_CONTAINS`, `JSON_TABLE`, `JSON_SET`. */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
+  /** Every member of this family runs the same SQL, so a body written once serves them all. */
+  override get dialectFamily(): SqlDialectName {
+    return 'mysql';
+  }
+
   override readonly features: SqlDialectFeatures = MYSQL_FEATURES;
 
   /**
@@ -271,7 +286,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     return `CAST(${expr} AS DOUBLE)`;
   }
 
-  protected override neExpr(field: string, ph: string): string {
+  override neExpr(field: string, ph: string): string {
     // MySQL/MariaDB null-safe inequality: true when values differ or one side is NULL.
     return `NOT (${field} <=> ${ph})`;
   }

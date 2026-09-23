@@ -125,9 +125,11 @@ describe('index features', () => {
     expect(() => render('mssql', { entries: [entry] })).toThrow('mssql does not support');
   });
 
-  it('should emit a descending filtered index on SQL Server', () => {
+  // T-SQL has no `IF NOT EXISTS` on an index, so the guard is a lookup, as it is for a table.
+  it('should emit a descending filtered index on SQL Server, guarded by a lookup', () => {
     expect(render('mssql', { entries: [{ column: 'email', order: 'desc' }], where: '"email" IS NOT NULL' })).toBe(
-      'CREATE INDEX "i" ON "t" ("email" DESC) WHERE "email" IS NOT NULL;',
+      `IF NOT EXISTS (SELECT 1 FROM sys.indexes WHERE name = N'i' AND object_id = OBJECT_ID(N'"t"'))` +
+        ' CREATE INDEX "i" ON "t" ("email" DESC) WHERE "email" IS NOT NULL;',
     );
   });
 

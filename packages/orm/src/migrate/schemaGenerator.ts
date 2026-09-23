@@ -1,9 +1,9 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
+import { canonicalToSql, engineType, isVectorCategory, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { indexChanges } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
-import { type BuildSchemaASTOptions, buildSchemaAST, resolveColumnCanonicalType } from '../schema/schemaASTBuilder.js';
+import { type BuildSchemaASTOptions, buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import type {
   CanonicalType,
@@ -20,6 +20,7 @@ import type {
   DialectFeatures,
   DropSchemaOptions,
   EntityMeta,
+  InstalledTriggers,
   EntityWhereMeta,
   FieldMeta,
   FieldOptions,
@@ -31,7 +32,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { isAutoIncrement, qualifyName } from '../util/index.js';
-import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName } from '../util/sql.util.js';
+import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
 import { formatDefaultValue, SqlExpression } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
@@ -46,6 +47,7 @@ import {
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
+import { dropTrigger, type RenderedTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
 /**
  * Unified SQL schema generator.
@@ -161,7 +163,63 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       }
     }
 
+    // Triggers last: each needs its own table, and a body may read any other the same schema just made.
+    const made = new Set(tables.map((table) => qualifyName(table.name, table.schema)));
+    statements.push(
+      ...entities
+        .filter((entity) => made.has(this.resolveTableName(getMeta(entity))))
+        .flatMap((entity) => this.generateTriggers(entity)),
+    );
+
     return statements;
+  }
+
+  /**
+   * The installed triggers on `entity`'s table it does not declare, and the declared ones not installed,
+   * compared by name alone: a name carries a hash of the trigger's SQL, so an edited one is a new name.
+   * Every trigger counts - the ones it authored, and one per event each stamp names.
+   */
+  private triggerChanges(entity: Type<object>, installed: InstalledTriggers) {
+    const meta = getMeta(entity);
+    const triggers = [...(meta.triggers ?? []), ...stampTriggers(this.dialect, meta)];
+    const rendered = triggers.map((trigger, i) => renderTrigger(this.dialect, meta, trigger, i));
+    const declared = new Set(rendered.map((trigger) => trigger.name));
+    return {
+      stale: [...installed]
+        .filter(([name]) => isOwnedName(name) && !declared.has(name))
+        .map(([name, statements]): RenderedTrigger => ({ name, statements })),
+      missing: rendered.filter((trigger) => !installed.has(trigger.name)),
+    };
+  }
+
+  generateTriggers(entity: Type<object>, installed: InstalledTriggers = new Map()): string[] {
+    const { stale, missing } = this.triggerChanges(entity, installed);
+    return this.swapTriggers(entity, stale, missing);
+  }
+
+  generateTriggersDown(entity: Type<object>, installed: InstalledTriggers = new Map()): string[] {
+    const { stale, missing } = this.triggerChanges(entity, installed);
+    return this.swapTriggers(entity, missing, stale);
+  }
+
+  /** `dropped` taken off `entity`'s table and `created` put on, which is a reconcile read either way. */
+  private swapTriggers(
+    entity: Type<object>,
+    dropped: readonly RenderedTrigger[],
+    created: readonly RenderedTrigger[],
+  ): string[] {
+    return [
+      ...this.generateTriggerDrops(
+        entity,
+        dropped.map((trigger) => trigger.name),
+      ),
+      ...created.flatMap((trigger) => trigger.statements.map((sql) => `${sql};`)),
+    ];
+  }
+
+  generateTriggerDrops(entity: Type<object>, names: readonly string[]): string[] {
+    const meta = getMeta(entity);
+    return names.filter(isOwnedName).flatMap((name) => dropTrigger(this.dialect, meta, name).map((sql) => `${sql};`));
   }
 
   /**
@@ -635,8 +693,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       constraints.push(this.foreignKeyConstraint(table.name, foreignKeyOf(rel), refTable));
     }
 
-    const ifNotExists = options.ifNotExists && this.features.ifNotExists ? 'IF NOT EXISTS ' : '';
-    let createSql = `CREATE TABLE ${ifNotExists}${this.dialect.escapeQualifiedId(table.name, table.schema)} (\n`;
+    const target = this.dialect.escapeQualifiedId(table.name, table.schema);
+    let createSql = `${this.tableDdl.createTable(target, !!options.ifNotExists)} (\n`;
     createSql += columns.map((col) => `  ${col}`).join(',\n');
 
     if (constraints.length > 0) {

@@ -2,6 +2,7 @@ import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnSchema,
+  InstalledTriggers,
   ForeignKeySchema,
   IndexSchema,
   QuerierPool,
@@ -11,6 +12,7 @@ import type {
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
+import { isOwnedName } from '../../util/sql.util.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -89,6 +91,27 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return this.withSqlQuerier(async (querier) => {
       const results = await querier.all<RawRow>(this.getTableNamesQuery());
       return results.map((row) => this.mapTableNameRow(row));
+    });
+  }
+
+  /**
+   * Every trigger uql installed in this schema, by table and then by name, with the statements recreating
+   * it: the whole schema in one read, since a table whose entity stopped declaring one still has one to
+   * drop. Ownership is matched here rather than with `LIKE`, whose `_` wildcard would take in a hand-written one.
+   */
+  async ownedTriggers(): Promise<Map<string, InstalledTriggers>> {
+    return this.withSqlQuerier(async (querier) => {
+      const byTable = new Map<string, Map<string, string[]>>();
+      for (const row of await querier.all<RawRow>(this.triggersQuery())) {
+        const name = String(row['name']);
+        if (!isOwnedName(name)) {
+          continue;
+        }
+        const table = String(row['table']);
+        const statements = [row['requires'], row['definition']].filter(Boolean).map((sql) => String(sql));
+        byTable.set(table, (byTable.get(table) ?? new Map()).set(name, statements));
+      }
+      return byTable;
     });
   }
 
@@ -204,6 +227,13 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
 
   /** SQL query to get primary key columns. Parameter: tableName (for PRAGMA-style). */
   protected abstract getPrimaryKeyQuery(tableName: string): string;
+
+  /**
+   * SQL listing every trigger in the schema as a `table`, a `name`, the engine's reprint of it as a
+   * `definition`, and where the body lives apart, the `requires` recreated first: what is installed, not
+   * what uql wrote, which is exactly what a rollback puts back.
+   */
+  protected abstract triggersQuery(): string;
 
   /**
    * Extract table name from a row returned by getTableNamesQuery.

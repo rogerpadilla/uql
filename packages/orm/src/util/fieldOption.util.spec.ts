@@ -77,10 +77,10 @@ it('should let a stored computed column keep what a real column has, and refuse 
 
   expect(fieldOptionConflict({ ...stored, index: true, comment: 'x', nullable: false })).toBeUndefined();
   expect(fieldOptionConflict({ ...stored, defaultValue: 'x' })).toBe(
-    "cannot use 'defaultValue': it is ignored on a stored computed column",
+    "cannot use 'defaultValue': it is ignored on a column the database writes",
   );
   expect(fieldOptionConflict({ ...stored, updatable: false })).toBe(
-    "cannot use 'updatable': it is ignored on a stored computed column",
+    "cannot use 'updatable': it is ignored on a column the database writes",
   );
 });
 

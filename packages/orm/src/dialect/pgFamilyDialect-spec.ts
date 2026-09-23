@@ -474,7 +474,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" LIKE $1 AND "name" IS DISTINCT FROM $2)');
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" LIKE $1 AND "name" <> $2)');
     expect(res.values).toEqual(['Some', 'Something']);
 
     res = this.exec((ctx) =>
@@ -704,7 +704,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(res.sql).toBe(
-      `SELECT "id" FROM "User" WHERE ${this.textSearch(['name'])}$1) AND "name" IS DISTINCT FROM $2 AND "creatorId" = $3${this.pgr(10)}`,
+      `SELECT "id" FROM "User" WHERE ${this.textSearch(['name'])}$1) AND "name" <> $2 AND "creatorId" = $3${this.pgr(10)}`,
     );
     expect(res.values).toEqual(['something', 'other unwanted', '1']);
   }
@@ -1000,7 +1000,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { entries: { $elemMatch: { status: { $ne: 'deleted' } } } },
       }),
     );
-    expect(res.sql).toContain("(_uql_elem->>'status') IS DISTINCT FROM $1");
+    expect(res.sql).toContain("(_uql_elem->>'status') <> $1");
 
     // Test $gte, $lt, $lte
     res = this.exec((ctx) =>
@@ -1076,7 +1076,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "Company" WHERE CASE WHEN JSONB_TYPEOF(("kind"->\'private\')) = \'number\' THEN (("kind"->>\'private\'))::numeric END IS DISTINCT FROM ($1)::numeric',
+      'SELECT "id" FROM "Company" WHERE CASE WHEN JSONB_TYPEOF(("kind"->\'private\')) = \'number\' THEN (("kind"->>\'private\'))::numeric END <> ($1)::numeric',
     );
     expect(values).toEqual([0]);
   }

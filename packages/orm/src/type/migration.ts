@@ -271,6 +271,9 @@ export interface DropSchemaOptions {
   readonly cascade?: boolean;
 }
 
+/** The triggers uql installed on one table, by name, each with the statements that recreate it as it stands. */
+export type InstalledTriggers = ReadonlyMap<string, readonly string[]>;
+
 /**
  * Interface for generating DDL statements from entity metadata
  */
@@ -287,6 +290,18 @@ export interface SchemaGenerator {
 
   /** Generate DROP TABLE statement. */
   generateDropTable(tableName: string, options?: DropSchemaOptions): string;
+
+  /**
+   * What takes the triggers on `entity`'s table from `installed` - each by name, with the statements that
+   * recreate it - to what it declares: nothing where the two agree, which is always on MongoDB.
+   */
+  generateTriggers(entity: Type<object>, installed?: InstalledTriggers): string[];
+
+  /** The inverse of {@link generateTriggers} from the same `installed`: its triggers dropped, and the ones it dropped restored. */
+  generateTriggersDown(entity: Type<object>, installed?: InstalledTriggers): string[];
+
+  /** A `DROP` for each trigger uql owns among `names` on `entity`'s table, whatever the entity declares. */
+  generateTriggerDrops(entity: Type<object>, names: readonly string[]): string[];
 
   /**
    * Generate ALTER TABLE statements based on schema diff
@@ -360,6 +375,13 @@ export interface SchemaGenerator {
  * Interface for introspecting the current database schema
  */
 export interface SchemaIntrospector {
+  /**
+   * Every trigger uql installed in this schema, by table and then by name, each with the statements that
+   * recreate it as it stands. The names say which to drop once an entity no longer declares them; the
+   * statements are what a rollback puts back, read off the engine rather than recorded anywhere by uql.
+   */
+  ownedTriggers(): Promise<Map<string, InstalledTriggers>>;
+
   /**
    * What this introspector can read back about an index, and so all that diffing may compare.
    * Comparing a feature it cannot read reports the same drift forever: the entity side declares it,

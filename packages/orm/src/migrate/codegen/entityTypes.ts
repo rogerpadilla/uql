@@ -1,6 +1,5 @@
 import { getMeta } from '../../entity/index.js';
-import { canonicalToTypeScript } from '../../schema/canonicalType.js';
-import { resolveColumnCanonicalType } from '../../schema/schemaASTBuilder.js';
+import { canonicalToTypeScript, resolveColumnCanonicalType } from '../../schema/canonicalType.js';
 import type { EntityMeta, FieldMeta, RelationMeta, Type } from '../../type/index.js';
 import { isToManyRelation, upperFirst } from '../../util/index.js';
 import { isIdentifierName } from './sourceLiteral.js';

@@ -15,10 +15,11 @@ import {
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
+  type TriggerRowName,
   type Type,
 } from '../type/index.js';
-import { isInlinedExpression } from './field.util.js';
-import { hasKeys } from './object.util.js';
+import { aggregateOf, isInlinedExpression } from './field.util.js';
+import { entityName, hasKeys } from './object.util.js';
 
 /**
  * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `raw` renders
@@ -127,27 +128,56 @@ function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
   });
 }
 
-/** One field as SQL, against its own entity or, read off a definition, the entity rendering it. */
-function columnRef(entity: Type<unknown> | undefined, key: string): ColumnRef {
+/**
+ * The fields of `E` as the row a trigger body reads them off, qualified by the side it names: `NEW."col"`
+ * against the incoming row, `OLD."col"` against the outgoing one. Columns only, never a relation's
+ * aggregate: that is a subquery, and a trigger fires on one row rather than over a table to correlate to.
+ */
+export function rowRefs<E>(qualifier: TriggerRowName): RefMap<E> {
+  return new Proxy({}, { get: (_, key) => rowColumn(qualifier, String(key)) }) as RefMap<E>;
+}
+
+/** One field of a trigger's row, for code that names it by its key rather than off {@link rowRefs}. */
+export function rowColumn(qualifier: TriggerRowName, key: string): ColumnRef {
+  return columnRef(undefined, key, qualifier);
+}
+
+/**
+ * One field as SQL, against its own entity or, read off a definition, the entity rendering it. A
+ * `qualifier` names the row it reads from, `NEW` or `OLD`, instead of the alias in scope.
+ */
+function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: string): ColumnRef {
   return new ColumnRef(key, (opts) => {
     const owner = entity ?? opts.entity;
     if (!owner) {
       throw new TypeError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
     }
-    renderColumn(getMeta(owner), key, { ...opts, entity: owner });
+    renderColumn(getMeta(owner), key, { ...opts, entity: owner }, qualifier);
   });
 }
 
-/** A field's column, or the expression an inlined computed one stands for, as a `$where` on it reads it. */
-function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderOptions): void {
+/**
+ * A field's column, or the expression an inlined computed one stands for, as a `$where` on it reads it.
+ * Under a `qualifier` the column is read off that row rather than off the alias in scope, and the row is
+ * written verbatim: it is a record the engine declares, not an identifier to quote and case-fold.
+ */
+function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderOptions, qualifier?: string): void {
+  const scope = qualifier === undefined ? opts : { ...opts, escapedPrefix: `${qualifier}.` };
   const field = meta.fields[key];
   if (field && isInlinedExpression(field)) {
-    opts.ctx.append('(');
-    field.computed.render(opts);
-    opts.ctx.append(')');
+    // A relation aggregate is a subquery correlated to a table in scope, and a trigger's row is not one.
+    if (qualifier !== undefined && aggregateOf(field)) {
+      throw new TypeError(
+        `'${entityName(meta)}.${key}' reads a relation, which a trigger's row cannot: it fires on one row, ` +
+          'with no table in scope to correlate a subquery to. Name the columns it is derived from instead.',
+      );
+    }
+    scope.ctx.append('(');
+    field.computed.render(scope);
+    scope.ctx.append(')');
     return;
   }
-  opts.ctx.append(opts.escapedPrefix + opts.dialect.escapeId(opts.dialect.columnOf(meta, key), true));
+  scope.ctx.append(scope.escapedPrefix + scope.dialect.escapeId(scope.dialect.columnOf(meta, key), true));
 }
 
 /** A tag call passes the frozen strings array, which carries its own `raw` counterpart. */

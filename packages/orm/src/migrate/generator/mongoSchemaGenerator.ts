@@ -155,6 +155,19 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     ];
   }
 
+  /** MongoDB has no triggers, and a write to an entity declaring one is refused, so there is none to reconcile. */
+  generateTriggers(): string[] {
+    return [];
+  }
+
+  generateTriggersDown(): string[] {
+    return [];
+  }
+
+  generateTriggerDrops(): string[] {
+    return [];
+  }
+
   private dropIndexCommand(tableName: string, index: IndexSchema): string {
     return index.type === 'vectorSearch'
       ? serializeMongoCommand({ action: 'dropSearchIndex', collection: tableName, name: index.name })

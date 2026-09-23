@@ -1,3 +1,4 @@
+import { OWNED_PREFIX } from '../dialect/aliases.js';
 import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
 import { hasKeys } from './object.util.js';
@@ -98,13 +99,36 @@ const TABLE_SEPARATOR = '__';
 /** The kinds of derived name, which is also what `indexNameStem` strips to compare them. */
 export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'ck' | 'uk';
 
+/** What every name uql installs begins with, so the two ends asking about one cannot spell it apart. */
+const OWNED_START = `${OWNED_PREFIX}_`;
+
+/**
+ * Whether uql installed the object called `name`. Ownership is the prefix and nothing else, since no
+ * engine records who created one - so this is the only thing standing between a hand-written trigger and
+ * a `DROP`, and it is asked on both sides: when reading the catalogue, and again before emitting.
+ */
+export function isOwnedName(name: string): boolean {
+  return name.startsWith(OWNED_START);
+}
+
+/**
+ * The identifier uql installs a schema object under: its own prefix, the table it hangs off, the label
+ * the author gave it, and last a hash of the object's `content`, which no clamping cuts. The table keeps
+ * two entities sharing a label apart where an engine scopes such names to the schema.
+ */
+export function ownedName(table: string, label: string, content: string): string {
+  const version = `_${hashIdentifier(content)}`;
+  return clampIdentifier(`${OWNED_START}${table}${TABLE_SEPARATOR}${label}`, version.length) + version;
+}
+
 /** A name the engine stores whole, shortened around a hash of the full one, which stays stable across runs. */
-function clampIdentifier(name: string): string {
-  if (name.length <= MAX_IDENTIFIER_LENGTH) {
+function clampIdentifier(name: string, reserved = 0): string {
+  const max = MAX_IDENTIFIER_LENGTH - reserved;
+  if (name.length <= max) {
     return name;
   }
   const suffix = `_${hashIdentifier(name)}`;
-  return name.slice(0, MAX_IDENTIFIER_LENGTH - suffix.length) + suffix;
+  return name.slice(0, max - suffix.length) + suffix;
 }
 
 /**

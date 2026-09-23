@@ -5,9 +5,10 @@ import type {
   FilterName,
   FilterOptions,
   RefMap,
+  TriggerOptions,
   Type,
 } from '../../type/index.js';
-import { applyMembers, defineEntity, defineFilter, defineIndex } from '../metadata/definition.js';
+import { applyMembers, defineEntity, defineFilter, defineIndex, defineTrigger } from '../metadata/definition.js';
 import { drainRegistrations } from './bag.js';
 
 // The class-level decorators. Unlike the member ones they receive the class, so each is a direct call
@@ -46,5 +47,17 @@ export function Index<E>(
 ) {
   return (entity: Type<E>): void => {
     defineIndex(entity, { ...options, columns });
+  };
+}
+
+/**
+ * Declares triggers the database runs, in the order written. Stacks, so several may sit above one class.
+ * @example ``@Trigger({ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => raw`...` })``
+ */
+export function Trigger<E>(...triggers: readonly TriggerOptions<E>[]) {
+  return (entity: Type<E>): void => {
+    for (const trigger of triggers) {
+      defineTrigger(entity, trigger);
+    }
   };
 }

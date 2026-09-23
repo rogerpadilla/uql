@@ -14,6 +14,16 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // A MySQL "schema" is a database, so the connection's own is what `DATABASE()` reports.
   protected override readonly defaultSchemaExpr = 'DATABASE()';
 
+  protected triggersQuery(): string {
+    return /*sql*/ `
+      SELECT EVENT_OBJECT_TABLE AS \`table\`, TRIGGER_NAME AS name,
+        CONCAT('CREATE TRIGGER \`', TRIGGER_SCHEMA, '\`.\`', TRIGGER_NAME, '\` ', ACTION_TIMING, ' ', EVENT_MANIPULATION,
+          ' ON \`', EVENT_OBJECT_SCHEMA, '\`.\`', EVENT_OBJECT_TABLE, '\` FOR EACH ROW ', ACTION_STATEMENT) AS definition
+      FROM information_schema.TRIGGERS
+      WHERE TRIGGER_SCHEMA = ${this.schemaExpr}
+    `;
+  }
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT TABLE_NAME as table_name

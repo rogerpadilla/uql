@@ -19,7 +19,6 @@ import {
   type QueryAggregate,
   type QueryAggregateOp,
   type QueryBuildFn,
-  type QueryCompareOp,
   type QueryComparisonOptions,
   type QueryConflictPaths,
   type QueryContext,
@@ -29,8 +28,7 @@ import {
   type QueryGroupMap,
   type QueryGroupOp,
   type QueryHavingMap,
-  type QueryLikeOp,
-  type QueryOptions,
+  type QueryRenderOptions,
   type QueryPage,
   type QueryPager,
   type QueryPopulate,
@@ -42,9 +40,9 @@ import {
   type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
-  type QueryVectorNear,
   type QueryWhere,
   type QueryWhereArray,
+  type QueryWhereFieldOp,
   type QueryWhereOptions,
   RAW_ALIAS,
   type RelationKey,
@@ -57,7 +55,6 @@ import {
   type SqlQueryDialect,
   type Type,
   type UpdatePayload,
-  VECTOR_QUERY_KEYS,
 } from '../type/index.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import {
@@ -102,7 +99,7 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { escapeAnsiSqlLiteral } from '../util/sqlLiteral.js';
-import { UqlUsageError } from '../util/uqlError.js';
+import { kindOf, UqlUsageError } from '../util/uqlError.js';
 import {
   AGGREGATE_PAGE_ALIAS,
   AGGREGATE_VALUE_ALIAS,
@@ -121,6 +118,21 @@ import {
   jsonPath,
   type JsonSlot,
 } from './jsonSql.js';
+import {
+  betweenBounds,
+  COMPARE_OPS,
+  EQUALITY_OPS,
+  GROUP_OPS,
+  groupClauses,
+  inOperands,
+  isGroupOp,
+  isOrderedOp,
+  isVectorQuery,
+  LIKE_OPS,
+  ORDERED_OPS,
+  VECTOR_QUERY_KEY_SET,
+  whereOperators,
+} from './operators.js';
 import { SqlQueryContext } from './queryContext.js';
 import {
   groupPathField,
@@ -151,9 +163,6 @@ type InsertShape<E> = {
   readonly columns: string[];
   readonly kinds: PersistKind[];
 };
-
-/** One entry of {@link AbstractSqlDialect.LIKE_OPS}: how the pattern is built, and whether it ignores case. */
-type LikeOp = { readonly pattern: (value: string) => string; readonly insensitive: boolean };
 
 /** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
 type HydratableField = readonly [string, HydrateKind];
@@ -200,7 +209,7 @@ export type ReadProjection = { readonly terms: readonly SelectTerm[]; readonly o
  * relation's rows read inside the parent's statement cross JSON, and where their aggregate orders them,
  * carry their sort terms out as columns.
  */
-type ReadOptions = QueryOptions & {
+type ReadOptions = QueryRenderOptions & {
   readonly alias?: string;
   readonly json?: boolean;
   readonly carried?: boolean;
@@ -266,13 +275,41 @@ function orRefuse<T>(value: T | undefined, refusal: string): T {
   return value;
 }
 
-/** An `$in`/`$nin` operand, which the types require to be an array but `/http` hands over untyped. */
-function inOperands(op: string, value: unknown): unknown[] {
-  if (!Array.isArray(value)) {
-    throw new UqlUsageError(`${op} expects an array, got ${value === null ? 'null' : typeof value}`);
-  }
-  return value;
+/** Conditions joined by `AND`, parenthesized where there is more than one. */
+function conjunction(parts: readonly string[]): string {
+  return parts.length > 1 ? `(${parts.join(' AND ')})` : parts.join('');
 }
+
+/**
+ * How `op` reads a JSON value: an ordered comparison as a number, an equality as its operand compares,
+ * and a pattern or a null check as text.
+ */
+function jsonOperatorMode(op: QueryWhereFieldOp, value: unknown): JsonAccessMode {
+  if (ORDERED_OPS.has(op)) {
+    return 'numeric';
+  }
+  return EQUALITY_OPS.has(op) ? jsonCompareMode(value) : 'text';
+}
+
+/** `$group` aggregate operator to SQL function name, over ops `resolveAggregateOp` has already allowlisted. */
+const AGGREGATE_FN: Readonly<Record<QueryAggregateOp, string>> = {
+  $count: 'COUNT',
+  $sum: 'SUM',
+  $avg: 'AVG',
+  $min: 'MIN',
+  $max: 'MAX',
+};
+
+const SORT_DIRECTION_MAP: ReadonlyMap<QuerySortDirection, SortOrder> = new Map<QuerySortDirection, SortOrder>([
+  [1, {}],
+  ['asc', {}],
+  ['desc', { direction: ' DESC' }],
+  [-1, { direction: ' DESC' }],
+  ['ascNullsFirst', { nulls: 'first' }],
+  ['ascNullsLast', { nulls: 'last' }],
+  ['descNullsFirst', { direction: ' DESC', nulls: 'first' }],
+  ['descNullsLast', { direction: ' DESC', nulls: 'last' }],
+]);
 
 /**
  * What a relation subquery selects: `exists` for a relation operator that only asks whether a row is
@@ -287,6 +324,11 @@ type RelationSubqueryRead = RelationSubqueryProjection & Pick<AggregateCall, 'wh
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
   // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
+
+  /** Itself, unless the engine is a fork running another's SQL, which is the only case that overrides. */
+  get dialectFamily(): SqlDialectName {
+    return this.dialectName;
+  }
 
   abstract readonly escapeIdChar: '"' | '`';
   /**
@@ -426,10 +468,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return expression ? `RETURNING ${expression}` : '';
   }
 
+  /** What the returned row is read off, for an engine that names it: SQL Server's `INSERTED.`. */
+  protected readonly returnedRowPrefix: string = '';
+
   /** `<id column> AS id` on its own, for a statement composing a `RETURNING` list of several items. */
   protected returningIdExpression<E>(meta: EntityMeta<E>): string {
     const [idKey] = meta.ids;
-    return meta.ids.length === 1 ? `${this.escapeId(this.columnOf(meta, idKey))} ${this.escapeId('id')}` : '';
+    return meta.ids.length === 1
+      ? `${this.returnedRowPrefix}${this.escapeId(this.columnOf(meta, idKey))} ${this.escapeId('id')}`
+      : '';
   }
 
   search<E>(
@@ -583,7 +630,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** The columns a `$text` over `keys` reads, qualified by `prefix` where the statement joins, as any column is. */
   protected textColumns<E>(meta: EntityMeta<E>, keys: readonly string[], prefix: string | undefined): string[] {
-    return keys.map((key) => this.columnWithPrefix(key, meta.fields[key as FieldKey<E>], prefix));
+    return keys.map((key) => this.columnWithPrefix(key, meta.fields[key as FieldKey<E>], { prefix }));
   }
 
   /** Ranks by the root `$text` of `where`, which is looked up only once a `$sort` asks for it. */
@@ -845,7 +892,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       }
       this.getComparisonKey(ctx, entity, key as FieldKey<E>, opts);
       ctx.append(' = ');
-      this.getRawValue(ctx, { value: val, prefix: opts.prefix });
+      this.getRawValue(ctx, { ...opts, value: val });
       return;
     }
 
@@ -854,7 +901,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
 
-    if (AbstractSqlDialect.isGroupOp(key)) {
+    if (isGroupOp(key)) {
       this.compareLogicalOperator(ctx, entity, key, val as QueryWhereArray<E>, opts);
       return;
     }
@@ -881,14 +928,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
 
-    const value = this.normalizeWhereValue(val);
-    const parts = getKeys(value).map((op) => this.fieldCondition(ctx, entity, key as FieldKey<E>, op, value[op], opts));
-    ctx.append(AbstractSqlDialect.conjunction(parts));
-  }
-
-  /** Conditions joined by `AND`, parenthesized where there is more than one. */
-  private static conjunction(parts: readonly string[]): string {
-    return parts.length > 1 ? `(${parts.join(' AND ')})` : parts.join('');
+    const parts = whereOperators(val, 'unknown operator').map(([op, value]) =>
+      this.fieldCondition(ctx, entity, key as FieldKey<E>, op, value, opts),
+    );
+    ctx.append(conjunction(parts));
   }
 
   protected compareLogicalOperator<E>(
@@ -898,18 +941,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     val: QueryWhereArray<E>,
     opts: QueryComparisonOptions,
   ): void {
-    const { join, negate } = AbstractSqlDialect.GROUP_OPS[key];
-    const items = AbstractSqlDialect.groupClauses(key, val);
+    const { join, negate } = GROUP_OPS[key];
+    const items = groupClauses(key, val);
     // With more than one item each is an operand of the operator joining them, so a compound item
     // parenthesizes itself and precedence never applies; a lone item is this group verbatim, so it
     // inherits the group's own position. A negation always makes its subject an operand.
     const childOperand = items.length > 1 || negate || opts.operand;
 
     const parts = this.renderOperands(ctx, items, (fragmentCtx, entry) => {
+      // The same scope as the group, so every render option carries over: a trigger's `NEW.` included.
       if (entry instanceof QueryRaw) {
-        this.getRawValue(fragmentCtx, { value: entry, prefix: opts.prefix });
+        this.getRawValue(fragmentCtx, { ...opts, value: entry });
       } else {
-        this.renderWhere(fragmentCtx, entity, entry, { prefix: opts.prefix, operand: childOperand, clause: false });
+        this.renderWhere(fragmentCtx, entity, entry, { ...opts, operand: childOperand, clause: false });
       }
     });
 
@@ -925,49 +969,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** Memoizes {@link escapedColumnName}; see there for why it is per dialect instance. */
   private readonly escapedColumns = new WeakMap<FieldOptions, string>();
 
-  private static readonly COMPARE_OP_MAP = new Map<QueryCompareOp, string>([
-    ['$gt', ' > '],
-    ['$gte', ' >= '],
-    ['$lt', ' < '],
-    ['$lte', ' <= '],
-  ]);
-
-  /** What a `$near` says about the search itself; everything else in it is a bound. */
-  private static readonly VECTOR_QUERY_KEYS: ReadonlySet<string> = new Set<string>(VECTOR_QUERY_KEYS);
-
-  /**
-   * The ordered comparisons, `QueryOrderedOp` at runtime, derived from the map above rather than spelled
-   * again: {@link QueryVectorNear}'s bounds, so `$near` never accepts one the renderer has no operator
-   * for, and the operators that read a JSON path as a number.
-   */
-  private static readonly ORDERED_OPS: ReadonlySet<string> = new Set<string>([
-    ...AbstractSqlDialect.COMPARE_OP_MAP.keys(),
-    '$between',
-  ]);
-
-  /** The operators an equality compares by value, which a JSON path reads the way that value compares. */
-  private static readonly EQUALITY_OPS: ReadonlySet<string> = new Set<string>(['$eq', '$ne', '$in', '$nin']);
-
-  /**
-   * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.
-   * Each case-sensitive operator is paired here with the `$i` twin that shares its pattern, so the
-   * two can never drift apart - and neither one decides case folding, which is
-   * {@link caseInsensitiveMatch}'s single call.
-   */
-  private static readonly LIKE_OPS: ReadonlyMap<string, LikeOp> = new Map(
-    (
-      [
-        ['$like', '$ilike', (v: string) => v],
-        ['$startsWith', '$istartsWith', (v: string) => `${v}%`],
-        ['$endsWith', '$iendsWith', (v: string) => `%${v}`],
-        ['$includes', '$iincludes', (v: string) => `%${v}%`],
-      ] satisfies readonly [QueryLikeOp, QueryLikeOp, (v: string) => string][]
-    ).flatMap(([sensitive, insensitive, pattern]): [string, LikeOp][] => [
-      [sensitive, { pattern, insensitive: false }],
-      [insensitive, { pattern, insensitive: true }],
-    ]),
-  );
-
   /**
    * How the engine matches case-insensitively: `ilike` has the operator, `native` ignores case already
    * (SQLite, where folding in JS would break non-ASCII), and `fold` lowers both sides.
@@ -979,8 +980,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * JSON paths, and the only place a pattern is folded - always together with the column it is
    * compared against.
    */
-  protected likeCondition(ctx: QueryContext, operand: string, op: string, val: unknown): string | undefined {
-    const like = AbstractSqlDialect.LIKE_OPS.get(op);
+  protected likeCondition(ctx: QueryContext, operand: string, op: QueryWhereFieldOp, val: unknown): string | undefined {
+    const like = LIKE_OPS.get(op);
     if (!like) {
       return undefined;
     }
@@ -992,8 +993,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** Builds `prefix.column` from an already-resolved field, through the same memo writes use. */
-  private columnWithPrefix(key: string, field: FieldOptions | undefined, prefix: string | undefined): string {
-    return this.escapeId(prefix, true, true) + this.escapedColumnOf(key, field);
+  private columnWithPrefix(
+    key: string,
+    field: FieldOptions | undefined,
+    opts: Pick<QueryRenderOptions, 'prefix' | 'escapedPrefix'>,
+  ): string {
+    return (opts.escapedPrefix ?? this.escapeId(opts.prefix, true, true)) + this.escapedColumnOf(key, field);
   }
 
   /**
@@ -1001,12 +1006,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * as text rather than appending it, so every operator gets a real operand to wrap - `LOWER(...)`,
    * `NOT (... <=> ...)` - instead of having to fall back to a form that takes none.
    */
-  protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryOptions): string {
+  protected resolveOperandField<E>(ctx: QueryContext, entity: Type<E>, key: string, opts: QueryRenderOptions): string {
     const meta = getMeta(entity);
     const field = meta.fields[key];
     return (
       this.inlinedOperand(ctx, field, opts.prefix ?? this.resolveTableAlias(meta), entity) ??
-      this.columnWithPrefix(key, field, opts.prefix)
+      this.columnWithPrefix(key, field, opts)
     );
   }
 
@@ -1031,9 +1036,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     entity: Type<E>,
     key: FieldKey<E>,
-    op: string,
+    op: QueryWhereFieldOp,
     val: unknown,
-    opts: QueryOptions = {},
+    opts: QueryComparisonOptions = {},
   ): void {
     ctx.append(this.fieldCondition(ctx, entity, key, op, val, opts));
   }
@@ -1043,15 +1048,15 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     entity: Type<E>,
     key: FieldKey<E>,
-    op: string,
+    op: QueryWhereFieldOp,
     val: unknown,
-    opts: QueryOptions,
+    opts: QueryComparisonOptions,
   ): string {
     if (op === '$not') {
       return `NOT (${this.buildFragment(ctx, (fragmentCtx) => this.compare(fragmentCtx, entity, key, val, opts))})`;
     }
     if (op === '$near') {
-      return this.vectorNearCondition(ctx, getMeta(entity), key, val as QueryVectorNear, opts.prefix);
+      return this.vectorNearCondition(ctx, getMeta(entity), key, val, opts.prefix);
     }
     const field = this.resolveOperandField(ctx, entity, key, opts);
     const condition =
@@ -1062,16 +1067,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /**
    * `<operand> <op> <value>` for every operator that needs only its left-hand SQL, shared by a column, a
    * JSON path, a `HAVING` expression, a count and a distance; `undefined` for the rest. `bind` renders
-   * each compared value, a plain placeholder unless a JSON path reads it otherwise.
+   * each compared value, a plain placeholder unless a JSON path reads it otherwise. NULL compares as the
+   * engine compares it: `<>`, `NOT IN` and `NOT` are unknown on a NULL, which SQL drops.
    */
   protected operatorCondition(
     ctx: QueryContext,
     operand: string,
-    op: string,
+    op: QueryWhereFieldOp,
     val: unknown,
     bind: (value: unknown) => string = (value) => this.addValue(ctx, value),
   ): string | undefined {
-    const compareOp = AbstractSqlDialect.COMPARE_OP_MAP.get(op as QueryCompareOp);
+    const compareOp = COMPARE_OPS.get(op);
     if (compareOp) {
       return `${operand}${compareOp}${bind(val)}`;
     }
@@ -1085,14 +1091,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       case '$eq':
         return val === null ? `${operand} IS NULL` : `${operand} = ${bind(val)}`;
       case '$ne':
-        return val === null ? `${operand} IS NOT NULL` : this.neExpr(operand, bind(val));
+        return val === null ? `${operand} IS NOT NULL` : `${operand} <> ${bind(val)}`;
       case '$regex':
         return this.regexCondition(operand, this.addValue(ctx, val));
       case '$in':
       case '$nin':
         return this.formatIn(ctx, operand, inOperands(op, val), op === '$nin', bind);
       case '$between': {
-        const [min, max] = val as [unknown, unknown];
+        const [min, max] = betweenBounds(val);
         return `${operand} BETWEEN ${bind(min)} AND ${bind(max)}`;
       }
       case '$isNull':
@@ -1105,7 +1111,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** `$all`, `$size` and `$elemMatch`, which read the JSON array at `slot`; `undefined` for the rest. */
-  private jsonArrayCondition(ctx: QueryContext, slot: JsonSlot, op: string, val: unknown): string | undefined {
+  private jsonArrayCondition(
+    ctx: QueryContext,
+    slot: JsonSlot,
+    op: QueryWhereFieldOp,
+    val: unknown,
+  ): string | undefined {
     switch (op) {
       case '$all':
         return this.jsonAll(ctx, slot, val as readonly unknown[]);
@@ -1129,11 +1140,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** Every operator `target` is compared with, `AND`-joined. */
   private jsonConditions(ctx: QueryContext, target: JsonTarget, val: unknown): string {
-    const value = this.normalizeWhereValue(val);
-    return AbstractSqlDialect.conjunction(getKeys(value).map((op) => this.jsonCondition(ctx, target, op, value[op])));
+    return conjunction(
+      whereOperators(val, 'unknown operator').map(([op, value]) => this.jsonCondition(ctx, target, op, value)),
+    );
   }
 
-  private jsonCondition(ctx: QueryContext, target: JsonTarget, op: string, value: unknown): string {
+  private jsonCondition(ctx: QueryContext, target: JsonTarget, op: QueryWhereFieldOp, value: unknown): string {
     if (op === '$not') {
       return `NOT (${this.jsonConditions(ctx, target, value)})`;
     }
@@ -1141,7 +1153,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (array !== undefined) {
       return array;
     }
-    const mode = AbstractSqlDialect.jsonOperatorMode(op, value);
+    const mode = jsonOperatorMode(op, value);
     const operand = target.read(mode);
     // Only a boolean compares as a JSON value, so the set holds two at most, and MySQL documents `IN()`
     // as unsupported on JSON values: the comparisons are spelled out.
@@ -1154,17 +1166,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const condition = this.operatorCondition(ctx, operand, op, value, (val) => this.jsonOperand(ctx, val, mode));
     return orRefuse(condition, `unknown operator: ${op}`);
-  }
-
-  /**
-   * How `op` reads a JSON value: an ordered comparison as a number, an equality as its operand compares,
-   * and a pattern or a null check as text.
-   */
-  private static jsonOperatorMode(op: string, value: unknown): JsonAccessMode {
-    if (AbstractSqlDialect.ORDERED_OPS.has(op)) {
-      return 'numeric';
-    }
-    return AbstractSqlDialect.EQUALITY_OPS.has(op) ? jsonCompareMode(value) : 'text';
   }
 
   /** A bound operand of a JSON comparison, read the way `mode` reads the value it is compared with. */
@@ -1210,7 +1211,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           : [this.jsonElemEquals(ctx, slot, alias, value)];
       return jsonElemExists(from, holds, this.jsonElemHint);
     });
-    return AbstractSqlDialect.conjunction(conditions);
+    return conjunction(conditions);
   }
 
   /**
@@ -1294,7 +1295,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** {@link resolveOperandField}, appended. */
-  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, opts: QueryOptions = {}): void {
+  getComparisonKey<E>(ctx: QueryContext, entity: Type<E>, key: FieldKey<E>, opts: QueryRenderOptions = {}): void {
     ctx.append(this.resolveOperandField(ctx, entity, key, opts));
   }
 
@@ -1429,7 +1430,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (field) {
       const expr =
         this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta), meta.entity) ??
-        this.columnWithPrefix(key, field, prefix);
+        this.columnWithPrefix(key, field, { prefix });
       return [{ expr, output: false }];
     }
     const json = this.resolveJsonDotPath(meta, key, prefix);
@@ -1512,7 +1513,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `COUNT(*)` over the filter, or over the rows a page settles. The clauses are read off `q` one by one:
    * `/http` hands it over untyped, and a smuggled `$sort` changes no count.
    */
-  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions): void {
+  count<E>(ctx: QueryContext, entity: Type<E>, q: QueryPage<E>, opts?: QueryRenderOptions): void {
     const { $where, $skip, $limit } = q;
     if ($skip === undefined && $limit === undefined) {
       this.select<E>(ctx, entity, { $select: [raw`COUNT(*)`.as(AGGREGATE_VALUE_ALIAS)] });
@@ -1527,7 +1528,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * How many rows a `$distinct` read returns: the deduplication runs after `COUNT(*)` and a window
    * alike, so the deduplicated set is counted as a derived table, never paged.
    */
-  countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryOptions): void {
+  countDistinct<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions): void {
     const read = this.readOptions(ctx, getMeta(entity), opts);
     this.countRows(ctx, () => {
       this.select(ctx, entity, q, read);
@@ -1551,20 +1552,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     throw new UqlUsageError(`${this.dialectName} does not support estimatedCount`);
   }
 
-  /** `$group` aggregate operator to SQL function name, over ops `resolveAggregateOp` has already allowlisted. */
-  private static readonly AGGREGATE_FN: Readonly<Record<QueryAggregateOp, string>> = {
-    $count: 'COUNT',
-    $sum: 'SUM',
-    $avg: 'AVG',
-    $min: 'MIN',
-    $max: 'MAX',
-  };
-
   aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     ctx: QueryContext,
     entity: Type<E>,
     q: QueryAggregate<E, G, A>,
-    opts: QueryOptions = {},
+    opts: QueryRenderOptions = {},
   ): void {
     const meta = getMeta(entity);
     const entries = parseGroupMap(q.$group, q.$select);
@@ -1700,19 +1692,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     });
   }
 
-  private static readonly SORT_DIRECTION_MAP = new Map<QuerySortDirection, SortOrder>([
-    [1, {}],
-    ['asc', {}],
-    ['desc', { direction: ' DESC' }],
-    [-1, { direction: ' DESC' }],
-    ['ascNullsFirst', { nulls: 'first' }],
-    ['ascNullsLast', { nulls: 'last' }],
-    ['descNullsFirst', { direction: ' DESC', nulls: 'first' }],
-    ['descNullsLast', { direction: ' DESC', nulls: 'last' }],
-  ]);
-
   private resolveSortDirection(sort: unknown): SortOrder {
-    const order = AbstractSqlDialect.SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
+    const order = SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
     return orRefuse(order, `unknown sort direction: ${sort}`);
   }
 
@@ -1738,9 +1719,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** Every operator of one `HAVING` condition, `AND`-joined. */
   protected havingCondition(ctx: QueryContext, expr: string, condition: QueryHavingMap[string]): void {
-    const ops = this.normalizeWhereValue(condition);
-    const parts = getKeys(ops).map((op) =>
-      orRefuse(this.operatorCondition(ctx, expr, op, ops[op]), `unsupported HAVING operator: ${op}`),
+    const refusal = 'unsupported HAVING operator';
+    const parts = whereOperators(condition, refusal).map(([op, value]) =>
+      orRefuse(this.operatorCondition(ctx, expr, op, value), `${refusal}: ${op}`),
     );
     ctx.append(parts.join(' AND '));
   }
@@ -1751,7 +1732,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected readonly totalOverExpr = 'COUNT(*) OVER ()';
 
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string): void {
+  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryRenderOptions, totalAlias?: string): void {
     const meta = getMeta(entity);
     const read = this.readOptions(ctx, meta, opts);
     // The one statement that can join, so the one that resolves the join set; everything else renders
@@ -1798,7 +1779,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return alias === name ? opts : { ...opts, alias };
   }
 
-  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryOptions): void {
+  insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void {
     // Every engine whose ids come back from the statement itself wants the same clause, so it is
     // built once here instead of in an identical `insert` override per dialect. `returningId` is
     // empty on a composite key, which has no id to ask for.
@@ -1902,7 +1883,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdatePayload<E>,
-    opts?: QueryOptions,
+    opts?: QueryRenderOptions,
   ): void {
     const meta = getMeta(entity);
     const [filledPayload] = fillOnFields(meta, payload as E, 'onUpdate');
@@ -2004,7 +1985,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       .join(', ');
   }
 
-  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryOptions = {}): void {
+  delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts: QueryRenderOptions = {}): void {
     const meta = getMeta(entity);
     const tableName = this.escapedTableName(meta);
 
@@ -2320,16 +2301,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected abstract jsonPathReading(escapedColumn: string, path: string, mode: 'json' | 'text'): string;
 
   /**
-   * Normalizes a raw WHERE value into an operator map.
-   * Arrays become `$in`, operator maps pass through, everything else becomes `$eq`.
-   */
-  private normalizeWhereValue(val: unknown): Record<string, unknown> {
-    if (Array.isArray(val)) return { $in: val };
-    if (isOperatorMap(val)) return val;
-    return { $eq: val };
-  }
-
-  /**
    * A field key's mapped column (`@Field({ name })`), escaped, memoized per dialect instance: field
    * metadata is shared between dialects while this result is not, since `escapeIdChar` and the naming
    * strategy differ. Weakly keyed so a transient entity's metadata stays collectable.
@@ -2493,7 +2464,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** One aggregate function call, the one spelling every statement that aggregates writes. */
   private aggregateFn(op: QueryAggregateOp, operand: string, distinct?: boolean): string {
-    return `${AbstractSqlDialect.AGGREGATE_FN[op]}(${distinct ? 'DISTINCT ' : ''}${operand})`;
+    return `${AGGREGATE_FN[op]}(${distinct ? 'DISTINCT ' : ''}${operand})`;
   }
 
   /**
@@ -2724,25 +2695,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const parts = Object.entries(bounds)
       .filter(([, val]) => val !== undefined)
       .map(([op, val]) => orRefuse(condition(this.buildFragment(ctx, expr), op, val), `${refusal}: ${op}`));
-    return AbstractSqlDialect.conjunction(parts);
+    return conjunction(parts);
   }
 
-  /**
-   * A count compared with `size`, a number or its bounds. A count is never NULL, so its equality stays
-   * plain rather than the null-safe `$ne` (`IS DISTINCT FROM`, `IS NOT`): same rows, shorter SQL.
-   */
+  /** A count compared with `size`, a number or its bounds. */
   private sizeCondition(ctx: QueryContext, count: QueryBuildFn, size: number | QuerySizeComparisonOps): string {
     const bounds = typeof size === 'number' ? { $eq: size } : size;
     return this.boundConditions(
       ctx,
       count,
       bounds,
-      (operand, op, val) => {
-        if (op === '$eq' || op === '$ne') {
-          return `${operand} ${op === '$eq' ? '=' : '<>'} ${this.addValue(ctx, val)}`;
-        }
-        return AbstractSqlDialect.ORDERED_OPS.has(op) ? this.operatorCondition(ctx, operand, op, val) : undefined;
-      },
+      (operand, op, val) =>
+        op === '$eq' || op === '$ne' || isOrderedOp(op) ? this.operatorCondition(ctx, operand, op, val) : undefined,
       'unsupported $size comparison operator',
     );
   }
@@ -2752,27 +2716,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     meta: EntityMeta<E>,
     key: string,
-    near: QueryVectorNear,
+    near: unknown,
     prefix: string | undefined,
   ): string {
-    const bounds: Record<string, unknown> = {};
-    for (const [op, val] of Object.entries(near)) {
-      if (AbstractSqlDialect.VECTOR_QUERY_KEYS.has(op) || val === undefined) {
-        continue;
-      }
-      if (!AbstractSqlDialect.ORDERED_OPS.has(op)) {
-        throw new UqlUsageError(`unsupported $near bound: ${op}`);
-      }
-      bounds[op] = val;
+    if (!isOperatorMap(near)) {
+      throw new UqlUsageError(`$near on '${key}' expects an object of its $vector and bounds, got ${kindOf(near)}`);
     }
+    const bounds = Object.fromEntries(
+      Object.entries(near).filter(([op, val]) => !VECTOR_QUERY_KEY_SET.has(op) && val !== undefined),
+    );
     if (!hasKeys(bounds)) {
-      const boundOps = [...AbstractSqlDialect.ORDERED_OPS].join(', ');
+      const boundOps = [...ORDERED_OPS].join(', ');
       throw new UqlUsageError(`$near on '${key}' needs a bound (${boundOps}); without one it filters nothing`);
     }
     // Required by the type, so this only fires for a query that never met it: `/http` casts client
     // JSON straight to `Query`. A `$near` never borrows the `$sort`'s vector, which is what keeps the
     // predicate meaning the same thing in a `count`, or in an entity filter merged into a `$where`.
-    if (!near.$vector) {
+    if (!isVectorQuery(near)) {
       throw new UqlUsageError(`$near on '${key}' needs its own $vector`);
     }
     const distance: QueryBuildFn = (fragmentCtx) => this.appendVectorDistance(fragmentCtx, meta, key, near, prefix);
@@ -2780,7 +2740,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx,
       distance,
       bounds,
-      (operand, op, val) => this.operatorCondition(ctx, operand, op, val),
+      (operand, op, val) => (isOrderedOp(op) ? this.operatorCondition(ctx, operand, op, val) : undefined),
       'unsupported $near bound',
     );
   }
@@ -2809,16 +2769,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /**
-   * Not-equal operator token for non-null comparisons.
-   * Postgres uses `IS DISTINCT FROM`; MySQL/Maria uses custom `neExpr`.
+   * Two fragments compared null-safely: true where they differ, and where one side alone is NULL. What a
+   * trigger compares a column's two rows with, where the portable `<>` would miss a column set to or
+   * from NULL. Abstract, so no engine inherits that miss.
    */
-  protected get neOp(): string {
-    return '<>';
-  }
-
-  protected neExpr(field: string, ph: string): string {
-    return `${field} ${this.neOp} ${ph}`;
-  }
+  abstract neExpr(field: string, ph: string): string;
 
   /** `operand IN (...)` of each value as `bind` renders it, or the constant an empty set reduces to: no value is in it. */
   protected formatIn(

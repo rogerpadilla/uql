@@ -8,6 +8,7 @@ export {
   defineId,
   defineIndex,
   defineRelation,
+  defineTrigger,
   getEntities,
   getMeta,
   removeEntity,

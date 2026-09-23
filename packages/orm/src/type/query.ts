@@ -23,13 +23,23 @@ export type QueryOptions = {
    * table look alike. The entity's own filters never count as naming one.
    */
   unfiltered?: boolean;
-  /**
-   * prefix the query with this.
-   */
+};
+
+/**
+ * What a statement is rendered with, on top of the options its caller passed. Kept apart from
+ * {@link QueryOptions} because that one is public - it is the third argument of every querier method -
+ * and none of this is a caller's to set: an alias is the dialect's to choose and to spell.
+ */
+export type QueryRenderOptions = QueryOptions & {
+  /** The alias columns are read off, escaped by the dialect unless {@link escapedPrefix} spells it. */
   prefix?: string;
   /**
-   * automatically infer the prefix for the query.
+   * The prefix already written out, for the one caller whose row is not an identifier: a trigger reads
+   * `NEW."col"`, where `NEW` is a record the engine declares, and quoting it names a table that is not
+   * in scope. Defaults to {@link prefix} escaped.
    */
+  escapedPrefix?: string;
+  /** Whether to infer the alias where none is given. */
   autoPrefix?: boolean;
 };
 

@@ -741,6 +741,7 @@ function introspectorOf(tables: Record<string, Record<string, CanonicalType>>): 
     getTableNames: vi.fn().mockResolvedValue(Object.keys(tables)),
     getTableSchema: vi.fn().mockResolvedValue(undefined),
     tableExists: vi.fn().mockImplementation((name: string) => Promise.resolve(name in tables)),
+    ownedTriggers: vi.fn().mockResolvedValue(new Map()),
   };
 }
 

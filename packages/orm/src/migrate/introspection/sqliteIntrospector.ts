@@ -13,6 +13,10 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   );
 
   /** Not SQLite's own tables, nor the ones libSQL keeps a vector index in: its metadata and `<index>_shadow`. */
+  protected triggersQuery(): string {
+    return /*sql*/ `SELECT tbl_name AS \`table\`, name, sql AS definition FROM sqlite_master WHERE type = 'trigger'`;
+  }
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT name

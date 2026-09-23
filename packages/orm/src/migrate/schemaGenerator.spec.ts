@@ -1,8 +1,9 @@
 import { v7 as uuidv7 } from 'uuid';
-import { describe, expect, it } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
-import { Entity, Field, getMeta, Id, Index, ManyToOne } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, ManyToOne, removeEntity, Trigger } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
+import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -1295,4 +1296,73 @@ describe('SqlSchemaGenerator on every dialect', () => {
       });
     },
   );
+});
+
+describe('SqlSchemaGenerator creating a table only where it is missing', () => {
+  it('should say so in the statement where the engine has the clause', () => {
+    const [sql] = new SqlSchemaGenerator(new PostgresDialect()).generateCreateSchema([UsersTable], {
+      ifNotExists: true,
+    });
+    expect(sql).toMatch(/^CREATE TABLE IF NOT EXISTS "users"/);
+  });
+
+  // T-SQL has no `IF NOT EXISTS` on a table: without the guard, a second create fails outright.
+  it('should guard it with a lookup on SQL Server', () => {
+    const [sql] = new SqlSchemaGenerator(new MsSqlDialect()).generateCreateSchema([UsersTable], { ifNotExists: true });
+    expect(sql).toMatch(/^IF OBJECT_ID\(N'"users"', N'U'\) IS NULL CREATE TABLE "users"/);
+  });
+});
+
+describe('generateTriggers', () => {
+  @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: () => raw`PERFORM 1;` } })
+  @Entity({ name: 'GenPost' })
+  class GenPost {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: String }) title?: string | null;
+  }
+
+  const generator = new SqlSchemaGenerator(new PostgresDialect());
+
+  afterAll(() => removeEntity(GenPost));
+
+  const audit = () => generator.generateTriggers(GenPost).join('\n');
+  const auditName = () => /CREATE TRIGGER "([^"]+)"/.exec(audit())?.[1] ?? '';
+
+  it('should install what the entity declares', () => {
+    expect(auditName()).toMatch(/^_uql_GenPost__audit_[0-9a-f]{6}$/);
+  });
+
+  // What a drift check reads: once installed as declared, there is nothing left to run.
+  it('should emit nothing where what is installed is what the entity declares', () => {
+    const installed = new Map([[auditName(), ['CREATE TRIGGER ...']]]);
+    expect(generator.generateTriggers(GenPost, installed)).toEqual([]);
+    expect(generator.generateTriggersDown(GenPost, installed)).toEqual([]);
+  });
+
+  // The `_uql` prefix is what says it is ours to drop; anything else on the table is left alone.
+  it('should drop an installed trigger the entity no longer declares, with its function', () => {
+    const installed = new Map([
+      ['_uql_GenPost__gone_000000', []],
+      ['handwritten', []],
+    ]);
+    const sql = generator.generateTriggers(GenPost, installed).join('\n');
+    expect(sql).toContain('DROP TRIGGER IF EXISTS "_uql_GenPost__gone_000000" ON "GenPost";');
+    expect(sql).toContain('DROP FUNCTION IF EXISTS "_uql_GenPost__gone_000000"();');
+    expect(sql).not.toContain('handwritten');
+  });
+
+  // Exactly the inverse: what the reconcile created goes, and what it dropped comes back as it stood.
+  it('should roll back by dropping what it created and restoring what it dropped', () => {
+    const installed = new Map([['_uql_GenPost__gone_000000', ['CREATE TRIGGER gone']]]);
+    expect(generator.generateTriggersDown(GenPost, installed)).toEqual([
+      `DROP TRIGGER IF EXISTS "${auditName()}" ON "GenPost";`,
+      `DROP FUNCTION IF EXISTS "${auditName()}"();`,
+      'CREATE TRIGGER gone;',
+    ]);
+  });
+
+  it('should emit nothing for an entity declaring none', () => {
+    expect(generator.generateTriggers(TestUser)).toEqual([]);
+    expect(generator.generateTriggersDown(TestUser)).toEqual([]);
+  });
 });

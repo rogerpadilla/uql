@@ -21,6 +21,17 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     'include',
   ]);
 
+  protected triggersQuery(): string {
+    return /*sql*/ `
+      SELECT c.relname AS "table", t.tgname AS name, pg_get_triggerdef(t.oid) AS definition,
+        pg_get_functiondef(t.tgfoid) AS requires
+      FROM pg_trigger t
+      JOIN pg_class c ON c.oid = t.tgrelid
+      JOIN pg_namespace n ON n.oid = c.relnamespace
+      WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr}
+    `;
+  }
+
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT table_name

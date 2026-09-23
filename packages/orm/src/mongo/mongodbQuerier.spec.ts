@@ -1,8 +1,9 @@
 import { AbstractCursor, Collection, type Document, MongoClient } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
-import { Entity, Field, Id, Index, ManyToOne } from '../entity/index.js';
+import { Entity, Field, Id, Index, ManyToOne, Trigger } from '../entity/index.js';
 import { assertDefined, Item } from '../test/index.js';
+import { raw } from '../util/raw.js';
 import { MongoDialect } from './mongoDialect.js';
 import { MongodbQuerier } from './mongodbQuerier.js';
 
@@ -28,6 +29,20 @@ class Post {
   @ManyToOne({ entity: () => Author, references: (post) => post.authorId }) author?: Author;
   @Field({ references: () => Author }) reviewerId?: number | null;
   @ManyToOne({ entity: () => Author, references: (post) => post.reviewerId }) reviewer?: Author;
+}
+
+/** A trigger and a stamp, neither of which MongoDB can run. */
+@Trigger({ on: 'afterInsert', run: (newRow) => raw`PERFORM ${newRow.id};` })
+@Entity({ name: 'Triggered' })
+class Triggered {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) body?: string | null;
+}
+
+@Entity({ name: 'Stamped' })
+class Stamped {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Date, computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] }) readonly touchedAt?: Date | null;
 }
 
 /** Soft-deletable through a renamed column. */
@@ -73,6 +88,26 @@ function pipelineOf(calls: readonly (readonly [Document[]?, ...unknown[]])[], ca
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+// MongoDB has no triggers, so a write to an entity declaring one would silently skip it.
+describe('MongodbQuerier writes to an entity with triggers', () => {
+  it('should refuse an insert rather than skip the trigger', async () => {
+    const { querier } = createRecordingQuerier();
+    await expect(querier.insertOne(Triggered, { id: 1, body: 'a' })).rejects.toThrow(/'Triggered' declares triggers/);
+  });
+
+  it('should refuse an update, a delete and an upsert alike', async () => {
+    const { querier } = createRecordingQuerier();
+    await expect(querier.updateOneById(Triggered, 1, { body: 'b' })).rejects.toThrow(/declares triggers/);
+    await expect(querier.deleteOneById(Triggered, 1)).rejects.toThrow(/declares triggers/);
+    await expect(querier.upsertOne(Triggered, { id: true }, { id: 1, body: 'c' })).rejects.toThrow(/declares triggers/);
+  });
+
+  it('should refuse a write to an entity with a stamp, which is a trigger too', async () => {
+    const { querier } = createRecordingQuerier();
+    await expect(querier.insertOne(Stamped, { id: 1 })).rejects.toThrow(/'Stamped' declares triggers/);
+  });
 });
 
 /**

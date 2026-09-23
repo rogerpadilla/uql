@@ -246,9 +246,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $limit: 10,
       }),
     );
-    expect(res.sql).toBe(
-      'SELECT `id` FROM `User` WHERE `User` MATCH ? AND `name` IS NOT ? AND `companyId` = ? LIMIT 10',
-    );
+    expect(res.sql).toBe('SELECT `id` FROM `User` WHERE `User` MATCH ? AND `name` <> ? AND `companyId` = ? LIMIT 10');
     expect(res.values).toEqual(['{"name"} : ("something")', 'other unwanted', '1']);
   }
 
@@ -416,7 +414,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
       }),
     );
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') IS NOT ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') <> ?");
     expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.b') AS REAL) > CAST(? AS REAL)");
     expect(res.sql).toContain("CAST(JSON_EXTRACT(_uql_elem.value, '$.c') AS REAL) >= CAST(? AS REAL)");
     expect(res.sql).toContain("(_uql_elem.value -> '$.active') = JSON(?)");
@@ -476,7 +474,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) IS NOT CAST(? AS REAL)",
+      "SELECT `id` FROM `Company` WHERE CAST(JSON_EXTRACT(`kind`, '$.public') AS REAL) <> CAST(? AS REAL)",
     );
     expect(values).toEqual([0]);
   }

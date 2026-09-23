@@ -1,4 +1,4 @@
-import { type ColumnFamily, type FamilyOf, type FieldOptions, QueryRaw } from '../type/index.js';
+import { type ColumnFamily, type FamilyOf, type FieldOptions, QueryRaw, type StampEvent } from '../type/index.js';
 import { columnFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
 import { constantSql } from './raw.js';
@@ -101,7 +101,7 @@ function contradictsNotNull(opts: FieldOptions, key: keyof FieldOptions): boolea
 /** Whatever leaves `key` unread, named for the message, or `undefined` where the field reads it. */
 function deadOn(opts: FieldOptions, key: keyof FieldOptions): string | undefined {
   if (isInlinedExpression(opts) && !INLINE_READS.some((read) => read === key)) return 'an inlined computed field';
-  if (opts.stored === true && GENERATED_WRITES.some((write) => write === key)) return 'a stored computed column';
+  if (opts.stored && GENERATED_WRITES.some((write) => write === key)) return 'a column the database writes';
   if (opts.isId === true && contradictsNotNull(opts, key)) return 'a primary key';
   if (opts.updatable === false && key === 'onUpdate') return "a field declared 'updatable: false'";
   if (opts.columnType instanceof QueryRaw && TYPE_BOUNDS.some((bound) => bound === key)) {
@@ -151,7 +151,7 @@ type OptionsFamily<O> = O extends { readonly columnType: infer C }
 
 /** What the field's own values leave unread, matching {@link deadOn} line for line. */
 type DeadOptions<O> =
-  | (O extends { readonly stored: true }
+  | (O extends { readonly stored: true | readonly StampEvent[] }
       ? GeneratedWrite
       : O extends { readonly computed: QueryRaw }
         ? Exclude<keyof FieldOptions, InlineRead>

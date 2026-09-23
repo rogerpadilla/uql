@@ -1,5 +1,8 @@
 import type { MigrationStorage, QuerierPool, SqlQuerier } from '../../type/index.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
+import { expr } from '../builder/expressions.js';
+import { TableBuilder } from '../builder/tableBuilder.js';
+import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 /**
  * Migration metadata stored in the database
@@ -40,16 +43,18 @@ export class DatabaseMigrationStorage implements MigrationStorage {
     });
   }
 
+  /**
+   * Rendered by the schema generator rather than written out, so each engine gets its own spelling: SQL
+   * Server has no `CREATE TABLE IF NOT EXISTS`, and its `TIMESTAMP` is a row version that takes no default.
+   */
   private async createTableIfNotExists(querier: SqlQuerier): Promise<void> {
-    const { dialect } = querier;
-    const sql = /*sql*/ `
-      CREATE TABLE IF NOT EXISTS ${dialect.escapeId(this.tableName)} (
-        ${dialect.escapeId('name')} VARCHAR(255) PRIMARY KEY,
-        ${dialect.escapeId('executed_at')} TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-      )
-    `;
-
-    await querier.run(sql);
+    const table = new TableBuilder(this.tableName);
+    table.string('name', { length: 255, primaryKey: true });
+    table.timestamp('executed_at', { defaultValue: expr.now() });
+    const generator = new SqlSchemaGenerator(querier.dialect);
+    for (const sql of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
+      await querier.run(sql);
+    }
   }
 
   async executed(): Promise<string[]> {

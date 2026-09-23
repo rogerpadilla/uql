@@ -9,6 +9,7 @@ import {
   sortAggregateField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
+import { GROUP_OPS, groupClauses, isGroupOp } from '../dialect/operators.js';
 import {
   aggregateColumnField,
   groupPathField,
@@ -150,7 +151,6 @@ type UpdateGroups = {
 
 /** Default {@link DialectFeatures} for MongoDB. */
 export const mongoDialectFeatures: DialectFeatures = {
-  ifNotExists: false,
   indexIfNotExists: false,
   schemas: false, // the connection picks the database, and a collection name takes no dot
   dropTableCascade: false,
@@ -177,6 +177,83 @@ function declaredTypeName(type: unknown): string {
   return typeof type === 'function' ? type.name : String(type);
 }
 
+const ID_KEY = '_id';
+/** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
+const MAX_NUM_CANDIDATES = 10_000;
+
+/** Adds `expr` to `filter`'s `$expr`, `AND`ed with any already there. */
+function andExpr(filter: Record<string, unknown>, expr: Record<string, unknown>): void {
+  filter['$expr'] = filter['$expr'] ? { $and: [filter['$expr'], expr] } : expr;
+}
+
+/**
+ * `$size` against bounds, which MongoDB's own `$size` takes only as a number: the array at `path` counted
+ * in an `$expr`, which no other value satisfies. `$and` may evaluate every operand, so the count reads an
+ * empty array in place of any other value.
+ */
+function arraySize(path: string, size: Readonly<Record<string, unknown>>): Record<string, unknown> {
+  const value = `$${path}`;
+  const count = { $size: { $cond: [{ $isArray: value }, value, []] } };
+  return { $and: [{ $isArray: value }, compareCount(count, size)] };
+}
+
+/** `count` compared with `size`, a number or its bounds, as an aggregation expression. */
+function compareCount(count: unknown, size: number | Readonly<Record<string, unknown>>): Record<string, unknown> {
+  if (typeof size === 'number') {
+    return { $eq: [count, size] };
+  }
+  const comparisons: Record<string, unknown>[] = Object.entries(size)
+    .filter(([, bound]) => bound !== undefined)
+    .flatMap(([op, bound]): Record<string, unknown>[] =>
+      op === '$between' && Array.isArray(bound)
+        ? [{ $gte: [count, bound[0]] }, { $lte: [count, bound[1]] }]
+        : [{ [op]: [count, bound] }],
+    );
+  if (!comparisons.length) {
+    throw new UqlUsageError('$size needs at least one comparison');
+  }
+  return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
+}
+
+/** String operators -> { pattern: (v) => regex, caseInsensitive } */
+const REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: boolean }>([
+  ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
+  ['$istartsWith', { wrap: (v) => `^${v}`, ci: true }],
+  ['$endsWith', { wrap: (v) => `${v}$`, ci: false }],
+  ['$iendsWith', { wrap: (v) => `${v}$`, ci: true }],
+  ['$includes', { wrap: (v) => String(v), ci: false }],
+  ['$iincludes', { wrap: (v) => String(v), ci: true }],
+  ['$like', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false }],
+  ['$ilike', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true }],
+]);
+
+/** MongoDB native operators - pass through as-is. */
+const NATIVE_OPS = new Set<MongoNativeOp>([
+  '$all',
+  '$size',
+  '$elemMatch',
+  '$eq',
+  '$ne',
+  '$lt',
+  '$lte',
+  '$gt',
+  '$gte',
+  '$in',
+  '$nin',
+  '$regex',
+  '$not',
+]);
+
+/** `1` where `ref` holds a value, `0` where it is null or missing, which an expression tells apart. */
+function countOf(ref: string): Record<string, unknown> {
+  return { $cond: [isNullExpr(ref), 0, 1] };
+}
+
+/** Whether `ref` is null or missing: an expression compares a missing field as neither. */
+function isNullExpr(ref: string): Record<string, unknown> {
+  return { $eq: [{ $ifNull: [ref, null] }, null] };
+}
+
 export class MongoDialect extends AbstractDialect {
   override readonly features: DialectFeatures = mongoDialectFeatures;
 
@@ -185,25 +262,21 @@ export class MongoDialect extends AbstractDialect {
   // The MongoDB driver reports the exact `_id` of every inserted document (`insertedIds`).
   override readonly insertIdSource = 'returning';
 
-  private static readonly ID_KEY = '_id';
-  /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
-  private static readonly MAX_NUM_CANDIDATES = 10_000;
-
   /**
    * MongoDB stores the primary key as `_id`; everything else resolves as usual. Projections, sorts,
    * `$group` refs and `$where` keys all map through here, so no read path can address a property name
    * the document does not use.
    */
   override columnOf<E>(meta: EntityMeta<E>, key: string): string {
-    if (key === MongoDialect.ID_KEY) {
-      return MongoDialect.ID_KEY;
+    if (key === ID_KEY) {
+      return ID_KEY;
     }
     if (meta.fields[key]?.isId) {
       // A document has one `_id`. A composite key is a different document shape - a sub-document,
       // whose field order decides equality - rather than a translation, so it is refused here, which
       // every read reaches, and in `getPersistables`, which every write reaches.
       assertSoleId(meta, 'MongoDB');
-      return MongoDialect.ID_KEY;
+      return ID_KEY;
     }
     return super.columnOf(meta, key);
   }
@@ -253,7 +326,7 @@ export class MongoDialect extends AbstractDialect {
     for (const [rawKey, rawVal] of Object.entries(where)) {
       let key = rawKey;
       let val: unknown = rawVal;
-      if (MongoDialect.isGroupOp(key)) {
+      if (isGroupOp(key)) {
         this.appendLogicalOperator(filter, entity, key, val as QueryWhereArray<E>, lookups);
       } else if (key === '$text') {
         // MongoDB's text index declares which fields it covers, so `$fields` cannot narrow the search
@@ -277,7 +350,7 @@ export class MongoDialect extends AbstractDialect {
         }
         const isReference = !!meta.fields[key]?.references;
         key = this.pathOf(meta, key);
-        if ((key === MongoDialect.ID_KEY || isReference) && !isOperatorObject(val)) {
+        if ((key === ID_KEY || isReference) && !isOperatorObject(val)) {
           val = this.toWireId(val);
         }
         if (!isOperatorObject(val)) {
@@ -289,7 +362,7 @@ export class MongoDialect extends AbstractDialect {
         if (!isRecord(size)) {
           filter[key] = this.transformOperators(val);
         } else {
-          MongoDialect.andExpr(filter, MongoDialect.arraySize(key, size));
+          andExpr(filter, arraySize(key, size));
           if (hasKeys(ops)) {
             filter[key] = this.transformOperators(ops);
           }
@@ -310,8 +383,8 @@ export class MongoDialect extends AbstractDialect {
     val: QueryWhereArray<E>,
     lookups?: RelationLookups,
   ): void {
-    const { join, negate } = MongoDialect.GROUP_OPS[key];
-    const parts = MongoDialect.groupClauses(key, val)
+    const { join, negate } = GROUP_OPS[key];
+    const parts = groupClauses(key, val)
       .map((filterIt) => {
         this.assertNoRaw(filterIt);
         return this.renderFilter(entity, filterIt, lookups);
@@ -353,24 +426,8 @@ export class MongoDialect extends AbstractDialect {
     if (sizeVal === undefined) {
       filter[`${temp}.0`] = { $exists: true };
     } else {
-      MongoDialect.andExpr(filter, MongoDialect.compareCount(this.tally(temp), sizeVal));
+      andExpr(filter, compareCount(this.tally(temp), sizeVal));
     }
-  }
-
-  /** Adds `expr` to `filter`'s `$expr`, `AND`ed with any already there. */
-  private static andExpr(filter: Record<string, unknown>, expr: Record<string, unknown>): void {
-    filter['$expr'] = filter['$expr'] ? { $and: [filter['$expr'], expr] } : expr;
-  }
-
-  /**
-   * `$size` against bounds, which MongoDB's own `$size` takes only as a number: the array at `path` counted
-   * in an `$expr`, which no other value satisfies. `$and` may evaluate every operand, so the count reads an
-   * empty array in place of any other value.
-   */
-  private static arraySize(path: string, size: Readonly<Record<string, unknown>>): Record<string, unknown> {
-    const value = `$${path}`;
-    const count = { $size: { $cond: [{ $isArray: value }, value, []] } };
-    return { $and: [{ $isArray: value }, MongoDialect.compareCount(count, size)] };
   }
 
   /**
@@ -401,7 +458,7 @@ export class MongoDialect extends AbstractDialect {
       $lookup: {
         from,
         localField: junction.target,
-        foreignField: MongoDialect.ID_KEY,
+        foreignField: ID_KEY,
         pipeline: [...targetMatch, { $limit: 1 }],
         as: REL_NESTED_KEY,
       },
@@ -435,33 +492,12 @@ export class MongoDialect extends AbstractDialect {
     return {
       lookup: {
         from: this.resolveTableName(throughMeta),
-        localField: MongoDialect.ID_KEY,
+        localField: ID_KEY,
         foreignField: this.columnOf(throughMeta, parentJoin.joined),
       },
       scope: hasKeys(scope) ? [{ $match: scope }] : [],
       target: this.columnOf(throughMeta, targetColumn),
     };
-  }
-
-  /** `count` compared with `size`, a number or its bounds, as an aggregation expression. */
-  private static compareCount(
-    count: unknown,
-    size: number | Readonly<Record<string, unknown>>,
-  ): Record<string, unknown> {
-    if (typeof size === 'number') {
-      return { $eq: [count, size] };
-    }
-    const comparisons: Record<string, unknown>[] = Object.entries(size)
-      .filter(([, bound]) => bound !== undefined)
-      .flatMap(([op, bound]): Record<string, unknown>[] =>
-        op === '$between' && Array.isArray(bound)
-          ? [{ $gte: [count, bound[0]] }, { $lte: [count, bound[1]] }]
-          : [{ [op]: [count, bound] }],
-      );
-    if (!comparisons.length) {
-      throw new UqlUsageError('$size needs at least one comparison');
-    }
-    return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
   }
 
   /** Whether a query subtracts `key` from the projection, via `$exclude` or a negative `$select`. */
@@ -484,40 +520,11 @@ export class MongoDialect extends AbstractDialect {
    */
   private assertKnownPathRoot<E>(meta: EntityMeta<E>, key: string): void {
     const root = key.includes('.') ? key.slice(0, key.indexOf('.')) : key;
-    if (root === MongoDialect.ID_KEY || meta.fields[root]) {
+    if (root === ID_KEY || meta.fields[root]) {
       return;
     }
     throw new UqlUsageError(`path ${key} does not exist in ${entityName(meta)}`);
   }
-
-  /** String operators -> { pattern: (v) => regex, caseInsensitive } */
-  private static readonly REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: boolean }>([
-    ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
-    ['$istartsWith', { wrap: (v) => `^${v}`, ci: true }],
-    ['$endsWith', { wrap: (v) => `${v}$`, ci: false }],
-    ['$iendsWith', { wrap: (v) => `${v}$`, ci: true }],
-    ['$includes', { wrap: (v) => String(v), ci: false }],
-    ['$iincludes', { wrap: (v) => String(v), ci: true }],
-    ['$like', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false }],
-    ['$ilike', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true }],
-  ]);
-
-  /** MongoDB native operators - pass through as-is. */
-  private static readonly NATIVE_OPS = new Set<MongoNativeOp>([
-    '$all',
-    '$size',
-    '$elemMatch',
-    '$eq',
-    '$ne',
-    '$lt',
-    '$lte',
-    '$gt',
-    '$gte',
-    '$in',
-    '$nin',
-    '$regex',
-    '$not',
-  ]);
 
   /**
    * Transform UQL operators to MongoDB operators.
@@ -532,6 +539,11 @@ export class MongoDialect extends AbstractDialect {
         result[op] = this.held(val);
         continue;
       }
+      // `$not` wraps a condition too, so a uql-only operator inside it (`$isNull`, `$startsWith`) is mapped.
+      if (op === '$not' && isOperatorObject(val)) {
+        result[op] = this.transformOperators(val);
+        continue;
+      }
       // An object or an array is matched by what it holds, as the SQL engines read it, where native `$all`
       // compares the whole element. MongoDB takes `$elemMatch` there only when every value is one.
       if (op === '$all' && Array.isArray(val) && val.some((value) => Array.isArray(value) || isOperatorMap(value))) {
@@ -539,12 +551,12 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
       // Native MongoDB operators - pass through directly
-      if (MongoDialect.NATIVE_OPS.has(op as MongoNativeOp)) {
+      if (NATIVE_OPS.has(op as MongoNativeOp)) {
         result[op] = val;
         continue;
       }
       // String/pattern -> regex operators (8 variants including $like/$ilike)
-      const regexEntry = MongoDialect.REGEX_OP_MAP.get(op as QueryLikeOp);
+      const regexEntry = REGEX_OP_MAP.get(op as QueryLikeOp);
       if (regexEntry) {
         result['$regex'] = regexEntry.wrap(val);
         if (regexEntry.ci) result['$options'] = 'i';
@@ -650,7 +662,7 @@ export class MongoDialect extends AbstractDialect {
     // `_id: 0` - the one inclusion/exclusion mix MongoDB allows - or `$exclude: { id: true }` would
     // have no effect at all.
     if (this.subtractsKey(soleIdOf(meta, 'MongoDB'), selectMap, exclude)) {
-      projection[MongoDialect.ID_KEY] = 0;
+      projection[ID_KEY] = 0;
     }
     return projection;
   }
@@ -933,7 +945,7 @@ export class MongoDialect extends AbstractDialect {
         $lookup: {
           from,
           localField: `${temp}.${junction.target}`,
-          foreignField: MongoDialect.ID_KEY,
+          foreignField: ID_KEY,
           ...pipeline,
           as: relKey,
         },
@@ -1142,7 +1154,7 @@ export class MongoDialect extends AbstractDialect {
       const relationProjection = this.pipelineProjection(join.entity, join.query);
       // MongoDB returns `_id` unless a projection subtracts it, so dropping the key from the map is
       // how a joined document keeps its own id, as it does on the SQL dialects.
-      delete relationProjection?.[MongoDialect.ID_KEY];
+      delete relationProjection?.[ID_KEY];
 
       const lookupPipeline = [
         ...(hasKeys(relationFilter) ? [{ $match: relationFilter }] : []),
@@ -1184,9 +1196,9 @@ export class MongoDialect extends AbstractDialect {
       // rows of every key that agrees on it. The other branch is refused by `columnOf` below, whose
       // key *is* an id column; this one names a plain foreign key, so it has to say so itself.
       assertSoleId(relMeta, 'MongoDB');
-      return { localField: this.columnOf(meta, relOpts.references[0].local), foreignField: MongoDialect.ID_KEY };
+      return { localField: this.columnOf(meta, relOpts.references[0].local), foreignField: ID_KEY };
     }
-    return { localField: MongoDialect.ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
+    return { localField: ID_KEY, foreignField: this.columnOf(relMeta, relOpts.references[0].foreign) };
   }
 
   /** `[column, key]` for the fields whose stored name differs from their property name, memoized per entity. */
@@ -1225,7 +1237,7 @@ export class MongoDialect extends AbstractDialect {
     }
 
     const res = doc as Record<string, unknown>;
-    const _id = MongoDialect.ID_KEY;
+    const _id = ID_KEY;
 
     // `!== undefined`, not truthiness: `0` is a key MongoDB accepts and a truthy test dropped it.
     if (res[_id] !== undefined) {
@@ -1425,7 +1437,7 @@ export class MongoDialect extends AbstractDialect {
         // Nothing named the key, so the database is being asked to mint one.
         this.assertMintableKey(meta, fieldOf(meta, idKey));
       }
-      const doc: Record<string, unknown> = named ? { [MongoDialect.ID_KEY]: this.toWireId(it[idKey]) } : {};
+      const doc: Record<string, unknown> = named ? { [ID_KEY]: this.toWireId(it[idKey]) } : {};
       for (const key of filterFieldKeys(meta, it, callbackKey)) {
         if (key === idKey) continue;
         const field = meta.fields[key]!;
@@ -1534,29 +1546,19 @@ export class MongoDialect extends AbstractDialect {
         columns[entry.alias] = { $size: `$${entry.alias}` };
       } else if (entry.op === '$count') {
         // COUNT(field) counts the non-null values, as SQL does.
-        accumulators[entry.alias] = { $sum: read(MongoDialect.countOf(ref), 0) };
+        accumulators[entry.alias] = { $sum: read(countOf(ref), 0) };
       } else {
         // `$sum`, `$avg`, `$min` and `$max` are MongoDB accumulators of the same name, and skip a null.
         accumulators[entry.alias] = { [entry.op]: read(ref, null) };
       }
       if (entry.op === '$sum' && !entry.distinct) {
         const counted = `${SUM_COUNT_ALIAS}_${entry.alias}`;
-        accumulators[counted] = { $sum: read(MongoDialect.countOf(ref), 0) };
+        accumulators[counted] = { $sum: read(countOf(ref), 0) };
         columns[entry.alias] = { $cond: [{ $eq: [`$${counted}`, 0] }, null, `$${entry.alias}`] };
       }
     }
 
     return { groupId, accumulators, columns, named };
-  }
-
-  /** `1` where `ref` holds a value, `0` where it is null or missing, which an expression tells apart. */
-  private static countOf(ref: string): Record<string, unknown> {
-    return { $cond: [MongoDialect.isNullExpr(ref), 0, 1] };
-  }
-
-  /** Whether `ref` is null or missing: an expression compares a missing field as neither. */
-  private static isNullExpr(ref: string): Record<string, unknown> {
-    return { $eq: [{ $ifNull: [ref, null] }, null] };
   }
 
   /** The field a grouped path reads, on the document or on the joined one its lookup unwound. */
@@ -1583,9 +1585,9 @@ export class MongoDialect extends AbstractDialect {
     const terms = getKeys(where)
       .filter((key) => where[key] !== undefined)
       .map((key): unknown => {
-        if (MongoDialect.isGroupOp(key)) {
-          const { join, negate } = MongoDialect.GROUP_OPS[key];
-          const clauses = MongoDialect.groupClauses(key, where[key]).map((clause) => {
+        if (isGroupOp(key)) {
+          const { join, negate } = GROUP_OPS[key];
+          const clauses = groupClauses(key, where[key]).map((clause) => {
             if (clause instanceof QueryRaw) {
               throw new UqlUsageError('raw SQL is not supported in an aggregate $where on MongoDB');
             }
@@ -1600,7 +1602,7 @@ export class MongoDialect extends AbstractDialect {
         named.push(key);
         const path = this.pathOf(meta, key);
         const wire = (value: unknown) =>
-          path === MongoDialect.ID_KEY || meta.fields[key]?.references ? this.toWireId(value) : value;
+          path === ID_KEY || meta.fields[key]?.references ? this.toWireId(value) : value;
         return this.fieldExpression(`$${path}`, val, wire);
       });
     return terms.length === 1 ? terms[0] : { $and: terms };
@@ -1608,12 +1610,12 @@ export class MongoDialect extends AbstractDialect {
 
   /** One field's condition as an expression: a value it equals, a list it is in, or a map of comparisons. */
   private fieldExpression(ref: string, val: unknown, wire: (value: unknown) => unknown): unknown {
-    const equals = (value: unknown) => (value === null ? MongoDialect.isNullExpr(ref) : { $eq: [ref, wire(value)] });
+    const equals = (value: unknown) => (value === null ? isNullExpr(ref) : { $eq: [ref, wire(value)] });
     if (!isOperatorMap(val)) {
       return Array.isArray(val) ? { $in: [ref, wire(val)] } : equals(val);
     }
     // A null or missing field compares below every value in an expression, where SQL leaves it unmatched.
-    const present = { $not: [MongoDialect.isNullExpr(ref)] };
+    const present = { $not: [isNullExpr(ref)] };
     const terms = Object.entries(val).map(([op, operand]): unknown => {
       switch (op) {
         case '$eq':
@@ -1635,9 +1637,9 @@ export class MongoDialect extends AbstractDialect {
           return { $and: [{ $gte: [ref, wire(min)] }, { $lte: [ref, wire(max)] }] };
         }
         case '$isNull':
-          return operand ? MongoDialect.isNullExpr(ref) : present;
+          return operand ? isNullExpr(ref) : present;
         case '$isNotNull':
-          return operand ? present : MongoDialect.isNullExpr(ref);
+          return operand ? present : isNullExpr(ref);
         default:
           throw new UqlUsageError(`aggregate $where operator '${op}' is not supported on MongoDB`);
       }
@@ -1720,7 +1722,7 @@ export class MongoDialect extends AbstractDialect {
       queryVector: [...search.$vector],
       // `$candidates` is the caller's own budget; the fallback is 10x the limit, which is what Atlas
       // suggests as a floor. Either way it is clamped: Atlas rejects a stage asking for more.
-      numCandidates: Math.min(candidates ?? limit * 10, MongoDialect.MAX_NUM_CANDIDATES),
+      numCandidates: Math.min(candidates ?? limit * 10, MAX_NUM_CANDIDATES),
       limit,
     };
 

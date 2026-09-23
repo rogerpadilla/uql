@@ -1,31 +1,21 @@
-import { fieldOf, foreignKeysOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
-import type { EntityGetter } from '../type/entity.js';
+import { fieldOf, foreignKeysOf, getMeta } from '../entity/metadata/definition.js';
 import type {
   EntityIndexColumn,
   EntityIndexMeta,
   EntityMeta,
   EntityWhereMeta,
-  FieldMeta,
   FieldOptions,
   Type,
 } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
-import { isInlinedExpression } from '../util/field.util.js';
-import { isSoleIdField } from '../util/field.util.js';
-import { isAutoIncrement } from '../util/field.util.js';
+import { isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
-import { fieldOptionsToCanonical } from './canonicalType.js';
+import { resolveColumnCanonicalType } from './canonicalType.js';
 import { createTableNode, SchemaAST } from './schemaAST.js';
-import {
-  type CanonicalType,
-  type ColumnNode,
-  DEFAULT_FOREIGN_KEY_ACTION,
-  type ForeignKeyAction,
-  type TableNode,
-} from './types.js';
+import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
 
 /**
  * Options for building SchemaAST from entities.
@@ -103,20 +93,6 @@ function refuseDdl(): string {
 }
 
 /**
- * A field's canonical type, taken from the referenced key where the field gave `references` and no
- * `type` (`typeFromReference`), so a foreign key matches the key it points at; `columnType` always wins.
- */
-export function resolveColumnCanonicalType(field: FieldMeta, seen: Set<EntityGetter> = new Set()): CanonicalType {
-  const hasExplicitType = !!field.columnType || !field.typeFromReference;
-  if (!hasExplicitType && field.references && !seen.has(field.references)) {
-    seen.add(field.references);
-    const referencedMeta = getMeta(field.references());
-    return resolveColumnCanonicalType(fieldOf(referencedMeta, soleIdOf(referencedMeta, 'a foreign key')), seen);
-  }
-  return fieldOptionsToCanonical(field);
-}
-
-/**
  * Add a table from entity metadata.
  */
 function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
@@ -148,7 +124,8 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
-      generatedAs: field.computed && ctx.compileDdl(field.computed, meta.entity),
+      // A stamp is filled by a trigger, so it is a column like any other; only `stored: true` generates.
+      generatedAs: field.stored === true && field.computed ? ctx.compileDdl(field.computed, meta.entity) : undefined,
       comment: field.comment,
       enum: field.enum,
       table,

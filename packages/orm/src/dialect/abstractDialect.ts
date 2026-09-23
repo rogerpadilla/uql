@@ -9,11 +9,8 @@ import type {
   InsertIdSource,
   NamingStrategy,
   Query,
-  QueryGroupOp,
-  QueryJoinOp,
   QueryOptions,
   QueryWhere,
-  QueryWhereArray,
   Type,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
@@ -22,6 +19,7 @@ import { applyFilters, assertWhere } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
 import { qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
+import { groupClauses, isGroupOp } from './operators.js';
 
 /**
  * Options for initializing a dialect.
@@ -157,34 +155,6 @@ export abstract class AbstractDialect {
   }
 
   /**
-   * How each grouping operator renders: the operator joining its clauses, and whether the group is
-   * negated (`$not` is `NOT (a AND b)`). Total over {@link QueryGroupOp}.
-   */
-  protected static readonly GROUP_OPS = {
-    $and: { join: '$and', negate: false },
-    $or: { join: '$or', negate: false },
-    $not: { join: '$and', negate: true },
-    $nor: { join: '$or', negate: true },
-  } as const satisfies Record<QueryGroupOp, { readonly join: QueryJoinOp; readonly negate: boolean }>;
-
-  /** Whether a `$where` key groups clauses, narrowing it for the renderers that read {@link GROUP_OPS}. */
-  protected static isGroupOp(key: string): key is QueryGroupOp {
-    return Object.hasOwn(AbstractDialect.GROUP_OPS, key);
-  }
-
-  /**
-   * A group operator's clauses, rejecting what the types do not cover: `/http` casts client JSON
-   * straight to `Query`, so a scalar can arrive where an array belongs. Shared so both backends
-   * refuse the same payload rather than one throwing and the other failing further in.
-   */
-  protected static groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | undefined): QueryWhereArray<E> {
-    if (val !== undefined && !Array.isArray(val)) {
-      throw new UqlUsageError(`${key} expects an array, got ${val === null ? 'null' : typeof val}`);
-    }
-    return val ?? [];
-  }
-
-  /**
    * Whether a `$where` reads a relation at any depth: filters by one, or by a relation aggregate. What
    * cannot host that read - a MongoDB filter, a write without {@link DialectFeatures.correlatedWrites} -
    * has the rows it names read first.
@@ -195,10 +165,8 @@ export abstract class AbstractDialect {
     }
     const meta = getMeta(entity);
     return someKey(where, (key) =>
-      AbstractDialect.isGroupOp(key)
-        ? AbstractDialect.groupClauses(key, where[key]).some(
-            (it) => !(it instanceof QueryRaw) && this.constrainsRelations(entity, it),
-          )
+      isGroupOp(key)
+        ? groupClauses(key, where[key]).some((it) => !(it instanceof QueryRaw) && this.constrainsRelations(entity, it))
         : !!meta.relations[key] || aggregateOf(meta.fields[key]) !== undefined,
     );
   }

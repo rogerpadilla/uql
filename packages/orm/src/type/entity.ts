@@ -1,8 +1,20 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
+import type { SqlDialectName } from './dialect.js';
 import type { FilterOptions, RelationQuery } from './query.js';
 import type { ColumnRef, QueryRaw, RelationAggregate } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
-import type { Except, ExactlyOne, IsEqual, IsMany, Json, Scalar, Type, Unpacked, Writable } from './utility.js';
+import type {
+  AtLeastOne,
+  Except,
+  ExactlyOne,
+  IsEqual,
+  IsMany,
+  Json,
+  Scalar,
+  Type,
+  Unpacked,
+  Writable,
+} from './utility.js';
 import type { VectorDistance, VectorIndexOptions, VectorIndexType } from './vector.js';
 
 /** Brands the property an entity is identified by, where it is not `id`, `_id` or `uuid`. */
@@ -382,8 +394,12 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
    * subquery a `$count` reads. Both resolve to SQL at registration, so everything downstream sees one.
    */
   readonly computed?: ComputedSql<E>;
-  /** Whether {@link FieldOptions.computed} is a generated column rather than spliced into each read; no query changes either way. */
-  readonly stored?: boolean;
+  /**
+   * Where {@link FieldOptions.computed} lives instead of being spliced into each read. `true` makes it a
+   * generated column, which takes only an immutable expression; a list of events makes it a stamp a trigger
+   * writes on each, whoever writes the row - how `CURRENT_TIMESTAMP` is kept, where `onUpdate` sees only uql's writes.
+   */
+  readonly stored?: boolean | readonly StampEvent[];
   readonly updatable?: boolean;
   readonly eager?: boolean;
   readonly onInsert?: OnFieldCallback<V>;
@@ -878,11 +894,114 @@ export type EntityMeta<E> = {
   checks?: EntityCheckMeta<E>[];
   /** Lifecycle hooks registered via @BeforeInsert, @AfterUpdate, etc. */
   hooks?: Partial<Record<HookEvent, HookRegistration[]>>;
+  /** Triggers the database runs, compiled when the schema is built. */
+  triggers?: EntityTriggerMeta<E>[];
   /** Bumped by every `define*` call, so what is derived from the metadata can tell it changed. */
   revision: number;
   /** The revision `getMeta` last finalized, which is what makes finalizing idempotent and re-entrant. */
   processedAt?: number;
 };
+
+/** When the database writes a stamp: as the row is inserted, as it is updated, or both. */
+export type StampEvent = 'insert' | 'update';
+
+/**
+ * The events a trigger fires on: the lifecycle names, minus the upsert pair, which names no event of its
+ * own because `ON CONFLICT` fires the insert or the update triggers, and minus `afterLoad`, which is a
+ * read. Derived from {@link HookEvent} so the two vocabularies cannot drift.
+ */
+export type TriggerEvent = Exclude<HookEvent, 'beforeUpsert' | 'afterUpsert' | 'afterLoad'>;
+
+/** Both events for one operation, since a trigger's timing never changes which rows it has. */
+type TriggerEventOn<Op extends string> = Extract<TriggerEvent, `before${Op}` | `after${Op}`>;
+
+/** The events with a row on both sides, the only ones that can say which columns moved. */
+type TriggerUpdateEvent = TriggerEventOn<'Update'>;
+
+/**
+ * The rows an event has, as `where` keys them: the incoming one on an insert, the outgoing one on a
+ * delete, both on an update.
+ */
+type TriggerRow<Ev extends TriggerEvent> =
+  Ev extends TriggerEventOn<'Insert'> ? '$new' : Ev extends TriggerEventOn<'Delete'> ? '$old' : '$new' | '$old';
+
+/** One row's refs, rendering `NEW."col"` or `OLD."col"`, or `never` where the event has no such row. */
+type TriggerRowRefs<E, Ev extends TriggerEvent, R extends '$new' | '$old'> =
+  R extends TriggerRow<Ev> ? RefMap<E> : never;
+
+/**
+ * What a trigger runs, over its rows: the incoming row first and the outgoing one second, on every event.
+ * The one an event lacks is `never`, so reading it does not compile, and a body reading only the outgoing
+ * row - `(_newRow, oldRow)` - serves an update and a delete alike.
+ */
+type TriggerBody<E, Ev extends TriggerEvent> = (
+  newRow: TriggerRowRefs<E, Ev, '$new'>,
+  oldRow: TriggerRowRefs<E, Ev, '$old'>,
+) => QueryRaw;
+
+/**
+ * A condition as data: a predicate on each row it names, of the rows the event has, all of which hold.
+ * The row is `$`-marked, as the operators inside it are, so it never reads as a field of the entity.
+ */
+type TriggerPredicate<E, Ev extends TriggerEvent> = {
+  readonly [R in TriggerRow<Ev>]?: EntityPredicate<E>;
+};
+
+/**
+ * The body, the engine's own SQL: one for every engine it reads alike, or a map naming one per engine
+ * where they differ, as SQL Server's set-based `inserted`/`deleted` does. A missing entry for the engine
+ * in use is refused at `sync`, since an entity is declared without knowing which pool will render it.
+ */
+type TriggerRun<E, Ev extends TriggerEvent> =
+  | TriggerBody<E, Ev>
+  | Readonly<AtLeastOne<Record<SqlDialectName, TriggerBody<E, Ev>>>>;
+
+/**
+ * A trigger, `{ on: 'beforeUpdate', of: (post) => [post.body], run: (newRow) => raw`...` }`.
+ *
+ * A list rather than a map keyed by the event, as `checks` and `indexes` are lists: several triggers may
+ * share an event, they fire in the order written, and each is named, diffed and dropped by that name.
+ */
+export type TriggerOptions<E = unknown> = {
+  [Ev in TriggerEvent]: {
+    readonly on: Ev;
+    /**
+     * What to call this trigger within the entity, for a clearer identifier than its event and position.
+     * A label, not the identifier: uql prefixes and qualifies what it installs, so it can tell its own
+     * objects from hand-written ones and two entities may share a label.
+     */
+    readonly name?: string;
+    /**
+     * The columns whose change the trigger waits for, reading as the `UPDATE OF` it renders. Beside it
+     * goes a `WHEN` comparing each with `IS DISTINCT FROM`, which is the point of the pair: `UPDATE OF`
+     * fires on a column that was merely assigned, and the comparison narrows that to one that moved.
+     */
+    readonly of?: Ev extends TriggerUpdateEvent ? (refs: RefMap<E>) => readonly ColumnRef<string>[] : never;
+    /**
+     * A further condition, as the `WHEN` the engine evaluates before entering the body, over the rows the
+     * body reads: a predicate on each, `{ $old: { status: 'draft' }, $new: { status: 'published' } }`,
+     * rendered on every engine from the one declaration, or SQL off them for what no predicate states.
+     */
+    readonly where?: TriggerPredicate<E, Ev> | TriggerBody<E, Ev>;
+    readonly run: TriggerRun<E, Ev>;
+  };
+}[TriggerEvent];
+
+/**
+ * A trigger as entity metadata keeps it: the column callback resolved to keys, and a body widened to
+ * take both rows, which the renderer passes whatever the event, each body reading only its own.
+ */
+export type EntityTriggerMeta<E = object> = Except<TriggerOptions<E>, 'of' | 'where' | 'run'> & {
+  readonly of?: readonly string[];
+  readonly where?: TriggerPredicate<E, TriggerUpdateEvent> | TriggerMetaBody<E>;
+  readonly run: TriggerMetaBody<E> | Readonly<Partial<Record<SqlDialectName, TriggerMetaBody<E>>>>;
+};
+
+/**
+ * A body as the renderer calls it, with both rows whatever the event. Bivariant, as {@link EntitySql} is,
+ * so a body typing the row its event lacks as `never` is still held here.
+ */
+export type TriggerMetaBody<E> = { run(newRow: RefMap<E>, oldRow: RefMap<E>): QueryRaw }['run'];
 
 /**
  * A table's `CHECK`, `{ where: { balance: { $gte: 0 } } }`, or SQL off the refs,
@@ -930,6 +1049,8 @@ export type EntityOptions<E = unknown> = {
   readonly checks?: readonly CheckOptions<E>[];
   /** Each lifecycle event and the methods it runs, read off the key map: `{ beforeInsert: (post) => [post.stamp] }`. */
   readonly hooks?: Partial<Record<HookEvent, (keys: KeyMap<E>) => readonly MethodKey<E>[]>>;
+  /** Triggers the database runs, in the order written. See {@link TriggerOptions}. */
+  readonly triggers?: readonly TriggerOptions<E>[];
 };
 
 /**
