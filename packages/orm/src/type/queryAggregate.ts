@@ -1,5 +1,5 @@
 import { UqlUsageError } from '../util/uqlError.js';
-import type { FieldKey, RelationKey, RelationTarget } from './entity.js';
+import type { FieldKey, FieldKeyOf, RelationKey, RelationTarget } from './entity.js';
 import type { QueryPager, QuerySelect, QuerySortDirection } from './query.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere, QueryWhereFieldValue } from './queryWhere.js';
@@ -60,14 +60,6 @@ export type QueryFieldRef<E, F extends keyof E = FieldKey<E>> = ExactlyOne<Requi
 /** The argument of an aggregate function: a field, or `'*'` (only meaningful for `COUNT(*)`). */
 export type QueryAggregateArg<E> = QueryFieldRef<E> | '*';
 
-/**
- * Fields `SUM`/`AVG` can total. Restricted to numeric columns because totalling a text or date one is
- * either an engine error or a coercion, and neither produces the value the signature promises.
- */
-type NumericFieldKey<E> = {
-  readonly [K in FieldKey<E>]: [NonNullable<E[K]>] extends [number | bigint] ? K : never;
-}[FieldKey<E>];
-
 /** Every aggregate op, plain and DISTINCT-qualified. */
 type AggregateOp = QueryAggregateOp | QueryAggregateDistinctOp;
 
@@ -89,10 +81,11 @@ type TotallingOp = SummingOp | AveragingOp;
 
 /**
  * Every aggregate op mapped to the argument it accepts: `$count` a field or `'*'` (`COUNT(*)`),
- * the totalling ops a numeric field, `$min`/`$max`/`$countDistinct` any field.
+ * the totalling ops a numeric field, since totalling any other is an engine error or a coercion,
+ * and `$min`/`$max`/`$countDistinct` any field.
  */
 type QueryAggregateArgMap<E> = Record<'$count', QueryAggregateArg<E>> &
-  Record<TotallingOp, QueryFieldRef<E, NumericFieldKey<E>>> &
+  Record<TotallingOp, QueryFieldRef<E, FieldKeyOf<E, number | bigint>>> &
   Record<Exclude<AggregateOp, '$count' | TotallingOp>, QueryFieldRef<E>>;
 
 /**

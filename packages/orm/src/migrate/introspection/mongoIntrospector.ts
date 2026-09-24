@@ -10,6 +10,7 @@ import {
   type SchemaIntrospector,
   type TableSchema,
 } from '../../type/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 
 /** The parts of a Mongo index description this introspector reads. */
 type MongoIndex = {
@@ -117,7 +118,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   private withDb<T>(task: (db: MongoQuerier['db']) => Promise<T>): Promise<T> {
     return this.pool.withQuerier((querier) => {
       if (!isMongoQuerier(querier)) {
-        throw new TypeError('MongoSchemaIntrospector requires a MongoDB querier');
+        throw new UqlUsageError('MongoSchemaIntrospector requires a MongoDB querier');
       }
       return task(querier.db);
     });

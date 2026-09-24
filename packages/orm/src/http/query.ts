@@ -43,7 +43,7 @@ const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery
  * Parse raw query-string entries (with JSON-stringified values) into a UQL query object.
  * Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
  */
-export function parseQueryParams(params: Record<string, unknown> = {}): WireQuery<unknown> {
+export function parseQueryParams<E = unknown>(params: Record<string, unknown> = {}): WireQuery<E> {
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
     if (REJECTED_QUERY_KEYS.has(key)) {
@@ -84,7 +84,7 @@ export function parseQueryParams(params: Record<string, unknown> = {}): WireQuer
     }
   }
 
-  return query as WireQuery<unknown>;
+  return query;
 }
 
 /**
@@ -120,11 +120,11 @@ export function wireJson(value: unknown): string {
       return held;
     }
     if (RAW_VALUE in held) {
-      throw new TypeError('raw SQL cannot travel over HTTP: what leaves the browser is JSON');
+      throw new UqlUsageError('raw SQL cannot travel over HTTP: what leaves the browser is JSON');
     }
     // A blob is a field value, so no type parameter reaches it: this is the only place it is caught.
     if (held instanceof ArrayBuffer || ArrayBuffer.isView(held)) {
-      throw new TypeError('binary cannot travel over HTTP: what leaves the browser is JSON');
+      throw new UqlUsageError('binary cannot travel over HTTP: what leaves the browser is JSON');
     }
     return held;
   });

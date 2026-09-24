@@ -2,8 +2,8 @@
 // guard is spelled three ways, the body lives in a function or inline, the rows arrive as records or as
 // tables, and only an engine that fires one says whether the emulation of any of that is right.
 //
-// The trigger writes to a second table on purpose. It is the one shape every engine allows: the MySQL
-// family refuses a trigger that updates the table it fires on, and SQL Server has no BEFORE to assign in.
+// Each body writes a second table, the one shape every engine allows (the MySQL family refuses a write to
+// the table firing, SQL Server has no BEFORE), and is written once, as `insertInto` and the like render it.
 
 import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
@@ -14,7 +14,7 @@ import { assertDefined } from '../test/index.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables, SQL_POOLS } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
@@ -22,12 +22,7 @@ import { Migrator } from './migrator.js';
   on: 'afterUpdate',
   of: (post) => [post.title],
   name: 'audit',
-  run: {
-    postgres: (newRow) => raw`INSERT INTO "TgAudit" ("postId") VALUES (${newRow.id});`,
-    mysql: (newRow) => raw`INSERT INTO \`TgAudit\` (\`postId\`) VALUES (${newRow.id});`,
-    sqlite: (newRow) => raw`INSERT INTO \`TgAudit\` (\`postId\`) VALUES (${newRow.id});`,
-    mssql: () => raw`INSERT INTO "TgAudit" ("postId") SELECT "id" FROM inserted;`,
-  },
+  run: (newRow) => insertInto(TgAudit, { postId: newRow.id }),
 })
 @Entity({ name: 'TgPost' })
 class TgPost {
@@ -55,14 +50,7 @@ describe.each(SQL_POOLS)('a trigger on %s', (_engine, connect) => {
     return [...(await introspectorFor(pool).ownedTriggers('TgPost')).keys()];
   };
 
-  const escapeId = (name: string) => pool.dialect.escapeId(name);
-
-  const audited = async (postId: unknown) => {
-    const rows = await pool.all(
-      `SELECT ${escapeId('postId')} FROM ${escapeId('TgAudit')} WHERE ${escapeId('postId')} = ${postId}`,
-    );
-    return rows.length;
-  };
+  const audited = (postId: TgAudit['postId']) => pool.count(TgAudit, { $where: { postId } });
 
   const tables = ['TgPost', 'TgAudit'] as const;
 
@@ -191,33 +179,47 @@ describe.each(SQL_POOLS)('a trigger on %s', (_engine, connect) => {
   });
 });
 
-// An insert trigger writing to a second table with its own generated key, whose counter runs ahead of
-// the first's: every engine has to hand back the ids of the rows the statement wrote, never the log's.
-@Trigger({
-  on: 'afterInsert',
-  name: 'log',
-  run: {
-    postgres: (newRow) => raw`INSERT INTO "TgLog" ("postId") VALUES (${newRow.id});`,
-    mysql: (newRow) => raw`INSERT INTO \`TgLog\` (\`postId\`) VALUES (${newRow.id});`,
-    sqlite: (newRow) => raw`INSERT INTO \`TgLog\` (\`postId\`) VALUES (${newRow.id});`,
-    mssql: () => raw`INSERT INTO "TgLog" ("postId") SELECT "id" FROM inserted;`,
+// Writing a second table with its own generated key, whose counter runs ahead of the first's: every
+// engine has to hand back the ids of the rows an insert wrote, never the log's. A statement touching
+// several rows is what tells SQL Server's one firing per statement from the others' one per row.
+@Trigger(
+  {
+    on: 'afterInsert',
+    name: 'log',
+    run: (newRow) => insertInto(TgLog, { postId: newRow.id, title: newRow.title, source: "it's" }),
   },
-})
+  {
+    on: 'afterUpdate',
+    name: 'relog',
+    run: (newRow) => updateTable(TgLog, { $where: { postId: newRow.id } }, { title: newRow.title }),
+  },
+  { on: 'afterDelete', name: 'unlog', run: (_newRow, oldRow) => deleteFrom(TgLog, { $where: { postId: oldRow.id } }) },
+)
 @Entity({ name: 'TgLogged' })
 class TgLogged {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) title?: string | null;
 }
 
+// A column named apart from its key, and a literal holding a quote, both carried into each engine's body.
 @Entity({ name: 'TgLog' })
 class TgLog {
   @Id({ type: Number }) id?: number;
-  @Field({ type: Number }) postId?: number | null;
+  @Field({ type: Number, name: 'post_id' }) postId?: number | null;
+  @Field({ type: String }) title?: string | null;
+  @Field({ type: String }) source?: string | null;
 }
 
-describe.each(SQL_POOLS)('an insert trigger writing a table of its own on %s', (_engine, connect) => {
+describe.each(SQL_POOLS)('triggers writing a table of their own on %s', (_engine, connect) => {
   let pool: SqlQuerierPool;
   const tables = ['TgLogged', 'TgLog'] as const;
+
+  const logsOf = (ids: TgLogged['id'][]) =>
+    pool.findMany(TgLog, {
+      $select: { postId: true, title: true, source: true },
+      $where: { postId: { $in: ids } },
+      $sort: { postId: 'asc' },
+    });
 
   beforeAll(async () => {
     pool = connect();
@@ -243,6 +245,26 @@ describe.each(SQL_POOLS)('an insert trigger writing a table of its own on %s', (
     const ids = await pool.insertMany(TgLogged, [{ title: 'a' }, { title: 'b' }, { title: 'c' }]);
     const rows = await pool.findMany(TgLogged, { $select: { id: true, title: true }, $where: { id: { $in: ids } } });
     expect(rows.map((row) => row.title).toSorted()).toEqual(['a', 'b', 'c']);
+  });
+
+  it('should insert a log for each row a statement inserted, reading each one', async () => {
+    const ids = await pool.insertMany(TgLogged, [{ title: 'a' }, { title: 'b' }]);
+    expect(await logsOf(ids)).toEqual([
+      { postId: ids[0], title: 'a', source: "it's" },
+      { postId: ids[1], title: 'b', source: "it's" },
+    ]);
+  });
+
+  it('should update the log of each row a statement updated, and no other', async () => {
+    const [kept, ...updated] = await pool.insertMany(TgLogged, [{ title: 'kept' }, { title: 'c' }, { title: 'd' }]);
+    await pool.updateMany(TgLogged, { $where: { id: { $in: updated } } }, { title: 'bulk' });
+    expect((await logsOf([kept, ...updated])).map((log) => log.title)).toEqual(['kept', 'bulk', 'bulk']);
+  });
+
+  it('should delete the log of each row a statement deleted, and no other', async () => {
+    const [kept, ...deleted] = await pool.insertMany(TgLogged, [{ title: 'kept' }, { title: 'e' }, { title: 'f' }]);
+    await pool.deleteMany(TgLogged, { $where: { id: { $in: deleted } } });
+    expect((await logsOf([kept, ...deleted])).map((log) => log.title)).toEqual(['kept']);
   });
 });
 

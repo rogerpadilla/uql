@@ -1,5 +1,6 @@
 import type { IndexColumnSchema, IndexSchema } from '../../type/index.js';
 import { indexDistance, isVectorIndexType, unsupportedVectorMetric } from '../../type/vector.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
 
 /**
@@ -34,7 +35,7 @@ export class SqliteIndexDdl extends IndexDdl {
     }
     // Its tables are named after the index, unquoted: any other name fails with "unable to initialize diskann".
     if (!/^\w+$/.test(index.name) || index.entries.length !== 1) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `libSQL names a vector index only by letters, digits and underscores, over one column (index "${index.name}")`,
       );
     }

@@ -1,7 +1,7 @@
 import { afterAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
-import { Entity, Field, Id, removeEntity } from '../entity/index.js';
+import { Entity, Field, Filter, Id, removeEntity } from '../entity/index.js';
 import { getMeta } from '../entity/metadata/definition.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
@@ -9,8 +9,9 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { idKey } from '../type/index.js';
-import type { EntityTriggerMeta } from '../type/index.js';
+import type { EntityTriggerMeta, Json } from '../type/index.js';
 import { raw } from '../util/raw.js';
+import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
 import { dropTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
 @Entity()
@@ -253,6 +254,17 @@ describe('the guard, however the engine states one', () => {
 });
 
 describe('the where guard', () => {
+  @Filter('tenant', { where: { tenantId: 7 }, security: true })
+  @Entity({ name: 'Scoped' })
+  class Scoped {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number }) tenantId?: number | null;
+    @Field({ type: String }) status?: string | null;
+    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  }
+
+  afterAll(() => removeEntity(Scoped));
+
   const archived: EntityTriggerMeta<Post> = { ...stamp, where: (newRow) => raw`${newRow.body} IS NOT NULL` };
 
   it('should read the row it names, as the body does', () => {
@@ -326,6 +338,17 @@ describe('the where guard', () => {
     }).join('\n');
     expect(sql).toContain('IF NEW.`body` IS NOT NULL THEN');
   });
+
+  // A filter scopes what a request reads, and a trigger serves no request: its guard holds what it states.
+  it('should apply no entity filter, a soft delete or a security one', () => {
+    const trigger: EntityTriggerMeta<Scoped> = {
+      on: 'afterUpdate',
+      where: { $new: { status: 'x' } },
+      run: () => raw`SELECT 1;`,
+    };
+    const sql = renderTrigger(new PostgresDialect(), getMeta(Scoped), trigger, 0).statements.join('\n');
+    expect(sql).toContain(`WHEN (NEW."status" = 'x')\n`);
+  });
 });
 
 describe('a stamp, which uql writes the body of', () => {
@@ -359,11 +382,11 @@ describe('a stamp, which uql writes the body of', () => {
     );
   });
 
-  // On a set-based engine the rows arrive as a table, which the `UPDATE` has to name before reading one.
+  // On a set-based engine the rows arrive as tables, which the `UPDATE` names as any write in the body does.
   it('should name the set in a FROM where the engine hands it a table', () => {
     expect(stampSql(new MsSqlDialect())).toContain(
-      'UPDATE "Note" SET "touched" = 1 FROM inserted WHERE "Note"."id" = inserted."id"' +
-        ' AND EXISTS (SELECT "Note"."touched" EXCEPT SELECT 1);',
+      'UPDATE "Note" SET "touched" = 1 FROM inserted JOIN deleted ON inserted."id" = deleted."id"' +
+        ' WHERE "Note"."id" = inserted."id" AND EXISTS (SELECT "Note"."touched" EXCEPT SELECT 1);',
     );
   });
 
@@ -499,5 +522,201 @@ describe('the rows it reads', () => {
 
   it('should refuse a body the engine in use has none of', () => {
     expect(() => render(new SqliteDialect(), stamp)).toThrow(/sqlite/);
+  });
+});
+
+describe('a write in the body, to another table', () => {
+  // Each option here is one a request's write applies and a trigger's must not: a security filter, a soft
+  // delete, a JavaScript fill standing on a column default.
+  @Filter('tenant', { where: { tenantId: 7 }, security: true })
+  @Entity({ name: 'WriteAudit' })
+  class WriteAudit {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, name: 'post_id' }) postId?: number | null;
+    @Field({ type: String }) body?: string | null;
+    @Field({ type: Number, onInsert: () => 7, defaultValue: 0 }) hits?: number | null;
+    @Field({ type: 'jsonb' }) tags?: Json<{ list?: string[] }> | null;
+    @Field({ type: Number }) tenantId?: number | null;
+    @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+  }
+
+  @Entity({ name: 'UuidAudit' })
+  class UuidAudit {
+    @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
+    @Field({ type: Number }) postId?: number | null;
+  }
+
+  afterAll(() => {
+    removeEntity(WriteAudit);
+    removeEntity(UuidAudit);
+  });
+
+  const inserted: EntityTriggerMeta<Post> = {
+    on: 'afterInsert',
+    run: (newRow) => insertInto(WriteAudit, { postId: newRow.id, body: "it's" }),
+  };
+  const updated: EntityTriggerMeta<Post> = {
+    on: 'afterUpdate',
+    run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { body: newRow.body }),
+  };
+  const deleted: EntityTriggerMeta<Post> = {
+    on: 'afterDelete',
+    run: (_newRow, oldRow) => deleteFrom(WriteAudit, { $where: { postId: oldRow.id } }),
+  };
+
+  // Columns named by the table written (`post_id`), refs by the trigger's own entity, a literal escaped
+  // as each engine escapes one, and `hits` left to its column's default. SQL Server reads its set.
+  it.each([
+    { dialect: new PostgresDialect(), sql: `INSERT INTO "WriteAudit" ("post_id", "body") VALUES (NEW."id", 'it''s');` },
+    {
+      dialect: new CockroachDialect(),
+      sql: `INSERT INTO "WriteAudit" ("post_id", "body") VALUES (NEW."id", 'it''s');`,
+    },
+    { dialect: new MySqlDialect(), sql: "INSERT INTO `WriteAudit` (`post_id`, `body`) VALUES (NEW.`id`, 'it\\'s');" },
+    { dialect: new MariaDialect(), sql: "INSERT INTO `WriteAudit` (`post_id`, `body`) VALUES (NEW.`id`, 'it\\'s');" },
+    { dialect: new SqliteDialect(), sql: "INSERT INTO `WriteAudit` (`post_id`, `body`) VALUES (NEW.`id`, 'it''s');" },
+    {
+      dialect: new MsSqlDialect(),
+      sql: `INSERT INTO "WriteAudit" ("post_id", "body") SELECT inserted."id", N'it''s' FROM inserted;`,
+    },
+  ])('should insert on $dialect.dialectName', ({ dialect, sql }) => {
+    expect(render(dialect, inserted).join('\n')).toContain(sql);
+  });
+
+  // No filter narrows the rows named: the security one would bake in the tenant of whoever ran `sync`.
+  it.each([
+    {
+      dialect: new PostgresDialect(),
+      sql: 'UPDATE "WriteAudit" SET "body" = NEW."body" WHERE "WriteAudit"."post_id" = NEW."id";',
+    },
+    {
+      dialect: new CockroachDialect(),
+      sql: 'UPDATE "WriteAudit" SET "body" = NEW."body" WHERE "WriteAudit"."post_id" = NEW."id";',
+    },
+    {
+      dialect: new MySqlDialect(),
+      sql: 'UPDATE `WriteAudit` SET `body` = NEW.`body` WHERE `WriteAudit`.`post_id` = NEW.`id`;',
+    },
+    {
+      dialect: new MariaDialect(),
+      sql: 'UPDATE `WriteAudit` SET `body` = NEW.`body` WHERE `WriteAudit`.`post_id` = NEW.`id`;',
+    },
+    {
+      dialect: new SqliteDialect(),
+      sql: 'UPDATE `WriteAudit` SET `body` = NEW.`body` WHERE `WriteAudit`.`post_id` = NEW.`id`;',
+    },
+    {
+      dialect: new MsSqlDialect(),
+      sql:
+        'UPDATE "WriteAudit" SET "body" = inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id"' +
+        ' WHERE "WriteAudit"."post_id" = inserted."id";',
+    },
+  ])('should update the rows it names, and no others, on $dialect.dialectName', ({ dialect, sql }) => {
+    expect(render(dialect, updated).join('\n')).toContain(sql);
+  });
+
+  // Outright, though the table soft-deletes, and with no filter narrowing the rows named.
+  it.each([
+    { dialect: new PostgresDialect(), sql: 'DELETE FROM "WriteAudit" WHERE "WriteAudit"."post_id" = OLD."id";' },
+    { dialect: new CockroachDialect(), sql: 'DELETE FROM "WriteAudit" WHERE "WriteAudit"."post_id" = OLD."id";' },
+    { dialect: new MySqlDialect(), sql: 'DELETE FROM `WriteAudit` WHERE `WriteAudit`.`post_id` = OLD.`id`;' },
+    { dialect: new MariaDialect(), sql: 'DELETE FROM `WriteAudit` WHERE `WriteAudit`.`post_id` = OLD.`id`;' },
+    { dialect: new SqliteDialect(), sql: 'DELETE FROM `WriteAudit` WHERE `WriteAudit`.`post_id` = OLD.`id`;' },
+    {
+      dialect: new MsSqlDialect(),
+      sql: 'DELETE FROM "WriteAudit" FROM deleted WHERE "WriteAudit"."post_id" = deleted."id";',
+    },
+  ])('should delete the rows it names outright on $dialect.dialectName', ({ dialect, sql }) => {
+    expect(render(dialect, deleted).join('\n')).toContain(sql);
+  });
+
+  it('should take a counter where the engine fires per row', () => {
+    const sql = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { hits: { $inc: 1 } }),
+    }).join('\n');
+    expect(sql).toContain(
+      'UPDATE "WriteAudit" SET "hits" = COALESCE("hits", 0) + 1 WHERE "WriteAudit"."post_id" = NEW."id";',
+    );
+  });
+
+  // A set-based UPDATE writes a target once however many rows of the set match it, so what accumulates
+  // per row would apply once.
+  it('should refuse a counter where the body reads a set', () => {
+    expect(() =>
+      render(new MsSqlDialect(), {
+        on: 'afterInsert',
+        run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { hits: { $inc: 1 } }),
+      }),
+    ).toThrow(`'WriteAudit.hits' cannot accumulate per row in a trigger fired once per statement`);
+  });
+
+  it('should refuse a push where the body reads a set', () => {
+    expect(() =>
+      render(new MsSqlDialect(), {
+        on: 'afterInsert',
+        run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { tags: { $push: { list: 'x' } } }),
+      }),
+    ).toThrow(`'WriteAudit.tags' cannot accumulate per row in a trigger fired once per statement`);
+  });
+
+  it('should run several writes in one body, each reading the rows it was handed', () => {
+    const sql = render(new MsSqlDialect(), {
+      on: 'afterDelete',
+      run: (_newRow, oldRow) =>
+        raw`${deleteFrom(WriteAudit, { $where: { postId: oldRow.id } })}
+          ${insertInto(WriteAudit, { body: oldRow.body })}`,
+    }).join('\n');
+    expect(sql).toContain('DELETE FROM "WriteAudit" FROM deleted WHERE "WriteAudit"."post_id" = deleted."id";');
+    expect(sql).toContain('INSERT INTO "WriteAudit" ("body") SELECT deleted."body" FROM deleted;');
+  });
+
+  // Left out, a uuid uql fills in JavaScript would be NULL, and every write firing the trigger would fail.
+  it('should refuse an insert leaving out what uql fills on insert, with no column default to stand in', () => {
+    expect(() =>
+      render(new PostgresDialect(), {
+        on: 'afterInsert',
+        run: (newRow) => insertInto(UuidAudit, { postId: newRow.id }),
+      }),
+    ).toThrow(
+      `'UuidAudit.id' is filled on insert by uql, which a trigger does not run: name it, or give it a defaultValue`,
+    );
+  });
+
+  it('should take SQL in place of what uql would fill', () => {
+    const sql = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => insertInto(UuidAudit, { id: raw`gen_random_uuid()`, postId: newRow.id }),
+    }).join('\n');
+    expect(sql).toContain('INSERT INTO "UuidAudit" ("id", "postId") VALUES (gen_random_uuid(), NEW."id");');
+  });
+
+  it('should refuse a write naming no field', () => {
+    expect(() => render(new PostgresDialect(), { on: 'afterInsert', run: () => insertInto(WriteAudit, {}) })).toThrow(
+      `a trigger's write to 'WriteAudit' names no field`,
+    );
+  });
+
+  // Every row of the table, each time the trigger fires, is what a forgotten filter looks like.
+  it('should refuse an update or a delete naming no rows', () => {
+    expect(() =>
+      render(new PostgresDialect(), {
+        on: 'afterDelete',
+        run: () => deleteFrom(WriteAudit, { $where: { postId: undefined } }),
+      }),
+    ).toThrow(`a trigger's delete over 'WriteAudit' names no rows, so it would address every one`);
+    expect(() =>
+      render(new PostgresDialect(), {
+        on: 'afterDelete',
+        run: () => deleteFrom(WriteAudit, { $where: { $or: [{ postId: undefined }] } }),
+      }),
+    ).toThrow(`a trigger's delete over 'WriteAudit' names no rows, so it would address every one`);
+  });
+
+  it('should refuse a field the table has not got', () => {
+    expect(() =>
+      // @ts-expect-error: the types refuse it first, and plain JavaScript reaches the dialect past them
+      render(new PostgresDialect(), { on: 'afterInsert', run: () => insertInto(WriteAudit, { nope: 1 }) }),
+    ).toThrow(`'WriteAudit' has no field 'nope' for a trigger to write`);
   });
 });

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { assertCliConfig } from './assertCliConfig.js';
 
 const minimalPool = {
@@ -18,6 +19,11 @@ describe('assertCliConfig', () => {
 
   it('should throw when config is not an object', () => {
     expect(() => assertCliConfig(null)).toThrow(/non-null object/);
+  });
+
+  it('should refuse a config as a usage error, still a TypeError', () => {
+    expect(() => assertCliConfig(null)).toThrow(UqlUsageError);
+    expect(() => assertCliConfig(null)).toThrow(TypeError);
   });
 
   it('should throw when pool is missing', () => {

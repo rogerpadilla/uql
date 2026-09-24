@@ -13,6 +13,7 @@ import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
 import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
@@ -91,7 +92,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
 
 /** The `compileDdl` of a build given no dialect, which has nothing to render an entity's SQL with. */
 function refuseDdl(): string {
-  throw new TypeError(
+  throw new UqlUsageError(
     'building the schema of an entity that declares SQL (a check, a stored computed column, an index expression or predicate) needs a dialect to render it: pass `compileDdl`, as `buildEntityAST` does',
   );
 }

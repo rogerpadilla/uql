@@ -11,7 +11,7 @@ const DEFAULT_LOG_LEVELS = [
 ] as const satisfies LogLevel[];
 
 /** Bound values as JSON, a `bigint` by its digits: `JSON.stringify` refuses one outright. */
-function renderValues(values: unknown[]): string {
+function renderValues(values: readonly unknown[]): string {
   return JSON.stringify(values, (_key, value: unknown) => (typeof value === 'bigint' ? value.toString() : value));
 }
 
@@ -19,13 +19,13 @@ function renderValues(values: unknown[]): string {
  * Default implementation of the Logger interface using console methods.
  */
 export class DefaultLogger implements Logger {
-  logQuery(query: string, values?: unknown[], duration?: number): void {
+  logQuery(query: string, values?: readonly unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
     const params = values?.length ? ` -- ${renderValues(values)}` : '';
     console.log(`\x1b[36mquery:\x1b[0m ${query}${params}\x1b[32m${time}\x1b[0m`);
   }
 
-  logSlowQuery(query: string, values?: unknown[], duration?: number): void {
+  logSlowQuery(query: string, values?: readonly unknown[], duration?: number): void {
     const time = duration !== undefined ? ` [${duration}ms]` : '';
     const params = values?.length ? ` -- ${renderValues(values)}` : '';
     console.warn(`\x1b[33mslow query:\x1b[0m ${query}${params}\x1b[31m${time}\x1b[0m`);
@@ -109,7 +109,7 @@ export class LoggerWrapper implements Logger {
     return this.logValues && (this.levels.has('query') || this.slowQuery !== undefined);
   }
 
-  logQuery(query: string, values?: unknown[], duration?: number): void {
+  logQuery(query: string, values?: readonly unknown[], duration?: number): void {
     const loggedValues = this.logValues ? values : undefined;
 
     if (this.slowQuery !== undefined && duration !== undefined && duration >= this.slowQuery) {

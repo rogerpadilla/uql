@@ -1,6 +1,7 @@
 import type { IndexType } from '../../schema/types.js';
 import type { IndexColumnSchema, IndexFeature, IndexSchema } from '../../type/index.js';
 import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
 
 /** `CREATE INDEX ... USING hnsw ("embedding" vector_cosine_ops) WITH (m = ...)`, pgvector's form. */
@@ -56,7 +57,7 @@ export class PgIndexDdl extends IndexDdl {
     const opsClass = `${vectorType}_${metric}_ops`;
     // IVFFlat has neither a sparsevec nor an L1 operator class; HNSW has all of them (pgvector 0.8.2).
     if (index.type === 'ivfflat' && (vectorType === 'sparsevec' || distance === 'l1')) {
-      throw new TypeError(`ivfflat has no ${opsClass} operator class (index "${index.name}"); use hnsw`);
+      throw new UqlUsageError(`ivfflat has no ${opsClass} operator class (index "${index.name}"); use hnsw`);
     }
     return ` ${opsClass}`;
   }

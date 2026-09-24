@@ -6,11 +6,14 @@ import {
   type QueryOrderedOp,
   type QueryVectorNear,
   type QueryVectorQuery,
+  QueryRaw,
+  type QueryWhere,
   type QueryWhereArray,
   type QueryWhereFieldOp,
   VECTOR_QUERY_KEYS,
 } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
+import { hasKeys, isWhereMap, someKey } from '../util/object.util.js';
 import { kindOf, UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -39,6 +42,22 @@ export function groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | und
     throw new UqlUsageError(`${key} expects an array, got ${kindOf(val)}`);
   }
   return val ?? [];
+}
+
+/**
+ * Whether a `$where` names any rows, as the WHERE it renders would: an `undefined` value, an empty
+ * operator map and a group none of whose clauses names one all render nothing, which a write reads as
+ * the whole table.
+ */
+export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
+  return (
+    where !== undefined &&
+    someKey(where, (key) =>
+      isGroupOp(key)
+        ? groupClauses(key, where[key]).some((clause) => clause instanceof QueryRaw || namesRows(clause))
+        : where[key] !== undefined && !(isWhereMap(where[key]) && !hasKeys(where[key])),
+    )
+  );
 }
 
 /**

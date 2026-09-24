@@ -16,6 +16,7 @@ import {
   type OnFieldCallback,
   type Query,
   type QueryAggMap,
+  type QueryConflictPaths,
   type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
@@ -30,6 +31,7 @@ import {
   type QueryVectorQuery,
   type QueryVectorSearch,
   type QueryWhere,
+  type QueryWhereArray,
   type RelationKey,
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
@@ -37,7 +39,7 @@ import {
   type VectorDistance,
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
-import { getFieldKeys, isDatabaseWritten } from './field.util.js';
+import { defaultReadKeys, fieldKeys, isDatabaseWritten } from './field.util.js';
 import {
   entityName,
   getKeys,
@@ -110,12 +112,7 @@ export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: EntityData<
   for (const record of payloads) {
     addInsertFieldKeys(meta, record, seen, keys);
   }
-  for (const key of getKeys(meta.fields) as FieldKey<E>[]) {
-    if (meta.fields[key]!.onInsert !== undefined && !seen.has(key)) {
-      keys.push(key);
-    }
-  }
-  return keys;
+  return [...keys, ...fieldKeys(meta, (field) => field.onInsert !== undefined).filter((key) => !seen.has(key))];
 }
 
 export function getFieldCallbackValue(val: OnFieldCallback) {
@@ -139,7 +136,7 @@ export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   const payloads = Array.isArray(payload) ? payload : [payload];
   // By presence, not truthiness, as `addInsertFieldKeys` above reads it: `onInsert: 0` and `onInsert: ''`
   // are values a caller meant, and a falsy one was silently never filled.
-  const keys = getKeys(meta.fields).filter((key) => meta.fields[key]![callbackKey] !== undefined) as FieldKey<E>[];
+  const keys = fieldKeys(meta, (field) => field[callbackKey] !== undefined);
   if (keys.length === 0) {
     return payloads;
   }
@@ -196,12 +193,32 @@ export function isPagedQuery<E>(q: QuerySearch<E>): boolean {
 }
 
 /**
- * `q` selecting nothing but the id: what a write hands its backend's own read builder to settle the
- * rows it will name. The cast is unavoidable - a computed key is not a `QuerySelect` key to the
- * compiler - so it is spelled once here rather than in each querier.
+ * Each of `keys` switched on, as a `$select` or conflict paths name them. This and the `where*` builders
+ * below hold the casts a statement built in generic code needs: a key read at run time is no key of
+ * these maps to the compiler, whose values it works out per entity.
  */
+export function keySet<E>(keys: readonly FieldKey<E>[]): QueryConflictPaths<E> {
+  return Object.fromEntries(keys.map((key) => [key, true])) as QueryConflictPaths<E>;
+}
+
+/** `where`, or no `$where`, with `key` held to `value` as well: spread, so the two `AND`. */
+export function whereWith<E>(key: FieldKey<E>, value: unknown, where?: QueryWhere<E>): QueryWhere<E> {
+  return { ...where, [key]: value } as QueryWhere<E>;
+}
+
+/** The `$where` holding each of `keys` to what `valueOf` reads for it. */
+export function whereEach<E>(keys: readonly FieldKey<E>[], valueOf: (key: FieldKey<E>) => unknown): QueryWhere<E> {
+  return Object.fromEntries(keys.map((key) => [key, valueOf(key)])) as QueryWhere<E>;
+}
+
+/** The `$where` any one of `clauses` satisfies. */
+export function whereAnyOf<E>(clauses: QueryWhereArray<E>): QueryWhere<E> {
+  return { $or: clauses } as QueryWhere<E>;
+}
+
+/** `q` selecting nothing but the id: what a write hands its backend's own read builder to settle the rows it will name. */
 export function idOnlyQuery<E>(meta: EntityMeta<E>, q: QuerySearch<E>): Query<E> {
-  return { ...q, $select: Object.fromEntries(meta.ids.map((key) => [key, true])) } as Query<E>;
+  return { ...q, $select: keySet(meta.ids) };
 }
 
 /**
@@ -247,7 +264,7 @@ export function normalizeScalarFieldSelection<E>(
     }
   }
 
-  const allFields = getFieldKeys(meta.fields);
+  const allFields = defaultReadKeys(meta);
   if (!excludedFields) {
     return allFields;
   }
@@ -310,10 +327,7 @@ export function findVectorIndex<E>(meta: EntityMeta<E>, key: string): EntityInde
  */
 export function vectorDistanceOf<E>(meta: EntityMeta<E>, key: string, search: QueryVectorQuery): VectorDistance {
   return (
-    search.$distance ??
-    meta.fields[key as FieldKey<E>]?.distance ??
-    findVectorIndex(meta, key)?.distance ??
-    DEFAULT_VECTOR_DISTANCE
+    search.$distance ?? meta.fields[key]?.distance ?? findVectorIndex(meta, key)?.distance ?? DEFAULT_VECTOR_DISTANCE
   );
 }
 
@@ -373,7 +387,7 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
  */
 export function whereIds<E>(meta: EntityMeta<E>, ids: EntityId<E> | EntityId<E>[]): QueryWhere<E> {
   if (Array.isArray(ids) ? ids.every(isScalarId) : isScalarId(ids)) {
-    return { [soleIdOf(meta, 'addressing by a bare id value')]: ids } as QueryWhere<E>;
+    return whereWith(soleIdOf(meta, 'addressing by a bare id value'), ids);
   }
   return (Array.isArray(ids) ? { $or: ids } : ids) as QueryWhere<E>;
 }
@@ -639,11 +653,11 @@ export function fulltextWeights(index: {
     return undefined;
   }
   if (index.type !== 'fulltext') {
-    throw new TypeError(`a column weight ranks a fulltext index, and this one is ${index.type ?? 'btree'}`);
+    throw new UqlUsageError(`a column weight ranks a fulltext index, and this one is ${index.type ?? 'btree'}`);
   }
   const weights = index.entries.map(({ weight = 1 }) => {
     if (!Number.isInteger(weight) || weight < 1 || weight > MAX_TEXT_WEIGHT) {
-      throw new TypeError(`a column weight is a whole number from 1 to ${MAX_TEXT_WEIGHT}, not ${weight}`);
+      throw new UqlUsageError(`a column weight is a whole number from 1 to ${MAX_TEXT_WEIGHT}, not ${weight}`);
     }
     return weight;
   });

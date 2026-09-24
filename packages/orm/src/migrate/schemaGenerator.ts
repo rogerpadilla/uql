@@ -35,6 +35,7 @@ import type {
 } from '../type/index.js';
 import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { sameDefault } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
@@ -713,7 +714,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string {
     if (!this.features.foreignKeyAlter) {
-      throw new TypeError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
+      throw new UqlUsageError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
     }
     const constraint = this.foreignKeyConstraint(tableName, foreignKey, this.escapeId(foreignKey.references.table));
     return `ALTER TABLE ${this.escapeId(tableName)} ADD ${constraint};`;
@@ -746,7 +747,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       return `ALTER TABLE ${table} DROP PRIMARY KEY;`;
     }
     if (!constraintName) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `Cannot drop the primary key of "${tableName}": ${this.dialect} names the constraint, and ` +
           'introspection did not report a name for it.',
       );
@@ -765,7 +766,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     if (!column.generatedAs || this.features.generatedColumnAdd) {
       return;
     }
-    throw new TypeError(
+    throw new UqlUsageError(
       `${this.dialect}: Cannot add the computed column "${column.name}" to the existing table ` +
         `"${tableName}" - this database only accepts one in a CREATE TABLE. Drop \`stored\` to have the ` +
         'expression spliced into each statement instead, or recreate the table in a written migration.',
@@ -776,7 +777,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     if (this.features.primaryKeyAlter) {
       return;
     }
-    throw new TypeError(
+    throw new UqlUsageError(
       `${this.dialect}: Cannot change the primary key of "${tableName}" - this database has no ALTER ` +
         'for it. Recreate the table in a written migration.',
     );

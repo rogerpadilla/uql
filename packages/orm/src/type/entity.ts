@@ -1,7 +1,7 @@
 import type { EnumValues, ForeignKeyAction, IndexType } from '../schema/types.js';
 import type { SqlDialectName } from './dialect.js';
 import type { FilterOptions, RelationQuery } from './query.js';
-import type { ColumnRef, QueryRaw, RelationAggregate } from './queryRaw.js';
+import type { ColumnRef, QueryRaw, RawFor, RelationAggregate } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type {
   AtLeastOne,
@@ -60,6 +60,9 @@ export type WritableKey<E> = {
 
 /** A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write. */
 export type EntityWrite<E> = EntityData<E, WritableKey<E>>;
+
+/** A row a trigger's body writes: each writable field its value, or SQL - a row's ref most often. */
+export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F]?: E[K] | RawFor<QueryRaw, E[K]> };
 
 /**
  * The property an entity brands with {@link versionKey} as its optimistic lock, `never` where it
@@ -170,7 +173,7 @@ export type JsonArrayFields<T> = {
  */
 export type JsonUpdateOp<T = unknown> = {
   readonly $set?: Partial<T>;
-  readonly $unset?: unknown extends T ? string[] : (keyof T & string)[];
+  readonly $unset?: unknown extends T ? readonly string[] : readonly (keyof T & string)[];
   readonly $push?: JsonArrayFields<T>;
   readonly $pull?: JsonArrayFields<T>;
 };
@@ -201,7 +204,11 @@ type FieldUpdateOpFor<V> = [NonNullable<V>] extends [number]
     : never;
 
 /** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and update operators. */
-type UpdateExtra<V, Raw> = (undefined extends V ? null : never) | Raw | JsonUpdateOpFor<V> | FieldUpdateOpFor<V>;
+type UpdateExtra<V, Raw> =
+  | (undefined extends V ? null : never)
+  | RawFor<Raw, V>
+  | JsonUpdateOpFor<V>
+  | FieldUpdateOpFor<V>;
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a
@@ -582,6 +589,11 @@ export type RelationReference<O, E> = {
   readonly [F in keyof E]-?: { readonly local: FieldKeyHolding<O, E[F]>; readonly foreign: F };
 }[FieldKey<E>];
 
+/** The fields of `E` whose value is a `T`, however optional: `FieldKeyOf<E, number | bigint>` are the ones a sum adds up. */
+export type FieldKeyOf<E, T> = {
+  readonly [K in FieldKey<E>]-?: [NonNullable<E[K]>] extends [T] ? K : never;
+}[FieldKey<E>];
+
 /** The fields of `O` that can hold any value `V` takes. */
 type FieldKeyHolding<O, V> = {
   readonly [K in keyof O]-?: [NonNullable<V>] extends [NonNullable<O[K]>] ? K : never;
@@ -618,15 +630,10 @@ type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 
 export type KeyMap<E> = { readonly [K in keyof E]-?: K };
 
 /** The fields of `E` as {@link ColumnRef}s, for SQL that names them: `refs(User)`, or a definition's callback. */
-export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string> };
+export type RefMap<E, F extends keyof E = FieldKey<E>> = { readonly [K in F]-?: ColumnRef<K & string, E[K]> };
 
 /** SQL a definition writes: `raw`, or a callback reading the fields off its refs, bivariant so the registry can hold it. */
 export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
-
-/** The fields of `C` a `sum` or an `avg` can add up. */
-type NumericKey<C> = {
-  readonly [K in FieldKey<C>]-?: [NonNullable<C[K]>] extends [number | bigint] ? K : never;
-}[FieldKey<C>];
 
 /** One field of `C`, read off its refs: `(item) => item.amount`. */
 type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
@@ -639,8 +646,11 @@ type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
 export type RelationRef<C> = {
   count(q?: AggregateFilter<C>): RelationAggregate<number, true>;
   count(q: AggregatePage<C>): RelationAggregate<number, false>;
-  sum<K extends NumericKey<C>>(pick: PickRef<C, K>, q?: AggregateFilter<C>): RelationAggregate<NonNullable<C[K]>, true>;
-  sum<K extends NumericKey<C>>(
+  sum<K extends FieldKeyOf<C, number | bigint>>(
+    pick: PickRef<C, K>,
+    q?: AggregateFilter<C>,
+  ): RelationAggregate<NonNullable<C[K]>, true>;
+  sum<K extends FieldKeyOf<C, number | bigint>>(
     pick: PickRef<C, K>,
     q: AggregateTopRows<C>,
   ): RelationAggregate<NonNullable<C[K]>, false>;
@@ -652,7 +662,10 @@ export type RelationRef<C> = {
     pick: PickRef<C, K>,
     q?: AggregateRows<C>,
   ): RelationAggregate<NonNullable<C[K]> | null, false>;
-  avg<K extends NumericKey<C>>(pick: PickRef<C, K>, q?: AggregateRows<C>): RelationAggregate<number | null, false>;
+  avg<K extends FieldKeyOf<C, number | bigint>>(
+    pick: PickRef<C, K>,
+    q?: AggregateRows<C>,
+  ): RelationAggregate<number | null, false>;
 };
 
 /**

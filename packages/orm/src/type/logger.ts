@@ -13,9 +13,9 @@ export interface Logger {
    * @param values - The parameters passed to the query.
    * @param duration - The time it took to execute the query in milliseconds.
    */
-  logQuery?(query: string, values?: unknown[], duration?: number): void;
+  logQuery?(query: string, values?: readonly unknown[], duration?: number): void;
   /** Logs a query that took longer than the threshold, its values `undefined` unless `logValues` is on. */
-  logSlowQuery?(query: string, values?: unknown[], duration?: number): void;
+  logSlowQuery?(query: string, values?: readonly unknown[], duration?: number): void;
   /**
    * Logs a warning.
    */

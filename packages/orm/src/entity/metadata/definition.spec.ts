@@ -19,6 +19,7 @@ import {
 } from '../../test/index.js';
 import { type EntityMeta, type IdKey, RAW_VALUE, RelationAggregate, idKey, type Type } from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
 import {
   assertSoleId,
@@ -75,6 +76,7 @@ it('should name the field it reads, and refuse one the entity does not declare',
   expect(fieldOf(meta, 'name')).toBe(meta.fields.name);
   // Outside the types, which name a field; the throw is for a key that reached it untyped.
   expect(() => fieldOf(meta, 'nope')).toThrow("'User' has no field 'nope'");
+  expect(() => fieldOf(meta, 'nope')).toThrow(UqlUsageError);
 });
 
 it('should name the relation it reads, and refuse one the entity does not declare', () => {

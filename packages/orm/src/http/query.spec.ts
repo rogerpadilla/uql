@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import type { Item, User } from '../test/index.js';
-import type { Query, QueryStringified } from '../type/index.js';
+import type { Query } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { parseQueryParams, stringifyQuery, wireJson } from './query.js';
 
@@ -56,7 +56,7 @@ describe('parseQueryParams', () => {
       $sort: '{ "name": -1, "companyId": 1 }',
       $skip: '200',
       $limit: '100',
-    } satisfies QueryStringified;
+    } satisfies Record<string, string>;
     const query = {
       $select: {
         id: true,

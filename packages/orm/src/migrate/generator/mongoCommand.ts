@@ -1,3 +1,4 @@
+import { UqlUsageError } from '../../util/uqlError.js';
 /** The direction, or `'text'`, of one field in a MongoDB index key spec. */
 export type MongoIndexKey = Record<string, 1 | -1 | 'text'>;
 
@@ -70,7 +71,7 @@ function parseMongoCommand(statement: string): MongoCommand {
 }
 
 function unsupportedMongoCommand(statement: string): TypeError {
-  return new TypeError(`unsupported MongoDB migration command: ${statement}`);
+  return new UqlUsageError(`unsupported MongoDB migration command: ${statement}`);
 }
 
 /** Execute one emitted command. */

@@ -163,6 +163,16 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Item, { $nor: null })).toThrow('$nor expects an array, got null');
   }
 
+  /** Refused before the server sees it, with the SQL dialects' message, at any depth. */
+  shouldRejectAnUnknownOperator() {
+    // @ts-expect-error: no such operator
+    expect(() => this.dialect.where(Item, { name: { $bogus: 'a' } })).toThrow('unknown operator: $bogus');
+    // @ts-expect-error: no such operator
+    expect(() => this.dialect.where(Item, { name: { $gt: 'a', toString: 'b' } })).toThrow('unknown operator: toString');
+    // @ts-expect-error: no such operator
+    expect(() => this.dialect.where(Item, { name: { $not: { $bogus: 'a' } } })).toThrow('unknown operator: $bogus');
+  }
+
   shouldBuildWhere() {
     expect(this.dialect.where(Item, undefined)).toEqual({});
 
@@ -1034,13 +1044,6 @@ class MongoDialectSpec implements Spec {
     });
   }
 
-  shouldNotResolveStringOperatorViaThePrototypeChain() {
-    // @ts-expect-error: an inherited property, beside a real operator so the map is read as operators
-    expect(this.dialect.where(Item, { name: { $gt: 'a', toString: 'x' } })).toEqual({
-      name: { $gt: 'a', toString: 'x' },
-    });
-  }
-
   shouldNotResolveAggregateOperatorViaThePrototypeChain() {
     expect(() =>
       // @ts-expect-error: an inherited property, not an aggregate function
@@ -1343,6 +1346,17 @@ class MongoDialectSpec implements Spec {
       { $project: { _id: 0, count: 1 } },
       { $match: { count: { $gte: 3 } } },
     ]);
+  }
+
+  /** Refused before the server sees it, with the SQL dialects' message. */
+  shouldRejectAnUnknownHavingOperator() {
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $select: { count: { $count: '*' } },
+        // @ts-expect-error: no such operator
+        $having: { count: { $bogus: 3 } },
+      }),
+    ).toThrow('unsupported HAVING operator: $bogus');
   }
 
   shouldBuildAggregateStagesWithHavingUndefined() {

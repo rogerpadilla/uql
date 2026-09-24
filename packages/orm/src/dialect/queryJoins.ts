@@ -1,7 +1,6 @@
 import { getMeta, relationOf } from '../entity/index.js';
 import type {
   EntityMeta,
-  FieldKey,
   FieldMeta,
   Query,
   QueryGroupMap,
@@ -9,7 +8,6 @@ import type {
   QuerySortMap,
   QueryWhere,
   RelationAggregateSpec,
-  RelationKey,
   RelationMeta,
   RelationQuery,
   Type,
@@ -147,10 +145,10 @@ export function aggregateColumnField<E>(
   if (entry.kind === 'fn') {
     return entry.op === '$count' || entry.op === '$avg' || entry.field === undefined
       ? undefined
-      : { field: meta.fields[entry.field as FieldKey<E>] };
+      : { field: meta.fields[entry.field] };
   }
   const { key, join } = groupPathField(joins, entry.path);
-  return join ? { field: join.meta.fields[key], join } : { field: meta.fields[key as FieldKey<E>] };
+  return join ? { field: join.meta.fields[key], join } : { field: meta.fields[key] };
 }
 
 /**
@@ -245,7 +243,7 @@ function addPathJoins<E>(
     return;
   }
   for (const key of getKeys(map)) {
-    const relation = meta.relations[key as RelationKey<E>];
+    const relation = meta.relations[key];
     const value = map[key];
     // A to-many, or a value that is not a map of the relation's own fields, cannot be joined and is
     // reported where the statement names it - the one place that knows how to.

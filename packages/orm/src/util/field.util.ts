@@ -3,6 +3,7 @@ import {
   COLUMN_TYPES,
   type EntityMeta,
   type FieldKey,
+  type FieldMeta,
   type FieldOptions,
   type NumericColumnType,
   type StampEvent,
@@ -104,13 +105,20 @@ export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boo
   return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.references;
 }
 
+/** The fields `meta` declares whose options `pick` accepts, in declaration order, each as the entity's own key. */
+export function fieldKeys<E>(meta: EntityMeta<E>, pick: (field: FieldMeta) => unknown): FieldKey<E>[] {
+  const fields: { readonly [K in FieldKey<E>]?: FieldMeta } = meta.fields;
+  return getKeys(fields).filter((key) => {
+    const field = fields[key];
+    return field !== undefined && Boolean(pick(field));
+  });
+}
+
 /**
  * The fields a read answers with where it names none. A relation aggregate is left out unless it asks
  * for `eager: true`: it reads the related rows, which is what a relation does, and a relation is loaded
  * only when a query asks for it. Naming one in `$select` reads it, whatever the default.
  */
-export function getFieldKeys<E>(fields: {
-  [K in FieldKey<E>]?: FieldOptions;
-}): FieldKey<E>[] {
-  return getKeys(fields).filter((field) => fields[field]!.eager ?? !aggregateOf(fields[field]));
+export function defaultReadKeys<E>(meta: EntityMeta<E>): FieldKey<E>[] {
+  return fieldKeys(meta, (field) => field.eager ?? !aggregateOf(field));
 }

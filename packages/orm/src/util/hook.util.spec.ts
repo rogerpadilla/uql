@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { BeforeInsert, Entity, Field, Id } from '../entity/index.js';
+import { BeforeInsert, defineHook, Entity, Field, Id } from '../entity/index.js';
 import { createMockQuerier } from '../test/index.js';
 import { type HookContext, runHooks } from './hook.util.js';
 
@@ -94,5 +94,18 @@ describe('runHooks', () => {
 
   it('should do nothing when there are no payloads', async () => {
     await expect(runHooks(Unhooked, 'beforeInsert', [], ctx)).resolves.toBeUndefined();
+  });
+
+  it('should refuse a registered name that is no method of the entity, naming both', async () => {
+    @Entity()
+    class Misnamed {
+      @Id({ type: Number })
+      id?: number;
+    }
+    defineHook(Misnamed, 'stamp', 'beforeInsert');
+
+    await expect(runHooks(Misnamed, 'beforeInsert', [new Misnamed()], ctx)).rejects.toThrow(
+      "'Misnamed' runs 'stamp' on beforeInsert, but has no such method",
+    );
   });
 });

@@ -10,11 +10,11 @@ export abstract class AbstractSqlQuerierPool<Q extends SqlQuerier, D extends Abs
   extends AbstractQuerierPool<Q, D>
   implements SqlQuerierPool<Q, D>
 {
-  all<T>(query: string, values?: unknown[]): Promise<T[]> {
+  all<T>(query: string, values?: readonly unknown[]): Promise<T[]> {
     return this.withQuerier((querier) => querier.all<T>(query, values));
   }
 
-  run(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
+  run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult> {
     return this.withQuerier((querier) => querier.run(query, values));
   }
 }

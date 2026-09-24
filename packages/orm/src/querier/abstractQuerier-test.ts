@@ -145,6 +145,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await querier.release();
 
     await expect(querier.count(User)).rejects.toThrow('querier already released');
+    // The caller's mistake, so a transport answers it with a 400.
+    expect(queryErrorKind(await querier.count(User).catch(thrownValue))).toBe('usage');
   }
 
   /** Each pool call is its own acquire/run/release, which is why the read below sees the write above. */
@@ -2539,6 +2541,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
+    expect(queryErrorKind(await this.querier.beginTransaction().catch(thrownValue))).toBe('usage');
     await this.querier.rollbackTransaction();
     await this.querier.release();
   }
@@ -2610,6 +2613,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+    expect(queryErrorKind(await this.querier.commitTransaction().catch(thrownValue))).toBe('usage');
   }
 
   async shouldSelectOneToManyEmpty() {
@@ -2693,6 +2697,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     await expect(this.querier.deleteMany(User, {})).rejects.toThrow("'deleteMany' over 'User' names no rows");
     await expect(this.querier.deleteMany(User, { $where: {} })).rejects.toThrow('names no rows');
+    // A key left `undefined` names nothing either: the WHERE drops it.
+    await expect(this.querier.deleteMany(User, { $where: { id: undefined } })).rejects.toThrow('names no rows');
+    await expect(this.querier.updateMany(User, { $where: { id: undefined } }, { name: 'x' })).rejects.toThrow(
+      'names no rows',
+    );
+    // Nor does a group none of whose clauses names one, at any depth.
+    await expect(this.querier.deleteMany(User, { $where: { $or: [{ id: undefined }] } })).rejects.toThrow(
+      'names no rows',
+    );
+    await expect(this.querier.deleteMany(User, { $where: { $and: [] } })).rejects.toThrow('names no rows');
     await expect(this.querier.updateMany(User, {}, { name: 'x' })).rejects.toThrow(
       "'updateMany' over 'User' names no rows",
     );

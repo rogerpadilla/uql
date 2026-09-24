@@ -10,6 +10,7 @@ import {
   type IndexSchema,
 } from '../../type/index.js';
 import { fulltextConfig, getKeys } from '../../util/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 
 /**
  * What in an index asks for each feature. A `Record` over the feature union rather than a list, so a
@@ -35,7 +36,7 @@ export function assertIndexType(
   hints: ReadonlyMap<IndexType, string> = new Map(),
 ): void {
   if (index.type && !types.has(index.type)) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${dialectName} has no ${index.type} index (index "${index.name}")` + (hints.get(index.type) ?? ''),
     );
   }
@@ -49,7 +50,9 @@ export function assertIndexFeatures(
 ): void {
   for (const feature of getKeys(INDEX_FEATURE_PROBES)) {
     if (INDEX_FEATURE_PROBES[feature](index) && !features.has(feature)) {
-      throw new TypeError(`${dialectName} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`);
+      throw new UqlUsageError(
+        `${dialectName} does not support ${INDEX_FEATURE_LABELS[feature]} (index "${index.name}")`,
+      );
     }
   }
 }
@@ -156,7 +159,7 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
    * every other dialect refuses `jsonArray` in {@link assertIndexFeatures} and never reaches this.
    */
   protected jsonArrayIndexExpr(_escapedColumn: string, _json: IndexJsonArray): string {
-    throw new TypeError(`${this.dialect.dialectName} has no multi-valued index`);
+    throw new UqlUsageError(`${this.dialect.dialectName} has no multi-valued index`);
   }
 
   /** Postgres-wire dialects put a vector or user-declared operator class here. */

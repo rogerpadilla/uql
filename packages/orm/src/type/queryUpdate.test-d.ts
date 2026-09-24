@@ -4,7 +4,7 @@
  */
 import type { Querier } from '../index.js';
 import { versionKey } from '../index.js';
-import { raw } from '../util/index.js';
+import { raw, refs } from '../util/index.js';
 
 class Company {
   id!: number;
@@ -34,6 +34,16 @@ export async function updatePayloadSafety() {
   await querier.updateMany(Employee, { $where: { id: 1 } }, { naem: 'x' });
   // @ts-expect-error a relation's value is checked against its own entity's fields
   await querier.updateOneById(Employee, 1, { company: { id: 1, naem: 'Acme' } });
+}
+
+export async function refValueSafety() {
+  const employee = refs(Employee);
+  // A ref holds its column's type, so one of the same type fits where a value does.
+  await querier.updateMany(Employee, { $where: { id: employee.id } }, { salary: employee.salary });
+  // @ts-expect-error a string column's ref is no number
+  await querier.updateMany(Employee, { $where: { id: 1 } }, { salary: employee.name });
+  // @ts-expect-error nor does it compare to one
+  await querier.updateMany(Employee, { $where: { id: employee.name } }, { salary: 1 });
 }
 
 class Counter {
@@ -112,6 +122,11 @@ class Required {
 export async function writePayloadsExcludeBehaviour(querier: Querier) {
   await querier.insertOne(Hooked, { title: 'Hello' });
   await querier.insertMany(Hooked, [{ title: 'a' }, { title: 'b' }]);
+  // A batch is only read, never changed in place, so a `readonly` one is taken as it is.
+  const batch: readonly { title: string }[] = [{ title: 'a' }];
+  await querier.insertMany(Hooked, batch);
+  await querier.upsertMany(Hooked, { title: true }, batch);
+  await querier.saveMany(Hooked, batch);
   await querier.saveOne(Hooked, { title: 'Hello' });
   await querier.upsertOne(Hooked, { title: true }, { title: 'Hello' });
   // relations are persistable data, so they stay in the payload

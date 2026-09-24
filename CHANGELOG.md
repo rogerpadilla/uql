@@ -2,6 +2,16 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.82.0] - 2026-09-24
+
+- A trigger's `run` writes another table through its entity, `insertInto(PostAudit, { postId: newRow.id })`, `updateTable` and `deleteFrom`: one body for every engine, SQL Server's included.
+- A field read off `refs(Entity)` or a trigger's rows carries its type, so `{ price: item.name }` no longer compiles as a `$where`, update or trigger-write value.
+- A `readonly` array or an `as const` tuple is taken wherever a query or a write only reads one: `$in`, `$nin`, `$between`, `$all`, a bare list as `$in`, the clauses of `$and`/`$or`/`$not`/`$nor`, `$unset`, the rows of `insertMany`, `upsertMany` and `saveMany`, and the values of raw `all`/`run`. A listener's `payloads` is `readonly` to match.
+- Every misuse of the API throws `UqlUsageError` (kind `usage`, a `400` over HTTP), still a `TypeError`: a bad definition, a hook naming no method of its entity, a migration or index option an engine cannot carry, a bad CLI config, a released querier, raw SQL sent over HTTP.
+- **Fixed:** `updateMany` and `deleteMany` refuse a `$where` naming no rows however it is written, such as `{ id: undefined }` or `{ $or: [] }`, which addressed the whole table.
+- **Fixed:** a trigger's `where` holds only what it states: an entity's soft-delete or security filter no longer joins it.
+- **Fixed (MongoDB):** an unknown `$where` or `$having` operator, and a `$between` without two bounds, are refused before the query is sent, with the SQL engines' error.
+
 ## [0.81.0] - 2026-09-23
 
 - **Breaking:** for code driving the migrator directly, `SchemaDiff` lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields.

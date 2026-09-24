@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import type { ColumnSchema } from '../../type/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { formatDefaultValue, sameDefault } from '../builder/expressions.js';
 
 /**
@@ -44,7 +45,7 @@ export class TableDdl {
    */
   alterColumn(table: string, column: ColumnSchema, definition: string, from?: ColumnSchema): string[] {
     if (this.dialect.alterColumnSyntax === 'none') {
-      throw new TypeError(
+      throw new UqlUsageError(
         `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
           `This database does not support ALTER COLUMN.`,
       );

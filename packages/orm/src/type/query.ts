@@ -1,4 +1,12 @@
-import type { FieldKey, JsonFieldPaths, RelationKey, RelationTarget, ToManyRelationKey, WrittenId } from './entity.js';
+import type {
+  FieldKey,
+  FieldKeyOf,
+  JsonFieldPaths,
+  RelationKey,
+  RelationTarget,
+  ToManyRelationKey,
+  WrittenId,
+} from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -168,17 +176,14 @@ export type QuerySortByCount = {
   $count: QuerySortDirection;
 };
 
-/** The fields of `E` a vector search can rank by. */
-type VectorFieldKey<E> = { [P in FieldKey<E>]: NonNullable<E[P]> extends readonly number[] ? P : never }[FieldKey<E>];
-
 /**
  * Ordering parents by the row of a to-many nearest a vector, per vector field: its distance is the
  * smallest of theirs. Nothing to `$project`, since no one row of the parent's answers under it. Never
  * where the target has no vector, since an empty map would admit any value at all.
  */
-export type QuerySortByNearest<E> = [VectorFieldKey<E>] extends [never]
+export type QuerySortByNearest<E> = [FieldKeyOf<E, readonly number[]>] extends [never]
   ? never
-  : { [P in VectorFieldKey<E>]?: QueryVectorQuery };
+  : { [P in FieldKeyOf<E, readonly number[]>]?: QueryVectorQuery };
 
 /**
  * Ordering by relevance to the `$text` at the root of `$where`, in either direction as any key sorts. The
@@ -509,13 +514,6 @@ type QueryProjectedRow<
 
 /** The to-many relations a query populated, which come back as lists rather than as optional ones. */
 type PopulatedToMany<E, P> = Extract<P, ToManyRelationKey<E>>;
-
-/**
- * stringified query.
- */
-export type QueryStringified = {
-  [K in keyof Query<unknown>]?: string;
-};
 
 /** What upserting one row reports. `created` is only knowable for a single statement, so a batch has none. */
 export type QueryUpsertOneResult<E> = {

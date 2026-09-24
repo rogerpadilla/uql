@@ -16,7 +16,7 @@ export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, Q
 
   insertMany<E extends object>(
     entity: Type<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
     opts?: RequestOptions,
   ): QuerierResult<'client', (WrittenId<E> | undefined)[]>;
 
@@ -28,7 +28,7 @@ export interface ClientQuerier extends SharedQuerier<'client', RequestOptions, Q
 
   saveMany<E extends object>(
     entity: Type<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
     opts?: RequestOptions,
   ): QuerierResult<'client', (WrittenId<E> | undefined)[]>;
 }

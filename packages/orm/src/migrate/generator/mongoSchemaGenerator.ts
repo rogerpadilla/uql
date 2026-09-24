@@ -20,6 +20,7 @@ import {
 import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../../util/ddlExpression.util.js';
 import { fulltextConfig, fulltextWeights } from '../../util/dialect.util.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
 import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
@@ -51,7 +52,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
 
   /** A collection has no SQL to render a check, a computed column or an index expression into. */
   compileDdl(): string {
-    throw new TypeError('mongodb has no SQL to render a check, a computed column or an index expression into');
+    throw new UqlUsageError('mongodb has no SQL to render a check, a computed column or an index expression into');
   }
 
   /**
@@ -116,7 +117,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
    */
   compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
     if (where instanceof QueryRaw) {
-      throw new TypeError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
+      throw new UqlUsageError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
     }
     assertIndexPredicate(where, this.dialectName, indexName);
     const filter = this.renderFilter(entity, where);
@@ -201,7 +202,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     assertIndexFeatures(index, new Set(), this.dialectName);
     const [vector, ...filters] = index.entries;
     if (!vector || index.dimensions === undefined) {
-      throw new TypeError(`an Atlas vector search index states its field's dimensions (index "${index.name}")`);
+      throw new UqlUsageError(`an Atlas vector search index states its field's dimensions (index "${index.name}")`);
     }
     const distance = indexDistance(index);
     const similarity = ATLAS_SIMILARITY[distance];
@@ -235,7 +236,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       case 'createTable': {
         const { name, columns, indexes } = operation.table;
         if (columns.length) {
-          throw new TypeError(`mongodb does not support columns in a migration (collection "${name}")`);
+          throw new UqlUsageError(`mongodb does not support columns in a migration (collection "${name}")`);
         }
         return [
           serializeMongoCommand({ action: 'createCollection', name }),
@@ -251,7 +252,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       case 'dropIndex':
         return [this.generateDropIndex(operation.tableName, operation.indexName)];
       default:
-        throw new TypeError(`mongodb does not support ${operation.type} in a migration`);
+        throw new UqlUsageError(`mongodb does not support ${operation.type} in a migration`);
     }
   }
 

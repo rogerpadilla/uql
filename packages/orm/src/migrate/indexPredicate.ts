@@ -1,6 +1,7 @@
 import type { DialectName, EntityWhereMeta } from '../type/index.js';
 import { QueryRaw } from '../type/queryRaw.js';
 import { isOperatorObject } from '../util/object.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 type PredicateGrammar = {
   readonly rootOps: ReadonlySet<string>;
@@ -40,7 +41,9 @@ export function assertIndexPredicate<E>(where: EntityWhereMeta<E>, dialectName: 
 
 /** What refusing any part of a partial index's predicate reports. */
 export function refusedIndexPredicate(dialectName: string, part: string, indexName: string): TypeError {
-  return new TypeError(`${dialectName} does not support ${part} in a partial index predicate (index "${indexName}")`);
+  return new UqlUsageError(
+    `${dialectName} does not support ${part} in a partial index predicate (index "${indexName}")`,
+  );
 }
 
 /** The first part of `where` outside `grammar`, depth-first; a `raw` clause is left alone. */

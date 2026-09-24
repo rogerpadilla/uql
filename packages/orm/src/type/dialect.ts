@@ -1,6 +1,7 @@
-import type { EntityMeta, UpdatePayload } from './entity.js';
+import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
 import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
+import type { QueryRawRenderOptions } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
@@ -244,6 +245,24 @@ export interface TriggerFeatures {
   readonly before: boolean;
 }
 
+/** Where DDL's SQL sits: the row a trigger's predicate reads, as its prefix, and a set-based body's rows. */
+export type DdlRenderOptions = Pick<QueryComparisonOptions, 'escapedPrefix' | 'operand'> &
+  Pick<QueryRawRenderOptions, 'rows'>;
+
+/**
+ * A write a trigger's body runs, as `insertInto`, `updateTable` and `deleteFrom` state it. Held untyped
+ * here, past those helpers' typing, since the dialect renders it by the entity's metadata alone.
+ */
+export type TriggerWrite = { readonly entity: Type<object> } & (
+  | { readonly kind: 'insert'; readonly row: Readonly<Record<string, unknown>> }
+  | {
+      readonly kind: 'update';
+      readonly set: Readonly<Record<string, unknown>>;
+      readonly where: EntityPredicate<object>;
+    }
+  | { readonly kind: 'delete'; readonly where: EntityPredicate<object> }
+);
+
 /**
  * What a SQL statement is rendered through, as a `raw` callback and a query context see it:
  * `AbstractSqlDialect` is the one implementation.
@@ -288,6 +307,9 @@ export interface SqlQueryDialect {
 
   /** An upsert of one record or many by their conflict paths. */
   upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void;
+
+  /** A write in a trigger's body; `rows` is where a set-based engine's body reads its rows from. */
+  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: string): void;
 
   /** A delete of the records the query matches, a soft delete where the entity has one. */
   delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;

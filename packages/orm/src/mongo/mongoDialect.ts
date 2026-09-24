@@ -9,7 +9,7 @@ import {
   sortAggregateField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
-import { GROUP_OPS, groupClauses, isGroupOp } from '../dialect/operators.js';
+import { betweenBounds, GROUP_OPS, groupClauses, isGroupOp, whereOperators } from '../dialect/operators.js';
 import {
   aggregateColumnField,
   groupPathField,
@@ -27,7 +27,6 @@ import type {
   DialectFeatures,
   EntityData,
   EntityMeta,
-  FieldKey,
   FieldOptions,
   FieldUpdateOp,
   Query,
@@ -46,6 +45,7 @@ import type {
   QueryVectorSearch,
   QueryWhere,
   QueryWhereArray,
+  QueryWhereFieldOp,
   QueryWhereFieldOperatorMap,
   RelationKey,
   RelationMeta,
@@ -215,8 +215,10 @@ function compareCount(count: unknown, size: number | Readonly<Record<string, unk
   return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
 }
 
+type RegexOp = { readonly wrap: (v: unknown) => string; readonly ci: boolean };
+
 /** String operators -> { pattern: (v) => regex, caseInsensitive } */
-const REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: boolean }>([
+const REGEX_OP_MAP: ReadonlyMap<QueryWhereFieldOp, RegexOp> = new Map<QueryLikeOp, RegexOp>([
   ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
   ['$istartsWith', { wrap: (v) => `^${v}`, ci: true }],
   ['$endsWith', { wrap: (v) => `${v}$`, ci: false }],
@@ -228,7 +230,7 @@ const REGEX_OP_MAP = new Map<QueryLikeOp, { wrap: (v: unknown) => string; ci: bo
 ]);
 
 /** MongoDB native operators - pass through as-is. */
-const NATIVE_OPS = new Set<MongoNativeOp>([
+const NATIVE_OPS: ReadonlySet<QueryWhereFieldOp> = new Set<MongoNativeOp>([
   '$all',
   '$size',
   '$elemMatch',
@@ -526,12 +528,10 @@ export class MongoDialect extends AbstractDialect {
     throw new UqlUsageError(`path ${key} does not exist in ${entityName(meta)}`);
   }
 
-  /**
-   * Transform UQL operators to MongoDB operators.
-   */
-  private transformOperators(ops: Record<string, unknown>): Record<string, unknown> {
+  /** Transform UQL operators to MongoDB operators, refusing as `refusal` a key that is none. */
+  private transformOperators(ops: Record<string, unknown>, refusal = 'unknown operator'): Record<string, unknown> {
     const result: Record<string, unknown> = {};
-    for (const [op, val] of Object.entries(ops)) {
+    for (const [op, val] of whereOperators(ops, refusal)) {
       // `$elemMatch`'s value is itself a condition, so the operators inside it need the same
       // mapping - passing it through raw sends UQL-only operators (`$startsWith`, `$between`, ...)
       // straight to the server, which rejects them as unknown.
@@ -541,7 +541,7 @@ export class MongoDialect extends AbstractDialect {
       }
       // `$not` wraps a condition too, so a uql-only operator inside it (`$isNull`, `$startsWith`) is mapped.
       if (op === '$not' && isOperatorObject(val)) {
-        result[op] = this.transformOperators(val);
+        result[op] = this.transformOperators(val, refusal);
         continue;
       }
       // An object or an array is matched by what it holds, as the SQL engines read it, where native `$all`
@@ -551,12 +551,12 @@ export class MongoDialect extends AbstractDialect {
         continue;
       }
       // Native MongoDB operators - pass through directly
-      if (NATIVE_OPS.has(op as MongoNativeOp)) {
+      if (NATIVE_OPS.has(op)) {
         result[op] = val;
         continue;
       }
       // String/pattern -> regex operators (8 variants including $like/$ilike)
-      const regexEntry = REGEX_OP_MAP.get(op as QueryLikeOp);
+      const regexEntry = REGEX_OP_MAP.get(op);
       if (regexEntry) {
         result['$regex'] = regexEntry.wrap(val);
         if (regexEntry.ci) result['$options'] = 'i';
@@ -565,7 +565,7 @@ export class MongoDialect extends AbstractDialect {
       // Structural transforms
       switch (op) {
         case '$between': {
-          const [min, max] = val as [unknown, unknown];
+          const [min, max] = betweenBounds(val);
           result['$gte'] = min;
           result['$lte'] = max;
           break;
@@ -583,9 +583,6 @@ export class MongoDialect extends AbstractDialect {
             '$near is not supported on MongoDB: Atlas scores by index-defined similarity, not distance. ' +
               "Project the score with $sort's $project and filter on it instead.",
           );
-        default:
-          result[op] = val;
-          break;
       }
     }
     return result;
@@ -1264,7 +1261,7 @@ export class MongoDialect extends AbstractDialect {
     }
     // A 64-bit integer, which the pool reads as a `bigint`: kept for a `BigInt` field, and elsewhere the
     // number it is where exact and its exact text past 2^53, as every SQL driver decodes one.
-    decodeBigIntsExcept(res, (key) => meta.fields[key as FieldKey<E>]?.type === BigInt);
+    decodeBigIntsExcept(res, (key) => meta.fields[key]?.type === BigInt);
 
     const relKeys = getKeys(meta.relations).filter((key) => res[key]) as RelationKey<E>[];
 
@@ -1410,7 +1407,7 @@ export class MongoDialect extends AbstractDialect {
     if (columnFamily(field.type) === 'string') {
       return;
     }
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entityName(meta)}.${meta.ids[0]}' is declared '${declaredTypeName(field.type)}' and left to the ` +
         'database, which MongoDB cannot do: the only key it generates is an ObjectId, read back as a string. ' +
         "Declare the key as a string, or give it an 'onInsert' generator.",
@@ -1655,7 +1652,7 @@ export class MongoDialect extends AbstractDialect {
       // on identical input. Keeping only numbers and objects dropped a string or boolean without a
       // word, handing back every group instead of the filtered ones.
       if (isOperatorMap(condition)) {
-        filter[alias] = this.transformOperators(condition);
+        filter[alias] = this.transformOperators(condition, 'unsupported HAVING operator');
       } else {
         filter[alias] = Array.isArray(condition) ? { $in: condition } : condition;
       }
@@ -1796,7 +1793,7 @@ function sortNulls(value: unknown): 'first' | 'last' | undefined {
 function assertReadable<E>(meta: EntityMeta<E>, key: string): void {
   const field = meta.fields[key];
   if (field?.computed && !aggregateOf(field)) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `cannot read '${meta.entity.name}.${key}' on MongoDB: a 'computed' field writing SQL is not something a document engine evaluates`,
     );
   }

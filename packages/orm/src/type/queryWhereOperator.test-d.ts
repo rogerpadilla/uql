@@ -103,6 +103,18 @@ export async function whereOperatorGating() {
   await querier.findMany(Person, { $where: { friends: { $size: { $gte: 2 } } } });
   await querier.findMany(Person, { $where: { friends: { name: 'x' } } });
 
+  // Every list a filter reads is only read, so a `readonly` one or an `as const` tuple is taken as it is.
+  const ids: readonly number[] = [1, 2];
+  const tags = ['a', 'b'] as const;
+  await querier.findMany(Person, {
+    $where: {
+      id: ids,
+      age: { $in: ids, $nin: ids, $between: [18, 65] as const },
+      tags: { $all: tags },
+      $or: [{ name: 'a' }, { nickname: 'b' }] as const,
+    },
+  });
+
   // The implicit-IN shorthand is rejected on array-typed fields (ambiguous nesting).
   // @ts-expect-error array-typed fields require an explicit operator
   await querier.findMany(Person, { $where: { embedding: [[1], [2]] } });

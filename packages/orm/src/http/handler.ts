@@ -6,13 +6,13 @@ import type {
   Querier,
   QuerierPool,
   Query,
-  QueryWhere,
   RequestSuccessResponse,
   Type,
   UpdateWrite,
   UqlContext,
 } from '../type/index.js';
-import { whereIds } from '../util/dialect.util.js';
+import { whereIds, whereWith } from '../util/dialect.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { type CrudOperation, entityPath, type HttpMethod, matchRoute, type RouteMatch } from './contract.js';
 import { parseQueryParams } from './query.js';
 
@@ -135,7 +135,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     entities = entities.filter((entity) => !exclude.includes(entity));
   }
   if (!entities.length) {
-    throw new TypeError('no entities for the uql middleware');
+    throw new UqlUsageError('no entities for the uql middleware');
   }
 
   // All of them at once, so fixing the first collision does not just reveal the next.
@@ -143,7 +143,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
   const collisions = [...byPath].filter(([, clashing]) => clashing.length > 1);
   if (collisions.length) {
     const lines = collisions.map(([path, clashing]) => `  /${path} <- ${clashing.map(tableOf).join(', ')}`);
-    throw new TypeError(
+    throw new UqlUsageError(
       `every entity below shares a route with another, so all but the first are unreachable:\n${lines.join('\n')}\n` +
         "A route is the kebab-cased class name unless 'entityPath' says otherwise. Name them apart, " +
         "pass an 'entityPath', or pass only one of them in 'include'.",
@@ -176,7 +176,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
       meta,
       op,
       method,
-      query: parseQueryParams(rawQuery) as Query<E>,
+      query: parseQueryParams<E>(rawQuery),
       body: req.body,
       context: req.context,
     };
@@ -295,6 +295,6 @@ function ok(body: unknown): HandlerResponse {
 }
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
-  query.$where = { ...query.$where, [soleIdOf(meta, 'the HTTP handler')]: id } as QueryWhere<E>;
+  query.$where = whereWith(soleIdOf(meta, 'the HTTP handler'), id, query.$where);
   return query;
 }

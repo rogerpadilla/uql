@@ -26,6 +26,7 @@ import type {
 } from '../type/index.js';
 import { hasTriggers } from '../util/field.util.js';
 import { LoggerWrapper } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
@@ -143,7 +144,7 @@ export class Migrator {
     if (options.to) {
       const toIndex = selected.findIndex((m) => m.name === options.to);
       if (toIndex === -1) {
-        throw new TypeError(`Migration '${options.to}' not found`);
+        throw new UqlUsageError(`Migration '${options.to}' not found`);
       }
       selected = selected.slice(0, toIndex + 1);
     }

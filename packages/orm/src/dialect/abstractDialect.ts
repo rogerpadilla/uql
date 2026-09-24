@@ -4,7 +4,6 @@ import type {
   DialectName,
   EntityMeta,
   ExtraOptions,
-  FieldKey,
   FieldOptions,
   InsertIdSource,
   NamingStrategy,
@@ -119,7 +118,7 @@ export abstract class AbstractDialect {
    * primary key to `_id`.
    */
   columnOf<E>(meta: EntityMeta<E>, key: string): string {
-    return this.resolveColumnName(key, meta.fields[key as FieldKey<E>]);
+    return this.resolveColumnName(key, meta.fields[key]);
   }
 
   /**

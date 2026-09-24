@@ -2,6 +2,7 @@ import { expect, vi } from 'vitest';
 import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createMockQuerier, createMockQuerierPool, createSpec } from '../../test/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -63,6 +64,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(
       'SqliteSchemaIntrospector requires a SQL-based querier',
     );
+    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(UqlUsageError);
   }
 
   async shouldIntrospectTextDefault() {

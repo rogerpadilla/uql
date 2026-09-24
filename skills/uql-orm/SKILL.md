@@ -84,7 +84,7 @@ export class Post {
   an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
 - `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`.
   `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, a trigger writing it on those events whoever writes the row (``computed: raw`CURRENT_TIMESTAMP` ``), where `onUpdate` covers only uql's own writes.
-- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires (`defineEntity`'s `triggers` or `defineTrigger` without decorators); `where` holds a `$where` predicate per row it names, or SQL off the rows. `run` takes `(newRow, oldRow)`, each only where the event has it (no `oldRow` on insert, no `newRow` on delete), and returns the engine's own SQL, one body for every engine or `{ postgres, mssql, ... }` where they differ (SQL Server fires per statement, reading `inserted`/`deleted` as tables, with no `before*` and no `where`). MongoDB has none, and refuses a write to an entity declaring one.
+- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires (`defineEntity`'s `triggers` or `defineTrigger` without decorators); `where` holds a `$where` predicate per row it names, or SQL off the rows. `run` takes `(newRow, oldRow)`, each only where the event has it (no `oldRow` on insert, no `newRow` on delete), and returns the body: `insertInto(Audit, { postId: newRow.id })`, `updateTable(Audit, { $where: { postId: newRow.id } }, { status: newRow.status })` or `deleteFrom(Audit, { $where: { postId: oldRow.id } })`, typed by the entity written and rendered on every engine (no `onInsert`/`onUpdate` fills, so an insert names each field uql fills on insert unless its column has a `defaultValue`; `$where` reads the entity's own fields; no entity filters, security ones included, so a soft-delete entity is hard-deleted; an update or delete naming no rows is refused; no `$inc`/`$mul`/`$push` on SQL Server), several joined in one `raw`. Anything else is `raw` SQL over the refs, one body for every engine or `{ postgres, mssql, ... }` where they differ (SQL Server fires per statement, reading `inserted`/`deleted` as tables, with no `before*` and no `where`). MongoDB has none, and refuses a write to an entity declaring one.
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries
@@ -123,7 +123,7 @@ const users = await pool.findMany(User, {
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyStream`, `count`, `exists`,
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
-- `updateMany` and `deleteMany` naming no rows - no `$where`, no `$limit` - throw; `{ unfiltered: true }` means the whole table.
+- `updateMany` and `deleteMany` naming no rows - no `$where` holding a value (an `undefined` or an empty group holds none), no `$limit` - throw; `{ unfiltered: true }` means the whole table.
 - An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0,
   so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$set`, `$unset`,
   `$push`, `$pull`.
@@ -133,7 +133,7 @@ const users = await pool.findMany(User, {
 - `queryErrorKind(err)` names any failure the same on every engine - `uniqueViolation`, `foreignKeyViolation`,
   `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage` - so catch by kind rather than by
   a driver's code or an `instanceof`.
-- `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`.
+- `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`. A field read off `refs(Entity)` carries its type: on its own as a value it fits only a field of that type.
 
 ## Connections and transactions
 

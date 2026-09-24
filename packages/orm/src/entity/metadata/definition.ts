@@ -13,7 +13,6 @@ import type {
   HookEvent,
   IdKey,
   KeyMap,
-  QueryWhere,
   RelationKey,
   RelationMeta,
   RelationOptions,
@@ -24,19 +23,20 @@ import type {
   WrittenId,
 } from '../../type/index.js';
 import { RelationAggregate, SOFT_DELETE_FILTER } from '../../type/index.js';
-import { isInlinedExpression } from '../../util/field.util.js';
+import { fieldKeys, isInlinedExpression } from '../../util/field.util.js';
 import {
   entitySql,
   entityWhere,
   fieldOptionConflict,
-  getKeys,
   hasKeys,
   isToManyRelation,
   memberRefs,
   fulltextWeights,
   normalizeIndexColumn,
   definedEntries,
+  whereWith,
 } from '../../util/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { ownRegistrations } from '../decorator/bag.js';
 
 // oxlint-disable-next-line typescript/no-explicit-any -- heterogeneous registry - stores EntityMeta for all entity types
@@ -63,7 +63,7 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // A relation aggregate reads as a correlated subquery, which no engine accepts in a generated column:
   // keeping one on the row takes the triggers a write fires, which are not built yet.
   if (opts.stored && sql instanceof RelationAggregate) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}.${key}' cannot be 'stored': a relation aggregate reads as a subquery, which no ` +
         "engine keeps in a generated column. Drop 'stored' to have it read on each query.",
     );
@@ -71,14 +71,14 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   // A stored computed column is a real column and still needs a type; only an inlined one is exempt,
   // its expression being spliced in rather than declared.
   if (!opts.type && !opts.references && !isInlinedExpression(opts)) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}.${key}' needs a 'type'. Declare it - '@Field({ type: String })' - or point the field ` +
         "at another entity with 'references', which resolves the column type from its primary key.",
     );
   }
   const conflict = fieldOptionConflict(opts);
   if (conflict) {
-    throw new TypeError(`'${entity.name}.${key}' ${conflict}.`);
+    throw new UqlUsageError(`'${entity.name}.${key}' ${conflict}.`);
   }
   const fieldKey = key as FieldKey<E>;
   // Flagged when the author gave `references` but no `type`, so schema generation knows to resolve the
@@ -134,12 +134,12 @@ const KEY_MAP = new Proxy({}, { get: (_, key) => key });
 
 function addRelation<E>(entity: Type<E>, key: string, registration: RelationRegistration): EntityMeta<E> {
   if (!registration.entity) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}.${key}' needs an 'entity' getter, e.g. '@ManyToOne({ entity: () => Company })'.`,
     );
   }
   if (registration.through && registration.references) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}.${key}' joins through a junction, whose column referencing each side is the join; ` +
         "'references' pairs the declaring entity's columns with the target's instead.",
     );
@@ -186,10 +186,10 @@ export function defineTrigger<E>(entity: Type<E>, trigger: TriggerOptions<E>): E
   const meta = ensureWritableMeta(entity);
   // The type already refuses an empty map; this is the same answer for plain JavaScript.
   if (typeof trigger.run !== 'function' && !hasKeys(trigger.run)) {
-    throw new TypeError(`'${entity.name}' has a trigger whose body names at least one engine to run on`);
+    throw new UqlUsageError(`'${entity.name}' has a trigger whose body names at least one engine to run on`);
   }
   if (trigger.name && meta.triggers?.some((it) => it.name === trigger.name)) {
-    throw new TypeError(`'${entity.name}' already has a trigger named '${trigger.name}'`);
+    throw new UqlUsageError(`'${entity.name}' already has a trigger named '${trigger.name}'`);
   }
   (meta.triggers ??= []).push({ ...trigger, of: trigger.of?.(memberRefs<E>()).map((ref) => ref.key) });
   return meta;
@@ -202,14 +202,16 @@ export function defineFilter<E, N extends string>(
 ): EntityMeta<E> {
   const meta = ensureWritableMeta(entity);
   if (name === SOFT_DELETE_FILTER) {
-    throw TypeError(
+    throw new UqlUsageError(
       `'${entity.name}' filter name '${SOFT_DELETE_FILTER}' is reserved; it is auto-registered from @Field({ softDelete })`,
     );
   }
   // Widened for a caller the types did not reach, which is the only one this can refuse.
   const { security, onMissing }: { readonly security?: boolean; readonly onMissing?: FilterOnMissing } = opts;
   if (security && onMissing === 'skip') {
-    throw TypeError(`'${entity.name}' security filter '${name}' cannot use onMissing: 'skip' (it must fail closed)`);
+    throw new UqlUsageError(
+      `'${entity.name}' security filter '${name}' cannot use onMissing: 'skip' (it must fail closed)`,
+    );
   }
   (meta.filters ??= {})[name] = opts;
   return meta;
@@ -247,7 +249,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   // statement builds and then fails at the database. `schema` is the way to say it.
   if (opts.name?.includes('.')) {
     const [schema, ...rest] = opts.name.split('.');
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${entity.name}' has a dotted name '${opts.name}'. Name the schema separately as ` +
         `{ schema: '${schema}', name: '${rest.join('.')}' }.`,
     );
@@ -281,7 +283,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   }
 
   if (!hasKeys(meta.fields)) {
-    throw TypeError(`'${entity.name}' must have fields`);
+    throw new UqlUsageError(`'${entity.name}' must have fields`);
   }
 
   // A later call composes onto the entity, so a name is only ever set, and `derivedName` records that
@@ -302,22 +304,19 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
   // Derive soft-delete from the (inheritance-merged) fields, so own and inherited markers are handled
   // uniformly. Exactly one field may be marked; it auto-registers the built-in `softDelete` read
   // filter (a reserved name - see defineFilter - so it never clobbers a user filter).
-  const softDeleteKeys = getKeys(meta.fields).filter((key) => {
-    const softDelete = meta.fields[key]?.softDelete;
-    return softDelete !== undefined && softDelete !== false;
-  }) as FieldKey<E>[];
+  const softDeleteKeys = fieldKeys(meta, ({ softDelete }) => softDelete !== undefined && softDelete !== false);
   if (softDeleteKeys.length > 1) {
-    throw TypeError(`'${entity.name}' must have at most one field with 'softDelete'`);
+    throw new UqlUsageError(`'${entity.name}' must have at most one field with 'softDelete'`);
   }
   if (softDeleteKeys.length) {
     meta.softDelete = softDeleteKeys[0];
-    (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: { [meta.softDelete]: null } as QueryWhere<E>, default: true };
+    (meta.filters ??= {})[SOFT_DELETE_FILTER] = { where: whereWith(meta.softDelete, null), default: true };
   }
 
   // The optimistic lock, derived the same way and just as singular: one row has one version.
-  const versionKeys = getKeys(meta.fields).filter((key) => meta.fields[key]?.version) as FieldKey<E>[];
+  const versionKeys = fieldKeys(meta, (field) => field.version);
   if (versionKeys.length > 1) {
-    throw TypeError(`'${entity.name}' must have at most one field with 'version'`);
+    throw new UqlUsageError(`'${entity.name}' must have at most one field with 'version'`);
   }
   if (versionKeys.length) {
     meta.version = versionKeys[0];
@@ -329,7 +328,7 @@ export function defineEntity<E>(entity: Type<E>, opts: EntityOptions<E> = {}): E
 
   const ids = getIdKeys(meta);
   if (!ids.length) {
-    throw TypeError(
+    throw new UqlUsageError(
       `'${entity.name}' must have at least one id field (use @Id, defineId, or defineEntity({ fields: { ..., isId: true } }))`,
     );
   }
@@ -349,7 +348,7 @@ export function assertSoleId<E>(meta: EntityMeta<E>, what: string): void {
   if (ids.length === 1) {
     return;
   }
-  throw new TypeError(
+  throw new UqlUsageError(
     ids.length
       ? `'${meta.entity.name}' has a composite primary key (${ids.join(', ')}), which ${what} does not support yet.`
       : // An entity registered with `@Field` but no `@Entity` never ran the check in `defineEntity`.
@@ -367,7 +366,7 @@ export function soleIdOf<E>(meta: EntityMeta<E>, what: string): IdKey<E> {
 export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
   const field = meta.fields[key];
   if (!field) {
-    throw new TypeError(`'${meta.entity.name}' has no field '${key}'`);
+    throw new UqlUsageError(`'${meta.entity.name}' has no field '${key}'`);
   }
   return field;
 }
@@ -376,13 +375,13 @@ export function fieldOf<E>(meta: EntityMeta<E>, key: string): FieldMeta {
 export function relationOf<E>(meta: EntityMeta<E>, key: RelationKey<E>): RelationMeta {
   const relation = meta.relations[key];
   if (!relation) {
-    throw new TypeError(`'${meta.entity.name}' has no relation '${key}'`);
+    throw new UqlUsageError(`'${meta.entity.name}' has no relation '${key}'`);
   }
   return relation;
 }
 
 /** A row of `E` as far as reading its key goes: a record or a write, whatever its values. */
-type KeyedRow<E> = { readonly [K in keyof E]?: unknown };
+export type KeyedRow<E> = { readonly [K in keyof E]?: unknown };
 
 /** Whether the row names every column of its primary key, `0` and `''` included. */
 export function namesKey<E>(meta: EntityMeta<E>, row: KeyedRow<E>): boolean {
@@ -445,7 +444,7 @@ export function getMeta<E>(entity: Type<E>): EntityMeta<E> {
 function registeredMeta<E>(entity: Type<E>): EntityMeta<E> {
   const meta = metas.get(entity);
   if (!meta) {
-    throw TypeError(`'${entity.name}' is not an entity`);
+    throw new UqlUsageError(`'${entity.name}' is not an entity`);
   }
   return meta;
 }
@@ -455,7 +454,7 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
     const at = `'${meta.entity.name}.${relKey}'`;
     const references = settledReferences(at, meta, relKey, relation);
     if (!references.length) {
-      throw new TypeError(`${at} has no columns to join on.`);
+      throw new UqlUsageError(`${at} has no columns to join on.`);
     }
     if (!relation.through) {
       assertJoins(at, meta, relation, references);
@@ -481,7 +480,7 @@ function settledReferences<E>(
   if (typeof references === 'string') {
     const target = ensureMeta(relOpts.entity());
     if (mappedBy || isToManyRelation(relOpts) || target.ids.length > 1) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `${at} names one column, '${references}', which only a to-one holding a foreign key to a one-column key ` +
           'can: pair the columns, [{ local, foreign }].',
       );
@@ -492,7 +491,7 @@ function settledReferences<E>(
   if (references) return references;
   if (mappedBy) return fillInverseSide(at, meta, relOpts, mappedBy);
   if (through) return fillThrough(at, meta, relOpts, through);
-  throw new TypeError(
+  throw new UqlUsageError(
     isToManyRelation(relOpts)
       ? `${at} is a to-many relation with no way to join: it needs 'mappedBy' (the member on the other side), ` +
           "'through' (a junction entity), or 'references' (the columns)."
@@ -531,7 +530,7 @@ function fillInverseSide<E>(
 
   if (relMeta.fields[mappedBy]) {
     if (meta.ids.length > 1) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `${at} is mapped by ${other}, one column, but the primary key of ` +
           `'${meta.entity.name}' is composite (${meta.ids.join(', ')}). Map it by the relation on the other side ` +
           'instead, which joins every column of the key.',
@@ -544,16 +543,16 @@ function fillInverseSide<E>(
 
   const owner: RelationRegistration | undefined = relMeta.relations[mappedBy];
   if (!owner) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${at} is mapped by '${mappedBy}', which is neither a field nor a relation of '${relMeta.entity.name}'.`,
     );
   }
   if (owner.mappedBy) {
-    throw new TypeError(`${at} is mapped by ${other}, an inverse side too, so neither owns the foreign key.`);
+    throw new UqlUsageError(`${at} is mapped by ${other}, an inverse side too, so neither owns the foreign key.`);
   }
   const ownerTarget = owner.entity();
   if (!isA(meta.entity, ownerTarget)) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${at} is mapped by ${other}, a relation to '${ownerTarget.name}', not to '${meta.entity.name}'.`,
     );
   }
@@ -592,11 +591,11 @@ function assertJoins<E>(
       const column = `'${side.meta.entity.name}.${key}'`;
       const field = side.meta.fields[key];
       if (!field || isInlinedExpression(field)) {
-        throw new TypeError(`${at} joins ${column}, which is not a column: declare it with '@Field'.`);
+        throw new UqlUsageError(`${at} joins ${column}, which is not a column: declare it with '@Field'.`);
       }
       const referenced = side.holds && pairs.length === 1 ? field.references?.() : undefined;
       if (referenced && !isA(side.joins, referenced)) {
-        throw new TypeError(
+        throw new UqlUsageError(
           `${at} joins ${column}, a foreign key to '${referenced.name}', not to '${side.joins.name}'.`,
         );
       }
@@ -632,7 +631,7 @@ export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
     const target = ensureMeta(field.references());
     if (!target.ids.length) return [];
     if (target.ids.length > 1) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `'${meta.entity.name}.${key}' cannot reference '${target.entity.name}', whose primary key is composite ` +
           `(${target.ids.join(', ')}): a column points at one. Declare a column per key and pair each with it ` +
           `in a '@ManyToOne' to '${target.entity.name}'.`,
@@ -656,13 +655,13 @@ function junctionReferences<S>(at: string, junction: EntityMeta<object>, side: E
         side.ids.length > 1
           ? `a column per key, paired in a '@ManyToOne' to '${side.entity.name}'`
           : `'@Field({ references: () => ${side.entity.name} })'`;
-      throw new TypeError(
+      throw new UqlUsageError(
         `${at} joins through '${junction.entity.name}', which has no column referencing ${referenced}: declare ${declare}.`,
       );
     }
     if (others.length) {
       const columns = [pair, ...others].map(({ local }) => `'${local}'`).join(' and ');
-      throw new TypeError(
+      throw new UqlUsageError(
         `${at} joins through '${junction.entity.name}', where ${columns} each reference ${referenced}: a junction ` +
           'needs exactly one column per key of each side.',
       );
@@ -673,7 +672,7 @@ function junctionReferences<S>(at: string, junction: EntityMeta<object>, side: E
 
 /** Every key the entity marks, in declaration order. More than one is a composite primary key. */
 function getIdKeys<E>(meta: EntityMeta<E>): IdKey<E>[] {
-  return getKeys(meta.fields).filter((key) => meta.fields[key]?.isId) as IdKey<E>[];
+  return fieldKeys(meta, (field) => field.isId) as IdKey<E>[];
 }
 
 /**

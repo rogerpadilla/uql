@@ -14,6 +14,7 @@ import type {
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
 import { isOwnedName } from '../../util/sql.util.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -121,7 +122,7 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
     return this.pool.withQuerier((querier) => {
       if (!isSqlQuerier(querier)) {
-        throw new TypeError(`${this.constructor.name} requires a SQL-based querier`);
+        throw new UqlUsageError(`${this.constructor.name} requires a SQL-based querier`);
       }
       return task(querier);
     });

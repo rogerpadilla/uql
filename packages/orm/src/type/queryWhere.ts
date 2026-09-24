@@ -1,6 +1,6 @@
 import type { FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
 import type { QuerySelect } from './query.js';
-import type { QueryRaw } from './queryRaw.js';
+import type { QueryRaw, RawFor } from './queryRaw.js';
 import type { AtLeastOne, ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
 
@@ -150,7 +150,7 @@ export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
    * whether a value is between two values (inclusive). Shorthand for $gte + $lte.
    * @example { age: { $between: [18, 65] } }
    */
-  $between?: [ExpandScalar<T>, ExpandScalar<T>];
+  $between?: readonly [ExpandScalar<T>, ExpandScalar<T>];
   /**
    * whether a string begins with the given string (case sensitive).
    */
@@ -190,11 +190,11 @@ export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
   /**
    * whether a value matches any of the given values.
    */
-  $in?: ExpandScalar<T>[];
+  $in?: readonly ExpandScalar<T>[];
   /**
    * whether a value does not match any of the given values.
    */
-  $nin?: ExpandScalar<T>[];
+  $nin?: readonly ExpandScalar<T>[];
   /**
    * whether a value is null.
    * @example { deletedAt: { $isNull: true } }
@@ -209,7 +209,11 @@ export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
    * whether an array contains all the specified values.
    * @example { tags: { $all: ['typescript', 'orm'] } }
    */
-  $all?: unknown extends T ? unknown[] : NonNullable<T> extends readonly (infer U)[] ? ExpandScalar<U>[] : never;
+  $all?: unknown extends T
+    ? readonly unknown[]
+    : NonNullable<T> extends readonly (infer U)[]
+      ? readonly ExpandScalar<U>[]
+      : never;
   /** whether an array has the given length, or one in range: `{ roles: { $size: { $gte: 2 } } }`. */
   $size?: number | QuerySizeComparisonOps;
   /**
@@ -331,11 +335,11 @@ type IsUntypedColumn<T> = [Scalar] extends [NonNullable<T>] ? true : false;
 export type QueryWhereFieldValue<T, Raw = QueryRaw> =
   | T
   | (undefined extends T ? null : never)
-  | (IsMany<T> extends true ? never : T[])
+  | (IsMany<T> extends true ? never : readonly T[])
   | QueryWhereFieldOperators<T, Raw>
-  | Raw;
+  | RawFor<Raw, T>;
 
 /**
  * query filter array - the value every {@link QueryGroupOp} takes.
  */
-export type QueryWhereArray<E, Raw = QueryRaw> = (QueryWhere<E, Raw> | Raw)[];
+export type QueryWhereArray<E, Raw = QueryRaw> = readonly (QueryWhere<E, Raw> | Raw)[];

@@ -6,6 +6,7 @@ import {
   type QuerierPool,
   type SqlQuerier,
 } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * Querier used for schema migrations and the migration journal.
@@ -58,7 +59,7 @@ function withQuerierOfKind<Q extends Querier, T>(
 ): Promise<T> {
   return withQuerierForMigrations(pool, (querier) => {
     if (!isKind(querier)) {
-      throw new TypeError(error);
+      throw new UqlUsageError(error);
     }
     return task(querier);
   });

@@ -155,7 +155,10 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * Ids are exact everywhere but MySQL, which infers them from its header and reports `undefined` rather
    * than a guess where it cannot: a batch naming some keys, or a key that is not `AUTO_INCREMENT`.
    */
-  insertMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]>;
+  insertMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+  ): Promise<(WrittenId<E> | undefined)[]>;
 
   /** Insert or update a record by its conflict paths; resolves to its id and whether it was created. */
   upsertOne<E extends object>(
@@ -168,7 +171,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
   ): Promise<QueryUpsertManyResult<E>>;
 
   /**
@@ -185,7 +188,10 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * @param payload the data to be persisted
    * @return the IDs
    */
-  saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]>;
+  saveMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+  ): Promise<(WrittenId<E> | undefined)[]>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

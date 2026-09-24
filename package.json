@@ -13,8 +13,6 @@
     "release.major": "bun run release major && bun run release.finish",
     "release.finish": "git push --follow-tags && bun run release.github",
     "release.github": "bun scripts/github-release.ts",
-    "publish.orm": "cd packages/orm && bun publish",
-    "publish.codemod": "cd packages/codemod && bun publish",
     "check": "bun run lint && bun run ts && bun run ts.rename && bun run test && bun run build && bun run check.package",
     "ts": "tsc --noEmit",
     "ts.rename": "bun scripts/type-rename.ts",

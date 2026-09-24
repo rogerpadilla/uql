@@ -1,5 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import type { ColumnSchema, SqlDialectName } from '../../type/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 
 /**
  * A {@link ColumnSchema.defaultValue} that is SQL rather than a literal. Kinds are symbolic: the
@@ -163,7 +164,7 @@ function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect): 
   const { expressions } = DIALECT_DEFAULTS[dialect.dialectName];
   const sql = expression.kind === 'raw' ? expression.sql : expressions[expression.kind];
   if (sql == null) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${dialect.dialectName} has no '${expression.kind}' default; pass expr.raw(...) with SQL this engine accepts`,
     );
   }

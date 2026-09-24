@@ -20,6 +20,7 @@ import {
 } from '../type/index.js';
 import { aggregateOf, isInlinedExpression } from './field.util.js';
 import { entityName, hasKeys } from './object.util.js';
+import { UqlUsageError } from './uqlError.js';
 
 /**
  * Raw SQL, where an interpolated value binds, a `refs` field renders its column, and a `raw` renders
@@ -120,7 +121,7 @@ type PickedRef = (refs: RefMap<object>) => ColumnRef;
 function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
   return new RelationAggregate(spec, (opts) => {
     if (!opts.entity) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `'${spec.relation}' was read off a definition's refs, so it renders only inside its entity's SQL`,
       );
     }
@@ -129,17 +130,13 @@ function relationAggregate(spec: RelationAggregateSpec): RelationAggregate {
 }
 
 /**
- * The fields of `E` as the row a trigger body reads them off, qualified by the side it names: `NEW."col"`
- * against the incoming row, `OLD."col"` against the outgoing one. Columns only, never a relation's
- * aggregate: that is a subquery, and a trigger fires on one row rather than over a table to correlate to.
+ * The fields of `entity` as the row a trigger body reads them off, qualified by the side it names:
+ * `NEW."col"` against the incoming row, `OLD."col"` against the outgoing one. Bound to the entity, as
+ * {@link refs} are, so each names its own column wherever it renders, a write to another table included.
+ * Columns only: a relation's aggregate is a subquery, and a trigger fires on one row, not over a table.
  */
-export function rowRefs<E>(qualifier: TriggerRowName): RefMap<E> {
-  return new Proxy({}, { get: (_, key) => rowColumn(qualifier, String(key)) }) as RefMap<E>;
-}
-
-/** One field of a trigger's row, for code that names it by its key rather than off {@link rowRefs}. */
-export function rowColumn(qualifier: TriggerRowName, key: string): ColumnRef {
-  return columnRef(undefined, key, qualifier);
+export function rowRefs<E>(entity: Type<E>, qualifier: TriggerRowName): RefMap<E> {
+  return new Proxy({}, { get: (_, key) => columnRef(entity, String(key), qualifier) }) as RefMap<E>;
 }
 
 /**
@@ -150,7 +147,7 @@ function columnRef(entity: Type<unknown> | undefined, key: string, qualifier?: s
   return new ColumnRef(key, (opts) => {
     const owner = entity ?? opts.entity;
     if (!owner) {
-      throw new TypeError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
+      throw new UqlUsageError(`'${key}' was read off a definition's refs, so it renders only inside its entity's SQL`);
     }
     renderColumn(getMeta(owner), key, { ...opts, entity: owner }, qualifier);
   });
@@ -167,7 +164,7 @@ function renderColumn<E>(meta: EntityMeta<E>, key: string, opts: QueryRawRenderO
   if (field && isInlinedExpression(field)) {
     // A relation aggregate is a subquery correlated to a table in scope, and a trigger's row is not one.
     if (qualifier !== undefined && aggregateOf(field)) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `'${entityName(meta)}.${key}' reads a relation, which a trigger's row cannot: it fires on one row, ` +
           'with no table in scope to correlate a subquery to. Name the columns it is derived from instead.',
       );

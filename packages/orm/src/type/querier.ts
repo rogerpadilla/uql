@@ -204,12 +204,12 @@ export interface SqlQuerier extends Querier {
   /**
    * Execute a raw SQL query and return results
    */
-  all<T>(query: string, values?: unknown[]): Promise<T[]>;
+  all<T>(query: string, values?: readonly unknown[]): Promise<T[]>;
 
   /**
    * Execute a raw SQL command (INSERT, UPDATE, DELETE, DDL)
    */
-  run(query: string, values?: unknown[]): Promise<QueryUpdateResult>;
+  run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult>;
 }
 
 /**
@@ -249,7 +249,7 @@ export function isMongoQuerier(querier: Querier): querier is MongoQuerier {
 export type ListenerContext<E extends object = object> = {
   readonly entity: Type<E>;
   readonly querier: Querier;
-  readonly payloads: E[];
+  readonly payloads: readonly E[];
   readonly event: HookEvent;
 };
 

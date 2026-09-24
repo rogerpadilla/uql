@@ -2,7 +2,10 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import type {
   EntityMeta,
   EntityTriggerMeta,
+  FieldKey,
+  FieldMeta,
   QueryRaw,
+  RefMap,
   StampEvent,
   TriggerEvent,
   TriggerMetaBody,
@@ -10,8 +13,9 @@ import type {
 } from '../type/index.js';
 import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
-import { raw, rowColumn, rowRefs } from '../util/raw.js';
+import { raw, refs, rowRefs } from '../util/raw.js';
 import { ownedName } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /** A trigger as uql installs it: the identifier, and the statements creating it under that identifier. */
 export type RenderedTrigger = { readonly name: string; readonly statements: readonly string[] };
@@ -40,7 +44,7 @@ export function renderTrigger<E>(
  */
 export function dropTrigger<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>, name: string): string[] {
   const { scope, body } = dialect.features.triggers;
-  const table = dialect.escapeId(dialect.resolveTableName(meta));
+  const table = dialect.escapedTableName(meta);
   return [
     `DROP TRIGGER IF EXISTS ${triggerId(dialect, meta, name)}${scope === 'table' ? ` ON ${table}` : ''}`,
     ...(body === 'function' ? [`DROP FUNCTION IF EXISTS ${schemaObjectId(dialect, meta, name)}()`] : []),
@@ -73,18 +77,16 @@ function triggerStatements<E>(
   name: string,
 ): string[] {
   const features = dialect.features.triggers;
-  // The event, read apart once: `beforeUpdate` is `BEFORE` and `UPDATE`, and everything else follows.
-  const before = trigger.on.startsWith('before');
-  const operation = trigger.on.slice(before ? 6 : 5).toUpperCase();
+  const [timing, operation] = EVENT_PARTS[trigger.on];
+  const before = timing === 'BEFORE';
   const body = triggerBody(dialect, meta, trigger, before);
 
   const id = triggerId(dialect, meta, name);
-  const table = dialect.escapeId(dialect.resolveTableName(meta));
-  const column = (key: string) => dialect.escapeId(dialect.columnOf(meta, key));
+  const table = dialect.escapedTableName(meta);
   const names = rowNames(dialect);
-  const rows = [rowRefs<E>(names.$new), rowRefs<E>(names.$old)] as const;
-  const sql = dialect.compileDdl(body(...rows), meta.entity);
-  const guard = triggerGuard(dialect, meta, trigger, rows, names, column);
+  const rows = [rowRefs(meta.entity, names.$new), rowRefs(meta.entity, names.$old)] as const;
+  const sql = dialect.compileDdl(body(...rows), meta.entity, { rows: rowsFrom(dialect, meta, operation) });
+  const guard = triggerGuard(dialect, meta, trigger, rows, names);
 
   const inBody = features.guards !== 'clause';
   const guarded =
@@ -99,15 +101,15 @@ function triggerStatements<E>(
 
   const of =
     features.guards === 'clause' && operation === 'UPDATE' && trigger.of?.length
-      ? ` OF ${trigger.of.map(column).join(', ')}`
+      ? ` OF ${trigger.of.map((key) => dialect.escapedColumnName(meta, key)).join(', ')}`
       : '';
   const each = features.rows === 'set' ? '' : '\nFOR EACH ROW';
   const clause = guard && !inBody ? `\nWHEN (${guard})` : '';
-  const timing = `${before ? 'BEFORE' : 'AFTER'} ${operation}${of}`;
+  const when = `${timing} ${operation}${of}`;
   const header =
     features.layout === 'tableFirst'
-      ? `CREATE TRIGGER ${id}\nON ${table} ${timing}${each}${clause}\nAS`
-      : `CREATE TRIGGER ${id}\n${timing} ON ${table}${each}${clause}`;
+      ? `CREATE TRIGGER ${id}\nON ${table} ${when}${each}${clause}\nAS`
+      : `CREATE TRIGGER ${id}\n${when} ON ${table}${each}${clause}`;
 
   if (features.body !== 'function') {
     return [`${header}\nBEGIN\n${opened}\nEND`];
@@ -118,6 +120,18 @@ function triggerStatements<E>(
   const fn = schemaObjectId(dialect, meta, name);
   return [plpgsqlFunction(fn, `BEGIN\n${opened}\nRETURN ${returned};\nEND`), `${header}\nEXECUTE FUNCTION ${fn}()`];
 }
+
+type TriggerOperation = 'INSERT' | 'UPDATE' | 'DELETE';
+
+/** Each event read apart: `beforeUpdate` is `BEFORE` and `UPDATE`. */
+const EVENT_PARTS = {
+  beforeInsert: ['BEFORE', 'INSERT'],
+  afterInsert: ['AFTER', 'INSERT'],
+  beforeUpdate: ['BEFORE', 'UPDATE'],
+  afterUpdate: ['AFTER', 'UPDATE'],
+  beforeDelete: ['BEFORE', 'DELETE'],
+  afterDelete: ['AFTER', 'DELETE'],
+} as const satisfies Record<TriggerEvent, readonly ['BEFORE' | 'AFTER', TriggerOperation]>;
 
 /**
  * The body for the engine in use, refusing first what the engine cannot render at all. One body serves
@@ -132,13 +146,13 @@ function triggerBody<E>(
 ): TriggerMetaBody<E> {
   const features = dialect.features.triggers;
   if (before && !features.before) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${dialect.dialectName} has no BEFORE trigger, only AFTER and INSTEAD OF, so '${trigger.on}' cannot be ` +
         'rendered there. Use the matching after event, which sees the row already written.',
     );
   }
   if (trigger.where && features.rows === 'set') {
-    throw new TypeError(
+    throw new UqlUsageError(
       `${dialect.dialectName} fires a trigger once per statement, over the rows it touched, so no condition ` +
         `can read one row: '${meta.entity.name}' cannot state a trigger 'where' there. Guard inside the body ` +
         'instead, where `inserted` and `deleted` can be read as tables.',
@@ -147,7 +161,7 @@ function triggerBody<E>(
   const { run } = trigger;
   const body = typeof run === 'function' ? run : (run[dialect.dialectName] ?? run[dialect.dialectFamily]);
   if (!body) {
-    throw new TypeError(
+    throw new UqlUsageError(
       `'${meta.entity.name}' has a trigger with no body for ${dialect.dialectName}, the engine in use. ` +
         'Write one for it, or one body for every engine.',
     );
@@ -162,9 +176,8 @@ function triggerGuard<E>(
   trigger: EntityTriggerMeta<E>,
   rows: Readonly<Parameters<TriggerMetaBody<E>>>,
   names: RowNames,
-  column: (key: string) => string,
 ): string {
-  const moved = movedColumns(dialect, meta, trigger.of ?? [], names, column);
+  const moved = movedColumns(dialect, meta, trigger.of ?? [], names);
   return [
     ...(moved ? [moved] : []),
     ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(moved)) : []),
@@ -205,16 +218,12 @@ function condition<E>(
     return [operand ? `(${sql})` : sql];
   }
   const predicates = definedEntries(where);
-  return predicates.map(([row, predicate]) => {
-    const ctx = dialect.createContext({ inlineValues: true });
-    const escapedPrefix = `${names[row]}.`;
-    dialect.where(ctx, meta.entity, predicate, {
-      clause: false,
+  return predicates.map(([row, predicate]) =>
+    dialect.compileDdl(predicate, meta.entity, {
+      escapedPrefix: `${names[row]}.`,
       operand: operand || predicates.length > 1,
-      escapedPrefix,
-    });
-    return ctx.sql;
-  });
+    }),
+  );
 }
 
 /**
@@ -222,12 +231,15 @@ function condition<E>(
  * column. Generated rather than authored, so unlike an authored body it renders on every engine from
  * one declaration - and not at all on the MySQL family, whose columns stamp themselves.
  */
-export function stampTriggers<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>): EntityTriggerMeta<E>[] {
+export function stampTriggers<E extends object>(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<E>,
+): EntityTriggerMeta<E>[] {
   const features = dialect.features.triggers;
   // Restating the row has to wait for it to be there, so those engines stamp after the write.
   const after = !features.assignsRow;
-  const newName = rowNames(dialect).$new;
-  return definedEntries(meta.fields).flatMap(([key, field]) => {
+  const fields: { readonly [K in FieldKey<E>]?: FieldMeta } = meta.fields;
+  return definedEntries(fields).flatMap(([key, field]) => {
     const events = stampEvents(field);
     const { computed } = field;
     if (!events?.length || !computed) {
@@ -238,7 +250,7 @@ export function stampTriggers<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E
       // The event is part of the name: a stamp on both writes installs two triggers, and one identifier
       // between them would have the second replace the first rather than sit beside it.
       name: `${key}_${event}`,
-      run: () => stampBody(dialect, meta, key, computed, newName),
+      run: (newRow) => stampBody(dialect, meta, key, computed, newRow),
     }));
   });
 }
@@ -249,32 +261,35 @@ const STAMP_EVENTS = {
   after: { insert: 'afterInsert', update: 'afterUpdate' },
 } as const satisfies Record<'before' | 'after', Record<StampEvent, TriggerEvent>>;
 
-/** The one statement a stamp runs, in whichever of the two shapes the engine leaves open. */
-function stampBody<E>(
+/**
+ * The one statement a stamp runs, in whichever of the two shapes the engine leaves open: an assignment
+ * to the incoming row, or where it may not be written, the row restated after the write, as any write in
+ * a trigger's body is, keyed on its whole key and only where the stamp still differs: that `UPDATE` fires
+ * the trigger again, and with recursive triggers on it then finds nothing left to change.
+ */
+function stampBody<E extends object>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
-  key: string,
+  key: FieldKey<E>,
   value: QueryRaw,
-  newName: TriggerRowName,
+  newRow: RefMap<E>,
 ): QueryRaw {
-  const features = dialect.features.triggers;
-  const read = (member: string) => rowColumn(newName, member);
-  if (features.assignsRow) {
-    const target = read(key);
-    return features.body === 'function' ? raw`${target} := ${value};` : raw`SET ${target} = ${value};`;
+  const { entity } = meta;
+  if (dialect.features.triggers.assignsRow) {
+    const target = newRow[key];
+    return dialect.features.triggers.body === 'function' ? raw`${target} := ${value};` : raw`SET ${target} = ${value};`;
   }
-  const table = dialect.escapeId(dialect.resolveTableName(meta));
-  const column = dialect.escapeId(dialect.columnOf(meta, key));
-  const keyed = meta.ids
-    .map((id) => raw`${text(`${table}.${dialect.escapeId(dialect.columnOf(meta, id))}`)} = ${read(id)}`)
-    .reduce((all, part) => raw`${all} AND ${part}`);
-  // A set-based engine hands the rows as a table, which an `UPDATE` has to name in a `FROM` before its
-  // condition can read one: `inserted."id"` binds to nothing on its own.
-  const from = features.rows === 'set' ? ` FROM ${newName}` : '';
-  // Only where the stamp still differs: this `UPDATE` fires the trigger again, and with recursive triggers
-  // on, the restatement it runs then finds nothing left to change instead of recursing without end.
-  const differs = dialect.neExpr(`${table}.${column}`, dialect.compileDdl(value, meta.entity));
-  return raw`UPDATE ${text(table)} SET ${text(column)} = ${value}${text(from)} WHERE ${keyed} AND ${text(differs)};`;
+  const table = refs(entity);
+  const keyed = meta.ids.map((id) => raw`${table[id]} = ${newRow[id]}`);
+  // Read through the write's own qualifier, as `keyed` is: `inserted` holds the same column name.
+  const stamped = dialect.compileDdl(value, entity);
+  const differs = raw(({ ctx, escapedPrefix }) =>
+    ctx.append(dialect.neExpr(`${escapedPrefix}${dialect.escapedColumnName(meta, key)}`, stamped)),
+  );
+  const where = { $and: [...keyed, differs] };
+  return raw(({ ctx, rows }) =>
+    dialect.triggerWrite(ctx, { kind: 'update', entity, set: { [key]: value }, where }, rows),
+  );
 }
 
 /** A dollar quote the body does not contain, so no `$$` in it - a literal, a comment - ends the function early. */
@@ -286,11 +301,6 @@ function dollarQuote(body: string): string {
   return tag;
 }
 
-/** SQL already written out, for the identifiers a statement splices rather than binds. */
-function text(sql: string): QueryRaw {
-  return raw((opts) => opts.ctx.append(sql));
-}
-
 /**
  * Whether any watched column moved, null-safely, or `undefined` where none is watched: the two records
  * compared on a row-based engine, and on a set-based one the same question over a join of its two tables.
@@ -300,16 +310,39 @@ function movedColumns<E>(
   meta: EntityMeta<E>,
   of: readonly string[],
   { $new: newName, $old: oldName }: RowNames,
-  column: (key: string) => string,
 ): string | undefined {
   if (!of.length) {
     return undefined;
   }
-  const differs = of.map((key) => dialect.neExpr(`${oldName}.${column(key)}`, `${newName}.${column(key)}`));
+  const differs = of.map((key) => {
+    const column = dialect.escapedColumnName(meta, key);
+    return dialect.neExpr(`${oldName}.${column}`, `${newName}.${column}`);
+  });
   const moved = differs.length > 1 ? `(${differs.join(' OR ')})` : differs.join('');
-  if (dialect.features.triggers.rows === 'row') {
-    return moved;
+  const source = rowsFrom(dialect, meta, 'UPDATE');
+  return source ? `EXISTS (SELECT 1 ${source} WHERE ${moved})` : moved;
+}
+
+/**
+ * Where a set-based engine's body reads the rows it fires for, as the `FROM` a statement names them in:
+ * `inserted` on an insert, `deleted` on a delete, and on an update both, joined on the whole key. None on a
+ * row-based engine, whose body reads `NEW` and `OLD` bare.
+ */
+function rowsFrom<E>(
+  dialect: AbstractSqlDialect,
+  meta: EntityMeta<E>,
+  operation: TriggerOperation,
+): string | undefined {
+  if (dialect.features.triggers.rows !== 'set') {
+    return undefined;
   }
-  const keyed = meta.ids.map((id) => `${newName}.${column(id)} = ${oldName}.${column(id)}`).join(' AND ');
-  return `EXISTS (SELECT 1 FROM ${newName} JOIN ${oldName} ON ${keyed} WHERE ${moved})`;
+  const { $new, $old } = rowNames(dialect);
+  if (operation !== 'UPDATE') {
+    return `FROM ${operation === 'INSERT' ? $new : $old}`;
+  }
+  const keyed = meta.ids.map((id) => {
+    const column = dialect.escapedColumnName(meta, id);
+    return `${$new}.${column} = ${$old}.${column}`;
+  });
+  return `FROM ${$new} JOIN ${$old} ON ${keyed.join(' AND ')}`;
 }

@@ -2,6 +2,7 @@ import { fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import {
   type AggregateCall,
   type ColumnFamily,
+  type DdlRenderOptions,
   COUNT_RESULT_KEY,
   type EntityData,
   type EntityMeta,
@@ -53,6 +54,7 @@ import {
   type RelationQuery,
   type SqlDialectName,
   type SqlQueryDialect,
+  type TriggerWrite,
   type Type,
   type UpdatePayload,
 } from '../type/index.js';
@@ -60,6 +62,8 @@ import { isInlinedExpression } from '../util/field.util.js';
 import {
   asSelectMap,
   assertNonNegativeInteger,
+  assertWhere,
+  definedEntries,
   escapeSqlId,
   fillOnFields,
   filterFieldKeys,
@@ -129,6 +133,7 @@ import {
   isOrderedOp,
   isVectorQuery,
   LIKE_OPS,
+  namesRows,
   ORDERED_OPS,
   VECTOR_QUERY_KEY_SET,
   whereOperators,
@@ -273,6 +278,14 @@ function orRefuse<T>(value: T | undefined, refusal: string): T {
     throw new UqlUsageError(refusal);
   }
   return value;
+}
+
+/**
+ * Whether an assignment builds on what each row before it left: `$inc`, `$mul`, `$push`. A set-based
+ * `UPDATE` writes a target once however many rows of its set match it, so it would apply one of them.
+ */
+function accumulates(value: unknown): boolean {
+  return isFieldUpdateOp(value) || (isJsonUpdateOp(value) && value.$push !== undefined);
 }
 
 /** Conditions joined by `AND`, parenthesized where there is more than one. */
@@ -454,7 +467,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /**
    * Normalizes a list of parameter values.
    */
-  normalizeValues(values: unknown[] | undefined): unknown[] | undefined {
+  normalizeValues(values: readonly unknown[] | undefined): unknown[] | undefined {
     return values?.map((v) => this.normalizeValue(v));
   }
 
@@ -475,7 +488,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected returningIdExpression<E>(meta: EntityMeta<E>): string {
     const [idKey] = meta.ids;
     return meta.ids.length === 1
-      ? `${this.returnedRowPrefix}${this.escapeId(this.columnOf(meta, idKey))} ${this.escapeId('id')}`
+      ? `${this.returnedRowPrefix}${this.escapedColumnName(meta, idKey)} ${this.escapeId('id')}`
       : '';
   }
 
@@ -630,7 +643,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** The columns a `$text` over `keys` reads, qualified by `prefix` where the statement joins, as any column is. */
   protected textColumns<E>(meta: EntityMeta<E>, keys: readonly string[], prefix: string | undefined): string[] {
-    return keys.map((key) => this.columnWithPrefix(key, meta.fields[key as FieldKey<E>], { prefix }));
+    return keys.map((key) => this.columnWithPrefix(key, meta.fields[key], { prefix }));
   }
 
   /** Ranks by the root `$text` of `where`, which is looked up only once a `$sort` asks for it. */
@@ -749,7 +762,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * The table as a statement writes it, each part escaped on its own rather than as one dotted
    * string taken apart again by {@link escapeId}.
    */
-  protected escapedTableName<E>(meta: EntityMeta<E>): string {
+  escapedTableName<E>(meta: EntityMeta<E>): string {
     return this.escapeQualifiedId(this.resolveTableAlias(meta), this.resolveSchema(meta));
   }
 
@@ -814,7 +827,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx.append(` ${join.required ? 'INNER' : 'LEFT'} JOIN ${this.escapedTableName(join.meta)} ${joinAlias} ON `);
       join.relation.references.forEach((reference, index) => {
         if (index > 0) ctx.append(' AND ');
-        const foreign = this.escapeId(this.columnOf(join.meta, reference.foreign));
+        const foreign = this.escapedColumnName(join.meta, reference.foreign);
         // Two calls rather than one over a union: the parent is either another join's entity or the
         // queried one, and their metadata types have nothing in common.
         const local = this.escapeId(
@@ -1342,7 +1355,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     prefix = opts.prefix,
   ): void {
     for (const [key, value] of Object.entries(sort)) {
-      const relation = meta.relations[key as RelationKey<E>];
+      const relation = meta.relations[key];
       const keyPath = path ? `${path}.${key}` : key;
       if (key === '$text') {
         if (path) {
@@ -1426,7 +1439,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     key: string,
     prefix: string | undefined,
   ): Pick<SortTerm, 'expr' | 'output'>[] {
-    const field = meta.fields[key as FieldKey<E>];
+    const field = meta.fields[key];
     if (field) {
       const expr =
         this.inlinedOperand(ctx, field, prefix ?? this.resolveTableAlias(meta), meta.entity) ??
@@ -1889,30 +1902,108 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const [filledPayload] = fillOnFields(meta, payload as E, 'onUpdate');
     const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
 
-    const tableName = this.escapedTableName(meta);
-    ctx.append(`UPDATE ${tableName} SET `);
+    ctx.append(`UPDATE ${this.escapedTableName(meta)} SET `);
     for (let i = 0; i < keys.length; i++) {
       if (i > 0) {
         ctx.append(', ');
       }
-      const key = keys[i];
-      const field = meta.fields[key];
-      const escapedCol = this.escapedColumnName(meta, key);
-      const value = filledPayload[key];
-
-      if (isJsonUpdateOp(value)) {
-        this.formatJsonUpdate(ctx, escapedCol, value, field);
-      } else if (isFieldUpdateOp(value)) {
-        const [op, operand] = fieldUpdateOf(key, value);
-        ctx.append(`${escapedCol} = COALESCE(${escapedCol}, 0) ${SQL_ARITHMETIC[op]} `);
-        ctx.addValue(operand);
-      } else {
-        ctx.append(`${escapedCol} = `);
-        this.formatPersistableValue(ctx, field, value);
-      }
+      this.appendAssignment(ctx, meta, keys[i], filledPayload[keys[i]]);
     }
-
     this.search(ctx, entity, q, opts);
+  }
+
+  /** `col = value`, a JSON operator or a `$inc`/`$mul` spelled as the engine's. */
+  private appendAssignment<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, value: unknown): void {
+    const field = meta.fields[key];
+    const escapedCol = this.escapedColumnName(meta, key);
+    if (isJsonUpdateOp(value)) {
+      this.formatJsonUpdate(ctx, escapedCol, value, field);
+    } else if (isFieldUpdateOp(value)) {
+      const [op, operand] = fieldUpdateOf(key, value);
+      ctx.append(`${escapedCol} = COALESCE(${escapedCol}, 0) ${SQL_ARITHMETIC[op]} `);
+      ctx.addValue(operand);
+    } else {
+      ctx.append(`${escapedCol} = `);
+      this.formatPersistableValue(ctx, field, value);
+    }
+  }
+
+  /**
+   * A write in a trigger's body. Only the columns it names, none filled in JavaScript - that would bake
+   * one value into the trigger - no id read back, and no entity filter, which a request resolves and a
+   * trigger has none of. `rows` is the `FROM` a set-based engine's body reads its rows through.
+   */
+  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: string): void {
+    const meta = getMeta(write.entity);
+    const table = this.escapedTableName(meta);
+    if (write.kind === 'insert') {
+      const unfilled = definedEntries(meta.fields).find(
+        ([key, field]) =>
+          field.onInsert !== undefined && field.defaultValue === undefined && write.row[key] === undefined,
+      );
+      if (unfilled) {
+        throw new UqlUsageError(
+          `'${meta.name}.${unfilled[0]}' is filled on insert by uql, which a trigger does not run: ` +
+            'name it, or give it a defaultValue',
+        );
+      }
+      const entries = this.writtenEntries(meta, write.row);
+      const columns = entries.map(([key]) => this.escapedColumnName(meta, key)).join(', ');
+      const [open, close] = rows ? ['SELECT ', ` ${rows};`] : ['VALUES (', ');'];
+      ctx.append(`INSERT INTO ${table} (${columns}) ${open}`);
+      entries.forEach(([key, value], i) => {
+        if (i > 0) {
+          ctx.append(', ');
+        }
+        this.formatPersistableValue(ctx, meta.fields[key], value);
+      });
+      ctx.append(close);
+      return;
+    }
+    assertWhere(meta, write.where);
+    if (!namesRows(write.where)) {
+      throw new UqlUsageError(
+        `a trigger's ${write.kind} over '${meta.name}' names no rows, so it would address every one`,
+      );
+    }
+    if (write.kind === 'update') {
+      const entries = this.writtenEntries(meta, write.set);
+      const accumulating = rows && entries.find(([, value]) => accumulates(value));
+      if (accumulating) {
+        throw new UqlUsageError(
+          `'${meta.name}.${accumulating[0]}' cannot accumulate per row in a trigger fired once per statement, ` +
+            'which applies $inc, $mul and $push once',
+        );
+      }
+      ctx.append(`UPDATE ${table} SET `);
+      entries.forEach(([key, value], i) => {
+        if (i > 0) {
+          ctx.append(', ');
+        }
+        this.appendAssignment(ctx, meta, key, value);
+      });
+    } else {
+      ctx.append(`DELETE FROM ${table}`);
+    }
+    if (rows) {
+      ctx.append(` ${rows}`);
+    }
+    // Qualified by the table: on a set-based engine `inserted` holds the same column names.
+    this.renderWhere(ctx, write.entity, write.where, { escapedPrefix: `${table}.` });
+    ctx.append(';');
+  }
+
+  /** The values a write names, refusing one the entity has no column for. */
+  private writtenEntries<E>(meta: EntityMeta<E>, values: Readonly<Record<string, unknown>>): [string, unknown][] {
+    const entries = Object.entries(values).filter(([, value]) => value !== undefined);
+    const unknown = entries.find(([key]) => !meta.fields[key]);
+    if (unknown) {
+      throw new UqlUsageError(`'${meta.name}' has no field '${unknown[0]}' for a trigger to write`);
+    }
+    if (!entries.length) {
+      throw new UqlUsageError(`a trigger's write to '${meta.name}' names no field`);
+    }
+    return entries;
   }
 
   /**
@@ -1962,26 +2053,21 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return fields
       .filter((col) => !conflictPaths[col])
       .map((col) => {
-        const field = meta.fields[col];
-        const columnName = this.resolveColumnName(col, field);
+        const column = this.escapedColumnName(meta, col);
         if (Object.hasOwn(sample as object, col)) {
-          return `${this.escapeId(columnName)} = ${callback(this.escapeId(columnName))}`;
+          return `${column} = ${callback(column)}`;
         }
         const text = this.buildFragment(ctx, (fragmentCtx) =>
-          this.formatPersistableValue(fragmentCtx, field, filledPayload[col]),
+          this.formatPersistableValue(fragmentCtx, meta.fields[col], filledPayload[col]),
         );
-        return `${this.escapeId(columnName)} = ${text}`;
+        return `${column} = ${text}`;
       })
       .join(', ');
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
     return getKeys(conflictPaths)
-      .map((key) => {
-        const field = meta.fields[key];
-        const columnName = this.resolveColumnName(key, field);
-        return this.escapeId(columnName);
-      })
+      .map((key) => this.escapedColumnName(meta, key))
       .join(', ');
   }
 
@@ -1992,10 +2078,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // Soft-delete (stamp only live rows) unless `hardDelete` is requested or the entity has no
     // soft-delete field (e.g. a cascade onto a non-soft-deletable child).
     if (!opts.hardDelete && meta.softDelete) {
-      const field = fieldOf(meta, meta.softDelete);
-      const columnName = this.resolveColumnName(meta.softDelete, field);
-      ctx.append(`UPDATE ${tableName} SET ${this.escapeId(columnName)} = `);
-      this.formatPersistableValue(ctx, field, getSoftDeleteValue(field));
+      ctx.append(`UPDATE ${tableName} SET `);
+      this.appendAssignment(ctx, meta, meta.softDelete, getSoftDeleteValue(fieldOf(meta, meta.softDelete)));
       this.search(ctx, entity, q, opts);
       return;
     }
@@ -2243,18 +2327,22 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * predicate with no entity filter applied; a migration's is `raw` reading none.
    */
   compileDdl(sql: QueryRaw): string;
-  compileDdl<E>(sql: EntityWhereMeta<E>, entity: Type<E>): string;
-  compileDdl<E>(sql: EntityWhereMeta<E>, entity?: Type<E>): string {
+  compileDdl<E>(sql: EntityWhereMeta<E>, entity: Type<E>, opts?: DdlRenderOptions): string;
+  compileDdl<E>(
+    sql: EntityWhereMeta<E>,
+    entity?: Type<E>,
+    { rows, escapedPrefix, operand }: DdlRenderOptions = {},
+  ): string {
     const ctx = this.createContext({ inlineValues: true });
     if (sql instanceof QueryRaw) {
-      sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: '', entity });
+      sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
     } else if (entity) {
-      this.renderWhere(ctx, entity, sql, { clause: false });
+      this.renderWhere(ctx, entity, sql, { clause: false, escapedPrefix, operand });
     } else {
-      throw new TypeError('a predicate compiles against the entity it is written for, and none was given');
+      throw new UqlUsageError('a predicate compiles against the entity it is written for, and none was given');
     }
     if (ctx.values.length) {
-      throw new TypeError(`DDL has no placeholder to bind a value into, and this SQL left one bound: ${ctx.sql}`);
+      throw new UqlUsageError(`DDL has no placeholder to bind a value into, and this SQL left one bound: ${ctx.sql}`);
     }
     return ctx.sql;
   }
@@ -2277,7 +2365,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return undefined;
     }
     const root = key.slice(0, dotIndex);
-    const field = meta.fields[root as FieldKey<E>];
+    const field = meta.fields[root];
     if (!field || columnFamily(field.type) !== 'json') {
       return undefined;
     }
@@ -2317,7 +2405,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return escaped;
   }
 
-  private escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
+  escapedColumnName<E>(meta: EntityMeta<E>, key: string): string {
     return this.escapedColumnOf(key, meta.fields[key]);
   }
 

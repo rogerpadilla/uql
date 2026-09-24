@@ -20,6 +20,7 @@ import type {
   WrittenId,
 } from '../../type/index.js';
 import { isScalarId } from '../../util/object.util.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
 import type { ClientQuerier, RequestFindOptions, RequestOptions } from '../type/index.js';
 
@@ -46,7 +47,7 @@ export type HttpQuerierDefaults = {
 /** The id as one path segment, refusing a composite key, which has no spelling in `/:id` yet. Callers are `async`. */
 function idSegment<E>(entity: Type<E>, id: EntityId<E>): string {
   if (!isScalarId(id)) {
-    throw new TypeError(`'${entity.name}' was addressed by an id object, which the HTTP route cannot carry.`);
+    throw new UqlUsageError(`'${entity.name}' was addressed by an id object, which the HTTP route cannot carry.`);
   }
   return String(id);
 }
@@ -150,7 +151,7 @@ export class HttpQuerier implements ClientQuerier {
     return post<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[], opts?: RequestOptions) {
+  insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return post<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.insertMany.path}`,
@@ -185,7 +186,7 @@ export class HttpQuerier implements ClientQuerier {
     return put<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[], opts?: RequestOptions) {
+  saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: RequestOptions) {
     const basePath = this.getBasePath(entity);
     return put<(WrittenId<E> | undefined)[]>(
       `${basePath}${CRUD_ROUTES.saveMany.path}`,

@@ -7,7 +7,7 @@ import { type QueryErrorKind, UqlOptimisticLockError, UqlUsageError } from '../u
  */
 export interface QueryError extends Error {
   query?: string;
-  values?: unknown[];
+  values?: readonly unknown[];
 }
 
 /** The fields a driver reports its code on, each read as `unknown` since any driver may fill any one. */
@@ -103,7 +103,7 @@ export function enrichError(
   err: unknown,
   logger: LoggerWrapper | undefined,
   query: string,
-  values?: unknown[],
+  values?: readonly unknown[],
 ): unknown {
   if (err instanceof Error) {
     const queryError: QueryError = err;

@@ -54,3 +54,12 @@ export async function poolAndQuerierAreInterchangeable() {
   await write(querier);
   await write(pool);
 }
+
+/** Raw SQL only reads its values, so a `readonly` list binds as it is, on a querier and a pool alike. */
+export async function rawSqlTakesReadonlyValues() {
+  const values: readonly unknown[] = [1, 'a'];
+  await sqlQuerier.all('SELECT ?', values);
+  await sqlQuerier.run('SELECT ?', values);
+  await sqlPool.all('SELECT ?', values);
+  await sqlPool.run('SELECT ?', values);
+}

@@ -23,7 +23,7 @@ class Post {
 describe('rowRefs', () => {
   const dialect = new PostgresDialect();
   const compile = (qualifier: TriggerRowName, read: (row: RefMap<Author>) => QueryRaw) =>
-    dialect.compileDdl(raw`${read(rowRefs<Author>(qualifier))}`, Author);
+    dialect.compileDdl(raw`${read(rowRefs(Author, qualifier))}`, Author);
 
   afterAll(() => {
     removeEntity(Post);
@@ -45,6 +45,12 @@ describe('rowRefs', () => {
 
   it('should qualify the columns inside an inlined computed expression too', () => {
     expect(compile('NEW', (row) => row.loud)).toBe('(upper(NEW."full_name"))');
+  });
+
+  // The ref knows its own entity, so it names its column wherever it renders: inside a write to another
+  // table, say, which is where a trigger's row is read from most often.
+  it('should read its own column while another entity is the one rendering', () => {
+    expect(dialect.compileDdl(raw`${rowRefs(Author, 'NEW').name}`, Post)).toBe('NEW."full_name"');
   });
 
   it('should refuse a field reading a relation, which no row can correlate a subquery to', () => {

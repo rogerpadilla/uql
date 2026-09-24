@@ -16,6 +16,11 @@ export type QueryRawRenderOptions = {
    * computed field's own, or the one whose schema is built. Absent where a statement renders SQL.
    */
   entity?: Type<unknown>;
+  /**
+   * The `FROM` a set-based trigger's body reads its rows through, `FROM inserted` and the like, which a
+   * write in it names. Absent where the body reads `NEW` and `OLD` bare, and outside a trigger.
+   */
+  rows?: string;
 };
 
 /** {@link QueryRawRenderOptions} as the callers along the way fill them in, every one still optional. */
@@ -65,9 +70,12 @@ export class QueryRaw {
 
 /**
  * A field of an entity as SQL, read off `refs(Entity)` or a definition's refs: interpolated into `raw`, it
- * renders as the field's column. Its `key` is how an index tells a column from an expression.
+ * renders as the field's column. Its `key` is how an index tells a column from an expression, and `V`,
+ * the field's type, is what a value slot checks it against: see {@link RawFor}.
  */
-export class ColumnRef<K extends string = string> extends QueryRaw {
+export class ColumnRef<K extends string = string, V = unknown> extends QueryRaw {
+  declare readonly __value?: V;
+
   constructor(
     readonly key: K,
     value: QueryRawFn,
@@ -75,6 +83,12 @@ export class ColumnRef<K extends string = string> extends QueryRaw {
     super(value);
   }
 }
+
+/**
+ * SQL where a value of type `V` goes: bare SQL, whose type is its author's to know, or a ref to a column
+ * holding one, nullability aside. `Raw` is what the transport carries, so the wire's `never` stays one.
+ */
+export type RawFor<Raw, V> = Raw & { readonly __value?: V | null };
 
 /**
  * A relation aggregate as SQL, read off a `computed` field's refs: `(user) => user.resources.count()`.
@@ -86,7 +100,7 @@ export class ColumnRef<K extends string = string> extends QueryRaw {
  * one no delta can maintain.
  */
 export class RelationAggregate<V = unknown, Storable extends boolean = boolean> extends QueryRaw {
-  declare private readonly __value: V;
+  declare readonly __value?: V;
   declare private readonly __storable: Storable;
 
   constructor(

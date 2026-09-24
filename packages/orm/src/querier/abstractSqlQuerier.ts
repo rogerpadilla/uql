@@ -152,18 +152,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    */
   protected async lazyConnect(): Promise<void> {
     if (this.released) {
-      throw new TypeError('querier already released');
+      throw new UqlUsageError('querier already released');
     }
   }
 
-  async all<T>(query: string, values?: unknown[]): Promise<T[]> {
+  async all<T>(query: string, values?: readonly unknown[]): Promise<T[]> {
     return this.serialize(async () => {
       await this.lazyConnect();
       return this.timed(query, values, () => this.internalAll<T>(query, this.dialect.normalizeValues(values)));
     });
   }
 
-  async run(query: string, values?: unknown[]): Promise<QueryUpdateResult> {
+  async run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult> {
     return this.serialize(async () => {
       await this.lazyConnect();
       return this.timed(query, values, () => this.internalRun(query, this.dialect.normalizeValues(values)));

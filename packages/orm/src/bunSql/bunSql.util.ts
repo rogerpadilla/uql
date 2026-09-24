@@ -1,5 +1,6 @@
 import type { SQL } from 'bun';
 import type { PrimaryKey, RawRow, SqlDialectName } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { decodeWideNumber } from '../util/wideNumber.js';
 
 /** The header a `bun:sql` result carries next to its rows. */
@@ -65,7 +66,9 @@ export function inferDialectName(config: SQL.Options): BunSqlDialectName {
   for (const name of [file ? 'sqlite' : url?.split(':')[0], config.adapter]) {
     const elsewhere = name && ELSEWHERE.get(name);
     if (elsewhere) {
-      throw new TypeError(`uql-orm/bunSql does not drive ${elsewhere}; use the dedicated uql-orm/${elsewhere} pool`);
+      throw new UqlUsageError(
+        `uql-orm/bunSql does not drive ${elsewhere}; use the dedicated uql-orm/${elsewhere} pool`,
+      );
     }
     const dialect = name && SCHEMES.get(name);
     if (dialect) {

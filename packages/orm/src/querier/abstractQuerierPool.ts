@@ -176,7 +176,10 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.insertOne(entity, payload));
   }
 
-  insertMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]> {
+  insertMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+  ): Promise<(WrittenId<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.insertMany(entity, payload));
   }
 
@@ -209,7 +212,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
   ): Promise<QueryUpsertManyResult<E>> {
     return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
   }
@@ -218,7 +221,10 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return this.withQuerier((querier) => querier.saveOne(entity, payload));
   }
 
-  saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]> {
+  saveMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+  ): Promise<(WrittenId<E> | undefined)[]> {
     return this.withQuerier((querier) => querier.saveMany(entity, payload));
   }
 

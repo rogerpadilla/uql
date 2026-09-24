@@ -26,7 +26,6 @@ import type {
   QueryOptions,
   QueryPager,
   QuerySearch,
-  QueryWhere,
   TransactionOptions,
   Type,
   UpdatePayload,
@@ -43,6 +42,7 @@ import {
   throwPendingTransaction,
   vectorCandidates,
   withoutSoftDeleteFilter,
+  whereEach,
 } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -346,11 +346,10 @@ export class MongodbQuerier extends AbstractQuerier {
     conflictPaths: QueryConflictPaths<E>,
     item: EntityData<E>,
   ) {
-    const where = getKeys(conflictPaths).reduce<Record<string, unknown>>((acc, key) => {
-      acc[key] = item[key];
-      return acc;
-    }, {}) as QueryWhere<E>;
-    return this.dialect.where(entity, where);
+    return this.dialect.where(
+      entity,
+      whereEach(getKeys(conflictPaths), (key) => item[key]),
+    );
   }
 
   protected override async internalUpsertOne<E extends Document>(
@@ -471,7 +470,7 @@ export class MongodbQuerier extends AbstractQuerier {
   /** Every read and write goes through here, which makes it where a released querier is caught. */
   collection<E extends Document>(entity: Type<E>) {
     if (this.released) {
-      throw new TypeError('querier already released');
+      throw new UqlUsageError('querier already released');
     }
     const { name } = getMeta(entity);
     return this.db.collection<E>(name!);

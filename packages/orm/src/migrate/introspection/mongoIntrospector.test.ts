@@ -9,6 +9,7 @@ import {
   mongoUri,
   provisioningTimeout,
 } from '../../test/index.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 
 describe('MongoSchemaIntrospector', () => {
@@ -97,5 +98,6 @@ describe('MongoSchemaIntrospector', () => {
     await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(
       'MongoSchemaIntrospector requires a MongoDB querier',
     );
+    await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(UqlUsageError);
   });
 });

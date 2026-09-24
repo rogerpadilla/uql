@@ -1,7 +1,6 @@
 import type {
   EntityIndexMeta,
   EntityMeta,
-  FieldKey,
   FieldOptions,
   Query,
   QueryContext,
@@ -82,7 +81,7 @@ export abstract class VectorSqlDialect extends AbstractDialect {
     key: string,
     search: QueryVectorQuery,
   ): { colName: string; distance: VectorDistance; field: FieldOptions | undefined } {
-    const field = meta.fields[key as FieldKey<E>];
+    const field = meta.fields[key];
     return { colName: this.resolveColumnName(key, field), distance: vectorDistanceOf(meta, key, search), field };
   }
 

@@ -2,6 +2,7 @@ import { jsonTypeMode } from '../../dialect/jsonSql.js';
 import type { IndexType } from '../../schema/types.js';
 import type { IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
 import { indexDistance, isVectorIndexType, unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
 
 /**
@@ -48,14 +49,14 @@ export class MySqlIndexDdl extends MysqlLikeIndexDdl {
   protected override jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
     const mode = jsonTypeMode(json.type);
     if (mode === 'json') {
-      throw new TypeError(`mysql cannot index the boolean JSON path '${json.path}', which compares as JSON`);
+      throw new UqlUsageError(`mysql cannot index the boolean JSON path '${json.path}', which compares as JSON`);
     }
     const expr = super.jsonPathIndexExpr(escapedColumn, json);
     if (mode === 'numeric') {
       return expr;
     }
     if (!json.length) {
-      throw new TypeError(`a MySQL index over the string JSON path '${json.path}' needs a length`);
+      throw new UqlUsageError(`a MySQL index over the string JSON path '${json.path}' needs a length`);
     }
     return `CAST(${expr} AS CHAR(${json.length}) CHARACTER SET utf8mb4) COLLATE utf8mb4_bin`;
   }
@@ -153,13 +154,15 @@ function arrayCastType(json: IndexJsonArray): string {
   const type = json.type;
   const cast = ARRAY_CASTS.get(typeof type === 'string' ? type.toLowerCase() : type);
   if (!cast) {
-    throw new TypeError(`mysql has no array cast for ${typeof type === 'string' ? type : type.name} elements`);
+    throw new UqlUsageError(`mysql has no array cast for ${typeof type === 'string' ? type : type.name} elements`);
   }
   if (cast !== 'CHAR' && cast !== 'BINARY') {
     return cast;
   }
   if (!json.length) {
-    throw new TypeError(`a multi-valued index over ${cast === 'CHAR' ? 'string' : 'binary'} elements needs a length`);
+    throw new UqlUsageError(
+      `a multi-valued index over ${cast === 'CHAR' ? 'string' : 'binary'} elements needs a length`,
+    );
   }
   return `${cast}(${json.length})`;
 }

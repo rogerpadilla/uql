@@ -1,6 +1,8 @@
 import { assertSoleId, getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
+import type { KeyedRow } from '../entity/metadata/definition.js';
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
+import { namesRows } from '../dialect/operators.js';
 import type {
   EntityData,
   EntityId,
@@ -8,6 +10,7 @@ import type {
   EntityMeta,
   ExtraOptions,
   FieldKey,
+  IdKey,
   HookEvent,
   Querier,
   Query,
@@ -29,7 +32,6 @@ import type {
   QueryUpdateResult,
   QueryUpsertOneResult,
   QueryUpsertManyResult,
-  QueryWhere,
   RelationKey,
   RelationMeta,
   RelationQuery,
@@ -52,8 +54,8 @@ import {
   getKeys,
   getRelationRequestSummary,
   idOnlyQuery,
+  keySet,
   isPagedQuery,
-  hasKeys,
   isScalarId,
   LoggerWrapper,
   parentJoins,
@@ -64,7 +66,10 @@ import {
   runHooks,
   someKey,
   targetKeyColumns,
+  whereAnyOf,
+  whereEach,
   whereIds,
+  whereWith,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
@@ -85,7 +90,7 @@ function assertIdValue<E>(entity: Type<E>, id: EntityId<E>): void {
   // Every key, or the `$where` names only some of the columns and addresses each row that agrees on
   // those - which for an update or a delete is silently far more than the one row asked for. `{}`
   // reaches here too, and would otherwise be an unfiltered statement over the whole table.
-  const given = id as Record<string, unknown>;
+  const given: { readonly [K in IdKey<E>]?: unknown } = id;
   const { ids } = getMeta(entity);
   const missing = ids.filter((key) => given[key] == null);
   if (missing.length) {
@@ -106,7 +111,7 @@ function soleParentColumn(relOpts: RelationMeta): string {
  * every table look narrowed, which is the case this exists to catch.
  */
 function assertNamesRows<E>(entity: Type<E>, method: string, q: QuerySearch<E> | undefined, opts?: QueryOptions): void {
-  if (opts?.unfiltered || hasKeys(q?.$where) || q?.$limit !== undefined) {
+  if (opts?.unfiltered || namesRows(q?.$where) || q?.$limit !== undefined) {
     return;
   }
   throw new UqlUsageError(
@@ -134,7 +139,7 @@ function lockVersion<E extends object>(
   const next = typeof expected === 'bigint' ? expected + 1n : expected + 1;
   // Spread, as every other added predicate here is: one flat `AND`, and a caller already filtering on
   // the version contradicts itself into matching nothing, which is what they asked for.
-  return { expected, next, q: { ...q, $where: { ...q.$where, [key]: expected } as QueryWhere<E> } };
+  return { expected, next, q: { ...q, $where: whereWith(key, expected, q.$where) } };
 }
 
 /**
@@ -157,8 +162,8 @@ function assertUnversioned<E extends object>(meta: EntityMeta<E>, what: string):
  * an `UPDATE` - reads the ids and writes them separately, putting the race back in the gap between.
  */
 function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySearch<E>, settles: boolean): void {
-  const where = q.$where as Record<string, unknown> | undefined;
-  const namesOneRow = meta.ids.every((key) => where?.[key] !== undefined && isScalarId(where[key]));
+  const where: KeyedRow<E> = { ...q.$where };
+  const namesOneRow = meta.ids.every((key) => where[key] !== undefined && isScalarId(where[key]));
   if (!namesOneRow || settles) {
     throw new UqlUsageError(
       `cannot update '${entityName(meta)}' this way: a versioned row is matched and written in one statement, so it is named by its ${meta.ids.map((id) => `'${id}'`).join(', ')}, takes no '$sort', '$limit' or '$skip', writes no relation, and filters by none`,
@@ -194,7 +199,7 @@ function adoptReportedIds<E>(
 }
 
 /** A parent's id and the value it writes into one of its relations. */
-type RelationWrite = { readonly id: unknown; readonly value: unknown };
+type RelationWrite<E> = { readonly id: EntityId<E>; readonly value: unknown };
 
 /** Base class for all database queriers. */
 export abstract class AbstractQuerier implements Querier {
@@ -543,7 +548,7 @@ export abstract class AbstractQuerier implements Querier {
    */
   async insertMany<E extends object>(
     entity: Type<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
   ): Promise<(WrittenId<E> | undefined)[]> {
     if (!payload?.length) {
       return [];
@@ -637,9 +642,11 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<never> {
     const meta = getMeta(entity);
-    const where = q.$where as Record<string, unknown>;
-    const byId = Object.fromEntries(meta.ids.map((id) => [id, where[id]])) as QueryWhere<E>;
-    const row = await this.findOne(entity, { $select: { [key]: true }, $where: byId } as Query<E>, opts);
+    const row = await this.findOne(
+      entity,
+      { $select: keySet([key]), $where: whereIds(meta, idOf(meta, { ...q.$where })) },
+      opts,
+    );
     const actual = row?.[key];
     const message =
       actual === undefined
@@ -700,12 +707,28 @@ export abstract class AbstractQuerier implements Querier {
     if (!meta.softDelete) {
       throw new UqlUsageError(`'${entity.name}' has not enabled 'softDelete'`);
     }
-    const $where = { ...q.$where, [meta.softDelete]: { $ne: null } } as QueryWhere<E>;
+    const $where = whereWith(meta.softDelete, { $ne: null }, q.$where);
     // No version: a restore only undoes the stamp a delete left, which takes none either, and two of
     // them racing agree on the result anyway. A lock is for content, and a restore writes none.
-    return this.hooked(entity, 'Update', [{ [meta.softDelete]: null } as UpdateWrite<E>], ([row]) =>
-      this.updateRows(entity, { ...q, $where }, row, { filters: { softDelete: false } }, undefined),
+    return this.unversionedUpdate(
+      entity,
+      { ...q, $where },
+      { [meta.softDelete]: null },
+      { filters: { softDelete: false } },
     );
+  }
+
+  /**
+   * An update the library writes of its own, hooked as a caller's is but carrying no version: a restore's
+   * cleared stamp, or a row pointed at the relation just inserted for it.
+   */
+  private unversionedUpdate<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: object,
+    opts?: QueryOptions,
+  ): Promise<number> {
+    return this.hooked(entity, 'Update', [payload], ([row]) => this.updateRows(entity, q, row, opts, undefined));
   }
 
   /** Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither the insert's nor the update's pair fits. */
@@ -727,7 +750,7 @@ export abstract class AbstractQuerier implements Querier {
   async upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityWrite<E>[],
+    payload: readonly EntityWrite<E>[],
   ): Promise<QueryUpsertManyResult<E>> {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsertMany'");
@@ -806,7 +829,10 @@ export abstract class AbstractQuerier implements Querier {
    * upserts on that key, so a stale id is written rather than silently missed, and an unnamed one
    * inserts. A composite is always named. The hooks follow the statement: a named row fires the upsert pair.
    */
-  async saveMany<E extends object>(entity: Type<E>, payload: EntityWrite<E>[]): Promise<(WrittenId<E> | undefined)[]> {
+  async saveMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+  ): Promise<(WrittenId<E> | undefined)[]> {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'save'");
     // Indexes, not rows: the result is reported in payload order so it can be zipped with what was
@@ -844,7 +870,7 @@ export abstract class AbstractQuerier implements Querier {
         }
       }
       if (toUpsert.length) {
-        const conflictPaths = Object.fromEntries(meta.ids.map((key) => [key, true])) as QueryConflictPaths<E>;
+        const conflictPaths = keySet<E>(meta.ids);
         const { ids: upserted } = await this.upsertMany(
           entity,
           conflictPaths,
@@ -895,7 +921,7 @@ export abstract class AbstractQuerier implements Querier {
   private async saveRelation<E extends object>(
     entity: Type<E>,
     relKey: RelationKey<E>,
-    writes: readonly RelationWrite[],
+    writes: readonly RelationWrite<E>[],
     isUpdate: boolean,
   ) {
     const meta = getMeta(entity);
@@ -930,7 +956,7 @@ export abstract class AbstractQuerier implements Querier {
     );
     // A link needs the target's id, which a MySQL batch mixing supplied and generated keys cannot report.
     if (savedIds.includes(undefined)) {
-      throw new TypeError(
+      throw new UqlUsageError(
         `'${relEntity.name}' rows saved through '${holder.name}' reported no id, so they cannot be linked. ` +
           'Insert them with their own ids, or save the relation in its own statement.',
       );
@@ -947,7 +973,7 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     relEntity: Type<object>,
     localColumn: string,
-    writes: readonly RelationWrite[],
+    writes: readonly RelationWrite<E>[],
   ) {
     // Before anything is written: the follow-up that points each row at its new relation carries no
     // version, and half an insert is worse than a refusal.
@@ -958,7 +984,12 @@ export abstract class AbstractQuerier implements Querier {
       pointing.map(({ value }) => value as object),
     );
     for (const [index, { id }] of pointing.entries()) {
-      await this.updateOneById(entity, id as EntityId<E>, { [localColumn]: referenceIds[index] } as UpdateWrite<E>);
+      assertIdValue(entity, id);
+      await this.unversionedUpdate(
+        entity,
+        { $where: whereIds(getMeta(entity), id) },
+        { [localColumn]: referenceIds[index] },
+      );
     }
   }
 
@@ -1042,10 +1073,10 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const [idKey] = meta.ids;
     const keys = getKeys(conflictPaths);
-    const q = {
-      $select: Object.fromEntries([idKey, ...keys].map((key) => [key, true])),
-      $where: { $or: rows.map((row) => Object.fromEntries(keys.map((key) => [key, row[key]]))) },
-    } as Query<E>;
+    const q: Query<E> = {
+      $select: keySet([idKey, ...keys]),
+      $where: whereAnyOf(rows.map((row) => whereEach(keys, (key) => row[key]))),
+    };
     const found = await this.internalFindMany(entity, q, { filters: withoutSoftDeleteFilter(undefined) });
     const byConflict = new Map<string, PrimaryKey | undefined>();
     for (const row of found) {
@@ -1063,22 +1094,22 @@ export abstract class AbstractQuerier implements Querier {
   private async hooked<E extends object, T>(
     entity: Type<E>,
     event: 'Insert' | 'Update' | 'Upsert',
-    payloads: readonly (EntityWrite<E> | UpdateWrite<E>)[],
+    payloads: readonly object[],
     write: (rows: E[]) => Promise<T>,
   ): Promise<T> {
-    // The one place a caller's write becomes the row the rest of the library handles. They are the
-    // same object: a write is the entity's data without the keys the database fills, which
-    // TypeScript cannot relate across an entity it has not resolved.
-    const asRows = payloads as E[];
+    // The one place a write becomes the row the rest of the library handles. They are the same object:
+    // a write is the entity's data without the keys the database fills, which TypeScript cannot relate
+    // across an entity it has not resolved.
+    const asRows = payloads as readonly E[];
     await this.emitHook(entity, `before${event}`, asRows);
-    const rows = clone(asRows);
+    const rows = asRows.map((row) => clone(row));
     const result = await write(rows);
     await this.emitHook(entity, `after${event}`, rows);
     return result;
   }
 
   /** Fires the global listeners first, then the entity's own hooks. */
-  private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: E[]): Promise<void> {
+  private async emitHook<E extends object>(entity: Type<E>, event: HookEvent, payloads: readonly E[]): Promise<void> {
     if (!this.hasHook(entity, event)) return;
 
     for (const listener of this.extra?.listeners ?? []) {
@@ -1100,7 +1131,7 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Runs `task`, logs `query` with its duration, and tags a failure with it: a method, since a decorator would lose the generics. */
-  protected async timed<T>(query: string, values: unknown[] | undefined, task: () => Promise<T>): Promise<T> {
+  protected async timed<T>(query: string, values: readonly unknown[] | undefined, task: () => Promise<T>): Promise<T> {
     const startTime = performance.now();
     try {
       return await task();

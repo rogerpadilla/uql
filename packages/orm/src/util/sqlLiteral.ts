@@ -2,6 +2,8 @@
 // values instead, so this is the hand-written-SQL hatch, and inline MySQL literals break under
 // `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters. Postgres arrays are separate.
 
+import { UqlUsageError } from './uqlError.js';
+
 type StringLiteralEscaper = (val: string) => string;
 
 const SINGLE_QUOTE = /'/g;
@@ -90,7 +92,7 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
     if ('toSqlString' in value && typeof (value as { toSqlString?: unknown }).toSqlString === 'function') {
       return String((value as { toSqlString: () => unknown }).toSqlString());
     }
-    throw new TypeError(
+    throw new UqlUsageError(
       'escapeSqlLiteral: plain objects are not supported; use bound parameters or JSON.stringify + a string column.',
     );
   };
@@ -113,7 +115,7 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
         return escapeObject(value);
       default:
         // A symbol or a function, or a future JS type: none of them may silently become SQL.
-        throw new TypeError(`escapeSqlLiteral: unsupported value type '${typeof value}'; use bound parameters.`);
+        throw new UqlUsageError(`escapeSqlLiteral: unsupported value type '${typeof value}'; use bound parameters.`);
     }
   };
 

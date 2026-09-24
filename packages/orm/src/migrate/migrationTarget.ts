@@ -11,6 +11,7 @@ import {
   type SchemaGenerator,
   type SqlQuerier,
 } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { withMongoQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import { MigrationBuilder } from './builder/migrationBuilder.js';
 import { type MigrationSource, migrationSource } from './codegen/migrationFile.js';
@@ -87,5 +88,5 @@ export async function migrationBuilderFor(querier: Querier): Promise<MigrationBu
   if (isMongoQuerier(querier)) {
     return new MigrationBuilder(await mongoSchemaGenerator(), mongoSession(querier).run);
   }
-  throw new TypeError('A migration builder needs a SQL or a MongoDB querier');
+  throw new UqlUsageError('A migration builder needs a SQL or a MongoDB querier');
 }
