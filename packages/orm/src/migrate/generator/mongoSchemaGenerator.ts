@@ -151,7 +151,7 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     ];
   }
 
-  /** MongoDB has no triggers, and a write to an entity declaring one is refused, so there is none to reconcile. */
+  /** MongoDB runs no trigger within a write, and a write to an entity declaring one is refused, so there is none to reconcile. */
   generateTriggers(): string[] {
     return [];
   }

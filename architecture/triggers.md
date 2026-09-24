@@ -2,7 +2,7 @@
 
 What `stored` adds beyond the generated column: a stamp the database writes, an aggregate the database keeps, and a trigger you author. The unstored relation aggregate shipped in 0.69.0.
 
-**Built, on every SQL engine:** authored triggers, stamps, and the reconciliation that installs what an entity declares and drops what it no longer does. MongoDB has no triggers and refuses them.
+**Built, on every SQL engine:** authored triggers, stamps, and the reconciliation that installs what an entity declares and drops what it no longer does. MongoDB runs no trigger within a write, so it refuses an entity declaring one: [why](#mongodb).
 
 **Designed, not built:** the maintained aggregate. It is the one arm nothing else offers and the one nobody has asked for - not in any surveyed ORM's issue tracker, not in django-pgtrigger's recipes after
 years in production. Build it when someone profiles an _unstored_ relation aggregate and finds it too slow; until then the unstored form does the job with no backfill, no drift and no repair command.
@@ -161,6 +161,17 @@ Three engine truths only a database would have told us, each of which broke a pl
 - **Aggregates through a chain of relations.** A grandchild's insert never touches the child's row.
 - **Reading a stored aggregate for `$count` or `$sort` automatically.** A query's result would then depend on a column declared elsewhere, and on whether it had drifted. Selecting the field is how you ask for it.
 - **A hot parent** serializes its children's writers. Statement-level bodies over transition tables (a flag, not a redesign) and sharded counters are the fixes.
+
+## MongoDB
+
+The server runs no trigger. Atlas Database Triggers exist, and none of them can back `@Trigger`:
+
+- **They fire after the commit,** from a change stream read by Atlas's serverless compute, outside the write's transaction. No `before` event, no `where` that holds the row back, no `run` that rolls back with it, and a stamp would be a second write landing later.
+- **Delivery is not guaranteed.** A trigger suspends on a dropped or renamed collection, a network loss or an oplog that rolled past its resume token, and auto-resume skips what it missed.
+- **Atlas only,** declared through its UI or Admin API with project credentials rather than over the connection `sync` holds, and absent from Community and self-managed servers.
+- **The body is a JavaScript function,** and `$old` needs collection pre-images turned on.
+
+Emulating one in uql's own writes would cover only uql's writes, where a trigger's point is to fire whoever writes the row. So a write to such an entity is refused rather than made without it.
 
 ## Why
 

@@ -90,7 +90,7 @@ afterEach(() => {
   vi.restoreAllMocks();
 });
 
-// MongoDB has no triggers, so a write to an entity declaring one would silently skip it.
+// MongoDB runs no trigger within a write, so a write to an entity declaring one would silently skip it.
 describe('MongodbQuerier writes to an entity with triggers', () => {
   it('should refuse an insert rather than skip the trigger', async () => {
     const { querier } = createRecordingQuerier();

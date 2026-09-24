@@ -58,13 +58,14 @@ function asksForNoRows(q: QueryPager): boolean {
 }
 
 /**
- * MongoDB has no triggers, so a write to an entity declaring one - a stamp included - would skip it
- * silently. Refused instead, as a query naming SQL is.
+ * MongoDB runs no trigger within a write (Atlas Database Triggers fire after the commit), so a write to
+ * an entity declaring one - a stamp included - would skip it silently. Refused instead, as a query naming
+ * SQL is. The why, in `architecture/triggers.md`.
  */
 function refuseTriggers(entity: Type<object>): void {
   if (hasTriggers(getMeta(entity))) {
     throw new UqlUsageError(
-      `'${entity.name}' declares triggers, which MongoDB has none of: a write here would skip them. ` +
+      `'${entity.name}' declares triggers, which MongoDB cannot run within a write: a write here would skip them. ` +
         'Keep the entity on a SQL engine, or drop its triggers and stamps.',
     );
   }

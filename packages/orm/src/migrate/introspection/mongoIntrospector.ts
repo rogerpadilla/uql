@@ -43,7 +43,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 
   constructor(private readonly pool: QuerierPool) {}
 
-  /** MongoDB has no triggers, so none is ever installed. */
+  /** MongoDB runs no trigger within a write, so uql installs none. */
   async ownedTriggers(): Promise<InstalledTriggers> {
     return new Map();
   }
