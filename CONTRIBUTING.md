@@ -37,4 +37,4 @@ Open an issue describing the desired behavior and the "why" behind it. We prefer
 
 ## Releasing
 
-Maintainers follow the [release skill](.claude/skills/release/SKILL.md). Versioning and publishing are separate on purpose: `lerna version` bumps, tags and pushes, then `bun publish` publishes, since `lerna publish`'s npm step 404s unreliably against this registry. A failed publish never leaves a half-done release; rerun the publish alone.
+Maintainers follow the [release skill](.claude/skills/release/SKILL.md): `lerna version` tags, and [publish.yml](.github/workflows/publish.yml) publishes each tag to npm.

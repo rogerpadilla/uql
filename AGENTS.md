@@ -34,4 +34,4 @@ Repo-specific rules, read directly by Claude Code, Cursor and other agents. Gene
 
 [architecture/](architecture/) holds the design docs: [roadmap.md](architecture/roadmap.md) is the build order, and a file per feature that needed a design settled before it was written.
 
-[CONTRIBUTING.md](CONTRIBUTING.md#packaging) holds the packaging constraints (ESM-only, **zero runtime dependencies**, no transpiler in the CLI) for human contributors. Cutting a release is the `release` skill - versioning and publishing are two separate steps on purpose, so never reach for `lerna publish`.
+[CONTRIBUTING.md](CONTRIBUTING.md#packaging) holds the packaging constraints (ESM-only, **zero runtime dependencies**, no transpiler in the CLI) for human contributors. Cutting a release is the `release` skill - a tag push publishes from CI, so never publish from a machine, `lerna publish` included.

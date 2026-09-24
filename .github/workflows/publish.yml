@@ -1,0 +1,27 @@
+name: publish
+
+# `lerna version` pushes a `<name>@<version>` tag per package it bumped, and each one publishes here through
+# npm's trusted publishing: no token anywhere, provenance attached. `npm`, since `bun publish` has no OIDC.
+on:
+  push:
+    tags: ['uql-*@*']
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    name: Publish ${{ github.ref_name }}
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup
+        with:
+          node-version: lts/*
+      - name: Publish
+        run: |
+          name="${GITHUB_REF_NAME%@*}"
+          cd "packages/${name#uql-}"
+          npm publish
