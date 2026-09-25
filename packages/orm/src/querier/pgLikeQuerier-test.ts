@@ -44,6 +44,21 @@ export abstract class PgLikeQuerierIt extends VectorQuerierIt {
     expect(found?.sparse).toEqual([0, 0, 1]);
   }
 
+  /** An inline date is the instant it names whatever the session's zone, as a CHECK or a trigger reads one. */
+  async shouldReadAnInlineDateAsTheSameInstantInAnyZone() {
+    const at = new Date('2024-01-15T12:30:45.123Z');
+    await this.querier.beginTransaction();
+    try {
+      await this.querier.run(`SET LOCAL TimeZone = 'America/Bogota'`);
+      const [row] = await this.querier.all<{ at: Date }>(
+        `SELECT ${this.querier.dialect.escape(at)}::timestamptz AS "at"`,
+      );
+      expect(row?.at).toEqual(at);
+    } finally {
+      await this.querier.rollbackTransaction();
+    }
+  }
+
   async shouldSortByNarrowVectorDistance() {
     await this.querier.insertMany(NarrowVectorItem, [
       { name: 'near', half: [1, 0, 0], sparse: [1, 0, 0] },

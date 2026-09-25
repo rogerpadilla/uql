@@ -15,6 +15,7 @@ import type {
   SqlDialectName,
   Type,
 } from '../type/index.js';
+import { utcTimestamp } from '../util/date.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import {
@@ -249,6 +250,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override escape(value: unknown): string {
     return escapeMysqlSqlLiteral(value);
+  }
+
+  /** A date as UTC text, which a `DATETIME` stores as is, where a driver would convert it to its own zone. */
+  override normalizeValue(value: unknown): unknown {
+    return value instanceof Date ? utcTimestamp(value) : super.normalizeValue(value);
   }
 
   /**

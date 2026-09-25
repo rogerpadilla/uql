@@ -113,8 +113,10 @@ describe('a date SQL an entity declares compares against', () => {
       @Id({ type: Number }) id?: number;
       @Field({ type: Date }) closedAt?: Date | null;
     }
-    expect(ddl(new PostgresDialect(), Dated)).toContain(`CHECK ("closedAt" >= '1970-01-01 00:00:00.000')`);
-    expect(ddl(new PostgresDialect(), Dated)).toContain(`CHECK ("closedAt" IN ('1970-01-01 00:00:00.000'))`);
+    const pg = ddl(new PostgresDialect(), Dated);
+    expect(pg).toContain(`"closedAt" TIMESTAMPTZ`);
+    expect(pg).toContain(`CHECK ("closedAt" >= '1970-01-01 00:00:00.000+00')`);
+    expect(pg).toContain(`CHECK ("closedAt" IN ('1970-01-01 00:00:00.000+00'))`);
     expect(ddl(new MySqlDialect(), Dated)).toContain("CHECK (`closedAt` >= '1970-01-01 00:00:00.000')");
   });
 });

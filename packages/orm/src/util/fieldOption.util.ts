@@ -4,7 +4,7 @@ import { getKeys } from './object.util.js';
 import { constantSql } from './raw.js';
 
 /**
- * The column family each field option means anything on, or `'*'` where it applies to every column.
+ * The column families each field option means anything on, or `'*'` where it applies to every column.
  * Exhaustive over {@link FieldOptions}, so a new option cannot be added without placing it - the
  * discipline `INDEX_FEATURE_LABELS` uses for index features.
  */
@@ -27,7 +27,8 @@ const FIELD_OPTION_FAMILY = {
   version: 'numeric',
   columnType: '*',
   length: 'string',
-  precision: 'numeric',
+  // A decimal's digits, or a timestamp's fractional-second digits.
+  precision: ['numeric', 'date'],
   scale: 'numeric',
   nullable: '*',
   unique: '*',
@@ -35,7 +36,7 @@ const FIELD_OPTION_FAMILY = {
   autoIncrement: 'numeric',
   index: '*',
   comment: '*',
-} as const satisfies Record<keyof FieldOptions, ColumnFamily | '*'>;
+} as const satisfies Record<keyof FieldOptions, ColumnFamily | '*' | readonly ColumnFamily[]>;
 
 /**
  * The only options an inlined computed field reaches: it is skipped in DDL and dropped from every insert and
@@ -129,10 +130,10 @@ export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   // conflicts always reports the same one. An option no rule knows is a typo, which `@Field`'s own check
   // reports where it can still be spelled right.
   for (const key of getKeys(FIELD_OPTION_FAMILY)) {
-    const applies: ColumnFamily | '*' = FIELD_OPTION_FAMILY[key];
+    const applies: readonly (ColumnFamily | '*')[] = [FIELD_OPTION_FAMILY[key]].flat();
     if (opts[key] === undefined) continue;
-    if (family && applies !== '*' && applies !== family) {
-      return `cannot use '${key}': it applies to a ${applies} column, not to a ${family} one`;
+    if (family && !applies.includes('*') && !applies.includes(family)) {
+      return `cannot use '${key}': it applies to a ${applies.join(' or ')} column, not to a ${family} one`;
     }
     const dead = deadOn(opts, key);
     if (dead) {
@@ -164,12 +165,17 @@ type DeadOptions<O> =
 
 type Given<O> = Extract<keyof O, keyof FieldOptions>;
 
+/** The families option `K` applies to, `'*'` for every one. */
+type OptionFamilies<K extends keyof FieldOptions> = (typeof FIELD_OPTION_FAMILY)[K] extends readonly (infer F)[]
+  ? F
+  : (typeof FIELD_OPTION_FAMILY)[K];
+
 type Offending<O> = {
-  [K in Given<O>]: (typeof FIELD_OPTION_FAMILY)[K] extends OptionsFamily<O> | '*'
-    ? K extends DeadOptions<O>
+  [K in Given<O>]: [Extract<OptionFamilies<K>, OptionsFamily<O> | '*'>] extends [never]
+    ? K
+    : K extends DeadOptions<O>
       ? K
-      : never
-    : K;
+      : never;
 }[Given<O>];
 
 /**

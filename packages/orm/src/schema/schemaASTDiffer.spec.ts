@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { columnsOf, mockTableNode } from '../test/index.js';
+import { engineType } from './canonicalType.js';
 import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
 import { diffSchemas } from './schemaASTDiffer.js';
@@ -50,6 +52,19 @@ describe('SchemaASTDiffer', () => {
       expect(diff.columnDiffs[0].description).toContain('type');
       // Either direction drops half the range, so it is not something safe mode may apply.
       expect(diff.columnDiffs[0].isBreaking).toBe(true);
+    });
+
+    /** A bare `DATETIME` holds whole seconds on MySQL, so `DATETIME(3)` widens it rather than narrowing. */
+    it('should judge a change breaking by the types the engine stores', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      source.addTable(mockTableNode('users', [{ name: 'at', type: { category: 'timestamp', precision: 3 } }]));
+      target.addTable(mockTableNode('users', [{ name: 'at', type: { category: 'timestamp', precision: 0 } }]));
+
+      const diff = diffSchemas(source, target, { normalizeType: engineType(new MySqlDialect()) });
+
+      expect(diff.columnDiffs).toHaveLength(1);
+      expect(diff.columnDiffs[0].isBreaking).toBe(false);
     });
 
     it('should not call a column breaking for a type it never compared', () => {

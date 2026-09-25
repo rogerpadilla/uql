@@ -208,7 +208,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.columns[0].name).toBe('createdAt');
-      expect(def.columns[0].type.category).toBe('timestamp');
+      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true });
       expect(def.columns[0].nullable).toBe(false);
       expect(def.columns[0].defaultValue).toBeDefined();
     });
@@ -219,6 +219,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.columns[0].name).toBe('updatedAt');
+      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true });
     });
 
     it('should add timestamps', () => {

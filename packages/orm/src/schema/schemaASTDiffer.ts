@@ -199,8 +199,9 @@ function diffColumn(
   const generatedType = source.isAutoIncrement && target.isAutoIncrement;
   const impliedNotNull = source.isPrimaryKey && target.isPrimaryKey;
 
-  const typeChanged =
-    !generatedType && !areTypesEqual(opts.normalizeType(source.type), opts.normalizeType(target.type));
+  const expectedType = opts.normalizeType(source.type);
+  const actualType = opts.normalizeType(target.type);
+  const typeChanged = !generatedType && !areTypesEqual(expectedType, actualType);
   if (typeChanged) {
     differences.push(`type: ${formatType(source.type)} -> ${formatType(target.type)}`);
   }
@@ -240,7 +241,7 @@ function diffColumn(
     // Only the type this diff actually reports: a column altered for its default carries no data loss,
     // and a generated key's type - never compared above - reads as unsigned against an entity that
     // cannot say so.
-    isBreaking: (typeChanged || signednessChanged) && isBreakingTypeChange(target.type, source.type),
+    isBreaking: (typeChanged || signednessChanged) && isBreakingTypeChange(actualType, expectedType),
     description: differences.join(', '),
   };
 }

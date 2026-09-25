@@ -16,7 +16,7 @@ vi.mock('@neondatabase/serverless', () => {
       return mockPoolInstance;
     }),
     // Neon ships its own copy of node-postgres's type registry, and the pool passes it to
-    // `numericTypes` so that this entry never has to import `pg` on a runtime that has no such peer.
+    // `wireTypes` so that this entry never has to import `pg` on a runtime that has no such peer.
     types: { builtins: { INT8: 20, FLOAT8: 701 }, getTypeParser: () => String },
   };
 });

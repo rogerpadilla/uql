@@ -17,12 +17,19 @@ it('should report a bound stated beside a column type written out as SQL', () =>
   );
 });
 
+it('should take a timestamp’s fractional-second digits as its precision', () => {
+  expect(fieldOptionConflict({ type: Date, precision: 3 })).toBeUndefined();
+});
+
 it('should report the option a column cannot use', () => {
   expect(fieldOptionConflict({ type: String, autoIncrement: true })).toBe(
     "cannot use 'autoIncrement': it applies to a numeric column, not to a string one",
   );
   expect(fieldOptionConflict({ type: Number, length: 10 })).toBe(
     "cannot use 'length': it applies to a string column, not to a numeric one",
+  );
+  expect(fieldOptionConflict({ type: String, precision: 3 })).toBe(
+    "cannot use 'precision': it applies to a numeric or date column, not to a string one",
   );
   expect(fieldOptionConflict({ type: String, dimensions: 3 })).toBe(
     "cannot use 'dimensions': it applies to a vector column, not to a string one",

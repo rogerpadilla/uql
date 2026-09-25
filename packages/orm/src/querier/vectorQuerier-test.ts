@@ -1,14 +1,20 @@
 import { expect } from 'vitest';
 import { VectorChunk, VectorDoc, VectorItem } from '../test/index.js';
+import type { SpecRequirements } from '../test/index.js';
 import type { WithProjection } from '../type/index.js';
 import { AbstractSqlQuerierIt } from './abstractSqlQuerier-test.js';
 
 /**
- * Shared vector-search expectations for every SQL backend that computes distances natively (pgvector,
- * CockroachDB, libSQL, Turso), run against a live engine: each names its distance function its own way,
- * and only a real query shows a wrong one.
+ * Shared vector-search expectations, run against a live engine: each names its distance function its own
+ * way, and only a real query shows a wrong one. Skipped where the engine computes no distance (MySQL).
  */
 export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
+  override requirements(): SpecRequirements<this> {
+    const vectors = this.pool.dialect.vectorMetrics.size > 0;
+    const cases = Object.getOwnPropertyNames(VectorQuerierIt.prototype).filter((name) => name.startsWith('should'));
+    return { ...super.requirements(), ...Object.fromEntries(cases.map((name) => [name, vectors])) };
+  }
+
   async shouldInsertAndRetrieveVector() {
     const id = await this.querier.insertOne(VectorItem, { name: 'alpha', vec: [1, 0, 0] });
     const found = await this.querier.findOneById(VectorItem, id);

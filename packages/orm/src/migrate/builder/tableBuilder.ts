@@ -191,7 +191,7 @@ export class TableBuilder implements ITableBuilder {
   }
 
   private timestampNow(name: string): IColumnBuilder {
-    return this.add(name, { category: 'timestamp' }, { defaultValue: expr.now() });
+    return this.timestamptz(name, { defaultValue: expr.now() });
   }
 
   timestamps(): void {

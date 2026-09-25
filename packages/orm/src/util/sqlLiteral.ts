@@ -2,6 +2,7 @@
 // values instead, so this is the hand-written-SQL hatch, and inline MySQL literals break under
 // `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters. Postgres arrays are separate.
 
+import { utcTimestamp } from './date.js';
 import { UqlUsageError } from './uqlError.js';
 
 type StringLiteralEscaper = (val: string) => string;
@@ -60,12 +61,8 @@ function bytesToHexLiteral(bytes: Uint8Array): string {
  * A factory, not a function taking `escapeString` as an argument: threading it through every call
  * measured 1.1-1.5x slower. Rejects unsupported types rather than stringifying them into SQL.
  */
-function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => string {
-  /**
-   * `YYYY-MM-DD HH:mm:ss.SSS` in UTC, so the SQL is the same whichever machine wrote it. Not `toISOString`
-   * as it is, whose `T` and `Z` MySQL rejects outright ("Invalid default value").
-   */
-  const dateLiteral = (date: Date): string => escapeString(date.toISOString().replace('T', ' ').replace('Z', ''));
+function createEscaper(escapeString: StringLiteralEscaper, zone = ''): (value: unknown) => string {
+  const dateLiteral = (date: Date): string => escapeString(utcTimestamp(date, zone));
 
   const sqlList = (arr: unknown[]): string => {
     let sql = '';
@@ -122,8 +119,17 @@ function createEscaper(escapeString: StringLiteralEscaper): (value: unknown) => 
   return escapeValue;
 }
 
-/** Escape `value` for Postgres, SQLite and related dialects (single-quote doubling). */
+/** How a Postgres timestamp says it is UTC. */
+export const PG_UTC = '+00';
+
+/** Escape `value` for SQLite and SQL Server (single-quote doubling). */
 export const escapeAnsiSqlLiteral = createEscaper(ansiStringLiteral);
+
+/**
+ * Escape `value` for the Postgres family: ANSI, a date marked UTC, which a `TIMESTAMPTZ` otherwise reads
+ * in the session's zone.
+ */
+export const escapePgSqlLiteral = createEscaper(ansiStringLiteral, PG_UTC);
 
 /** Escape `value` for MySQL and MariaDB (backslash escaping). */
 export const escapeMysqlSqlLiteral = createEscaper(mysqlStringLiteral);

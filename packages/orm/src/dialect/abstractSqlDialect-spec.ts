@@ -472,7 +472,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
 
     res = this.exec((ctx) =>
       this.dialect.insert(ctx, InventoryAdjustment, {
-        date: new Date(2021, 11, 31, 23, 59, 59, 999),
+        date: new Date(Date.UTC(2021, 11, 31, 23, 59, 59, 999)),
         createdAt: 123,
       }),
     );
@@ -480,7 +480,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`, `id`) VALUES (?, ?, ?)' +
         this.returningClause(InventoryAdjustment),
     );
-    expect(res.values[0]).toBeInstanceOf(Date);
+    expect(res.values[0]).toBe('2021-12-31 23:59:59.999');
     expect(res.values[1]).toBe(123);
   }
 

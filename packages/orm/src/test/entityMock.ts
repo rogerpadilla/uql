@@ -475,6 +475,10 @@ export class TypedRow {
   /** A BIGINT written from a `bigint`, which only an exact bind keeps apart from its rounded neighbour. */
   @Field({ type: BigInt }) wide?: bigint | null;
   @Field({ type: Date }) at?: Date | null;
+  /** A timestamp without a zone, which holds UTC on every engine. */
+  @Field({ type: Date, columnType: 'timestamp' }) zonelessAt?: Date | null;
+  /** A calendar day, the UTC midnight `new Date('2026-09-10')` parses to. */
+  @Field({ type: Date, columnType: 'date' }) day?: Date | null;
   @Field({ type: 'blob' }) bytes?: Uint8Array | null;
   @Field({ references: () => TypedGroup }) groupId?: number | null;
   @ManyToOne({ entity: () => TypedGroup, references: (typedRow) => typedRow.groupId }) group?: TypedGroup;

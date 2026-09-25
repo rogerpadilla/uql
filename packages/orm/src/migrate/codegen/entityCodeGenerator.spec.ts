@@ -514,6 +514,22 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('createdAt?: Date');
     });
 
+    /** A MySQL `DATETIME` holds whole seconds, where an unstated precision would declare uql's three digits. */
+    it('should write the fractional-second digits a timestamp column has', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('test', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'at', type: { category: 'timestamp', precision: 0 } },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('test');
+      assertDefined(result);
+
+      expect(result.code).toContain("@Field({ columnType: 'timestamp', precision: 0,");
+    });
+
     it('should format complex default values correctly', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('test', [

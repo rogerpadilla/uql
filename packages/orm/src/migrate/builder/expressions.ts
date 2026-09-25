@@ -31,12 +31,17 @@ const MYSQL: SqlExpressionMap = {
 /** MySQL 8.0.13+ rejects `DEFAULT 'x'` on these but accepts `DEFAULT ('x')`, whatever the value. */
 const MYSQL_LARGE_TYPES = /^\s*(TINY|MEDIUM|LONG)?(TEXT|BLOB)|^\s*(JSON|GEOMETRY)\b/i;
 
+/** A `DATETIME(3)` or `TIMESTAMP(3)`, whose fractional-second precision is captured. */
+const MYSQL_PRECISE_TYPES = /^\s*(?:DATETIME|TIMESTAMP)\((\d)\)/i;
+
 /** How one engine renders a DDL default. A new per-dialect rule is a field here, not a second table. */
 export type DialectDefaults = {
   /** Spelling of each kind, `null` where the engine has none. */
   readonly expressions: SqlExpressionMap;
   /** Column types whose `DEFAULT` this engine takes only as a parenthesized expression. */
   readonly wrapTypes?: RegExp;
+  /** Column types whose `CURRENT_TIMESTAMP` default must repeat their precision, captured by the pattern. */
+  readonly preciseTypes?: RegExp;
 };
 
 /**
@@ -48,8 +53,12 @@ export type DialectDefaults = {
 export const DIALECT_DEFAULTS: Readonly<Record<SqlDialectName, DialectDefaults>> = {
   postgres: { expressions: { ...PG, uuidv7: 'uuidv7()' } },
   cockroachdb: { expressions: PG },
-  mysql: { expressions: MYSQL, wrapTypes: MYSQL_LARGE_TYPES },
-  mariadb: { expressions: { ...MYSQL, uuidv7: 'UUID_v7()' }, wrapTypes: MYSQL_LARGE_TYPES },
+  mysql: { expressions: MYSQL, wrapTypes: MYSQL_LARGE_TYPES, preciseTypes: MYSQL_PRECISE_TYPES },
+  mariadb: {
+    expressions: { ...MYSQL, uuidv7: 'UUID_v7()' },
+    wrapTypes: MYSQL_LARGE_TYPES,
+    preciseTypes: MYSQL_PRECISE_TYPES,
+  },
   sqlite: { expressions: ANSI },
   // `SYSUTCDATETIME()` over `CURRENT_TIMESTAMP`, which is local time in the server's zone. No
   // `uuidv7`: `NEWSEQUENTIALID()` is an ordered v4 GUID, so it carries no readable timestamp and
@@ -112,7 +121,7 @@ export const expr = {
  * the result needs wrapping, which MySQL demands on its large types whatever the value.
  */
 export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, columnType?: string): string {
-  const sql = defaultLiteral(value, dialect);
+  const sql = defaultLiteral(value, dialect, columnType);
   const { wrapTypes } = DIALECT_DEFAULTS[dialect.dialectName];
   return columnType !== undefined && wrapTypes?.test(columnType) ? `(${sql})` : sql;
 }
@@ -147,12 +156,12 @@ export function sameDefault(desired: unknown, current: unknown, dialect: Abstrac
  * cannot serve stay here: a boolean is `1` where booleans are integers, and a plain object or array
  * is JSON rather than the throw and the IN-list `escape` gives them.
  */
-function defaultLiteral(value: unknown, dialect: AbstractSqlDialect): string {
+function defaultLiteral(value: unknown, dialect: AbstractSqlDialect, columnType?: string): string {
   if (value === undefined || value === null) {
     return 'NULL';
   }
   if (SqlExpression.isExpression(value)) {
-    return expressionSql(value, dialect);
+    return expressionSql(value, dialect, columnType);
   }
   if (typeof value === 'boolean') {
     return dialect.booleanLiteral === 'native' ? (value ? 'TRUE' : 'FALSE') : value ? '1' : '0';
@@ -160,13 +169,16 @@ function defaultLiteral(value: unknown, dialect: AbstractSqlDialect): string {
   return dialect.escape(typeof value === 'object' && !(value instanceof Date) ? JSON.stringify(value) : value);
 }
 
-function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect): string {
-  const { expressions } = DIALECT_DEFAULTS[dialect.dialectName];
-  const sql = expression.kind === 'raw' ? expression.sql : expressions[expression.kind];
+function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect, columnType?: string): string {
+  const { expressions, preciseTypes } = DIALECT_DEFAULTS[dialect.dialectName];
+  const raw = expression.kind === 'raw';
+  const sql = raw ? expression.sql : expressions[expression.kind];
   if (sql == null) {
     throw new UqlUsageError(
       `${dialect.dialectName} has no '${expression.kind}' default; pass expr.raw(...) with SQL this engine accepts`,
     );
   }
-  return sql;
+  // A raw default is the caller's SQL, never rewritten.
+  const precision = raw || columnType === undefined ? undefined : preciseTypes?.exec(columnType)?.[1];
+  return precision === undefined ? sql : sql.replaceAll('CURRENT_TIMESTAMP', `CURRENT_TIMESTAMP(${precision})`);
 }

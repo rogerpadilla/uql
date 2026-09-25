@@ -84,7 +84,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
     const createdAtCol = this.getColumn(schema, 'created_at');
-    expect(createdAtCol.type.toUpperCase()).toBe('DATETIME');
+    expect(createdAtCol.type.toUpperCase()).toBe('DATETIME(3)');
     expect(createdAtCol.defaultValue).toBe('CURRENT_TIMESTAMP');
   }
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
+import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
@@ -10,6 +11,7 @@ import { raw } from '../util/raw.js';
 import {
   engineType,
   areTypesEqual,
+  canonicalColumnType,
   canonicalToColumnType,
   canonicalToSql,
   canonicalToTypeScript,
@@ -160,6 +162,18 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'timestamp', withTimezone: true }, pg)).toBe('TIMESTAMPTZ');
     });
 
+    it('should store a Date field as an instant where the engine has one, and as its own timestamp elsewhere', () => {
+      const date = fieldOptionsToCanonical({ type: Date });
+      expect(canonicalToSql(date, pg)).toBe('TIMESTAMPTZ');
+      expect(canonicalToSql(date, cockroach)).toBe('TIMESTAMPTZ');
+      expect(canonicalToSql(date, mysql)).toBe('DATETIME(3)');
+      expect(canonicalToSql(date, sqlite)).toBe('TEXT');
+    });
+
+    it('should keep a declared timestamp without time zone', () => {
+      expect(canonicalToSql(fieldOptionsToCanonical({ type: Date, columnType: 'timestamp' }), pg)).toBe('TIMESTAMP');
+    });
+
     it('should handle raw types', () => {
       expect(canonicalToSql({ category: 'string', raw: 'CUSTOM' }, pg)).toBe('CUSTOM');
     });
@@ -240,7 +254,7 @@ describe('canonicalType', () => {
       expect(fieldOptionsToCanonical({ type: String })).toEqual({ category: 'string', length: undefined });
       expect(fieldOptionsToCanonical({ type: Number })).toEqual({ category: 'integer', size: 'big' });
       expect(fieldOptionsToCanonical({ type: Boolean })).toEqual({ category: 'boolean' });
-      expect(fieldOptionsToCanonical({ type: Date })).toEqual({ category: 'timestamp' });
+      expect(fieldOptionsToCanonical({ type: Date })).toEqual({ category: 'timestamp', withTimezone: true });
       expect(fieldOptionsToCanonical({ type: BigInt })).toEqual({ category: 'integer', size: 'big' });
     });
 
@@ -454,4 +468,37 @@ describe('engineType', () => {
       expect(areTypesEqual(stored({ category: 'vector', length: 3 }), stored(sqlToCanonical('TEXT')))).toBe(false);
     },
   );
+});
+
+describe('timestamp precision', () => {
+  it('should read it wherever an engine prints it', () => {
+    expect(sqlToCanonical('DATETIME(3)')).toEqual({ category: 'timestamp', precision: 3 });
+    expect(sqlToCanonical('timestamp(3) with time zone')).toEqual({
+      category: 'timestamp',
+      withTimezone: true,
+      precision: 3,
+    });
+  });
+
+  it('should render a stated one where the engine takes one', () => {
+    expect(canonicalToSql({ category: 'timestamp', precision: 0 }, mysql)).toBe('DATETIME(0)');
+    expect(canonicalToSql({ category: 'timestamp', withTimezone: true, precision: 3 }, pg)).toBe('TIMESTAMPTZ(3)');
+    expect(canonicalToSql({ category: 'timestamp', precision: 3 }, sqlite)).toBe('TEXT');
+  });
+
+  it('should take a Date field’s own', () => {
+    expect(canonicalToSql(fieldOptionsToCanonical({ type: Date, precision: 6 }), mysql)).toBe('DATETIME(6)');
+  });
+
+  /** Postgres's unstated one is its own 6; MySQL's introspector states its 0, where uql's unstated one is 3. */
+  it('should compare a Date field against the column the engine reports', () => {
+    const date = fieldOptionsToCanonical({ type: Date });
+    const same = (dialect: AbstractDialect, stored: CanonicalType) =>
+      areTypesEqual(engineType(dialect)(date), engineType(dialect)(stored));
+    expect(same(pg, sqlToCanonical('timestamp with time zone'))).toBe(true);
+    expect(same(pg, canonicalColumnType('timestamp with time zone', { precision: 6 }))).toBe(true);
+    expect(same(pg, sqlToCanonical('timestamp(3) with time zone'))).toBe(false);
+    expect(same(mysql, sqlToCanonical('DATETIME(3)'))).toBe(true);
+    expect(same(mysql, canonicalColumnType('DATETIME', { precision: 0 }))).toBe(false);
+  });
 });

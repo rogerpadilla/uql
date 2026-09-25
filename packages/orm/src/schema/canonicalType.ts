@@ -112,6 +112,8 @@ type EngineTypes = {
   readonly scalars: Record<TypeCategory, string>;
   readonly sizes?: Partial<Record<TypeCategory, Record<SizeVariant, string>>>;
   readonly decimal?: { readonly precision: number; readonly scale: number };
+  /** The fractional-second digits a timestamp stating none holds, where the engine counts them. */
+  readonly timestampPrecision?: number;
 };
 
 /**
@@ -150,7 +152,8 @@ const MYSQL_SCALAR_MAP: ScalarTypeMap = {
   boolean: 'TINYINT(1)',
   date: 'DATE',
   time: 'TIME',
-  timestamp: 'DATETIME',
+  // The milliseconds a `Date` holds, which a bare `DATETIME` rounds away.
+  timestamp: 'DATETIME(3)',
   json: 'JSON',
   uuid: 'CHAR(36)',
   blob: 'BLOB',
@@ -229,25 +232,28 @@ const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
   postgres: {
     scalars: { ...PG_SCALAR_MAP, vector: 'VECTOR', halfvec: 'HALFVEC', sparsevec: 'SPARSEVEC' },
     sizes: PG_SIZES,
+    timestampPrecision: 6,
   },
   // CockroachDB's VECTOR is native, no extension needed.
-  cockroachdb: { scalars: withVectorType(PG_SCALAR_MAP, 'VECTOR'), sizes: PG_SIZES },
+  cockroachdb: { scalars: withVectorType(PG_SCALAR_MAP, 'VECTOR'), sizes: PG_SIZES, timestampPrecision: 6 },
   // MySQL does have a `VECTOR` type (26.7), but no distance function outside HeatWave and no vector
   // index, so JSON keeps the column queryable with the JSON operators and needs no conversion.
   mysql: {
     scalars: withVectorType(MYSQL_SCALAR_MAP, 'JSON'),
     sizes: MYSQL_SIZES,
     decimal: { precision: 10, scale: 2 },
+    timestampPrecision: 0,
   },
   mariadb: {
     scalars: withVectorType(MYSQL_SCALAR_MAP, 'VECTOR'),
     sizes: MYSQL_SIZES,
     decimal: { precision: 10, scale: 2 },
+    timestampPrecision: 0,
   },
   // SQLite uses affinity, so no size variants. `F32_BLOB` is libSQL's vector type; elsewhere just a name of BLOB affinity.
   sqlite: { scalars: withVectorType(SQLITE_SCALAR_MAP, 'F32_BLOB') },
   // 2025 and up; below that the server refuses the type rather than storing it as text.
-  mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'VECTOR'), sizes: MSSQL_SIZES },
+  mssql: { scalars: withVectorType(MSSQL_SCALAR_MAP, 'VECTOR'), sizes: MSSQL_SIZES, timestampPrecision: 7 },
   mongodb: { scalars: withVectorType(MONGO_SCALAR_MAP, 'array') },
 };
 
@@ -280,8 +286,11 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
   const unsigned = normalized.includes('unsigned');
   const withoutUnsigned = normalized.replace(/\s*unsigned\s*/i, ' ').trim();
 
-  // Extract base type and parameters: "VARCHAR(255)" -> ["varchar", "255"]
-  const match = withoutUnsigned.match(/^([a-z][a-z0-9_ ]*?)(?:\(([^)]+)\))?$/);
+  // Extract base type and parameters: "VARCHAR(255)" -> ["varchar", "255"], and Postgres's
+  // "timestamp(3) with time zone", whose parameter sits inside the name, as "timestamp with time zone(3)".
+  const match = withoutUnsigned
+    .replace(/^(\w+)\((\d+)\)\s+(.+)$/, '$1 $3($2)')
+    .match(/^([a-z][a-z0-9_ ]*?)(?:\(([^)]+)\))?$/);
   const base = match ? SQL_TO_CANONICAL[match[1]] : undefined;
   if (!match || !base) {
     return { category: 'string', raw: sqlType };
@@ -301,7 +310,7 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
     size: measured && params[0] === 'max' ? 'small' : base.size,
     withTimezone: base.withTimezone,
     length: measured ? first : undefined,
-    precision: decimal ? first : undefined,
+    precision: decimal || base.category === 'timestamp' ? first : undefined,
     scale: decimal ? second : undefined,
     unsigned: unsigned || undefined,
   };
@@ -364,6 +373,9 @@ export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): s
   if (type.category === 'timestamp' && type.withTimezone && features.supportsTimestamptz) {
     sqlType = 'TIMESTAMPTZ';
   }
+  if (type.category === 'timestamp' && type.precision !== undefined && engine.timestampPrecision !== undefined) {
+    sqlType = `${sqlType.replace(/\(\d+\)$/, '')}(${type.precision})`;
+  }
 
   return type.unsigned && features.supportsUnsigned ? `${sqlType} UNSIGNED` : sqlType;
 }
@@ -395,12 +407,23 @@ export function canonicalToTypeScript(type: CanonicalType): string {
   return CANONICAL_TO_TS[type.category];
 }
 
+/** The fractional-second digits an engine's timestamp holds when its type states none; `undefined` where it counts none. */
+export function defaultTimestampPrecision(dialectName: DialectName): number | undefined {
+  return ENGINE_TYPES[dialectName].timestampPrecision;
+}
+
 /**
  * A type as `dialect` stores it, rendered and read back: several types share one storage type, and only
  * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
-  return (type) => sqlToCanonical(canonicalToSql(type, dialect));
+  const timestampPrecision = defaultTimestampPrecision(dialect.dialectName);
+  return (type) => {
+    const stored = sqlToCanonical(canonicalToSql(type, dialect));
+    return stored.category === 'timestamp' && stored.precision === undefined
+      ? { ...stored, precision: timestampPrecision }
+      : stored;
+  };
 }
 
 /**
@@ -417,14 +440,16 @@ export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
   switch (columnFamily(options.type)) {
     case 'numeric':
       // BIGINT for every `Number` without a scale, key or not: a 32-bit column is a migration waiting
-      // to happen, and the pools decode it back to a JS number at the wire (see `pgNumericTypes`).
+      // to happen, and the pools decode it back to a JS number at the wire (see `pgWireTypes`).
       return isIntegerColumn(options)
         ? { category: 'integer', size: 'big' }
         : { category: 'decimal', precision: options.precision, scale: options.scale };
     case 'boolean':
       return { category: 'boolean' };
+    // An instant: uql reads a zoneless timestamp as UTC, but the database's own clock and every other
+    // client read one in the session's zone.
     case 'date':
-      return { category: 'timestamp' };
+      return { category: 'timestamp', withTimezone: true, precision: options.precision };
     // `String`, and anything a reflected type left unrecognised.
     default:
       return { category: 'string', length: options.length };

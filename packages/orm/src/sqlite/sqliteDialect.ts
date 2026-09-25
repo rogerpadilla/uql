@@ -2,7 +2,6 @@ import {
   AbstractSqlDialect,
   type CarriedFields,
   type DerivedRelation,
-  type HydrateKind,
   type RelationRows,
 } from '../dialect/abstractSqlDialect.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
@@ -32,9 +31,10 @@ import {
   type VectorMetric,
 } from '../type/index.js';
 import { indexDistance, isVectorIndexType } from '../type/vector.js';
+import { utcTimestamp } from '../util/date.js';
 import { declaredIndexName } from '../util/ddlExpression.util.js';
 import { findVectorIndex, findVectorSort, textSearchFields, vectorCandidates } from '../util/dialect.util.js';
-import { columnFamily, isIntegerColumn } from '../util/field.util.js';
+import { isIntegerColumn } from '../util/field.util.js';
 
 /**
  * An FTS5 query over `columns` for what a person typed: each word a quoted string, which FTS5 reads as a
@@ -180,7 +180,7 @@ export class SqliteDialect extends AbstractSqlDialect {
   }
 
   override normalizeValue(value: unknown): unknown {
-    if (value instanceof Date) return value.getTime();
+    if (value instanceof Date) return utcTimestamp(value);
     return super.normalizeValue(value);
   }
 
@@ -225,11 +225,6 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   private bytesAsText(expr: string): string {
     return `${this.escape(BYTES_PREFIX)} || hex(${expr})`;
-  }
-
-  /** A date reads back as SQLite stored it, a number or text, which JSON carries unchanged. */
-  protected override hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
-    return columnFamily(field?.type) === 'date' ? undefined : super.hydrateKind(field);
   }
 
   /**

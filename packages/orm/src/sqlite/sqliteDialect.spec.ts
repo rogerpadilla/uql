@@ -5,7 +5,6 @@ import {
   anyUuid,
   Company,
   createSpec,
-  InventoryAdjustment,
   Item,
   ItemTag,
   JsonRecord,
@@ -112,32 +111,6 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       /^INSERT INTO `User` \(.*`id`.*`email`.*`createdAt`.*\) VALUES \(\?, \?, \?\) ON CONFLICT \(`id`\) DO UPDATE SET .*`updatedAt` = \?.*$/,
     );
     expect(values).toEqual(['1', 'a@b.com', expect.any(Number), expect.any(Number)]);
-  }
-
-  override shouldInsertOne() {
-    let res = this.exec((ctx) =>
-      this.dialect.insert(ctx, User, {
-        name: 'Some Name',
-        email: 'someemail@example.com',
-        createdAt: 123,
-      }),
-    );
-    expect(res.sql).toBe(
-      'INSERT INTO `User` (`name`, `email`, `createdAt`, `id`) VALUES (?, ?, ?, ?) RETURNING `id` `id`',
-    );
-    expect(res.values).toEqual(['Some Name', 'someemail@example.com', 123, anyUuid]);
-
-    res = this.exec((ctx) =>
-      this.dialect.insert(ctx, InventoryAdjustment, {
-        date: new Date(Date.UTC(2021, 11, 31, 23, 59, 59, 999)),
-        createdAt: 123,
-      }),
-    );
-    expect(res.sql).toBe(
-      'INSERT INTO `InventoryAdjustment` (`date`, `createdAt`, `id`) VALUES (?, ?, ?) RETURNING `id` `id`',
-    );
-    expect(res.values[0]).toBe(1640995199999);
-    expect(res.values[1]).toBe(123);
   }
 
   /**

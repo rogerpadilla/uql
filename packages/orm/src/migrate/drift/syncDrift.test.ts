@@ -23,6 +23,22 @@ class DriftUniqueUser {
   @Field({ type: String, length: 20 }) code?: string | null;
   @Field({ type: String, length: 20, defaultValue: 'active' }) status?: string | null;
   @Field({ type: Number, defaultValue: 0 }) score?: number | null;
+  @Field({ type: Date }) seenAt?: Date | null;
+}
+
+const DATED = 'drift_sync_dated';
+
+/** A timestamp as an older schema built it: no zone, and whole seconds. */
+@Entity({ name: DATED })
+class DatedBefore {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Date, columnType: 'timestamp', precision: 0 }) at?: Date | null;
+}
+
+@Entity({ name: DATED })
+class DatedAfter {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Date }) at?: Date | null;
 }
 
 const SHAPE = 'drift_sync_shape';
@@ -87,6 +103,20 @@ describe.each(SQL_POOLS)('drift and sync (%s)', (_engine, connect) => {
 
       expect(await driftOf(pool, DriftUniqueUser, TABLE)).toEqual([]);
       expect(await planOf(DriftUniqueUser, { safe: false })).toEqual([]);
+    },
+    provisioningTimeout,
+  );
+
+  /** An older timestamp, zoneless and in whole seconds, is altered to the one a `Date` field declares, once. */
+  it(
+    'should widen an older timestamp to the one a Date field declares',
+    async () => {
+      await syncOf(DatedBefore, { force: true });
+
+      await syncOf(DatedAfter, { safe: false });
+
+      expect(await driftOf(pool, DatedAfter, DATED)).toEqual([]);
+      expect(await planOf(DatedAfter, { safe: false })).toEqual([]);
     },
     provisioningTimeout,
   );

@@ -2833,7 +2833,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     );
   }
 
-  /** ANSI-style single-quote escaping. MySQL-family dialects override this for backslash escaping. */
+  /** ANSI-style single-quote escaping. */
   escape(value: unknown): string {
     return escapeAnsiSqlLiteral(value);
   }

@@ -25,8 +25,16 @@ describe('decodeColumn', () => {
     );
   });
 
-  it('should read a bare date at local midnight, as pg does', () => {
-    expect(decodeColumn('2026-09-10', 'date')).toEqual(new Date(2026, 8, 10));
+  it('should read a timestamp naming no zone as UTC, in any spelling an engine gives it', () => {
+    const at = new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123));
+    expect(decodeColumn('2026-09-10 12:30:00.123', 'date')).toEqual(at);
+    expect(decodeColumn('2026-09-10T12:30:00.123456', 'date')).toEqual(at);
+    expect(decodeColumn('2026-09-10T21:30:00.123+09:00', 'date')).toEqual(at);
+    expect(decodeColumn('2026-09-10 12:30:00', 'date')).toEqual(new Date(Date.UTC(2026, 8, 10, 12, 30)));
+  });
+
+  it('should read a bare date at UTC midnight, as `new Date` parses one', () => {
+    expect(decodeColumn('2026-09-10', 'date')).toEqual(new Date(Date.UTC(2026, 8, 10)));
   });
 
   it('should leave a Date the driver already decoded, and text that is no date', () => {

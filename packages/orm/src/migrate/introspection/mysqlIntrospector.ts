@@ -59,6 +59,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         CHARACTER_MAXIMUM_LENGTH as character_maximum_length,
         NUMERIC_PRECISION as numeric_precision,
         NUMERIC_SCALE as numeric_scale,
+        DATETIME_PRECISION as datetime_precision,
         COLUMN_KEY as column_key,
         EXTRA as extra,
         CASE WHEN EXTRA LIKE '%STORED GENERATED%' THEN GENERATION_EXPRESSION END as generated_as,
@@ -133,7 +134,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       isUnique: row.column_key === 'UNI',
       // A `VECTOR`'s is its bytes, four a dimension, which `column_type` already states as dimensions.
       length: /^vector/i.test(row.column_type) ? undefined : this.toNumber(row.character_maximum_length),
-      precision: this.toNumber(row.numeric_precision),
+      // A timestamp's fractional digits, stated even when 0, which uql's own unstated `DATETIME(3)` is not.
+      precision: this.toNumber(TIMESTAMP_TYPES.has(row.data_type) ? row.datetime_precision : row.numeric_precision),
       scale: this.toNumber(row.numeric_scale),
       comment: row.column_comment || undefined,
       generatedAs: row.generated_as ?? undefined,
@@ -177,7 +179,8 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (normalized === 'NULL') {
       return null;
     }
-    if (normalized === 'CURRENT_TIMESTAMP' || normalized === 'CURRENT_TIMESTAMP()') {
+    // Whatever precision it repeats from its column, which the column's own type already states.
+    if (/^CURRENT_TIMESTAMP(?:\(\d?\))?$/.test(normalized)) {
       return 'CURRENT_TIMESTAMP';
     }
     if (/^-?\d+(\.\d+)?$/.test(defaultValue)) {
@@ -190,8 +193,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 }
 
+const TIMESTAMP_TYPES = new Set(['datetime', 'timestamp']);
+
 type MysqlColumnRow = {
   column_name: string;
+  data_type: string;
   column_type: string;
   is_nullable: string;
   column_default: string | null;
@@ -199,6 +205,7 @@ type MysqlColumnRow = {
   extra: string;
   character_maximum_length: number | bigint | null;
   numeric_precision: number | bigint | null;
+  datetime_precision: number | bigint | null;
   numeric_scale: number | null;
   column_comment: string | null;
   generated_as: string | null;

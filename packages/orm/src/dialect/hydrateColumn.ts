@@ -1,3 +1,4 @@
+import { decodeDate } from '../util/date.js';
 import { decodeWideNumber } from '../util/wideNumber.js';
 import { decodeFloat32s, parseVectorLiteral, type VectorCast } from './vectorCast.js';
 
@@ -50,7 +51,7 @@ const float32Decoder: Decoder = (value) => {
 const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
   // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
   boolean: (value) => (typeof value === 'boolean' ? value : Boolean(value)),
-  date: (value) => (typeof value === 'string' ? (parseDate(value) ?? value) : value),
+  date: (value) => (typeof value === 'string' ? decodeDate(value) : value),
   // Only a string can be bytes that crossed JSON: bytes a driver already decoded stay as they are.
   bytes: (value) =>
     typeof value === 'string' && value.startsWith(BYTES_PREFIX) ? hexBytes(value.slice(BYTES_PREFIX.length)) : value,
@@ -79,18 +80,6 @@ const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
   halfvec: vectorDecoder('halfvec'),
   sparsevec: vectorDecoder('sparsevec'),
 };
-
-/**
- * An ISO 8601 timestamp as a `Date`, its fraction cut to the milliseconds one holds, and a bare date at
- * local midnight, which is how `pg` reads a `date`. `undefined` for text that is neither.
- */
-function parseDate(text: string): Date | undefined {
-  const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(text);
-  const date = day
-    ? new Date(Number(day[1]), Number(day[2]) - 1, Number(day[3]))
-    : new Date(text.replace(/(\.\d{3})\d+/, '$1'));
-  return Number.isNaN(date.getTime()) ? undefined : date;
-}
 
 /**
  * What bytes crossing JSON start with, before two hex digits per byte: Postgres's own text for `bytea`,

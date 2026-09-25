@@ -1,3 +1,4 @@
+import { defaultTimestampPrecision } from '../../schema/canonicalType.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import {
   AbstractSqlSchemaIntrospector,
@@ -156,7 +157,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       const bytes = this.toNumber(row.max_length);
       return {
         name: row.column_name,
-        type: bytes === -1 && CHARACTER_TYPES.has(type) ? `${type}(MAX)` : type,
+        type: spelledType(type, bytes, this.toNumber(row.numeric_scale)),
         nullable: Boolean(row.is_nullable),
         defaultValue: this.parseDefaultValue(row.column_default),
         isAutoIncrement: Boolean(row.is_identity),
@@ -215,6 +216,18 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 const CHARACTER_TYPES = new Set(['CHAR', 'NCHAR', 'VARCHAR', 'NVARCHAR', 'BINARY', 'VARBINARY']);
 
 const NUMERIC_TYPES = new Set(['DECIMAL', 'NUMERIC']);
+
+/** `(MAX)` on an unbounded character type, and a timestamp's fractional digits where not the engine's default. */
+function spelledType(type: string, bytes: number | undefined, scale: number | undefined): string {
+  if (bytes === -1 && CHARACTER_TYPES.has(type)) {
+    return `${type}(MAX)`;
+  }
+  return (type === 'DATETIME2' || type === 'DATETIMEOFFSET') &&
+    scale !== undefined &&
+    scale !== defaultTimestampPrecision('mssql')
+    ? `${type}(${scale})`
+    : type;
+}
 
 /**
  * A column's declared width from `max_length`, which is bytes: an `N` type holds two a character, a

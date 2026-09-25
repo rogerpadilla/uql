@@ -15,7 +15,7 @@ Everything `git status` lists, untracked files included, since `lerna version` l
 
 ## 2. Settle the changelog entry and the level
 
-Compress `[Unreleased]` as the CHANGELOG.md header says, related bullets together, only what a user really needs (what worth it). Rename the heading to the version the bump will produce, dated today.
+Compress `[Unreleased]` as the CHANGELOG.md header says, related bullets together, only what a user really needs (what worth it). Rename the heading to the version the bump will produce, dated today. Summarize, simplify and unify.
 
 Nothing checks the level, so take it from the entry. Pre-1.0 a caret range takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked:
 

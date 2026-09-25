@@ -33,10 +33,10 @@ describe('MariadbQuerierPool', () => {
   });
 
   /** `bigIntAsNumber` rounds past 2^53; the querier decodes exactly instead. */
-  it('should leave BIGINT for the querier to decode', () => {
+  it('should read a date as its UTC text in a UTC session, and leave BIGINT for the querier to decode', () => {
     new MariadbQuerierPool({ host: '0.0.0.0' });
 
-    expect(createPool).toHaveBeenCalledWith({ host: '0.0.0.0' });
+    expect(createPool).toHaveBeenCalledWith({ timezone: 'Z', dateStrings: true, host: '0.0.0.0' });
   });
 
   it('should wire the pool error handler', () => {

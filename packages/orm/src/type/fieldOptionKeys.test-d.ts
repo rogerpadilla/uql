@@ -37,8 +37,9 @@ class IncompatibleRejected {
   @Field({ type: String, dimensions: 3 }) b?: string | null;
   // @ts-expect-error - 'length' belongs to a string column
   @Field({ type: Number, length: 10 }) c?: number | null;
-  // @ts-expect-error - 'precision' belongs to a numeric column
+  // @ts-expect-error - 'precision' belongs to a numeric or a date column
   @Field({ type: String, precision: 10 }) d?: string | null;
+  @Field({ type: Date, precision: 3 }) d2?: Date | null;
   // @ts-expect-error - an inlined computed field is never in the DDL, so its index would never be created
   @Field({ type: Number, computed: raw`1`, index: true }) e?: number | null;
   // @ts-expect-error - the refs a computed callback reads are the entity's fields

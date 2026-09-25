@@ -93,11 +93,11 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     expect(this.dialect.features.rowLocks).toMatchObject({ withWindow: true });
   }
 
+  /** As UTC text, so no driver converts it to the zone of the process sending it. */
   shouldHandleDate() {
     const ctx = this.dialect.createContext();
-    expect(this.dialect.addValue(ctx, new Date())).toBe('?');
-    expect(ctx.values).toHaveLength(1);
-    expect(ctx.values[0]).toBeInstanceOf(Date);
+    expect(this.dialect.addValue(ctx, new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123)))).toBe('?');
+    expect(ctx.values).toEqual(['2026-09-10 12:30:00.123']);
   }
 
   shouldEscape() {

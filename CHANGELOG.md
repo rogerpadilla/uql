@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.83.0] - 2026-09-24
+
+- **Breaking:** a `Date` is the instant it names on every SQL engine, whatever zone the process runs in: bound as UTC, and a zoneless timestamp or a `DATE` read as UTC. A `Date` field is a `TIMESTAMPTZ` on Postgres and CockroachDB, a `DATETIME(3)` on MySQL and MariaDB, and UTC text on the SQLite family, as are the builder's `createdAt()` and `updatedAt()`. Existing columns convert as the [upgrade guide](https://uql-orm.dev/upgrade-guide) says.
+- `precision` on a `Date` field sets its fractional-second digits, which drift and migrations compare.
+- **Fixed:** a `Date` with milliseconds matches on SQL Server, and a date written into Postgres SQL reads as UTC.
+
 ## [0.82.0] - 2026-09-24
 
 - A trigger's `run` writes another table through its entity, `insertInto(PostAudit, { postId: newRow.id })`, `updateTable` and `deleteFrom`: one body for every engine, SQL Server's included.

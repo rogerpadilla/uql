@@ -13,8 +13,9 @@ import {
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
+import { utcTimestamp } from '../util/date.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
-import { escapeSingleQuotes } from '../util/sqlLiteral.js';
+import { escapePgSqlLiteral, escapeSingleQuotes, PG_UTC } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
 import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
@@ -163,10 +164,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   override normalizeValue(value: unknown): unknown {
-    if (value != null && typeof value === 'object' && Array.isArray(value)) {
-      return this.driverCapabilities.nativeArrays ? value : toPgArray(value);
+    if (Array.isArray(value)) {
+      const values = value.map(utcDate);
+      return this.driverCapabilities.nativeArrays ? values : toPgArray(values);
     }
-    return super.normalizeValue(value);
+    return super.normalizeValue(utcDate(value));
   }
 
   override placeholder(index: number): string {
@@ -317,6 +319,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     return negate ? `${operand} <> ALL(${ph})` : `${operand} = ANY(${ph})`;
   }
 
+  override escape(value: unknown): string {
+    return escapePgSqlLiteral(value);
+  }
+
   protected override numericCast(expr: string): string {
     return `(${expr})::numeric`;
   }
@@ -402,6 +408,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const ph = this.addValue(ctx, json);
     return this.driverCapabilities.explicitJsonCast ? `(${ph}::text)::${type}` : `${ph}::${type}`;
   }
+}
+
+/** A date as UTC text, which a zoneless `TIMESTAMP` stores as is, where each driver would pick its own zone. */
+function utcDate(value: unknown): unknown {
+  return value instanceof Date ? utcTimestamp(value, PG_UTC) : value;
 }
 
 /**

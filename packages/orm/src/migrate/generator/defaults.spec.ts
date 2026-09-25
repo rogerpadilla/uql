@@ -79,6 +79,14 @@ describe('Default value expressions', () => {
     expect(fmt(sqlite, 'none', 'TEXT')).toBe("'none'");
   });
 
+  /** MySQL refuses a `CURRENT_TIMESTAMP` default whose precision differs from its column's. */
+  it('should give a now default the precision of its MySQL column', () => {
+    expect(fmt(mysql, expr.now(), 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP(3)');
+    expect(fmt(mariadb, expr.onUpdateNow(), 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP(3) ON UPDATE CURRENT_TIMESTAMP(3)');
+    expect(fmt(mysql, expr.raw('CURRENT_TIMESTAMP'), 'DATETIME(3)')).toBe('CURRENT_TIMESTAMP');
+    expect(fmt(postgres, expr.now(), 'TIMESTAMP(3)')).toBe('CURRENT_TIMESTAMP');
+  });
+
   it('should render onUpdateNow on MySQL and throw elsewhere', () => {
     expect(fmt(mysql, expr.onUpdateNow())).toBe('CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP');
     expect(() => fmt(postgres, expr.onUpdateNow())).toThrow(/no 'onUpdateNow' default/);
@@ -103,7 +111,7 @@ describe('Default value expressions', () => {
   /** MySQL rejects `toISOString`'s `T` and `Z` outright ("Invalid default value"). UTC, not local. */
   it('should format a Date default as SQL every engine accepts', () => {
     const at = new Date('2024-01-15T10:30:00.000Z');
-    expect(fmt(postgres, at)).toBe("'2024-01-15 10:30:00.000'");
+    expect(fmt(postgres, at)).toBe("'2024-01-15 10:30:00.000+00'");
     expect(fmt(mysql, at)).toBe("'2024-01-15 10:30:00.000'");
     expect(fmt(sqlite, at)).toBe("'2024-01-15 10:30:00.000'");
   });

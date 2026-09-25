@@ -74,7 +74,7 @@ export class Post {
 }
 ```
 
-- Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
+- Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date` (an instant, bound and read as UTC on every engine; `TIMESTAMPTZ` on Postgres and CockroachDB, `DATETIME(3)` on MySQL and MariaDB; `precision` sets its fractional-second digits), `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
 - An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.

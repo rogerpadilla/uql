@@ -159,6 +159,60 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(populated).toEqual(own);
   }
 
+  /**
+   * A date is the instant written, and a day the day written, read on its own or populated, whichever
+   * zone the process runs in.
+   */
+  async shouldReadADateAsTheInstantWrittenInAnyZone() {
+    const at = new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123));
+    const day = new Date('2026-09-10');
+    const groupId = await inTimeZone('America/Bogota', async () => {
+      const id = await this.querier.insertOne(TypedGroup, { name: 'zoned' });
+      await this.querier.insertOne(TypedRow, { groupId: id, name: 'zoned', at, zonelessAt: at, day });
+      return id;
+    });
+
+    const [own, populated] = await inTimeZone('Asia/Tokyo', () => this.readDatesBothWays(groupId));
+
+    expect(own).toEqual({ at, zonelessAt: at, day });
+    expect(populated).toEqual({ at, zonelessAt: at, day });
+  }
+
+  /** A list of dates binds as one, which a driver that takes no JS array spells as a literal. */
+  async shouldFindByAListOfDates() {
+    const at = new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123));
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'listed' });
+    await this.querier.insertOne(TypedRow, { groupId, name: 'listed', at });
+
+    expect(await this.querier.count(TypedRow, { $where: { groupId, at: { $in: [at] } } })).toBe(1);
+  }
+
+  /**
+   * A date the database stamps is the instant it is, whichever zone reads it. Not a zoneless column's
+   * on Postgres, which the database fills with the session's wall clock.
+   */
+  async shouldReadADatabaseStampAsTheCurrentInstant() {
+    const groupId = await this.querier.insertOne(TypedGroup, { name: 'stamped' });
+    await this.querier.insertOne(TypedRow, { groupId, name: 'stamped' });
+    await this.querier.updateMany(TypedRow, { $where: { groupId } }, { at: raw`CURRENT_TIMESTAMP` });
+
+    const [own, populated] = await inTimeZone('Asia/Tokyo', () => this.readDatesBothWays(groupId));
+
+    expect(Math.abs(Number(own.at) - Date.now())).toBeLessThan(60_000);
+    expect(populated).toEqual(own);
+  }
+
+  private async readDatesBothWays(groupId: TypedRow['groupId']) {
+    const $select = { at: true, zonelessAt: true, day: true } as const;
+    const [row] = await this.querier.findMany(TypedRow, { $select, $where: { groupId } });
+    const [group] = await this.querier.findMany(TypedGroup, {
+      $select: { name: true },
+      $where: { id: groupId },
+      $populate: { rows: { $select } },
+    });
+    return [row, group.rows[0]] as const;
+  }
+
   /** The same rows read on their own and populated under their group, both sorted by name. */
   protected async readTypedRowsBothWays() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'typed group' });
@@ -526,5 +580,18 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       $populate: { lines: { $select: { amount: true } } },
     });
     expect(found.lines).toMatchObject([{ amount: 50 }]);
+  }
+}
+
+/** Runs `fn` with the process in `zone`, the way a server in another zone would run it. */
+async function inTimeZone<T>(zone: string, fn: () => Promise<T>): Promise<T> {
+  const previous = process.env.TZ;
+  process.env.TZ = zone;
+  try {
+    return await fn();
+  } finally {
+    // Assigning `undefined` would set the text "undefined", an unknown zone every later test ran in.
+    if (previous === undefined) delete process.env.TZ;
+    else process.env.TZ = previous;
   }
 }

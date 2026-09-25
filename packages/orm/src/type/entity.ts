@@ -431,7 +431,7 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly columnType?: ColumnType | QueryRaw;
   /** A string column's length. */
   readonly length?: number;
-  /** A decimal column's precision. */
+  /** A decimal column's digits, or a timestamp's fractional-second digits. */
   readonly precision?: number;
   /** A decimal column's scale. */
   readonly scale?: number;

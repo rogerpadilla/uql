@@ -50,7 +50,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   private async createTableIfNotExists(querier: SqlQuerier): Promise<void> {
     const table = new TableBuilder(this.tableName);
     table.string('name', { length: 255, primaryKey: true });
-    table.timestamp('executed_at', { defaultValue: expr.now() });
+    table.timestamptz('executed_at', { defaultValue: expr.now() });
     const generator = new SqlSchemaGenerator(querier.dialect);
     for (const sql of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
       await querier.run(sql);

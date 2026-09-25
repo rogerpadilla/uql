@@ -84,7 +84,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.is_identity,
         c.identity_generation,
         CASE WHEN a.attgenerated = 's' THEN c.generation_expression END AS generated_as,
-        CASE WHEN c.data_type IN ('USER-DEFINED', 'vector') AND a.atttypmod > -1
+        CASE WHEN (c.data_type IN ('USER-DEFINED', 'vector') OR c.data_type LIKE 'timestamp%') AND a.atttypmod > -1
           THEN format_type(a.atttypid, a.atttypmod) END AS formatted_type,
         EXISTS (
           SELECT 1 FROM information_schema.table_constraints tc

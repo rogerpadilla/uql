@@ -1,4 +1,4 @@
-import { ISOLATION_LEVEL } from 'mssql';
+import { DateTime2, ISOLATION_LEVEL } from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { IsolationLevel, QueryUpdateResult, RawRow, TransactionOptions } from '../type/index.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
@@ -18,6 +18,7 @@ type MsSqlRowStream = AsyncIterable<unknown> & {
 /** The part of an `mssql` `Request` a querier drives. */
 type MsSqlRequest = {
   input(name: string, value: unknown): unknown;
+  input(name: string, type: typeof DateTime2, value: unknown): unknown;
   query(command: string): Promise<MsSqlResult>;
   toReadableStream(): MsSqlRowStream;
   cancel(): unknown;
@@ -46,13 +47,16 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
   #transaction?: MsSqlTransaction;
 
   /**
-   * Values bind by name, `@p1` upward, matching {@link MsSqlDialect.placeholder}. `tedious` infers
-   * a type from the JS value, which is why a `Date` and a `Uint8Array` reach it unconverted - the
-   * inference is right for both, and wrong only for a bare `null`, which it calls `NVarChar`.
+   * Values bind by name, `@p1` upward, matching {@link MsSqlDialect.placeholder}. `mssql` infers a type
+   * from the JS value, right for a `Uint8Array` and harmlessly wrong for a bare `null` (`NVarChar`), but
+   * a `Date` it binds as the legacy `DATETIME`, whose 1/300 s steps no `DATETIME2` column compares equal to.
    */
   #request(values?: unknown[]): MsSqlRequest {
     const request = this.#transaction ? this.#transaction.request() : this.getConn().request();
-    values?.forEach((value, index) => request.input(`p${index + 1}`, value));
+    values?.forEach((value, index) => {
+      const name = `p${index + 1}`;
+      return value instanceof Date ? request.input(name, DateTime2, value) : request.input(name, value);
+    });
     return request;
   }
 

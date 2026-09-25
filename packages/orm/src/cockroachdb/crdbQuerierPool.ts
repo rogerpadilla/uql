@@ -1,7 +1,7 @@
 import { Pool, type PoolClient, type PoolConfig, types } from 'pg';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractPgQuerierPool } from '../postgres/abstractPgQuerierPool.js';
-import { numericTypes } from '../postgres/pgNumericTypes.js';
+import { wireTypes } from '../postgres/pgWireTypes.js';
 import type { ExtraOptions } from '../type/index.js';
 import { CockroachDialect } from './cockroachDialect.js';
 
@@ -14,7 +14,7 @@ export class CrdbQuerierPool extends AbstractPgQuerierPool<PoolClient, Cockroach
   constructor(opts: PoolConfig, extra?: ExtraOptions) {
     super(
       new CockroachDialect(dialectOptionsFrom(extra)),
-      new Pool({ keepAlive: true, types: numericTypes(types), ...opts }),
+      new Pool({ keepAlive: true, types: wireTypes(types), ...opts }),
       extra,
     );
   }
