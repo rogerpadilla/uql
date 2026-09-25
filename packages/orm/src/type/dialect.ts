@@ -149,6 +149,11 @@ export interface DialectFeatures {
    * value rather than a flag each, since the details mean nothing without a lock.
    */
   readonly rowLocks: RowLockFeatures | false;
+  /**
+   * Whether the engine runs a transaction across statements: false on D1, which refuses one, so what
+   * would open one can run its steps in order instead. MongoDB has them as a replica set alone.
+   */
+  readonly transactions: boolean;
 }
 
 /** How a dialect spells a row lock, once {@link DialectFeatures.rowLocks} says it has one. */

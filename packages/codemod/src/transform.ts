@@ -39,7 +39,10 @@ const REMOVED_DECORATORS = new Map([
  * same reason as the decorators: what replaces each is decided at its call site.
  */
 const REMOVED_EXPORTS = new Map([
-  ['setQuerierPool', 'pass the pool where it is used: `createFetchHandler({ pool })`, `querierMiddleware({ pool })`'],
+  [
+    'setQuerierPool',
+    'pass the pool where it is used: `createFetchHandler({ pool, include })`, `querierMiddleware({ pool, include })`',
+  ],
   ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
   ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
   ['QueryWhereFieldMap', 'use `QueryWhere`'],

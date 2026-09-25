@@ -1,5 +1,5 @@
 import { withContext } from '../context/context.js';
-import { getEntities, getMeta, soleIdOf } from '../entity/index.js';
+import { getMeta, soleIdOf } from '../entity/index.js';
 import type {
   EntityMeta,
   IdValue,
@@ -75,8 +75,11 @@ export type ResponseHook<Ctx = unknown> = <E extends object>(
 ) => void | Promise<void>;
 
 export type RequestHandlerOptions<Ctx = unknown> = {
-  include?: Type<object>[];
-  exclude?: Type<object>[];
+  /**
+   * The entities served, and the only ones a request reaches, through a relation too: nothing is served
+   * by being defined, so an entity holding secrets (a session's token) stays off the wire unless named.
+   */
+  include: readonly Type<object>[];
   /** The URL segment an entity is addressed by, its kebab-cased class name by default; the browser client takes the same option. */
   entityPath?: (entity: Type<unknown>) => string;
   /**
@@ -126,15 +129,12 @@ function tableOf(entity: Type<object>): string {
 }
 
 export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<Ctx>): RequestHandler<Ctx> {
-  const { include, exclude, pre, preSave, preFilter, post, getContext, pool } = opts;
+  const { include: entities, pre, preSave, preFilter, post, getContext, pool } = opts;
   const pathOf = opts.entityPath ?? entityPath;
 
-  let entities = include ?? getEntities();
-  if (exclude) {
-    entities = entities.filter((entity) => !exclude.includes(entity));
-  }
-  if (!entities.length) {
-    throw new UqlUsageError('no entities for the uql middleware');
+  // Refused rather than defaulted to every entity defined, which would serve whatever one registers.
+  if (!entities?.length) {
+    throw new UqlUsageError("name the entities the handler serves in 'include': it serves those alone");
   }
 
   // All of them at once, so fixing the first collision does not just reveal the next.

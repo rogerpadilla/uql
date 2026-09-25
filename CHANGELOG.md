@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.85.0] - 2026-09-25
+
+- **Breaking:** `uql-orm/http` and `uql-orm/express` require `include` and serve only the entities it names, never one for being defined. `exclude` is gone.
+- **Breaking:** a custom dialect's `features` states `transactions`, whether the engine runs a transaction across statements.
+- `uql-orm/betterAuth` runs [Better Auth](https://better-auth.com) on every engine UQL does: `uqlAdapter(pool)` is its database, and `authEntities(options)` its tables for `uql-migrate`.
+
 ## [0.84.0] - 2026-09-25
 
 - **Breaking:** a `security` filter guards writes as it scopes reads. An insert gets the fields it names filled and refuses another value, an update refuses changing one, and a save or upsert keyed on a row outside it fails on the key instead of overwriting that row. A filter that is not plain field equalities refuses writes.

@@ -119,7 +119,8 @@ const users = await pool.findMany(User, {
 - A result is narrowed to what the query selected and populated: reading an unselected field is a compile error.
   Name that shape with `QueryFindResult<User, 'id' | 'email'>` rather than widening the query.
 - `$populate` loads relations in the same statement. Nothing is lazy: a relation not populated is not there.
-- A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`.
+- A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`,
+  whose handler serves only the entities its required `include` names.
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyStream`, `count`, `exists`,
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
@@ -157,6 +158,13 @@ transaction. A querier from `pool.getQuerier()` is yours to release: bind it wit
 writes entity classes from an existing database; `drift:check` fails when the database no longer matches.
 Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names and never touches another.
 
+## Better Auth
+
+`betterAuth({ ...authOptions, database: uqlAdapter(pool) })`, from `uql-orm/betterAuth`, runs Better Auth on any
+pool; `...authEntities(authOptions)` in the config's `entities` has `uql-migrate` create its tables. Keep
+`authOptions` (plugins, table and field names, `rateLimit.storage`) in a module of its own, since the config imports
+it, and never put those entities in an HTTP handler's `include`: a session row holds its token.
+
 ## Where to read more
 
 - Operators, per-dialect SQL: https://uql-orm.dev/querying/comparison-operators.md
@@ -165,4 +173,5 @@ Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names
 - Triggers: https://uql-orm.dev/entities/triggers.md
 - Every method's signature: https://uql-orm.dev/querying/methods.md
 - Coming from Prisma, Drizzle, TypeORM or MikroORM: https://uql-orm.dev/switching-to-uql.md
+- Better Auth: https://uql-orm.dev/better-auth.md
 - Breaking changes by version: https://uql-orm.dev/upgrade-guide.md

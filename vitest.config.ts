@@ -59,7 +59,9 @@ export default defineConfig({
       // `loadTsDefaultExport` writes generated migrations to a temp dir to prove they run on a real
       // runtime. Externalizing them keeps this run's esbuild transform out of the way, so Node's own
       // type stripping does the work a user's would.
-      deps: { external: [/[\\/]uql-ts-[^\\/]*[\\/]/] },
+      // Better Auth's adapter suites call `describe`, and bun links them to a vitest copy of their own:
+      // inlined, they resolve the runner's, whose `describe` is the one collecting tests.
+      deps: { external: [/[\\/]uql-ts-[^\\/]*[\\/]/], inline: ['@better-auth/test-utils'] },
     },
     coverage: {
       provider: 'v8',

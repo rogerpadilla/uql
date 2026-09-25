@@ -64,6 +64,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: false,
+  transactions: true,
   nullsOrdering: 'clause',
   textScoreIndexes: false,
   orderedUpsertReturning: true,

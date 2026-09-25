@@ -118,9 +118,8 @@ describe('querierMiddleware', () => {
     expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
-  it('should fall through to 404 for an unknown or excluded entity', async () => {
-    class OtherEntity {}
-    const router = querierMiddleware({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
+  it('should fall through to 404 for an entity it does not serve', async () => {
+    const router = querierMiddleware({ pool, include: [User] });
     app = express();
     app.use('/api', router);
     const res = await request(app).get('/api/other-entity');
@@ -141,12 +140,8 @@ describe('querierMiddleware', () => {
     expect(res.body).toEqual({ error: { message: 'forbidden', code: 403 } });
   });
 
-  it('should throw if no entities are provided', () => {
-    expect(() => querierMiddleware({ pool, include: [] })).toThrow('no entities for the uql middleware');
-  });
-
-  it('should use getEntities when include is omitted', () => {
-    expect(querierMiddleware({ pool })).toBeDefined();
+  it('should refuse a middleware naming no entity to serve', () => {
+    expect(() => querierMiddleware({ pool, include: [] })).toThrow("name the entities the handler serves in 'include'");
   });
 
   it('should hand hooks the express request as context', async () => {

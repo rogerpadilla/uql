@@ -68,8 +68,11 @@ describe('createRequestHandler', () => {
     expect(tenantQuerier.findMany).toHaveBeenCalled();
   });
 
-  it('should throw if no entities are provided', () => {
-    expect(() => createRequestHandler({ pool, include: [] })).toThrow('no entities for the uql middleware');
+  it('should refuse a handler naming no entity to serve', () => {
+    const refusal = "name the entities the handler serves in 'include'";
+    expect(() => createRequestHandler({ pool, include: [] })).toThrow(refusal);
+    // @ts-expect-error: an untyped caller can still leave it out
+    expect(() => createRequestHandler({ pool })).toThrow(refusal);
   });
 
   // The path comes from the class name, so two entities on the same table in different schemas would
@@ -106,9 +109,12 @@ describe('createRequestHandler', () => {
     expect(handle(req({ method: 'POST', entityPath: 'user', subPath: 'one' }))).toBeUndefined();
   });
 
-  it('should respect exclude', () => {
-    class OtherEntity {}
-    const handle = createRequestHandler({ pool, include: [User, OtherEntity], exclude: [OtherEntity] });
+  it('should serve no entity it does not name, however defined', () => {
+    class OtherEntity {
+      id?: number;
+    }
+    defineEntity(OtherEntity, { fields: { id: { type: Number, isId: true } } });
+    const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'other-entity' }))).toBeUndefined();
   });
 
