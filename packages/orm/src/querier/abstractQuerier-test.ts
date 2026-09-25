@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { withContext } from '../context/context.js';
 import { getEntities } from '../entity/index.js';
 import {
   assertDefined,
@@ -14,6 +15,7 @@ import {
   Tag,
   Tax,
   TaxCategory,
+  TenantNote,
   User,
   VectorChunk,
   VectorCitation,
@@ -27,6 +29,8 @@ import { UqlOptimisticLockError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
 const thrownValue = (thrown: unknown) => thrown;
+const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantId }, fn);
+const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
 
 export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   querier!: Q;
@@ -2330,6 +2334,129 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(inserted).toMatchObject({ name: 'Save Order New' });
   }
 
+  async shouldFillTheTenantOfARowInsertedWithoutOne() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'mine' }));
+    assertDefined(id);
+
+    const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { tenantId: true } }));
+
+    expect(row).toMatchObject({ tenantId: 'a' });
+  }
+
+  async shouldInsertARowNamingItsOwnTenant() {
+    await asTenant('a', () => this.querier.insertOne(TenantNote, { tenantId: 'a', title: 'mine' }));
+
+    expect(await asTenant('a', () => this.querier.count(TenantNote))).toBe(1);
+  }
+
+  async shouldRefuseAnInsertIntoAnotherTenant() {
+    const refused = await asTenant('a', () =>
+      this.querier.insertOne(TenantNote, { tenantId: 'b', title: 'theirs' }),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await asSystem(() => this.querier.count(TenantNote))).toBe(0);
+  }
+
+  async shouldUpdateARowKeepingItsTenant() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    assertDefined(id);
+
+    const changes = await asTenant('a', () =>
+      this.querier.updateOneById(TenantNote, id, { tenantId: 'a', title: 'final' }),
+    );
+
+    expect(changes).toBe(1);
+  }
+
+  async shouldRefuseAnUpdateMovingARowToAnotherTenant() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'mine' }));
+    assertDefined(id);
+
+    const refused = await asTenant('a', () => this.querier.updateOneById(TenantNote, id, { tenantId: 'b' })).catch(
+      thrownValue,
+    );
+
+    expect(queryErrorKind(refused)).toBe('security');
+    expect(await asTenant('a', () => this.querier.count(TenantNote))).toBe(1);
+  }
+
+  async shouldSaveItsOwnRowByKeyAndInsertTheRest() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+
+    await asTenant('a', () => this.querier.saveMany(TenantNote, [{ id, title: 'final' }, { title: 'new' }]));
+
+    const rows = await asSystem(() =>
+      this.querier.findMany(TenantNote, { $select: { tenantId: true, title: true }, $sort: { title: 'asc' } }),
+    );
+    expect(rows).toMatchObject([
+      { tenantId: 'a', title: 'final' },
+      { tenantId: 'a', title: 'new' },
+    ]);
+  }
+
+  async shouldRefuseASaveTakingOverAnotherTenantsRow() {
+    const id = await asTenant('b', () => this.querier.insertOne(TenantNote, { title: 'theirs' }));
+    assertDefined(id);
+
+    const refused = await asTenant('a', () => this.querier.saveOne(TenantNote, { id, title: 'mine now' })).catch(
+      thrownValue,
+    );
+
+    expect(queryErrorKind(refused)).toBe('uniqueViolation');
+    const row = await asSystem(() =>
+      this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
+    );
+    expect(row).toMatchObject({ tenantId: 'b', title: 'theirs' });
+  }
+
+  async shouldUpsertItsOwnRowOnAConflict() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    assertDefined(id);
+
+    const result = await asTenant('a', () => this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'final' }));
+
+    expect(result).toMatchObject({ id, created: false });
+    const row = await asSystem(() =>
+      this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
+    );
+    expect(row).toMatchObject({ tenantId: 'a', title: 'final' });
+  }
+
+  async shouldRollBackAGuardedUpsertBatchReachingAnotherTenantsRow() {
+    const mine = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    const theirs = await asTenant('b', () => this.querier.insertOne(TenantNote, { title: 'theirs' }));
+
+    const refused = await asTenant('a', () =>
+      this.querier.upsertMany(TenantNote, { id: true }, [
+        { id: mine, title: 'final' },
+        { id: theirs, title: 'mine now' },
+      ]),
+    ).catch(thrownValue);
+
+    expect(queryErrorKind(refused)).toBe('uniqueViolation');
+    const rows = await asSystem(() =>
+      this.querier.findMany(TenantNote, { $select: { tenantId: true, title: true }, $sort: { tenantId: 'asc' } }),
+    );
+    expect(rows).toMatchObject([
+      { tenantId: 'a', title: 'draft' },
+      { tenantId: 'b', title: 'theirs' },
+    ]);
+  }
+
+  async shouldUpsertNoRowsOfAGuardedEntity() {
+    const result = await asTenant('a', () => this.querier.upsertMany(TenantNote, { id: true }, []));
+    expect(result.changes).toBe(0);
+  }
+
+  async shouldWriteAnyTenantUnderASystemContext() {
+    const id = await asSystem(() => this.querier.insertOne(TenantNote, { tenantId: 'b', title: 'seeded' }));
+    assertDefined(id);
+
+    expect(await asSystem(() => this.querier.updateOneById(TenantNote, id, { tenantId: 'c' }))).toBe(1);
+    expect(await asTenant('c', () => this.querier.count(TenantNote))).toBe(1);
+  }
+
   async shouldFindOne() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
 
@@ -3084,7 +3211,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async clearTables() {
     const entities = getEntities();
-    await Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true })));
+    await asSystem(() =>
+      Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true }))),
+    );
   }
 
   abstract createTables(): Promise<void>;

@@ -1,9 +1,10 @@
 /**
  * Pre-publish gate: every path `package.json` promises exists and is non-empty, every browser-facing
  * entry graph is free of Node builtins, every entry point's declarations resolve in a project that has
- * no ambient types and its driverless entries load there, and no entry exceeds its size budget.
+ * no ambient types and every entry runs there on each runtime with no driver, and no entry exceeds its
+ * size budget.
  *
- * Runs at the end of `bun run build` and again from `prepack`, so a stale or broken `dist/` cannot be
+ * Runs at the end of `bun run build`, which `prepack` runs, so a stale or broken `dist/` cannot be
  * published. See CHANGELOG's "uql-orm@0.10.0 shipped only the browser bundle", "uql-orm@0.13.0
  * root import broke browser bundles" and "uql-orm@0.24.4 named `Buffer` in a public type" for the
  * incidents behind it.
@@ -120,7 +121,7 @@ function checkBrowserGraph(): number {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   '.': 35_100,
-  './postgres': 33_400,
+  './postgres': 33_900,
   './migrate': 58_100,
   './browser': 2_000,
 };
@@ -167,72 +168,52 @@ async function checkSizeBudgets(): Promise<void> {
  * is a dev dependency of this repo, and `mongodb`'s or `better-sqlite3`'s declarations pull `@types/node`
  * into the program, which puts `Buffer` back in scope and hides the very thing being looked for. What has
  * to hold is the case of a consumer who installed `uql-orm` and no driver, which is also where
- * {@link checkDriverlessEntries} loads them.
+ * {@link checkRuntimes} runs them.
  */
-function checkDeclarationsStandalone(): void {
-  const { checkDir, installed } = writeConsumerProject();
-  try {
-    const output = typeCheck(checkDir);
-    const inConsumer = consumerErrors(output, checkDir, installed);
-    if (inConsumer.length) {
-      refuse(
-        'a consumer cannot use the published surface',
-        inConsumer,
-        'The entity in `entity.ts` is written the way the README says one is written. If the decorators ' +
-          'now need `experimentalDecorators`, or a name moved off the root entry, that promise is broken.',
-      );
-    }
-    const unresolved = ownUnresolvedNames(output, checkDir, installed);
-    if (unresolved.length) {
-      refuse(
-        'the published types do not stand on their own in a consumer project',
-        unresolved,
-        'A public type is naming something only this repo has in scope. Prefer a structural type a consumer ' +
-          'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
-      );
-    }
-    checkDriverlessEntries(checkDir);
-  } finally {
-    rmSync(checkDir, { recursive: true, force: true });
+function checkDeclarationsStandalone(checkDir: string, installed: string): void {
+  const output = typeCheck(checkDir);
+  const inConsumer = consumerErrors(output, checkDir, installed);
+  if (inConsumer.length) {
+    refuse(
+      'a consumer cannot use the published surface',
+      inConsumer,
+      'The entity in `entity.ts` is written the way the README says one is written. If the decorators ' +
+        'now need `experimentalDecorators`, or a name moved off the root entry, that promise is broken.',
+    );
+  }
+  const unresolved = ownUnresolvedNames(output, checkDir, installed);
+  if (unresolved.length) {
+    refuse(
+      'the published types do not stand on their own in a consumer project',
+      unresolved,
+      'A public type is naming something only this repo has in scope. Prefer a structural type a consumer ' +
+        'always has (`Uint8Array` over `Buffer`), or import the name instead of relying on an ambient global.',
+    );
   }
 }
 
 const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
 
-/** Entries a consumer imports whatever driver they installed, or none. */
-const DRIVERLESS_ENTRIES = [
-  '.',
-  './dialect',
-  './entity',
-  './querier',
-  './type',
-  './util',
-  './namingStrategy',
-  './migrate',
-  './http',
-  './browser',
-];
+/** The runtimes the README claims, each running `smoke.mjs` in the consumer project. */
+const RUNTIMES = [['node'], ['bun'], ['deno', 'run']];
 
 /**
- * Each driverless entry, imported by Node where no optional peer is installed: `uql-orm@0.72.2` failed
- * `import 'uql-orm/migrate'` with "Cannot find package 'mongodb'", reached through the MongoDB introspector.
+ * Each runtime loads every entry and builds a query where no optional peer is installed: `uql-orm@0.72.2`
+ * failed `import 'uql-orm/migrate'` with "Cannot find package 'mongodb'", reached through the MongoDB introspector.
  */
-function checkDriverlessEntries(checkDir: string): void {
-  const unloadable = DRIVERLESS_ENTRIES.flatMap((entry) => {
-    const { status, stderr } = spawnSync(
-      'node',
-      ['--input-type=module', '-e', `await import('${specifierOf(entry)}')`],
-      {
-        cwd: checkDir,
-        encoding: 'utf8',
-      },
-    );
-    return status === 0 ? [] : [`${entry}: ${/^\w*Error.*$/m.exec(stderr)?.[0] ?? stderr.trim()}`];
+function checkRuntimes(checkDir: string): void {
+  cpSync(join(pkgDir, 'smoke.mjs'), join(checkDir, 'smoke.mjs'));
+  const broken = RUNTIMES.flatMap(([bin, ...args]) => {
+    const { status, stdout, stderr, error } = spawnSync(bin, [...args, 'smoke.mjs'], {
+      cwd: checkDir,
+      encoding: 'utf8',
+    });
+    return status === 0 ? [] : [`${bin}: ${error?.message ?? (stderr || stdout).trim()}`];
   });
-  if (unloadable.length) {
+  if (broken.length) {
     refuse(
-      'a driverless entrypoint needs an optional peer to load',
-      unloadable,
+      'the package does not run on every runtime with no driver installed',
+      broken,
       'Import driver code on use (`await import(...)`), or move what the entry needs out of the driver module.',
     );
   }
@@ -246,6 +227,8 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
   mkdirSync(installed, { recursive: true });
   cpSync(join(pkgDir, 'dist'), join(installed, 'dist'), { recursive: true });
   writeFileSync(join(installed, 'package.json'), JSON.stringify(pkg));
+  // Deno reads `node_modules` only beside a `package.json`.
+  writeFileSync(join(checkDir, 'package.json'), '{"private":true}');
 
   for (const [index, entry] of entries.entries()) {
     writeFileSync(join(checkDir, `entry${index}.ts`), `export * from '${specifierOf(entry)}';\n`);
@@ -362,12 +345,18 @@ settle();
 
 const browserModules = checkBrowserGraph();
 await checkSizeBudgets();
-checkDeclarationsStandalone();
+const { checkDir, installed } = writeConsumerProject();
+try {
+  checkDeclarationsStandalone(checkDir, installed);
+  checkRuntimes(checkDir);
+} finally {
+  rmSync(checkDir, { recursive: true, force: true });
+}
 settle();
 
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
     `${entries.length} entry points' types resolve with \`types: []\`; ` +
-    `${DRIVERLESS_ENTRIES.length} driverless entries load with no driver; ` +
+    `every entry loads and queries with no driver on ${RUNTIMES.map(([bin]) => bin).join(', ')}; ` +
     `${Object.keys(BUDGETS).length} entry budgets within limits)`,
 );

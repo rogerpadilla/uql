@@ -3,7 +3,7 @@
 ## Getting Started
 
 1. **Fork the repository** and create your branch from `main`.
-2. **Install dependencies** using `bun install`.
+2. **Install dependencies** using `bun install`. `bun run build` also needs Node and Deno on the path: it runs the package on each.
 3. **Start the databases**: `docker compose up -d --wait`.
 4. **Run tests** to ensure a clean state: `bun run test`.
 

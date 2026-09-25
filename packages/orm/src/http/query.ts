@@ -15,10 +15,16 @@ import { getKeys, isRecord, isWhereMap } from '../util/object.util.js';
 // the error class alone, from its own leaf module: `queryError.ts` carries every driver's code map
 import { UqlUsageError } from '../util/uqlError.js';
 
+/** The flags a request carries beside its query: `hardDelete` on a delete, `count` on a `findMany`. */
+const WIRE_FLAGS = ['hardDelete', 'count'] as const satisfies (keyof Pick<QueryOptions, 'hardDelete'> | 'count')[];
+
+/** {@link WIRE_FLAGS} as the booleans {@link parseQueryParams} decodes them to, where a hook may also set them. */
+export type WireFlags = { readonly [K in (typeof WIRE_FLAGS)[number]]?: boolean };
+
 /**
- * Keys accepted from the wire - query structure ({@link Query}) plus the `hardDelete`/`count` scalar
- * flags. Anything else (e.g. `filters`, `context`, `$entity`) is dropped so a remote client can't
- * bypass a security filter or inject ambient context - those are server-only. The `satisfies` ties
+ * Keys accepted from the wire - query structure ({@link Query}) plus the {@link WIRE_FLAGS}. Anything else
+ * (e.g. `filters`, `context`, `$entity`) is dropped so a remote client can't bypass a security filter or
+ * inject ambient context - those are server-only. The `satisfies` ties
  * every entry to a real query/option key, so a typo or a renamed option fails to compile.
  */
 const ALLOWED_QUERY_KEYS = new Set<string>([
@@ -27,9 +33,8 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
   ...QUERY_NUMBER_CLAUSES,
   ...QUERY_ROOT_NUMBER_CLAUSES,
   ...QUERY_BOOLEAN_CLAUSES,
-  'hardDelete',
-  'count',
-] satisfies (keyof WireQuery<unknown> | keyof Pick<QueryOptions, 'hardDelete'> | 'count')[]);
+  ...WIRE_FLAGS,
+] satisfies (keyof WireQuery<unknown> | (typeof WIRE_FLAGS)[number])[]);
 
 /**
  * Keys that mean something locally but that this transport can never honor, so they are rejected
@@ -43,7 +48,7 @@ const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery
  * Parse raw query-string entries (with JSON-stringified values), or a `QUERY` body, into a UQL query
  * object. Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
  */
-export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E> {
+export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E> & WireFlags {
   if (!isRecord(params)) {
     throw new UqlUsageError('the query must be a JSON object');
   }
@@ -63,7 +68,7 @@ export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E
       try {
         query[key] = JSON.parse(value);
       } catch {
-        throw Object.assign(new SyntaxError(`invalid JSON in '${key}'`), { status: 400 });
+        throw new UqlUsageError(`invalid JSON in '${key}'`);
       }
     }
   }
@@ -81,7 +86,7 @@ export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E
       query[key] = Number(query[key]);
     }
   }
-  for (const key of QUERY_BOOLEAN_CLAUSES) {
+  for (const key of [...QUERY_BOOLEAN_CLAUSES, ...WIRE_FLAGS]) {
     if (query[key] !== undefined) {
       query[key] = query[key] === true || query[key] === 'true';
     }

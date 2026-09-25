@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { UqlSecurityError, withContext } from '../context/context.js';
+import { withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
 import { parseQueryParams } from '../http/query.js';
 import {
@@ -20,6 +20,7 @@ import {
 } from '../test/index.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
 import { raw, refs } from '../util/index.js';
+import { UqlSecurityError } from '../util/uqlError.js';
 import type { AbstractSqlDialect } from './abstractSqlDialect.js';
 
 /** Each field of a tag, which a relation excluding every one reads all the same. */

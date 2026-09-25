@@ -21,9 +21,8 @@ describe('assertCliConfig', () => {
     expect(() => assertCliConfig(null)).toThrow(/non-null object/);
   });
 
-  it('should refuse a config as a usage error, still a TypeError', () => {
+  it('should refuse a config as a usage error', () => {
     expect(() => assertCliConfig(null)).toThrow(UqlUsageError);
-    expect(() => assertCliConfig(null)).toThrow(TypeError);
   });
 
   it('should throw when pool is missing', () => {

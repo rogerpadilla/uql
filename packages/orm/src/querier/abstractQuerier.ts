@@ -53,6 +53,7 @@ import {
   forEachRequestedRelation,
   getKeys,
   getRelationRequestSummary,
+  guardWrite,
   idOnlyQuery,
   keySet,
   isPagedQuery,
@@ -64,6 +65,7 @@ import {
   parseRelationQueryValue,
   rowKey,
   runHooks,
+  securityConditions,
   someKey,
   targetKeyColumns,
   whereAnyOf,
@@ -555,10 +557,17 @@ export abstract class AbstractQuerier implements Querier {
     }
     const meta = getMeta(entity);
     return this.hooked(entity, 'Insert', payload, async (rows) => {
-      fillOnFields(meta, rows, 'onInsert');
-      await this.internalInsertMany(entity, rows);
+      await this.insertRows(entity, rows);
       return writtenIds(meta, rows);
     });
+  }
+
+  /** Fills and guards `rows`, then writes them: an insert, and the insert half of a guarded upsert. */
+  private async insertRows<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
+    const meta = getMeta(entity);
+    fillOnFields(meta, rows, 'onInsert');
+    guardWrite(meta, rows, 'insert');
+    await this.internalInsertMany(entity, rows);
   }
 
   /** Writes `rows`, and onto each one the key the database generated for it, where it can tell. */
@@ -600,6 +609,7 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number> {
     const meta = getMeta(entity);
     fillOnFields(meta, [row], 'onUpdate');
+    guardWrite(meta, [row], 'update');
     const relKeys = filterPersistableRelationKeys(meta, row, 'persist');
     const settles = !!relKeys.length || this.settlesWrite(entity, q);
     if (lockKey) {
@@ -740,7 +750,9 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsertOne'");
     return this.hooked(entity, 'Upsert', [payload], async (rows) => {
-      const { ids, changes, created } = await this.internalUpsertOne(entity, conflictPaths, rows[0]);
+      const { ids, changes, created } = securityConditions(meta).length
+        ? await this.guardedUpsert(entity, conflictPaths, rows)
+        : await this.internalUpsertOne(entity, conflictPaths, rows[0]);
       adoptReportedIds(meta, rows, ids);
       const [id] = writtenIds(meta, rows);
       return { id, changes, created };
@@ -755,10 +767,59 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsertMany'");
     return this.hooked(entity, 'Upsert', payload, async (rows) => {
-      const { ids, changes } = await this.internalUpsertMany(entity, conflictPaths, rows);
+      const { ids, changes } = securityConditions(meta).length
+        ? await this.guardedUpsert(entity, conflictPaths, rows)
+        : await this.internalUpsertMany(entity, conflictPaths, rows);
       adoptReportedIds(meta, rows, ids);
       return { ids: writtenIds(meta, rows), changes };
     });
+  }
+
+  /**
+   * An upsert on an entity a `security` filter guards. `ON CONFLICT` updates the conflicting row whoever
+   * it belongs to, so the rows the conflict names are read through the filter: those found update, the
+   * rest insert, where another tenant's row fails on its key. See architecture/security-filter-writes.md.
+   */
+  private async guardedUpsert<E extends object>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    rows: EntityData<E>[],
+  ): Promise<QueryUpdateResult> {
+    guardWrite(getMeta(entity), rows, 'insert');
+    if (!rows.length) {
+      return { changes: 0 };
+    }
+    const keys = getKeys(conflictPaths);
+    const write = async () => {
+      const ids = await this.idsByConflict(entity, conflictPaths, rows);
+      let changes = 0;
+      for (const [index, row] of rows.entries()) {
+        if (ids[index] !== undefined) {
+          // What `ON CONFLICT` would assign: the row, less the columns it matched on.
+          const payload = { ...row };
+          for (const key of keys) {
+            delete payload[key];
+          }
+          changes += await this.updateColumns(
+            entity,
+            { $where: whereEach(keys, (key) => row[key]) },
+            payload,
+            undefined,
+            0,
+          );
+        }
+      }
+      const inserts = rows.filter((_, index) => ids[index] === undefined);
+      if (inserts.length) {
+        await this.insertRows(entity, inserts);
+        changes += inserts.length;
+      }
+      const created = rows.length === 1 ? ids[0] === undefined : undefined;
+      // A found row's key is adopted by the caller; an inserted one carries the key its insert wrote.
+      return { changes, created, ids };
+    };
+    // One row is one statement after the read, so it needs no transaction of its own.
+    return rows.length === 1 ? write() : this.transaction(write);
   }
 
   protected abstract internalUpsertOne<E extends object>(
@@ -1061,9 +1122,9 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /**
-   * The ids of `rows`, read back by the columns an upsert matched them on, for a statement that could
-   * not report them in payload order. A row that no read row matches, or that two do, keeps
-   * `undefined`: a missing id is honest where a guessed one is not.
+   * The ids of `rows`, read through the filters by the columns an upsert matches them on: after a
+   * statement that could not report them in payload order, or before a guarded upsert. A row that no
+   * read row matches, or that two do, keeps `undefined`: a missing id is honest where a guessed one is not.
    */
   protected async idsByConflict<E extends object>(
     entity: Type<E>,

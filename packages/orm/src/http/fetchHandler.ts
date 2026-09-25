@@ -1,3 +1,4 @@
+import { UqlUsageError } from '../util/uqlError.js';
 import { type RequestErrorResponse, toErrorResponse } from './contract.js';
 import { createRequestHandler, type RequestHandlerOptions } from './handler.js';
 
@@ -61,7 +62,7 @@ async function parseBody(request: Request, method: string): Promise<unknown> {
   try {
     return JSON.parse(text);
   } catch {
-    throw Object.assign(new SyntaxError('invalid JSON body'), { status: 400 });
+    throw new UqlUsageError('invalid JSON body');
   }
 }
 

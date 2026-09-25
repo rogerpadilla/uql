@@ -1,4 +1,4 @@
-import { getContext, UqlSecurityError } from '../context/context.js';
+import { getContext } from '../context/context.js';
 import { soleIdOf } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
@@ -12,6 +12,7 @@ import {
   type FieldOptions,
   type FieldUpdateOp,
   type FilterOnMissing,
+  type FilterOptions,
   type JsonUpdateOp,
   type OnFieldCallback,
   type Query,
@@ -50,7 +51,7 @@ import {
   isWhereMap,
   someKey,
 } from './object.util.js';
-import { UqlUsageError } from './uqlError.js';
+import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
 
@@ -406,62 +407,86 @@ export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): Query
 
 /**
  * `$where` with the entity's active filters merged in, against the ambient {@link UqlContext}. A convenience
- * filter yields to a `$where` on its key; a `security` one is always ANDed, and throws where its condition
- * resolves to nothing, unless `onMissing: 'skip'`.
+ * filter yields to a `$where` on its key; a `security` one is always ANDed, from {@link securityConditions}.
  */
 export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, opts?: QueryOptions): QueryWhere<E> {
   if (!meta.filters) {
     return whereMap;
   }
-  const context = getContext();
   const result: Record<string, unknown> = { ...whereMap };
-  const securityConditions: unknown[] = [];
-
-  for (const name of getKeys(meta.filters)) {
-    const filter = meta.filters[name];
-
-    let active: boolean;
-    if (filter.security) {
-      active = true;
-    } else if (opts?.filters === false) {
-      active = false;
-    } else {
-      active = opts?.filters?.[name] ?? filter.default !== false;
-    }
-    if (!active) {
+  for (const [name, filter] of Object.entries(meta.filters)) {
+    const active = opts?.filters !== false && (opts?.filters?.[name] ?? filter.default !== false);
+    if (filter.security || !active) {
       continue;
     }
-
-    const condition = typeof filter.where === 'function' ? filter.where(context) : filter.where;
-    if (condition === undefined) {
-      const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
-      if (onMissing === 'throw') {
-        throw new UqlSecurityError(`filter '${name}' on '${entityName(meta)}' could not resolve (missing context)`);
+    const condition: Record<string, unknown> = resolveFilter(meta, name, filter) ?? {};
+    for (const key of getKeys(condition)) {
+      if (result[key] === undefined) {
+        result[key] = condition[key];
       }
-      continue;
     }
+  }
+  const security = securityConditions(meta).map(([, condition]) => condition);
+  if (security.length) {
+    const existing = result['$and'] as unknown[] | undefined;
+    result['$and'] = existing ? [...existing, ...security] : security;
+  }
+  return result as QueryWhere<E>;
+}
 
-    const conditionMap = condition as Record<string, unknown>;
-    if (!hasKeys(conditionMap)) {
-      continue; // resolved to "no restriction" (e.g. a trusted system context) - nothing to merge
+/**
+ * Each `security` filter's condition, by name, resolved against the ambient context. One resolving to
+ * `{}`, a trusted context's "no restriction", is left out. Reads AND these in; writes are held to them.
+ */
+export function securityConditions<E>(meta: EntityMeta<E>): [name: string, condition: QueryWhere<E>][] {
+  return Object.entries(meta.filters ?? {}).flatMap(([name, filter]) => {
+    const condition = filter.security ? resolveFilter(meta, name, filter) : undefined;
+    return condition && hasKeys(condition) ? [[name, condition]] : [];
+  });
+}
+
+/** A filter's condition, `undefined` where it resolves to nothing and may skip; throws where it may not. */
+function resolveFilter<E>(meta: EntityMeta<E>, name: string, filter: FilterOptions<E>): QueryWhere<E> | undefined {
+  const condition = typeof filter.where === 'function' ? filter.where(getContext()) : filter.where;
+  const onMissing: FilterOnMissing = filter.onMissing ?? (filter.security ? 'throw' : 'skip');
+  if (condition === undefined && onMissing === 'throw') {
+    throw new UqlSecurityError(`filter '${name}' on '${entityName(meta)}' could not resolve (missing context)`);
+  }
+  return condition;
+}
+
+/**
+ * Holds written rows to the `security` filters, as {@link applyFilters} holds reads: an inserted row gets
+ * each field a condition names and it leaves out, and a row naming one must carry the condition's value.
+ * A condition other than field equalities refuses the write, having nothing a row can be checked against.
+ * See architecture/security-filter-writes.md.
+ */
+export function guardWrite<E, R extends EntityData<E> | UpdatePayload<E>>(
+  meta: EntityMeta<E>,
+  rows: readonly R[],
+  write: 'insert' | 'update',
+): void {
+  for (const [name, condition] of securityConditions(meta)) {
+    const values: Record<string, unknown> = condition;
+    const keys = fieldKeys(meta, () => true).filter((key) => Object.hasOwn(values, key));
+    const equalities = keys.length === getKeys(values).length;
+    if (!equalities || keys.some((key) => Array.isArray(values[key]) || isOperatorObject(values[key]))) {
+      throw new UqlSecurityError(
+        `'${entityName(meta)}' security filter '${name}' is not field equalities, so no write can be checked against it`,
+      );
     }
-    if (filter.security) {
-      securityConditions.push(conditionMap);
-    } else {
-      for (const key of getKeys(conditionMap)) {
-        if (result[key] === undefined) {
-          result[key] = conditionMap[key];
+    for (const key of keys) {
+      for (const row of rows) {
+        if (row[key] === undefined) {
+          if (write === 'insert') {
+            row[key] = values[key] as R[typeof key];
+          }
+        } else if (row[key] !== values[key]) {
+          throw new UqlSecurityError(`'${entityName(meta)}' row sets '${key}' outside security filter '${name}'`);
         }
       }
     }
   }
-
-  if (securityConditions.length) {
-    const existing = result['$and'] as unknown[] | undefined;
-    result['$and'] = existing ? [...existing, ...securityConditions] : securityConditions;
-  }
-
-  return result as QueryWhere<E>;
 }
 
 /**

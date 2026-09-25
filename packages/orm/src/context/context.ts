@@ -1,8 +1,6 @@
 import { AsyncLocalStorage } from 'node:async_hooks';
 import type { UqlContext } from '../type/index.js';
 
-export * from './securityError.js';
-
 /** Holds the current {@link UqlContext} for the active async flow (per request/transaction). */
 const contextStorage = new AsyncLocalStorage<UqlContext>();
 

@@ -1,6 +1,6 @@
 import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
-import { UqlSecurityError, withContext } from '../context/context.js';
+import { withContext } from '../context/context.js';
 import { AGGREGATE_VALUE_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
@@ -22,6 +22,7 @@ import {
 } from '../test/index.js';
 import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
 import { raw } from '../util/index.js';
+import { UqlSecurityError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
 

@@ -7,7 +7,7 @@
   </picture>
 </a>
 
-<h3>The JSON-native ORM for TypeScript</h3>
+<h3>JSON-native ORM for TypeScript</h3>
 
 <p align="left">UQL queries SQL databases and MongoDB with plain, type-safe JSON-syntax.
 </p>
@@ -121,19 +121,42 @@ const posts = await pool.findMany(Post, {
 
 The result is typed to what the query selected: `posts[0].author?.email` compiles, `posts[0].likes` does not.
 
-### 4. Serve it, and send the same query from the browser
+### 4. Or serve it over HTTP, scoped to the signed-in user
 
 ```ts
 // server.ts: Bun, Deno, Cloudflare Workers, or any framework that takes a fetch handler
+import { defineFilter } from 'uql-orm';
 import { createFetchHandler } from 'uql-orm/http';
-import { Post, User } from './entities.js';
+import { authenticate } from './auth.js';
+import { Post } from './entities.js';
 import { pool } from './uql.config.js';
 
-export default { fetch: createFetchHandler({ pool, include: [User, Post] }) };
+declare module 'uql-orm' {
+  interface UqlContext {
+    userId?: number;
+  }
+}
+
+// Scopes every read and write on Post: no `$where` widens it, a new post gets `authorId`, and with no user it throws.
+defineFilter(Post, 'ownPosts', {
+  where: (ctx) => (ctx?.userId != null ? { authorId: ctx.userId } : undefined),
+  security: true,
+});
+
+export default {
+  fetch: createFetchHandler({
+    pool,
+    include: [Post],
+    // From your verified session, never from client input.
+    getContext: async (request) => ({ userId: (await authenticate(request)).userId }),
+  }),
+};
 ```
 
+The client sends a query as JSON and gets the same typed result, never touching the database:
+
 ```ts
-// browser.ts
+// client.ts
 import { HttpQuerier } from 'uql-orm/browser';
 import { Post } from './entities.js';
 
@@ -141,15 +164,13 @@ const api = new HttpQuerier('https://api.example.com');
 
 const { data: posts } = await api.findMany(Post, {
   $select: { title: true },
-  $populate: { author: { $select: { email: true } } },
   $where: { likes: { $gte: 10 } },
   $sort: { likes: 'desc' },
   $limit: 10,
 });
-// GET /post?$select={"title":true}&$populate={"author":{"$select":{"email":true}}}&$where={"likes":{"$gte":10}}&$sort={"likes":"desc"}&$limit=10
 ```
 
-The query object is the same on both sides, and so is its type check. Authorization goes in the handler's [hooks](https://uql-orm.dev/http#authorization-hooks), and tenant isolation in [security filters](https://uql-orm.dev/multi-tenancy) that apply to every query, including the server's own.
+Only the entities in `include` are served: a `$populate: { author: true }` here is a `400`, as `User` is not. More in [HTTP](https://uql-orm.dev/http) and [multi-tenancy](https://uql-orm.dev/multi-tenancy).
 
 ### When CRUD is not enough
 

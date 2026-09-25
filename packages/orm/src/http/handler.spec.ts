@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { getContext } from '../context/context.js';
 import { defineEntity, getMeta } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { createMockQuerier, createMockQuerierPool, type MockedQuerier, User } from '../test/index.js';
+import { createMockQuerier, createMockQuerierPool, Item, type MockedQuerier, Tax, User } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
 import { createRequestHandler, type HandlerRequest } from './handler.js';
 
@@ -206,6 +206,12 @@ describe('createRequestHandler', () => {
     expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
   });
 
+  it('should not count rows on ?count=false', async () => {
+    const handle = createRequestHandler({ pool, include: [User] });
+    await handle(req({ method: 'GET', entityPath: 'user', query: { count: 'false' } }));
+    expect(mockQuerier.count).not.toHaveBeenCalled();
+  });
+
   it("should take a QUERY read's query from the body, through preFilter", async () => {
     mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
     mockQuerier.count.mockResolvedValue(1);
@@ -337,6 +343,63 @@ describe('createRequestHandler', () => {
     const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
     expect(mockQuerier.release).toHaveBeenCalled();
+  });
+
+  describe('relations reaching an entity the handler does not serve', () => {
+    const served = () => createRequestHandler({ include: [Item, Tax], pool });
+
+    it.each([
+      { clause: '$populate', value: { tags: true }, path: 'tags', target: 'Tag' },
+      {
+        clause: '$populate',
+        value: { tax: { $populate: { category: true } } },
+        path: 'tax.category',
+        target: 'TaxCategory',
+      },
+      { clause: '$where', value: { tags: { name: 'a' } }, path: 'tags', target: 'Tag' },
+      {
+        clause: '$where',
+        value: { $or: [{ measureUnit: { name: 'kg' } }] },
+        path: 'measureUnit',
+        target: 'MeasureUnit',
+      },
+      { clause: '$sort', value: { tax: { category: { name: 1 } } }, path: 'tax.category', target: 'TaxCategory' },
+      { clause: '$count', value: { tags: { $where: { name: 'a' } } }, path: 'tags', target: 'Tag' },
+    ])('should refuse $clause reaching $target', async ({ clause, value, path, target }) => {
+      const read = served()(req({ method: 'GET', entityPath: 'item', query: { [clause]: JSON.stringify(value) } }));
+
+      await expect(read).rejects.toThrow(`'${path}' reaches '${target}', which this handler does not serve`);
+      expect(mockQuerier.findMany).not.toHaveBeenCalled();
+    });
+
+    it('should refuse a written row reaching one', async () => {
+      const write = served()(req({ method: 'POST', entityPath: 'item', body: { name: 'a', tags: [{ name: 't' }] } }));
+
+      await expect(write).rejects.toThrow("'tags' reaches 'Tag', which this handler does not serve");
+      expect(mockQuerier.insertOne).not.toHaveBeenCalled();
+    });
+
+    it('should read a relation to an entity it serves', async () => {
+      const query = { $populate: JSON.stringify({ tax: true }), $where: JSON.stringify({ tax: { name: 'VAT' } }) };
+
+      await served()(req({ method: 'GET', entityPath: 'item', query }));
+
+      expect(mockQuerier.findMany).toHaveBeenCalledWith(Item, expect.objectContaining({ $populate: { tax: true } }));
+    });
+
+    it("should leave a hook's own relations alone: the server writes those", async () => {
+      const handle = createRequestHandler({
+        include: [Item],
+        pool,
+        preFilter: ({ query }) => {
+          Object.assign(query, { $populate: { tags: true } });
+        },
+      });
+
+      await handle(req({ method: 'GET', entityPath: 'item' }));
+
+      expect(mockQuerier.findMany).toHaveBeenCalledWith(Item, expect.objectContaining({ $populate: { tags: true } }));
+    });
   });
 
   describe('hooks', () => {

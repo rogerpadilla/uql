@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { UqlSecurityError, withContext } from '../context/context.js';
+import { withContext } from '../context/context.js';
 import { Entity, Field, Filter, getMeta, Id, Index } from '../entity/index.js';
 import { type Item, User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
@@ -13,6 +13,7 @@ import {
   findVectorIndex,
   getFieldCallbackValue,
   getSoftDeleteValue,
+  guardWrite,
   insertShapeOf,
   isCascadable,
   normalizeScalarFieldSelection,
@@ -22,6 +23,7 @@ import {
   withoutSoftDeleteFilter,
 } from './dialect.util.js';
 import { raw } from './raw.js';
+import { UqlSecurityError } from './uqlError.js';
 
 @Filter('active', { where: { status: 'active' }, default: false })
 @Filter('recent', { where: () => ({ status: 'new' }), default: false })
@@ -113,6 +115,42 @@ it('should keep a security filter against a client $where on the same field', ()
 
 it('should fail closed on a security filter whose context is missing', () => {
   expect(() => tenantApplied({})).toThrow(UqlSecurityError);
+});
+
+it("should fill an inserted row's guarded field from a security filter, and no other filter's", () => {
+  const rows: Tenanted[] = [{ id: 1 }];
+  withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'insert'));
+  expect(rows).toEqual([{ id: 1, companyId: 5 }]);
+});
+
+it('should leave an update payload without the guarded field as it is', () => {
+  const rows: Tenanted[] = [{ deletedAt: null }];
+  withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), rows, 'update'));
+  expect(rows).toEqual([{ deletedAt: null }]);
+});
+
+it('should refuse a write naming another value for a guarded field', () => {
+  const write = () => withContext({ tenantId: 5 }, () => guardWrite(getMeta(Tenanted), [{ companyId: 6 }], 'update'));
+  expect(write).toThrow("'Tenanted' row sets 'companyId' outside security filter 'tenant'");
+});
+
+it('should fail closed on a write whose security context is missing', () => {
+  expect(() => guardWrite(getMeta(Tenanted), [{ id: 1 }], 'insert')).toThrow(UqlSecurityError);
+});
+
+@Filter('tenants', { where: { companyId: { $in: [1, 2] } }, security: true })
+@Entity()
+class MultiTenanted {
+  @Field({ type: Number, isId: true })
+  id?: number;
+  @Field({ type: Number })
+  companyId?: number | null;
+}
+
+it('should refuse a write against a security condition that is not field equalities', () => {
+  expect(() => guardWrite(getMeta(MultiTenanted), [{ companyId: 1 }], 'insert')).toThrow(
+    "'MultiTenanted' security filter 'tenants' is not field equalities, so no write can be checked against it",
+  );
 });
 
 it('should read a condition resolving to {} as no restriction, merging nothing', () => {

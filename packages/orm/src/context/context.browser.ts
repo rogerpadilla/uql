@@ -1,7 +1,5 @@
 import type { UqlContext } from '../type/index.js';
 
-export * from './securityError.js';
-
 // The browser's `context.ts`, without `node:async_hooks`. Filters never resolve in a browser, so this
 // only keeps the API; it does not carry a context across `await`s.
 let current: UqlContext | undefined;

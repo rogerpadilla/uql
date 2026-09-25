@@ -6,6 +6,7 @@ import type {
   Querier,
   QuerierPool,
   Query,
+  RelationMeta,
   RequestSuccessResponse,
   Type,
   UpdateWrite,
@@ -13,8 +14,15 @@ import type {
 } from '../type/index.js';
 import { whereIds, whereWith } from '../util/dialect.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { type CrudOperation, entityPath, type HttpMethod, matchRoute, type RouteMatch } from './contract.js';
-import { parseQueryParams } from './query.js';
+import {
+  CRUD_ROUTES,
+  type CrudOperation,
+  entityPath,
+  type HttpMethod,
+  matchRoute,
+  type RouteMatch,
+} from './contract.js';
+import { parseQueryParams, type WireFlags } from './query.js';
 
 /**
  * Framework-normalized request: adapters (express, fetch, ...) reduce their native
@@ -43,21 +51,12 @@ export type HandlerResponse = {
   readonly body: unknown;
 };
 
-/**
- * Wire flags ride inside the query object (as strings on GET, booleans on QUERY),
- * so hooks can set/override them, e.g. force `hardDelete: true` in `preFilter`.
- */
-type WireFlags = {
-  readonly hardDelete?: unknown;
-  readonly count?: unknown;
-};
-
 export type HookContext<E extends object, Ctx = unknown> = {
   readonly meta: EntityMeta<E>;
   readonly op: CrudOperation;
   readonly method: HttpMethod;
   /** The parsed query, to reshape in place. Scope rows with a `security` filter instead, which a client cannot override. */
-  query: Query<E>;
+  query: Query<E> & WireFlags;
   /**
    * request payload - reassignable for sanitization or field injection.
    */
@@ -150,6 +149,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     );
   }
   const entityByPath = new Map<string, Type<object>>([...byPath].map(([path, [entity]]) => [path, entity]));
+  const served = new Set(entities);
 
   return (req) => {
     const entity = entityByPath.get(req.entityPath);
@@ -169,122 +169,116 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     req: HandlerRequest<Ctx>,
   ): Promise<HandlerResponse> {
     const meta = getMeta(entity);
-    const hookCtx: HookContext<E, Ctx> = {
-      meta,
-      op,
-      method,
-      // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
-      query: parseQueryParams<E>(method === 'QUERY' ? req.body : req.query),
-      body: req.body,
-      context: req.context,
-    };
+    // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
+    const query = parseQueryParams<E>(method === 'QUERY' ? req.body : req.query);
+    const { method: verb } = CRUD_ROUTES[op];
+    // What the client sent, before the hooks: a relation a hook adds is the server's own to add.
+    assertServed(meta, query, served);
+    assertServed(meta, req.body, served);
+    const hookCtx: HookContext<E, Ctx> = { meta, op, method, query, body: req.body, context: req.context };
     const appContext = (await getContext?.(req.context)) ?? {};
-    // Resolved where the statement runs, not up front: a hook that aborts the request must not reach
-    // the pool at all, and picking one per request may cost a lookup this request will never use.
-    const resolvePool = async () => (typeof pool === 'function' ? pool(req.context, appContext) : pool);
-    /** Read paths: the pool acquires and releases; nothing here owns a connection. */
-    const withQuerier = async <T>(fn: (querier: Querier) => Promise<T>) => (await resolvePool()).withQuerier(fn);
-    /** Write paths: one transaction per request, so a cascade that fails takes its parent with it. */
-    const withTransaction = async <T>(fn: (querier: Querier) => Promise<T>) => (await resolvePool()).transaction(fn);
     // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
     return withContext(appContext, async () => {
       await pre?.(hookCtx);
-      if (method === 'POST' || method === 'PUT' || method === 'PATCH') {
-        await preSave?.(hookCtx);
-      } else {
-        await preFilter?.(hookCtx);
-      }
-
-      const envelope = await dispatch();
+      await (verb === 'GET' || verb === 'DELETE' ? preFilter : preSave)?.(hookCtx);
+      // Resolved after the hooks: one that aborts the request must not reach the pool at all.
+      const resolved = typeof pool === 'function' ? await pool(req.context, appContext) : pool;
+      // A read acquires and releases; a write is one transaction, so a failing cascade takes its parent with it.
+      const envelope = await (verb === 'GET' ? resolved.withQuerier(execute) : resolved.transaction(execute));
       await post?.(hookCtx, envelope);
       return { status: 200, body: envelope };
     });
 
-    function dispatch(): Promise<RequestSuccessResponse<unknown>> {
-      // read post-hooks so both in-place mutation and reassignment of hookCtx.query apply
-      const query = hookCtx.query;
-      const flags = query as WireFlags;
-      const hardDelete = flags.hardDelete === 'true' || flags.hardDelete === true;
+    /** Runs `op`, reading the query and body after the hooks, which may have reshaped or reassigned them. */
+    async function execute(querier: Querier): Promise<RequestSuccessResponse<unknown>> {
+      const { query, body } = hookCtx;
+      const { hardDelete = false, count: counts } = query;
+      const scoped =
+        id === undefined
+          ? query
+          : { ...query, $where: whereWith(soleIdOf(meta, 'the HTTP handler'), id, query.$where) };
       switch (op) {
         case 'findOne':
-          return withQuerier(async (querier) => {
-            const data = await querier.findOne(entity, query);
-            return { data, count: data ? 1 : 0 };
-          });
-        case 'count':
-          return withQuerier(async (querier) => {
-            const count = await querier.count(entity, query);
-            return { data: count, count };
-          });
-        case 'findOneById':
-          return withQuerier(async (querier) => {
-            const data = await querier.findOne(entity, buildIdQuery(meta, id, query));
-            return { data, count: data ? 1 : 0 };
-          });
-        case 'findMany':
-          return withQuerier(async (querier) => {
-            const findManyPromise = querier.findMany(entity, query);
-            const countPromise = flags.count ? querier.count(entity, query) : undefined;
-            const [data, count] = await Promise.all([findManyPromise, countPromise]);
-            return { data, count };
-          });
+        case 'findOneById': {
+          const data = await querier.findOne(entity, scoped);
+          return { data, count: data ? 1 : 0 };
+        }
+        case 'count': {
+          const count = await querier.count(entity, query);
+          return { data: count, count };
+        }
+        case 'findMany': {
+          const [data, count] = await Promise.all([
+            querier.findMany(entity, query),
+            counts ? querier.count(entity, query) : undefined,
+          ]);
+          return { data, count };
+        }
         case 'insertOne':
-          return withTransaction(async (querier) => {
-            const data = await querier.insertOne(entity, hookCtx.body as E);
-            return { data, count: 1 };
-          });
-        case 'insertMany':
-          return withTransaction(async (querier) => {
-            const data = await querier.insertMany(entity, hookCtx.body as E[]);
-            return { data, count: data.length };
-          });
+          return { data: await querier.insertOne(entity, body as E), count: 1 };
         case 'saveOne':
-          return withTransaction(async (querier) => {
-            const data = await querier.saveOne(entity, hookCtx.body as E);
-            return { data, count: 1 };
-          });
-        case 'saveMany':
-          return withTransaction(async (querier) => {
-            const data = await querier.saveMany(entity, hookCtx.body as E[]);
-            return { data, count: data.length };
-          });
-        case 'updateOneById':
-          return withTransaction(async (querier) => {
-            const count = await querier.updateMany(
-              entity,
-              buildIdQuery(meta, id, query),
-              hookCtx.body as UpdateWrite<E>,
-            );
-            return { data: id, count };
-          });
+          return { data: await querier.saveOne(entity, body as E), count: 1 };
+        case 'insertMany': {
+          const data = await querier.insertMany(entity, body as E[]);
+          return { data, count: data.length };
+        }
+        case 'saveMany': {
+          const data = await querier.saveMany(entity, body as E[]);
+          return { data, count: data.length };
+        }
         case 'updateMany':
-          return withTransaction(async (querier) => {
-            const count = await querier.updateMany(entity, query, hookCtx.body as UpdateWrite<E>);
-            return { data: count, count };
-          });
-        case 'deleteOneById':
-          return withTransaction(async (querier) => {
-            const count = await querier.deleteMany(entity, buildIdQuery(meta, id, query), { hardDelete });
-            return { data: id, count };
-          });
-        case 'deleteMany':
-          return withTransaction(async (querier) => {
-            const founds = await querier.findMany(entity, query);
-            let ids: IdValue<E>[] = [];
-            let count = 0;
-            if (founds.length) {
-              const idKey = soleIdOf(meta, 'the HTTP handler');
-              ids = founds.map((found) => found[idKey]);
-              count = await querier.deleteMany(entity, { $where: whereIds(meta, ids) }, { hardDelete });
-            }
-            return { data: ids, count };
-          });
+        case 'updateOneById': {
+          const count = await querier.updateMany(entity, scoped, body as UpdateWrite<E>);
+          return { data: id ?? count, count };
+        }
+        case 'deleteOneById': {
+          const count = await querier.deleteMany(entity, scoped, { hardDelete });
+          return { data: id, count };
+        }
+        case 'deleteMany': {
+          const founds = await querier.findMany(entity, query);
+          if (!founds.length) {
+            return { data: [], count: 0 };
+          }
+          const idKey = soleIdOf(meta, 'the HTTP handler');
+          const ids: IdValue<E>[] = founds.map((found) => found[idKey]);
+          return {
+            data: ids,
+            count: await querier.deleteMany(entity, { $where: whereIds(meta, ids) }, { hardDelete }),
+          };
+        }
       }
     }
   }
 }
 
-function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {
-  query.$where = whereWith(soleIdOf(meta, 'the HTTP handler'), id, query.$where);
-  return query;
+/**
+ * Refuses a relation, at any depth of what a client sent, leading to an entity this handler does not
+ * serve: `include` fences the routes, and this the rows a `$populate`, a filter, a sort, a tally or a
+ * written row would otherwise reach through them. Every `$` clause holds keys of the entity it sits on.
+ */
+function assertServed<E>(meta: EntityMeta<E>, sent: unknown, served: ReadonlySet<Type<object>>, path = ''): void {
+  if (Array.isArray(sent)) {
+    for (const item of sent) {
+      assertServed(meta, item, served, path);
+    }
+    return;
+  }
+  if (typeof sent !== 'object' || sent === null) {
+    return;
+  }
+  const relations: Readonly<Record<string, RelationMeta | undefined>> = meta.relations;
+  for (const [key, value] of Object.entries(sent)) {
+    const relation = Object.hasOwn(relations, key) ? relations[key] : undefined;
+    if (relation) {
+      const target = relation.entity();
+      const at = path ? `${path}.${key}` : key;
+      if (!served.has(target)) {
+        throw new UqlUsageError(`'${at}' reaches '${target.name}', which this handler does not serve`);
+      }
+      assertServed(getMeta(target), value, served, at);
+    } else if (key.startsWith('$')) {
+      assertServed(meta, value, served, path);
+    }
+  }
 }

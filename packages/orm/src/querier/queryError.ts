@@ -1,5 +1,5 @@
 import type { LoggerWrapper } from '../util/logger.js';
-import { type QueryErrorKind, UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import { type QueryErrorKind, UqlError } from '../util/uqlError.js';
 
 /**
  * A driver error tagged by {@link enrichError}: `query` always, `values` only when the logger already
@@ -78,7 +78,7 @@ export function queryErrorKind(err: unknown): QueryErrorKind | undefined {
   if (typeof err !== 'object' || err === null) {
     return undefined;
   }
-  if (err instanceof UqlOptimisticLockError || err instanceof UqlUsageError) {
+  if (err instanceof UqlError) {
     return err.kind;
   }
   const { code, errno, number, errorLabels, message }: DriverErrorFields = err;

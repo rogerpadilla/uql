@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.84.0] - 2026-09-25
+
+- **Breaking:** a `security` filter guards writes as it scopes reads. An insert gets the fields it names filled and refuses another value, an update refuses changing one, and a save or upsert keyed on a row outside it fails on the key instead of overwriting that row. A filter that is not plain field equalities refuses writes.
+- **Breaking:** the errors UQL raises extend `UqlError`, which carries their `kind` and HTTP `status`, so `UqlUsageError` is no longer a `TypeError`. `UqlSecurityError` answers `403` over `uql-orm/http`, not `500`.
+- **Fixed:** `uql-orm/http` answers `400` to a relation leading to an entity outside `include`, at any depth of a query or a written row, where it read or wrote that entity's rows.
+- **Fixed:** `uql-orm/http` no longer counts on `?count=false`.
+
 ## [0.83.1] - 2026-09-25
 
 - **Fixed:** the `$like` family reads the same on every engine. `$startsWith`, `$endsWith`, `$includes` and their `$i` twins match their text literally, so a `%`, `_` or `[` in it (a `.` or `(` on MongoDB) is no longer a wildcard. A `$like` pattern is whole-string on MongoDB too, `\` escapes on SQLite, D1 and SQL Server too, and `[` is no longer a character class on SQL Server; one ending in a `\` with nothing to escape (`'John\'`) is refused.

@@ -6,10 +6,6 @@ it('should expose the exact same API surface as the node context', () => {
   expect(Object.keys(browserContext).sort()).toEqual(Object.keys(nodeContext).sort());
 });
 
-it('should share the UqlSecurityError class with the node context (single identity per bundle)', () => {
-  expect(browserContext.UqlSecurityError).toBe(nodeContext.UqlSecurityError);
-});
-
 it('should scope and restore the context for sync callbacks, nesting included', () => {
   expect(browserContext.getContext()).toBeUndefined();
   const result = browserContext.withContext({ tenantId: 1 }, () => {

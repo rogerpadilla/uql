@@ -1,15 +1,9 @@
 /**
- * Post-pack gate: the published tarball resolves and runs on every runtime we claim to support.
+ * The package runs on every runtime we claim to support, with no driver installed: `verify-dist.ts`
+ * runs it with Node, Bun and Deno in a consumer project holding `dist` alone.
  *
- * The entry list comes from the installed manifest rather than this file, so adding an export to
- * `package.json` covers it here automatically, on every runtime, with no edit to CI. Adding a
- * runtime is one more line in the workflow.
- *
- * Deliberately `.mjs` and dependency-free: it runs byte-identical on Node, Deno, Bun and any
- * fetch-only runtime, with no transpile step to make the thing under test differ per runtime.
- *
- * Run from a directory where the tarball is installed, once per runtime:
- *   node smoke.mjs / deno run smoke.mjs / bun smoke.mjs
+ * The entry list comes from the installed manifest, so a new export in `package.json` is covered here
+ * with no edit. Deliberately `.mjs` and dependency-free, so it runs byte-identical on each runtime.
  */
 
 import pkg from 'uql-orm/package.json' with { type: 'json' };
@@ -24,7 +18,7 @@ const runtime = globalThis.Deno
  * No peers are installed on purpose: that is what a consumer who uses one dialect actually has.
  *
  * The same list as `external` in verify-dist.ts, copied rather than imported because this file runs
- * from a temp directory where only the tarball exists, with no path back into the repo. Change one
+ * from a temp directory where only `dist` exists, with no path back into the repo. Change one
  * and change the other.
  */
 const peers = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
@@ -93,25 +87,20 @@ for (const name of ['Entity', 'Field', 'Id', 'getMeta', 'defineEntity']) {
   if (!(name in root)) broken.push(`missing root export: ${name}`);
 }
 
-// Imports resolving proves nothing about the code running, so build one query end to end.
+// Imports resolving proves nothing about the code running, so build one query end to end. The SQL
+// itself is the dialect specs' to pin; this only proves one comes out.
 class User {}
 root.defineEntity(User, {
   fields: { id: { type: Number, isId: true }, email: { type: String } },
 });
-// The dialects left the root entry in 0.38.0, and every entry but this family needs a driver peer
-// the smoke install deliberately does not have - so SQLite is the one that proves the code runs.
+// Every other dialect's entry needs a driver peer the consumer project deliberately does not have.
 const { SqliteDialect } = await import(`${pkg.name}/sqlite`);
 const dialect = new SqliteDialect();
 const ctx = dialect.createContext();
-dialect.find(ctx, User, {
-  $select: { id: true, email: true },
-  $where: { email: { $endsWith: '@uql-orm.dev' } },
-  $limit: 10,
-});
+dialect.find(ctx, User, { $select: { id: true }, $where: { email: 'a@uql-orm.dev' } });
 
-const expected = 'SELECT `id`, `email` FROM `User` WHERE `email` LIKE ? LIMIT 10';
-if (ctx.sql !== expected) broken.push(`generated SQL: ${ctx.sql}`);
-if (ctx.values[0] !== '%@uql-orm.dev') broken.push(`bound values: ${JSON.stringify(ctx.values)}`);
+if (!ctx.sql.startsWith('SELECT ')) broken.push(`generated SQL: ${ctx.sql}`);
+if (JSON.stringify(ctx.values) !== '["a@uql-orm.dev"]') broken.push(`bound values: ${JSON.stringify(ctx.values)}`);
 
 if (broken.length) {
   console.error(`smoke: ${pkg.name}@${pkg.version} is broken on ${runtime}:`);

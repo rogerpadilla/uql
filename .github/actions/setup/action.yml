@@ -1,5 +1,5 @@
 name: Setup
-description: Install the pinned Bun, optionally Node, and the locked dependencies
+description: Install the pinned Bun, Deno, optionally Node, and the locked dependencies
 inputs:
   node-version:
     description: Node version to install; empty keeps the image's
@@ -10,6 +10,10 @@ runs:
     - uses: oven-sh/setup-bun@v2
       with:
         bun-version-file: .bun-version
+    # `build` runs smoke.mjs on Deno too.
+    - uses: denoland/setup-deno@v2
+      with:
+        deno-version: v2.x
     - if: inputs.node-version != ''
       uses: actions/setup-node@v6
       with:

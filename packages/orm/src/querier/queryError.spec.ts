@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { type QueryErrorKind, UqlLockUsageError, UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import {
+  type QueryErrorKind,
+  UqlLockUsageError,
+  UqlOptimisticLockError,
+  UqlError,
+  UqlSecurityError,
+  UqlUsageError,
+} from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
 describe('queryErrorKind', () => {
@@ -50,6 +57,11 @@ describe('queryErrorKind', () => {
     ['a busy SQLite database', { message: 'SQLITE_BUSY: database is locked' }, 'retryable'],
     ['a stale version', new UqlOptimisticLockError('moved on', 3, 4), 'optimisticLock'],
     ['a misuse of the API', new UqlUsageError('$lock requires an open transaction'), 'usage'],
+    [
+      'a write outside a security filter',
+      new UqlSecurityError("'Note' row sets 'tenantId' outside security filter 'tenant'"),
+      'security',
+    ],
   ])('names %s', (_, err, kind) => {
     expect(queryErrorKind(err)).toBe(kind);
   });
@@ -66,14 +78,21 @@ describe('queryErrorKind', () => {
   });
 });
 
-describe('UqlUsageError', () => {
-  it('is what the deprecated UqlLockUsageError names, so an existing instanceof keeps working', () => {
-    expect(new UqlLockUsageError('carries no version')).toBeInstanceOf(UqlUsageError);
-    expect(new UqlUsageError('carries no version')).toBeInstanceOf(TypeError);
+describe('UqlError', () => {
+  it.each<[string, UqlError, QueryErrorKind, number]>([
+    ['UqlUsageError', new UqlUsageError('carries no version'), 'usage', 400],
+    ['UqlSecurityError', new UqlSecurityError("filter 'tenant' on 'Note' could not resolve"), 'security', 403],
+    ['UqlOptimisticLockError', new UqlOptimisticLockError('moved on', 3, 4), 'optimisticLock', 409],
+  ])('should root %s, which states its kind and HTTP status', (_, err, kind, status) => {
+    expect(err).toBeInstanceOf(UqlError);
+    expect(err).toMatchObject({ kind, status });
   });
 
-  it('answers 400, where a conflict answers 409', () => {
-    expect(new UqlUsageError('carries no version').status).toBe(400);
-    expect(new UqlOptimisticLockError('moved on', 3, 4).status).toBe(409);
+  it('should not make a misuse a TypeError, which says a value has the wrong type', () => {
+    expect(new UqlUsageError('carries no version')).not.toBeInstanceOf(TypeError);
+  });
+
+  it('should keep the deprecated UqlLockUsageError naming UqlUsageError, so an existing instanceof keeps working', () => {
+    expect(new UqlLockUsageError('carries no version')).toBeInstanceOf(UqlUsageError);
   });
 });

@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Entity, Field, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { idKey, type Json, versionKey } from '../type/index.js';
 
 /**
@@ -170,6 +170,26 @@ export class WideVersionedNote {
 
   @Field({ type: BigInt, version: true })
   version?: bigint;
+}
+
+/** The row-level-security fixture: scoped to the context's `tenantId`, open to a `system` one. */
+@Filter('tenant', {
+  where: (ctx) => {
+    const tenantId = ctx?.['tenantId'];
+    return ctx?.['system'] ? {} : typeof tenantId === 'string' ? { tenantId } : undefined;
+  },
+  security: true,
+})
+@Entity()
+export class TenantNote {
+  @Id({ type: String, onInsert: uuidv7 })
+  id?: string;
+
+  @Field({ type: String })
+  tenantId?: string | null;
+
+  @Field({ type: String })
+  title?: string | null;
 }
 
 @Entity()

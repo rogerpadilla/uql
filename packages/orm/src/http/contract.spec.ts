@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { User } from '../test/index.js';
-import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import { UqlOptimisticLockError, UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { entityPath, matchRoute, toErrorResponse } from './contract.js';
 
 describe('entityPath', () => {
@@ -71,6 +71,15 @@ describe('toErrorResponse', () => {
     expect(toErrorResponse(err)).toEqual({
       status: 403,
       body: { error: { message: 'forbidden', code: 403 } },
+    });
+  });
+
+  it('should answer a security refusal with a 403', () => {
+    expect(
+      toErrorResponse(new UqlSecurityError("filter 'tenant' on 'Note' could not resolve (missing context)")),
+    ).toEqual({
+      status: 403,
+      body: { error: { message: "filter 'tenant' on 'Note' could not resolve (missing context)", code: 403 } },
     });
   });
 

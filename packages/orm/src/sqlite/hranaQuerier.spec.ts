@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { UqlUsageError } from '../util/uqlError.js';
 import { HranaQuerier } from './hranaQuerier.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -118,12 +119,12 @@ describe('HranaQuerier', () => {
 
   it('should throw error on double beginTransaction', async () => {
     await querier.beginTransaction();
-    await expect(querier.beginTransaction()).rejects.toThrow(TypeError);
+    await expect(querier.beginTransaction()).rejects.toThrow(UqlUsageError);
     await expect(querier.beginTransaction()).rejects.toThrow('pending transaction');
   });
 
   it('should throw error on commitTransaction without transaction', async () => {
-    await expect(querier.commitTransaction()).rejects.toThrow(TypeError);
+    await expect(querier.commitTransaction()).rejects.toThrow(UqlUsageError);
     await expect(querier.commitTransaction()).rejects.toThrow('not a pending transaction');
   });
 

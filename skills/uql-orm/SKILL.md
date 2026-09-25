@@ -131,8 +131,8 @@ const users = await pool.findMany(User, {
   someone else holds) and needs an open transaction; SQLite, libSQL, Turso, D1 and MongoDB have no row lock and
   refuse it.
 - `queryErrorKind(err)` names any failure the same on every engine - `uniqueViolation`, `foreignKeyViolation`,
-  `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage` - so catch by kind rather than by
-  a driver's code or an `instanceof`.
+  `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage`, `security` - so catch by kind
+  rather than by a driver's code or an `instanceof`. Every error UQL raises itself is a `UqlError`.
 - `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`. A field read off `refs(Entity)` carries its type: on its own as a value it fits only a field of that type.
 
 ## Connections and transactions
