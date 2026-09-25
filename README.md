@@ -7,7 +7,7 @@
   </picture>
 </a>
 
-<h3>The JSON-native TypeScript ORM</h3>
+<h3>The JSON-native ORM for TypeScript</h3>
 
 <p align="left">UQL queries SQL databases and MongoDB with plain, type-safe JSON-syntax.
 </p>
