@@ -152,35 +152,37 @@ export type QueryWhereFieldOperatorMap<T, Raw = QueryRaw> = {
    */
   $between?: readonly [ExpandScalar<T>, ExpandScalar<T>];
   /**
-   * whether a string begins with the given string (case sensitive).
+   * whether a string begins with the given text, taken literally (case sensitive).
    */
   $startsWith?: string;
   /**
-   * whether a string begins with the given string (case insensitive).
+   * whether a string begins with the given text, taken literally (case insensitive).
    */
   $istartsWith?: string;
   /**
-   * whether a string ends with the given string (case sensitive).
+   * whether a string ends with the given text, taken literally (case sensitive).
    */
   $endsWith?: string;
   /**
-   * whether a string ends with the given string (case insensitive).
+   * whether a string ends with the given text, taken literally (case insensitive).
    */
   $iendsWith?: string;
   /**
-   * whether a string is contained within the given string (case sensitive).
+   * whether a string contains the given text, taken literally (case sensitive).
    */
   $includes?: string;
   /**
-   * whether a string is contained within the given string (case insensitive).
+   * whether a string contains the given text, taken literally (case insensitive).
    */
   $iincludes?: string;
   /**
-   * whether a string fulfills the given pattern (case sensitive).
+   * whether a whole string matches the given pattern, the same on every engine: `%` is any run of
+   * characters, `_` any one, and `\` makes the next one literal; a last `\` with nothing after it to
+   * escape, `'John\'`, is refused (case sensitive).
    */
   $like?: string;
   /**
-   * whether a string fulfills the given pattern (case insensitive).
+   * whether a whole string matches the given pattern, as `$like` reads it (case insensitive).
    */
   $ilike?: string;
   /**

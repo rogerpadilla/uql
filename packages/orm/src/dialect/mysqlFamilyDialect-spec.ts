@@ -185,7 +185,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
       $where: { entries: { $elemMatch: { city: { $like: 'New%' } } } },
     });
     expect(ctx.sql).toBe(
-      `SELECT \`id\` FROM \`JsonRecord\` WHERE EXISTS (${this.elemSelect} FROM ${this.elemFrom} WHERE ${this.elemPath('city')} LIKE ?)`,
+      `SELECT \`id\` FROM \`JsonRecord\` WHERE EXISTS (${this.elemSelect} FROM ${this.elemFrom} WHERE ${this.elemPath('city')} ${this.likeSql()})`,
     );
     expect(ctx.values).toEqual(['New%']);
   }
@@ -231,9 +231,9 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     expect(ctx.sql).toContain(`CAST(${this.elemPath('b')} AS DOUBLE) > CAST(? AS DOUBLE)`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('c')} AS DOUBLE) < CAST(? AS DOUBLE)`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('d')} AS DOUBLE) <= CAST(? AS DOUBLE)`);
-    expect(ctx.sql).toContain(`${this.elemPath('e')} LIKE ?`);
+    expect(ctx.sql).toContain(`${this.elemPath('e')} ${this.likeSql()}`);
     // A JSON path folds case exactly as a column does: both sides, never the pattern alone.
-    expect(ctx.sql).toContain(`LOWER(${this.elemPath('f')}) LIKE ?`);
+    expect(ctx.sql).toContain(`LOWER(${this.elemPath('f')}) ${this.likeSql()}`);
     expect(ctx.values).toContain('hi');
     expect(ctx.sql).toContain(`${this.elemPath('m')} REGEXP ?`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('n')} AS DOUBLE) IN (`);

@@ -44,16 +44,127 @@ That is the whole install ([setup](https://uql-orm.dev/getting-started)). No com
 
 The compiler catches each of those, with no codegen: the entity classes are the schema. Try the editor [on the home page](https://uql-orm.dev).
 
+## How it fits together
+
+### 1. The entities are the schema
+
+```ts
+// entities.ts
+import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
+
+@Entity()
+export class User {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String, unique: true })
+  email?: string | null;
+
+  @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
+  posts?: Post[];
+}
+
+@Entity()
+export class Post {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  title?: string | null;
+
+  @Field({ type: Number })
+  likes?: number | null;
+
+  @Field({ references: () => User })
+  authorId?: number | null;
+
+  @ManyToOne({ entity: () => User, references: (post) => post.authorId })
+  author?: User;
+}
+```
+
+### 2. A pool, and the migrations it drives
+
+```ts
+// uql.config.ts
+import type { Config } from 'uql-orm';
+import { PgQuerierPool } from 'uql-orm/postgres';
+import { Post, User } from './entities.js';
+
+export const pool = new PgQuerierPool({ connectionString: process.env.DATABASE_URL });
+
+export default { pool, entities: [User, Post] } satisfies Config;
+```
+
+```sh
+npx uql-migrate generate:entities initial   # diffs the entities against the database into a migration you review
+npx uql-migrate up                          # applies it
+```
+
+### 3. Query on the server
+
+```ts
+import { Post } from './entities.js';
+import { pool } from './uql.config.js';
+
+const posts = await pool.findMany(Post, {
+  $select: { title: true },
+  $populate: { author: { $select: { email: true } } },
+  $where: { likes: { $gte: 10 } },
+  $sort: { likes: 'desc' },
+  $limit: 10,
+});
+// SELECT "Post"."title", "author"."id" "author.id", "author"."email" "author.email"
+// FROM "Post" LEFT JOIN "User" "author" ON "author"."id" = "Post"."authorId"
+// WHERE "Post"."likes" >= $1 ORDER BY "Post"."likes" DESC LIMIT 10
+```
+
+The result is typed to what the query selected: `posts[0].author?.email` compiles, `posts[0].likes` does not.
+
+### 4. Serve it, and send the same query from the browser
+
+```ts
+// server.ts: Bun, Deno, Cloudflare Workers, or any framework that takes a fetch handler
+import { createFetchHandler } from 'uql-orm/http';
+import { Post, User } from './entities.js';
+import { pool } from './uql.config.js';
+
+export default { fetch: createFetchHandler({ pool, include: [User, Post] }) };
+```
+
+```ts
+// browser.ts
+import { HttpQuerier } from 'uql-orm/browser';
+import { Post } from './entities.js';
+
+const api = new HttpQuerier('https://api.example.com');
+
+const { data: posts } = await api.findMany(Post, {
+  $select: { title: true },
+  $populate: { author: { $select: { email: true } } },
+  $where: { likes: { $gte: 10 } },
+  $sort: { likes: 'desc' },
+  $limit: 10,
+});
+// GET /post?$select={"title":true}&$populate={"author":{"$select":{"email":true}}}&$where={"likes":{"$gte":10}}&$sort={"likes":"desc"}&$limit=10
+```
+
+The query object is the same on both sides, and so is its type check. Authorization goes in the handler's [hooks](https://uql-orm.dev/http#authorization-hooks), and tenant isolation in [security filters](https://uql-orm.dev/multi-tenancy) that apply to every query, including the server's own.
+
+### When CRUD is not enough
+
+- [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, and a migration can be plain SQL.
+- [Computed fields](https://uql-orm.dev/entities/computed-fields) are SQL expressions that you can filter and sort on. [Triggers](https://uql-orm.dev/entities/triggers) run inside the database.
+- [Transactions](https://uql-orm.dev/querying/transactions) hold one connection across many operations, and [lifecycle hooks](https://uql-orm.dev/entities/lifecycle-hooks) run your code around each write.
+- Anything the CRUD routes do not cover goes in a route you write, beside the handler and under the same prefix.
+
 ## Why UQL?
 
-- **Queries are JSON, not method chains.** Build one dynamically, store it, or send it from the browser; the same object runs on every database. No DSL to learn.
 - **One API, everywhere it runs.** PostgreSQL, PGlite, CockroachDB, MySQL, MariaDB, MSSQL, SQLite, Turso, libSQL, Neon, Cloudflare D1, Bun's native SQL, and even MongoDB. The same code on Node 24+, Bun, Deno, [Cloudflare Workers](https://uql-orm.dev/cloudflare-d1), [AWS Lambda and Vercel](https://uql-orm.dev/serverless), and [the browser](https://uql-orm.dev/browser), with no native binaries on the `fetch`-based drivers.
 - **Type-safe to the leaf, nothing to generate.** Every key is checked against your entity, down into populated relations and [JSON/JSONB](https://uql-orm.dev/querying/json) dot-paths, so `$like` on a numeric column is a compile error. No `.prisma` file, no generated client.
 - **Relations without N+1.** [`$populate`](https://uql-orm.dev/querying/relations) reads a to-many inside the parent's statement, so a read is one round trip. Nothing is lazy, so nothing fires behind your back in a serializer.
-- **Migrations you read before they run.** Edit an entity, run `uql-migrate generate:entities`, review the SQL in the PR like any other file. [`drift:check`](https://uql-orm.dev/migrations) catches a database that no longer matches.
-- **Raw SQL when you want it.** [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere in a query, [computed fields](https://uql-orm.dev/entities/computed-fields) are expressions you can filter on, and a migration can be plain SQL.
 - **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 27 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
-- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [a REST API from your entities](https://uql-orm.dev/http).
+- **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
 - **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), on Bun, Node and Deno alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by compiling ordinary mistakes in each ORM's API: UQL is the only one that catches them all.
 
 ## Get started

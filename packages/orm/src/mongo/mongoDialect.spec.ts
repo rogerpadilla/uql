@@ -1015,20 +1015,27 @@ class MongoDialectSpec implements Spec {
       name: { $regex: '^abc' },
     });
     expect(this.dialect.where(Item, { name: { $endsWith: 'xyz' } })).toEqual({
-      name: { $regex: 'xyz$' },
+      name: { $regex: String.raw`xyz\z` },
     });
     expect(this.dialect.where(Item, { name: { $includes: 'test' } })).toEqual({
       name: { $regex: 'test' },
     });
     expect(this.dialect.where(Item, { name: { $like: '%test%' } })).toEqual({
-      name: { $regex: '.*test.*' },
+      name: { $regex: 'test' },
+    });
+    // A `$like` is whole-string, its `_` any one character and `\` an escape; a value is literal.
+    expect(this.dialect.where(Item, { name: { $like: 'a_b\\%' } })).toEqual({
+      name: { $regex: String.raw`^a[\s\S]b%\z` },
+    });
+    expect(this.dialect.where(Item, { name: { $startsWith: 'a.b(' } })).toEqual({
+      name: { $regex: String.raw`^a\.b\(` },
     });
     // Case-insensitive operators
     expect(this.dialect.where(Item, { name: { $istartsWith: 'abc' } })).toEqual({
       name: { $regex: '^abc', $options: 'i' },
     });
     expect(this.dialect.where(Item, { name: { $iendsWith: 'xyz' } })).toEqual({
-      name: { $regex: 'xyz$', $options: 'i' },
+      name: { $regex: String.raw`xyz\z`, $options: 'i' },
     });
     expect(this.dialect.where(Item, { name: { $iincludes: 'test' } })).toEqual({
       name: { $regex: 'test', $options: 'i' },
@@ -1040,7 +1047,7 @@ class MongoDialectSpec implements Spec {
       name: { $regex: 'val' },
     });
     expect(this.dialect.where(Item, { name: { $ilike: '%test%' } })).toEqual({
-      name: { $regex: '.*test.*', $options: 'i' },
+      name: { $regex: 'test', $options: 'i' },
     });
   }
 

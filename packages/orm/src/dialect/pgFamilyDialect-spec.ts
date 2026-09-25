@@ -456,7 +456,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { id: '123', name: { $not: { $startsWith: 'a' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "id" = $1 AND NOT ("name" LIKE $2)');
+    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE "id" = $1 AND NOT ("name" LIKE $2 ESCAPE \'\\\')');
     expect(res.values).toEqual(['123', 'a%']);
 
     res = this.exec((ctx) =>
@@ -465,7 +465,9 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { name: { $not: { $startsWith: 'a', $endsWith: 'z' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Company" WHERE NOT (("name" LIKE $1 AND "name" LIKE $2))');
+    expect(res.sql).toBe(
+      'SELECT "id" FROM "Company" WHERE NOT (("name" LIKE $1 ESCAPE \'\\\' AND "name" LIKE $2 ESCAPE \'\\\'))',
+    );
     expect(res.values).toEqual(['a%', '%z']);
 
     res = this.exec((ctx) =>
@@ -474,7 +476,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { $not: [{ name: { $like: 'Some', $ne: 'Something' } }] },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" LIKE $1 AND "name" <> $2)');
+    expect(res.sql).toBe('SELECT "id" FROM "User" WHERE NOT ("name" LIKE $1 ESCAPE \'\\\' AND "name" <> $2)');
     expect(res.values).toEqual(['Some', 'Something']);
 
     res = this.exec((ctx) =>
@@ -492,7 +494,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { companyId: '1', name: { $not: { $startsWith: 'a' } } },
       }),
     );
-    expect(res.sql).toBe('SELECT "id" FROM "Tax" WHERE "companyId" = $1 AND NOT ("name" LIKE $2)');
+    expect(res.sql).toBe('SELECT "id" FROM "Tax" WHERE "companyId" = $1 AND NOT ("name" LIKE $2 ESCAPE \'\\\')');
     expect(res.values).toEqual(['1', 'a%']);
   }
 
@@ -934,7 +936,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'city\') ILIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'city\') ILIKE $1 ESCAPE \'\\\')',
     );
     expect(values).toEqual(['new%']);
   }
@@ -987,7 +989,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'name\') LIKE $1)',
+      'SELECT "id" FROM "JsonRecord" WHERE EXISTS (SELECT 1 FROM JSONB_ARRAY_ELEMENTS(CASE WHEN JSONB_TYPEOF("entries") = \'array\' THEN "entries" END) AS _uql_elem WHERE (_uql_elem->>\'name\') LIKE $1 ESCAPE \'\\\')',
     );
     expect(values).toEqual(['Test%']);
   }
@@ -1101,7 +1103,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         $where: { 'kind.description': { $ilike: '%active%' } },
       }),
     );
-    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'description\') ILIKE $1');
+    expect(sql).toBe('SELECT "id" FROM "Company" WHERE ("kind"->>\'description\') ILIKE $1 ESCAPE \'\\\'');
     expect(values).toEqual(['%active%']);
   }
 

@@ -6,7 +6,7 @@ import { idKey } from '../type/index.js';
 import type { QueryAggMap, QueryGroupMap, QuerySelect, QueryWhere } from '../type/index.js';
 import {
   applyFilters,
-  asSelectMap,
+  isSelectList,
   assertWhere,
   fillOnFields,
   filterFieldKeys,
@@ -363,9 +363,10 @@ describe('textSearchFields', () => {
   });
 });
 
-it('should read a raw-array $select as no map', () => {
-  expect(asSelectMap<User>([raw`1`])).toBeUndefined();
-  expect(asSelectMap<User>({ name: true })).toEqual({ name: true });
+it('should tell a $select list from its map form', () => {
+  expect(isSelectList<User>([raw`1`])).toBe(true);
+  expect(isSelectList<User>({ name: true })).toBe(false);
+  expect(isSelectList<User>(undefined)).toBe(false);
 });
 
 it('should name only the insertable keys a row carries', () => {

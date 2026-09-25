@@ -5,7 +5,7 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { driftOf } from '../../test/drift.js';
 import { provisioningTimeout } from '../../test/index.js';
-import { dropTables, SQL_POOLS } from '../../test/sqlPools.js';
+import { dropTables, sqlPools } from '../../test/sqlPools.js';
 import type { SyncOptions, Type } from '../../type/index.js';
 import { Migrator } from '../migrator.js';
 
@@ -87,7 +87,7 @@ class ShapeNoEmail {
 }
 
 /** Every engine reads back what `sync` built as what the entity said, however it holds it. */
-describe.each(SQL_POOLS)('drift and sync (%s)', (_engine, connect) => {
+describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) => {
   const pool = connect();
   afterAll(() => pool.end());
 

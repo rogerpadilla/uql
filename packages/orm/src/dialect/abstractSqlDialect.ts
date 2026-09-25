@@ -60,7 +60,7 @@ import {
 } from '../type/index.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import {
-  asSelectMap,
+  isSelectList,
   assertNonNegativeInteger,
   assertWhere,
   definedEntries,
@@ -264,10 +264,20 @@ function projectedKeys<E>(
   exclude: QueryExclude<E> | undefined,
   json: boolean | undefined,
 ): readonly (FieldKey<E> | QueryRaw)[] {
-  const selected: readonly (FieldKey<E> | QueryRaw)[] = Array.isArray(select)
-    ? select
-    : normalizeScalarFieldSelection(meta, asSelectMap(select), exclude);
+  const selected: readonly (FieldKey<E> | QueryRaw)[] = isSelectList(select)
+    ? select.map(selectRaw)
+    : normalizeScalarFieldSelection(meta, select, exclude);
   return selected.length || !json ? selected : normalizeScalarFieldSelection(meta);
+}
+
+/** An item of a `$select` list, which only `raw()` fills: anything else arrived from an untyped client. */
+function selectRaw(item: unknown): QueryRaw {
+  if (item instanceof QueryRaw) {
+    return item;
+  }
+  throw new UqlUsageError(
+    `a $select list takes raw() expressions only, not a ${kindOf(item)}: name fields in its map form, { field: true }`,
+  );
 }
 
 export type { HydrateKind };
@@ -1001,8 +1011,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const fold = like.insensitive && this.caseInsensitiveMatch === 'fold';
     const value = String(val);
     const ph = this.addValue(ctx, like.pattern(fold ? value.toLowerCase() : value));
-    const matchOp = like.insensitive && this.caseInsensitiveMatch === 'ilike' ? 'ILIKE' : this.likeFn;
-    return `${fold ? `LOWER(${operand})` : operand} ${matchOp} ${ph}`;
+    const matchOp = like.insensitive && this.caseInsensitiveMatch === 'ilike' ? 'ILIKE' : 'LIKE';
+    // Stated on every engine, although only SQLite and SQL Server lack `\` as their default escape.
+    return `${fold ? `LOWER(${operand})` : operand} ${matchOp} ${ph} ESCAPE ${this.escape('\\')}`;
   }
 
   /** Builds `prefix.column` from an already-resolved field, through the same memo writes use. */
@@ -2850,10 +2861,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected regexCondition(operand: string, placeholder: string): string {
     return `${operand} ${this.regexpOp} ${placeholder}`;
-  }
-
-  protected get likeFn(): string {
-    return 'LIKE';
   }
 
   /**

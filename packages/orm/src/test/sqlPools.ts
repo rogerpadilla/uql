@@ -18,23 +18,21 @@ import {
 export type SqlPool = readonly [SqlDialectName | 'pglite', () => SqlQuerierPool];
 
 /**
- * Every SQL engine, as a pool each. One list rather than one per suite: a suite that spells its own
- * leaves an engine out by omission, which nothing notices - the `FROM inserted` a stamp needs on SQL
- * Server was broken for exactly that long. A suite that must skip one does it by name, in sight.
+ * Every SQL engine but those in `except`, as a pool each; one list, since a suite spelling its own drops an
+ * engine unnoticed (SQL Server's stamps broke for exactly that long). SQL Server runs on `mssqlDatabase`,
+ * one per file changing the schema, since two such files on one database deadlock (`docker/init-mssql.sql`).
  */
-export const SQL_POOLS: readonly SqlPool[] = [
-  ['pglite', () => new PgliteQuerierPool('memory://')],
-  ['postgres', () => new PgQuerierPool(postgresConnection())],
-  ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection())],
-  ['mysql', () => new MySql2QuerierPool(mysqlConnection())],
-  ['mariadb', () => new MariadbQuerierPool(mariadbConnection())],
-  ['sqlite', () => new NodeSqliteQuerierPool(':memory:')],
-  ['mssql', () => new MsSqlQuerierPool(mssqlConnection())],
-];
-
-/** {@link SQL_POOLS} without the engines named, each of which a suite has to justify leaving out. */
-export function sqlPoolsExcept(...names: readonly (SqlDialectName | 'pglite')[]): readonly SqlPool[] {
-  return SQL_POOLS.filter(([name]) => !names.includes(name));
+export function sqlPools(mssqlDatabase: string, ...except: readonly (SqlDialectName | 'pglite')[]): readonly SqlPool[] {
+  const pools: readonly SqlPool[] = [
+    ['pglite', () => new PgliteQuerierPool('memory://')],
+    ['postgres', () => new PgQuerierPool(postgresConnection())],
+    ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection())],
+    ['mysql', () => new MySql2QuerierPool(mysqlConnection())],
+    ['mariadb', () => new MariadbQuerierPool(mariadbConnection())],
+    ['sqlite', () => new NodeSqliteQuerierPool(':memory:')],
+    ['mssql', () => new MsSqlQuerierPool(mssqlConnection(mssqlDatabase))],
+  ];
+  return pools.filter(([name]) => !except.includes(name));
 }
 
 /** Drops `tables` one after another: two DDL statements fired at once deadlocked CockroachDB and SQL Server. */

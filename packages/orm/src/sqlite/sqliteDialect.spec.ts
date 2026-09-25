@@ -351,7 +351,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
       }),
     );
     expect(sql).toBe(
-      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ?)",
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE JSON_EXTRACT(_uql_elem.value, '$.city') LIKE ? ESCAPE '\\')",
     );
     expect(values).toEqual(['new%']);
   }
@@ -412,10 +412,10 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         },
       }),
     );
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.d') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.e') LIKE ?");
-    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.g') LIKE ?");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.a') LIKE ? ESCAPE '\\'");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.d') LIKE ? ESCAPE '\\'");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.e') LIKE ? ESCAPE '\\'");
+    expect(res.sql).toContain("JSON_EXTRACT(_uql_elem.value, '$.g') LIKE ? ESCAPE '\\'");
 
     // Test $regex
     res = this.exec((ctx) =>
@@ -484,7 +484,7 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
         $where: { 'kind.country': { $ilike: '%land%' } },
       }),
     );
-    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.country') LIKE ?");
+    expect(sql).toBe("SELECT `id` FROM `Company` WHERE JSON_EXTRACT(`kind`, '$.country') LIKE ? ESCAPE '\\'");
     expect(values).toEqual(['%land%']);
   }
   shouldFindByManyToManyRelation() {

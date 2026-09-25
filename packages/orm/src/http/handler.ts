@@ -169,14 +169,12 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     req: HandlerRequest<Ctx>,
   ): Promise<HandlerResponse> {
     const meta = getMeta(entity);
-    // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
-    const rawQuery = method === 'QUERY' ? (req.body as Record<string, unknown> | undefined) : req.query;
-
     const hookCtx: HookContext<E, Ctx> = {
       meta,
       op,
       method,
-      query: parseQueryParams<E>(rawQuery),
+      // QUERY (RFC 10008) carries the JSON query in the body instead of the query string
+      query: parseQueryParams<E>(method === 'QUERY' ? req.body : req.query),
       body: req.body,
       context: req.context,
     };
@@ -185,11 +183,9 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     // the pool at all, and picking one per request may cost a lookup this request will never use.
     const resolvePool = async () => (typeof pool === 'function' ? pool(req.context, appContext) : pool);
     /** Read paths: the pool acquires and releases; nothing here owns a connection. */
-    const withQuerier = async (fn: (querier: Querier) => Promise<HandlerResponse>) =>
-      (await resolvePool()).withQuerier(fn);
+    const withQuerier = async <T>(fn: (querier: Querier) => Promise<T>) => (await resolvePool()).withQuerier(fn);
     /** Write paths: one transaction per request, so a cascade that fails takes its parent with it. */
-    const withTransaction = async (fn: (querier: Querier) => Promise<HandlerResponse>) =>
-      (await resolvePool()).transaction(fn);
+    const withTransaction = async <T>(fn: (querier: Querier) => Promise<T>) => (await resolvePool()).transaction(fn);
     // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
     return withContext(appContext, async () => {
       await pre?.(hookCtx);
@@ -199,14 +195,12 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
         await preFilter?.(hookCtx);
       }
 
-      const resp = await dispatch();
-      if (post) {
-        await post(hookCtx, resp.body as RequestSuccessResponse<unknown>);
-      }
-      return resp;
+      const envelope = await dispatch();
+      await post?.(hookCtx, envelope);
+      return { status: 200, body: envelope };
     });
 
-    function dispatch(): Promise<HandlerResponse> {
+    function dispatch(): Promise<RequestSuccessResponse<unknown>> {
       // read post-hooks so both in-place mutation and reassignment of hookCtx.query apply
       const query = hookCtx.query;
       const flags = query as WireFlags;
@@ -215,44 +209,44 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
         case 'findOne':
           return withQuerier(async (querier) => {
             const data = await querier.findOne(entity, query);
-            return ok({ data, count: data ? 1 : 0 });
+            return { data, count: data ? 1 : 0 };
           });
         case 'count':
           return withQuerier(async (querier) => {
             const count = await querier.count(entity, query);
-            return ok({ data: count, count });
+            return { data: count, count };
           });
         case 'findOneById':
           return withQuerier(async (querier) => {
             const data = await querier.findOne(entity, buildIdQuery(meta, id, query));
-            return ok({ data, count: data ? 1 : 0 });
+            return { data, count: data ? 1 : 0 };
           });
         case 'findMany':
           return withQuerier(async (querier) => {
             const findManyPromise = querier.findMany(entity, query);
             const countPromise = flags.count ? querier.count(entity, query) : undefined;
             const [data, count] = await Promise.all([findManyPromise, countPromise]);
-            return ok({ data, count });
+            return { data, count };
           });
         case 'insertOne':
           return withTransaction(async (querier) => {
             const data = await querier.insertOne(entity, hookCtx.body as E);
-            return ok({ data, count: 1 });
+            return { data, count: 1 };
           });
         case 'insertMany':
           return withTransaction(async (querier) => {
             const data = await querier.insertMany(entity, hookCtx.body as E[]);
-            return ok({ data, count: data.length });
+            return { data, count: data.length };
           });
         case 'saveOne':
           return withTransaction(async (querier) => {
             const data = await querier.saveOne(entity, hookCtx.body as E);
-            return ok({ data, count: 1 });
+            return { data, count: 1 };
           });
         case 'saveMany':
           return withTransaction(async (querier) => {
             const data = await querier.saveMany(entity, hookCtx.body as E[]);
-            return ok({ data, count: data.length });
+            return { data, count: data.length };
           });
         case 'updateOneById':
           return withTransaction(async (querier) => {
@@ -261,17 +255,17 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
               buildIdQuery(meta, id, query),
               hookCtx.body as UpdateWrite<E>,
             );
-            return ok({ data: id, count });
+            return { data: id, count };
           });
         case 'updateMany':
           return withTransaction(async (querier) => {
             const count = await querier.updateMany(entity, query, hookCtx.body as UpdateWrite<E>);
-            return ok({ data: count, count });
+            return { data: count, count };
           });
         case 'deleteOneById':
           return withTransaction(async (querier) => {
             const count = await querier.deleteMany(entity, buildIdQuery(meta, id, query), { hardDelete });
-            return ok({ data: id, count });
+            return { data: id, count };
           });
         case 'deleteMany':
           return withTransaction(async (querier) => {
@@ -283,15 +277,11 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
               ids = founds.map((found) => found[idKey]);
               count = await querier.deleteMany(entity, { $where: whereIds(meta, ids) }, { hardDelete });
             }
-            return ok({ data: ids, count });
+            return { data: ids, count };
           });
       }
     }
   }
-}
-
-function ok(body: unknown): HandlerResponse {
-  return { status: 200, body };
 }
 
 function buildIdQuery<E extends object>(meta: EntityMeta<E>, id: string | undefined, query: Query<E>): Query<E> {

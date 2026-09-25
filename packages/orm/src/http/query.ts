@@ -11,7 +11,7 @@ import {
 // with it, in the browser bundle, which is on a size budget
 import { RAW_VALUE } from '../type/queryRaw.js';
 // the specific util module, not the barrel, so the browser bundle does not pull in entity metadata
-import { getKeys, isWhereMap } from '../util/object.util.js';
+import { getKeys, isRecord, isWhereMap } from '../util/object.util.js';
 // the error class alone, from its own leaf module: `queryError.ts` carries every driver's code map
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -40,10 +40,13 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
 const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery<unknown>)[]);
 
 /**
- * Parse raw query-string entries (with JSON-stringified values) into a UQL query object.
- * Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
+ * Parse raw query-string entries (with JSON-stringified values), or a `QUERY` body, into a UQL query
+ * object. Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
  */
-export function parseQueryParams<E = unknown>(params: Record<string, unknown> = {}): WireQuery<E> {
+export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E> {
+  if (!isRecord(params)) {
+    throw new UqlUsageError('the query must be a JSON object');
+  }
   const query: Record<string, unknown> = {};
   for (const key of getKeys(params)) {
     if (REJECTED_QUERY_KEYS.has(key)) {

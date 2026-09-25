@@ -158,6 +158,59 @@ export function isOrderedOp(op: string): op is QueryOrderedOp {
 export const EQUALITY_OPS: ReadonlySet<string> = new Set<string>(['$eq', '$ne', '$in', '$nin']);
 
 /**
+ * `value` as a `$like` pattern matching it literally. The pattern language is the same on every engine:
+ * `%` and `_` are wildcards, `\` escapes, and `[` is escaped since SQL Server reads it as a character class.
+ */
+export function likeLiteral(value: string): string {
+  return value.replace(/[\\%_[]/g, '\\$&');
+}
+
+/**
+ * `pattern` with its `[` escaped, as {@link likeLiteral} does; refused where its last `\` has nothing
+ * after it to escape (`'John\'`): Postgres throws on one, MySQL reads it literally and SQLite matches nothing.
+ */
+export function likePattern(pattern: string): string {
+  const tokens = likeTokens(pattern);
+  const last = tokens.at(-1);
+  if (last?.char === '\\' && !last.escaped) {
+    throw new UqlUsageError(
+      "a $like pattern cannot end in a '\\' with nothing after it to escape: write '\\\\' to match a backslash",
+    );
+  }
+  return tokens.map(({ char, escaped }) => (escaped || char === '[' ? `\\${char}` : char)).join('');
+}
+
+/**
+ * A `$like` pattern as the anchored regex matching the same strings, for an engine with no `LIKE`. A
+ * wildcard spans lines, as it does in SQL; an edge `%` drops its anchor, which keeps a prefix indexable.
+ * The end anchor is `\z`, since `$` also matches before a trailing newline.
+ */
+export function likeRegex(pattern: string): string {
+  const tokens = likeTokens(pattern).map(
+    ({ char, escaped }) => (escaped ? undefined : LIKE_WILDCARDS[char]) ?? escapeRegex(char),
+  );
+  const open = tokens[0] === LIKE_WILDCARDS['%'];
+  const closed = tokens.at(-1) !== LIKE_WILDCARDS['%'];
+  const body = tokens.slice(open ? 1 : 0, closed ? undefined : -1).join('');
+  return `${open ? '' : '^'}${body}${closed ? String.raw`\z` : ''}`;
+}
+
+/** A `$like` pattern's characters, each marked where a `\` escaped it; a last `\` escaping nothing reads as plain. */
+function likeTokens(pattern: string): { readonly char: string; readonly escaped: boolean }[] {
+  return [...pattern.matchAll(/\\([\s\S])|[\s\S]/g)].map(([token, escaped]) => ({
+    char: escaped ?? token,
+    escaped: escaped !== undefined,
+  }));
+}
+
+/** Each `$like` wildcard as the regex matching it, across lines as SQL does. */
+const LIKE_WILDCARDS: Readonly<Record<string, string>> = { '%': String.raw`[\s\S]*`, _: String.raw`[\s\S]` };
+
+function escapeRegex(char: string): string {
+  return char.replace(/[\\^$.*+?()[\]{}|]/, '\\$&');
+}
+
+/**
  * Every `$like`-family operator: the pattern it wraps its value in, and whether it ignores case.
  * Each case-sensitive operator is paired here with the `$i` twin that shares its pattern, so the
  * two can never drift apart - and neither one decides case folding, which is
@@ -166,10 +219,10 @@ export const EQUALITY_OPS: ReadonlySet<string> = new Set<string>(['$eq', '$ne', 
 export const LIKE_OPS: ReadonlyMap<string, LikeOp> = new Map(
   (
     [
-      ['$like', '$ilike', (v: string) => v],
-      ['$startsWith', '$istartsWith', (v: string) => `${v}%`],
-      ['$endsWith', '$iendsWith', (v: string) => `%${v}`],
-      ['$includes', '$iincludes', (v: string) => `%${v}%`],
+      ['$like', '$ilike', likePattern],
+      ['$startsWith', '$istartsWith', (v: string) => `${likeLiteral(v)}%`],
+      ['$endsWith', '$iendsWith', (v: string) => `%${likeLiteral(v)}`],
+      ['$includes', '$iincludes', (v: string) => `%${likeLiteral(v)}%`],
     ] satisfies readonly [QueryLikeOp, QueryLikeOp, (v: string) => string][]
   ).flatMap(([sensitive, insensitive, pattern]): [string, LikeOp][] => [
     [sensitive, { pattern, insensitive: false }],

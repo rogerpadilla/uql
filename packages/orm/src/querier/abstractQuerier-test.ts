@@ -1228,6 +1228,45 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(afterDelete?.unitCount).toBe(0);
   }
 
+  private async categoryNames($where: QueryWhere<MeasureUnitCategory>) {
+    const rows = await this.querier.findMany(MeasureUnitCategory, { $select: { name: true }, $where });
+    return rows.map((it) => it.name).sort();
+  }
+
+  async shouldMatchAStringOperatorValueLiterally() {
+    await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'lit 50% off' },
+      { name: 'lit 50x off' },
+      { name: 'lit a_b' },
+      { name: 'lit axb' },
+      { name: 'lit a.b(' },
+      { name: 'lit back\\slash' },
+      { name: 'lit backXslash' },
+      { name: 'lit [x]' },
+      { name: 'lit x' },
+    ]);
+    expect(await this.categoryNames({ name: { $includes: '50%' } })).toEqual(['lit 50% off']);
+    expect(await this.categoryNames({ name: { $startsWith: 'lit a_' } })).toEqual(['lit a_b']);
+    expect(await this.categoryNames({ name: { $iendsWith: 'A.B(' } })).toEqual(['lit a.b(']);
+    expect(await this.categoryNames({ name: { $iincludes: 'K\\S' } })).toEqual(['lit back\\slash']);
+    expect(await this.categoryNames({ name: { $includes: '[x]' } })).toEqual(['lit [x]']);
+  }
+
+  async shouldMatchALikePatternWholeWithBackslashEscapes() {
+    await this.querier.insertMany(MeasureUnitCategory, [
+      { name: 'pat a_b' },
+      { name: 'pat axb' },
+      { name: 'pat a.b' },
+      { name: 'pat [a]' },
+    ]);
+    expect(await this.categoryNames({ name: { $like: 'pat a_b' } })).toEqual(['pat a.b', 'pat a_b', 'pat axb']);
+    expect(await this.categoryNames({ name: { $like: 'pat [a]%' } })).toEqual(['pat [a]']);
+    expect(await this.categoryNames({ name: { $like: 'pat a\\_b' } })).toEqual(['pat a_b']);
+    expect(await this.categoryNames({ name: { $ilike: 'PAT A.B' } })).toEqual(['pat a.b']);
+    expect(await this.categoryNames({ name: { $like: 'pat a' } })).toEqual([]);
+    await expect(this.categoryNames({ name: { $like: 'pat a\\' } })).rejects.toThrow('with nothing after it to escape');
+  }
+
   /** A relation aggregate groups and aggregates like any field: the rows computing it are read first. */
   async shouldAggregateARelationAggregate() {
     const [alpha, beta, gamma] = await this.querier.insertMany(MeasureUnitCategory, [

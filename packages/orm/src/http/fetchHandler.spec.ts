@@ -74,6 +74,14 @@ describe('createFetchHandler', () => {
     expect(mockQuerier.findOne).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { name: 'John' } }));
   });
 
+  it('should answer 400 to a QUERY whose body is not an object', async () => {
+    const handler = createFetchHandler({ pool, include: [User] });
+    const resp = await handler(new Request('http://localhost/user', { method: 'QUERY', body: '[1]' }));
+    expect(resp.status).toBe(400);
+    expect(await resp.json()).toEqual({ error: { message: 'the query must be a JSON object', code: 400 } });
+    expect(mockQuerier.findMany).not.toHaveBeenCalled();
+  });
+
   it('should strip the basePath only at a path boundary', async () => {
     const handler = createFetchHandler({ pool, include: [User], basePath: '/api' });
     const resp = await handler(new Request('http://localhost/apiuser'));

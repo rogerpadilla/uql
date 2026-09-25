@@ -221,12 +221,9 @@ export function idOnlyQuery<E>(meta: EntityMeta<E>, q: QuerySearch<E>): Query<E>
   return { ...q, $select: keySet(meta.ids) };
 }
 
-/**
- * The map form of a `$select` value, or `undefined` for the raw-array form. Centralizes the one
- * narrowing cast: `Array.isArray` does not narrow `readonly` arrays out of a union.
- */
-export function asSelectMap<E>(select: QuerySelectValue<E> | undefined): QuerySelect<E> | undefined {
-  return Array.isArray(select) ? undefined : (select as QuerySelect<E> | undefined);
+/** Whether `select` is the list form `raw()` fills, narrowing both ways, which `Array.isArray` does not for a `readonly` array. */
+export function isSelectList<E>(select: QuerySelectValue<E> | undefined): select is readonly QueryRaw[] {
+  return Array.isArray(select);
 }
 
 export function normalizeScalarFieldSelection<E>(

@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.83.1] - 2026-09-25
+
+- **Fixed:** the `$like` family reads the same on every engine. `$startsWith`, `$endsWith`, `$includes` and their `$i` twins match their text literally, so a `%`, `_` or `[` in it (a `.` or `(` on MongoDB) is no longer a wildcard. A `$like` pattern is whole-string on MongoDB too, `\` escapes on SQLite, D1 and SQL Server too, and `[` is no longer a character class on SQL Server; one ending in a `\` with nothing to escape (`'John\'`) is refused.
+- **Fixed:** a `$select` list naming a field instead of a `raw()` expression is refused, and `uql-orm/http` answers `400` to one, as to a `QUERY` body that is not a JSON object.
+
 ## [0.83.0] - 2026-09-24
 
 - **Breaking:** a `Date` is the instant it names on every SQL engine, whatever zone the process runs in: bound as UTC, and a zoneless timestamp or a `DATE` read as UTC. A `Date` field is a `TIMESTAMPTZ` on Postgres and CockroachDB, a `DATETIME(3)` on MySQL and MariaDB, and UTC text on the SQLite family, as are the builder's `createdAt()` and `updatedAt()`. Existing columns convert as the [upgrade guide](https://uql-orm.dev/upgrade-guide) says.

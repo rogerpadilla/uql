@@ -4,12 +4,12 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, removeEntity } from '../entity/index.js';
 import { provisioningTimeout } from '../test/index.js';
-import { dropTables, sqlPoolsExcept } from '../test/sqlPools.js';
+import { dropTables, sqlPools } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/raw.js';
 import { Migrator } from './migrator.js';
 
-const STAMP_POOLS = sqlPoolsExcept('pglite');
+const STAMP_POOLS = sqlPools('test_stamp', 'pglite');
 
 /** What `onUpdate` already does: the database computes it, but only in the statement uql emits. */
 @Entity({ name: 'StampTouch' })

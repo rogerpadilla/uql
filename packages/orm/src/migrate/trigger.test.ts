@@ -12,7 +12,7 @@ import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vites
 import { Entity, Field, getMeta, Id, removeEntity, Trigger } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
 import { provisioningTimeout } from '../test/index.js';
-import { dropTables, SQL_POOLS } from '../test/sqlPools.js';
+import { dropTables, sqlPools } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
 import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
@@ -37,7 +37,9 @@ class TgAudit {
   @Field({ type: Number }) postId?: number | null;
 }
 
-describe.each(SQL_POOLS)('a trigger on %s', (_engine, connect) => {
+const TRIGGER_POOLS = sqlPools('test_trigger');
+
+describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   let pool: SqlQuerierPool;
   const entities = [TgAudit, TgPost];
 
@@ -210,7 +212,7 @@ class TgLog {
   @Field({ type: String }) source?: string | null;
 }
 
-describe.each(SQL_POOLS)('triggers writing a table of their own on %s', (_engine, connect) => {
+describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_engine, connect) => {
   let pool: SqlQuerierPool;
   const tables = ['TgLogged', 'TgLog'] as const;
 

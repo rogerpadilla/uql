@@ -548,28 +548,28 @@ describe('AbstractSqlDialect', () => {
     it('should compare a path with $like', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $like: '%test%' } });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ? ESCAPE \\");
       expect(ctx.values).toEqual(['%test%']);
     });
 
     it('should compare a path with $startsWith', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $startsWith: 'pre' } });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ? ESCAPE \\");
       expect(ctx.values).toEqual(['pre%']);
     });
 
     it('should compare a path with $endsWith', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $endsWith: 'fix' } });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ? ESCAPE \\");
       expect(ctx.values).toEqual(['%fix']);
     });
 
     it('should compare a path with $includes', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $includes: 'mid' } });
-      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ?");
+      expect(ctx.sql).toBe(" WHERE (`kind`->>'description') LIKE ? ESCAPE \\");
       expect(ctx.values).toEqual(['%mid%']);
     });
 
@@ -685,7 +685,7 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Item, { tags: { name: { $like: '%react%' } } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`name` LIKE ?))',
+        ' WHERE EXISTS (SELECT 1 FROM `ItemTag` WHERE `ItemTag`.`itemId` = `Item`.`id` AND `ItemTag`.`tagId` IN (SELECT `tags`.`id` FROM `Tag` `tags` WHERE `tags`.`name` LIKE ? ESCAPE \\))',
       );
       expect(ctx.values).toEqual(['%react%']);
     });
@@ -753,7 +753,7 @@ describe('AbstractSqlDialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, ItemAdjustment, { item: { name: { $like: '%test%' } } });
       expect(ctx.sql).toBe(
-        ' WHERE EXISTS (SELECT 1 FROM `Item` `item` WHERE `item`.`id` = `ItemAdjustment`.`itemId` AND `item`.`name` LIKE ?)',
+        ' WHERE EXISTS (SELECT 1 FROM `Item` `item` WHERE `item`.`id` = `ItemAdjustment`.`itemId` AND `item`.`name` LIKE ? ESCAPE \\)',
       );
       expect(ctx.values).toEqual(['%test%']);
     });
@@ -778,7 +778,7 @@ describe('AbstractSqlDialect', () => {
     it('should fall back to LOWER() for $ilike on the base dialect', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, { 'kind.description': { $ilike: '%Active%' } });
-      expect(ctx.sql).toBe(" WHERE LOWER((`kind`->>'description')) LIKE ?");
+      expect(ctx.sql).toBe(" WHERE LOWER((`kind`->>'description')) LIKE ? ESCAPE \\");
       expect(ctx.values).toEqual(['%active%']);
     });
   });

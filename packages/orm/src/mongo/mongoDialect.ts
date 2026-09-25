@@ -9,7 +9,15 @@ import {
   sortAggregateField,
   TEXT_SCORE_ALIAS,
 } from '../dialect/aliases.js';
-import { betweenBounds, GROUP_OPS, groupClauses, isGroupOp, whereOperators } from '../dialect/operators.js';
+import {
+  betweenBounds,
+  GROUP_OPS,
+  groupClauses,
+  isGroupOp,
+  LIKE_OPS,
+  likeRegex,
+  whereOperators,
+} from '../dialect/operators.js';
 import {
   aggregateColumnField,
   groupPathField,
@@ -35,7 +43,6 @@ import type {
   QueryExclude,
   QueryGroupMap,
   QueryGroupOp,
-  QueryLikeOp,
   QueryOptions,
   QueryPager,
   QuerySelect,
@@ -56,7 +63,7 @@ import { COUNT_RESULT_KEY } from '../type/query.js';
 import { QueryRaw } from '../type/queryRaw.js';
 import {
   aggregateOf,
-  asSelectMap,
+  isSelectList,
   assertAggregateColumns,
   assertNonNegativeInteger,
   type CallbackKey,
@@ -214,20 +221,6 @@ function compareCount(count: unknown, size: number | Readonly<Record<string, unk
   }
   return comparisons.length === 1 ? comparisons[0] : { $and: comparisons };
 }
-
-type RegexOp = { readonly wrap: (v: unknown) => string; readonly ci: boolean };
-
-/** String operators -> { pattern: (v) => regex, caseInsensitive } */
-const REGEX_OP_MAP: ReadonlyMap<QueryWhereFieldOp, RegexOp> = new Map<QueryLikeOp, RegexOp>([
-  ['$startsWith', { wrap: (v) => `^${v}`, ci: false }],
-  ['$istartsWith', { wrap: (v) => `^${v}`, ci: true }],
-  ['$endsWith', { wrap: (v) => `${v}$`, ci: false }],
-  ['$iendsWith', { wrap: (v) => `${v}$`, ci: true }],
-  ['$includes', { wrap: (v) => String(v), ci: false }],
-  ['$iincludes', { wrap: (v) => String(v), ci: true }],
-  ['$like', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: false }],
-  ['$ilike', { wrap: (v) => String(v).replace(/%/g, '.*').replace(/_/g, '.'), ci: true }],
-]);
 
 /** MongoDB native operators - pass through as-is. */
 const NATIVE_OPS: ReadonlySet<QueryWhereFieldOp> = new Set<MongoNativeOp>([
@@ -555,11 +548,11 @@ export class MongoDialect extends AbstractDialect {
         result[op] = val;
         continue;
       }
-      // String/pattern -> regex operators (8 variants including $like/$ilike)
-      const regexEntry = REGEX_OP_MAP.get(op);
-      if (regexEntry) {
-        result['$regex'] = regexEntry.wrap(val);
-        if (regexEntry.ci) result['$options'] = 'i';
+      // The `$like` family, as the regex matching what its `LIKE` pattern matches on SQL.
+      const like = LIKE_OPS.get(op);
+      if (like) {
+        result['$regex'] = likeRegex(like.pattern(String(val)));
+        if (like.insensitive) result['$options'] = 'i';
         continue;
       }
       // Structural transforms
@@ -634,18 +627,17 @@ export class MongoDialect extends AbstractDialect {
     if (!select && !exclude) {
       return {};
     }
-    if (Array.isArray(select)) {
+    if (isSelectList(select)) {
       throw new UqlUsageError('raw $select is not supported on MongoDB');
     }
-    const selectMap = asSelectMap(select);
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
-    const projection = normalizeScalarFieldSelection(meta, selectMap, exclude).reduce<Record<string, 0 | 1>>(
+    const projection = normalizeScalarFieldSelection(meta, select, exclude).reduce<Record<string, 0 | 1>>(
       (acc, key) => {
         // A computed field writing SQL leaves the document nothing to project: refused asked for by
         // name, skipped swept in with the rest. A relation aggregate is on it by now, like any column.
         const field = meta.fields[key];
         if (field?.computed && !aggregateOf(field)) {
-          if (selectMap && key in selectMap) {
+          if (select && key in select) {
             assertReadable(meta, key);
           }
           return acc;
@@ -658,7 +650,7 @@ export class MongoDialect extends AbstractDialect {
     // MongoDB returns `_id` unless it is explicitly excluded, so subtracting the primary key needs
     // `_id: 0` - the one inclusion/exclusion mix MongoDB allows - or `$exclude: { id: true }` would
     // have no effect at all.
-    if (this.subtractsKey(soleIdOf(meta, 'MongoDB'), selectMap, exclude)) {
+    if (this.subtractsKey(soleIdOf(meta, 'MongoDB'), select, exclude)) {
       projection[ID_KEY] = 0;
     }
     return projection;
@@ -808,7 +800,7 @@ export class MongoDialect extends AbstractDialect {
   /** The relation aggregates a read projects or sorts by; its `$where` puts its own on the document. */
   private aggregateKeys<E extends Document>(entity: Type<E>, q: Query<E>): string[] {
     const meta = getMeta(entity);
-    const projected = normalizeScalarFieldSelection(meta, asSelectMap(q.$select), q.$exclude);
+    const projected = normalizeScalarFieldSelection(meta, isSelectList(q.$select) ? undefined : q.$select, q.$exclude);
     return [...projected, ...Object.keys(q.$sort ?? {})].filter((key) => aggregateOf(meta.fields[key]));
   }
 
