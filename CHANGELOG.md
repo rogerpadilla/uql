@@ -10,35 +10,35 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.82.0] - 2026-09-24
 
-- A trigger's `run` writes another table through its entity, `insertInto(PostAudit, { postId: newRow.id })`, `updateTable` and `deleteFrom`: one body for every engine, SQL Server's included.
-- A field read off `refs(Entity)` or a trigger's rows carries its type, so `{ price: item.name }` no longer compiles as a `$where`, update or trigger-write value.
-- A `readonly` array or an `as const` tuple is taken wherever a query or a write only reads one: `$in`, `$nin`, `$between`, `$all`, a bare list as `$in`, the clauses of `$and`/`$or`/`$not`/`$nor`, `$unset`, the rows of `insertMany`, `upsertMany` and `saveMany`, and the values of raw `all`/`run`. A listener's `payloads` is `readonly` to match.
-- Every misuse of the API throws `UqlUsageError` (kind `usage`, a `400` over HTTP), still a `TypeError`: a bad definition, a hook naming no method of its entity, a migration or index option an engine cannot carry, a bad CLI config, a released querier, raw SQL sent over HTTP.
-- **Fixed:** `updateMany` and `deleteMany` refuse a `$where` naming no rows however it is written, such as `{ id: undefined }` or `{ $or: [] }`, which addressed the whole table.
-- **Fixed:** a trigger's `where` holds only what it states: an entity's soft-delete or security filter no longer joins it.
-- **Fixed (MongoDB):** an unknown `$where` or `$having` operator, and a `$between` without two bounds, are refused before the query is sent, with the SQL engines' error.
+- A trigger's `run` writes another table through its entity (`insertInto`, `updateTable`, `deleteFrom`): one body for every engine, SQL Server's included.
+- A field read off `refs(Entity)` or a trigger's rows carries its type, so a mistyped `$where`, update or trigger-write value is a compile error.
+- A `readonly` array or `as const` tuple is taken wherever a query or write only reads a list: `$in`, `$between`, `$and`/`$or`, `insertMany`, raw `all`/`run`, and so on.
+- Every misuse of the API throws `UqlUsageError` (kind `usage`, `400` over HTTP), still a `TypeError`.
+- **Fixed:** `updateMany` and `deleteMany` refuse a `$where` naming no rows, such as `{ id: undefined }` or `{ $or: [] }`, instead of addressing the whole table.
+- **Fixed:** a trigger's `where` no longer picks up the entity's soft-delete or security filter.
+- **Fixed (MongoDB):** an unknown `$where`/`$having` operator or a `$between` without two bounds is refused before sending, as on SQL.
 
 ## [0.81.0] - 2026-09-23
 
-- **Breaking:** for code driving the migrator directly, `SchemaDiff` lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields.
-- A unique column is a unique index on every engine: `@Field({ unique: true })` and a builder's `.unique()` create `<table>__<column>_idx` beside the table rather than a `UNIQUE` constraint in it, so `sync` and `generate:entities` add and drop uniqueness like any index. `generate:from-db` writes one as `unique: true, index: '<name>'`.
-- `sync` (outside safe mode) and `generate:entities` rebuild an index that differs in anything the database reports: order, nulls, operator class, included columns or vector distance. Safe mode holds a rebuild back whole.
+- **Breaking:** `SchemaDiff`, for code driving the migrator directly, lists `columns`, `indexes`, `foreignKeys` and `primaryKey` as `{ from?, to? }` changes in place of the nine `*ToAdd`/`*ToDrop`/`*ToAlter` fields.
+- A unique column is a unique index (`<table>__<column>_idx`) on every engine, so `sync` and `generate:entities` add and drop it like any index.
+- `sync` (outside safe mode) and `generate:entities` rebuild an index that differs in order, nulls, operator class, included columns or vector distance.
 - A generated migration's `down` restores a dropped column or foreign key.
-- `drift:check` compares defaults the way `generate:entities` does, and a vector index's `distance` (Postgres, CockroachDB, MariaDB, libSQL).
-- **Fixed:** indexes pair by name, then by columns, so one under a legacy name is no longer reported both missing and unexpected, while a duplicate still is.
-- **Fixed (SQL Server):** dropping a column drops the indexes over it first, which the server otherwise refuses.
+- `drift:check` compares defaults as `generate:entities` does, and a vector index's `distance`.
+- **Fixed:** indexes pair by name, then by columns, so one under a legacy name is no longer reported both missing and unexpected.
+- **Fixed (SQL Server):** dropping a column drops its indexes first.
 
 ## [0.80.0] - 2026-09-23
 
-- `@Trigger({ on, of, where, run })` declares triggers the database runs, on every SQL engine: `of: (post) => [post.body]` fires only when a watched column moved, and `where` is a predicate per row, `{ $old: { status: 'draft' }, $new: { status: 'published' } }`, or SQL. `run` is the engine's own SQL, one body for every engine or a map naming one per engine. SQL Server takes only the after events and no `where`, since it fires once per statement.
-- `@Field({ computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] })` makes a column a stamp, filled by a trigger on each event named whoever writes the row: psql, a data migration, another service. `onUpdate` still covers uql's own writes.
-- `sync` and `generate:entities` install the triggers an entity declares and drop the ones it no longer does, leaving an unchanged or hand-written one alone; a generated migration's `down` restores what stood before. MongoDB has no triggers, so it refuses a write to an entity declaring one.
-- **Breaking:** NULL compares the way each engine compares it. `$ne` renders the plain `<>` again, as `$nin`, `$not` and `$nor` render `NOT IN` and `NOT`, so a SQL engine leaves out a row whose column is NULL, where MongoDB keeps it. Name NULL where you want it: `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`.
+- **Breaking:** NULL compares the way each engine compares it: `$ne`, `$nin`, `$not` and `$nor` render plain `<>`, `NOT IN` and `NOT`, so a SQL engine skips a NULL column where MongoDB keeps it. Add `{ col: null }` to an `$or` to include it.
+- `@Trigger({ on, of, where, run })` declares database triggers on every SQL engine: `of` lists watched columns, `where` is an `$old`/`$new` predicate or SQL, `run` is SQL for every engine or one per engine. SQL Server takes only after events and no `where`.
+- ``@Field({ computed: raw`CURRENT_TIMESTAMP`, stored: ['update'] })`` makes a column a stamp a trigger fills, whoever writes the row.
+- `sync` and `generate:entities` install and drop declared triggers, leaving hand-written ones alone. MongoDB refuses a write to an entity declaring one.
 
 ## [0.79.0] - 2026-09-21
 
-- `columnType` takes an engine's own type as a `raw` constant, `columnType: raw`tsvector``, rendered verbatim, so `ltree`, `inet`, `citext`, geometry and ranges reach a column and a stored computed one can hold a search vector. A bare unknown string stays a compile error, and a `length`, `precision`, `scale` or `dimensions` beside one is refused: the text carries its own.
-- **Fixed:** a bound is read whichever option named the type. `type: 'varchar'` with `length` and `type: 'decimal'` with `precision`/`scale` dropped it for the engine's default width, and `columnType: 'vector'` dropped `dimensions`. A column created before this reads as drift and is altered to the width it declares.
+- `columnType` takes an engine's own type as ``raw`tsvector` ``, rendered verbatim, for `ltree`, `inet`, `citext`, geometry, ranges and the like.
+- **Fixed:** `length`, `precision`/`scale` and `dimensions` apply whichever option named the type; a column created before reads as drift and is altered to its declared width.
 
 ## [0.78.0] - 2026-09-21
 
