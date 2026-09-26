@@ -3,9 +3,11 @@ import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import { SchemaAST } from '../schema/index.js';
+import { columnRenames, tableRenameCandidates } from '../schema/schemaASTDiffer.js';
 import type { TableNode } from '../schema/types.js';
 import type {
   Change,
+  ColumnRenames,
   EntityMeta,
   InstalledTriggers,
   LoggingOptions,
@@ -244,8 +246,9 @@ export class Migrator {
    */
   async generateFromEntities(name: string): Promise<string> {
     const generator = await this.getSchemaGenerator();
-    const { created, altered } = await this.pendingChanges();
+    const { created, altered } = await this.pendingChanges({ renames: true });
     const plan = this.alterPlan(generator, altered, await this.installedTriggers(created));
+    await this.noteChanges(generator, created, altered);
     const up = [...this.createSchema(generator, created), ...plan.up];
 
     if (up.length === 0) {
@@ -305,19 +308,24 @@ export class Migrator {
    */
   private alterPlan(generator: SchemaGenerator, altered: readonly SchemaDiff[], state: readonly TriggerState[]) {
     const changing = new Set(
-      altered.filter((diff) => sides(diff.columns, 'from').length).map((diff) => diff.tableName),
+      altered
+        .filter((diff) => sides(diff.columns, 'from').length || diff.renamedColumns?.length)
+        .map((diff) => diff.tableName),
     );
     const cleared = state.filter(({ entity }) => changing.has(this.tableOf(entity)));
     const after = state.map((it) => (cleared.includes(it) ? { entity: it.entity, installed: new Map() } : it));
     return {
       up: [
         ...cleared.flatMap(({ entity, installed }) => generator.generateTriggerDrops(entity, [...installed.keys()])),
-        ...altered.flatMap((diff) => generator.generateAlterTable(diff)),
+        ...altered.flatMap((diff) => [...renameStatements(generator, diff), ...generator.generateAlterTable(diff)]),
         ...this.reconcileTriggers(generator, after),
       ],
       down: () => [
         ...this.revertedTriggers(generator, after),
-        ...altered.toReversed().flatMap((diff) => generator.generateAlterTable(reverseDiff(diff))),
+        ...altered.toReversed().flatMap((diff) => {
+          const reversed = reverseDiff(diff);
+          return [...generator.generateAlterTable(reversed), ...renameStatements(generator, reversed)];
+        }),
         ...cleared.flatMap(({ installed }) => [...installed.values()].flat().map((sql) => `${sql};`)),
       ],
     };
@@ -340,6 +348,46 @@ export class Migrator {
     return state.flatMap(({ entity, installed }) => generator.generateTriggersDown(entity, installed));
   }
 
+  /**
+   * What a generated migration does that its reader must not miss: each column it drops or retypes, which
+   * can lose data, and each table it creates empty while the database holds one no entity names with the
+   * same columns, which may be the table renamed. That one is never renamed here: it may be another's.
+   */
+  private async noteChanges(
+    generator: SchemaGenerator,
+    created: readonly string[],
+    altered: readonly SchemaDiff[],
+  ): Promise<void> {
+    for (const { tableName, columns = [] } of altered) {
+      for (const { from, to } of columns.filter((change) => change.isBreaking)) {
+        this.logger.logWarn(
+          to
+            ? `Retypes "${tableName}"."${to.name}" from ${from?.type} to ${to.type}: a value that does not fit is lost or refused.`
+            : `Drops "${tableName}"."${from?.name}", losing what it holds.`,
+        );
+      }
+    }
+    for (const { from, to } of await this.renamedTables(generator, created)) {
+      this.logger.logWarn(
+        `Creates "${to}" empty, while "${from}", which no entity names, holds the same columns. If it was ` +
+          `renamed, replace its creation in this migration with \`renameTable('${from}', '${to}')\`.`,
+      );
+    }
+  }
+
+  /** The tables the database holds that no entity names, each paired with a new one it is identical to. */
+  private async renamedTables(generator: SchemaGenerator, created: readonly string[]) {
+    const createdEntities = this.createdEntities(created);
+    const diffOptions = generator.diffOptions?.();
+    if (!createdEntities.length || !generator.buildAST || !diffOptions) {
+      return [];
+    }
+    const owned = new Set(this.entities.map((entity) => this.tableOf(entity)));
+    const unowned = (await this.schemaIntrospector.getTableNames()).filter((table) => !owned.has(table));
+    const current = await this.schemaIntrospector.introspect(unowned);
+    return tableRenameCandidates(generator.buildAST(createdEntities), current, diffOptions);
+  }
+
   /** The entities whose tables are among `created`. */
   private createdEntities(created: readonly string[]): Type<object>[] {
     const fresh = new Set(created);
@@ -352,18 +400,26 @@ export class Migrator {
   }
 
   /**
-   * Get all schema differences between entities and database
+   * The differences between the entities and the database. With `renames`, a column identical to one the
+   * entity no longer names is renamed in place rather than dropped and added, as a generated migration wants.
    */
-  async getDiffs(): Promise<SchemaDiff[]> {
+  async getDiffs(options: { renames?: boolean } = {}): Promise<SchemaDiff[]> {
     const generator = await this.getSchemaGenerator();
-    const ast = await this.introspectEntities(this.entities);
-    // Both sides built once: the database's above, the entities' here. Left to `diffSchema`, each
+    // Both sides built once: the database's here, the entities' below. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
     // generator that compares no schema of its own - MongoDB, which reads only indexes.
     const desiredAst = generator.buildAST?.(this.entities);
+    let ast = await this.introspectEntities(this.entities);
+    const diffOptions = generator.diffOptions?.();
+    const renames: ColumnRenames =
+      options.renames && desiredAst && diffOptions ? columnRenames(desiredAst, ast, diffOptions) : new Map();
+    if (renames.size) {
+      // Read again under the names the entities give them, so the rest compares as the columns they become.
+      ast = await this.introspectEntities(this.entities, renames);
+    }
     return this.entities.flatMap((entity) => {
-      const table = ast.getTable(generator.resolveTableName(getMeta(entity)));
-      const diff = generator.diffSchema(entity, table, desiredAst);
+      const tableName = generator.resolveTableName(getMeta(entity));
+      const diff = generator.diffSchema(entity, ast.getTable(tableName), desiredAst, renames.get(tableName));
       return diff ? [diff] : [];
     });
   }
@@ -372,13 +428,13 @@ export class Migrator {
    * The tables `entities` name, read a schema at a time so each is keyed as its entity spells it. Those
    * alone: nothing else is diffed, and another table can be dropped mid-scan by whatever else is running.
    */
-  private async introspectEntities(entities: readonly Type<object>[]): Promise<SchemaAST> {
+  private async introspectEntities(entities: readonly Type<object>[], renames?: ColumnRenames): Promise<SchemaAST> {
     const { dialect } = this.pool;
     const bySchema = Map.groupBy(new Set(entities), (entity) => dialect.resolveSchema(getMeta(entity)));
     const merged = new SchemaAST();
     for (const [schema, members] of bySchema) {
       const tables = members.map((entity) => dialect.resolveTableAlias(getMeta(entity)));
-      for (const table of (await this.schemaIntrospectorFor(schema).introspect(tables)).getTables()) {
+      for (const table of (await this.schemaIntrospectorFor(schema).introspect(tables, renames)).getTables()) {
         merged.addTable(table);
       }
     }
@@ -480,8 +536,10 @@ export class Migrator {
    * alter. What to emit for each stays with the caller: a sync narrows an alter to what it allows and
    * never asks for the rollback, which on SQLite cannot even be expressed (no `ALTER COLUMN`).
    */
-  private async pendingChanges(): Promise<{ created: string[]; altered: SchemaDiff[] }> {
-    const diffs = await this.getDiffs();
+  private async pendingChanges(
+    options: { renames?: boolean } = {},
+  ): Promise<{ created: string[]; altered: SchemaDiff[] }> {
+    const diffs = await this.getDiffs(options);
     return {
       created: diffs.filter((diff) => diff.type === 'create').map((diff) => diff.tableName),
       altered: diffs.filter((diff) => diff.type === 'alter'),
@@ -687,4 +745,11 @@ function referencedEntities(meta: EntityMeta<object>): Type<object>[] {
   const fields = Object.values(meta.fields).flatMap((field) => field?.references?.() ?? []);
   const relations = Object.values(meta.relations).flatMap((relation) => relation?.entity?.() ?? []);
   return [...fields, ...relations];
+}
+
+/** A diff's column renames, through the builder operation every SQL generator already renders. */
+function renameStatements(generator: SchemaGenerator, { tableName, renamedColumns = [] }: SchemaDiff): string[] {
+  return renamedColumns.flatMap(({ from, to }) =>
+    generator.generateOperation({ type: 'renameColumn', tableName, oldName: from, newName: to }),
+  );
 }

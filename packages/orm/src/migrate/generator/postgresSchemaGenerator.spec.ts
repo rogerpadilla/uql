@@ -1,11 +1,13 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { expr } from '../builder/expressions.js';
+import { tableDdlFor } from '../ddl/index.js';
 import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
+  const tableDdl = tableDdlFor(new PostgresDialect());
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
@@ -33,9 +35,9 @@ describe('PostgresSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    const statements = generator.generateAlterColumnStatements('users', col, 'INTEGER');
+    const statements = tableDdl.alterColumn('users', col, 'INTEGER');
 
-    expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER;');
+    expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER;');
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET NOT NULL;');
     expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET DEFAULT 18;');
   });
@@ -58,10 +60,27 @@ describe('PostgresSchemaGenerator Specifics', () => {
     };
 
     expect(generator.generateAlterTable(diff)).toEqual([
-      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMPTZ;',
+      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMPTZ USING "createdAt"::TIMESTAMPTZ;',
     ]);
     expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
-      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMP;',
+      'ALTER TABLE "users" ALTER COLUMN "createdAt" TYPE TIMESTAMP USING "createdAt"::TIMESTAMP;',
+    ]);
+  });
+
+  /** Postgres casts text to integer only when told to, so a retype without `USING` fails on any row. */
+  it('should cast the values of a retyped column', () => {
+    const from = {
+      name: 'age',
+      type: 'TEXT',
+      nullable: true,
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+    const diff = { tableName: 'users', type: 'alter' as const, columns: [{ from, to: { ...from, type: 'INTEGER' } }] };
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER;',
     ]);
   });
 

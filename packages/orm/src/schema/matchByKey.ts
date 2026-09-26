@@ -14,3 +14,26 @@ export function matchByKey<S, T>(source: Iterable<S>, target: Iterable<T>, key: 
   }
   return { created, dropped: [...unpaired.values()].flat(), matched };
 }
+
+/**
+ * What {@link matchByKey} left unpaired, paired where `same` finds exactly one counterpart on each side:
+ * an item two others could be is ambiguous, so it stays created or dropped.
+ */
+export function pairUnique<S, T>(
+  created: readonly S[],
+  dropped: readonly T[],
+  same: (source: S, target: T) => boolean,
+) {
+  const matched = created.flatMap((source) => {
+    const [target, ...others] = dropped.filter((candidate) => same(source, candidate));
+    return target !== undefined && !others.length && created.filter((other) => same(other, target)).length === 1
+      ? [[source, target] as const]
+      : [];
+  });
+  const paired = new Set<S | T>(matched.flat());
+  return {
+    created: created.filter((item) => !paired.has(item)),
+    dropped: dropped.filter((item) => !paired.has(item)),
+    matched,
+  };
+}

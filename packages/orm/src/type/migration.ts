@@ -1,6 +1,7 @@
 import type { AnyMigrationOperation } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
+import type { DiffOptions } from '../schema/schemaASTDiffer.js';
 import type { ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
 import type {
   EntityMeta,
@@ -202,6 +203,15 @@ export interface ForeignKeySchema {
  * change is undone by swapping its ends. No engine alters an index, a key or a foreign key in place, so
  * an alter of one is its drop and its add, which safe mode holds back together.
  */
+/** A column's change, and whether it can lose what the column holds: a drop, or a retype that narrows it. */
+export type ColumnChange = Change<ColumnSchema> & { readonly isBreaking?: boolean };
+
+/** A name changed, `from` the database's `to` the entity's. */
+export type Rename = { readonly from: string; readonly to: string };
+
+/** Renamed columns by qualified table name. */
+export type ColumnRenames = ReadonlyMap<string, readonly Rename[]>;
+
 export interface Change<T> {
   readonly from?: T;
   readonly to?: T;
@@ -230,9 +240,11 @@ export interface SchemaDiff {
   readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
   readonly primaryKey?: Change<PrimaryKeySchema>;
-  readonly columns?: readonly Change<ColumnSchema>[];
+  readonly columns?: readonly ColumnChange[];
   readonly indexes?: readonly Change<IndexSchema>[];
   readonly foreignKeys?: readonly Change<ForeignKeySchema>[];
+  /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
+  readonly renamedColumns?: readonly Rename[];
 }
 
 /**
@@ -337,11 +349,20 @@ export interface SchemaGenerator {
   /**
    * An entity's differences from its table. `desiredAst`, from {@link buildAST}, has to span every entity
    * a foreign key here points at, or those keys read as matching.
+   * `renamedColumns` are columns `currentTable` already holds under their new names.
    */
-  diffSchema(entity: Type<object>, currentTable: TableNode | undefined, desiredAst?: SchemaAST): SchemaDiff | undefined;
+  diffSchema(
+    entity: Type<object>,
+    currentTable: TableNode | undefined,
+    desiredAst?: SchemaAST,
+    renamedColumns?: readonly Rename[],
+  ): SchemaDiff | undefined;
 
   /** The entities as one AST, built once per run for every {@link diffSchema}. Absent on MongoDB, which diffs only indexes. */
   buildAST?(entities: readonly Type<object>[]): SchemaAST;
+
+  /** How this engine's diff compares types and defaults. Absent where {@link buildAST} is. */
+  diffOptions?(): DiffOptions;
 
   /**
    * The table's key: {@link resolveTableAlias} behind {@link resolveSchema}, which is how a
@@ -383,8 +404,11 @@ export interface SchemaIntrospector {
    */
   readonly indexFacets: ReadonlySet<IndexFacet>;
 
-  /** The whole database, or just the tables named. Names nothing matches are left out. */
-  introspect(tables?: readonly string[]): Promise<SchemaAST>;
+  /**
+   * The whole database, or just the tables named. Names nothing matches are left out. `renames` reads
+   * each column under the name it is being renamed to, so a diff compares it as the column it becomes.
+   */
+  introspect(tables?: readonly string[], renames?: ColumnRenames): Promise<SchemaAST>;
 
   /**
    * Get all table names in the database

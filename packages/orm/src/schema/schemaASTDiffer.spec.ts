@@ -4,8 +4,8 @@ import { columnsOf, mockTableNode } from '../test/index.js';
 import { engineType } from './canonicalType.js';
 import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
-import { diffSchemas } from './schemaASTDiffer.js';
-import type { IndexNode, RelationshipNode } from './types.js';
+import { columnRenames, diffSchemas, tableRenameCandidates } from './schemaASTDiffer.js';
+import type { ColumnNode, IndexNode, RelationshipNode } from './types.js';
 
 /** An index as one side of a comparison declares it, over the `users` fixture below. */
 type IndexParts = Partial<Pick<IndexNode, 'entries' | 'unique' | 'type' | 'where' | 'include'>>;
@@ -893,6 +893,87 @@ describe('SchemaASTDiffer', () => {
 
       expect(diff.tablesToCreate.length).toBe(1);
       expect(diff.tablesToCreate[0].name).toBe('users');
+    });
+  });
+
+  describe('columnRenames', () => {
+    const id = { name: 'id', type: { category: 'integer' }, isPrimaryKey: true } as const;
+    const text = { type: { category: 'string', length: 255 } } as const;
+
+    /** The entities' `users` against the database's, each holding `id` and the columns given. */
+    function renamesOf(expected: Partial<ColumnNode>[], actual: Partial<ColumnNode>[]) {
+      const desired = new SchemaAST();
+      const current = new SchemaAST();
+      desired.addTable(mockTableNode('users', [id, ...expected]));
+      current.addTable(mockTableNode('users', [id, ...actual]));
+      return columnRenames(desired, current);
+    }
+
+    it('should rename the one column a new one is identical to but for its name', () => {
+      expect(renamesOf([{ name: 'headline', ...text }], [{ name: 'title', ...text }])).toEqual(
+        new Map([['users', [{ from: 'title', to: 'headline' }]]]),
+      );
+    });
+
+    it('should not rename a column whose type changes too', () => {
+      expect(renamesOf([{ name: 'headline', ...text }], [{ name: 'title', type: { category: 'integer' } }]).size).toBe(
+        0,
+      );
+    });
+
+    it('should not rename a column whose nullability changes too', () => {
+      expect(renamesOf([{ name: 'headline', ...text, nullable: false }], [{ name: 'title', ...text }]).size).toBe(0);
+    });
+
+    it('should not rename a column whose default changes too', () => {
+      expect(renamesOf([{ name: 'headline', ...text, defaultValue: 'a' }], [{ name: 'title', ...text }]).size).toBe(0);
+    });
+
+    it('should not rename where two columns could have been renamed', () => {
+      expect(
+        renamesOf(
+          [{ name: 'headline', ...text }],
+          [
+            { name: 'title', ...text },
+            { name: 'subtitle', ...text },
+          ],
+        ).size,
+      ).toBe(0);
+    });
+
+    it('should not rename across tables', () => {
+      const desired = new SchemaAST();
+      const current = new SchemaAST();
+      desired.addTable(mockTableNode('users', [id, { name: 'headline', ...text }]));
+      current.addTable(mockTableNode('users', [id]));
+      current.addTable(mockTableNode('posts', [id, { name: 'title', ...text }]));
+
+      expect(columnRenames(desired, current).size).toBe(0);
+    });
+  });
+
+  describe('tableRenameCandidates', () => {
+    const columns = [
+      { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+      { name: 'name', type: { category: 'string', length: 255 } },
+    ] as const;
+
+    it('should name the one table the database holds with the same columns as a new one', () => {
+      const desired = new SchemaAST();
+      const current = new SchemaAST();
+      desired.addTable(mockTableNode('posts', [...columns]));
+      current.addTable(mockTableNode('articles', [...columns]));
+
+      expect(tableRenameCandidates(desired, current)).toEqual([{ from: 'articles', to: 'posts' }]);
+    });
+
+    it('should name none where a column differs', () => {
+      const desired = new SchemaAST();
+      const current = new SchemaAST();
+      desired.addTable(mockTableNode('posts', [...columns]));
+      current.addTable(mockTableNode('articles', [columns[0]]));
+
+      expect(tableRenameCandidates(desired, current)).toEqual([]);
     });
   });
 });

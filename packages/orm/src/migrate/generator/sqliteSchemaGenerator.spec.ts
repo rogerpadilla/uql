@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
+import { tableDdlFor } from '../ddl/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('SqliteSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new SqliteDialect());
+  const tableDdl = tableDdlFor(new SqliteDialect());
 
   it('should map column types correctly', () => {
     // Affinity, so a length is not a different column type here as it is everywhere else.
@@ -15,7 +17,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
   });
 
-  it('should throw error on generateAlterColumnStatements (SQLite limitation)', () => {
+  it('should refuse to alter a column, which SQLite cannot', () => {
     const col = {
       name: 'age',
       type: 'INTEGER',
@@ -25,7 +27,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
       isUnique: false,
     };
     // SQLite doesn't support ALTER COLUMN - requires table recreation
-    expect(() => generator.generateAlterColumnStatements('users', col, '`age` INTEGER')).toThrow('Cannot alter column');
+    expect(() => tableDdl.alterColumn('users', col, '`age` INTEGER')).toThrow('Cannot alter column');
   });
 
   it('should return empty string for column comment', () => {

@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
+import { tableDdlFor } from '../ddl/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MsSqlSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new MsSqlDialect({}));
+  const tableDdl = tableDdlFor(new MsSqlDialect({}));
   const age = {
     name: 'age',
     type: 'BIGINT',
@@ -58,7 +60,7 @@ describe('MsSqlSchemaGenerator Specifics', () => {
   });
 
   it('should alter a column around its default, which ALTER COLUMN cannot restate', () => {
-    const [lookup, alter, restore] = generator.generateAlterColumnStatements('users', age, '');
+    const [lookup, alter, restore] = tableDdl.alterColumn('users', age, '');
 
     expect(lookup).toContain('sys.default_constraints');
     expect(lookup).not.toContain('sys.check_constraints');
@@ -68,7 +70,7 @@ describe('MsSqlSchemaGenerator Specifics', () => {
 
   it('should size a type introspection read back apart from its length', () => {
     const name = { ...age, name: 'name', type: 'NVARCHAR', length: 100, nullable: true, defaultValue: undefined };
-    expect(generator.generateAlterColumnStatements('users', name, '').slice(1)).toEqual([
+    expect(tableDdl.alterColumn('users', name, '').slice(1)).toEqual([
       'ALTER TABLE "users" ALTER COLUMN "name" NVARCHAR(100) NULL;',
     ]);
   });

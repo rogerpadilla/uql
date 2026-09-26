@@ -24,7 +24,7 @@ Nothing checks the level, so take it from the entry. Pre-1.0 a caret range takes
 
 ## 3. Commit
 
-If the review edited anything, stop and let the user read that unstaged diff first: everything after the commit is public. One commit, CHANGELOG included, since `lerna version` refuses a dirty tree: `feat:` or `fix:`, `!` when breaking, the subject saying what users get.
+If the review edited anything important/critical, stop and let the user read that unstaged diff first: everything after the commit is public. Only do a minor release when something important really is released or breaks, otherwise use patch.
 
 ## 4. Bump, tag, push, GitHub Release
 

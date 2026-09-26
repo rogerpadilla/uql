@@ -54,9 +54,11 @@ export class TableDdl {
     if (this.dialect.alterColumnStrategy !== 'separate-clauses') {
       return [`ALTER TABLE ${target} ${this.dialect.alterColumnSyntax} ${definition};`];
     }
-    const alter = `ALTER TABLE ${target} ALTER COLUMN ${this.dialect.escapeId(column.name)}`;
+    const name = this.dialect.escapeId(column.name);
+    const alter = `ALTER TABLE ${target} ALTER COLUMN ${name}`;
     return [
-      (!from || from.type !== column.type) && `${alter} TYPE ${column.type};`,
+      // Cast, since the engine converts only between types it deems compatible: text to integer needs saying.
+      (!from || from.type !== column.type) && `${alter} TYPE ${column.type} USING ${name}::${column.type};`,
       (!from || from.nullable !== column.nullable) && `${alter} ${column.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`,
       (!from || !sameDefault(column.defaultValue, from.defaultValue, this.dialect)) &&
         (column.defaultValue === undefined ? `${alter} DROP DEFAULT;` : `${alter} SET${this.defaultClause(column)};`),

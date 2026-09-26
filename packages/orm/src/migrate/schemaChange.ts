@@ -41,5 +41,6 @@ export function reverseDiff(diff: SchemaDiff): SchemaDiff {
     columns: diff.columns?.map(swap),
     indexes: diff.indexes?.map(swap),
     foreignKeys: diff.foreignKeys?.map(swap),
+    renamedColumns: diff.renamedColumns?.map(({ from, to }) => ({ from: to, to: from })),
   };
 }

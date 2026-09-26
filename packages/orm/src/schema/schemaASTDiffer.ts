@@ -1,6 +1,8 @@
+import type { ColumnRenames, Rename } from '../type/migration.js';
+import { qualifyName } from '../util/sql.util.js';
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
 import { describeIndexDifferences, type IndexFacet, pairIndexes } from './indexDifferences.js';
-import { matchByKey } from './matchByKey.js';
+import { matchByKey, pairUnique } from './matchByKey.js';
 import type { SchemaAST } from './schemaAST.js';
 import type { CanonicalType } from './types.js';
 import type {
@@ -63,17 +65,7 @@ function relationEnds(relation: RelationshipNode) {
 /** The differences between the expected schema (the entities) and the actual one (the database). */
 export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffOptions = {}): SchemaDiffResult {
   const opts = { ...DEFAULT_OPTIONS, ...options };
-  const normalizeName = nameNormalizer(opts);
-
-  const included = (tables: Iterable<TableNode>) =>
-    [...tables].filter((table) => !opts.excludeTables.includes(table.name));
-  const {
-    created: tablesToCreate,
-    dropped: tablesToDrop,
-    matched,
-  } = matchByKey(included(source.tables.values()), included(target.tables.values()), (table) =>
-    normalizeName(table.name),
-  );
+  const { created: tablesToCreate, dropped: tablesToDrop, matched } = matchTables(source, target, opts);
 
   const tablesToAlter = matched
     .map(([sourceTable, targetTable]) => diffTable(sourceTable, targetTable, opts))
@@ -168,6 +160,49 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
       .map(([sourceColumn, targetColumn]) => diffColumn(source.name, sourceColumn, targetColumn, opts))
       .filter((diff) => diff !== undefined),
   ];
+}
+
+/**
+ * The columns renamed in the tables both sides name, by qualified table:
+ * a new column identical to exactly one the entity no longer names, and to no other. The dropped side is
+ * always the entity's own table, so a wrong guess renames, keeping the data, and never drops it.
+ */
+export function columnRenames(desired: SchemaAST, actual: SchemaAST, options: DiffOptions = {}): ColumnRenames {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const normalizeName = nameNormalizer(opts);
+  return new Map(
+    matchTables(desired, actual, opts).matched.flatMap(([expected, current]) => {
+      const { created, dropped } = matchByKey(expected.columns.values(), current.columns.values(), (column) =>
+        normalizeName(column.name),
+      );
+      const { matched } = pairUnique(created, dropped, (to, from) => !diffColumn(expected.name, to, from, opts));
+      const table = qualifyName(current.name, current.schema);
+      return matched.length ? [[table, matched.map(([to, from]) => ({ from: from.name, to: to.name }))] as const] : [];
+    }),
+  );
+}
+
+/**
+ * Tables the database holds that a new one is identical to but for its name, each only where it is the one
+ * match on both sides. Suggested, never applied: the database's side is a table no entity names, which may
+ * be another application's rather than one this schema renamed.
+ */
+export function tableRenameCandidates(desired: SchemaAST, actual: SchemaAST, options: DiffOptions = {}): Rename[] {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const { created, dropped } = matchTables(desired, actual, opts);
+  const same = (to: TableNode, from: TableNode) =>
+    to.schema === from.schema && !diffTable(to, from, { ...opts, compareIndexes: false });
+  return pairUnique(created, dropped, same).matched.map(([to, from]) => ({ from: from.name, to: to.name }));
+}
+
+/** The two sides' tables paired by name, those `excludeTables` names left out of both. */
+function matchTables(desired: SchemaAST, actual: SchemaAST, opts: Required<DiffOptions>) {
+  const normalizeName = nameNormalizer(opts);
+  const included = (tables: Iterable<TableNode>) =>
+    [...tables].filter((table) => !opts.excludeTables.includes(table.name));
+  return matchByKey(included(desired.tables.values()), included(actual.tables.values()), (table) =>
+    normalizeName(table.name),
+  );
 }
 
 /** Compare indexes between two tables, paired by {@link pairIndexes}, in what the target's reader reports. */

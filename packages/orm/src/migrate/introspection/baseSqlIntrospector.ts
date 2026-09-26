@@ -3,9 +3,9 @@ import { canonicalColumnType } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { createTableNode, keyOfColumns, SchemaAST } from '../../schema/schemaAST.js';
 import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
-import type { TableSchema } from '../../type/migration.js';
+import type { ColumnRenames, TableSchema } from '../../type/migration.js';
 import { escapeSqlId } from '../../util/index.js';
-import { derivedForeignKeyName } from '../../util/sql.util.js';
+import { derivedForeignKeyName, qualifyName } from '../../util/sql.util.js';
 
 /**
  * Base class for SQL introspectors with shared AST building logic.
@@ -32,18 +32,42 @@ export abstract class BaseSqlIntrospector {
    * rather than raised: the point of naming them is to read a database other things are still
    * changing, where scanning every table is both wasted work and a relation that can vanish mid-scan.
    */
-  async introspect(tables?: readonly string[]): Promise<SchemaAST> {
+  async introspect(tables?: readonly string[], renames?: ColumnRenames): Promise<SchemaAST> {
     const tableNames = tables ?? (await this.getTableNames());
     const tableSchemas: TableSchema[] = [];
 
     for (const tableName of tableNames) {
       const schema = await this.getTableSchema(tableName);
       if (schema) {
-        tableSchemas.push(schema);
+        tableSchemas.push(renames ? this.renamed(schema, renames) : schema);
       }
     }
 
     return this.buildAST(tableSchemas);
+  }
+
+  /** `table` with each column `renames` names under its new name, wherever the table names it. */
+  private renamed(table: TableSchema, renames: ColumnRenames): TableSchema {
+    const nameIn = (tableName: string) => (column: string) =>
+      renames.get(qualifyName(tableName, this.schema))?.find((rename) => rename.from === column)?.to ?? column;
+    const own = nameIn(table.name);
+    return {
+      ...table,
+      columns: table.columns.map((column) => ({ ...column, name: own(column.name) })),
+      primaryKey: table.primaryKey && { ...table.primaryKey, columns: table.primaryKey.columns.map(own) },
+      indexes: table.indexes?.map((index) => ({
+        ...index,
+        entries: index.entries.map((entry) => (entry.expression ? entry : { ...entry, column: own(entry.column) })),
+      })),
+      foreignKeys: table.foreignKeys?.map((foreignKey) => ({
+        ...foreignKey,
+        columns: foreignKey.columns.map(own),
+        references: {
+          ...foreignKey.references,
+          columns: foreignKey.references.columns.map(nameIn(foreignKey.references.table)),
+        },
+      })),
+    };
   }
 
   abstract getTableNames(): Promise<string[]>;

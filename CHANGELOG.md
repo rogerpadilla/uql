@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.87.0] - 2026-09-26
+
+- **Breaking:** `SqlSchemaGenerator.generateAlterColumnStatements` is gone: a custom generator alters a column through `generateAlterTable`.
+- `generate:entities` renames a column in place when its field was renamed but not otherwise changed, keeping the data, and suggests `renameTable` for a new table the database holds under another name.
+- A retyped column casts its values on the Postgres family, so text holding numbers can become a number, and `generate:entities` names every column it drops or narrows.
+
 ## [0.86.0] - 2026-09-26
 
 - **Breaking:** `uql-orm/betterAuth` is gone, to return as a package of its own, and a custom dialect's `features` no longer states `transactions`.

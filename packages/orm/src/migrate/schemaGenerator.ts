@@ -16,6 +16,7 @@ import type {
 } from '../schema/types.js';
 import type {
   Change,
+  ColumnChange,
   ColumnSchema,
   CreateSchemaOptions,
   DialectFeatures,
@@ -28,6 +29,7 @@ import type {
   ForeignKeySchema,
   IndexSchema,
   PrimaryKeySchema,
+  Rename,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -387,11 +389,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       : this.canonicalTypeToSql(canonical);
   }
 
-  /** The statements that alter `column` in place, as this dialect spells them. */
-  public generateAlterColumnStatements(tableName: string, column: ColumnSchema, newDefinition: string): string[] {
-    return this.tableDdl.alterColumn(tableName, column, newDefinition);
-  }
-
   /** The inline ` COMMENT '...'` a column declaration carries, where the engine takes one there. */
   public generateColumnComment(comment: string): string {
     return this.features.commentSyntax === 'inline' ? ` COMMENT ${this.dialect.escape(comment)}` : '';
@@ -431,6 +428,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     entity: Type<object>,
     currentTable: TableNode | undefined,
     desiredAst?: SchemaAST,
+    renamedColumns?: readonly Rename[],
   ): SchemaDiff | undefined {
     const meta = getMeta(entity);
     const tableName = this.resolveTableName(meta);
@@ -454,16 +452,17 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     // restated `CHECK` by adding a *second* constraint rather than replacing the first, so the column
     // would accumulate one per alter. An enum's values reach the database with the column and are never
     // restated - which is also why changing them is a hand-written migration. See architecture/roadmap.md.
-    const columns = (tableDiff?.columnDiffs ?? []).map((it): Change<ColumnSchema> => {
+    const columns = (tableDiff?.columnDiffs ?? []).map((it): ColumnChange => {
       if (it.type === 'add') {
         return { to: this.columnNodeToSchema(it.expected) };
       }
       if (it.type === 'drop') {
-        return { from: this.columnNodeToSchema(it.actual) };
+        return { from: this.columnNodeToSchema(it.actual), isBreaking: true };
       }
       return {
         from: this.columnNodeToSchema(it.actual),
         to: { ...this.columnNodeToSchema(it.expected), enum: undefined },
+        isBreaking: it.isBreaking,
       };
     });
 
@@ -499,11 +498,14 @@ export class SqlSchemaGenerator implements SchemaGenerator {
         ...indexes.toAlter.map(({ from, to }) => ({ from: indexNodeToSchema(from), to: indexNodeToSchema(to) })),
       ]),
       foreignKeys: nonEmpty(foreignKeys),
+      renamedColumns: nonEmpty(renamedColumns ?? []),
     };
-    return alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys ? alter : undefined;
+    return alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys || alter.renamedColumns
+      ? alter
+      : undefined;
   }
 
-  protected diffOptions(): DiffOptions {
+  diffOptions(): DiffOptions {
     return {
       normalizeType: engineType(this.dialect),
       defaultsEqual: this.defaultsEqual,
@@ -680,7 +682,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string[] {
     const node = fullColumnDefinitionToNode(column, tableName);
-    return this.generateAlterColumnStatements(
+    return this.tableDdl.alterColumn(
       tableName,
       { ...this.columnNodeToSchema(node), name: columnName },
       this.generateColumnFromNode(node),

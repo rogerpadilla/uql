@@ -88,8 +88,11 @@ services:
     restart: always
     container_name: uql-cockroachdb-26
     # `--cache` and `--max-sql-memory` default to a quarter of visible RAM *each*, so left alone this
-    # claims up to ~8GB of a CI runner it shares with three other engines. It holds 20 tiny tables.
-    command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB
+    # claims up to ~8GB of a CI runner it shares with three other engines. It holds 20 tiny tables. The
+    # store is in memory, as TypeORM, Drizzle and Knex run it for tests: no disk sync on every schema change.
+    command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB --store=type=mem,size=1GiB
+    volumes:
+      - ./docker/init-cockroach.sql:/docker-entrypoint-initdb.d/init-cockroach.sql
     ports:
       - 26257:26257
     healthcheck:

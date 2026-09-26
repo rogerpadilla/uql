@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
+import { tableDdlFor } from '../ddl/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MysqlSchemaGenerator Specifics', () => {
   const generator = new SqlSchemaGenerator(new MySqlDialect());
+  const tableDdl = tableDdlFor(new MySqlDialect());
 
   it('should map column types correctly', () => {
     expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
@@ -30,7 +32,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
       isUnique: false,
     };
     // newDefinition should include the column name (as generateColumnDefinitionFromSchema does)
-    const statements = generator.generateAlterColumnStatements('users', col, '`age` INT NOT NULL DEFAULT 18');
+    const statements = tableDdl.alterColumn('users', col, '`age` INT NOT NULL DEFAULT 18');
 
     expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN `age` INT NOT NULL DEFAULT 18;']);
   });

@@ -73,13 +73,13 @@ describe('index drift (PostgreSQL)', () => {
   const introspector = new PostgresSchemaIntrospector(pool);
 
   const driftOf = async (entity: typeof DriftIndexUser) => {
-    const actual = await introspector.introspect();
+    // Its own table alone: the whole database is every other file's tables too, mid-change.
+    const actual = await introspector.introspect([TABLE]);
     const expected = buildSchemaAST([entity], {
       namingStrategy: dialect.namingStrategy,
       compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
     });
-    const report = detectDrift(expected, actual, { dialect });
-    return report.drifts.filter((drift) => drift.table === TABLE);
+    return detectDrift(expected, actual, { dialect }).drifts;
   };
 
   beforeAll(async () => {
@@ -148,7 +148,8 @@ describe('index drift (CockroachDB)', () => {
   }, provisioningTimeout);
 
   it('should report nothing for the schema it just created, unique indexes included', async () => {
-    const actual = await introspector.introspect();
+    // Its own table alone: the whole database is every other file's tables too, mid-change.
+    const actual = await introspector.introspect([CRDB_TABLE]);
     expect(
       actual
         .getTable(CRDB_TABLE)
@@ -161,6 +162,6 @@ describe('index drift (CockroachDB)', () => {
       compileDdl: (sql, entity) => dialect.compileDdl(sql, entity),
     });
     const report = detectDrift(expected, actual, { dialect });
-    expect(report.drifts.filter((drift) => drift.table === CRDB_TABLE)).toEqual([]);
+    expect(report.drifts).toEqual([]);
   });
 });
