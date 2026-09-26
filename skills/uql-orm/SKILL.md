@@ -158,13 +158,6 @@ transaction. A querier from `pool.getQuerier()` is yours to release: bind it wit
 writes entity classes from an existing database; `drift:check` fails when the database no longer matches.
 Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names and never touches another.
 
-## Better Auth
-
-`betterAuth({ ...authOptions, database: uqlAdapter(pool) })`, from `uql-orm/betterAuth`, runs Better Auth on any
-pool; `...authEntities(authOptions)` in the config's `entities` has `uql-migrate` create its tables. Keep
-`authOptions` (plugins, table and field names, `rateLimit.storage`) in a module of its own, since the config imports
-it, and never put those entities in an HTTP handler's `include`: a session row holds its token.
-
 ## Where to read more
 
 - Operators, per-dialect SQL: https://uql-orm.dev/querying/comparison-operators.md
@@ -173,5 +166,4 @@ it, and never put those entities in an HTTP handler's `include`: a session row h
 - Triggers: https://uql-orm.dev/entities/triggers.md
 - Every method's signature: https://uql-orm.dev/querying/methods.md
 - Coming from Prisma, Drizzle, TypeORM or MikroORM: https://uql-orm.dev/switching-to-uql.md
-- Better Auth: https://uql-orm.dev/better-auth.md
 - Breaking changes by version: https://uql-orm.dev/upgrade-guide.md

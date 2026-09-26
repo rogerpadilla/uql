@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.86.0] - 2026-09-26
+
+- **Breaking:** `uql-orm/betterAuth` is gone, to return as a package of its own, and a custom dialect's `features` no longer states `transactions`.
+
 ## [0.85.0] - 2026-09-25
 
 - **Breaking:** `uql-orm/http` and `uql-orm/express` require `include` and serve only the entities it names, never one for being defined. `exclude` is gone.

@@ -45,7 +45,6 @@ const PEER_ENTRIES = {
   // Two value imports, so which one the runtime names first is not ours to pick.
   nestjs: ['@nestjs/common', '@nestjs/core'],
   neon: ['@neondatabase/serverless'],
-  betterAuth: ['better-auth'],
   bunSql: ['bun'],
 };
 

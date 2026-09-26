@@ -9,7 +9,7 @@ import { UqlUsageError } from '../util/uqlError.js';
  */
 export class D1SqliteDialect extends SqliteDialect {
   /** A vector stays text: D1 answers a BLOB as an array of its byte values, which reads like a vector. */
-  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, vectorBytes: false, transactions: false };
+  override readonly features: SqlDialectFeatures = { ...SQLITE_FEATURES, vectorBytes: false };
 
   // Cloudflare D1 caps bound parameters at 100 per query.
   override readonly maxBindValues: number = 100;

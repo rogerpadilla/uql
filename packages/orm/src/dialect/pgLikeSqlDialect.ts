@@ -57,7 +57,6 @@ export const PG_FEATURES: SqlDialectFeatures = {
   serverSideCursors: true,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: false, placement: 'suffix' },
-  transactions: true,
   nullsOrdering: 'clause',
   textScoreIndexes: false,
   orderedUpsertReturning: true,

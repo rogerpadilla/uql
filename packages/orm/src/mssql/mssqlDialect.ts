@@ -48,7 +48,6 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
-  transactions: true,
   nullsOrdering: 'case',
   textScoreIndexes: false,
   orderedUpsertReturning: false,
