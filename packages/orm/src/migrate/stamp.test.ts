@@ -30,7 +30,7 @@ describe.each(STAMP_POOLS)('a stamp on %s', (_name, connect) => {
   let pool: SqlQuerierPool;
   const escapeId = (name: string) => pool.dialect.escapeId(name);
 
-  const tables = ['StampNote', 'StampTouch'] as const;
+  const tables = ['StampNote', 'StampTouch', 'StampRetyped'] as const;
 
   beforeAll(async () => {
     pool = connect();
@@ -89,6 +89,36 @@ describe.each(STAMP_POOLS)('a stamp on %s', (_name, connect) => {
       `SELECT ${escapeId('body')} FROM ${escapeId('StampNote')} WHERE ${escapeId('id')} = ${id}`,
     );
     expect(row.body).toBe('after');
+  });
+
+  /** A retype SQLite makes by rebuilding the table, which drops its triggers, so they have to come back on. */
+  it('should still stamp once its table is retyped', async () => {
+    @Entity({ name: 'StampRetyped' })
+    class Before {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) code?: string | null;
+      @Field({ type: Number, computed: raw`1`, stored: ['update'] }) readonly touched?: number | null;
+    }
+    await new Migrator(pool, { entities: [Before] }).sync({ logging: false });
+    const id = await pool.insertOne(Before, { code: '1' });
+    removeEntity(Before);
+
+    @Entity({ name: 'StampRetyped' })
+    class After {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number }) code?: number | null;
+      @Field({ type: Number, computed: raw`1`, stored: ['update'] }) readonly touched?: number | null;
+    }
+    const migrator = new Migrator(pool, { entities: [After] });
+    await migrator.sync({ logging: false, safe: false });
+    await pool.run(`UPDATE ${escapeId('StampRetyped')} SET ${escapeId('code')} = 2 WHERE ${escapeId('id')} = ${id}`);
+
+    const [row] = await pool.all<{ touched: number }>(
+      `SELECT ${escapeId('touched')} FROM ${escapeId('StampRetyped')} WHERE ${escapeId('id')} = ${id}`,
+    );
+    expect(Number(row.touched)).toBe(1);
+    expect(await migrator.planSync({ safe: false })).toEqual([]);
+    removeEntity(After);
   });
 
   it('should not take a value from a payload, the database owning it', async () => {

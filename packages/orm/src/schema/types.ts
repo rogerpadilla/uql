@@ -1,6 +1,6 @@
 // A database schema as a graph, whichever side it came from: the entities or the database itself.
 
-import type { IndexSchema, PrimaryKeySchema } from '../type/migration.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, StoredDefinition } from '../type/migration.js';
 import type { IndexFacet } from './indexDifferences.js';
 
 /**
@@ -165,6 +165,10 @@ export interface TableNode {
   readonly checks: CheckSchema[];
   /** Optional table comment */
   readonly comment?: string;
+  /** The statements the engine keeps for the table, where it keeps them; none on a table built from entities. */
+  definition?: readonly StoredDefinition[];
+  /** The foreign keys to tables this AST does not hold, which a rebuild keeps as they are. */
+  readonly externalForeignKeys: ForeignKeySchema[];
 
   // === Graph Links ===
   /** Relationships pointing TO this table (other tables referencing this one) */

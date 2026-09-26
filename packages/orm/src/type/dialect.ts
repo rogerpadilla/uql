@@ -95,18 +95,12 @@ export interface DialectFeatures {
    */
   readonly schemas: boolean;
   readonly dropTableCascade: boolean;
-  readonly foreignKeyAlter: boolean;
   /**
-   * Whether a table's primary key can be changed on an existing table. False on SQLite, whose only
-   * route is rebuilding the table - so a migration that would change one is refused by name rather
-   * than emitting DDL the engine rejects.
+   * Whether the engine changes a column, a key or a foreign key, or adds a stored generated column, only
+   * by rebuilding the table, as SQLite does: a generated migration copies the table into a new one, and
+   * the migration builder refuses the change by name.
    */
-  readonly primaryKeyAlter: boolean;
-  /**
-   * Whether a stored generated column can be added to an existing table. SQLite takes one only in a
-   * `CREATE TABLE`, so a sync that would add one is refused by name.
-   */
-  readonly generatedColumnAdd: boolean;
+  readonly rebuildsTables: boolean;
   /** Where a comment goes: in the declaration (MySQL family), a `COMMENT ON` of its own (Postgres family), or nowhere. */
   readonly commentSyntax: 'inline' | 'statement' | 'none';
   /**

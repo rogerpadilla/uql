@@ -154,7 +154,7 @@ transaction. A querier from `pool.getQuerier()` is yours to release: bind it wit
 ## Migrations
 
 `npx uql-migrate` reads `uql.config.ts`. `sync` creates what the entities imply (development only);
-`generate:entities` writes the diff as a migration file to review, renaming a column its field was renamed from and printing `renameTable` for a table that may have been; `up` applies migrations; `generate:from-db`
+`generate:entities` writes the diff as a migration file to review, renaming a column its field was renamed from, printing `renameTable` for a table that may have been, rebuilding a SQLite table for what it cannot alter, and refusing a required column with no default on a table holding rows; `up` applies migrations; `generate:from-db`
 writes entity classes from an existing database; `drift:check` fails when the database no longer matches.
 Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names and never touches another.
 

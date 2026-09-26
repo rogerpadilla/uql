@@ -1,7 +1,7 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import type { ColumnSchema } from '../../type/index.js';
-import { UqlUsageError } from '../../util/uqlError.js';
 import { formatDefaultValue, sameDefault } from '../builder/expressions.js';
+import { lacksValue } from '../schemaChange.js';
 
 /**
  * A column's type with the size it was read back with, unless its spelling already carries one:
@@ -34,6 +34,20 @@ export class TableDdl {
     return `ALTER TABLE ${this.dialect.escapeId(table)} ADD COLUMN ${definition};`;
   }
 
+  /**
+   * `column` added, spelled by `render`. MySQL fills a zero into the rows already there for a required
+   * column with no default, so there it is added nullable and required after, failing on them as elsewhere.
+   */
+  addColumnStatements(table: string, column: ColumnSchema, render: (column: ColumnSchema) => string): string[] {
+    if (this.dialect.alterColumnSyntax !== 'MODIFY COLUMN' || !lacksValue(column)) {
+      return [this.addColumn(table, render(column))];
+    }
+    return [
+      this.addColumn(table, render({ ...column, nullable: true })),
+      ...this.alterColumn(table, column, render(column)),
+    ];
+  }
+
   dropColumn(table: string, column: string): string[] {
     return [`ALTER TABLE ${this.dialect.escapeId(table)} DROP COLUMN ${this.dialect.escapeId(column)};`];
   }
@@ -44,12 +58,6 @@ export class TableDdl {
    * column was (`from`), only the clauses that changed.
    */
   alterColumn(table: string, column: ColumnSchema, definition: string, from?: ColumnSchema): string[] {
-    if (this.dialect.alterColumnSyntax === 'none') {
-      throw new UqlUsageError(
-        `${this.dialect}: Cannot alter column "${column.name}" - you must recreate the table. ` +
-          `This database does not support ALTER COLUMN.`,
-      );
-    }
     const target = this.dialect.escapeId(table);
     if (this.dialect.alterColumnStrategy !== 'separate-clauses') {
       return [`ALTER TABLE ${target} ${this.dialect.alterColumnSyntax} ${definition};`];

@@ -10,6 +10,7 @@ import type {
   RawRow,
   SchemaIntrospector,
   SqlQuerier,
+  StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
 import { isSqlQuerier } from '../../type/index.js';
@@ -71,11 +72,12 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         return undefined;
       }
 
-      const [columns, indexes, foreignKeys, primaryKey] = await Promise.all([
+      const [columns, indexes, foreignKeys, primaryKey, definition] = await Promise.all([
         this.getColumns(read, tableName),
         this.getIndexes(read, tableName),
         this.getForeignKeys(read, tableName),
         this.getPrimaryKey(read, tableName),
+        this.getDefinition(read, tableName),
       ]);
 
       return {
@@ -84,8 +86,14 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         primaryKey,
         indexes,
         foreignKeys,
+        definition,
       };
     });
+  }
+
+  /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
+  protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
+    return undefined;
   }
 
   async getTableNames(): Promise<string[]> {

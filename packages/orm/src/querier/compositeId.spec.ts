@@ -403,14 +403,12 @@ describe('changing the primary key of an existing table', () => {
     ]);
   });
 
-  /** SQLite's only route is rebuilding the table, so it refuses by name rather than emitting DDL. */
-  it('should refuse on an engine that cannot alter a key at all', () => {
+  /** SQLite changes a key only by rebuilding the table, the new one declaring it. */
+  it('should rebuild the table on an engine that cannot alter a key at all', () => {
     const generator = new SqlSchemaGenerator(new SqliteDialect());
     const diff = diffOf(generator, MemberAfter, existingTable());
 
-    expect(() => generator.generateAlterTable(diff)).toThrow(
-      /Cannot change the primary key of "Member" - this database has no ALTER for it/,
-    );
+    expect(diff.rebuild?.to.statements[0]).toContain('PRIMARY KEY (`userId`, `groupId`)');
   });
 });
 

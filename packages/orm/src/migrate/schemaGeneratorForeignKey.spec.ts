@@ -144,17 +144,18 @@ describe('SqlSchemaGenerator foreign keys', () => {
       expect(alone?.foreignKeys).toBeUndefined();
     });
 
-    /**
-     * SQLite resolves foreign keys lazily and keeps them inline at CREATE time; its only way to
-     * change one afterwards is the twelve-step table rebuild, which a sync does not do. Reporting a
-     * difference nothing can apply would throw on every sync of an entity that has a relation.
-     */
-    it('should report no foreign key difference where the engine cannot alter one', () => {
+    /** SQLite changes a foreign key only by rebuilding the table, so the diff carries both ends of one. */
+    it('should rebuild the table where the engine changes a foreign key no other way', () => {
       const { employee } = tables();
+      const created = 'CREATE TABLE `FkEmployee` (`id` INTEGER PRIMARY KEY, `name` TEXT, `companyId` INTEGER)';
+      employee.definition = [{ kind: 'table', name: 'FkEmployee', sql: created }];
       const sqlite = new SqlSchemaGenerator(new SqliteDialect());
 
-      expect(sqlite.features.foreignKeyAlter).toBe(false);
-      expect(sqlite.diffSchema(FkEmployee, employee, sqlite.buildAST(ENTITIES))?.foreignKeys).toBeUndefined();
+      const diff = sqlite.diffSchema(FkEmployee, employee, sqlite.buildAST(ENTITIES));
+
+      expect(diff?.foreignKeys).toHaveLength(1);
+      expect(diff?.rebuild?.from).toEqual({ statements: [`${created};`], columns: ['id', 'name', 'companyId'] });
+      expect(diff?.rebuild?.to.columns).toEqual(['id', 'name', 'companyId']);
     });
 
     /**

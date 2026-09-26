@@ -151,7 +151,22 @@ export interface TableSchema {
   readonly primaryKey?: PrimaryKeySchema;
   readonly indexes?: IndexSchema[];
   readonly foreignKeys?: ForeignKeySchema[];
+  /** The statements the engine keeps for the table, where it keeps them: SQLite's `sqlite_master`. */
+  readonly definition?: readonly StoredDefinition[];
 }
+
+/** A statement exactly as the engine keeps it, which only it can say all of: a `CHECK`, an index over an expression. */
+export type StoredDefinition = {
+  readonly kind: 'table' | 'index' | 'trigger';
+  readonly name: string;
+  readonly sql: string;
+};
+
+/** One side of a rebuilt table: its `CREATE TABLE` and what goes back on it, and the columns holding stored values, under this side's names. */
+export type RebuiltTable = {
+  readonly statements: readonly string[];
+  readonly columns: readonly string[];
+};
 
 /**
  * Represents an index in a database table
@@ -245,6 +260,11 @@ export interface SchemaDiff {
   readonly foreignKeys?: readonly Change<ForeignKeySchema>[];
   /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
   readonly renamedColumns?: readonly Rename[];
+  /**
+   * The table copied into a new one, which is how an engine that {@link DialectFeatures.rebuildsTables}
+   * applies the changes above. Its column renames are carried by the copy.
+   */
+  readonly rebuild?: { readonly from: RebuiltTable; readonly to: RebuiltTable };
 }
 
 /**

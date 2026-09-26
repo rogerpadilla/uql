@@ -29,11 +29,12 @@ import type {
 import { hasTriggers } from '../util/field.util.js';
 import { LoggerWrapper } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
+import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import type { IMigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
 import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
-import { dropped, nonEmpty, reverseDiff, sides } from './schemaChange.js';
+import { dropped, lacksValue, newlyRequired, nonEmpty, reverseDiff, sides, withoutRebuild } from './schemaChange.js';
 
 /** An entity with triggers, beside the ones uql has installed on its table right now. */
 type TriggerState = { readonly entity: Type<object>; readonly installed: InstalledTriggers };
@@ -247,6 +248,7 @@ export class Migrator {
   async generateFromEntities(name: string): Promise<string> {
     const generator = await this.getSchemaGenerator();
     const { created, altered } = await this.pendingChanges({ renames: true });
+    await this.assertFillable(altered);
     const plan = this.alterPlan(generator, altered, await this.installedTriggers(created));
     await this.noteChanges(generator, created, altered);
     const up = [...this.createSchema(generator, created), ...plan.up];
@@ -309,7 +311,7 @@ export class Migrator {
   private alterPlan(generator: SchemaGenerator, altered: readonly SchemaDiff[], state: readonly TriggerState[]) {
     const changing = new Set(
       altered
-        .filter((diff) => sides(diff.columns, 'from').length || diff.renamedColumns?.length)
+        .filter((diff) => sides(diff.columns, 'from').length || diff.renamedColumns?.length || diff.rebuild)
         .map((diff) => diff.tableName),
     );
     const cleared = state.filter(({ entity }) => changing.has(this.tableOf(entity)));
@@ -371,6 +373,44 @@ export class Migrator {
       this.logger.logWarn(
         `Creates "${to}" empty, while "${from}", which no entity names, holds the same columns. If it was ` +
           `renamed, replace its creation in this migration with \`renameTable('${from}', '${to}')\`.`,
+      );
+    }
+  }
+
+  /**
+   * Refuses, before anything runs, each column the changes require with no default while rows would hold
+   * none: every engine fails on one but MySQL, which fills in a zero. Counted, since an empty table is fine.
+   */
+  private async assertFillable(altered: readonly SchemaDiff[]): Promise<void> {
+    // A renamed column is identical but for its name, so the one counted is never renamed too.
+    const counts = altered.flatMap(({ tableName, columns }) =>
+      newlyRequired(columns)
+        .filter(({ to }) => lacksValue(to))
+        .map(({ from, to }) => ({ tableName, column: to.name, nullable: from })),
+    );
+    if (!counts.length) {
+      return;
+    }
+    const unfilled = await withSqlQuerierForMigrations(this.pool, 'Migrator', async (querier) => {
+      const escapeId = (name: string) => querier.dialect.escapeId(name);
+      const found: string[] = [];
+      for (const { tableName, column, nullable } of counts) {
+        const empty = nullable ? ` WHERE ${escapeId(column)} IS NULL` : '';
+        const [{ rows }] = await querier.all<{ rows: number | bigint | string }>(
+          `SELECT COUNT(*) AS ${escapeId('rows')} FROM ${escapeId(tableName)}${empty}`,
+        );
+        const count = Number(rows);
+        if (count) {
+          found.push(
+            `"${tableName}"."${column}" is required with no default, and ${count} ${count === 1 ? 'row holds' : 'rows hold'} none`,
+          );
+        }
+      }
+      return found;
+    });
+    if (unfilled.length) {
+      throw new UqlUsageError(
+        `${unfilled.join('; ')}. Declare a default, or add the column nullable, fill it, then require it.`,
       );
     }
   }
@@ -479,6 +519,7 @@ export class Migrator {
     const ast = await this.introspectEntities([entity, ...referencedEntities(meta)]);
     // The table is already there, so its triggers are reconciled rather than carried by a `CREATE`.
     const altered = this.alterFromEntity(generator, entity, ast.getTable(tableName), options);
+    await this.assertFillable(altered);
     return this.alterPlan(generator, altered, await this.installedTriggers([], [entity])).up;
   }
 
@@ -520,6 +561,7 @@ export class Migrator {
     }
     const { created, altered } = await this.pendingChanges();
     const filtered = altered.map((diff) => this.filterDiff(diff, options));
+    await this.assertFillable(filtered);
     return [
       ...this.createSchema(generator, created),
       ...this.alterPlan(generator, filtered, await this.installedTriggers(created)).up,
@@ -549,12 +591,15 @@ export class Migrator {
   /**
    * Safe mode only adds: a change with a `from` drops or rebuilds what the table holds, so it is held,
    * and so is a key whole, which rebuilds an index over every row and fails where a column holds a null.
-   * Without `drop`, a column's drop is held too.
+   * Without `drop`, a column's drop is held too. A rebuilt table applies its diff whole, so holding any
+   * part of it holds the rebuild, and only what an `ALTER` adds goes ahead: a plain column, an index.
    */
   protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
     const safe = options.safe !== false;
+    let held = false;
     const skip = (what: string, names: readonly string[], fix: string) => {
       if (names.length) {
+        held = true;
         this.logger.logSkippedMigration(
           `[AutoSync] Skipped ${names.length} ${what} in table '${diff.tableName}': ${names.join(', ')} (${fix}).`,
         );
@@ -580,7 +625,7 @@ export class Migrator {
         'drop: false. Use { drop: true } to apply',
       );
     }
-    return {
+    const filtered: SchemaDiff = {
       ...diff,
       primaryKey: safe ? undefined : diff.primaryKey,
       columns: options.drop ? columns : nonEmpty((columns ?? []).filter((change) => change.to !== undefined)),
@@ -591,6 +636,11 @@ export class Migrator {
         (foreignKey) => foreignKey.name ?? foreignKey.columns.join(', '),
       ),
     };
+    if (!diff.rebuild || !held) {
+      return filtered;
+    }
+    skip('rebuild', [diff.tableName], 'it applies the whole diff, and part of it is held');
+    return withoutRebuild(filtered);
   }
 
   /** Runs the statements a generator wrote, in one transaction where the engine takes DDL in one. */
@@ -748,8 +798,13 @@ function referencedEntities(meta: EntityMeta<object>): Type<object>[] {
 }
 
 /** A diff's column renames, through the builder operation every SQL generator already renders. */
-function renameStatements(generator: SchemaGenerator, { tableName, renamedColumns = [] }: SchemaDiff): string[] {
-  return renamedColumns.flatMap(({ from, to }) =>
-    generator.generateOperation({ type: 'renameColumn', tableName, oldName: from, newName: to }),
-  );
+function renameStatements(
+  generator: SchemaGenerator,
+  { tableName, renamedColumns = [], rebuild }: SchemaDiff,
+): string[] {
+  return rebuild
+    ? []
+    : renamedColumns.flatMap(({ from, to }) =>
+        generator.generateOperation({ type: 'renameColumn', tableName, oldName: from, newName: to }),
+      );
 }

@@ -67,20 +67,21 @@ export function pairIndexes<S extends ComparableIndex, T extends ComparableIndex
 /**
  * The indexes a table lacks, the ones it no longer needs, and the ones to rebuild, differing in what
  * `facets` let the engine report. Only an unpaired index uql named, or whose name the entity claims, is
- * dropped: any other may have been made outside the ORM.
+ * dropped: any other may have been made outside the ORM, so it is `kept`.
  */
 export function indexChanges<I extends IndexSchema>(
   table: string,
   declared: readonly I[],
   current: readonly IndexNode[],
   facets: ReadonlySet<IndexFacet>,
-): { toAdd: I[]; toDrop: IndexNode[]; toAlter: { from: IndexNode; to: I }[] } {
+): { toAdd: I[]; toDrop: IndexNode[]; toAlter: { from: IndexNode; to: I }[]; kept: IndexNode[] } {
   const { created, dropped, matched } = pairIndexes(declared, current);
   const claimed = new Set(declared.map((index) => index.name));
   const owned = (index: IndexNode) => claimed.has(index.name) || hasDerivedName(table, index);
   return {
     toAdd: created,
     toDrop: dropped.filter(owned),
+    kept: dropped.filter((index) => !owned(index)),
     toAlter: matched.flatMap(([to, from]) => (describeIndexDifferences(to, from, facets).length ? [{ from, to }] : [])),
   };
 }

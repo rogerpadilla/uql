@@ -51,9 +51,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   indexIfNotExists: true,
   schemas: false, // SQLite's namespaces are attached database files, not declared objects
   dropTableCascade: false,
-  foreignKeyAlter: false, // SQLite does not support adding FKs to existing tables
-  primaryKeyAlter: false, // nor changing a key: the only route is rebuilding the table
-  generatedColumnAdd: false, // accepted in a CREATE TABLE, rejected in an ALTER
+  rebuildsTables: true,
   commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
@@ -101,8 +99,6 @@ export class SqliteDialect extends AbstractSqlDialect {
   override readonly rollbackTransactionCommand = 'ROLLBACK';
 
   override readonly isolationLevelStrategy = 'none';
-
-  override readonly alterColumnSyntax = 'none';
 
   override readonly booleanLiteral = 'integer';
 

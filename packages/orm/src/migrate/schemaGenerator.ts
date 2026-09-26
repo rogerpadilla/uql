@@ -29,7 +29,9 @@ import type {
   ForeignKeySchema,
   IndexSchema,
   PrimaryKeySchema,
+  RebuiltTable,
   Rename,
+  StoredDefinition,
   NamingStrategy,
   SchemaDiff,
   SchemaGenerator,
@@ -38,11 +40,12 @@ import type {
 import { isAutoIncrement, qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { sameDefault } from './builder/expressions.js';
+import { formatDefaultValue, sameDefault } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
 import { sizedType } from './ddl/tableDdl.js';
+import { rebuildTable } from './ddl/tableRebuild.js';
 import {
   columnForeignKey,
   columnIndex,
@@ -52,7 +55,7 @@ import {
 } from './generator/definitionToNode.js';
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
-import { added, alterations, dropped, nonEmpty, sides } from './schemaChange.js';
+import { added, alterations, dropped, needsRebuild, newlyRequired, nonEmpty, sides } from './schemaChange.js';
 import { dropTrigger, type RenderedTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
 /**
@@ -147,7 +150,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const withForeignKeys = options.foreignKeys ?? true;
     // Inline only where a constraint cannot be added afterwards, which is what makes the cyclic case
     // work everywhere else.
-    const inline = withForeignKeys && !this.features.foreignKeyAlter;
+    const inline = withForeignKeys && this.features.rebuildsTables;
 
     // Namespaces first: a qualified `CREATE TABLE` fails against a schema nobody created, and the
     // schema is the one part of the layout a migration cannot infer from the table it is making.
@@ -277,8 +280,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * index along with its column, which would leave nothing to name. An alter is its drop, then its add.
    */
   generateAlterTable(diff: SchemaDiff): string[] {
-    const { tableName, schema, primaryKey } = diff;
-    const { columns } = diff;
+    const { tableName, schema, primaryKey, columns, rebuild } = diff;
+    const fills = this.defaultFills(columns);
+    if (rebuild) {
+      return rebuildTable(this.dialect, tableName, rebuild, { renames: diff.renamedColumns ?? [], fills });
+    }
+    const target = this.escapeId(tableName);
     return [
       ...sides(diff.foreignKeys, 'from').map((foreignKey) =>
         this.generateDropForeignKeySql(tableName, constraintNameOf(tableName, foreignKey)),
@@ -286,6 +293,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...(primaryKey?.from ? [this.generateDropPrimaryKeySql(tableName, primaryKey.from.name)] : []),
       ...sides(diff.indexes, 'from').map((index) => this.generateDropIndex(tableName, index.name, schema)),
       ...added(columns).flatMap((column) => this.addColumnStatements(tableName, column, schema)),
+      ...[...fills].map(([column, value]) => {
+        const name = this.escapeId(column);
+        return `UPDATE ${target} SET ${name} = ${value} WHERE ${name} IS NULL;`;
+      }),
       ...alterations(columns).flatMap(({ from, to }) =>
         this.tableDdl.alterColumn(tableName, to, this.generateColumnDefinitionFromSchema(to), from),
       ),
@@ -294,6 +305,18 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...(primaryKey?.to ? [this.generateAddPrimaryKeySql(tableName, primaryKey.to.columns, primaryKey.to.name)] : []),
       ...this.addForeignKeyStatements(tableName, sides(diff.foreignKeys, 'to')),
     ];
+  }
+
+  /**
+   * Each column the changes make required while declaring a default, and that default as SQL: the rows
+   * already there hold a null it has to replace, and it is the only value the entity says it may take.
+   */
+  private defaultFills(columns: SchemaDiff['columns']): Map<string, string> {
+    return new Map(
+      newlyRequired(columns)
+        .filter(({ from, to }) => from && to.defaultValue !== undefined)
+        .map(({ to }) => [to.name, formatDefaultValue(to.defaultValue, this.dialect, to.type)]),
+    );
   }
 
   /** `ADD CONSTRAINT` for each of `foreignKeys`. */
@@ -313,7 +336,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   private addColumnStatements(tableName: string, column: ColumnSchema, schema?: string): string[] {
     this.assertColumnAddable(tableName, column);
     return [
-      this.tableDdl.addColumn(tableName, this.generateColumnDefinitionFromSchema(column)),
+      ...this.tableDdl.addColumnStatements(tableName, column, (it) => this.generateColumnDefinitionFromSchema(it)),
       ...this.generateColumnCommentStatement(tableName, column, schema),
     ];
   }
@@ -476,11 +499,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       },
     };
 
-    // This table's own foreign keys. None where the engine cannot alter one (SQLite, short of rebuilding
-    // the table), since a difference nothing can apply would throw on every sync; `drift:check` names it.
-    const relationDiffs = this.features.foreignKeyAlter
-      ? diffRelationshipNodes(desired.outgoingRelations, currentTable.outgoingRelations, this.diffOptions())
-      : [];
+    const relationDiffs = diffRelationshipNodes(
+      desired.outgoingRelations,
+      currentTable.outgoingRelations,
+      this.diffOptions(),
+    );
     const foreignKeys = relationDiffs.map(({ actual, expected }) => ({
       from: actual && foreignKeyOf(actual),
       to: expected && foreignKeyOf(expected),
@@ -500,9 +523,49 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       foreignKeys: nonEmpty(foreignKeys),
       renamedColumns: nonEmpty(renamedColumns ?? []),
     };
-    return alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys || alter.renamedColumns
-      ? alter
-      : undefined;
+    if (!(alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys || alter.renamedColumns)) {
+      return undefined;
+    }
+    return this.features.rebuildsTables && needsRebuild(alter)
+      ? { ...alter, rebuild: this.rebuildOf(desired, currentTable, indexes.kept, renamedColumns ?? []) }
+      : alter;
+  }
+
+  /**
+   * Both ends of rebuilding `actual` as `desired`. The new table is the entity's, keeping what it cannot
+   * know of: the indexes and triggers uql did not make, and foreign keys to tables no entity names. The
+   * old one is the engine's own statements, so a rollback restores it exactly, checks included.
+   */
+  private rebuildOf(
+    desired: TableNode,
+    actual: TableNode,
+    kept: readonly IndexNode[],
+    renames: readonly Rename[],
+  ): { from: RebuiltTable; to: RebuiltTable } {
+    const definition = actual.definition ?? [];
+    const read = new Set(actual.indexes.map((index) => index.name));
+    const own = (entry: StoredDefinition) => entry.kind === 'trigger' && isOwnedName(entry.name);
+    const verbatim = (entries: readonly StoredDefinition[]) => entries.map((entry) => `${entry.sql};`);
+    const stored = (table: TableNode) =>
+      [...table.columns.values()].filter((column) => !column.generatedAs).map((column) => column.name);
+    return {
+      from: {
+        statements: verbatim(definition.filter((entry) => !own(entry))),
+        columns: stored(actual).map((name) => renames.find((rename) => rename.to === name)?.from ?? name),
+      },
+      to: {
+        statements: [
+          ...this.generateCreateTableFromNode({ ...desired, externalForeignKeys: actual.externalForeignKeys }),
+          ...kept.map((index) => this.generateCreateIndexFromNode(index)),
+          ...verbatim(
+            definition.filter(
+              (entry) => (entry.kind === 'index' && !read.has(entry.name)) || (entry.kind === 'trigger' && !own(entry)),
+            ),
+          ),
+        ],
+        columns: stored(desired),
+      },
+    };
   }
 
   diffOptions(): DiffOptions {
@@ -552,6 +615,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     for (const rel of table.outgoingRelations) {
       const refTable = this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema);
       constraints.push(this.foreignKeyConstraint(table.name, foreignKeyOf(rel), refTable));
+    }
+    for (const foreignKey of table.externalForeignKeys) {
+      constraints.push(this.foreignKeyConstraint(table.name, foreignKey, this.escapeId(foreignKey.references.table)));
     }
 
     const target = this.dialect.escapeQualifiedId(table.name, table.schema);
@@ -664,9 +730,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /** `ADD COLUMN`, plus the foreign key and index the column declares, as `CREATE TABLE` lifts them. */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string[] {
-    this.assertColumnAddable(tableName, column);
-    const colSql = this.generateColumnFromNode(fullColumnDefinitionToNode(column, tableName));
-    const statements = [this.tableDdl.addColumn(tableName, colSql)];
+    const statements = this.addColumnStatements(
+      tableName,
+      this.columnNodeToSchema(fullColumnDefinitionToNode(column, tableName)),
+    );
 
     const foreignKey = columnForeignKey(column);
     if (foreignKey) {
@@ -676,11 +743,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     if (index) {
       statements.push(this.generateCreateIndex(tableName, index));
     }
-    statements.push(...this.generateColumnCommentStatement(tableName, column));
     return statements;
   }
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string[] {
+    this.assertAlterable(`Altering the column "${columnName}" of "${tableName}"`);
     const node = fullColumnDefinitionToNode(column, tableName);
     return this.tableDdl.alterColumn(
       tableName,
@@ -715,9 +782,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   generateAddForeignKeySql(tableName: string, foreignKey: ForeignKeySchema): string {
-    if (!this.features.foreignKeyAlter) {
-      throw new UqlUsageError(`Dialect ${this.dialect} does not support adding foreign keys to existing tables`);
-    }
+    this.assertAlterable(`Adding a foreign key to "${tableName}"`);
     const constraint = this.foreignKeyConstraint(tableName, foreignKey, this.escapeId(foreignKey.references.table));
     return `ALTER TABLE ${this.escapeId(tableName)} ADD ${constraint};`;
   }
@@ -732,7 +797,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * rather than emitting DDL it will reject.
    */
   generateAddPrimaryKeySql(tableName: string, columns: readonly string[], name?: string): string {
-    this.assertPrimaryKeyAlterable(tableName);
+    this.assertAlterable(`Changing the primary key of "${tableName}"`);
     const constraintName = this.escapeId(name ?? derivedPrimaryKeyName(tableName, columns));
     const pkCols = columns.map((c) => this.escapeId(c)).join(', ');
     return `ALTER TABLE ${this.escapeId(tableName)} ADD CONSTRAINT ${constraintName} PRIMARY KEY (${pkCols});`;
@@ -743,7 +808,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * generator added it. MySQL takes no name.
    */
   generateDropPrimaryKeySql(tableName: string, constraintName?: string): string {
-    this.assertPrimaryKeyAlterable(tableName);
+    this.assertAlterable(`Changing the primary key of "${tableName}"`);
     const table = this.escapeId(tableName);
     if (this.dialect.dropPrimaryKeySyntax === 'DROP PRIMARY KEY') {
       return `ALTER TABLE ${table} DROP PRIMARY KEY;`;
@@ -757,32 +822,24 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return `ALTER TABLE ${table} DROP CONSTRAINT ${this.escapeId(constraintName)};`;
   }
 
-  /**
-   * A column an `ALTER` can carry. Only a generated one is ever refused, and only where the engine
-   * takes it in a `CREATE TABLE` but not afterwards.
-   */
-  private assertColumnAddable(
-    tableName: string,
-    column: { readonly name: string; readonly generatedAs?: string },
-  ): void {
-    if (!column.generatedAs || this.features.generatedColumnAdd) {
-      return;
+  /** A stored generated column, which an engine that rebuilds tables takes only in a `CREATE TABLE`. */
+  private assertColumnAddable(tableName: string, column: { readonly name: string; readonly generatedAs?: string }) {
+    if (column.generatedAs) {
+      this.assertAlterable(`Adding the stored column "${column.name}" to "${tableName}"`);
     }
-    throw new UqlUsageError(
-      `${this.dialect}: Cannot add the computed column "${column.name}" to the existing table ` +
-        `"${tableName}" - this database only accepts one in a CREATE TABLE. Drop \`stored\` to have the ` +
-        'expression spliced into each statement instead, or recreate the table in a written migration.',
-    );
   }
 
-  private assertPrimaryKeyAlterable(tableName: string): void {
-    if (this.features.primaryKeyAlter) {
-      return;
+  /**
+   * Refuses `what` where the engine makes it only by rebuilding the table, which a migration generated
+   * from the entities does and a lone statement of the builder cannot.
+   */
+  private assertAlterable(what: string): void {
+    if (this.features.rebuildsTables) {
+      throw new UqlUsageError(
+        `${this.dialect}: ${what} rebuilds the table, which a migration generated from the entities does ` +
+          '(`uql-migrate generate:entities`) and a hand-written one cannot.',
+      );
     }
-    throw new UqlUsageError(
-      `${this.dialect}: Cannot change the primary key of "${tableName}" - this database has no ALTER ` +
-        'for it. Recreate the table in a written migration.',
-    );
   }
 }
 

@@ -114,6 +114,7 @@ export abstract class BaseSqlIntrospector {
     // key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back to the flags
     // for an introspector that reports no key of its own.
     table.primaryKey = schema.primaryKey ?? keyOfColumns(schema.columns);
+    table.definition = schema.definition;
 
     return table;
   }
@@ -126,7 +127,10 @@ export abstract class BaseSqlIntrospector {
   ): void {
     for (const fk of schema.foreignKeys ?? []) {
       const toTable = tableNodes.get(fk.references.table);
-      if (!toTable) continue;
+      if (!toTable) {
+        fromTable.externalForeignKeys.push(fk);
+        continue;
+      }
 
       const fromColumns = fk.columns.flatMap((name) => fromTable.columns.get(name) ?? []);
       const toColumns = fk.references.columns.flatMap((name) => toTable.columns.get(name) ?? []);

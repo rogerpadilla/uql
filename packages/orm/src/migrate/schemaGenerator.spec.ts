@@ -606,8 +606,8 @@ describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
 
   it('should emit a column comment where the dialect supports one', () => {
     const mysqlGenerator = new SqlSchemaGenerator(new MySqlDialect());
-    expect(addColumn({ comment: "the user's age", nullable: false }, mysqlGenerator)).toBe(
-      "ALTER TABLE `users` ADD COLUMN `col` INTEGER NOT NULL COMMENT 'the user\\'s age';",
+    expect(addColumn({ comment: "the user's age", nullable: false, defaultValue: 0 }, mysqlGenerator)).toBe(
+      "ALTER TABLE `users` ADD COLUMN `col` INTEGER NOT NULL DEFAULT 0 COMMENT 'the user\\'s age';",
     );
   });
 
@@ -830,7 +830,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
         onDelete: 'NO ACTION',
         onUpdate: 'NO ACTION',
       }),
-    ).toThrow('does not support adding foreign keys to existing tables');
+    ).toThrow('rebuilds the table');
   });
 
   it('should rename a table with ALTER TABLE, which MySQL takes too', () => {
@@ -858,7 +858,7 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       const sql = generator.generateCreateSchema([TestUser, TestPost]);
 
       // SQLite resolves a foreign key target lazily, so a forward reference is fine and no ALTER is
-      // needed. `features.foreignKeyAlter` is false there, which is what selects this shape.
+      // needed. `features.rebuildsTables` is what selects this shape.
       expect(sql.some((s) => s.includes('ADD CONSTRAINT'))).toBe(false);
       expect(sql.some((s) => s.startsWith('CREATE TABLE') && s.includes('FOREIGN KEY'))).toBe(true);
     });

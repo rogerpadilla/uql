@@ -182,21 +182,28 @@ describe('the guard, however the engine states one', () => {
 
   // SQL Server is handed the rows as tables, so the same comparison is made over a join between them
   // rather than dropped for `UPDATE(col)`, which would fire on a column merely assigned. `EXCEPT` is
-  // what makes it null-safe on every version of the engine.
-  it('should compare the two sets on SQL Server, so the declaration means one thing everywhere', () => {
-    const sql = render(new MsSqlDialect(), { ...setBased, of: ['body'] }).join('\n');
-    expect(sql).toContain(
-      'IF EXISTS (SELECT 1 FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
-        'WHERE EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body"))',
-    );
-    expect(sql).not.toContain('UPDATE("body")');
-    expect(sql).not.toContain('END IF;');
+  // what makes it null-safe on every version of the engine. The join is also what the body writes
+  // from, so it writes for the rows whose column moved alone, as a per-row engine fires for those.
+  it('should write for each row whose watched column moved on SQL Server, as other engines fire for it', () => {
+    const rows =
+      'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
+      'AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body")';
+    const sql = render(new MsSqlDialect(), {
+      on: 'afterUpdate',
+      of: ['body'],
+      run: (newRow) => insertInto(Post, { searchVector: newRow.body }),
+    });
+    expect(sql).toEqual([
+      expect.stringContaining(
+        `IF EXISTS (SELECT 1 ${rows})\nBEGIN\nINSERT INTO "Post" ("searchVector") SELECT inserted."body" ${rows};\nEND`,
+      ),
+    ]);
   });
 
   it('should or two watched columns together on a set-based engine too', () => {
     const sql = render(new MsSqlDialect(), { ...setBased, of: ['body', 'searchVector'] }).join('\n');
     expect(sql).toContain(
-      'WHERE (EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body") ' +
+      'AND (EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body") ' +
         'OR EXISTS (SELECT deleted."searchVector" EXCEPT SELECT inserted."searchVector")))',
     );
   });

@@ -85,8 +85,9 @@ function triggerStatements<E>(
   const table = dialect.escapedTableName(meta);
   const names = rowNames(dialect);
   const rows = [rowRefs(meta.entity, names.$new), rowRefs(meta.entity, names.$old)] as const;
-  const sql = dialect.compileDdl(body(...rows), meta.entity, { rows: rowsFrom(dialect, meta, operation) });
-  const guard = triggerGuard(dialect, meta, trigger, rows, names);
+  const source = rowsFrom(dialect, meta, operation, trigger.of ?? []);
+  const sql = dialect.compileDdl(body(...rows), meta.entity, { rows: source });
+  const guard = triggerGuard(dialect, meta, trigger, rows, names, source);
 
   const inBody = features.guards !== 'clause';
   const guarded =
@@ -169,18 +170,23 @@ function triggerBody<E>(
   return body;
 }
 
-/** The one condition both guards reduce to: any watched column that moved, and whatever `where` asks. */
+/**
+ * The one condition both guards reduce to: any watched column that moved, and whatever `where` asks. On a
+ * set-based engine a watched column narrows `source` already, so the guard asks whether it holds a row.
+ */
 function triggerGuard<E>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
   trigger: EntityTriggerMeta<E>,
   rows: Readonly<Parameters<TriggerMetaBody<E>>>,
   names: RowNames,
+  source: string | undefined,
 ): string {
   const moved = movedColumns(dialect, meta, trigger.of ?? [], names);
+  const watched = moved && (source ? `EXISTS (SELECT 1 ${source})` : moved);
   return [
-    ...(moved ? [moved] : []),
-    ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(moved)) : []),
+    ...(watched ? [watched] : []),
+    ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(watched)) : []),
   ].join(' AND ');
 }
 
@@ -303,7 +309,7 @@ function dollarQuote(body: string): string {
 
 /**
  * Whether any watched column moved, null-safely, or `undefined` where none is watched: the two records
- * compared on a row-based engine, and on a set-based one the same question over a join of its two tables.
+ * compared on a row-based engine, the two tables' rows on a set-based one.
  */
 function movedColumns<E>(
   dialect: AbstractSqlDialect,
@@ -318,20 +324,20 @@ function movedColumns<E>(
     const column = dialect.escapedColumnName(meta, key);
     return dialect.neExpr(`${oldName}.${column}`, `${newName}.${column}`);
   });
-  const moved = differs.length > 1 ? `(${differs.join(' OR ')})` : differs.join('');
-  const source = rowsFrom(dialect, meta, 'UPDATE');
-  return source ? `EXISTS (SELECT 1 ${source} WHERE ${moved})` : moved;
+  return differs.length > 1 ? `(${differs.join(' OR ')})` : differs.join('');
 }
 
 /**
  * Where a set-based engine's body reads the rows it fires for, as the `FROM` a statement names them in:
- * `inserted` on an insert, `deleted` on a delete, and on an update both, joined on the whole key. None on a
- * row-based engine, whose body reads `NEW` and `OLD` bare.
+ * `inserted` on an insert, `deleted` on a delete, and on an update both, joined on the whole key and on a
+ * watched column having moved, so the body writes for those rows alone, as a per-row engine fires for them.
+ * None on a row-based engine, whose body reads `NEW` and `OLD` bare.
  */
 function rowsFrom<E>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
   operation: TriggerOperation,
+  of: readonly string[],
 ): string | undefined {
   if (dialect.features.triggers.rows !== 'set') {
     return undefined;
@@ -344,5 +350,6 @@ function rowsFrom<E>(
     const column = dialect.escapedColumnName(meta, id);
     return `${$new}.${column} = ${$old}.${column}`;
   });
-  return `FROM ${$new} JOIN ${$old} ON ${keyed.join(' AND ')}`;
+  const moved = movedColumns(dialect, meta, of, { $new, $old });
+  return `FROM ${$new} JOIN ${$old} ON ${[...keyed, ...(moved ? [moved] : [])].join(' AND ')}`;
 }

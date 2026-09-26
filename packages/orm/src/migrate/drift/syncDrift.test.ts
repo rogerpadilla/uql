@@ -318,13 +318,16 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   );
 });
 
-/** The Postgres family casts only between types it deems compatible, so a retype says how. */
-describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))('retype (%s)', (_engine, connect) => {
+/**
+ * The Postgres family casts only between types it deems compatible, so a retype says how; SQLite rebuilds
+ * the table, and its rollback rebuilds it back as it was.
+ */
+describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'mssql'))('retype (%s)', (_engine, connect) => {
   const pool = connect();
   afterAll(() => pool.end());
 
   it(
-    'should retype text holding a number to a number',
+    'should retype text holding a number to a number, and back',
     async () => {
       await new Migrator(pool, { entities: [CodedAsText] }).sync({ logging: false, force: true });
       await pool.insertOne(CodedAsText, { id: 1, code: '42' });
@@ -336,6 +339,9 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))('re
 
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Retypes "${RETYPED}"."code"`));
       expect(await pool.findOneById(CodedAsNumber, 1)).toEqual({ id: 1, code: 42 });
+
+      await migrator.down();
+      expect(await pool.findOneById(CodedAsText, 1)).toEqual({ id: 1, code: '42' });
     },
     provisioningTimeout,
   );

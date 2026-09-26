@@ -1,5 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import type { ColumnSchema, ForeignKeySchema, IndexSchema, StoredDefinition } from '../../type/index.js';
 import { derivedForeignKeyName } from '../../util/sql.util.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
@@ -92,7 +92,10 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     const uniqueColumns = await this.getUniqueColumns(read, tableName);
     // Only a sole `INTEGER PRIMARY KEY` is the rowid, which is what numbers itself.
     const soleKey = results.filter((row) => row.pk > 0).length === 1;
-    const ddl = results.some((row) => row.hidden === STORED_GENERATED) ? await this.getTableDdl(read, tableName) : '';
+    const [table] = results.some((row) => row.hidden === STORED_GENERATED)
+      ? await this.getDefinition(read, tableName)
+      : [];
+    const ddl = table?.sql ?? '';
 
     return results.map((row): ColumnSchema => ({
       name: row.name,
@@ -176,6 +179,14 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     });
   }
 
+  /** Every statement `sqlite_master` keeps for the table, its `CREATE TABLE` first. An automatic index has none. */
+  protected override getDefinition(read: TableRowReader, tableName: string): Promise<StoredDefinition[]> {
+    return read<StoredDefinition>(
+      /*sql*/ `SELECT type AS kind, name, sql FROM sqlite_master WHERE tbl_name = ? AND sql IS NOT NULL ORDER BY type <> 'table'`,
+      [tableName],
+    );
+  }
+
   protected override mapPrimaryKeyResult(results: SqliteColumnRow[]): string[] | undefined {
     const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
 
@@ -223,15 +234,6 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       type: 'vector',
       distance: this.dialect.indexedDistance(metric),
     };
-  }
-
-  /** The statement that created the table, which is where SQLite keeps every expression it was given. */
-  private async getTableDdl(read: TableRowReader, tableName: string): Promise<string> {
-    const [row] = await read<{ sql: string }>(
-      /*sql*/ `SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?`,
-      [tableName],
-    );
-    return row.sql;
   }
 
   private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {

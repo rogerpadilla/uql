@@ -88,6 +88,21 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     expect(await audited(id)).toBe(0);
   });
 
+  // SQL Server fires once for the statement, so the rows the body writes from are narrowed to the ones
+  // whose watched column moved, as a per-row engine fires for those alone.
+  it('should fire for each row of a statement whose watched column moved, and no other', async () => {
+    const [moved, kept] = await pool.insertMany(TgPost, [
+      { title: 'Before', views: 0 },
+      { title: 'Kept', views: 0 },
+    ]);
+    await pool.run(
+      `UPDATE ${pool.dialect.escapeId('TgPost')} SET ${pool.dialect.escapeId('title')} = CASE ` +
+        `WHEN ${pool.dialect.escapeId('id')} = ${moved} THEN 'After' ELSE ${pool.dialect.escapeId('title')} END ` +
+        `WHERE ${pool.dialect.escapeId('id')} IN (${moved}, ${kept})`,
+    );
+    expect([await audited(moved), await audited(kept)]).toEqual([1, 0]);
+  });
+
   it('should install it under a name uql owns', async () => {
     expect(await installed()).toEqual(audit);
   });

@@ -21,7 +21,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
 
       await expect(
         builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload', { nullable: true })),
-      ).rejects.toThrow('Cannot alter column');
+      ).rejects.toThrow('rebuilds the table');
     });
   }
 
@@ -34,7 +34,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
         builder.alterTable(BUILDER_TABLES.MAIN, (t) => {
           t.alterColumn((c) => c.text('payload', { nullable: true }));
         }),
-      ).rejects.toThrow('Cannot alter column');
+      ).rejects.toThrow('rebuilds the table');
     });
   }
 
@@ -47,7 +47,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
           table: BUILDER_TABLES.PARENT,
           columns: ['id'],
         }),
-      ).rejects.toThrow('does not support adding foreign keys to existing tables');
+      ).rejects.toThrow('rebuilds the table');
     });
   }
 

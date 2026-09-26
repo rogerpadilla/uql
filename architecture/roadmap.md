@@ -57,6 +57,7 @@ Each by name, never by taking the first key column: saving a relation (one child
 - **The key is a list, and `assertSoleId` is the only way past it.** A first-column shortcut would address every row that agrees on one column of two.
 - **Keys and indexes compare by columns, not names**, so a naming-convention change rewrites nothing.
 - **Nothing derived is diffed until R7b.** A check, a partial index's predicate and a stored computed column's expression are all reprinted by the engine from a parse tree, so changing one emits nothing and a drifted one is invisible. Until the fingerprints land, changing one is a written migration - and an index's `where` is spelled as the predicate the query passes, never as `raw`, or the planner will not match the two.
+- **SQLite alters a table by rebuilding it, foreign keys off.** Dropping the old table with them on deletes every `CASCADE` child and fails a `NO ACTION` one, and `defer_foreign_keys` stops neither; `PRAGMA foreign_keys` only switches outside a transaction. So the migration session switches it around the transaction and runs `foreign_key_check` before commit, and the rebuild carries a guard failing it wherever they stay on (D1, a remote libSQL).
 - **An enum is a column check, not a native type.** So adding a value emits nothing: no engine-wide place holds the list for the differ to compare.
 - **A relation's `$limit` is each parent's share.** [The design](relations-in-one-statement.md).
 - **A column shape is derived, never copied field by field.** Five hand copies each lost a different option.

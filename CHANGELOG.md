@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.88.0] - 2026-09-26
+
+- **Breaking:** a custom dialect's `features` states `rebuildsTables` in place of `foreignKeyAlter`, `primaryKeyAlter` and `generatedColumnAdd`, and `alterColumnSyntax` no longer takes `'none'`.
+- On SQLite, libSQL, Turso and D1, `sync` and `generate:entities` rebuild a table to retype a column, change its nullability or default, change a key or a foreign key, or add a stored computed column, keeping its rows and the rows referencing it. A SQLite migration runs with foreign keys off and checked before it commits; where they stay on, a rebuild of a table others reference is refused.
+- A column made required fills its nulls with its default. Without one, on a table holding rows, `sync` and `generate:entities` refuse it with the row count, where MySQL filled in zeros.
+- **Fixed:** on SQL Server, a trigger with `of` writes only for the rows whose watched column changed, as on every other engine, where it wrote for every row of the statement once one had. `sync` replaces those triggers.
+
 ## [0.87.0] - 2026-09-26
 
 - **Breaking:** `SqlSchemaGenerator.generateAlterColumnStatements` is gone: a custom generator alters a column through `generateAlterTable`.

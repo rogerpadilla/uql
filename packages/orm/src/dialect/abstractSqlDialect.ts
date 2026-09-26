@@ -379,7 +379,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
 
-  readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' | 'none' = 'ALTER COLUMN';
+  readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' = 'ALTER COLUMN';
 
   readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
 

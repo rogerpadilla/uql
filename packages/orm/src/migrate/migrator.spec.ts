@@ -771,6 +771,8 @@ describe('Migrator sync against an introspected schema', () => {
   beforeEach(() => {
     const sqliteDialect = new SqliteDialect();
     querier = createSqlQuerier(sqliteDialect);
+    // As SQLite answers: foreign keys on, which a migration turns off around its transaction.
+    querier.all.mockImplementation(async (sql: string) => (sql === 'PRAGMA foreign_keys' ? [{ foreign_keys: 1 }] : []));
     pool = createMockQuerierPool(sqliteDialect, async (): Promise<Querier> => querier);
 
     migrator = new Migrator(pool, {
@@ -795,7 +797,8 @@ describe('Migrator sync against an introspected schema', () => {
     expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE `SyncUser` ADD COLUMN `name` TEXT'));
   });
 
-  it('should add the column an entity gained, and leave a table that has them all alone', async () => {
+  /** SQLite adds the relation's foreign key only by rebuilding the table, which brings the column with it. */
+  it('should add the relation an entity gained, and leave a table that has them all alone', async () => {
     const introspector = introspectorOf({
       SyncUser: { id: BIG_INT, name: TEXT },
       SyncProfile: { id: BIG_INT, bio: TEXT },
@@ -805,7 +808,9 @@ describe('Migrator sync against an introspected schema', () => {
     await migrator.sync({ logging: true });
 
     expect(introspector.introspect).toHaveBeenCalled();
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('ALTER TABLE `SyncProfile` ADD COLUMN `userId`'));
+    expect(querier.run).toHaveBeenCalledWith(
+      expect.stringMatching(/^CREATE TABLE `_uql_new_SyncProfile` [^;]*`userId`[^;]*FOREIGN KEY \(`userId`\)/),
+    );
     const allCalls = querier.run.mock.calls;
     const syncUserAlterCalls = allCalls.filter((call) => String(call[0]).includes('ALTER TABLE `SyncUser`'));
     expect(syncUserAlterCalls).toHaveLength(0);

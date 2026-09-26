@@ -78,7 +78,16 @@ describe('indexChanges', () => {
       toAdd: [],
       toDrop: [emailIndex('idx_users_email')],
       toAlter: [],
+      kept: [],
     });
+  });
+
+  it('should keep an index uql did not name, which may have been made outside it', () => {
+    const current = [emailIndex('users__email_idx'), emailIndex('hand_made')];
+
+    expect(indexChanges('users', [emailIndex('users__email_idx')], current, new Set()).kept).toEqual([
+      emailIndex('hand_made'),
+    ]);
   });
 });
 

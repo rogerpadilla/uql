@@ -157,7 +157,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
      * declares two. The key itself has to change, not just the column - and it has to come back in
      * the order declared, since `(a, b)` is a different key from `(b, a)`.
      */
-    it.skipIf(!db.dialect.features.primaryKeyAlter)('should widen a single-column key to a composite one', async () => {
+    it('should widen a single-column key to a composite one', async () => {
       @Entity()
       class AutoSyncKeyTest {
         [idKey]?: 'userId' | 'groupId';
@@ -179,26 +179,6 @@ export function describeMigratorSync(db: DatabaseConfig) {
 
       const after = await introspector.getTableSchema(tableName);
       expect(after?.primaryKey?.columns).toEqual(['userId', 'groupId']);
-    });
-
-    /** SQLite can only rebuild the table, so it refuses by name rather than emitting DDL. */
-    it.skipIf(db.dialect.features.primaryKeyAlter)('should refuse to change a key it cannot alter', async () => {
-      @Entity()
-      class AutoSyncKeyRefusedTest {
-        [idKey]?: 'userId' | 'groupId';
-        @Id({ type: Number }) userId?: number;
-        @Id({ type: Number }) groupId?: number;
-      }
-
-      const tableName = 'AutoSyncKeyRefusedTest';
-      await givenTable(
-        tableName,
-        `${escapeId('userId')} ${db.keyColumnType} NOT NULL, PRIMARY KEY (${escapeId('userId')})`,
-      );
-
-      await expect(new Migrator(pool, { entities: [AutoSyncKeyRefusedTest] }).sync({ safe: false })).rejects.toThrow(
-        'Cannot change the primary key',
-      );
     });
 
     it('should create an index the entity declares on a table that already exists', async () => {
@@ -437,18 +417,29 @@ export function describeMigratorSync(db: DatabaseConfig) {
      * sides differ in signedness (`serialIdColumn` is unsigned on MySQL). The child is claimed first, so
      * the teardown drops it before the parent it points at.
      */
-    const givenRelatedTables = async (parent: string, child: string) => {
+    /** A parent and a child whose `companyId` may point at it through `constraint`, declared inline as every engine takes it. */
+    const givenRelatedTables = async (
+      parent: string,
+      child: string,
+      constraint?: { name: string; action?: string },
+    ) => {
       const idColumn = `${escapeId('id')} ${db.keyColumnType} PRIMARY KEY`;
+      const foreignKey = constraint
+        ? `, CONSTRAINT ${escapeId(constraint.name)} FOREIGN KEY (${escapeId('companyId')}) ` +
+          `REFERENCES ${escapeId(parent)} (${escapeId('id')})${constraint.action ? ` ON DELETE ${constraint.action}` : ''}`
+        : '';
       await givenNoTable(child);
       await givenTable(parent, idColumn);
-      await pool.run(`CREATE TABLE ${escapeId(child)} (${idColumn}, ${escapeId('companyId')} ${db.keyColumnType})`);
+      await pool.run(
+        `CREATE TABLE ${escapeId(child)} (${idColumn}, ${escapeId('companyId')} ${db.keyColumnType}${foreignKey})`,
+      );
     };
 
     /**
      * The whole point of the foreign-key diff: the constraint has to reach the database and the engine
      * has to accept the DDL, which no string assertion can prove.
      */
-    it.skipIf(!db.dialect.features.foreignKeyAlter)('should add a foreign key the table has not got', async () => {
+    it('should add a foreign key the table has not got', async () => {
       @Entity()
       class FkSyncCompany {
         @Id({ type: Number }) id?: number;
@@ -475,36 +466,28 @@ export function describeMigratorSync(db: DatabaseConfig) {
      * The case the feature exists for, and the one no unit test can prove: changing `onDelete` on a
      * relation whose constraint is already there. It is a drop and an add, so it needs `safe: false`.
      */
-    it.skipIf(!db.dialect.features.foreignKeyAlter)(
-      'should alter a foreign key whose referential action changed',
-      async () => {
-        @Entity()
-        class FkAlterCompany {
-          @Id({ type: Number }) id?: number;
-        }
-        @Entity()
-        class FkAlterEmployee {
-          @Id({ type: Number }) id?: number;
-          @Field({ references: () => FkAlterCompany, onDelete: 'SET NULL' }) companyId?: number | null;
-        }
+    it('should alter a foreign key whose referential action changed', async () => {
+      @Entity()
+      class FkAlterCompany {
+        @Id({ type: Number }) id?: number;
+      }
+      @Entity()
+      class FkAlterEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkAlterCompany, onDelete: 'SET NULL' }) companyId?: number | null;
+      }
 
-        await givenRelatedTables('FkAlterCompany', 'FkAlterEmployee');
-        await pool.run(
-          `ALTER TABLE ${escapeId('FkAlterEmployee')} ADD CONSTRAINT ${escapeId('fk_employee_company')} ` +
-            `FOREIGN KEY (${escapeId('companyId')}) REFERENCES ${escapeId('FkAlterCompany')} (${escapeId('id')}) ` +
-            `ON DELETE CASCADE`,
-        );
-        const fkTables = ['FkAlterCompany', 'FkAlterEmployee'];
-        const before = await introspector.introspect(fkTables);
-        expect(before.getTable('FkAlterEmployee')?.outgoingRelations[0].onDelete).toBe('CASCADE');
+      await givenRelatedTables('FkAlterCompany', 'FkAlterEmployee', { name: 'fk_employee_company', action: 'CASCADE' });
+      const fkTables = ['FkAlterCompany', 'FkAlterEmployee'];
+      const before = await introspector.introspect(fkTables);
+      expect(before.getTable('FkAlterEmployee')?.outgoingRelations[0].onDelete).toBe('CASCADE');
 
-        await new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] }).sync({ logging: true, safe: false });
+      await new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] }).sync({ logging: true, safe: false });
 
-        const relations = (await introspectTable('FkAlterEmployee', fkTables)).outgoingRelations;
-        expect(relations).toHaveLength(1);
-        expect(relations[0].onDelete).toBe('SET NULL');
-      },
-    );
+      const relations = (await introspectTable('FkAlterEmployee', fkTables)).outgoingRelations;
+      expect(relations).toHaveLength(1);
+      expect(relations[0].onDelete).toBe('SET NULL');
+    });
 
     /**
      * A schema built from its own entities has no foreign key left to reconcile. A phantom here would
@@ -530,26 +513,19 @@ export function describeMigratorSync(db: DatabaseConfig) {
     });
 
     /** A foreign key to a table no entity names is left alone, as that table is, even by an unsafe sync. */
-    it.skipIf(!db.dialect.features.foreignKeyAlter)(
-      'should leave alone a foreign key to a table no entity names',
-      async () => {
-        @Entity()
-        class FkUnnamedEmployee {
-          @Id({ type: Number }) id?: number;
-          @Field({ type: Number }) companyId?: number | null;
-        }
+    it('should leave alone a foreign key to a table no entity names', async () => {
+      @Entity()
+      class FkUnnamedEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number }) companyId?: number | null;
+      }
 
-        await givenRelatedTables('FkUnnamedCompany', 'FkUnnamedEmployee');
-        await pool.run(
-          `ALTER TABLE ${escapeId('FkUnnamedEmployee')} ADD CONSTRAINT ${escapeId('fk_unnamed_company')} ` +
-            `FOREIGN KEY (${escapeId('companyId')}) REFERENCES ${escapeId('FkUnnamedCompany')} (${escapeId('id')})`,
-        );
+      await givenRelatedTables('FkUnnamedCompany', 'FkUnnamedEmployee', { name: 'fk_unnamed_company' });
 
-        const migrator = new Migrator(pool, { entities: [FkUnnamedEmployee] });
+      const migrator = new Migrator(pool, { entities: [FkUnnamedEmployee] });
 
-        expect(await migrator.planSync({ safe: false })).toEqual([]);
-      },
-    );
+      expect(await migrator.planSync({ safe: false })).toEqual([]);
+    });
 
     /**
      * The upgrade path for a database created while the serial was a fixed `BIGINT UNSIGNED`: the key
@@ -779,35 +755,157 @@ export function describeMigratorSync(db: DatabaseConfig) {
     };
 
     /** Reading the value back is what shows the added column carries its expression. */
-    it.skipIf(!db.dialect.features.generatedColumnAdd)(
-      'should add a stored computed column to a table that already exists',
-      async () => {
-        const migrator = await givenTableGainingAComputedColumn();
-        await migrator.sync({ logging: true });
+    it('should add a stored computed column to a table that already exists', async () => {
+      const migrator = await givenTableGainingAComputedColumn();
+      await migrator.sync({ logging: true });
 
-        const [row] = await pool.findMany(ComputedAdded, { $select: { double: true } });
-        expect(row.double).toBe(8);
-        expect(await migrator.planSync()).toEqual([]);
-      },
-    );
+      const [row] = await pool.findMany(ComputedAdded, { $select: { double: true } });
+      expect(row.double).toBe(8);
+      expect(await migrator.planSync()).toEqual([]);
+    });
 
     /**
-     * SQLite takes a generated column in a `CREATE TABLE` and rejects the same one in an `ALTER`. The
-     * driver's "cannot add a STORED column" names neither the table nor the way out, so the generator
-     * refuses first, the way it already does for a primary key it cannot change.
+     * A retype SQLite makes only by rebuilding the table, which must bring through its rows, its index,
+     * and the rows of a table pointing at it with `ON DELETE CASCADE`, which a rebuild with foreign keys
+     * on deletes.
      */
-    it.runIf(!db.dialect.features.generatedColumnAdd)(
-      'should refuse a stored computed column it cannot add',
-      async () => {
-        const migrator = await givenTableGainingAComputedColumn();
+    it('should keep every row through a retype, the ones pointing at the table included', async () => {
+      @Entity({ name: 'RetypedParent' })
+      class ParentBefore {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, index: true }) name?: string | null;
+        @Field({ type: String }) code?: string | null;
+      }
+      @Entity({ name: 'RetypedChild' })
+      class ChildBefore {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => ParentBefore, onDelete: 'CASCADE' }) parentId?: number | null;
+      }
 
-        await expect(migrator.sync({ logging: true })).rejects.toThrow(
-          'Cannot add the computed column "double" to the existing table "SyncComputedAdded"',
-        );
-        // The cheap way out is in the message: unstored, the same field needs no DDL at all.
-        await expect(migrator.sync({ logging: true })).rejects.toThrow('Drop `stored`');
-      },
-    );
+      await givenNoTable('RetypedChild');
+      await givenNoTable('RetypedParent');
+      await new Migrator(pool, { entities: [ParentBefore, ChildBefore] }).sync();
+      const parentId = await pool.insertOne(ParentBefore, { name: 'a', code: '12' });
+      await pool.insertOne(ChildBefore, { parentId });
+      removeEntity(ParentBefore);
+      removeEntity(ChildBefore);
+
+      @Entity({ name: 'RetypedParent' })
+      class ParentAfter {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, index: true }) name?: string | null;
+        @Field({ type: Number }) code?: number | null;
+      }
+      @Entity({ name: 'RetypedChild' })
+      class ChildAfter {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => ParentAfter, onDelete: 'CASCADE' }) parentId?: number | null;
+      }
+      const migrator = new Migrator(pool, { entities: [ParentAfter, ChildAfter] });
+      await migrator.sync({ safe: false });
+
+      expect(await pool.findMany(ParentAfter, { $select: { name: true, code: true } })).toMatchObject([
+        { name: 'a', code: 12 },
+      ]);
+      expect(await pool.count(ChildAfter, { $where: { parentId } })).toBe(1);
+      expect(await indexNamesOf('RetypedParent')).toEqual(['RetypedParent__name_idx']);
+      expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
+      removeEntity(ParentAfter);
+      removeEntity(ChildAfter);
+    });
+
+    /** A table holding `rows` rows with no `rank` in them, which the next entity asks for. */
+    const givenRowsGainingRank = async (tableName: string, rows = 1) => {
+      @Entity({ name: tableName })
+      class Before {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: Number }) rank?: number | null;
+      }
+      await givenNoTable(tableName);
+      await new Migrator(pool, { entities: [Before] }).sync();
+      await pool.insertMany(
+        Before,
+        Array.from({ length: rows }, () => ({ name: 'a' })),
+      );
+      removeEntity(Before);
+    };
+
+    /**
+     * A required column with no default has nothing to fill the rows already there with: Postgres, SQL
+     * Server and SQLite fail, and MySQL would guess a zero. Refused before anything runs, with the count.
+     */
+    it('should refuse to require a column with no default on a table holding rows', async () => {
+      await givenRowsGainingRank('RequiredRank');
+
+      @Entity({ name: 'RequiredRank' })
+      class After {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: Number, nullable: false }) rank?: number;
+      }
+
+      await expect(new Migrator(pool, { entities: [After] }).sync({ safe: false })).rejects.toThrow(
+        '"RequiredRank"."rank" is required with no default, and 1 row holds none',
+      );
+      removeEntity(After);
+    });
+
+    it('should refuse to add a required column with no default to a table holding rows', async () => {
+      await givenRowsGainingRank('RequiredAdded', 2);
+
+      @Entity({ name: 'RequiredAdded' })
+      class After {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: Number }) rank?: number | null;
+        @Field({ type: Number, nullable: false }) score?: number;
+      }
+
+      await expect(new Migrator(pool, { entities: [After] }).sync()).rejects.toThrow(
+        '"RequiredAdded"."score" is required with no default, and 2 rows hold none',
+      );
+      removeEntity(After);
+    });
+
+    it('should add a required column with no default to a table holding no rows', async () => {
+      @Entity({ name: 'RequiredEmpty' })
+      class Before {
+        @Id({ type: Number }) id?: number;
+      }
+      await givenNoTable('RequiredEmpty');
+      await new Migrator(pool, { entities: [Before] }).sync();
+      removeEntity(Before);
+
+      @Entity({ name: 'RequiredEmpty' })
+      class After {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Number, nullable: false }) rank?: number;
+      }
+      const migrator = new Migrator(pool, { entities: [After] });
+      await migrator.sync();
+
+      expect(await columnNamesOf('RequiredEmpty')).toEqual(['id', 'rank']);
+      expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
+      removeEntity(After);
+    });
+
+    it('should fill the rows of a column it requires with the default it declares', async () => {
+      await givenRowsGainingRank('RequiredDefault');
+
+      @Entity({ name: 'RequiredDefault' })
+      class After {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) name?: string | null;
+        @Field({ type: Number, nullable: false, defaultValue: 5 }) rank?: number;
+      }
+      const migrator = new Migrator(pool, { entities: [After] });
+      await migrator.sync({ safe: false });
+
+      expect(await pool.findMany(After, { $select: { rank: true } })).toMatchObject([{ rank: 5 }]);
+      expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
+      removeEntity(After);
+    });
 
     it('should log skipped migrations when safe mode blocks changes', async () => {
       @Entity()
@@ -833,7 +931,7 @@ export function describeMigratorSync(db: DatabaseConfig) {
       }
     });
 
-    it.skipIf(db.dialect.alterColumnSyntax === 'none')('should alter column type when safe: false', async () => {
+    it('should alter column type when safe: false', async () => {
       @Entity()
       class AutoSyncUnsafeAlterTest {
         @Id({ type: Number }) id?: number;
@@ -851,23 +949,5 @@ export function describeMigratorSync(db: DatabaseConfig) {
       expect(type).toContain('int');
       expect(type).not.toContain('double');
     });
-
-    it.runIf(db.dialect.alterColumnSyntax === 'none')(
-      'should throw error when altering column type (system limitation)',
-      async () => {
-        @Entity()
-        class AutoSyncUnsafeAlterErrorTest {
-          @Id({ type: Number }) id?: number;
-          @Field({ type: Number }) cost?: number | null;
-        }
-
-        const tableName = 'AutoSyncUnsafeAlterErrorTest';
-        await givenTable(tableName, `${db.serialIdColumn}, ${escapeId('cost')} ${db.doubleType}`);
-
-        const migrator = new Migrator(pool, { entities: [AutoSyncUnsafeAlterErrorTest] });
-
-        await expect(migrator.sync({ logging: true, safe: false })).rejects.toThrow('Cannot alter column');
-      },
-    );
   });
 }

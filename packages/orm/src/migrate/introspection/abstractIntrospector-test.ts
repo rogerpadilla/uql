@@ -23,6 +23,8 @@ export const INTROSPECT_TABLES = {
   MULTI_FK: 'test_introspect_multi_fk',
   COMPOSITE_UNIQUE: 'test_introspect_composite_unique',
   NO_FK: 'test_introspect_no_fk',
+  /** Made and dropped by one test, and listed so a run killed in between cannot leave it pointing at `COMPOSITE_PK`. */
+  COMPOSITE_FK: 'introspect_composite_fk',
 } as const;
 
 /**
@@ -153,6 +155,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
     const builder = await migrationBuilderFor(querier);
 
     // Drop in reverse dependency order
+    await builder.dropTable(INTROSPECT_TABLES.COMPOSITE_FK, { ifExists: true, cascade: true });
     await builder.dropTable(INTROSPECT_TABLES.NO_FK, { ifExists: true, cascade: true });
     await builder.dropTable(INTROSPECT_TABLES.COMPOSITE_UNIQUE, { ifExists: true, cascade: true });
     await builder.dropTable(INTROSPECT_TABLES.MULTI_FK, { ifExists: true, cascade: true });
@@ -456,7 +459,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
   /** Declared out of table order, so only a key read in its own order pairs each column right. */
   async shouldPairTheColumnsOfACompositeForeignKey() {
-    const schema = await this.probe('introspect_composite_fk', (querier, table) =>
+    const schema = await this.probe(INTROSPECT_TABLES.COMPOSITE_FK, (querier, table) =>
       querier.run(
         `CREATE TABLE ${table} (pb INTEGER, pa INTEGER, FOREIGN KEY (pa, pb) REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.COMPOSITE_PK)} (tenant_id, entity_id) ON DELETE CASCADE)`,
       ),

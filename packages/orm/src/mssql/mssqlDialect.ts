@@ -34,9 +34,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   indexIfNotExists: true,
   schemas: true,
   dropTableCascade: false,
-  foreignKeyAlter: true,
-  primaryKeyAlter: true,
-  generatedColumnAdd: true,
+  rebuildsTables: false,
   // Extended properties are out-of-band metadata with their own procedures, not comments.
   commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
