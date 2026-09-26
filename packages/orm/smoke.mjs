@@ -7,6 +7,7 @@
  */
 
 import pkg from 'uql-orm/package.json' with { type: 'json' };
+import checks from './peers.json' with { type: 'json' };
 
 const runtime = globalThis.Deno
   ? `deno ${Deno.version.deno}`
@@ -15,38 +16,11 @@ const runtime = globalThis.Deno
     : `node ${process.versions.node}`;
 
 /**
- * No peers are installed on purpose: that is what a consumer who uses one dialect actually has.
- *
- * The same list as `external` in verify-dist.ts, copied rather than imported because this file runs
- * from a temp directory where only `dist` exists, with no path back into the repo. Change one
- * and change the other.
+ * No peers are installed on purpose: that is what a consumer who uses one dialect actually has. Which
+ * peers exist, and which an entry may be missing as it loads, is `verify-dist.ts`'s `DRIVER_ENTRIES`,
+ * written beside this file since only `dist` is here, with no path back into the repo.
  */
-const peers = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
-
-/**
- * The entries that wrap a third-party driver or framework, mapped to the peer each one is allowed to
- * be missing. Every *other* entry must load on every runtime with nothing else installed, which is
- * the "an edge bundle pulls no native binaries" claim: `d1`, `turso`, `libsql`, `sqlite` and
- * `browser` reach their driver lazily, so they resolve on a bare install.
- *
- * A map, not a set of entry names, because "this entry failed on *some* peer" is too weak to be a
- * gate. `neon` shipped statically importing `pg` once; `pg` is a declared peer, so a set-based skip
- * filed a broken edge entry as expected and the check was green. An entry may only be excused for
- * the driver it is named for. Extra loads are fine: `bunSql` loads on Bun and nowhere else.
- */
-const PEER_ENTRIES = {
-  mysql: ['mysql2'],
-  postgres: ['pg'],
-  cockroachdb: ['pg'],
-  maria: ['mariadb'],
-  mssql: ['mssql'],
-  mongo: ['mongodb'],
-  express: ['express'],
-  // Two value imports, so which one the runtime names first is not ours to pick.
-  nestjs: ['@nestjs/common', '@nestjs/core'],
-  neon: ['@neondatabase/serverless'],
-  bunSql: ['bun'],
-};
+const { peers, driverEntries } = checks;
 
 /**
  * Matched as a quoted specifier, not as a substring: every runtime quotes the module it could not
@@ -58,23 +32,21 @@ const PEER_ENTRIES = {
 const missingPeer = (message) =>
   peers.find((name) => [`'${name}'`, `'${name}/`, `"${name}"`, `"${name}/`].some((quoted) => message.includes(quoted)));
 
-const entries = Object.keys(pkg.exports)
-  .filter((entry) => entry !== './package.json')
-  .map((entry) => (entry === '.' ? '' : entry.slice(2)));
+const entries = Object.keys(pkg.exports).filter((entry) => entry !== './package.json');
 
 const loaded = [];
 const skipped = [];
 const broken = [];
 
 for (const entry of entries) {
-  const specifier = entry ? `${pkg.name}/${entry}` : pkg.name;
+  const specifier = `${pkg.name}${entry.slice(1)}`;
   try {
     await import(specifier);
     loaded.push(entry);
   } catch (err) {
     const message = String(err).split('\n')[0];
     const peer = missingPeer(message);
-    if (peer && PEER_ENTRIES[entry]?.includes(peer)) {
+    if (peer && driverEntries[entry]?.loads?.includes(peer)) {
       skipped.push(`${entry} (${peer})`);
     } else {
       broken.push(`${specifier}: ${message}`);

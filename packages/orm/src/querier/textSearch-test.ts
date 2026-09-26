@@ -3,9 +3,9 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
+import { isMongoQuerier } from '../mongo/mongoQuerier.js';
 import { provisioningTimeout } from '../test/index.js';
 import {
-  isMongoQuerier,
   isSqlQuerier,
   type MigratorDialect,
   type Querier,

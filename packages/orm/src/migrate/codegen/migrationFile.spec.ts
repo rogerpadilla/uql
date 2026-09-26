@@ -35,7 +35,7 @@ describe('buildMigrationModule', () => {
       downInner: '',
     });
 
-    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/migrate';`);
+    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/mongo';`);
     expect(source).toContain('async up(querier: MongoQuerier): Promise<void> {');
     expect(source).toContain('async down(querier: MongoQuerier): Promise<void> {');
   });

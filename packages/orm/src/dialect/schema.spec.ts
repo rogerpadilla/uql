@@ -4,10 +4,10 @@
 
 import { describe, expect, it } from 'vitest';
 import { defineEntity, Entity, Field, getMeta, Id, ManyToOne } from '../entity/index.js';
-import { MongoSchemaGenerator } from '../migrate/generator/mongoSchemaGenerator.js';
 import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';

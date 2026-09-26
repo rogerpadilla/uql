@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.90.0] - 2026-09-26
+
+- **Breaking:** `MongoQuerier`, `isMongoQuerier`, `MongoMigrationStorage` and `MongoSchemaIntrospector` are imported from `uql-orm/mongo`, as a generated MongoDB migration now does; `uql-codemod` moves the imports.
+- **Fixed:** only `uql-orm/mongo`'s types need `mongodb` installed, where every entry's did and failed to compile under `skipLibCheck: false`.
+
 ## [0.89.0] - 2026-09-26
 
 - **Breaking:** a custom dialect's trigger `features` state `fires` (`'eachRowWhen'`, `'eachRowIf'` or `'eachStatement'`) in place of `guards` and `rows`.

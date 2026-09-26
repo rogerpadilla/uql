@@ -1,16 +1,10 @@
-import { textConfigOf } from '../../mongo/textLanguage.js';
-import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { createTableNode, SchemaAST } from '../../schema/schemaAST.js';
-import type { TableNode } from '../../schema/types.js';
-import {
-  isMongoQuerier,
-  type InstalledTriggers,
-  type MongoQuerier,
-  type QuerierPool,
-  type SchemaIntrospector,
-  type TableSchema,
-} from '../../type/index.js';
-import { UqlUsageError } from '../../util/uqlError.js';
+import type { IndexFacet } from '../schema/indexDifferences.js';
+import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
+import type { TableNode } from '../schema/types.js';
+import type { InstalledTriggers, QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
+import { isMongoQuerier, type MongoQuerier } from './mongoQuerier.js';
+import { textConfigOf } from './textLanguage.js';
 
 /** The parts of a Mongo index description this introspector reads. */
 type MongoIndex = {

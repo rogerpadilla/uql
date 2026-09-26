@@ -1,4 +1,3 @@
-import type { Db } from 'mongodb';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlDialectName } from './dialect.js';
 import type { FieldKey, HookEvent, RelationKey } from './entity.js';
@@ -223,24 +222,6 @@ export function isSqlQuerier(querier: Querier): querier is SqlQuerier {
     q.dialect !== undefined &&
     typeof q.dialect.escapeIdChar === 'string'
   );
-}
-
-/**
- * Extended querier interface for MongoDB execution.
- */
-export interface MongoQuerier extends Querier {
-  /**
-   * The MongoDB database instance.
-   */
-  readonly db: Db;
-}
-
-/**
- * Type guard for a querier over a MongoDB database. A handle alone does not tell: the SQLite, D1 and
- * Turso queriers carry a `db` of their own.
- */
-export function isMongoQuerier(querier: Querier): querier is MongoQuerier {
-  return 'db' in querier && !isSqlQuerier(querier);
 }
 
 /**

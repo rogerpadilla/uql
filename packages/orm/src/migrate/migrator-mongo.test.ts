@@ -3,13 +3,14 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
+import { runMongoCommand, serializeMongoCommand } from '../mongo/mongoCommand.js';
+import type { MongoQuerier } from '../mongo/mongoQuerier.js';
+import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
 import { MongodbQuerierPool } from '../mongo/mongodbQuerierPool.js';
 import { mongoUri, provisioningTimeout } from '../test/index.js';
 import { loadTsDefaultExport } from '../test/loadTsDefaultExport.js';
-import type { MigrationDefinition, MongoQuerier } from '../type/index.js';
+import type { MigrationDefinition } from '../type/index.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
-import { runMongoCommand, serializeMongoCommand } from './generator/mongoCommand.js';
-import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
 
@@ -214,7 +215,7 @@ describe('Migrator on MongoDB (integration)', () => {
 
     const source = await readFile(await migrator.generate('seed'), 'utf8');
 
-    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/migrate';`);
+    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/mongo';`);
     expect(source).toContain('async up(querier: MongoQuerier): Promise<void> {');
     expect(source).not.toContain('querier.run(');
   });

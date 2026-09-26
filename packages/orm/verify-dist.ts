@@ -1,8 +1,8 @@
 /**
  * Pre-publish gate: every path `package.json` promises exists and is non-empty, every browser-facing
- * entry graph is free of Node builtins, every entry point's declarations resolve in a project that has
- * no ambient types and every entry runs there on each runtime with no driver, and no entry exceeds its
- * size budget.
+ * entry graph is free of Node builtins, no entry's declarations reach another entry's driver, every entry
+ * point's declarations resolve in a project that has no ambient types and every entry runs there on each
+ * runtime with no driver, and no entry exceeds its size budget.
  *
  * Runs at the end of `bun run build`, which `prepack` runs, so a stale or broken `dist/` cannot be
  * published. See CHANGELOG's "uql-orm@0.10.0 shipped only the browser bundle", "uql-orm@0.13.0
@@ -75,6 +75,17 @@ function checkDeclaredPaths(): number {
 }
 
 /**
+ * A module's specifiers. tsc emits only statements opening a line (`import`/`export ... from`, `import '...'`)
+ * and `import("...")` calls and types, so SQL quoting `from '...'` inside a string is not mistaken for one.
+ */
+function importsOf(file: string): string[] {
+  const source = readFileSync(file, 'utf8');
+  const pattern =
+    /^(?:(?:import|export)\b[^;'"]*?\bfrom|import)\s*['"]([^'"]+)['"]|\bimport\(\s*['"]([^'"]+)['"]\s*\)/gm;
+  return [...source.matchAll(pattern)].flatMap(([, statement, call]) => statement ?? call ?? []);
+}
+
+/**
  * Node-only modules must be remapped via the package.json `browser` map (like `context/context.js`),
  * which browser bundlers apply and Node ignores. A static walk suffices because tsc emits only plain
  * `import`/`export ... from` and bare side-effect `import '...'`. A bundler would not substitute: Bun
@@ -94,9 +105,7 @@ function checkBrowserGraph(): number {
     const mapped = browserMap[relPath] ?? relPath;
     if (seen.has(mapped)) continue;
     seen.add(mapped);
-    const source = readFileSync(join(pkgDir, mapped), 'utf8');
-    for (const [, specifier] of source.matchAll(/(?:\bfrom|\bimport\(?)\s*['"]([^'"]+)['"]/g)) {
-      if (specifier === undefined) continue;
+    for (const specifier of importsOf(join(pkgDir, mapped))) {
       if (isBuiltin(specifier)) violations.push(`${mapped} imports ${specifier}`);
       else if (specifier.startsWith('.')) queue.push(`./${join(mapped, '..', specifier).replace(/\\/g, '/')}`);
       // bare specifiers (real deps) are the consumer bundler's concern, not a Node-builtin leak
@@ -113,6 +122,78 @@ function checkBrowserGraph(): number {
   return seen.size;
 }
 
+/** Every optional peer as a bundler or runtime names it: the declared ones, and Bun's built-ins. */
+const PEERS = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
+
+/** `mysql2/promise` is the `mysql2` peer dependency, imported at a subpath. */
+const packageOf = (specifier: string) =>
+  specifier
+    .split('/')
+    .slice(0, specifier.startsWith('@') ? 2 : 1)
+    .join('/');
+
+/**
+ * Each entry built on a driver or framework, and the peers it is for: `loads` it imports as it loads, so
+ * a bare install cannot load it; `lazy` only its types and its use reach, so it loads bare, the "an edge
+ * bundle pulls no native binaries" claim. Every other entry is for none, `d1` too: its binding is
+ * structural. A map, not a set: `neon` once imported `pg` as it loaded, and a set excused it for a peer.
+ */
+const DRIVER_ENTRIES: Readonly<Record<string, { readonly loads?: string[]; readonly lazy?: string[] }>> = {
+  './mysql': { loads: ['mysql2'] },
+  './postgres': { loads: ['pg'] },
+  './cockroachdb': { loads: ['pg'] },
+  './maria': { loads: ['mariadb'] },
+  './mssql': { loads: ['mssql'] },
+  './mongo': { loads: ['mongodb'] },
+  './express': { loads: ['express'] },
+  './nestjs': { loads: ['@nestjs/common', '@nestjs/core', 'rxjs'] },
+  './neon': { loads: ['@neondatabase/serverless'] },
+  './bunSql': { loads: ['bun'] },
+  './sqlite': { lazy: ['better-sqlite3'] },
+  './libsql': { lazy: ['@libsql/client'] },
+  './turso': { lazy: ['@tursodatabase/serverless'] },
+  './turso/local': { lazy: ['@tursodatabase/database'] },
+  './pglite': { lazy: ['@electric-sql/pglite'] },
+  './d1': {},
+};
+
+/**
+ * Each entry's declarations reach only the peers {@link DRIVER_ENTRIES} says it is for, so `uql-orm/postgres`
+ * reaches `pg` and nothing reaches `mongodb` but `uql-orm/mongo`. The tsc check below cannot tell: it has
+ * to let an uninstalled peer's "Cannot find module" through, and `uql-orm@0.89.0` shipped `mongodb`'s `Db`
+ * in the root's types that way.
+ */
+function checkPeerReach(): void {
+  const leaks = new Map<string, string[]>();
+  for (const entry of entries) {
+    const target = pkg.exports[entry];
+    const start = join(pkgDir, (typeof target === 'string' ? target : target.import).replace(/\.js$/, '.d.ts'));
+    const { loads = [], lazy = [] } = DRIVER_ENTRIES[entry] ?? {};
+    const isFor = new Set([...loads, ...lazy]);
+    const seen = new Set<string>();
+    const queue = [start];
+    for (let file = queue.pop(); file !== undefined; file = queue.pop()) {
+      if (seen.has(file)) continue;
+      seen.add(file);
+      for (const specifier of importsOf(file)) {
+        if (specifier.startsWith('.')) queue.push(resolve(file, '..', specifier.replace(/\.js$/, '.d.ts')));
+        else if (!specifier.startsWith('node:') && !isFor.has(packageOf(specifier))) {
+          const leak = `${relative(pkgDir, file)} imports ${specifier}`;
+          leaks.set(leak, [...(leaks.get(leak) ?? []), specifierOf(entry)]);
+        }
+      }
+    }
+  }
+  if (leaks.size) {
+    refuse(
+      "an entry's types reach a package it is not for",
+      [...leaks].map(([leak, from]) => `${leak}, reached from ${from.join(', ')}`),
+      'A consumer without that optional peer gets "Cannot find module" under `skipLibCheck: false`. Move the ' +
+        "type to the driver's entry, or name it structurally.",
+    );
+  }
+}
+
 // Gzipped bytes per entry, peers external. Catches what the checks above cannot: a dev-only module
 // becoming reachable from a consumer entry. Four suffice - the SQL drivers share one core, so the
 // root moves with them. Deliberately per-entry and not a `dist` total: a total also counts
@@ -127,7 +208,6 @@ const BUDGETS: Record<string, number> = {
 };
 
 async function checkSizeBudgets(): Promise<void> {
-  const external = [...Object.keys(pkg.peerDependencies ?? {}), 'bun', 'bun:sqlite'];
   const oversized: string[] = [];
 
   for (const [subpath, budget] of Object.entries(BUDGETS)) {
@@ -137,7 +217,7 @@ async function checkSizeBudgets(): Promise<void> {
       minify: true,
       target: 'node',
       format: 'esm',
-      external,
+      external: PEERS,
     });
     const output = built.outputs[0];
     if (!output) {
@@ -203,6 +283,7 @@ const RUNTIMES = [['node'], ['bun'], ['deno', 'run']];
  */
 function checkRuntimes(checkDir: string): void {
   cpSync(join(pkgDir, 'smoke.mjs'), join(checkDir, 'smoke.mjs'));
+  writeFileSync(join(checkDir, 'peers.json'), JSON.stringify({ peers: PEERS, driverEntries: DRIVER_ENTRIES }));
   const broken = RUNTIMES.flatMap(([bin, ...args]) => {
     const { status, stdout, stderr, error } = spawnSync(bin, [...args, 'smoke.mjs'], {
       cwd: checkDir,
@@ -308,20 +389,10 @@ function consumerErrors(output: string, checkDir: string, installed: string): st
 }
 
 function ownUnresolvedNames(output: string, checkDir: string, installed: string): string[] {
-  /** `mysql2/promise` is the `mysql2` peer dependency, imported at a subpath. */
-  const packageOf = (specifier: string) =>
-    specifier
-      .split('/')
-      .slice(0, specifier.startsWith('@') ? 2 : 1)
-      .join('/');
   /** Declared optional, so a consumer who does not use that driver does not have its types either. */
-  const isPeer = (specifier: string) => {
-    const name = packageOf(specifier);
-    return name in (pkg.peerDependencies ?? {}) || name === 'bun';
-  };
+  const isPeer = (specifier: string) => PEERS.includes(packageOf(specifier));
   /** A declaration file that imports a Node-only driver is Node-only, and its consumer has `@types/node`. */
-  const driverBound = (file: string) =>
-    [...readFileSync(file, 'utf8').matchAll(/from '([^']+)'/g)].some(([, specifier]) => isPeer(specifier));
+  const driverBound = (file: string) => importsOf(file).some(isPeer);
 
   const unresolved: string[] = [];
   for (const line of output.split('\n')) {
@@ -344,6 +415,7 @@ const declaredPaths = checkDeclaredPaths();
 settle();
 
 const browserModules = checkBrowserGraph();
+checkPeerReach();
 await checkSizeBudgets();
 const { checkDir, installed } = writeConsumerProject();
 try {
@@ -356,7 +428,7 @@ settle();
 
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
-    `${entries.length} entry points' types resolve with \`types: []\`; ` +
+    `${entries.length} entry points' types resolve with \`types: []\` and reach only the peers each is for; ` +
     `every entry loads and queries with no driver on ${RUNTIMES.map(([bin]) => bin).join(', ')}; ` +
     `${Object.keys(BUDGETS).length} entry budgets within limits)`,
 );

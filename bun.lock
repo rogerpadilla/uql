@@ -62,7 +62,7 @@
         "pg-query-stream": "^4.17.0",
         "rxjs": "^7.8.2",
         "sqlite-vec": "^0.1.9",
-        "ws": "^8.21.3",
+        "ws": "^8.22.0",
       },
       "peerDependencies": {
         "@electric-sql/pglite": ">=0.5.0",

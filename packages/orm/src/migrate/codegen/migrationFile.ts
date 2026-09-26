@@ -1,4 +1,4 @@
-import { mongoCommandSource } from '../generator/mongoCommand.js';
+import { mongoCommandSource } from '../../mongo/mongoCommand.js';
 
 /**
  * Source code generation for default-export migrations (`uql-migrate`), on a `SqlQuerier` or a `MongoQuerier`.
@@ -53,6 +53,8 @@ export const EMPTY_MANUAL_MIGRATION_DOWN_INNER = `    // Add your rollback logic
 /** How a migration on one querier is scaffolded empty, and how a generated statement is spelled in it. */
 export type MigrationSource = {
   readonly querier: MigrationQuerierType;
+  /** The entry exporting that querier's type: a MongoDB one names the driver's `Db`, so only `uql-orm/mongo` has it. */
+  readonly module: string;
   readonly emptyUp: string;
   readonly emptyDown: string;
   emit(statements: string[]): string;
@@ -61,12 +63,14 @@ export type MigrationSource = {
 export const migrationSource = {
   SqlQuerier: {
     querier: 'SqlQuerier',
+    module: 'uql-orm/migrate',
     emptyUp: EMPTY_MANUAL_MIGRATION_UP_INNER,
     emptyDown: EMPTY_MANUAL_MIGRATION_DOWN_INNER,
     emit: emitSqlRunCalls,
   },
   MongoQuerier: {
     querier: 'MongoQuerier',
+    module: 'uql-orm/mongo',
     emptyUp: `    // Add your migration logic here, through the database handle.
     // await querier.db.collection('users').updateMany({}, { $set: { active: true } });
 `,
@@ -85,7 +89,7 @@ export function buildMigrationModule(options: MigrationModuleOptions): string {
   const iso = options.createdAt.toISOString();
   const extra = options.docExtraLines?.map((line) => `\n * ${line}`).join('') ?? '';
 
-  return /*ts*/ `import type { ${querier} } from 'uql-orm/migrate';
+  return /*ts*/ `import type { ${querier} } from '${migrationSource[querier].module}';
 
 /**
  * Migration: ${options.migrationName}

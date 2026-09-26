@@ -1046,6 +1046,29 @@ let a: SqlQueryDialect; let b: DialectName; let c: D1Queryable; let d: DialectFe
     expect(unresolved).toEqual([]);
   });
 
+  it('moves the MongoDB migration exports to uql-orm/mongo', () => {
+    const { text, unresolved } =
+      codemodFile(`import { defineMigration, MongoMigrationStorage, type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/migrate';
+import { isMongoQuerier } from 'uql-orm';
+let a: MongoQuerier; let b = [MongoMigrationStorage, MongoSchemaIntrospector, isMongoQuerier, defineMigration];
+`);
+
+    expect(text).toBe(`import { defineMigration } from 'uql-orm/migrate';
+import { MongoMigrationStorage, type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/mongo';
+import { isMongoQuerier } from 'uql-orm/mongo';
+let a: MongoQuerier; let b = [MongoMigrationStorage, MongoSchemaIntrospector, isMongoQuerier, defineMigration];
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('leaves an import already from the entry its export moved to', () => {
+    const { changed } = codemodFile(`import type { MongoQuerier } from 'uql-orm/mongo';
+let a: MongoQuerier;
+`);
+
+    expect(changed).toBe(false);
+  });
+
   it('reports the dialect, pool, migrator and D1 exports that repeated another or always held', () => {
     const { changed, unresolved } = codemod(`
       import { isKnownMigratorDialect, MysqlLikeSqlDialect, QuerierPoolDialect, QuerierPoolQuerier } from 'uql-orm';

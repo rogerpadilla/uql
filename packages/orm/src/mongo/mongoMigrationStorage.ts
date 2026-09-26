@@ -1,6 +1,6 @@
-import type { MigrationStorage, MongoQuerier, QuerierPool } from '../../type/index.js';
-import { withMongoQuerierForMigrations } from '../acquireQuerierForMigrations.js';
-import { DEFAULT_MIGRATIONS_TABLE } from './databaseStorage.js';
+import { DEFAULT_MIGRATIONS_TABLE } from '../migrate/storage/databaseStorage.js';
+import type { MigrationStorage, QuerierPool } from '../type/index.js';
+import { type MongoQuerier, withMongoQuerierForMigrations } from './mongoQuerier.js';
 
 /** Keyed by the migration's name, so recording one twice is refused the way a SQL primary key refuses it. */
 type MigrationDocument = { _id: string; executed_at: Date };

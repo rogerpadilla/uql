@@ -1,7 +1,7 @@
 import { AbstractCursor, Collection, MongoClient, MongoServerError } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { MongodbQuerierPool } from '../../mongo/mongodbQuerierPool.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
+import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
 /**
  * A pool over a client that never connects, answering that the collection exists and has no key-spec

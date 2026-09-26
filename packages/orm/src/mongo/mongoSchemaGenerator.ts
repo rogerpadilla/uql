@@ -1,8 +1,12 @@
-import { getMeta } from '../../entity/index.js';
-import { MongoDialect } from '../../mongo/mongoDialect.js';
-import { textLanguage } from '../../mongo/textLanguage.js';
-import { indexChanges } from '../../schema/indexDifferences.js';
-import type { ForeignKeyAction, IndexType, TableNode } from '../../schema/types.js';
+import { getMeta } from '../entity/index.js';
+import type { AnyMigrationOperation, IndexDefinition } from '../migrate/builder/types.js';
+import { assertIndexFeatures, assertIndexType } from '../migrate/ddl/indexDdl.js';
+import { renderIndexDefinition } from '../migrate/generator/definitionToNode.js';
+import { indexNodeToSchema } from '../migrate/generator/indexNodeToSchema.js';
+import { assertIndexPredicate, refusedIndexPredicate } from '../migrate/indexPredicate.js';
+import { sides } from '../migrate/schemaChange.js';
+import { indexChanges } from '../schema/indexDifferences.js';
+import type { ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
 import {
   type CreateSchemaOptions,
   type EntityIndexMeta,
@@ -16,18 +20,14 @@ import {
   type SchemaGenerator,
   type Type,
   type VectorDistance,
-} from '../../type/index.js';
-import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
-import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../../util/ddlExpression.util.js';
-import { fulltextConfig, fulltextWeights } from '../../util/dialect.util.js';
-import { UqlUsageError } from '../../util/uqlError.js';
-import type { AnyMigrationOperation, IndexDefinition } from '../builder/types.js';
-import { assertIndexFeatures, assertIndexType } from '../ddl/indexDdl.js';
-import { assertIndexPredicate, refusedIndexPredicate } from '../indexPredicate.js';
-import { sides } from '../schemaChange.js';
-import { renderIndexDefinition } from './definitionToNode.js';
-import { indexNodeToSchema } from './indexNodeToSchema.js';
+} from '../type/index.js';
+import { indexDistance, unsupportedVectorMetric } from '../type/vector.js';
+import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
+import { fulltextConfig, fulltextWeights } from '../util/dialect.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { type MongoIndexKey, serializeMongoCommand } from './mongoCommand.js';
+import { MongoDialect } from './mongoDialect.js';
+import { textLanguage } from './textLanguage.js';
 
 /** The index types a key spec can say, a plain key or `'text'`, and Atlas's vector search index. */
 const MONGO_INDEX_TYPES: ReadonlySet<IndexType> = new Set(['btree', 'fulltext', 'vectorSearch']);

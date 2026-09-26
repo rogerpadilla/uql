@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../../entity/index.js';
-import { createTableNode } from '../../schema/schemaAST.js';
-import type { TableNode } from '../../schema/types.js';
-import { assertDefined } from '../../test/index.js';
-import type { EntityWhere, Type } from '../../type/index.js';
-import { raw } from '../../util/index.js';
-import { added, reverseDiff } from '../schemaChange.js';
+import { Entity, Field, Id, Index } from '../entity/index.js';
+import { added, reverseDiff } from '../migrate/schemaChange.js';
+import { createTableNode } from '../schema/schemaAST.js';
+import type { TableNode } from '../schema/types.js';
+import { assertDefined } from '../test/index.js';
+import type { EntityWhere, Type } from '../type/index.js';
+import { raw } from '../util/index.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()

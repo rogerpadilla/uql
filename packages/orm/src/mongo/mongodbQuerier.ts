@@ -47,6 +47,7 @@ import {
 import { UqlUsageError } from '../util/uqlError.js';
 
 import type { ExtractedVectorSort, MongoAggregationPipelineEntry, MongoDialect } from './mongoDialect.js';
+import type { MongoQuerier } from './mongoQuerier.js';
 
 /**
  * `$limit: 0` asks for no rows, the way it does on every SQL dialect - but MongoDB reads `limit(0)`
@@ -71,7 +72,7 @@ function refuseTriggers(entity: Type<object>): void {
   }
 }
 
-export class MongodbQuerier extends AbstractQuerier {
+export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   private session?: ClientSession;
 
   constructor(

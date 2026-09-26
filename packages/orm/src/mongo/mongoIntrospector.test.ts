@@ -1,16 +1,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MongoDialect } from '../../mongo/mongoDialect.js';
-import { MongodbQuerierPool } from '../../mongo/mongodbQuerierPool.js';
-import { indexColumns } from '../../schema/indexColumns.js';
+import { indexColumns } from '../schema/indexColumns.js';
 import {
   assertDefined,
   createMockQuerier,
   createMockQuerierPool,
   mongoUri,
   provisioningTimeout,
-} from '../../test/index.js';
-import { UqlUsageError } from '../../util/uqlError.js';
+} from '../test/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
+import { MongoDialect } from './mongoDialect.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
+import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
 describe('MongoSchemaIntrospector', () => {
   const pool = new MongodbQuerierPool(mongoUri('uql_introspect'));

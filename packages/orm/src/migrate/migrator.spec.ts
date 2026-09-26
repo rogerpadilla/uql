@@ -6,6 +6,8 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MongoSchemaIntrospector } from '../mongo/mongoIntrospector.js';
+import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
@@ -23,8 +25,6 @@ import type {
   SchemaDiff,
   SchemaIntrospector,
 } from '../type/index.js';
-import { MongoSchemaGenerator } from './generator/mongoSchemaGenerator.js';
-import { MongoSchemaIntrospector } from './introspection/mongoIntrospector.js';
 import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './introspection/mysqlIntrospector.js';
 import { PostgresSchemaIntrospector } from './introspection/postgresIntrospector.js';
 import { SqliteSchemaIntrospector } from './introspection/sqliteIntrospector.js';

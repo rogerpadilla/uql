@@ -1,10 +1,11 @@
+import { runMongoCommand } from '../mongo/mongoCommand.js';
+import { MongoMigrationStorage } from '../mongo/mongoMigrationStorage.js';
+import { isMongoQuerier, type MongoQuerier, withMongoQuerierForMigrations } from '../mongo/mongoQuerier.js';
 import type { ForeignKeyAction } from '../schema/types.js';
 import {
-  isMongoQuerier,
   isSqlQuerier,
   type MigrationStorage,
   type MigratorDialect,
-  type MongoQuerier,
   type NamingStrategy,
   type Querier,
   type QuerierPool,
@@ -12,13 +13,11 @@ import {
   type SqlQuerier,
 } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { withMongoQuerierForMigrations, withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
+import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import { MigrationBuilder } from './builder/migrationBuilder.js';
 import { type MigrationSource, migrationSource } from './codegen/migrationFile.js';
-import { runMongoCommand } from './generator/mongoCommand.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 import { DatabaseMigrationStorage } from './storage/databaseStorage.js';
-import { MongoMigrationStorage } from './storage/mongoStorage.js';
 
 /** A migration querier as its engine family drives it. */
 export type MigrationSession = {
@@ -84,7 +83,7 @@ async function mongoSchemaGenerator(
   namingStrategy?: NamingStrategy,
   defaultForeignKeyAction?: ForeignKeyAction,
 ): Promise<SchemaGenerator> {
-  const { MongoSchemaGenerator } = await import('./generator/mongoSchemaGenerator.js');
+  const { MongoSchemaGenerator } = await import('../mongo/mongoSchemaGenerator.js');
   return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
 }
 

@@ -1,11 +1,4 @@
-import {
-  isMongoQuerier,
-  isSqlQuerier,
-  type MongoQuerier,
-  type Querier,
-  type QuerierPool,
-  type SqlQuerier,
-} from '../type/index.js';
+import { isSqlQuerier, type Querier, type QuerierPool, type SqlQuerier } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -42,16 +35,8 @@ export function withSqlQuerierForMigrations<T>(
   return withQuerierOfKind(pool, isSqlQuerier, `${requiredBy} requires a SQL-based querier`, task);
 }
 
-/** Same, for the paths that only work against MongoDB. */
-export function withMongoQuerierForMigrations<T>(
-  pool: QuerierPool,
-  requiredBy: string,
-  task: (querier: MongoQuerier) => Promise<T>,
-): Promise<T> {
-  return withQuerierOfKind(pool, isMongoQuerier, `${requiredBy} requires a MongoDB querier`, task);
-}
-
-function withQuerierOfKind<Q extends Querier, T>(
+/** Runs `task` on a migration querier `isKind` accepts, refusing any other with `error`. */
+export function withQuerierOfKind<Q extends Querier, T>(
   pool: QuerierPool,
   isKind: (querier: Querier) => querier is Q,
   error: string,

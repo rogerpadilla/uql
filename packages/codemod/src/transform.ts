@@ -78,8 +78,8 @@ const REMOVED_EXPORTS = new Map([
 ]);
 
 /**
- * Exports renamed and nothing else - the driver classes were empty subclasses - so the import and every
- * use follow, the import moving to `from` where the new name lives in another entry.
+ * Exports renamed or moved and nothing else - the driver classes were empty subclasses - so the import and
+ * every use follow, the import moving to `from` where the name lives in another entry.
  */
 const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: string }>([
   ['QueryWhereMap', { to: 'QueryWhere' }],
@@ -103,6 +103,10 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['KnownMigratorDialect', { to: 'DialectName', from: 'uql-orm' }],
   ['D1Preparer', { to: 'D1Queryable' }],
   ['D1Database', { to: 'D1Queryable', from: 'uql-orm/d1' }],
+  ['MongoQuerier', { to: 'MongoQuerier', from: 'uql-orm/mongo' }],
+  ['isMongoQuerier', { to: 'isMongoQuerier', from: 'uql-orm/mongo' }],
+  ['MongoMigrationStorage', { to: 'MongoMigrationStorage', from: 'uql-orm/mongo' }],
+  ['MongoSchemaIntrospector', { to: 'MongoSchemaIntrospector', from: 'uql-orm/mongo' }],
 ]);
 
 export type FileResult = {
@@ -981,16 +985,16 @@ function renameExports(
   ctx: Context,
 ): ReadonlySet<ts.ImportDeclaration> {
   const imports = uqlImportDeclarations(source, true);
-  const kept = imports.flatMap(({ elements }) => elements).filter((element) => !renamedTo(element));
+  const kept = imports.flatMap(({ entry, elements }) => elements.filter((element) => !renamedTo(element, entry)));
   const bound = new Set(kept.map((element) => element.name.text));
   const rewritten = new Set<ts.ImportDeclaration>();
   for (const { declaration, entry, elements } of imports) {
-    if (!elements.some(renamedTo)) {
+    if (!elements.some((element) => renamedTo(element, entry))) {
       continue;
     }
     const byEntry = new Map<string, string[]>([[entry, []]]);
     for (const element of elements.filter(({ name }) => !dead.has(name.text))) {
-      const rename = renamedTo(element);
+      const rename = renamedTo(element, entry);
       const local = element.propertyName || !rename ? element.name.text : rename.to;
       if (rename && !element.propertyName) {
         ctx.edits.push(...usesOf(source, element.name, ctx.checker).map((use) => replaced(use, rename.to)));
@@ -1017,8 +1021,11 @@ function renameExports(
   return rewritten;
 }
 
-function renamedTo(element: ts.ImportSpecifier) {
-  return RENAMED_EXPORTS.get(importedName(element));
+/** The rename `element` still needs, none where it already names the export at its entry. */
+function renamedTo(element: ts.ImportSpecifier, entry: string) {
+  const name = importedName(element);
+  const rename = RENAMED_EXPORTS.get(name);
+  return rename?.to === name && (rename.from ?? entry) === entry ? undefined : rename;
 }
 
 /** Every identifier in the file bound to the same symbol as `name`, besides `name` itself. */
