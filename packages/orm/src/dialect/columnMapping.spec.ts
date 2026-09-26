@@ -59,9 +59,11 @@ it('should apply the soft-delete filter on the stored column', () => {
 
 it('should reject a relation $size mixed with other conditions on both engines', () => {
   const mixed = { tags: { $size: 2, name: 'x' } };
+  // @ts-expect-error: the types refuse the mix first, and plain JavaScript reaches the dialect past them
   expect(() => pgSql((d, ctx) => d.where(ctx, Item, mixed))).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );
+  // @ts-expect-error: as above
   expect(() => mongo.matchStages(Item, mixed)).toThrow(
     '$size on a relation cannot be combined with other conditions: name',
   );

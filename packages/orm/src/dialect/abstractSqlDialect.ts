@@ -54,6 +54,7 @@ import {
   type RelationQuery,
   type SqlDialectName,
   type SqlQueryDialect,
+  type TriggerRows,
   type TriggerWrite,
   type Type,
   type UpdatePayload,
@@ -1942,9 +1943,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /**
    * A write in a trigger's body. Only the columns it names, none filled in JavaScript - that would bake
    * one value into the trigger - no id read back, and no entity filter, which a request resolves and a
-   * trigger has none of. `rows` is the `FROM` a set-based engine's body reads its rows through.
+   * trigger has none of. `rows` are what a set-based engine's body reads, narrowed to the ones it fires for.
    */
-  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: string): void {
+  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void {
     const meta = getMeta(write.entity);
     const table = this.escapedTableName(meta);
     if (write.kind === 'insert') {
@@ -1960,7 +1961,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       }
       const entries = this.writtenEntries(meta, write.row);
       const columns = entries.map(([key]) => this.escapedColumnName(meta, key)).join(', ');
-      const [open, close] = rows ? ['SELECT ', ` ${rows};`] : ['VALUES (', ');'];
+      const [open, close] = rows
+        ? ['SELECT ', ` FROM ${rows.from}${rows.where ? ` WHERE ${rows.where}` : ''};`]
+        : ['VALUES (', ');'];
       ctx.append(`INSERT INTO ${table} (${columns}) ${open}`);
       entries.forEach(([key, value], i) => {
         if (i > 0) {
@@ -1997,10 +2000,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx.append(`DELETE FROM ${table}`);
     }
     if (rows) {
-      ctx.append(` ${rows}`);
+      ctx.append(` FROM ${rows.from}`);
     }
+    const narrowed = rows?.where;
+    const where = narrowed ? { $and: [write.where, raw(() => narrowed)] } : write.where;
     // Qualified by the table: on a set-based engine `inserted` holds the same column names.
-    this.renderWhere(ctx, write.entity, write.where, { escapedPrefix: `${table}.` });
+    this.renderWhere(ctx, write.entity, where, { escapedPrefix: `${table}.` });
     ctx.append(';');
   }
 

@@ -16,6 +16,7 @@ import {
   type RelationAggregateOp,
   type RelationAggregateSpec,
   type TriggerRowName,
+  TriggerWriteRaw,
   type Type,
 } from '../type/index.js';
 import { aggregateOf, isInlinedExpression } from './field.util.js';
@@ -33,7 +34,10 @@ export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly 
   if (!isTemplateStrings(value)) {
     return new QueryRaw(value);
   }
-  return new QueryRaw(
+  // Writes joined by whitespace alone are still only writes, so a set-based trigger narrows each one.
+  const writes =
+    rest.length > 0 && rest.every((v) => v instanceof TriggerWriteRaw) && value.every((part) => !part.trim());
+  return new (writes ? TriggerWriteRaw : QueryRaw)(
     (opts) => {
       const { ctx } = opts;
       ctx.append(value[0]);

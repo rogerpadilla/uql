@@ -40,6 +40,8 @@ export async function fullTextSearch() {
 
   // @ts-expect-error 'naem' is not a field of Person
   await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: { naem: true } } } });
+  // @ts-expect-error full-text search reads string columns, so `age` is no field for it
+  await querier.findMany(Person, { $where: { $text: { $value: 'john', $fields: { age: true } } } });
   // @ts-expect-error $value is required
   await querier.findMany(Person, { $where: { $text: { $fields: { name: true } } } });
 

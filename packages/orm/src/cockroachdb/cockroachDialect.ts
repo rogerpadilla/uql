@@ -29,7 +29,7 @@ export class CockroachDialect extends PgLikeSqlDialect {
   override readonly features: SqlDialectFeatures = {
     ...PG_FEATURES,
     orderedUpsertReturning: false,
-    triggers: { ...PG_FEATURES.triggers, guards: 'thenEndIf' },
+    triggers: { ...PG_FEATURES.triggers, fires: 'eachRowIf' },
   };
 
   /**

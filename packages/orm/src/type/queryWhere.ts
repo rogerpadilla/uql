@@ -1,4 +1,11 @@
-import type { FieldKey, JsonFieldPaths, JsonFieldPathValue, RelationKey, RelationTarget } from './entity.js';
+import type {
+  FieldKey,
+  FieldKeyOf,
+  JsonFieldPaths,
+  JsonFieldPathValue,
+  RelationKey,
+  RelationTarget,
+} from './entity.js';
 import type { QuerySelect } from './query.js';
 import type { QueryRaw, RawFor } from './queryRaw.js';
 import type { AtLeastOne, ExpandScalar, IsMany, QueryComparableScalar, Scalar } from './utility.js';
@@ -13,9 +20,9 @@ export type QueryTextSearchOptions<E> = {
    */
   $value: string;
   /**
-   * the fields to search, `{ title: true, body: true }`, in the order a MySQL `FULLTEXT` index lists them.
+   * the string fields to search, `{ title: true, body: true }`, in the order a MySQL `FULLTEXT` index lists them.
    */
-  $fields?: QuerySelect<E>;
+  $fields?: QuerySelect<E, FieldKeyOf<E, string>>;
   /**
    * The language the search is parsed in (e.g. `'english'`, or `'simple'` for no stemming), else that of
    * the fulltext index over its fields: the Postgres family's text-search config, MongoDB's `$language`.
@@ -33,21 +40,28 @@ export type QueryWhere<E, Raw = QueryRaw, K extends keyof E = FieldKey<E> | Rela
   E,
   Raw
 > & {
-  [P in K]?: P extends FieldKey<E>
-    ? QueryWhereFieldValue<E[P], Raw>
-    : QueryWhere<RelationTarget<E[P]>, Raw> | QueryRelationSizeFilter;
+  [P in K]?: P extends FieldKey<E> ? QueryWhereFieldValue<E[P], Raw> : QueryWhereRelation<RelationTarget<E[P]>, Raw>;
 } & ([JsonFieldPaths<E>] extends [never]
     ? unknown
     : { [P in JsonFieldPaths<E>]?: QueryWhereFieldValue<JsonFieldPathValue<E, P>, Raw> });
 
 /**
- * Filter a to-many relation by its row count.
+ * Filter a to-many relation by its row count, and by nothing beside it: the target's keys and the root
+ * operators are refused, as the engine refuses them at run time.
  * @example { users: { $size: 2 } }
  * @example { users: { $size: { $gte: 2 } } }
  */
-export type QueryRelationSizeFilter = {
-  readonly $size: number | QuerySizeComparisonOps;
+export type QueryRelationSizeFilter<T = object> = { readonly $size: number | QuerySizeComparisonOps } & {
+  readonly [K in (keyof T & string) | keyof QueryWhereRootOperator<object>]?: never;
 };
+
+/**
+ * A relation key's filter: a where over the target's rows, or its row count, never both. A target keyed
+ * by an index signature declares no keys to refuse, so there the run-time check alone answers a mix.
+ */
+export type QueryWhereRelation<T, Raw = QueryRaw> = string extends keyof T
+  ? QueryWhere<T, Raw> | QueryRelationSizeFilter
+  : (QueryWhere<T, Raw> & { readonly $size?: never }) | QueryRelationSizeFilter<T>;
 
 export type QueryWhereRootOperator<E, Raw = QueryRaw> = {
   /**

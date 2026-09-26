@@ -198,16 +198,12 @@ export interface TriggerFeatures {
    */
   readonly body: 'function' | 'inline';
   /**
-   * How it states which rows it fires for: `UPDATE OF` beside a `WHEN` (`'clause'`), or, where there is
-   * no usable `WHEN` - the MySQL family, CockroachDB, SQL Server - the same condition wrapping the body,
-   * as `IF c THEN ... END IF;` (`'thenEndIf'`) or T-SQL's `IF c BEGIN ... END` (`'beginEnd'`).
+   * How it fires, and so how it keeps to the rows `of` and `where` select: once per row, behind
+   * `UPDATE OF` and a `WHEN` (`'eachRowWhen'`) or, with no usable `WHEN` (the MySQL family, CockroachDB),
+   * an `IF c THEN ... END IF;` around the body (`'eachRowIf'`); or once per statement (`'eachStatement'`,
+   * SQL Server), narrowing the `inserted` and `deleted` tables its writes read.
    */
-  readonly guards: 'clause' | 'thenEndIf' | 'beginEnd';
-  /**
-   * Whether it fires once per row, with a row on each side, or once per statement over the set it
-   * touched. SQL Server is the only one here that is set-based, reading `inserted` and `deleted`.
-   */
-  readonly rows: 'row' | 'set';
+  readonly fires: 'eachRowWhen' | 'eachRowIf' | 'eachStatement';
   /**
    * Where a trigger's name is unique, and so what a `DROP` has to name: per table on the Postgres
    * family, which spells `DROP TRIGGER x ON t`, and per schema everywhere else, which spells
@@ -238,6 +234,12 @@ export interface TriggerFeatures {
    */
   readonly before: boolean;
 }
+
+/**
+ * The rows a set-based trigger's writes read: the tables `from` names, `inserted` and the like, narrowed
+ * by `where` to the ones the trigger selects.
+ */
+export type TriggerRows = { readonly from: string; readonly where?: string };
 
 /** Where DDL's SQL sits: the row a trigger's predicate reads, as its prefix, and a set-based body's rows. */
 export type DdlRenderOptions = Pick<QueryComparisonOptions, 'escapedPrefix' | 'operand'> &
@@ -302,8 +304,8 @@ export interface SqlQueryDialect {
   /** An upsert of one record or many by their conflict paths. */
   upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void;
 
-  /** A write in a trigger's body; `rows` is where a set-based engine's body reads its rows from. */
-  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: string): void;
+  /** A write in a trigger's body; `rows` are what a set-based engine's body reads, narrowed to the ones it fires for. */
+  triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void;
 
   /** A delete of the records the query matches, a soft delete where the entity has one. */
   delete<E>(ctx: QueryContext, entity: Type<E>, q: QuerySearch<E>, opts?: QueryRenderOptions): void;

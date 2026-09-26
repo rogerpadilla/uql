@@ -14,6 +14,7 @@ import { assertDefined } from '../test/index.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
@@ -211,6 +212,20 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     run: (newRow) => updateTable(TgLog, { $where: { postId: newRow.id } }, { title: newRow.title }),
   },
   { on: 'afterDelete', name: 'unlog', run: (_newRow, oldRow) => deleteFrom(TgLog, { $where: { postId: oldRow.id } }) },
+  {
+    on: 'afterInsert',
+    name: 'flag',
+    where: { $new: { title: 'flagged' } },
+    run: (newRow) => insertInto(TgLog, { postId: newRow.id, source: 'flag' }),
+  },
+  {
+    on: 'afterUpdate',
+    name: 'unflag',
+    where: { $old: { title: 'flagged' } },
+    run: (newRow) =>
+      raw`${deleteFrom(TgLog, { $where: { postId: newRow.id, source: 'flag' } })}
+        ${insertInto(TgLog, { postId: newRow.id, source: 'unflag' })}`,
+  },
 )
 @Entity({ name: 'TgLogged' })
 class TgLogged {
@@ -276,6 +291,17 @@ describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_en
     const [kept, ...updated] = await pool.insertMany(TgLogged, [{ title: 'kept' }, { title: 'c' }, { title: 'd' }]);
     await pool.updateMany(TgLogged, { $where: { id: { $in: updated } } }, { title: 'bulk' });
     expect((await logsOf([kept, ...updated])).map((log) => log.title)).toEqual(['kept', 'bulk', 'bulk']);
+  });
+
+  // SQL Server fires once for the statement, so a where narrows the rows each write reads: proven here
+  // on a statement touching a row it selects and one it does not, on insert and on update.
+  it('should write only for the rows of a statement its where selects', async () => {
+    const ids = await pool.insertMany(TgLogged, [{ title: 'flagged' }, { title: 'plain' }]);
+    await pool.updateMany(TgLogged, { $where: { id: { $in: ids } } }, { title: 'cleared' });
+    const marks = (await logsOf(ids))
+      .filter((log) => log.source !== "it's")
+      .map((log) => `${log.postId}:${log.source}`);
+    expect(marks).toEqual([`${ids[0]}:unflag`]);
   });
 
   it('should delete the log of each row a statement deleted, and no other', async () => {

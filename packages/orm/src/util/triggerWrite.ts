@@ -1,13 +1,13 @@
-import type {
-  EntityPredicate,
-  QueryRaw,
-  TriggerWrite,
-  Type,
-  UpdatePayload,
-  WritableKey,
-  WriteRow,
+import {
+  type EntityPredicate,
+  type QueryRaw,
+  type TriggerWrite,
+  TriggerWriteRaw,
+  type Type,
+  type UpdatePayload,
+  type WritableKey,
+  type WriteRow,
 } from '../type/index.js';
-import { raw } from './raw.js';
 
 /**
  * A row inserted by a trigger's body, into any table: `insertInto(PostAudit, { postId: newRow.id })`.
@@ -32,6 +32,7 @@ export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $whe
   return written({ kind: 'delete', entity, where: q.$where });
 }
 
-function written(write: TriggerWrite): QueryRaw {
-  return raw(({ ctx, dialect, rows }) => dialect.triggerWrite(ctx, write, rows));
+/** A write in a trigger's body, as every helper here and a stamp render one. */
+export function written(write: TriggerWrite): QueryRaw {
+  return new TriggerWriteRaw(({ ctx, dialect, rows }) => dialect.triggerWrite(ctx, write, rows));
 }

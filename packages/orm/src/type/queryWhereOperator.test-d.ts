@@ -118,9 +118,13 @@ export async function whereOperatorGating() {
   // The implicit-IN shorthand is rejected on array-typed fields (ambiguous nesting).
   // @ts-expect-error array-typed fields require an explicit operator
   await querier.findMany(Person, { $where: { embedding: [[1], [2]] } });
-  // Note: `{ $size: 2, name: 'x' }` (mixing $size with relation conditions) is not rejected at
-  // compile time - union excess-property checking accepts keys from either union arm. The
-  // dialect's exact-shape runtime check covers it.
+  // A relation's row count and a condition on its target are different asks of the same key, and the
+  // engine's exact-shape check refuses the mix at run time, so the types refuse it too: neither arm
+  // of the union takes the other's keys.
+  // @ts-expect-error $size on a relation cannot be mixed with a condition on its target
+  await querier.findMany(Person, { $where: { friends: { $size: 2, name: 'x' } } });
+  // @ts-expect-error nor with an operator over its rows
+  await querier.findMany(Person, { $where: { friends: { $size: 2, $or: [{ name: 'x' }] } } });
 
   // `$near` filters by distance where `$sort`'s `$vector` ranks by it, and is gated to vector fields
   // the same way. Without its own arm in `QueryAllowedOp` it would fall into the common bucket and

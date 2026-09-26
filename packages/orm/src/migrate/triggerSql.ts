@@ -10,11 +10,14 @@ import type {
   TriggerEvent,
   TriggerMetaBody,
   TriggerRowName,
+  TriggerRows,
 } from '../type/index.js';
+import { TriggerWriteRaw } from '../type/index.js';
 import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
 import { raw, refs, rowRefs } from '../util/raw.js';
 import { ownedName } from '../util/sql.util.js';
+import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 /** A trigger as uql installs it: the identifier, and the statements creating it under that identifier. */
@@ -79,38 +82,41 @@ function triggerStatements<E>(
   const features = dialect.features.triggers;
   const [timing, operation] = EVENT_PARTS[trigger.on];
   const before = timing === 'BEFORE';
-  const body = triggerBody(dialect, meta, trigger, before);
+  const { fires } = features;
+  const perStatement = fires === 'eachStatement';
+  const names = rowNames(dialect);
+  const rows = [rowRefs(meta.entity, names.$new), rowRefs(meta.entity, names.$old)] as const;
+  const filter = triggerFilter(dialect, meta, trigger, rows, names);
+  const body = triggerBody(dialect, meta, trigger, before)(...rows);
+  if (perStatement && filter && !(body instanceof TriggerWriteRaw)) {
+    throw new UqlUsageError(
+      `${dialect.dialectName} fires a trigger once per statement, so 'of' and 'where' narrow only what ` +
+        `insertInto, updateTable or deleteFrom reads, and '${meta.entity.name}' has one running its own SQL. ` +
+        'Keep the body to those writes, or filter inserted and deleted in that SQL.',
+    );
+  }
+  const sql = dialect.compileDdl(body, meta.entity, {
+    rows: perStatement ? rowsFrom(dialect, meta, operation, names, filter) : undefined,
+  });
+
+  // A per-row engine keeps to the selected rows by a guard; a per-statement one narrowed what the body reads.
+  const guarded = filter && fires === 'eachRowIf' ? `IF ${filter} THEN\n${sql}\nEND IF;` : sql;
+  const opened = features.preamble ? `${features.preamble}\n${guarded}` : guarded;
 
   const id = triggerId(dialect, meta, name);
   const table = dialect.escapedTableName(meta);
-  const names = rowNames(dialect);
-  const rows = [rowRefs(meta.entity, names.$new), rowRefs(meta.entity, names.$old)] as const;
-  const source = rowsFrom(dialect, meta, operation, trigger.of ?? []);
-  const sql = dialect.compileDdl(body(...rows), meta.entity, { rows: source });
-  const guard = triggerGuard(dialect, meta, trigger, rows, names, source);
-
-  const inBody = features.guards !== 'clause';
-  const guarded =
-    !guard || !inBody
-      ? sql
-      : features.guards === 'beginEnd'
-        ? `IF ${guard}\nBEGIN\n${sql}\nEND`
-        : `IF ${guard} THEN\n${sql}\nEND IF;`;
-  // The preamble opens the body, outside the guard: it settles how the batch reports itself rather than
-  // which rows are touched, so it runs even when the guard keeps the statements from running.
-  const opened = features.preamble ? `${features.preamble}\n${guarded}` : guarded;
-
+  const byWhen = fires === 'eachRowWhen';
   const of =
-    features.guards === 'clause' && operation === 'UPDATE' && trigger.of?.length
+    byWhen && operation === 'UPDATE' && trigger.of?.length
       ? ` OF ${trigger.of.map((key) => dialect.escapedColumnName(meta, key)).join(', ')}`
       : '';
-  const each = features.rows === 'set' ? '' : '\nFOR EACH ROW';
-  const clause = guard && !inBody ? `\nWHEN (${guard})` : '';
-  const when = `${timing} ${operation}${of}`;
+  const each = perStatement ? '' : '\nFOR EACH ROW';
+  const whenClause = filter && byWhen ? `\nWHEN (${filter})` : '';
+  const event = `${timing} ${operation}${of}`;
   const header =
     features.layout === 'tableFirst'
-      ? `CREATE TRIGGER ${id}\nON ${table} ${when}${each}${clause}\nAS`
-      : `CREATE TRIGGER ${id}\n${when} ON ${table}${each}${clause}`;
+      ? `CREATE TRIGGER ${id}\nON ${table} ${event}${each}${whenClause}\nAS`
+      : `CREATE TRIGGER ${id}\n${event} ON ${table}${each}${whenClause}`;
 
   if (features.body !== 'function') {
     return [`${header}\nBEGIN\n${opened}\nEND`];
@@ -145,18 +151,10 @@ function triggerBody<E>(
   trigger: EntityTriggerMeta<E>,
   before: boolean,
 ): TriggerMetaBody<E> {
-  const features = dialect.features.triggers;
-  if (before && !features.before) {
+  if (before && !dialect.features.triggers.before) {
     throw new UqlUsageError(
       `${dialect.dialectName} has no BEFORE trigger, only AFTER and INSTEAD OF, so '${trigger.on}' cannot be ` +
         'rendered there. Use the matching after event, which sees the row already written.',
-    );
-  }
-  if (trigger.where && features.rows === 'set') {
-    throw new UqlUsageError(
-      `${dialect.dialectName} fires a trigger once per statement, over the rows it touched, so no condition ` +
-        `can read one row: '${meta.entity.name}' cannot state a trigger 'where' there. Guard inside the body ` +
-        'instead, where `inserted` and `deleted` can be read as tables.',
     );
   }
   const { run } = trigger;
@@ -171,22 +169,20 @@ function triggerBody<E>(
 }
 
 /**
- * The one condition both guards reduce to: any watched column that moved, and whatever `where` asks. On a
- * set-based engine a watched column narrows `source` already, so the guard asks whether it holds a row.
+ * The rows a trigger fires for, as one condition on every engine: any watched column that moved, and
+ * whatever `where` asks. Empty where it names neither.
  */
-function triggerGuard<E>(
+function triggerFilter<E>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
   trigger: EntityTriggerMeta<E>,
   rows: Readonly<Parameters<TriggerMetaBody<E>>>,
   names: RowNames,
-  source: string | undefined,
 ): string {
   const moved = movedColumns(dialect, meta, trigger.of ?? [], names);
-  const watched = moved && (source ? `EXISTS (SELECT 1 ${source})` : moved);
   return [
-    ...(watched ? [watched] : []),
-    ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(watched)) : []),
+    ...(moved ? [moved] : []),
+    ...(trigger.where ? condition(dialect, meta, trigger.where, rows, names, Boolean(moved)) : []),
   ].join(' AND ');
 }
 
@@ -198,7 +194,7 @@ function plpgsqlFunction(id: string, block: string): string {
 
 /** What the engine calls the rows it hands a trigger: records on a row-based engine, tables on a set-based one. */
 function rowNames(dialect: AbstractSqlDialect): RowNames {
-  return dialect.features.triggers.rows === 'set'
+  return dialect.features.triggers.fires === 'eachStatement'
     ? { $new: 'inserted', $old: 'deleted' }
     : { $new: 'NEW', $old: 'OLD' };
 }
@@ -207,7 +203,7 @@ function rowNames(dialect: AbstractSqlDialect): RowNames {
 type RowNames = { readonly $new: TriggerRowName; readonly $old: TriggerRowName };
 
 /**
- * The `where` guard as the terms an `AND` joins. A callback writes its own off the rows; a predicate
+ * The `where` filter as the terms an `AND` joins. A callback writes its own off the rows; a predicate
  * renders a term per row it names, spelled verbatim because `NEW` is a record the engine declares. Each
  * is an `operand` wherever another term sits beside it, bracketing itself if compound, as `$where` does.
  */
@@ -293,9 +289,7 @@ function stampBody<E extends object>(
     ctx.append(dialect.neExpr(`${escapedPrefix}${dialect.escapedColumnName(meta, key)}`, stamped)),
   );
   const where = { $and: [...keyed, differs] };
-  return raw(({ ctx, rows }) =>
-    dialect.triggerWrite(ctx, { kind: 'update', entity, set: { [key]: value }, where }, rows),
-  );
+  return written({ kind: 'update', entity, set: { [key]: value }, where });
 }
 
 /** A dollar quote the body does not contain, so no `$$` in it - a literal, a comment - ends the function early. */
@@ -328,28 +322,21 @@ function movedColumns<E>(
 }
 
 /**
- * Where a set-based engine's body reads the rows it fires for, as the `FROM` a statement names them in:
- * `inserted` on an insert, `deleted` on a delete, and on an update both, joined on the whole key and on a
- * watched column having moved, so the body writes for those rows alone, as a per-row engine fires for them.
- * None on a row-based engine, whose body reads `NEW` and `OLD` bare.
+ * What a set-based engine's writes read: `inserted` on an insert, `deleted` on a delete, and on an update
+ * both, joined on the whole key, narrowed by `filter` to the rows a per-row engine would fire for.
  */
 function rowsFrom<E>(
   dialect: AbstractSqlDialect,
   meta: EntityMeta<E>,
   operation: TriggerOperation,
-  of: readonly string[],
-): string | undefined {
-  if (dialect.features.triggers.rows !== 'set') {
-    return undefined;
-  }
-  const { $new, $old } = rowNames(dialect);
-  if (operation !== 'UPDATE') {
-    return `FROM ${operation === 'INSERT' ? $new : $old}`;
-  }
+  { $new, $old }: RowNames,
+  filter: string,
+): TriggerRows {
   const keyed = meta.ids.map((id) => {
     const column = dialect.escapedColumnName(meta, id);
     return `${$new}.${column} = ${$old}.${column}`;
   });
-  const moved = movedColumns(dialect, meta, of, { $new, $old });
-  return `FROM ${$new} JOIN ${$old} ON ${[...keyed, ...(moved ? [moved] : [])].join(' AND ')}`;
+  const from =
+    operation === 'UPDATE' ? `${$new} JOIN ${$old} ON ${keyed.join(' AND ')}` : operation === 'INSERT' ? $new : $old;
+  return { from, where: filter || undefined };
 }

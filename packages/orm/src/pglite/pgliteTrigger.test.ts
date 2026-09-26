@@ -1,6 +1,6 @@
 // What only a row-level engine with a BEFORE trigger can do, which the shared suite in
-// `migrate/trigger.test.ts` cannot ask of every engine: assigning to the incoming row, reading the
-// outgoing one, and the `where` guard SQL Server has no way to state.
+// `migrate/trigger.test.ts` cannot ask of every engine: assigning to the incoming row and reading the
+// outgoing one.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id, Trigger, removeEntity } from '../entity/index.js';

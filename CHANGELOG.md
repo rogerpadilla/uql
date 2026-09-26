@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.89.0] - 2026-09-26
+
+- **Breaking:** a custom dialect's trigger `features` state `fires` (`'eachRowWhen'`, `'eachRowIf'` or `'eachStatement'`) in place of `guards` and `rows`.
+- **Breaking:** on SQL Server, a trigger's `where` now works, and with `of` narrows the rows `insertInto`, `updateTable` and `deleteFrom` write for, as other engines fire for them. A body of its own SQL beside either is refused. `sync` replaces SQL Server triggers with `of`.
+- **Breaking:** the types refuse a relation's `$size` beside a condition on its rows, as the engine already did, and `$text`'s `$fields` takes string fields only.
+
 ## [0.88.0] - 2026-09-26
 
 - **Breaking:** a custom dialect's `features` states `rebuildsTables` in place of `foreignKeyAlter`, `primaryKeyAlter` and `generatedColumnAdd`, and `alterColumnSyntax` no longer takes `'none'`.

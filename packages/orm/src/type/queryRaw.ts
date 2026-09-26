@@ -1,4 +1,4 @@
-import type { QueryContext, RelationAggregateSpec, SqlQueryDialect } from './dialect.js';
+import type { QueryContext, RelationAggregateSpec, SqlQueryDialect, TriggerRows } from './dialect.js';
 import type { Type } from './utility.js';
 
 /** What a `raw` callback receives. See {@link QueryRawFn}. */
@@ -17,10 +17,10 @@ export type QueryRawRenderOptions = {
    */
   entity?: Type<unknown>;
   /**
-   * The `FROM` a set-based trigger's body reads its rows through, `FROM inserted` and the like, which a
-   * write in it names. Absent where the body reads `NEW` and `OLD` bare, and outside a trigger.
+   * The rows a set-based trigger's writes read. Absent where the body reads `NEW` and `OLD` bare, and
+   * outside a trigger.
    */
-  rows?: string;
+  rows?: TriggerRows;
 };
 
 /** {@link QueryRawRenderOptions} as the callers along the way fill them in, every one still optional. */
@@ -111,3 +111,10 @@ export class RelationAggregate<V = unknown, Storable extends boolean = boolean> 
     super(value);
   }
 }
+
+/**
+ * A write `insertInto`, `updateTable` or `deleteFrom` renders, or several joined in one `raw`. It reads a
+ * set-based trigger's rows through {@link QueryRawRenderOptions.rows}, which is how `of` and `where` narrow
+ * them there; SQL of its own reads `inserted` and `deleted` whole.
+ */
+export class TriggerWriteRaw extends QueryRaw {}

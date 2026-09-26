@@ -147,9 +147,9 @@ describe('the body, where the engine keeps it', () => {
 describe('what a body opens with', () => {
   // A T-SQL trigger running its own DML sends a rowcount back, which the client reads as what the
   // original statement affected. `SET NOCOUNT ON` is what every hand-written one starts with.
-  it('should quiet the rowcount on SQL Server, ahead of the guard', () => {
-    const sql = render(new MsSqlDialect(), { ...setBased, of: ['body'] }).join('\n');
-    expect(sql).toContain('AS\nBEGIN\nSET NOCOUNT ON;\nIF EXISTS');
+  it('should quiet the rowcount on SQL Server, first thing in the body', () => {
+    const sql = render(new MsSqlDialect(), setBased).join('\n');
+    expect(sql).toContain('AS\nBEGIN\nSET NOCOUNT ON;\nSELECT 1;');
   });
 
   it('should open with nothing where the engine needs none', () => {
@@ -182,36 +182,96 @@ describe('the guard, however the engine states one', () => {
 
   // SQL Server is handed the rows as tables, so the same comparison is made over a join between them
   // rather than dropped for `UPDATE(col)`, which would fire on a column merely assigned. `EXCEPT` is
-  // what makes it null-safe on every version of the engine. The join is also what the body writes
-  // from, so it writes for the rows whose column moved alone, as a per-row engine fires for those.
+  // what makes it null-safe on every version of the engine. It narrows the rows the write reads, so
+  // the body writes for the rows whose column moved alone, as a per-row engine fires for those.
+  const audited: EntityTriggerMeta<Post> = {
+    on: 'afterUpdate',
+    of: ['body'],
+    run: (newRow) => insertInto(Post, { searchVector: newRow.body }),
+  };
+
   it('should write for each row whose watched column moved on SQL Server, as other engines fire for it', () => {
-    const rows =
-      'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
-      'AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body")';
-    const sql = render(new MsSqlDialect(), {
-      on: 'afterUpdate',
-      of: ['body'],
-      run: (newRow) => insertInto(Post, { searchVector: newRow.body }),
-    });
-    expect(sql).toEqual([
+    expect(render(new MsSqlDialect(), audited)).toEqual([
       expect.stringContaining(
-        `IF EXISTS (SELECT 1 ${rows})\nBEGIN\nINSERT INTO "Post" ("searchVector") SELECT inserted."body" ${rows};\nEND`,
+        'AS\nBEGIN\nSET NOCOUNT ON;\nINSERT INTO "Post" ("searchVector") SELECT inserted."body" ' +
+          'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
+          'WHERE EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body");\nEND',
       ),
     ]);
   });
 
   it('should or two watched columns together on a set-based engine too', () => {
-    const sql = render(new MsSqlDialect(), { ...setBased, of: ['body', 'searchVector'] }).join('\n');
+    const sql = render(new MsSqlDialect(), { ...audited, of: ['body', 'searchVector'] }).join('\n');
     expect(sql).toContain(
-      'AND (EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body") ' +
-        'OR EXISTS (SELECT deleted."searchVector" EXCEPT SELECT inserted."searchVector")))',
+      'WHERE (EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body") ' +
+        'OR EXISTS (SELECT deleted."searchVector" EXCEPT SELECT inserted."searchVector"));',
     );
   });
 
-  it('should refuse a where on a set-based engine, where no condition can read one row', () => {
+  it('should narrow the rows a write reads by a where on SQL Server, as other engines fire for them', () => {
+    const sql = render(new MsSqlDialect(), {
+      ...audited,
+      of: undefined,
+      where: { $old: { body: 'draft' }, $new: { body: 'published' } },
+    }).join('\n');
+    expect(sql).toContain(
+      'FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
+        `WHERE deleted."body" = N'draft' AND inserted."body" = N'published';`,
+    );
+  });
+
+  it('should narrow an insert by a where on SQL Server, reading the one table it has', () => {
+    const sql = render(new MsSqlDialect(), {
+      on: 'afterInsert',
+      where: { $new: { body: { $ne: null } } },
+      run: (newRow) => insertInto(Post, { searchVector: newRow.body }),
+    }).join('\n');
+    expect(sql).toContain('SELECT inserted."body" FROM inserted WHERE inserted."body" IS NOT NULL;');
+  });
+
+  it('should keep the rows a write names beside the ones the trigger narrows to', () => {
+    const sql = render(new MsSqlDialect(), {
+      ...audited,
+      run: (newRow) => updateTable(Post, { $where: { id: newRow.id } }, { searchVector: newRow.body }),
+    }).join('\n');
+    expect(sql).toContain(
+      'UPDATE "Post" SET "searchVector" = inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id" ' +
+        'WHERE "Post"."id" = inserted."id" AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body");',
+    );
+  });
+
+  // SQL of its own reads `inserted` and `deleted` whole, where uql has no way in to narrow them, so it
+  // would write for every row of the statement once one qualified: what a per-row engine never does.
+  it('should refuse a body of SQL with of or where on SQL Server, whose rows uql cannot narrow', () => {
+    expect(() => render(new MsSqlDialect(), { ...setBased, of: ['body'] })).toThrow(/once per statement/);
     expect(() => render(new MsSqlDialect(), { ...setBased, where: { $new: { body: { $ne: null } } } })).toThrow(
       /once per statement/,
     );
+  });
+
+  it('should narrow each of several writes joined in one raw on SQL Server, having no SQL of its own', () => {
+    const sql = render(new MsSqlDialect(), {
+      ...audited,
+      run: (newRow) =>
+        raw`${insertInto(Post, { searchVector: newRow.body })}
+          ${deleteFrom(Post, { $where: { id: newRow.id } })}`,
+    }).join('\n');
+    const narrowed = 'WHERE EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body")';
+    expect(sql).toContain(
+      `SELECT inserted."body" FROM inserted JOIN deleted ON inserted."id" = deleted."id" ${narrowed};`,
+    );
+    expect(sql).toContain(
+      `WHERE "Post"."id" = inserted."id" AND EXISTS (SELECT deleted."body" EXCEPT SELECT inserted."body");`,
+    );
+  });
+
+  it('should refuse writes joined in one raw beside SQL of its own on SQL Server', () => {
+    expect(() =>
+      render(new MsSqlDialect(), {
+        ...audited,
+        run: (newRow) => raw`${insertInto(Post, { searchVector: newRow.body })} SELECT 1;`,
+      }),
+    ).toThrow(/once per statement/);
   });
 
   // Measured, not assumed: CockroachDB has no `UPDATE OF`, and its `WHEN` resolves neither OLD nor NEW,
