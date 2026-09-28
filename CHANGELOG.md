@@ -4,10 +4,9 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.91.0] - 2026-09-28
 
-- **Breaking:** an insert names every field declared `!`, related rows included, but for a single-column key and the `version`, which uql fills. Declare a `nullable: false` field `!` and every read has it, with no fallback.
-- `Filled<T>` declares a `nullable: false` field that `onInsert` or a `defaultValue` fills, `createdAt!: Filled<Date>`: every read has it, and an insert may leave it out.
-- **Breaking:** a `type: 'time'` field is a `string`, as every driver reads it, not a `Date`.
-- **Fixed:** `generate:from-db` writes entities that compile: `type`, `nullable: false`, `as const` enums, vector `dimensions`, `autoIncrement` where the database disagrees, the `idKey` brand, inverse relations, self-references and a table referencing another twice. Each property is declared `!`, `Filled<T>` or `| null` as its column is, and `uql-migrate types` does the same.
+- **Breaking:** an insert names every field declared `!`, a related row's too, but a single-column key and the `version`. `Filled<T>` marks one that `onInsert` or a `defaultValue` fills: `createdAt!: Filled<Date>` is on every read and optional on insert.
+- **Breaking:** a `type: 'time'` field is a `string`, as every driver returns it.
+- **Fixed:** `generate:from-db` writes entities that compile, and it and `uql-migrate types` declare each property `!`, `Filled<T>` or `| null` as its column is.
 
 ## [0.90.0] - 2026-09-26
 
