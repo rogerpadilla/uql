@@ -1,10 +1,27 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SchemaAST } from '../../schema/schemaAST.js';
 import type { RelationshipNode } from '../../schema/types.js';
-import { assertDefined, columnsOf, mockTableNode } from '../../test/index.js';
+import { assertDefined, columnsOf, mockGeneratedSchema, mockTableNode } from '../../test/index.js';
 import { createEntityCodeGenerator, EntityCodeGenerator } from './entityCodeGenerator.js';
 
 describe('EntityCodeGenerator', () => {
+  /**
+   * The entities checked in under `test/generated/` are what `bun run ts` compiles, so output that stops
+   * compiling against the decorators fails the gate rather than a user's first `generate:from-db`.
+   */
+  it('should generate the entities checked in under test/generated', () => {
+    const generated = new EntityCodeGenerator(mockGeneratedSchema(), { addSyncComments: false }).generateAll();
+    const checkedIn = (fileName: string) =>
+      readFileSync(new URL(`../../test/generated/${fileName}`, import.meta.url), 'utf8');
+
+    expect(Object.fromEntries(generated.map((it) => [it.fileName, it.code]))).toEqual({
+      'User.ts': checkedIn('User.ts'),
+      'Post.ts': checkedIn('Post.ts'),
+      'Region.ts': checkedIn('Region.ts'),
+    });
+  });
+
   describe('generateForTable', () => {
     it('should generate a basic entity class', () => {
       const ast = new SchemaAST();
@@ -19,10 +36,10 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
       expect(result.code).toContain('@Entity(');
       expect(result.code).toContain('class User');
-      expect(result.code).toContain('@Id()');
-      expect(result.code).toContain('id?:');
+      expect(result.code).toContain("@Id({ type: 'int' })");
+      expect(result.code).toContain('id!: number;');
       expect(result.code).toContain('@Field(');
-      expect(result.code).toContain('name?:');
+      expect(result.code).toContain('name?: string | null;');
     });
 
     it('should type a blob column as the bytes the drivers return', () => {
@@ -40,7 +57,7 @@ describe('EntityCodeGenerator', () => {
 
       // Not `Buffer`: the drivers hand back a `Uint8Array`, and a generated file has to compile in a
       // project with no `@types/node`.
-      expect(result.code).toContain('body?: Uint8Array');
+      expect(result.code).toContain('body?: Uint8Array | null');
       expect(result.code).not.toContain('Buffer');
     });
 
@@ -125,7 +142,7 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('unique: true');
     });
 
-    it('should add nullable annotation', () => {
+    it('should leave a nullable column unmarked, its property admitting null', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('users', [
         { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
@@ -137,7 +154,8 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain('nullable: true');
+      expect(result.code).not.toContain('nullable');
+      expect(result.code).toContain('bio?: string | null;');
     });
 
     it('should handle explicit entity name for non-standard table names', () => {
@@ -211,6 +229,32 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('import { User } from');
       expect(result.code).toContain('@ManyToOne');
       expect(result.code).toContain('author?: User');
+    });
+
+    it('should name a relation after its foreign key only where the column ends in an id suffix', () => {
+      const ast = new SchemaAST();
+      const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const orders = mockTableNode('orders', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'buyerId', type: { category: 'integer' } },
+        { name: 'paid', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(orders);
+      for (const column of ['buyerId', 'paid']) {
+        ast.addRelationship({
+          name: `orders_${column}_fk`,
+          type: 'ManyToOne',
+          from: { table: orders, columns: columnsOf(orders, column) },
+          to: { table: users, columns: columnsOf(users, 'id') },
+        });
+      }
+
+      const result = new EntityCodeGenerator(ast).generateForTable('orders');
+      assertDefined(result);
+
+      expect(result.code).toContain('buyer?: User;');
+      expect(result.code).toContain('user?: User;');
     });
 
     it('should carry a real referential action from introspection into the relation decorator', () => {
@@ -413,14 +457,18 @@ describe('EntityCodeGenerator', () => {
 
     it('should generate Id with custom name', () => {
       const ast = new SchemaAST();
-      const table = mockTableNode('users', [{ name: 'user_id', type: { category: 'integer' }, isPrimaryKey: true }]);
+      const table = mockTableNode('users', [
+        { name: 'user_id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true },
+      ]);
       ast.addTable(table);
 
       const generator = new EntityCodeGenerator(ast);
       const result = generator.generateForTable('users');
       assertDefined(result);
 
-      expect(result.code).toContain("@Id({ name: 'user_id' })");
+      expect(result.code).toContain("@Id({ name: 'user_id', type: 'int' })");
+      // No conventional name to read the key by, so the entity names it.
+      expect(result.code).toContain("[idKey]?: 'userId';");
     });
 
     it('should generate field with default value', () => {
@@ -510,8 +558,8 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain('isActive?: boolean');
-      expect(result.code).toContain('createdAt?: Date');
+      expect(result.code).toContain('isActive?: boolean | null');
+      expect(result.code).toContain('createdAt?: Date | null');
     });
 
     /** A MySQL `DATETIME` holds whole seconds, where an unstated precision would declare uql's three digits. */
@@ -527,7 +575,7 @@ describe('EntityCodeGenerator', () => {
       const result = new EntityCodeGenerator(ast).generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain("@Field({ columnType: 'timestamp', precision: 0,");
+      expect(result.code).toContain("@Field({ type: 'timestamp', precision: 0 })");
     });
 
     it('should format complex default values correctly', () => {
@@ -644,7 +692,7 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).not.toContain('@ManyToOne');
       expect(result.code).not.toContain('Relation');
       expect(result.code).not.toContain("from './User.js'");
-      expect(result.code).toContain('authorId?: number;');
+      expect(result.code).toContain('authorId?: number | null;');
     });
 
     it('should omit index decorators and index field options when disabled', () => {
@@ -681,9 +729,9 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain(
-        "@Field({ columnType: 'varchar', length: 255, comment: 'headline', index: 'posts_title_idx' })",
+        "@Field({ type: 'varchar', length: 255, nullable: false, comment: 'headline', index: 'posts_title_idx' })",
       );
-      expect(result.code).toContain('title: string;');
+      expect(result.code).toContain('title!: string;');
     });
 
     it('should use a custom import path for the uql-orm imports', () => {
@@ -733,8 +781,8 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('computed: raw`qty * 2`, stored: true');
       expect(result.code).toContain("import { Entity, Field, Id, raw } from 'uql-orm';");
       // The database writes it, so a write payload leaves it out rather than dropping what it names.
-      expect(result.code).toContain('readonly total?: number;');
-      expect(result.code).toContain('  qty?: number;');
+      expect(result.code).toContain('readonly total?: number | null;');
+      expect(result.code).toContain('  qty?: number | null;');
     });
 
     it('should escape what a database reprints inside the source it emits', () => {

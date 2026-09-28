@@ -204,7 +204,7 @@ const BUDGETS: Record<string, number> = {
   '.': 35_200,
   './postgres': 33_900,
   './migrate': 61_400,
-  './browser': 2_000,
+  './browser': 2_100,
 };
 
 async function checkSizeBudgets(): Promise<void> {

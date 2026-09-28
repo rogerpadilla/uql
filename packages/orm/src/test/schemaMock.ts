@@ -1,6 +1,6 @@
 import { sqlToCanonical } from '../schema/canonicalType.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
-import { createTableNode, keyOfColumns } from '../schema/schemaAST.js';
+import { createTableNode, keyOfColumns, SchemaAST } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
 import { assertDefined } from './spec.util.js';
 
@@ -57,4 +57,63 @@ export function columnsOf(table: TableNode, ...names: string[]): ColumnNode[] {
     assertDefined(column, `${table.name} has no column ${name}`);
     return column;
   });
+}
+
+/**
+ * A schema with a column of every kind `generate:from-db` declares differently, whose generated entities are
+ * checked in under `test/generated/`: `bun run ts` compiles them, and the generator's spec compares them.
+ */
+export function mockGeneratedSchema(): SchemaAST {
+  const ast = new SchemaAST();
+  const users = mockTableNode('users', [
+    { name: 'id', type: { category: 'integer' }, isPrimaryKey: true, isAutoIncrement: true, nullable: false },
+    { name: 'email', type: { category: 'string', length: 255 }, nullable: false, isUnique: true },
+    { name: 'name', type: { category: 'string' } },
+    { name: 'settings', type: { category: 'json' }, nullable: false, defaultValue: '{}' },
+    { name: 'manager_id', type: { category: 'integer' } },
+  ]);
+  const posts = mockTableNode('posts', [
+    { name: 'id', type: { category: 'uuid' }, isPrimaryKey: true, nullable: false },
+    { name: 'author_id', type: { category: 'integer' }, nullable: false },
+    { name: 'editor_id', type: { category: 'integer' } },
+    { name: 'title', type: { category: 'string', length: 255 }, nullable: false },
+    {
+      name: 'state',
+      type: { category: 'string', length: 10 },
+      nullable: false,
+      enum: ['draft', 'live'],
+      defaultValue: 'draft',
+    },
+    { name: 'views', type: { category: 'integer' }, nullable: false, defaultValue: 0 },
+    { name: 'score', type: { category: 'integer' }, nullable: false, generatedAs: 'views * 2' },
+    { name: 'published_at', type: { category: 'timestamp' } },
+    { name: 'read_at', type: { category: 'time' } },
+    { name: 'embedding', type: { category: 'vector', length: 3 } },
+  ]);
+  const regions = mockTableNode('regions', [
+    { name: 'code', type: { category: 'integer' }, isPrimaryKey: true, nullable: false },
+    { name: 'name', type: { category: 'string' }, nullable: false },
+  ]);
+  ast.addTable(users);
+  ast.addTable(posts);
+  ast.addTable(regions);
+  ast.addRelationship({
+    name: 'posts_author_id_fkey',
+    type: 'ManyToOne',
+    from: { table: posts, columns: columnsOf(posts, 'author_id') },
+    to: { table: users, columns: columnsOf(users, 'id') },
+  });
+  ast.addRelationship({
+    name: 'posts_editor_id_fkey',
+    type: 'ManyToOne',
+    from: { table: posts, columns: columnsOf(posts, 'editor_id') },
+    to: { table: users, columns: columnsOf(users, 'id') },
+  });
+  ast.addRelationship({
+    name: 'users_manager_id_fkey',
+    type: 'ManyToOne',
+    from: { table: users, columns: columnsOf(users, 'manager_id') },
+    to: { table: users, columns: columnsOf(users, 'id') },
+  });
+  return ast;
 }

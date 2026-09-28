@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.91.0] - 2026-09-28
+
+- **Breaking:** an insert names every field declared `!`, related rows included, but for a single-column key and the `version`, which uql fills. Declare a `nullable: false` field `!` and every read has it, with no fallback.
+- `Filled<T>` declares a `nullable: false` field that `onInsert` or a `defaultValue` fills, `createdAt!: Filled<Date>`: every read has it, and an insert may leave it out.
+- **Breaking:** a `type: 'time'` field is a `string`, as every driver reads it, not a `Date`.
+- **Fixed:** `generate:from-db` writes entities that compile: `type`, `nullable: false`, `as const` enums, vector `dimensions`, `autoIncrement` where the database disagrees, the `idKey` brand, inverse relations, self-references and a table referencing another twice. Each property is declared `!`, `Filled<T>` or `| null` as its column is, and `uql-migrate types` does the same.
+
 ## [0.90.0] - 2026-09-26
 
 - **Breaking:** `MongoQuerier`, `isMongoQuerier`, `MongoMigrationStorage` and `MongoSchemaIntrospector` are imported from `uql-orm/mongo`, as a generated MongoDB migration now does; `uql-codemod` moves the imports.

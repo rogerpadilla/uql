@@ -75,8 +75,8 @@ type EnumValue<Members, Declared> = Declared extends Members ? { readonly __enum
 
 /**
  * Declares a persisted field, its `type` checked against the property's.
- * @example `@Field({ type: String }) name?: string;`
- * @example `@Field({ references: () => User }) userId?: string;`
+ * @example `@Field({ type: String, nullable: false }) name!: string;`
+ * @example `@Field({ references: () => User }) userId?: string | null;`
  */
 export function Field<
   This,
@@ -139,7 +139,7 @@ type IdDecorator<V> = <This>(value: undefined, context: ClassFieldDecoratorConte
 
 /**
  * Declares the primary key, checked like `@Field`; a key not named `id`, `_id` or `uuid` needs the `idKey` brand.
- * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id?: string;`
+ * @example `@Id({ type: 'uuid', onInsert: uuidv7 }) id!: string;`
  */
 export function Id<
   O extends FieldOptions<DeclaredValue<O>> & { type: FieldType } & RejectKeys<Exclude<keyof O, keyof FieldOptions>> &

@@ -75,8 +75,8 @@ describe('generate:from-db (PostgreSQL)', () => {
    */
   it('should name the column wherever the property cannot', () => {
     expect(code).toContain("@Field({ name: 'is_enabled'");
-    expect(code).toContain('isEnabled?: boolean;');
-    expect(code).toContain('tenantId?: number;');
+    expect(code).toContain('isEnabled?: boolean | null;');
+    expect(code).toContain('tenantId?: number | null;');
     expect(code).not.toContain('tenantid');
     expect(code).not.toContain("name: 'tenantId'");
   });

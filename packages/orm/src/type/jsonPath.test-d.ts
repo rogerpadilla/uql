@@ -97,13 +97,6 @@ export async function jsonDotPathSafety() {
   // @ts-expect-error 'nope' is not a key of Post.kind
   await querier.findMany(Post, { $where: { 'kind.nope': 1 } });
 
-  // The `Json` brand is not a path: `Json<P>`'s payload infers as `P` alone, so the marker key
-  // never reaches the key derivation in the first place.
-  // @ts-expect-error '__json' is a brand, not a key of the payload
-  await querier.findMany(Post, { $where: { 'kind.__json': 1 } });
-  // @ts-expect-error and it is not a key of an array payload's element either
-  await querier.findMany(Post, { $where: { 'items.__json': 1 } });
-
   // Dot-paths on non-JSON scalar fields are compile errors.
   // @ts-expect-error 'title' is not a JSON field
   await querier.findMany(Post, { $where: { 'title.foo': 1 } });

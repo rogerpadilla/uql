@@ -8,5 +8,5 @@
     "partitionByNewline": true,
     "ignoreCase": false
   },
-  "ignorePatterns": ["CHANGELOG.md", "**/CHANGELOG.md"]
+  "ignorePatterns": ["CHANGELOG.md", "**/CHANGELOG.md", "packages/orm/src/test/generated"]
 }

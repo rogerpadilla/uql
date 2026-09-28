@@ -55,10 +55,10 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from 'uql-orm';
 @Entity()
 export class User {
   @Id({ type: Number })
-  id?: number;
+  id!: number;
 
-  @Field({ type: String, unique: true })
-  email?: string | null;
+  @Field({ type: String, unique: true, nullable: false })
+  email!: string;
 
   @OneToMany({ entity: () => Post, mappedBy: (post) => post.author })
   posts?: Post[];
@@ -67,10 +67,10 @@ export class User {
 @Entity()
 export class Post {
   @Id({ type: Number })
-  id?: number;
+  id!: number;
 
-  @Field({ type: String })
-  title?: string | null;
+  @Field({ type: String, nullable: false })
+  title!: string;
 
   @Field({ type: Number })
   likes?: number | null;

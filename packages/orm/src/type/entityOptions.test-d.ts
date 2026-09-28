@@ -33,6 +33,10 @@ expectType<TypeFor<boolean>>(Boolean);
 expectType<TypeFor<boolean>>('bool');
 expectType<TypeFor<Date>>(Date);
 expectType<TypeFor<Date>>('timestamptz');
+// A time of day names no day, so it reads as the text every driver returns rather than a `Date`.
+expectType<TypeFor<string>>('time');
+// @ts-expect-error a time column holds no `Date`
+expectType<TypeFor<Date>>('time');
 expectType<TypeFor<Uint8Array>>('bytea');
 
 // A string-literal union (the shape every `as const` enum takes) is still a string column.
@@ -459,6 +463,7 @@ expectType<TypeFor<TsTypeOf<'int'>>>('int');
 expectType<TypeFor<TsTypeOf<'bigint'>>>('bigint');
 expectType<TypeFor<TsTypeOf<'bool'>>>('bool');
 expectType<TypeFor<TsTypeOf<'timestamptz'>>>('timestamptz');
+expectType<TypeFor<TsTypeOf<'time'>>>('time');
 expectType<TypeFor<TsTypeOf<'jsonb'>>>('jsonb');
 expectType<TypeFor<TsTypeOf<'bytea'>>>('bytea');
 expectType<TypeFor<TsTypeOf<'vector'>>>('vector');

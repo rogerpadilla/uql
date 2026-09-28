@@ -8,10 +8,10 @@ import {
   type RelationshipType,
   type TableNode,
 } from '../../schema/types.js';
-import { camelCase, lowerFirst, pascalCase, singularize } from '../../util/string.util.js';
-import { buildFieldOptionsSource, fieldNeedsRaw } from './fieldOptionsSource.js';
+import { camelCase, lowerFirst, pascalCase, singularize, upperFirst } from '../../util/string.util.js';
+import { buildFieldOptionsSource, enumMembersSource, fieldNeedsRaw } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
-import { memberSource } from './sourceLiteral.js';
+import { memberSource, quoted } from './sourceLiteral.js';
 
 /** The decorator on the other side of a relation. */
 const INVERSE_RELATION: Readonly<Record<RelationshipType, RelationshipType>> = {
@@ -107,7 +107,8 @@ export class EntityCodeGenerator {
 
     const imports = this.buildImports(table);
     const decorators = this.buildEntityDecorators(table);
-    const fields = this.buildFields(table);
+    const brand = this.idKeyBrand(table);
+    const fields = brand ? `${brand}\n\n${this.buildFields(table)}` : this.buildFields(table);
     const relations = this.options.includeRelations ? this.buildRelations(table) : '';
 
     const code = [imports, '', decorators, `export class ${className} {`, fields, relations, '}', ''].join('\n');
@@ -127,6 +128,9 @@ export class EntityCodeGenerator {
     const uqlImports = new Set<string>(['Entity', 'Field']);
     const relatedImports: string[] = [];
 
+    if (this.idKeyBrand(table)) {
+      uqlImports.add('idKey');
+    }
     for (const col of table.columns.values()) {
       if (col.isPrimaryKey) {
         uqlImports.add('Id');
@@ -134,16 +138,26 @@ export class EntityCodeGenerator {
       if (fieldNeedsRaw(col)) {
         uqlImports.add('raw');
       }
+      if (col.type.category === 'json') {
+        uqlImports.add('type Json');
+      }
+      if (isFilledColumn(col)) {
+        uqlImports.add('type Filled');
+      }
     }
 
     // Check for relation decorators
     if (this.options.includeRelations) {
-      for (const rel of [...table.incomingRelations, ...table.outgoingRelations]) {
+      for (const rel of table.outgoingRelations) {
         uqlImports.add(rel.type);
-
+      }
+      for (const rel of table.incomingRelations) {
+        uqlImports.add(INVERSE_RELATION[rel.type]);
+      }
+      for (const rel of [...table.incomingRelations, ...table.outgoingRelations]) {
         const relatedTable = rel.from.table === table ? rel.to.table : rel.from.table;
         const relatedClassName = this.options.classNameTransformer(relatedTable.name);
-        if (!relatedImports.includes(relatedClassName)) {
+        if (relatedTable !== table && !relatedImports.includes(relatedClassName)) {
           relatedImports.push(relatedClassName);
         }
       }
@@ -159,14 +173,10 @@ export class EntityCodeGenerator {
       }
     }
 
-    let code = `import { ${Array.from(uqlImports).sort().join(', ')} } from '${this.options.uqlImportPath}';\n`;
-
-    // Add related entity imports
-    for (const className of relatedImports.sort()) {
-      code += `import { ${className} } from './${className}.js';\n`;
-    }
-
-    return code;
+    return [
+      `import { ${Array.from(uqlImports).sort().join(', ')} } from '${this.options.uqlImportPath}';`,
+      ...relatedImports.sort().map((className) => `import { ${className} } from './${className}.js';`),
+    ].join('\n');
   }
 
   /**
@@ -203,12 +213,26 @@ export class EntityCodeGenerator {
   }
 
   /**
+   * The `idKey` brand naming the key, which the type level cannot see otherwise: needed unless the key is
+   * one column holding the conventional name the entity would be read by, the first of `_id`, `id`, `uuid`.
+   */
+  private idKeyBrand(table: TableNode): string | undefined {
+    const property = (column: string) => this.options.propertyNameTransformer(column);
+    const keys = (table.primaryKey?.columns ?? []).map(property);
+    const properties = [...table.columns.keys()].map(property);
+    const conventional = ['_id', 'id', 'uuid'].find((name) => properties.includes(name));
+    if (!keys.length || (keys.length === 1 && keys[0] === conventional)) {
+      return undefined;
+    }
+    return `  [idKey]?: ${keys.map(quoted).join(' | ')};`;
+  }
+
+  /**
    * Build a single field definition.
    */
   private buildField(col: ColumnNode): string {
     const lines: string[] = [];
     const propertyName = this.options.propertyNameTransformer(col.name);
-    const tsType = canonicalToTypeScript(col.type);
 
     // JSDoc comment if enabled
     if (this.options.addSyncComments) {
@@ -218,29 +242,10 @@ export class EntityCodeGenerator {
       lines.push('   */');
     }
 
-    // Decorator
-    if (col.isPrimaryKey) {
-      const idOptions = this.buildIdOptions(col, propertyName);
-      lines.push(`  @Id(${idOptions})`);
-    } else {
-      const fieldOptions = this.buildFieldOptions(col, propertyName);
-      lines.push(`  @Field(${fieldOptions})`);
-    }
-
-    // Property. A generated column is the database's to write, so it is `readonly`: a write payload
-    // leaves those out, and one naming it would be dropped rather than persisted.
-    const nullable = col.nullable ? '?' : '';
-    const written = col.generatedAs === undefined ? '' : 'readonly ';
-    lines.push(`  ${written}${propertyName}${nullable}: ${tsType};`);
+    lines.push(`  @${col.isPrimaryKey ? 'Id' : 'Field'}(${this.buildFieldOptions(col, propertyName)})`);
+    lines.push(`  ${propertySource(col, propertyName)};`);
 
     return lines.join('\n');
-  }
-
-  /**
-   * Build Id decorator options.
-   */
-  private buildIdOptions(col: ColumnNode, propertyName: string): string {
-    return propertyName === col.name ? '' : `{ name: '${col.name}' }`;
   }
 
   /**
@@ -274,7 +279,7 @@ export class EntityCodeGenerator {
 
     // Incoming relations (other tables have FK to this)
     for (const rel of table.incomingRelations) {
-      const relCode = this.buildIncomingRelation(rel, table);
+      const relCode = this.buildIncomingRelation(rel);
       lines.push(relCode);
     }
 
@@ -291,16 +296,7 @@ export class EntityCodeGenerator {
   private buildOutgoingRelation(rel: RelationshipNode): string {
     const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.to.table.name);
-
-    // Try to derive property name from FK column name (e.g., author_id -> author)
-    let propertyName = '';
-    const firstCol = rel.from.columns[0]?.name;
-    if (firstCol && (firstCol.toLowerCase().endsWith('_id') || firstCol.toLowerCase().endsWith('id'))) {
-      const baseName = firstCol.replace(/_?id$/i, '');
-      propertyName = this.options.propertyNameTransformer(baseName);
-    } else {
-      propertyName = this.options.propertyNameTransformer(this.options.singularize(rel.to.table.name));
-    }
+    const propertyName = this.owningPropertyName(rel);
 
     // JSDoc
     if (this.options.addSyncComments) {
@@ -323,6 +319,27 @@ export class EntityCodeGenerator {
     lines.push(`  ${propertyName}?: ${relatedClassName};`);
 
     return lines.join('\n');
+  }
+
+  /**
+   * The property of the side holding the foreign key: its column's name less an `_id` or `Id` suffix
+   * (`author_id` is `author`), else the singular of the table it points at. The inverse's `mappedBy` names the same.
+   */
+  private owningPropertyName(rel: RelationshipNode): string {
+    const base = rel.from.columns[0]?.name.replace(/(?:_[iI][dD]|(?<=[a-z\d])Id)$/, '');
+    return this.options.propertyNameTransformer(
+      base && base !== rel.from.columns[0]?.name ? base : this.options.singularize(rel.to.table.name),
+    );
+  }
+
+  /**
+   * The inverse side's property: the related table's name, prefixed with the owning property where that
+   * table points here more than once (`authorPosts`, `editorPosts`), so each gets a member of its own.
+   */
+  private inversePropertyName(rel: RelationshipNode): string {
+    const name = this.options.propertyNameTransformer(rel.from.table.name);
+    const pointers = rel.to.table.incomingRelations.filter((it) => it.from.table === rel.from.table);
+    return pointers.length > 1 ? `${this.owningPropertyName(rel)}${upperFirst(name)}` : name;
   }
 
   /**
@@ -351,10 +368,10 @@ export class EntityCodeGenerator {
   /**
    * Build incoming relation (OneToMany where other tables have FK to this).
    */
-  private buildIncomingRelation(rel: RelationshipNode, table: TableNode): string {
+  private buildIncomingRelation(rel: RelationshipNode): string {
     const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.from.table.name);
-    const propertyName = this.options.propertyNameTransformer(rel.from.table.name);
+    const propertyName = this.inversePropertyName(rel);
 
     // JSDoc
     if (this.options.addSyncComments) {
@@ -366,7 +383,7 @@ export class EntityCodeGenerator {
 
     // The inverse side, mapped by the related class's property that points back at this one.
     const param = lowerFirst(relatedClassName);
-    const inverse = memberSource(param, this.options.propertyNameTransformer(this.options.singularize(table.name)));
+    const inverse = memberSource(param, this.owningPropertyName(rel));
     const inverseType = INVERSE_RELATION[rel.type];
     lines.push(`  @${inverseType}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`);
     const many = inverseType === 'OneToMany' || inverseType === 'ManyToMany';
@@ -426,6 +443,29 @@ export class EntityCodeGenerator {
   private defaultSingularize(name: string): string {
     return singularize(name);
   }
+}
+
+/**
+ * A column's property as source, declared the way every read and insert types it: present (`!`) where
+ * the column is NOT NULL, `Filled` where a default fills it (a single-column key stays `!`, which an insert
+ * leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
+ */
+function propertySource(col: ColumnNode, propertyName: string): string {
+  const type = col.enum
+    ? enumMembersSource(col.enum).join(' | ')
+    : col.type.category === 'json'
+      ? 'Json<unknown>'
+      : canonicalToTypeScript(col.type);
+  const written = col.generatedAs === undefined ? '' : 'readonly ';
+  if (col.nullable && !col.isPrimaryKey) {
+    return `${written}${propertyName}?: ${type} | null`;
+  }
+  return `${written}${propertyName}!: ${isFilledColumn(col) ? `Filled<${type}>` : type}`;
+}
+
+/** A non-null column its default fills, which every read has and an insert may leave out. */
+function isFilledColumn(col: ColumnNode): boolean {
+  return !col.nullable && !col.isPrimaryKey && col.generatedAs === undefined && col.defaultValue !== undefined;
 }
 
 /**

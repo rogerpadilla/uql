@@ -8,6 +8,7 @@ import type {
   Except,
   ExactlyOne,
   IsEqual,
+  IsJson,
   IsMany,
   Json,
   Scalar,
@@ -26,6 +27,19 @@ export const idKey = Symbol('idKey');
  * must not start demanding one.
  */
 export const versionKey = Symbol('versionKey');
+
+/**
+ * A non-null field uql or the database fills on insert, by `onInsert` or a default: every read has it,
+ * and an insert may leave it out. `createdAt!: Filled<Date>`.
+ */
+export type Filled<T> = T & FilledBrand;
+
+declare const filled: unique symbol;
+
+/** The marker {@link Filled} adds: a symbol key, so no string key or autocomplete shows it. */
+export interface FilledBrand {
+  readonly [filled]?: never;
+}
 
 /** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
@@ -58,8 +72,24 @@ export type WritableKey<E> = {
   readonly [K in FieldKey<E>]-?: IsEqual<Pick<E, K>, Writable<Pick<E, K>>> extends true ? K : never;
 }[FieldKey<E>];
 
-/** A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write. */
-export type EntityWrite<E> = EntityData<E, WritableKey<E>>;
+/**
+ * What an insert may leave out: a single-column key, which something usually generates, the version,
+ * which uql starts at 0, and a {@link Filled} field. A composite key is the references a row is made of,
+ * so an insert names it.
+ */
+type FilledKey<E> = SoleIdKey<E> | VersionKey<E> | FilledFieldKey<E>;
+
+type FilledFieldKey<E> = {
+  readonly [K in WritableKey<E>]-?: typeof filled extends keyof NonNullable<E[K]> ? K : never;
+}[WritableKey<E>];
+
+/**
+ * A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write,
+ * a {@link FilledKey} optional. That part is a conditional, which TypeScript leaves shut while it types a
+ * call's payload against the generic write: as a mapped type, it doubled what checking an insert cost.
+ */
+export type EntityWrite<E> = EntityData<E, Exclude<WritableKey<E>, FilledKey<E>>> &
+  ([FilledKey<E>] extends [never] ? unknown : { [P in WritableKey<E> & FilledKey<E>]?: E[P] });
 
 /** A row a trigger's body writes: each writable field its value, or SQL - a row's ref most often. */
 export type WriteRow<E, F extends keyof E = WritableKey<E>> = { readonly [K in F]?: E[K] | RawFor<QueryRaw, E[K]> };
@@ -89,9 +119,6 @@ export type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends 
 
 /** The relation names a parent holds many rows of: what a populated query fills, and what an aggregate reads. */
 export type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
-
-/** Whether `T` carries the `Json` brand, read off its marker key: a primitive matches `Json<infer P>` too. */
-type IsJson<T> = '__json' extends keyof T ? true : false;
 
 /** The payload `P` of a branded `Json<P>`, or `never` for any other type. */
 type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
@@ -212,7 +239,8 @@ type UpdateExtra<V, Raw> =
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a
- * related row's alike, and no methods. Two mapped types, since asking each key costs a conditional.
+ * related row as a caller writes one, and no methods. Two mapped types, since asking each key costs a
+ * conditional.
  */
 export type EntityData<E, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
   [P in F]: E[P];
@@ -220,8 +248,8 @@ export type EntityData<E, F extends keyof E = FieldKey<E>, R extends keyof E = R
   [P in R]: E[P] | RelationData<E[P]>;
 };
 
-/** A relation's value as its rows' {@link EntityData}. */
-type RelationData<V> = V extends readonly (infer T)[] ? EntityData<T>[] : V extends object ? EntityData<V> : never;
+/** A relation's value as its rows' {@link EntityWrite}. */
+type RelationData<V> = V extends readonly (infer T)[] ? EntityWrite<T>[] : V extends object ? EntityWrite<V> : never;
 
 /** {@link EntityData} made partial, each member also taking its {@link UpdateExtra}. */
 export type UpdatePayload<E, Raw = QueryRaw, F extends keyof E = FieldKey<E>, R extends keyof E = RelationKey<E>> = {
@@ -250,6 +278,12 @@ export type IdValue<E> = E[IdKey<E>];
 /** Whether `E`'s primary key spans several columns, which no single column can reference. */
 export type HasCompositeKey<E> = true extends IsUnion<IdKey<E>> ? true : false;
 
+/**
+ * The key an entity names where it is one column, as `soleIdOf` reads it at run time; `never` for a
+ * composite and for no named key, which {@link HasCompositeKey} tells apart where a reference needs it.
+ */
+type SoleIdKey<E> = true extends IsUnion<NamedIdKey<E>> ? never : NamedIdKey<E>;
+
 /** Every column of a key, which is how a composite row is named and what a `$where` reduces to. */
 type IdMap<E> = Partial<Pick<E, IdKey<E>>>;
 
@@ -268,7 +302,7 @@ type IsUnion<T, U = T> = T extends unknown ? ([U] extends [T] ? false : true) : 
  */
 export type WrittenId<E> = [NamedIdKey<E>] extends [never]
   ? EntityId<E>
-  : IsUnion<IdKey<E>> extends true
+  : [SoleIdKey<E>] extends [never]
     ? IdMap<E>
     : IdValue<E>;
 
@@ -305,6 +339,9 @@ type ColumnTypeOf<F extends ColumnFamily> = (typeof COLUMN_TYPES)[F][number];
 export type NumericColumnType = ColumnTypeOf<'numeric'>;
 export type StringColumnType = ColumnTypeOf<'string'>;
 export type DateColumnType = ColumnTypeOf<'date'>;
+
+/** A date column holding a time of day, which names no day: every driver reads it back as text, never a `Date`. */
+type TimeColumnType = 'time';
 export type JsonColumnType = ColumnTypeOf<'json'>;
 export type BlobColumnType = ColumnTypeOf<'blob'>;
 export type BooleanColumnType = ColumnTypeOf<'boolean'>;
@@ -348,7 +385,7 @@ export type TypeFor<V, T = NonNullable<V>> =
     : T extends readonly number[]
       ? VectorColumnType
       : T extends string
-        ? StringConstructor | StringColumnType
+        ? StringConstructor | StringColumnType | TimeColumnType
         : T extends number
           ? NumberConstructor | NumericColumnType
           : T extends bigint
@@ -356,7 +393,7 @@ export type TypeFor<V, T = NonNullable<V>> =
             : T extends boolean
               ? BooleanConstructor | BooleanColumnType
               : T extends Date
-                ? DateConstructor | DateColumnType
+                ? DateConstructor | Exclude<DateColumnType, TimeColumnType>
                 : T extends Uint8Array
                   ? BlobColumnType
                   : FieldType;
@@ -476,7 +513,7 @@ export type TsTypeOf<T> = T extends StringConstructor
         ? boolean
         : T extends DateConstructor
           ? Date
-          : T extends StringColumnType
+          : T extends StringColumnType | TimeColumnType
             ? string
             : T extends NumericColumnType
               ? number | bigint

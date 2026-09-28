@@ -26,7 +26,17 @@ export type PrimaryKey = string | number | bigint;
  * Brands a JSON field, `settings?: Json<{ isArchived?: boolean }>`, so it reads as a field rather than a
  * relation; `Json<T>[]` is a list of documents.
  */
-export type Json<T = unknown> = T & { readonly __json?: never };
+export type Json<T = unknown> = T & JsonBrand;
+
+declare const json: unique symbol;
+
+/** The marker {@link Json} adds: a symbol key, so no string key, path or autocomplete shows it. */
+export interface JsonBrand {
+  readonly [json]?: never;
+}
+
+/** Whether `T` carries the {@link Json} brand: a primitive matches `Json<infer P>` too, so the key is what tells. */
+export type IsJson<T> = typeof json extends keyof T ? true : false;
 
 export type ExpandScalar<T> = T extends Date ? Date | string : T;
 

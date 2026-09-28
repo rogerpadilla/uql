@@ -37,6 +37,8 @@ export type QueryRawFn = (opts: QueryRawRenderOptions) => unknown;
 export const RAW_VALUE: unique symbol = Symbol('rawValue');
 export const RAW_ALIAS: unique symbol = Symbol('rawAlias');
 export const RAW_TEXT: unique symbol = Symbol('rawText');
+/** Keys the phantom a ref or an aggregate carries its value type in, which no value ever fills. */
+export const RAW_VALUE_TYPE: unique symbol = Symbol('rawValueType');
 
 export class QueryRaw {
   readonly [RAW_VALUE]: QueryRawFn;
@@ -74,7 +76,7 @@ export class QueryRaw {
  * the field's type, is what a value slot checks it against: see {@link RawFor}.
  */
 export class ColumnRef<K extends string = string, V = unknown> extends QueryRaw {
-  declare readonly __value?: V;
+  declare readonly [RAW_VALUE_TYPE]?: V;
 
   constructor(
     readonly key: K,
@@ -88,7 +90,7 @@ export class ColumnRef<K extends string = string, V = unknown> extends QueryRaw 
  * SQL where a value of type `V` goes: bare SQL, whose type is its author's to know, or a ref to a column
  * holding one, nullability aside. `Raw` is what the transport carries, so the wire's `never` stays one.
  */
-export type RawFor<Raw, V> = Raw & { readonly __value?: V | null };
+export type RawFor<Raw, V> = Raw & { readonly [RAW_VALUE_TYPE]?: V | null };
 
 /**
  * A relation aggregate as SQL, read off a `computed` field's refs: `(user) => user.resources.count()`.
@@ -100,7 +102,7 @@ export type RawFor<Raw, V> = Raw & { readonly __value?: V | null };
  * one no delta can maintain.
  */
 export class RelationAggregate<V = unknown, Storable extends boolean = boolean> extends QueryRaw {
-  declare readonly __value?: V;
+  declare readonly [RAW_VALUE_TYPE]?: V;
   declare private readonly __storable: Storable;
 
   constructor(
