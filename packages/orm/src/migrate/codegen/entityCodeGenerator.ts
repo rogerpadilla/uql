@@ -141,9 +141,6 @@ export class EntityCodeGenerator {
       if (col.type.category === 'json') {
         uqlImports.add('type Json');
       }
-      if (isFilledColumn(col)) {
-        uqlImports.add('type Filled');
-      }
     }
 
     // Check for relation decorators
@@ -447,8 +444,8 @@ export class EntityCodeGenerator {
 
 /**
  * A column's property as source, declared the way every read and insert types it: present (`!`) where
- * the column is NOT NULL, `Filled` where a default fills it (a single-column key stays `!`, which an insert
- * leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
+ * the column is NOT NULL, left out of an insert (`?`) where a default fills it (a single-column key stays
+ * `!`, which an insert leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
  */
 function propertySource(col: ColumnNode, propertyName: string): string {
   const type = col.enum
@@ -460,12 +457,8 @@ function propertySource(col: ColumnNode, propertyName: string): string {
   if (col.nullable && !col.isPrimaryKey) {
     return `${written}${propertyName}?: ${type} | null`;
   }
-  return `${written}${propertyName}!: ${isFilledColumn(col) ? `Filled<${type}>` : type}`;
-}
-
-/** A non-null column its default fills, which every read has and an insert may leave out. */
-function isFilledColumn(col: ColumnNode): boolean {
-  return !col.nullable && !col.isPrimaryKey && col.generatedAs === undefined && col.defaultValue !== undefined;
+  const filled = !col.isPrimaryKey && col.defaultValue !== undefined;
+  return `${written}${propertyName}${filled ? '?' : '!'}: ${type}`;
 }
 
 /**

@@ -1,4 +1,4 @@
-import { Entity, Field, Id, ManyToOne, raw, type Filled } from 'uql-orm';
+import { Entity, Field, Id, ManyToOne, raw } from 'uql-orm';
 import { User } from './User.js';
 
 @Entity({ name: 'posts' })
@@ -16,10 +16,10 @@ export class Post {
   title!: string;
 
   @Field({ type: 'varchar', length: 10, nullable: false, enum: ['draft', 'live'] as const, defaultValue: 'draft' })
-  state!: Filled<'draft' | 'live'>;
+  state?: 'draft' | 'live';
 
   @Field({ type: 'int', nullable: false, defaultValue: 0 })
-  views!: Filled<number>;
+  views?: number;
 
   @Field({ type: 'int', nullable: false, computed: raw`views * 2`, stored: true })
   readonly score!: number;

@@ -28,19 +28,6 @@ export const idKey = Symbol('idKey');
  */
 export const versionKey = Symbol('versionKey');
 
-/**
- * A non-null field uql or the database fills on insert, by `onInsert` or a default: every read has it,
- * and an insert may leave it out. `createdAt!: Filled<Date>`.
- */
-export type Filled<T> = T & FilledBrand;
-
-declare const filled: unique symbol;
-
-/** The marker {@link Filled} adds: a symbol key, so no string key or autocomplete shows it. */
-export interface FilledBrand {
-  readonly [filled]?: never;
-}
-
 /** The filter `@Field({ softDelete })` registers, a name reserved against an entity's own filters. */
 export const SOFT_DELETE_FILTER = 'softDelete';
 
@@ -73,15 +60,11 @@ export type WritableKey<E> = {
 }[FieldKey<E>];
 
 /**
- * What an insert may leave out: a single-column key, which something usually generates, the version,
- * which uql starts at 0, and a {@link Filled} field. A composite key is the references a row is made of,
- * so an insert names it.
+ * What an insert may leave out however the entity declares it: a single-column key, which something
+ * usually generates, and the version, which uql starts at 0. A composite key is the references a row is
+ * made of, so an insert names it.
  */
-type FilledKey<E> = SoleIdKey<E> | VersionKey<E> | FilledFieldKey<E>;
-
-type FilledFieldKey<E> = {
-  readonly [K in WritableKey<E>]-?: typeof filled extends keyof NonNullable<E[K]> ? K : never;
-}[WritableKey<E>];
+type FilledKey<E> = SoleIdKey<E> | VersionKey<E>;
 
 /**
  * A whole-record write as a caller supplies one: {@link EntityData} without the fields it cannot write,

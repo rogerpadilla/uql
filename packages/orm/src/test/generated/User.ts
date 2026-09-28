@@ -1,4 +1,4 @@
-import { Entity, Field, Id, ManyToOne, OneToMany, type Filled, type Json } from 'uql-orm';
+import { Entity, Field, Id, ManyToOne, OneToMany, type Json } from 'uql-orm';
 import { Post } from './Post.js';
 
 @Entity({ name: 'users' })
@@ -13,7 +13,7 @@ export class User {
   name?: string | null;
 
   @Field({ type: 'jsonb', nullable: false, defaultValue: '{}' })
-  settings!: Filled<Json<unknown>>;
+  settings?: Json<unknown>;
 
   @Field({ name: 'manager_id', type: 'int' })
   managerId?: number | null;

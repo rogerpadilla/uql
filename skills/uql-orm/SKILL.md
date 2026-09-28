@@ -76,7 +76,7 @@ export class Post {
 
 - Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date` (an instant, bound and read as UTC on every engine; `TIMESTAMPTZ` on Postgres and CockroachDB, `DATETIME(3)` on MySQL and MariaDB; `precision` sets its fractional-second digits), `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
-- Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. One `onInsert` or a `defaultValue` fills is `Filled<T>` (`createdAt!: Filled<Date>`): reads have it, inserts may leave it out. Declare `?` the rest an insert may leave out: a nullable, `eager: false` or `computed` field, and relations.
+- Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. Declare `?` whatever an insert may leave out: a nullable, `onInsert`, `defaultValue`, `eager: false` or `computed` field, and relations.
 - An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.

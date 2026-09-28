@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.91.1] - 2026-09-28
+
+- `Filled<T>` is gone: declare a field that `onInsert` or a `defaultValue` fills `?`, as before 0.91.0.
+
 ## [0.91.0] - 2026-09-28
 
 - **Breaking:** an insert names every field declared `!`, a related row's too, but a single-column key and the `version`. `Filled<T>` marks one that `onInsert` or a `defaultValue` fills: `createdAt!: Filled<Date>` is on every read and optional on insert.
