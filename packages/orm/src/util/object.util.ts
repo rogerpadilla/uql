@@ -1,13 +1,4 @@
 import type { EntityMeta } from '../type/index.js';
-import { UqlUsageError } from './uqlError.js';
-
-export function throwPendingTransaction(): never {
-  throw new UqlUsageError('pending transaction');
-}
-
-export function throwNoPendingTransaction(): never {
-  throw new UqlUsageError('not a pending transaction');
-}
 
 export function clone<T>(value: T): T {
   if (typeof value !== 'object' || value === null) {

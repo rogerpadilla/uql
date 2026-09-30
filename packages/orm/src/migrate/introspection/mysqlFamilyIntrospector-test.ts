@@ -1,5 +1,6 @@
 import { expect } from 'vitest';
 import type { SchemaIntrospector, SqlQuerier } from '../../type/index.js';
+import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 
 /**
@@ -85,17 +86,21 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
 
     const createdAtCol = this.getColumn(schema, 'created_at');
     expect(createdAtCol.type.toUpperCase()).toBe('DATETIME(3)');
-    expect(createdAtCol.defaultValue).toBe('CURRENT_TIMESTAMP');
+    expect(createdAtCol.defaultValue).toEqual(expr.now());
   }
 
-  /** Each engine prints these its own way, see `parseDefaultValue`; both read back what was declared. */
+  /**
+   * Each engine prints these its own way, see `parseDefaultValue`; both read back what was declared. MySQL
+   * prints the text `'CURRENT_TIMESTAMP'` exactly as the clock, and only `DEFAULT_GENERATED` tells them apart.
+   */
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
       querier.run(/*sql*/ `
         CREATE TABLE ${table} (
           word VARCHAR(9) DEFAULT 'hello', quoted VARCHAR(9) DEFAULT 'it''s', slash VARCHAR(9) DEFAULT 'a\\\\b',
           lined VARCHAR(9) DEFAULT 'a\\nb', fraction DECIMAL(6, 2) DEFAULT -12.5, negative INT DEFAULT -3,
-          stamped DATETIME DEFAULT CURRENT_TIMESTAMP, note TEXT DEFAULT ('o''k'), bare INT NOT NULL
+          stamped DATETIME DEFAULT CURRENT_TIMESTAMP, note TEXT DEFAULT ('o''k'), bare INT NOT NULL,
+          spelled VARCHAR(20) DEFAULT 'CURRENT_TIMESTAMP'
         )
       `),
     );
@@ -107,9 +112,10 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
       lined: 'a\nb',
       fraction: -12.5,
       negative: -3,
-      stamped: 'CURRENT_TIMESTAMP',
+      stamped: expr.now(),
       note: "o'k",
       bare: undefined,
+      spelled: 'CURRENT_TIMESTAMP',
     });
   }
 

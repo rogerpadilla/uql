@@ -75,9 +75,7 @@ describe('indexChanges', () => {
     const current = [emailIndex('users__email_uk'), emailIndex('idx_users_email')];
 
     expect(indexChanges('users', [emailIndex('users__email_idx')], current, new Set())).toEqual({
-      toAdd: [],
-      toDrop: [emailIndex('idx_users_email')],
-      toAlter: [],
+      changes: [{ from: emailIndex('idx_users_email') }],
       kept: [],
     });
   });

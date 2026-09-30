@@ -11,7 +11,6 @@ import type {
   FieldMeta,
   FieldOptions,
   IdKey,
-  InsertIdSource,
   Query,
   QueryConflictPaths,
   QueryContext,
@@ -23,6 +22,7 @@ import type {
   VectorMetric,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
+import { bytesToHex } from '../util/bytes.js';
 import { isAutoIncrement } from '../util/field.util.js';
 import { assertNonNegativeInteger } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
@@ -46,6 +46,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
+  nullsSortLowest: true,
   nullsOrdering: 'case',
   textScoreIndexes: false,
   orderedUpsertReturning: false,
@@ -55,6 +56,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   serialDeclaresPrimaryKey: false,
   triggers: {
     preamble: 'SET NOCOUNT ON;',
+    reentryGuard: 'IF TRIGGER_NESTLEVEL(@@PROCID) > 1 RETURN;',
     assignsRow: false,
     body: 'inline',
     fires: 'eachStatement',
@@ -97,8 +99,6 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   override readonly autoIncrementSuffix = 'IDENTITY(1,1)';
 
-  override readonly tableOptions = '';
-
   override readonly beginTransactionCommand = 'BEGIN TRANSACTION';
 
   override readonly commitTransactionCommand = 'COMMIT TRANSACTION';
@@ -111,9 +111,10 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   override readonly isolationLevelStrategy = 'set-before';
 
-  override readonly dropIndexSyntax = 'on-table';
-
   override readonly booleanLiteral = 'integer';
+
+  /** UTC, since `CURRENT_TIMESTAMP` is local time in the server's zone. */
+  override readonly currentTimestamp = 'SYSUTCDATETIME()';
 
   /** [The hard server limit](https://github.com/yiisoft/yii2/issues/10371), not a driver preference. */
   override readonly maxBindValues = 2100;
@@ -123,8 +124,6 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   /** `OUTPUT` reads the written row off the `INSERTED` pseudo-table. */
   protected override readonly returnedRowPrefix = 'INSERTED.';
-
-  override readonly insertIdSource: InsertIdSource = 'returning';
 
   /** Holds the update key lock across the insert; without it two concurrent upserts of one key race. */
   protected override readonly mergeTargetHint = ' WITH (HOLDLOCK)';
@@ -209,19 +208,11 @@ export class MsSqlDialect extends MergeSqlDialect {
    */
   override returningId<E>(meta: EntityMeta<E>): string {
     const expression = this.returningIdExpression(meta);
-    return expression ? `OUTPUT ${expression} INTO ${OUTPUT_TABLE}` : '';
+    return expression ? this.mergeReturning(expression) : '';
   }
 
-  override upsert<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E | E[],
-    extraReturning = '',
-  ): void {
-    this.writeRows(ctx, getMeta(entity), payload, () =>
-      super.upsert(ctx, entity, conflictPaths, payload, extraReturning),
-    );
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
+    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload));
   }
 
   /**
@@ -277,7 +268,7 @@ export class MsSqlDialect extends MergeSqlDialect {
       return `N'${escapeSingleQuotes(value)}'`;
     }
     if (value instanceof Uint8Array) {
-      return `0x${Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('')}`;
+      return `0x${bytesToHex(value)}`;
     }
     return super.escape(value);
   }

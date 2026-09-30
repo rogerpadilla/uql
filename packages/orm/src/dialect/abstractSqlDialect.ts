@@ -38,7 +38,6 @@ import {
   type QuerySearch,
   type QuerySelectValue,
   type QuerySizeComparisonOps,
-  type QuerySortDirection,
   type QuerySortMap,
   type QueryTextSearchOptions,
   type QueryWhere,
@@ -59,6 +58,7 @@ import {
   type Type,
   type UpdatePayload,
 } from '../type/index.js';
+import { utcTimestamp } from '../util/date.js';
 import { isInlinedExpression } from '../util/field.util.js';
 import {
   isSelectList,
@@ -74,7 +74,9 @@ import {
   getSoftDeleteValue,
   hasKeys,
   idOnlyQuery,
+  whereAnd,
   columnFamily,
+  fieldFamily,
   countedRelations,
   fieldUpdateOf,
   fulltextIndexOver,
@@ -96,7 +98,9 @@ import {
   parseGroupMap,
   parseRelationAtKey,
   parseRelationSize,
+  parseSortDirection,
   populatesRelations,
+  type SortDirection,
   aggregateOf,
   raw,
   refs,
@@ -121,6 +125,9 @@ import {
   jsonCompareMode,
   jsonElemExists,
   jsonPath,
+  jsonRemoveCall,
+  jsonSetCall,
+  jsonSetTarget,
   type JsonSlot,
 } from './jsonSql.js';
 import {
@@ -179,8 +186,8 @@ type HydratableField = readonly [string, HydrateKind];
  */
 type JsonTarget = { readonly read: (mode: JsonAccessMode) => string; readonly slot: JsonSlot };
 
-/** A direction as a statement writes it: the suffix, and where the caller asked nulls to land. */
-type SortOrder = { readonly direction?: string; readonly nulls?: 'first' | 'last' };
+/** A sort term's direction. A vector distance has none: it always ranks nearest first. */
+type SortOrder = Partial<SortDirection>;
 
 /**
  * One `ORDER BY` term, taken apart: `key` is the path it sorts by, and `output` says `expr` already
@@ -324,17 +331,6 @@ const AGGREGATE_FN: Readonly<Record<QueryAggregateOp, string>> = {
   $max: 'MAX',
 };
 
-const SORT_DIRECTION_MAP: ReadonlyMap<QuerySortDirection, SortOrder> = new Map<QuerySortDirection, SortOrder>([
-  [1, {}],
-  ['asc', {}],
-  ['desc', { direction: ' DESC' }],
-  [-1, { direction: ' DESC' }],
-  ['ascNullsFirst', { nulls: 'first' }],
-  ['ascNullsLast', { nulls: 'last' }],
-  ['descNullsFirst', { direction: ' DESC', nulls: 'first' }],
-  ['descNullsLast', { direction: ' DESC', nulls: 'last' }],
-]);
-
 /**
  * What a relation subquery selects: `exists` for a relation operator that only asks whether a row is
  * there, `value` for the column a capped aggregate carries out to the page wrapping it, and otherwise
@@ -346,7 +342,6 @@ type RelationSubqueryProjection = { readonly op: 'exists'; readonly field?: neve
 type RelationSubqueryRead = RelationSubqueryProjection & Pick<AggregateCall, 'where'>;
 
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
-  // Narrow dialect type from Dialect to SqlDialect
   abstract override readonly dialectName: SqlDialectName;
 
   /** Itself, unless the engine is a fork running another's SQL, which is the only case that overrides. */
@@ -362,10 +357,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   abstract readonly autoIncrementSuffix: string;
 
-  abstract readonly tableOptions: string;
-  abstract readonly beginTransactionCommand: string;
-  abstract readonly commitTransactionCommand: string;
-  abstract readonly rollbackTransactionCommand: string;
+  readonly beginTransactionCommand: string = 'BEGIN';
+  readonly commitTransactionCommand: string = 'COMMIT';
+  readonly rollbackTransactionCommand: string = 'ROLLBACK';
 
   /**
    * How this engine declares a namespace, so a generated migration creates the schemas its tables
@@ -378,21 +372,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
 
-  readonly alterColumnStrategy: 'separate-clauses' | 'single-statement' = 'single-statement';
-
-  readonly alterColumnSyntax: 'ALTER COLUMN' | 'MODIFY COLUMN' = 'ALTER COLUMN';
-
-  readonly dropForeignKeySyntax: 'DROP CONSTRAINT' | 'DROP FOREIGN KEY' = 'DROP CONSTRAINT';
-
-  /**
-   * `DROP CONSTRAINT <name>` where a primary key is a named constraint like any other; MySQL spells
-   * it `DROP PRIMARY KEY` and takes no name, since a table's key is always called `PRIMARY` there.
-   */
-  readonly dropPrimaryKeySyntax: 'DROP CONSTRAINT' | 'DROP PRIMARY KEY' = 'DROP CONSTRAINT';
-
-  readonly dropIndexSyntax: 'on-table' | 'standalone' = 'standalone';
-
   readonly booleanLiteral: 'native' | 'integer' = 'native';
+
+  readonly currentTimestamp: string = 'CURRENT_TIMESTAMP';
 
   /**
    * Maximum number of bind parameters the driver accepts in a single statement.
@@ -463,12 +445,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return this.placeholder(ctx.values.length);
   }
 
+  /** When set, a `Date` binds as UTC text with this zone suffix (`''` for none). Unset, the driver gets the `Date`. */
+  protected readonly dateZone?: string;
+
   /**
-   * A parameter value as this engine's driver takes it: a boolean as the integer an engine with no
-   * boolean type stores, and everything else as it is - a `bigint` included, which every driver here
-   * binds exactly, where a number would round it past 2^53. A driver that refuses one (D1) overrides.
+   * Converts a parameter value to what this engine's driver takes: a `Date` per {@link dateZone}, a boolean to
+   * 1/0 on an engine with no boolean type, and anything else unchanged. A `bigint` passes as is, since every
+   * driver here binds it exactly where a number would round past 2^53; a driver that refuses one (D1) overrides.
    */
   normalizeValue(value: unknown): unknown {
+    if (value instanceof Date && this.dateZone !== undefined) {
+      return utcTimestamp(value, this.dateZone);
+    }
     if (typeof value === 'boolean' && this.booleanLiteral !== 'native') {
       return value ? 1 : 0;
     }
@@ -1376,7 +1364,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         // Where projected in the SELECT list, ordered by that alias rather than scored twice.
         const { order, project } = textSortOf(sort)!;
         const expr = project ? this.escapeId(project) : this.buildFragment(ctx, opts.rankText);
-        columns.push({ key, expr, ...this.resolveSortDirection(order), output: project !== undefined });
+        columns.push({ key, expr, ...parseSortDirection(order), output: project !== undefined });
         continue;
       }
       if (relation) {
@@ -1394,7 +1382,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
           if (spec.search) {
             vectors.push({ key: name, expr, output: false });
           } else {
-            columns.push({ key: keyPath, expr, ...this.resolveSortDirection(direction), output: false });
+            columns.push({ key: keyPath, expr, ...parseSortDirection(direction), output: false });
           }
         }
         if (rest === undefined) {
@@ -1432,7 +1420,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         );
         continue;
       }
-      const order = this.resolveSortDirection(value);
+      const order = parseSortDirection(value);
       // A JSON path can sort by more than one reading, each carried under a name of its own.
       this.sortColumns(ctx, meta, key, prefix).forEach((column, index) => {
         columns.push({ key: index ? `${keyPath}:${index}` : keyPath, ...column, ...order });
@@ -1474,6 +1462,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected readonly jsonSortModes: readonly JsonAccessMode[] = ['json'];
 
+  /** The `LIMIT` meaning all rows, for an engine that accepts an `OFFSET` only after a `LIMIT`. */
+  protected readonly unboundedLimit?: string;
+
   /**
    * `LIMIT`/`OFFSET`. `sorted` says whether an `ORDER BY` was emitted just before, which
    * {@link MergeSqlDialect} needs: SQL Server refuses to page a statement that has none.
@@ -1482,6 +1473,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // `!== undefined`, not truthiness: `$limit: 0` asks for no rows, where "unset" means every row.
     if (opts.$limit !== undefined) {
       ctx.append(` LIMIT ${assertNonNegativeInteger(opts.$limit, '$limit')}`);
+    } else if (opts.$skip !== undefined && this.unboundedLimit) {
+      ctx.append(` LIMIT ${this.unboundedLimit}`);
     }
     if (opts.$skip !== undefined) {
       ctx.append(` OFFSET ${assertNonNegativeInteger(opts.$skip, '$skip')}`);
@@ -1694,7 +1687,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx.append(' ORDER BY ');
     Object.entries(sort).forEach(([key, dir], index) => {
       if (index > 0) ctx.append(', ');
-      ctx.append(this.orderByTerm(this.aggregateRef(emittedColumns, key, '$sort'), this.resolveSortDirection(dir)));
+      ctx.append(this.orderByTerm(this.aggregateRef(emittedColumns, key, '$sort'), parseSortDirection(dir)));
     });
     return true;
   }
@@ -1717,17 +1710,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     });
   }
 
-  private resolveSortDirection(sort: unknown): SortOrder {
-    const order = SORT_DIRECTION_MAP.get(sort as QuerySortDirection);
-    return orRefuse(order, `unknown sort direction: ${sort}`);
-  }
-
   /**
    * One `ORDER BY` term. A placement the engine has no `NULLS FIRST/LAST` for becomes a term of its
    * own in front of it, which is why one is only ever emitted where the caller asked for it: no index
    * serves an expression. SQL Server needs a `CASE`, having no orderable boolean.
    */
-  protected orderByTerm(expr: string, { direction = '', nulls }: SortOrder): string {
+  protected orderByTerm(expr: string, { desc, nulls }: SortOrder): string {
+    const direction = desc ? ' DESC' : '';
     if (!nulls) {
       return expr + direction;
     }
@@ -1804,11 +1793,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return alias === name ? opts : { ...opts, alias };
   }
 
+  /**
+   * The clause that returns the written ids, shared by every insert and upsert. It is `''` on an engine whose
+   * statement cannot return them, and on a composite key, which has no id to ask for.
+   */
+  protected insertedIdReturning<E>(meta: EntityMeta<E>): string {
+    return this.insertIdSource === 'returning' ? this.returningId(meta) : '';
+  }
+
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void {
-    // Every engine whose ids come back from the statement itself wants the same clause, so it is
-    // built once here instead of in an identical `insert` override per dialect. `returningId` is
-    // empty on a composite key, which has no id to ask for.
-    const returning = this.insertIdSource === 'returning' ? this.returningId(getMeta(entity)) : '';
+    const returning = this.insertedIdReturning(getMeta(entity));
 
     if (returning && this.returningPosition === 'after-target') {
       this.appendInsertValues(ctx, entity, payload, returning);
@@ -2040,7 +2034,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
     const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
     // Composed rather than concatenated: a composite key contributes no id item, and a dialect's own
-    // item (Postgres's `_created`) still has to be the *first* thing after the keyword when it is.
+    // item (Postgres's created flag) must then come right after the keyword, with no comma before it.
     const returning = [this.returningIdExpression(meta), extraReturning].filter(Boolean).join(', ');
     this.appendInsertValues(ctx, entity, payload);
     ctx.append(` ON CONFLICT (${keys}) ${onConflict}${returning ? ` RETURNING ${returning}` : ''}`);
@@ -2323,19 +2317,23 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `${elem} <> ${operand}`;
   }
 
-  /** Shallow assignment of top-level keys, matching PostgreSQL's `jsonb || jsonb`. */
-  protected abstract jsonSet(
-    ctx: QueryContext,
-    expr: string,
-    set: Record<string, unknown>,
-    field?: FieldOptions,
-  ): string;
+  /** Shallow assignment of top-level keys, matching PostgreSQL's `jsonb || jsonb`, through `JSON_SET`. */
+  protected jsonSet(ctx: QueryContext, expr: string, set: Record<string, unknown>, field?: FieldOptions): string {
+    return jsonSetCall(
+      (value) => this.jsonScalarParam(ctx, value),
+      jsonSetTarget(expr, field, `'{}'`),
+      set,
+      this.maxFunctionArgs,
+    );
+  }
 
   /** Append one value per array key, creating the array when the key is absent. */
   protected abstract jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string;
 
-  /** Remove object keys. */
-  protected abstract jsonUnset(ctx: QueryContext, expr: string, unset: readonly string[]): string;
+  /** Remove object keys, through `JSON_REMOVE`. */
+  protected jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
+    return jsonRemoveCall(expr, unset, this.maxFunctionArgs);
+  }
 
   /**
    * The text of SQL a schema declares, as DDL carries it: values written as literals, and none left bound,
@@ -2554,7 +2552,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const query = {
       ...page,
       $select: [read.as(AGGREGATE_VALUE_ALIAS)],
-      $where: { ...$where, $and: [...($where?.$and ?? []), correlation] },
+      $where: whereAnd($where, [correlation]),
     };
     const joins = resolveQueryJoins(getMeta(entity), query, (path) => ctx.claimAlias(path));
     this.read(ctx, entity, query, { alias }, joins);
@@ -2645,7 +2643,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     this.assertDistinctSort(relMeta, relKey, query);
     const alias = ctx.claimAlias(relKey, parent);
     const correlation = raw(({ ctx: rowsCtx }) => this.appendCorrelation(rowsCtx, meta, relation, parent, alias));
-    const rows = { ...query, $where: { ...query.$where, $and: [...(query.$where?.$and ?? []), correlation] } };
+    const rows = { ...query, $where: whereAnd(query.$where, [correlation]) };
     const joins = resolveQueryJoins(relMeta, rows, (path) => ctx.claimAlias(path));
     this.appendRelationArray(ctx, { entity, query: rows, alias, joins, distinct });
   }
@@ -2748,7 +2746,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** `expr` as it crosses JSON, by its field's family: see {@link carriedFields}. */
   private carried(expr: string, field: FieldOptions): string {
-    const family = columnFamily(field.columnType ?? field.type);
+    const family = fieldFamily(field);
     return (family && this.carriedFields[family]?.(expr, field)) ?? expr;
   }
 
@@ -2854,10 +2852,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return escapeAnsiSqlLiteral(value);
   }
 
-  protected get regexpOp(): string {
-    return 'REGEXP';
-  }
-
   /**
    * The `$regex` predicate. An infix operator on the MySQL family (`REGEXP`) and the Postgres one
    * (`~`), but a function on Oracle and SQL Server 2025 (`REGEXP_LIKE(col, ?)`) - which is why this
@@ -2865,7 +2859,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * throw, the way {@link appendTextSearch} already does.
    */
   protected regexCondition(operand: string, placeholder: string): string {
-    return `${operand} ${this.regexpOp} ${placeholder}`;
+    return `${operand} REGEXP ${placeholder}`;
   }
 
   /**

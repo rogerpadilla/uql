@@ -34,6 +34,7 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
     findMany: vi.fn(),
     findManyStream: vi.fn(),
     findManyAndCount: vi.fn(),
+    findManyPage: vi.fn(),
     count: vi.fn(),
     exists: vi.fn(),
     estimatedCount: vi.fn(),

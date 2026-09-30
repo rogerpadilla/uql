@@ -82,6 +82,20 @@ describe('DriftDetector', () => {
       ]);
     });
 
+    /** Drift reports what a migration would change, so a key's implied NOT NULL is no mismatch here either. */
+    it('should report on a key only what the differ compares', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(
+        mockTableNode('users', [{ name: 'id', isPrimaryKey: true, nullable: false, defaultValue: 'a' }]),
+      );
+      actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, nullable: true, defaultValue: 'b' }]));
+
+      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true });
+
+      expect(drifts.map((drift) => drift.details)).toEqual(['Default mismatch for "id"']);
+    });
+
     it('should name a primary key the database lacks as none', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();

@@ -1,10 +1,14 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import { canonicalColumnType } from '../../schema/canonicalType.js';
+import { canonicalColumnType, defaultTimestampPrecision, withTimestampPrecision } from '../../schema/canonicalType.js';
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { createTableNode, keyOfColumns, SchemaAST } from '../../schema/schemaAST.js';
-import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import {
+  type ColumnNode,
+  DEFAULT_FOREIGN_KEY_ACTION,
+  type RelationshipNode,
+  type TableNode,
+} from '../../schema/types.js';
 import type { ColumnRenames, TableSchema } from '../../type/migration.js';
-import { escapeSqlId } from '../../util/index.js';
 import { derivedForeignKeyName, qualifyName } from '../../util/sql.util.js';
 
 /**
@@ -24,9 +28,6 @@ export abstract class BaseSqlIntrospector {
     readonly schema?: string,
   ) {}
 
-  protected escapeId(identifier: string): string {
-    return escapeSqlId(identifier, this.dialect.escapeIdChar);
-  }
   /**
    * The database as a {@link SchemaAST}, or just the tables named. A name nothing matches is left out
    * rather than raised: the point of naming them is to read a database other things are still
@@ -103,7 +104,11 @@ export abstract class BaseSqlIntrospector {
       const { type, length: _length, precision: _precision, scale: _scale, ...rest } = col;
       const column: ColumnNode = {
         ...rest,
-        type: canonicalColumnType(type, col),
+        // A timestamp with no stated precision has the engine's default; otherwise an entity would assume 3.
+        type: withTimestampPrecision(
+          canonicalColumnType(type, col),
+          defaultTimestampPrecision(this.dialect.dialectName),
+        ),
         table,
         referencedBy: [],
       };
@@ -141,8 +146,8 @@ export abstract class BaseSqlIntrospector {
           type: fromColumns[0].isUnique ? 'OneToOne' : 'ManyToOne',
           from: { table: fromTable, columns: fromColumns },
           to: { table: toTable, columns: toColumns },
-          onDelete: fk.onDelete || 'NO ACTION',
-          onUpdate: fk.onUpdate || 'NO ACTION',
+          onDelete: fk.onDelete || DEFAULT_FOREIGN_KEY_ACTION,
+          onUpdate: fk.onUpdate || DEFAULT_FOREIGN_KEY_ACTION,
         };
         ast.addRelationship(rel);
       }

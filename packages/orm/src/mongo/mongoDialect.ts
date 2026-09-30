@@ -45,7 +45,6 @@ import type {
   QueryGroupOp,
   QueryOptions,
   QueryPager,
-  QuerySelect,
   QuerySelectValue,
   QuerySortMap,
   QueryTextSearchOptions,
@@ -91,6 +90,7 @@ import {
   parseGroupMap,
   parseRelationAtKey,
   parseRelationSize,
+  parseSortDirection,
   rankedTextSearch,
   someKey,
   targetKeyColumns,
@@ -172,6 +172,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: false,
   rowLocks: false, // its concurrency control is the transaction plus atomic document updates
+  nullsSortLowest: true,
 };
 
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
@@ -183,6 +184,18 @@ function declaredTypeName(type: unknown): string {
 }
 
 const ID_KEY = '_id';
+
+/** Native operators that compare a field against values. On a key field, those values are sent as `ObjectId`s. */
+const KEY_OPERATORS: ReadonlySet<string> = new Set([
+  '$eq',
+  '$ne',
+  '$lt',
+  '$lte',
+  '$gt',
+  '$gte',
+  '$in',
+  '$nin',
+] satisfies MongoNativeOp[]);
 /** Atlas rejects a `$vectorSearch` asking for more candidates than this. */
 const MAX_NUM_CANDIDATES = 10_000;
 
@@ -251,9 +264,6 @@ export class MongoDialect extends AbstractDialect {
   override readonly features: DialectFeatures = mongoDialectFeatures;
 
   readonly dialectName = 'mongodb';
-
-  // The MongoDB driver reports the exact `_id` of every inserted document (`insertedIds`).
-  override readonly insertIdSource = 'returning';
 
   /**
    * MongoDB stores the primary key as `_id`; everything else resolves as usual. Projections, sorts,
@@ -341,23 +351,25 @@ export class MongoDialect extends AbstractDialect {
           }
           this.appendAggregateField(meta, key, lookups);
         }
-        const isReference = !!meta.fields[key]?.references;
+        const keyed = this.holdsKeys(meta, key);
         key = this.pathOf(meta, key);
-        if ((key === ID_KEY || isReference) && !isOperatorObject(val)) {
-          val = this.toWireId(val);
-        }
         if (!isOperatorObject(val)) {
-          filter[key] = Array.isArray(val) ? { $in: val } : val;
+          const wire = keyed ? this.toWireId(val) : val;
+          filter[key] = Array.isArray(wire) ? { $in: wire } : wire;
           continue;
         }
+        const operators = (ops: Record<string, unknown>) => {
+          const native = this.transformOperators(ops);
+          return keyed ? this.toWireOperands(native) : native;
+        };
         // MongoDB's `$size` takes only a number, so bounds become an `$expr` beside the other operators.
         const { $size: size, ...ops } = val;
         if (!isRecord(size)) {
-          filter[key] = this.transformOperators(val);
+          filter[key] = operators(val);
         } else {
           andExpr(filter, arraySize(key, size));
           if (hasKeys(ops)) {
-            filter[key] = this.transformOperators(ops);
+            filter[key] = operators(ops);
           }
         }
       }
@@ -493,12 +505,6 @@ export class MongoDialect extends AbstractDialect {
     };
   }
 
-  /** Whether a query subtracts `key` from the projection, via `$exclude` or a negative `$select`. */
-  private subtractsKey<E>(key: string, select?: QuerySelect<E>, exclude?: QueryExclude<E>): boolean {
-    const at = (map: QuerySelect<E> | QueryExclude<E> | undefined) => (map as Record<string, unknown>)?.[key];
-    return at(exclude) === true || at(select) === false;
-  }
-
   /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
   private assertNoRaw<T>(value: T): asserts value is Exclude<T, QueryRaw> {
     if (value instanceof QueryRaw) {
@@ -628,27 +634,25 @@ export class MongoDialect extends AbstractDialect {
     if (isSelectList(select)) {
       throw new UqlUsageError('raw $select is not supported on MongoDB');
     }
+    const fields = normalizeScalarFieldSelection(meta, select, exclude);
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
-    const projection = normalizeScalarFieldSelection(meta, select, exclude).reduce<Record<string, 0 | 1>>(
-      (acc, key) => {
-        // A computed field writing SQL leaves the document nothing to project: refused asked for by
-        // name, skipped swept in with the rest. A relation aggregate is on it by now, like any column.
-        const field = meta.fields[key];
-        if (field?.computed && !aggregateOf(field)) {
-          if (select && key in select) {
-            assertReadable(meta, key);
-          }
-          return acc;
+    const projection = fields.reduce<Record<string, 0 | 1>>((acc, key) => {
+      // A computed field that writes SQL has nothing in the document to project: refused when `$select`
+      // names it, skipped otherwise. A relation aggregate is already on the document, like any column.
+      const field = meta.fields[key];
+      if (field?.computed && !aggregateOf(field)) {
+        if (select && key in select) {
+          assertReadable(meta, key);
         }
-        acc[this.columnOf(meta, key)] = 1;
         return acc;
-      },
-      {},
-    );
-    // MongoDB returns `_id` unless it is explicitly excluded, so subtracting the primary key needs
-    // `_id: 0` - the one inclusion/exclusion mix MongoDB allows - or `$exclude: { id: true }` would
-    // have no effect at all.
-    if (this.subtractsKey(soleIdOf(meta, 'MongoDB'), select, exclude)) {
+      }
+      acc[this.columnOf(meta, key)] = 1;
+      return acc;
+    }, {});
+    // MongoDB returns `_id` unless it is explicitly excluded, so a projection without the key sets `_id: 0`,
+    // the one inclusion/exclusion mix MongoDB allows. This returns the same fields a SQL engine would, and is
+    // what makes `$exclude: { id: true }` work at all.
+    if (!fields.includes(soleIdOf(meta, 'MongoDB'))) {
       projection[ID_KEY] = 0;
     }
     return projection;
@@ -721,19 +725,18 @@ export class MongoDialect extends AbstractDialect {
       }
       if (!relation) {
         // The queried entity's first vector search is lifted out into `$vectorSearch` before this walk,
-        // so one reaching it is a second. `sortDirection` would read the operator object as "ascending"
-        // and order by the raw vector column instead, a silent answer where the caller asked for a rank.
+        // so one found here is a second one. It is refused as such, not as an unknown direction.
         if (isVectorSearch(value)) {
           throw new UqlUsageError(`cannot $sort by a second vector '${key}' on MongoDB: $vectorSearch ranks by one`);
         }
         const docPath = path + this.pathOf(meta, key);
-        const nulls = sortNulls(value);
+        const { desc, nulls } = parseSortDirection(value);
         if (nulls) {
           placed.push(docPath);
           // The flag holds 1 for a null, so ordering by it descending brings the null block to the front.
           out[nullsSortField(docPath)] = nulls === 'first' ? -1 : 1;
         }
-        out[docPath] = sortDirection(value);
+        out[docPath] = desc ? -1 : 1;
         continue;
       }
       // A `$lookup` is what puts the relation's fields on the document, and only `$populate` asks for
@@ -1296,6 +1299,25 @@ export class MongoDialect extends AbstractDialect {
     return typeof value === 'string' && HEX_24.test(value) ? new ObjectId(value) : value;
   }
 
+  /** Whether `key` holds ids the driver stores as `ObjectId`s: the entity's own `_id`, or a reference to one. */
+  private holdsKeys<E>(meta: EntityMeta<E>, key: string): boolean {
+    return this.pathOf(meta, key) === ID_KEY || !!meta.fields[key]?.references;
+  }
+
+  /** Converts every operand `ops` compares a key against with {@link toWireId}, including inside a `$not`. */
+  private toWireOperands(ops: Record<string, unknown>): Record<string, unknown> {
+    return Object.fromEntries(
+      Object.entries(ops).map(([op, operand]) => [
+        op,
+        op === '$not' && isRecord(operand)
+          ? this.toWireOperands(operand)
+          : KEY_OPERATORS.has(op)
+            ? this.toWireId(operand)
+            : operand,
+      ]),
+    );
+  }
+
   /** The seam out of the driver: an `ObjectId` becomes its hex string, the type the code declares. */
   public fromWireId(value: unknown): unknown {
     return value instanceof ObjectId ? value.toHexString() : value;
@@ -1587,10 +1609,8 @@ export class MongoDialect extends AbstractDialect {
         }
         const val: unknown = where[key];
         named.push(key);
-        const path = this.pathOf(meta, key);
-        const wire = (value: unknown) =>
-          path === ID_KEY || meta.fields[key]?.references ? this.toWireId(value) : value;
-        return this.fieldExpression(`$${path}`, val, wire);
+        const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : (value: unknown) => value;
+        return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
       });
     return terms.length === 1 ? terms[0] : { $and: terms };
   }
@@ -1762,17 +1782,9 @@ export type ExtractedVectorSort<E> = {
   readonly regularSort: QuerySortMap<E>;
 };
 
-/** `-1` for every descending spelling, `1` for everything else - MongoDB knows no other value. */
+/** A sort direction in MongoDB's form: `-1` for descending, else `1`. MongoDB accepts no other values. */
 function sortDirection(value: unknown): 1 | -1 {
-  return value === -1 || (typeof value === 'string' && value.startsWith('desc')) ? -1 : 1;
-}
-
-/** Where a direction asks nulls to land, where it asks at all. */
-function sortNulls(value: unknown): 'first' | 'last' | undefined {
-  if (typeof value !== 'string') {
-    return undefined;
-  }
-  return value.endsWith('NullsFirst') ? 'first' : value.endsWith('NullsLast') ? 'last' : undefined;
+  return parseSortDirection(value).desc ? -1 : 1;
 }
 
 /**

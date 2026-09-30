@@ -216,8 +216,9 @@ class MongoDialectSpec implements Spec {
     });
   }
 
+  /** A projection leaving the key out drops `_id`, which MongoDB returns otherwise and no SQL engine does. */
   shouldSelect() {
-    expect(this.dialect.select(Tax, { name: true })).toEqual({ name: 1 });
+    expect(this.dialect.select(Tax, { name: true })).toEqual({ name: 1, _id: 0 });
     // the primary key is stored as `_id`; `normalizeId` maps it back to `id` on the way out
     expect(this.dialect.select(Tax, { id: true, name: true })).toEqual({ _id: 1, name: 1 });
   }
@@ -605,7 +606,7 @@ class MongoDialectSpec implements Spec {
     expect(Object.keys(stages[1]?.['$addFields'] ?? {})).toEqual(['unit_count']);
     expect(stages[2]).toEqual({ $match: { deleted_at: null, unit_count: { $gte: 1 } } });
     expect(stages[4]).toEqual({ $group: { _id: { unitCount: '$unit_count' }, n: { $sum: 1 } } });
-    expect(dialect.select(MeasureUnitCategory, { unitCount: true })).toEqual({ unit_count: 1 });
+    expect(dialect.select(MeasureUnitCategory, { unitCount: true })).toEqual({ unit_count: 1, _id: 0 });
   }
 
   /** A relation aggregate read by several clauses is put on the document once. */
@@ -2048,6 +2049,26 @@ class MongoDialectSpec implements Spec {
     expect(this.dialect.where(Doc, { parentId: [hex, 'plain'] })).toEqual({
       parentId: { $in: [new ObjectId(hex), 'plain'] },
     });
+  }
+
+  /**
+   * An operator's operand is converted as a bare value is: a key compared as its hex text matches no
+   * `ObjectId`, since MongoDB orders a string apart from every `ObjectId`, which is how a cursor page
+   * past a minted key came back empty.
+   */
+  shouldMapAKeyComparedByAnOperatorIntoTheWire() {
+    const hex = '507f191e810c19729de860ea';
+
+    expect(this.dialect.where(Doc, { id: { $gt: hex, $ne: 'plain' } })).toEqual({
+      _id: { $gt: new ObjectId(hex), $ne: 'plain' },
+    });
+    expect(this.dialect.where(Doc, { parentId: { $in: [hex], $between: [hex, hex] } })).toEqual({
+      parentId: { $in: [new ObjectId(hex)], $gte: new ObjectId(hex), $lte: new ObjectId(hex) },
+    });
+    expect(this.dialect.where(Doc, { id: { $not: { $gt: hex } } })).toEqual({
+      _id: { $not: { $gt: new ObjectId(hex) } },
+    });
+    expect(this.dialect.where(Doc, { title: { $gt: hex } })).toEqual({ title: { $gt: hex } });
   }
 
   /**

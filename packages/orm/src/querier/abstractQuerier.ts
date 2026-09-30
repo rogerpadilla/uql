@@ -4,6 +4,7 @@ import type { KeyedRow } from '../entity/metadata/definition.js';
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { namesRows } from '../dialect/operators.js';
 import type {
+  CursorPage,
   EntityData,
   EntityId,
   EntityWrite,
@@ -21,6 +22,8 @@ import type {
   QueryFilter,
   QueryFindResult,
   QueryGroupMap,
+  QueryKeyset,
+  QueryKeysetProjected,
   QueryOne,
   QueryOneProjected,
   QueryOptions,
@@ -75,6 +78,7 @@ import {
   withoutSoftDeleteFilter,
 } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
+import { keysetRead } from './keyset.js';
 import { enrichError } from './queryError.js';
 
 /**
@@ -200,6 +204,30 @@ function adoptReportedIds<E>(
   }
 }
 
+/** A read's arguments in either call form: `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
+type EntityArgs<E, Q> =
+  | [entity: Type<E>, q?: Q, opts?: QueryOptions]
+  | [q: Q & { $entity: Type<E> }, opts?: QueryOptions];
+
+/** Normalizes either call form to `[entity, query, opts]`, throwing when a query object has no `$entity`. */
+function entityArgs<E, Q extends object>(args: EntityArgs<E, Q>): [Type<E>, Q, QueryOptions | undefined] {
+  if (isEntityFirst(args)) {
+    const [entity, q, opts] = args;
+    return [entity, q ?? ({} as Q), opts];
+  }
+  const [{ $entity, ...q }, opts] = args;
+  if (!$entity) {
+    throw new UqlUsageError('$entity is required when using query-object syntax');
+  }
+  return [$entity, q as Q, opts];
+}
+
+/** Whether the entity is passed first, i.e. the first argument is a class rather than a query object. */
+function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, q?: Q, opts?: QueryOptions] {
+  const [first] = args;
+  return typeof first === 'function' && first.prototype !== undefined;
+}
+
 /** A parent's id and the value it writes into one of its relations. */
 type RelationWrite<E> = { readonly id: EntityId<E>; readonly value: unknown };
 
@@ -271,23 +299,6 @@ export abstract class AbstractQuerier implements Querier {
     });
   }
 
-  /** `[entity, query, opts]` from either call form, `(entity, q, opts)` or `({ $entity, ...q }, opts)`. */
-  protected resolveEntityQuery<E extends object, Q extends object>(
-    entityOrQuery: Type<E> | (Q & { $entity: Type<E> }),
-    maybeQueryOrOpts?: Q | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): [Type<E>, Q, QueryOptions | undefined] {
-    if (typeof entityOrQuery === 'function' && entityOrQuery.prototype) {
-      return [entityOrQuery, (maybeQueryOrOpts as Q) ?? ({} as Q), maybeOpts];
-    }
-    const q = entityOrQuery as Q & { $entity: Type<E> };
-    if (!q.$entity) {
-      throw new UqlUsageError('$entity is required when using query-object syntax');
-    }
-    const { $entity, ...query } = q;
-    return [$entity, query as Q, maybeQueryOrOpts as QueryOptions | undefined];
-  }
-
   findOneById<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -335,12 +346,8 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryOneProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
-  async findOne<E extends object>(
-    entityOrQuery: Type<E> | (QueryOne<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: QueryOne<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<E | undefined> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  async findOne<E extends object>(...args: EntityArgs<E, QueryOne<E>>): Promise<E | undefined> {
+    const [entity, q, opts] = entityArgs(args);
     const rows = await this.findMany(entity, { ...q, $limit: 1 }, opts);
     return rows[0];
   }
@@ -369,12 +376,8 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
-  async findMany<E extends object>(
-    entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: Query<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<E[]> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  async findMany<E extends object>(...args: EntityArgs<E, Query<E>>): Promise<E[]> {
+    const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
     const founds = await this.internalFindMany(entity, q, opts);
     // Guarded here rather than only inside: awaiting a call that returns at once still costs every read
@@ -419,12 +422,8 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
-  findManyStream<E extends object>(
-    entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: Query<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): AsyncIterable<E> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  findManyStream<E extends object>(...args: EntityArgs<E, Query<E>>): AsyncIterable<E> {
+    const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
     return this.internalFindManyStream(entity, q, opts);
   }
@@ -459,12 +458,8 @@ export abstract class AbstractQuerier implements Querier {
     q: QueryProjected<E, S, V, X, P, C>,
     opts?: QueryOptions,
   ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
-  async findManyAndCount<E extends object>(
-    entityOrQuery: Type<E> | (Query<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: Query<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<[E[], number]> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  async findManyAndCount<E extends object>(...args: EntityArgs<E, Query<E>>): Promise<[E[], number]> {
+    const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
     const [founds, count] = await this.internalFindManyAndCount(entity, q, opts);
     if (this.listensForLoad(entity, q.$populate)) {
@@ -488,15 +483,50 @@ export abstract class AbstractQuerier implements Querier {
     ]);
   }
 
+  /** Read a page of records from a cursor, the entity passed first or as the query's `$entity`. */
+  findManyPage<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
+  >(
+    q: QueryKeysetProjected<E, S, V, X, P, C> & { $entity: Type<E> },
+    opts?: QueryOptions,
+  ): Promise<CursorPage<QueryFindResult<E, S, V, X, P, C>>>;
+  findManyPage<
+    E extends object,
+    const S extends FieldKey<E> = never,
+    const V = true,
+    const X extends FieldKey<E> = never,
+    const P extends RelationKey<E> = never,
+    const C extends RelationKey<E> = never,
+  >(
+    entity: Type<E>,
+    q: QueryKeysetProjected<E, S, V, X, P, C>,
+    opts?: QueryOptions,
+  ): Promise<CursorPage<QueryFindResult<E, S, V, X, P, C>>>;
+  /**
+   * Shared by every backend: the keyset condition is an ordinary `$where`, so each engine renders it with the
+   * operators it already has, and the page holds the rows `findMany` would return.
+   */
+  async findManyPage<E extends object>(...args: EntityArgs<E, QueryKeyset<E>>): Promise<CursorPage<E>> {
+    const [entity, q, opts] = entityArgs(args);
+    this.validateReadQuery(entity, q);
+    const read = keysetRead(getMeta(entity), q, this.dialect.features.nullsSortLowest);
+    const page = read.page(await this.internalFindMany(entity, read.query, opts));
+    if (this.listensForLoad(entity, q.$populate)) {
+      await this.emitLoaded(entity, page.items, q.$populate);
+    }
+    return page;
+  }
+
   /** Count records matching the query, the entity passed first or as the query's `$entity`. */
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
   count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  async count<E extends object>(
-    entityOrQuery: Type<E> | (QueryPage<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: QueryPage<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<number> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number>;
+  async count<E extends object>(...args: EntityArgs<E, QueryPage<E>>): Promise<number> {
+    const [entity, q, opts] = entityArgs(args);
     return this.internalCount(entity, q, opts);
   }
 
@@ -508,14 +538,10 @@ export abstract class AbstractQuerier implements Querier {
   ): Promise<number>;
 
   /** Whether anything matches, the entity passed first or as `$entity`: a count capped at one row. */
-  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
   exists<E extends object>(q: QueryFilter<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<boolean>;
-  async exists<E extends object>(
-    entityOrQuery: Type<E> | (QueryFilter<E> & { $entity: Type<E> }),
-    maybeQueryOrOpts?: QueryFilter<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<boolean> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, maybeQueryOrOpts, maybeOpts);
+  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean>;
+  async exists<E extends object>(...args: EntityArgs<E, QueryFilter<E>>): Promise<boolean> {
+    const [entity, q, opts] = entityArgs(args);
     return (await this.internalCount(entity, { $where: q.$where, $limit: 1 }, opts)) > 0;
   }
 
@@ -840,14 +866,10 @@ export abstract class AbstractQuerier implements Querier {
   }
 
   /** Delete records matching the query, the entity passed first or as `$entity`; soft-deletes unless `opts.hardDelete`. */
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  async deleteMany<E extends object>(
-    entityOrQuery: Type<E> | (QuerySearch<E> & { $entity: Type<E> }),
-    qOrOpts?: QuerySearch<E> | QueryOptions,
-    maybeOpts?: QueryOptions,
-  ): Promise<number> {
-    const [entity, q, opts] = this.resolveEntityQuery(entityOrQuery, qOrOpts, maybeOpts);
+  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  async deleteMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<number> {
+    const [entity, q, opts] = entityArgs(args);
     assertNamesRows(entity, 'deleteMany', q, opts);
     const meta = getMeta(entity);
     const cascades = cascadesOnDelete(meta);
@@ -1203,16 +1225,42 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  abstract beginTransaction(opts?: TransactionOptions): Promise<void>;
+  beginTransaction(opts?: TransactionOptions): Promise<void> {
+    return this.serialize(async () => {
+      if (this.hasOpenTransaction) {
+        throw new UqlUsageError('pending transaction');
+      }
+      await this.openTransaction(opts);
+    });
+  }
 
   /** Strict: this is the check that catches a forgotten `beginTransaction`. */
-  abstract commitTransaction(): Promise<void>;
+  commitTransaction(): Promise<void> {
+    return this.serialize(async () => {
+      if (!this.hasOpenTransaction) {
+        throw new UqlUsageError('not a pending transaction');
+      }
+      await this.endTransaction(true);
+    });
+  }
 
   /**
    * Rolls the open transaction back, or does nothing when there is none: it is called from `catch` and
    * `finally`, where the caller cannot know whether `beginTransaction` got far enough to open one.
    */
-  abstract rollbackTransaction(): Promise<void>;
+  rollbackTransaction(): Promise<void> {
+    return this.serialize(async () => {
+      if (this.hasOpenTransaction) {
+        await this.endTransaction(false);
+      }
+    });
+  }
+
+  /** Opens a transaction on the engine, after `beginTransaction` has queued the call and checked none is open. */
+  protected abstract openTransaction(opts?: TransactionOptions): Promise<void>;
+
+  /** Commits the open transaction on the engine, or rolls it back when `commit` is false. */
+  protected abstract endTransaction(commit: boolean): Promise<void>;
 
   /**
    * Rolls back an unfinished transaction, then hands the connection back, discarding it if the rollback

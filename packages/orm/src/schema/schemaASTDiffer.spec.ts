@@ -5,7 +5,15 @@ import { engineType } from './canonicalType.js';
 import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
 import { columnRenames, diffSchemas, tableRenameCandidates } from './schemaASTDiffer.js';
+import { SqlExpression } from './sqlExpression.js';
 import type { ColumnNode, IndexNode, RelationshipNode } from './types.js';
+
+/** What two schemas alike differ by. */
+const NO_DIFFERENCES = { tables: [], columns: [], indexes: [], primaryKeys: [], relationships: [] };
+
+/** Which change a diff is, named as a migration makes it. */
+const kindOf = (change: { readonly from?: unknown; readonly to?: unknown }) =>
+  change.from === undefined ? 'create' : change.to === undefined ? 'drop' : 'alter';
 
 /** An index as one side of a comparison declares it, over the `users` fixture below. */
 type IndexParts = Partial<Pick<IndexNode, 'entries' | 'unique' | 'type' | 'where' | 'include'>>;
@@ -29,9 +37,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table2);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(false);
-      expect(diff.tablesToCreate.length).toBe(0);
-      expect(diff.tablesToDrop.length).toBe(0);
+      expect(diff).toEqual(NO_DIFFERENCES);
     });
 
     /**
@@ -48,10 +54,10 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target);
 
-      expect(diff.columnDiffs).toHaveLength(1);
-      expect(diff.columnDiffs[0].description).toContain('type');
+      expect(diff.columns).toHaveLength(1);
+      expect(diff.columns[0].description).toContain('type');
       // Either direction drops half the range, so it is not something safe mode may apply.
-      expect(diff.columnDiffs[0].isBreaking).toBe(true);
+      expect(diff.columns[0].isBreaking).toBe(true);
     });
 
     /** A bare `DATETIME` holds whole seconds on MySQL, so `DATETIME(3)` widens it rather than narrowing. */
@@ -63,8 +69,8 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target, { normalizeType: engineType(new MySqlDialect()) });
 
-      expect(diff.columnDiffs).toHaveLength(1);
-      expect(diff.columnDiffs[0].isBreaking).toBe(false);
+      expect(diff.columns).toHaveLength(1);
+      expect(diff.columns[0].isBreaking).toBe(false);
     });
 
     it('should not call a column breaking for a type it never compared', () => {
@@ -79,10 +85,10 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target);
 
-      expect(diff.columnDiffs).toHaveLength(1);
-      expect(diff.columnDiffs[0].description).toContain('default');
-      expect(diff.columnDiffs[0].description).not.toContain('type');
-      expect(diff.columnDiffs[0].isBreaking).toBe(false);
+      expect(diff.columns).toHaveLength(1);
+      expect(diff.columns[0].description).toContain('default');
+      expect(diff.columns[0].description).not.toContain('type');
+      expect(diff.columns[0].isBreaking).toBe(false);
     });
 
     it('should detect tables to create', () => {
@@ -93,9 +99,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(table);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.tablesToCreate.length).toBe(1);
-      expect(diff.tablesToCreate[0].name).toBe('users');
+      expect(diff.tables).toEqual([{ to: table }]);
     });
 
     it('should detect tables to drop', () => {
@@ -106,9 +110,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.tablesToDrop.length).toBe(1);
-      expect(diff.tablesToDrop[0].name).toBe('users');
+      expect(diff.tables).toEqual([{ from: table }]);
     });
 
     it('should detect columns to add', () => {
@@ -129,8 +131,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.columnDiffs.some((c) => c.column === 'email' && c.type === 'add')).toBe(true);
+      expect(diff.columns.some((c) => c.column === 'email' && kindOf(c) === 'create')).toBe(true);
     });
 
     it('should detect columns to drop', () => {
@@ -151,8 +152,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.columnDiffs.some((c) => c.column === 'email' && c.type === 'drop')).toBe(true);
+      expect(diff.columns.some((c) => c.column === 'email' && kindOf(c) === 'drop')).toBe(true);
     });
 
     it('should detect column type changes', () => {
@@ -172,8 +172,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.columnDiffs.some((c) => c.column === 'age' && c.type === 'alter')).toBe(true);
+      expect(diff.columns.some((c) => c.column === 'age' && kindOf(c) === 'alter')).toBe(true);
     });
 
     it('should detect nullable changes', () => {
@@ -193,7 +192,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(true);
+      expect(diff.columns).toMatchObject([{ changed: ['nullable'] }]);
     });
 
     /**
@@ -207,7 +206,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, isAutoIncrement: true }]));
       target.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, isAutoIncrement: false }]));
 
-      expect(diffSchemas(source, target).columnDiffs).toEqual([]);
+      expect(diffSchemas(source, target).columns).toEqual([]);
     });
 
     it('should detect default value changes', () => {
@@ -226,7 +225,7 @@ describe('SchemaASTDiffer', () => {
         ]),
       );
       const result = diffSchemas(source, target);
-      expect(result.columnDiffs[0].description).toContain('default: 20 -> 30');
+      expect(result.columns[0].description).toContain('default: 20 -> 30');
     });
 
     /** A unique column is a unique index, compared with the indexes, so the column alone differs in nothing. */
@@ -245,23 +244,7 @@ describe('SchemaASTDiffer', () => {
           { name: 'email', isUnique: false },
         ]),
       );
-      expect(diffSchemas(source, target).columnDiffs).toEqual([]);
-    });
-
-    it('should use case-insensitive comparison when configured', () => {
-      const source = new SchemaAST();
-      const target = new SchemaAST();
-
-      const sourceTable = mockTableNode('Users', [{ name: 'ID', type: { category: 'integer' }, isPrimaryKey: true }]);
-      const targetTable = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
-
-      source.addTable(sourceTable);
-      target.addTable(targetTable);
-      const diff = diffSchemas(source, target, { ignoreCase: true });
-
-      // With case insensitive, tables should match
-      expect(diff.tablesToCreate.length).toBe(0);
-      expect(diff.tablesToDrop.length).toBe(0);
+      expect(diffSchemas(source, target).columns).toEqual([]);
     });
 
     it('should detect breaking changes', () => {
@@ -278,7 +261,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasBreakingChanges).toBe(true);
+      expect(diff.columns.map((columnDiff) => columnDiff.isBreaking)).toEqual([true]);
     });
 
     it('should format meaningful type differences (size, precision, scale, unsigned)', () => {
@@ -300,8 +283,8 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target);
 
-      const amountDiff = diff.columnDiffs.find((c) => c.column === 'amount');
-      const bioDiff = diff.columnDiffs.find((c) => c.column === 'bio');
+      const amountDiff = diff.columns.find((c) => c.column === 'amount');
+      const bioDiff = diff.columns.find((c) => c.column === 'bio');
 
       expect(amountDiff).toBeDefined();
       expect(amountDiff?.description).toContain('type: decimal(10,2) unsigned -> decimal(8,2)');
@@ -336,8 +319,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.name === 'users__email_idx' && i.type === 'create')).toBe(true);
+      expect(diff.indexes.some((i) => i.name === 'users__email_idx' && kindOf(i) === 'create')).toBe(true);
     });
 
     it('should detect indexes to drop', () => {
@@ -364,8 +346,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(targetTable);
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.name === 'users__email_idx' && i.type === 'drop')).toBe(true);
+      expect(diff.indexes.some((i) => i.name === 'users__email_idx' && kindOf(i) === 'drop')).toBe(true);
     });
 
     /** The generator already takes an index of the same shape as the one it wants; drift must agree. */
@@ -381,7 +362,7 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.indexDiffs).toEqual([]);
+      expect(diff.indexes).toEqual([]);
     });
 
     it('should report a duplicate of an index the entity asked for', () => {
@@ -398,7 +379,7 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.indexDiffs.map((index) => [index.name, index.type])).toEqual([['users_email_uq', 'drop']]);
+      expect(diff.indexes.map((index) => [index.name, kindOf(index)])).toEqual([['users_email_uq', 'drop']]);
     });
 
     it('should still report a same-shape index that differs in a compared attribute', () => {
@@ -423,7 +404,7 @@ describe('SchemaASTDiffer', () => {
 
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.indexDiffs.map((index) => [index.name, index.type])).toEqual([['users__email_idx', 'alter']]);
+      expect(diff.indexes.map((index) => [index.name, kindOf(index)])).toEqual([['users__email_idx', 'alter']]);
     });
 
     it('should detect altered index', () => {
@@ -451,8 +432,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.type === 'alter')).toBe(true);
+      expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
 
     it('should detect altered index column change', () => {
@@ -481,8 +461,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.indexDiffs.some((i) => i.type === 'alter')).toBe(true);
+      expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
 
     it('should detect altered index type change', () => {
@@ -517,7 +496,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareIndexes: true });
 
-      expect(diff.indexDiffs.some((i) => i.type === 'alter')).toBe(true);
+      expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
   });
 
@@ -547,8 +526,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareRelationships: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.relationshipDiffs.some((r) => r.name === 'posts_users_fk' && r.type === 'create')).toBe(true);
+      expect(diff.relationships.some((r) => r.name === 'posts_users_fk' && kindOf(r) === 'create')).toBe(true);
     });
 
     it('should detect relationships to drop', () => {
@@ -576,8 +554,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareRelationships: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.relationshipDiffs.some((r) => r.name === 'posts_users_fk' && r.type === 'drop')).toBe(true);
+      expect(diff.relationships.some((r) => r.name === 'posts_users_fk' && kindOf(r) === 'drop')).toBe(true);
     });
 
     it('should detect relationship action changes', () => {
@@ -613,8 +590,7 @@ describe('SchemaASTDiffer', () => {
       });
       const diff = diffSchemas(source, target, { compareRelationships: true });
 
-      expect(diff.hasDifferences).toBe(true);
-      expect(diff.relationshipDiffs.some((r) => r.type === 'alter')).toBe(true);
+      expect(diff.relationships.some((r) => kindOf(r) === 'alter')).toBe(true);
     });
 
     it('should detect no differences for identical indexes', () => {
@@ -641,7 +617,7 @@ describe('SchemaASTDiffer', () => {
       source.addIndex(idx1);
       target.addIndex(idx2);
       const result = diffSchemas(source, target, { compareIndexes: true });
-      expect(result.indexDiffs.length).toBe(0);
+      expect(result.indexes.length).toBe(0);
     });
 
     it('should detect no differences for identical relationships', () => {
@@ -668,7 +644,7 @@ describe('SchemaASTDiffer', () => {
       source.addRelationship(rel1);
       target.addRelationship(rel2);
       const result = diffSchemas(source, target, { compareRelationships: true });
-      expect(result.relationshipDiffs.length).toBe(0);
+      expect(result.relationships.length).toBe(0);
     });
 
     it('should handle default onDelete/onUpdate actions in relationship diff', () => {
@@ -698,29 +674,34 @@ describe('SchemaASTDiffer', () => {
       target.addRelationship(rel2);
 
       const result = diffSchemas(source, target, { compareRelationships: true });
-      expect(result.relationshipDiffs.length).toBe(0);
+      expect(result.relationships.length).toBe(0);
     });
   });
 
   describe('Utility Functions', () => {
-    it('should normalize default values', () => {
-      const source = new SchemaAST();
-      const target = new SchemaAST();
+    /** No dialect renders them here, so SQL is alike only to the letter, and never a literal that spells it. */
+    it('should compare defaults as written where no dialect is given', () => {
+      const diffOf = (expected: unknown, actual: unknown) => {
+        const source = new SchemaAST();
+        const target = new SchemaAST();
+        source.addTable(
+          mockTableNode('users', [
+            { name: 'id', isPrimaryKey: true },
+            { name: 'at', defaultValue: expected },
+          ]),
+        );
+        target.addTable(
+          mockTableNode('users', [
+            { name: 'id', isPrimaryKey: true },
+            { name: 'at', defaultValue: actual },
+          ]),
+        );
+        return diffSchemas(source, target).columns.length > 0;
+      };
 
-      const table1 = mockTableNode('users', [
-        { name: 'id', isPrimaryKey: true },
-        { name: 'created_at', defaultValue: 'now()' },
-      ]);
-      const table2 = mockTableNode('users', [
-        { name: 'id', isPrimaryKey: true },
-        { name: 'created_at', defaultValue: 'CURRENT_TIMESTAMP' },
-      ]);
-
-      source.addTable(table1);
-      target.addTable(table2);
-      const diff = diffSchemas(source, target);
-
-      expect(diff.hasDifferences).toBe(false);
+      expect(diffOf(SqlExpression.parenthesized('now()'), SqlExpression.parenthesized('now()'))).toBe(false);
+      expect(diffOf(SqlExpression.parenthesized('now()'), SqlExpression.parenthesized('CURRENT_TIMESTAMP'))).toBe(true);
+      expect(diffOf('CURRENT_TIMESTAMP', SqlExpression.parenthesized('CURRENT_TIMESTAMP'))).toBe(true);
     });
 
     it('should handle other default values in normalizeDefault', () => {
@@ -740,7 +721,7 @@ describe('SchemaASTDiffer', () => {
       target.addTable(table2);
       const diff = diffSchemas(source, target);
 
-      expect(diff.hasDifferences).toBe(false);
+      expect(diff).toEqual(NO_DIFFERENCES);
     });
 
     it('should use diffSchemas convenience function', () => {
@@ -748,7 +729,7 @@ describe('SchemaASTDiffer', () => {
       const target = new SchemaAST();
 
       const diff = diffSchemas(source, target);
-      expect(diff.hasDifferences).toBe(false);
+      expect(diff).toEqual(NO_DIFFERENCES);
     });
   });
 
@@ -784,7 +765,7 @@ describe('SchemaASTDiffer', () => {
         unique: false,
         ...target,
       });
-      return diffSchemas(sourceSchema, targetSchema, { compareIndexes: true }).indexDiffs;
+      return diffSchemas(sourceSchema, targetSchema, { compareIndexes: true }).indexes;
     };
 
     it('should leave the entries of an expression index uncompared, whatever the text says', () => {
@@ -891,8 +872,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(mockTableNode('ignored', [{ name: 'id', isPrimaryKey: true }]));
       const diff = diffSchemas(source, target, { excludeTables: ['ignored'] });
 
-      expect(diff.tablesToCreate.length).toBe(1);
-      expect(diff.tablesToCreate[0].name).toBe('users');
+      expect(diff.tables).toEqual([{ to: expect.objectContaining({ name: 'users' }) }]);
     });
   });
 

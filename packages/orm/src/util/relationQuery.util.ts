@@ -8,12 +8,7 @@ import type {
   RelationQuery,
   QueryWhere,
 } from '../type/index.js';
-import {
-  QUERY_BOOLEAN_CLAUSES,
-  QUERY_NUMBER_CLAUSES,
-  QUERY_OBJECT_CLAUSES,
-  QUERY_STATEMENT_CLAUSES,
-} from '../type/query.js';
+import { QUERY_CLAUSES, type QueryClause } from '../type/query.js';
 import { getKeys, isRecord, someKey } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
@@ -173,17 +168,19 @@ export function countedRelations<E>(
   });
 }
 
-// Taken from the clause groups declared beside `Query` itself, so a renamed clause fails to compile
-// here instead of quietly narrowing what a relation query accepts. `$required` is the one key that
-// is not a `Query` clause at all - it says how the relation joins, not what it selects.
-const RELATION_QUERY_BOOLEAN_KEYS = new Set<string>([...QUERY_BOOLEAN_CLAUSES, '$required']);
-const RELATION_QUERY_OBJECT_KEYS = new Set<string>(QUERY_OBJECT_CLAUSES);
-const RELATION_QUERY_NUMBER_KEYS = new Set<string>(QUERY_NUMBER_CLAUSES);
-const RELATION_QUERY_ALLOWED_KEYS = new Set<string>([
-  ...RELATION_QUERY_BOOLEAN_KEYS,
-  ...RELATION_QUERY_OBJECT_KEYS,
-  ...RELATION_QUERY_NUMBER_KEYS,
+/**
+ * The value type each key of a relation query takes: the clauses scoped to a relation, plus `$required`,
+ * which is not a clause. It says how the relation joins, not what it selects.
+ */
+const RELATION_QUERY_VALUES: ReadonlyMap<string, QueryClause['value']> = new Map([
+  ...getKeys(QUERY_CLAUSES)
+    .filter((key) => QUERY_CLAUSES[key].scope === 'relation')
+    .map((key) => [key, QUERY_CLAUSES[key].value] as const),
+  ['$required', 'boolean'],
 ]);
+
+/** Clauses only a top-level statement takes. A populated relation's query rejects them, naming the clause. */
+const STATEMENT_CLAUSES = getKeys(QUERY_CLAUSES).filter((key) => QUERY_CLAUSES[key].scope === 'statement');
 
 function isRelationQueryObject<E extends object = object>(value: unknown): value is RelationQuery<E> {
   return isRecord(value) && isValidRelationQueryShape(value);
@@ -200,7 +197,7 @@ export function parseRelationQueryValue<E extends object = object>(value: unknow
   // Caught before the shape check so the message names the key, rather than reporting the whole
   // object as an unrecognized relation query value.
   if (isRecord(value)) {
-    const statementOnly = QUERY_STATEMENT_CLAUSES.find((clause) => clause in value);
+    const statementOnly = STATEMENT_CLAUSES.find((clause) => clause in value);
     if (statementOnly) {
       throw new UqlUsageError(
         `'${statementOnly}' applies to the whole statement, not to a populated relation. Move it to the top level of the query.`,
@@ -247,17 +244,18 @@ function isBooleanLikeValue(value: unknown): value is boolean | 0 | 1 {
 function isValidRelationQueryShape(query: Record<string, unknown>): boolean {
   let hasKnownKey = false;
   for (const [key, value] of Object.entries(query)) {
-    if (!RELATION_QUERY_ALLOWED_KEYS.has(key)) {
+    const shape = RELATION_QUERY_VALUES.get(key);
+    if (shape === undefined) {
       return false;
     }
     hasKnownKey = true;
-    if (RELATION_QUERY_BOOLEAN_KEYS.has(key) && !isBooleanLikeValue(value)) {
+    if (shape === 'boolean' && !isBooleanLikeValue(value)) {
       return false;
     }
-    if (RELATION_QUERY_OBJECT_KEYS.has(key) && !isRecord(value) && !(key === '$select' && Array.isArray(value))) {
+    if (shape === 'object' && !isRecord(value) && !(key === '$select' && Array.isArray(value))) {
       return false;
     }
-    if (RELATION_QUERY_NUMBER_KEYS.has(key) && (typeof value !== 'number' || !Number.isFinite(value))) {
+    if (shape === 'number' && (typeof value !== 'number' || !Number.isFinite(value))) {
       return false;
     }
   }

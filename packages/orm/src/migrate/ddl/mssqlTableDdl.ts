@@ -1,6 +1,6 @@
 import type { ColumnSchema } from '../../type/index.js';
 import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
-import { sizedType, TableDdl } from './tableDdl.js';
+import { dropIndexOnTable, sizedType, TableDdl } from './tableDdl.js';
 
 /** What pins column `c`, the `sys.columns` row {@link MsSqlTableDdl} reads: each constraint, then each index, by kind. */
 const PINNED_BY = {
@@ -63,6 +63,10 @@ export class MsSqlTableDdl extends TableDdl {
 
   override renameTable(oldName: string, newName: string): string {
     return /*sql*/ `EXEC sp_rename ${this.dialect.escape(this.dialect.escapeId(oldName))}, ${this.dialect.escape(newName)};`;
+  }
+
+  override dropIndex(table: string, index: string): string {
+    return dropIndexOnTable(this.dialect, table, index);
   }
 
   override storedGeneratedColumn(_type: string, expression: string): string {

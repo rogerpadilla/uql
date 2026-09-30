@@ -2,6 +2,7 @@
 // values instead, so this is the hand-written-SQL hatch, and inline MySQL literals break under
 // `NO_BACKSLASH_ESCAPES` or a GBK-like charset: prefer bound parameters. Postgres arrays are separate.
 
+import { bytesToHex } from './bytes.js';
 import { utcTimestamp } from './date.js';
 import { UqlUsageError } from './uqlError.js';
 
@@ -45,18 +46,6 @@ export function unescapeMysqlString(body: string): string {
 const mysqlStringLiteral: StringLiteralEscaper = (val) =>
   `'${val.replace(MYSQL_SPECIALS, (char) => MYSQL_ESCAPES[char])}'`;
 
-const HEX_BYTES = Array.from({ length: 256 }, (_, byte) => byte.toString(16).padStart(2, '0'));
-
-/** Native hex encoder where available (~130x faster on 4 KB); lookup table for browsers. */
-function bytesToHexLiteral(bytes: Uint8Array): string {
-  if (typeof Buffer !== 'undefined') {
-    return `X'${Buffer.from(bytes.buffer, bytes.byteOffset, bytes.byteLength).toString('hex')}'`;
-  }
-  let hex = '';
-  for (let i = 0; i < bytes.length; i++) hex += HEX_BYTES[bytes[i]];
-  return `X'${hex}'`;
-}
-
 /**
  * A factory, not a function taking `escapeString` as an argument: threading it through every call
  * measured 1.1-1.5x slower. Rejects unsupported types rather than stringifying them into SQL.
@@ -84,10 +73,10 @@ function createEscaper(escapeString: StringLiteralEscaper, zone = ''): (value: u
     }
     // A Node `Buffer` is a `Uint8Array` too.
     if (value instanceof Uint8Array) {
-      return bytesToHexLiteral(value);
+      return `X'${bytesToHex(value)}'`;
     }
-    if ('toSqlString' in value && typeof (value as { toSqlString?: unknown }).toSqlString === 'function') {
-      return String((value as { toSqlString: () => unknown }).toSqlString());
+    if ('toSqlString' in value && typeof value.toSqlString === 'function') {
+      return String(value.toSqlString());
     }
     throw new UqlUsageError(
       'escapeSqlLiteral: plain objects are not supported; use bound parameters or JSON.stringify + a string column.',

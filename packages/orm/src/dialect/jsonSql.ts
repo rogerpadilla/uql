@@ -70,7 +70,10 @@ export function jsonSetCall(
   return chainedCall('JSON_SET', target, pairs, 2, maxArgs);
 }
 
-/** The `$set` target: a nullable column needs a `COALESCE` fallback to build on. */
+/**
+ * The target a `$set` builds on. A nullable column gets a `COALESCE` fallback; a NOT NULL one goes in bare,
+ * which keeps MySQL's partial in-place JSON update, since that needs the column itself as `JSON_SET`'s input.
+ */
 export function jsonSetTarget(expr: string, field: FieldOptions | undefined, empty: string): string {
   return field?.nullable === false ? expr : `COALESCE(${expr}, ${empty})`;
 }

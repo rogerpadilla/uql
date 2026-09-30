@@ -1,7 +1,7 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import type { ColumnSchema } from '../../type/index.js';
-import { formatDefaultValue, sameDefault } from '../builder/expressions.js';
-import { lacksValue } from '../schemaChange.js';
+import { UqlUsageError } from '../../util/uqlError.js';
+import { formatDefaultValue } from '../builder/expressions.js';
 
 /**
  * A column's type with the size it was read back with, unless its spelling already carries one:
@@ -19,11 +19,14 @@ export function sizedType(column: Pick<ColumnSchema, 'type' | 'length' | 'precis
 }
 
 /**
- * The `ALTER TABLE` statements an engine spells its own way: the migrator's, for the reason
- * {@link IndexDdl} is. The form here is the portable one; SQL Server's is {@link MsSqlTableDdl}.
+ * Table DDL that engines spell differently. Like {@link IndexDdl}, it belongs to the migrator, so no runtime
+ * entry carries it. This class holds the portable form, which SQLite takes; other families override what differs.
  */
 export class TableDdl {
   constructor(protected readonly dialect: AbstractSqlDialect) {}
+
+  /** Options appended to `CREATE TABLE`, such as MySQL's engine; empty by default. */
+  readonly tableOptions: string = '';
 
   /** A `CREATE TABLE` up to its column list, a no-op where `ifNotExists` and the table is already there. */
   createTable(target: string, ifNotExists: boolean): string {
@@ -34,18 +37,9 @@ export class TableDdl {
     return `ALTER TABLE ${this.dialect.escapeId(table)} ADD COLUMN ${definition};`;
   }
 
-  /**
-   * `column` added, spelled by `render`. MySQL fills a zero into the rows already there for a required
-   * column with no default, so there it is added nullable and required after, failing on them as elsewhere.
-   */
+  /** The statements that add `column`, whose definition `render` writes. */
   addColumnStatements(table: string, column: ColumnSchema, render: (column: ColumnSchema) => string): string[] {
-    if (this.dialect.alterColumnSyntax !== 'MODIFY COLUMN' || !lacksValue(column)) {
-      return [this.addColumn(table, render(column))];
-    }
-    return [
-      this.addColumn(table, render({ ...column, nullable: true })),
-      ...this.alterColumn(table, column, render(column)),
-    ];
+    return [this.addColumn(table, render(column))];
   }
 
   dropColumn(table: string, column: string): string[] {
@@ -53,24 +47,11 @@ export class TableDdl {
   }
 
   /**
-   * What changes `column` to what it now declares. `definition` is the whole column, which MySQL's
-   * `MODIFY COLUMN` restates; Postgres takes each change as a clause of its own, so given what the
-   * column was (`from`), only the clauses that changed.
+   * The statements that change a column from `from`, what it was, to `column`, what it now declares.
+   * `definition` is the complete new column definition.
    */
-  alterColumn(table: string, column: ColumnSchema, definition: string, from?: ColumnSchema): string[] {
-    const target = this.dialect.escapeId(table);
-    if (this.dialect.alterColumnStrategy !== 'separate-clauses') {
-      return [`ALTER TABLE ${target} ${this.dialect.alterColumnSyntax} ${definition};`];
-    }
-    const name = this.dialect.escapeId(column.name);
-    const alter = `ALTER TABLE ${target} ALTER COLUMN ${name}`;
-    return [
-      // Cast, since the engine converts only between types it deems compatible: text to integer needs saying.
-      (!from || from.type !== column.type) && `${alter} TYPE ${column.type} USING ${name}::${column.type};`,
-      (!from || from.nullable !== column.nullable) && `${alter} ${column.nullable ? 'DROP NOT NULL' : 'SET NOT NULL'};`,
-      (!from || !sameDefault(column.defaultValue, from.defaultValue, this.dialect)) &&
-        (column.defaultValue === undefined ? `${alter} DROP DEFAULT;` : `${alter} SET${this.defaultClause(column)};`),
-    ].filter((statement) => statement !== false);
+  alterColumn(table: string, _column: ColumnSchema, definition: string, _from?: ColumnSchema): string[] {
+    return [`ALTER TABLE ${this.dialect.escapeId(table)} ALTER COLUMN ${definition};`];
   }
 
   renameColumn(table: string, oldName: string, newName: string): string {
@@ -80,6 +61,26 @@ export class TableDdl {
 
   renameTable(oldName: string, newName: string): string {
     return `ALTER TABLE ${this.dialect.escapeId(oldName)} RENAME TO ${this.dialect.escapeId(newName)};`;
+  }
+
+  /** `schema` is the table's schema, which also holds its indexes. */
+  dropIndex(table: string, index: string, schema?: string): string {
+    return `DROP INDEX IF EXISTS ${this.dialect.escapeQualifiedId(index, schema)};`;
+  }
+
+  dropForeignKey(table: string, constraint: string): string {
+    return `ALTER TABLE ${this.dialect.escapeId(table)} DROP CONSTRAINT ${this.dialect.escapeId(constraint)};`;
+  }
+
+  /** Drops the primary key by its real constraint name: the introspected one, or the one uql derived when adding it. */
+  dropPrimaryKey(table: string, constraint?: string): string {
+    if (!constraint) {
+      throw new UqlUsageError(
+        `Cannot drop the primary key of "${table}": ${this.dialect.dialectName} names the constraint, and ` +
+          'introspection did not report a name for it.',
+      );
+    }
+    return `ALTER TABLE ${this.dialect.escapeId(table)} DROP CONSTRAINT ${this.dialect.escapeId(constraint)};`;
   }
 
   /** A stored generated column's type, with the clause computing it. */
@@ -96,4 +97,9 @@ export class TableDdl {
       ? ''
       : ` DEFAULT ${formatDefaultValue(column.defaultValue, this.dialect, column.type)}`;
   }
+}
+
+/** `DROP INDEX <index> ON <table>`, for engines that scope index names per table: MySQL and SQL Server. */
+export function dropIndexOnTable(dialect: AbstractSqlDialect, table: string, index: string): string {
+  return `DROP INDEX ${dialect.escapeId(index)} ON ${dialect.escapeId(table)};`;
 }

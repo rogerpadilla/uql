@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { MariaDialect } from '../../maria/mariaDialect.js';
+import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { canonicalToSql } from '../../schema/canonicalType.js';
@@ -18,11 +19,15 @@ describe('Default value expressions', () => {
   const mariadb = new MariaDialect();
   const sqlite = new SqliteDialect();
   const cockroach = new CockroachDialect();
+  const mssql = new MsSqlDialect();
 
-  it('should render the timestamp kinds identically everywhere', () => {
+  /** The clock each engine's statements read, which writes a timestamp uql reads back as it stored it. */
+  it('should render the timestamp kinds as the text a bound Date is written as', () => {
     expect(fmt(postgres, expr.now())).toBe('CURRENT_TIMESTAMP');
     expect(fmt(mysql, expr.now())).toBe('CURRENT_TIMESTAMP');
-    expect(fmt(sqlite, expr.currentDate())).toBe('CURRENT_DATE');
+    expect(fmt(mssql, expr.now())).toBe('SYSUTCDATETIME()');
+    expect(fmt(sqlite, expr.now())).toBe("(strftime('%Y-%m-%d %H:%M:%f', 'now'))");
+    expect(fmt(sqlite, expr.currentDate())).toBe("(strftime('%Y-%m-%d 00:00:00.000', 'now'))");
     expect(fmt(sqlite, expr.currentTime())).toBe('CURRENT_TIME');
   });
 
@@ -130,14 +135,31 @@ describe('Default value expressions', () => {
     expect(fmt(sqlite, false)).toBe('0');
   });
 
-  /** Drift compares the entity's desired default against the engine's own text for the column. */
-  it('should not report drift for a symbolic default the engine echoes back', () => {
+  /** Drift compares the entity's desired default against what introspection read back, as the engine reprints it. */
+  it('should not report drift for SQL the engine reprints as it was declared', () => {
     const generator = new SqlSchemaGenerator(postgres);
 
-    expect(generator.defaultsEqual(expr.now(), 'CURRENT_TIMESTAMP')).toBe(true);
-    expect(generator.defaultsEqual(expr.uuid(), 'gen_random_uuid()')).toBe(true);
-    expect(generator.defaultsEqual({}, "'{}'::jsonb")).toBe(true);
-    expect(generator.defaultsEqual(expr.now(), 'CURRENT_DATE')).toBe(false);
+    expect(generator.defaultsEqual(expr.now(), expr.raw('(CURRENT_TIMESTAMP)'))).toBe(true);
+    expect(generator.defaultsEqual(expr.uuid(), expr.raw('(gen_random_uuid())'))).toBe(true);
+    expect(generator.defaultsEqual({}, '{}')).toBe(true);
+    expect(generator.defaultsEqual(expr.now(), expr.raw('(CURRENT_DATE)'))).toBe(false);
+  });
+
+  /** The reprints engines differ in, each taken out on its own engine: see `columnDefault.test.ts`. */
+  it('should read SQL alike past case, spacing, wrapping parentheses and an empty argument list', () => {
+    const generator = new SqlSchemaGenerator(cockroach);
+
+    expect(generator.defaultsEqual(expr.now(), expr.raw('(current_timestamp())'))).toBe(true);
+    expect(generator.defaultsEqual(expr.raw("coalesce(NULL, 'a')"), expr.raw("((coalesce(NULL,'a')))"))).toBe(true);
+    expect(generator.defaultsEqual(expr.raw("coalesce(NULL, 'a')"), expr.raw("(coalesce(NULL, 'b'))"))).toBe(false);
+  });
+
+  /** A literal that spells the clock is text, so it neither is the clock nor passes for it. */
+  it('should never read a literal as the SQL it spells', () => {
+    const generator = new SqlSchemaGenerator(postgres);
+
+    expect(generator.defaultsEqual('CURRENT_TIMESTAMP', expr.raw('(CURRENT_TIMESTAMP)'))).toBe(false);
+    expect(generator.defaultsEqual(expr.now(), 'CURRENT_TIMESTAMP')).toBe(false);
   });
 
   /** `expr` holds only what a plain value cannot express; `raw` is exempt, being the escape hatch. */

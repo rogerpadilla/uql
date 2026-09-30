@@ -34,8 +34,6 @@ import {
   isAutoIncrement,
   isRecord,
   obtainAttrsPaths,
-  throwNoPendingTransaction,
-  throwPendingTransaction,
   unflatObject,
   unflatObjects,
 } from '../util/index.js';
@@ -544,15 +542,10 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return !!this.hasPendingTransaction;
   }
 
-  override async beginTransaction(opts?: TransactionOptions) {
-    return this.serialize(async () => {
-      if (this.hasPendingTransaction) {
-        throwPendingTransaction();
-      }
-      await this.lazyConnect();
-      await this.internalBegin(opts);
-      this.hasPendingTransaction = true;
-    });
+  protected override async openTransaction(opts?: TransactionOptions) {
+    await this.lazyConnect();
+    await this.internalBegin(opts);
+    this.hasPendingTransaction = true;
   }
 
   /**
@@ -560,23 +553,9 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * answers `SQLITE_BUSY` and keeps it), so the flag has to stay set for the `catch` in
    * {@link AbstractQuerier.transaction} or {@link AbstractQuerier.release} to roll it back.
    */
-  override async commitTransaction() {
-    return this.serialize(async () => {
-      if (!this.hasPendingTransaction) {
-        throwNoPendingTransaction();
-      }
-      await this.internalCommit();
-      this.hasPendingTransaction = false;
-    });
-  }
-
-  override async rollbackTransaction() {
-    return this.serialize(async () => {
-      if (this.hasPendingTransaction) {
-        await this.internalRollback();
-        this.hasPendingTransaction = false;
-      }
-    });
+  protected override async endTransaction(commit: boolean) {
+    await (commit ? this.internalCommit() : this.internalRollback());
+    this.hasPendingTransaction = false;
   }
 
   /**

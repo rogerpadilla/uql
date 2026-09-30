@@ -71,9 +71,8 @@ class MockQuerier extends AbstractQuerier {
     return Promise.resolve(0);
   }
 
-  override async beginTransaction() {}
-  override async commitTransaction() {}
-  override async rollbackTransaction() {}
+  protected override async openTransaction() {}
+  protected override async endTransaction() {}
   protected override async internalRelease() {}
   hasOpenTransaction = false;
 }

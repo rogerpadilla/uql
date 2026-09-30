@@ -1,5 +1,5 @@
 import { type ColumnFamily, type FamilyOf, type FieldOptions, QueryRaw, type StampEvent } from '../type/index.js';
-import { columnFamily, isInlinedExpression } from './field.util.js';
+import { fieldFamily, isInlinedExpression } from './field.util.js';
 import { getKeys } from './object.util.js';
 import { constantSql } from './raw.js';
 
@@ -125,7 +125,7 @@ export function fieldOptionConflict(opts: FieldOptions): string | undefined {
   if (opts.columnType instanceof QueryRaw && constantSql(opts.columnType) === undefined) {
     return "cannot use 'columnType': a `raw` one names a constant type, so it can bind no value and read no column";
   }
-  const family = columnFamily(opts.columnType ?? opts.type);
+  const family = fieldFamily(opts);
   // Walked in table order, not in the order the field happened to be written, so a field with two
   // conflicts always reports the same one. An option no rule knows is a typo, which `@Field`'s own check
   // reports where it can still be spelled right.

@@ -71,6 +71,16 @@ describe('MongoSchemaIntrospector', () => {
     });
   });
 
+  /** What drift compares a text index by, so a whole introspection has to keep it too. */
+  it("should keep a text index's language in the tables it introspects", async () => {
+    await pool.withQuerier(({ db }) =>
+      db.collection('note').createIndex({ body: 'text' }, { name: 'note_body_idx', default_language: 'english' }),
+    );
+    const table = (await introspector.introspect()).getTable('note');
+    await pool.withQuerier(({ db }) => db.collection('note').drop());
+    expect(table?.indexes.find((index) => index.name === 'note_body_idx')?.config).toBe('english');
+  });
+
   it('should read no schema for a collection that does not exist', async () => {
     expect(await introspector.getTableSchema('missing')).toBeUndefined();
   });

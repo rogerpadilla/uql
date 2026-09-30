@@ -9,7 +9,7 @@ import {
   type TableNode,
 } from '../../schema/types.js';
 import { camelCase, lowerFirst, pascalCase, singularize, upperFirst } from '../../util/string.util.js';
-import { buildFieldOptionsSource, enumMembersSource, fieldNeedsRaw } from './fieldOptionsSource.js';
+import { buildFieldOptionsSource, enumMembersSource, fieldImports } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 import { memberSource, quoted } from './sourceLiteral.js';
 
@@ -135,8 +135,8 @@ export class EntityCodeGenerator {
       if (col.isPrimaryKey) {
         uqlImports.add('Id');
       }
-      if (fieldNeedsRaw(col)) {
-        uqlImports.add('raw');
+      for (const name of fieldImports(col)) {
+        uqlImports.add(name);
       }
       if (col.type.category === 'json') {
         uqlImports.add('type Json');

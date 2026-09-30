@@ -64,6 +64,14 @@ describe('HttpQuerier', () => {
     expectTypeOf(response.count).toEqualTypeOf<number>();
   });
 
+  it('should read a page past a cursor from the page path', async () => {
+    const q = { $sort: { id: 1 }, $limit: 2, $after: 'WyJhIl0' } as const;
+    const response = await querier.findManyPage(User, q);
+    expect(http.get).toHaveBeenCalledWith(`/api/user/page${stringifyQuery(q)}`, undefined);
+    expectTypeOf(response.data.items).toEqualTypeOf<User[]>();
+    expectTypeOf(response.data.endCursor).toEqualTypeOf<string | undefined>();
+  });
+
   it('should reject a count read whose response carries no count', async () => {
     vi.mocked(http.get).mockResolvedValueOnce({ data: [] });
     await expect(querier.findManyAndCount(User, {})).rejects.toThrow('findManyAndCount response has an invalid count');

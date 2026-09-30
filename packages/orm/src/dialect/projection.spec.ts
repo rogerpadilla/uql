@@ -18,7 +18,7 @@ const cases: ProjectionCase[] = [
     query: { $select: { name: true } },
     sqlIncludes: ['"name"'],
     sqlExcludes: ['"createdAt"', '"email"'],
-    mongoProjection: { name: 1 },
+    mongoProjection: { name: 1, _id: 0 },
   },
   {
     name: 'exclude subtractive',

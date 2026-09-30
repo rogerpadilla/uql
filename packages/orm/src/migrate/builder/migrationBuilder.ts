@@ -1,12 +1,11 @@
-import type { ForeignKeyAction } from '../../schema/types.js';
+import { DEFAULT_FOREIGN_KEY_ACTION } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
-import type { SchemaGenerator } from '../../type/migration.js';
-import { indexNameParts, normalizeIndexColumn } from '../../util/index.js';
-import { derivedIndexName } from '../../util/sql.util.js';
+import type { ForeignKeySchema, SchemaGenerator } from '../../type/migration.js';
+import { UqlUsageError } from '../../util/uqlError.js';
+import { indexDefinition } from '../generator/definitionToNode.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
-  CreateIndexOperation,
   FullColumnDefinition,
   IAlterTableBuilder,
   IColumnBuilder,
@@ -15,52 +14,8 @@ import type {
   ITableBuilder,
 } from './types.js';
 
-/**
- * One `createIndex` operation. Shared because the alter-table builder, the recorder and the
- * executing builder all record the same thing, and an entry left unnormalized reaches the generator
- * as a column literally named `[object Object]`.
- */
-function createIndexOperation(
-  tableName: string,
-  columns: readonly IndexColumnInput[],
-  options: IndexOptions = {},
-): CreateIndexOperation {
-  const { name, unique, ...index } = options;
-  const entries = columns.map(normalizeIndexColumn);
-  return {
-    type: 'createIndex',
-    tableName,
-    index: {
-      ...index,
-      name: name ?? derivedIndexName(tableName, indexNameParts(entries)),
-      entries,
-      unique: unique ?? false,
-    },
-  };
-}
-
-type ForeignKeyTarget = { table: string; columns: string[] };
-type ForeignKeyOptions = { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction };
-
-/** An `addForeignKey` operation, `NO ACTION` defaults included, for the three builders that record one. */
-function addForeignKeyOperation(
-  tableName: string,
-  columns: string[],
-  target: ForeignKeyTarget,
-  options: ForeignKeyOptions = {},
-): AnyMigrationOperation {
-  return {
-    type: 'addForeignKey',
-    tableName,
-    foreignKey: {
-      name: options.name,
-      columns,
-      references: { table: target.table, columns: target.columns },
-      onDelete: options.onDelete ?? 'NO ACTION',
-      onUpdate: options.onUpdate ?? 'NO ACTION',
-    },
-  };
-}
+type ForeignKeyTarget = ForeignKeySchema['references'];
+type ForeignKeyOptions = Pick<ForeignKeySchema, 'name' | 'onDelete' | 'onUpdate'>;
 
 /** One column declared through `createTable`'s vocabulary, a throwaway {@link TableBuilder}, so its type is stated. */
 function buildOneColumn(callback: (columns: IColumnFactory) => IColumnBuilder): FullColumnDefinition {
@@ -101,8 +56,14 @@ class AlterTableBuilder implements IAlterTableBuilder {
     return this;
   }
 
+  /** Alters only the column: throws if it declares an index or a foreign key, rather than dropping them. */
   alterColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this {
     const column = buildOneColumn(callback);
+    if (column.index || column.foreignKey) {
+      throw new UqlUsageError(
+        `alterColumn changes '${column.name}' alone: add its index with createIndex, its foreign key with addForeignKey`,
+      );
+    }
     this.operations.push({
       type: 'alterColumn',
       tableName: this.tableName,
@@ -113,7 +74,11 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 
   addIndex(columns: readonly IndexColumnInput[], options?: IndexOptions): this {
-    this.operations.push(createIndexOperation(this.tableName, columns, options));
+    this.operations.push({
+      type: 'createIndex',
+      tableName: this.tableName,
+      index: indexDefinition(this.tableName, columns, options),
+    });
     return this;
   }
 
@@ -126,8 +91,18 @@ class AlterTableBuilder implements IAlterTableBuilder {
     return this;
   }
 
-  addForeignKey(columns: string[], target: ForeignKeyTarget, options?: ForeignKeyOptions): this {
-    this.operations.push(addForeignKeyOperation(this.tableName, columns, target, options));
+  addForeignKey(columns: string[], target: ForeignKeyTarget, options: ForeignKeyOptions = {}): this {
+    this.operations.push({
+      type: 'addForeignKey',
+      tableName: this.tableName,
+      foreignKey: {
+        name: options.name,
+        columns,
+        references: { table: target.table, columns: target.columns },
+        onDelete: options.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION,
+        onUpdate: options.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION,
+      },
+    });
     return this;
   }
 
@@ -199,68 +174,42 @@ export class OperationRecorder implements IMigrationBuilder {
     }
   }
 
-  async addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
-    await this.record({
-      type: 'addColumn',
-      tableName,
-      column: buildOneColumn(callback),
-    });
+  // Each single change delegates to `alterTable`, so each operation is implemented only once.
+  addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
+    return this.alterTable(tableName, (table) => table.addColumn(callback));
   }
 
-  async dropColumn(tableName: string, columnName: string): Promise<void> {
-    await this.record({
-      type: 'dropColumn',
-      tableName,
-      columnName,
-    });
+  dropColumn(tableName: string, columnName: string): Promise<void> {
+    return this.alterTable(tableName, (table) => table.dropColumn(columnName));
   }
 
-  async alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
-    const column = buildOneColumn(callback);
-    await this.record({
-      type: 'alterColumn',
-      tableName,
-      columnName: column.name,
-      changes: column,
-    });
+  alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void> {
+    return this.alterTable(tableName, (table) => table.alterColumn(callback));
   }
 
-  async renameColumn(tableName: string, oldName: string, newName: string): Promise<void> {
-    await this.record({
-      type: 'renameColumn',
-      tableName,
-      oldName,
-      newName,
-    });
+  renameColumn(tableName: string, oldName: string, newName: string): Promise<void> {
+    return this.alterTable(tableName, (table) => table.renameColumn(oldName, newName));
   }
 
-  async createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void> {
-    await this.record(createIndexOperation(tableName, columns, options));
+  createIndex(tableName: string, columns: readonly IndexColumnInput[], options?: IndexOptions): Promise<void> {
+    return this.alterTable(tableName, (table) => table.addIndex(columns, options));
   }
 
-  async dropIndex(tableName: string, indexName: string): Promise<void> {
-    await this.record({
-      type: 'dropIndex',
-      tableName,
-      indexName,
-    });
+  dropIndex(tableName: string, indexName: string): Promise<void> {
+    return this.alterTable(tableName, (table) => table.dropIndex(indexName));
   }
 
-  async addForeignKey(
+  addForeignKey(
     tableName: string,
     columns: string[],
     target: ForeignKeyTarget,
-    options: ForeignKeyOptions = {},
+    options?: ForeignKeyOptions,
   ): Promise<void> {
-    await this.record(addForeignKeyOperation(tableName, columns, target, options));
+    return this.alterTable(tableName, (table) => table.addForeignKey(columns, target, options));
   }
 
-  async dropForeignKey(tableName: string, constraintName: string): Promise<void> {
-    await this.record({
-      type: 'dropForeignKey',
-      tableName,
-      constraintName,
-    });
+  dropForeignKey(tableName: string, constraintName: string): Promise<void> {
+    return this.alterTable(tableName, (table) => table.dropForeignKey(constraintName));
   }
 
   async raw(sql: string): Promise<void> {

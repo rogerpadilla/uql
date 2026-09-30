@@ -35,7 +35,6 @@ export function keyOfColumns(
 export class SchemaAST {
   readonly tables: Map<string, TableNode> = new Map();
   readonly relationships: RelationshipNode[] = [];
-  readonly indexes: IndexNode[] = [];
 
   /** A table by the key it is stored under: schema-qualified where it has one (see `qualifyName`). */
   getTable(name: string): TableNode | undefined {
@@ -61,7 +60,6 @@ export class SchemaAST {
   }
 
   addIndex(index: IndexNode): void {
-    this.indexes.push(index);
     if (!index.table.indexes.includes(index)) {
       index.table.indexes.push(index);
     }

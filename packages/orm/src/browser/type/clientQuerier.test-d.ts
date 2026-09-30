@@ -79,6 +79,10 @@ export async function rawIsServerOnly() {
   // @ts-expect-error nor a raw sub-query
   await client.findMany(Article, { $where: { $exists: raw`SELECT 1` } });
 
+  await server.findManyPage(Article, { $where: { title: raw`lower(title)` }, $sort: { id: 1 }, $limit: 10 });
+  // @ts-expect-error nor in a page's filter
+  await client.findManyPage(Article, { $where: { title: raw`lower(title)` }, $sort: { id: 1 }, $limit: 10 });
+
   await server.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
   // @ts-expect-error nor a raw value in an update
   await client.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
@@ -113,6 +117,9 @@ export async function clientServerParity() {
 
   await server.findManyAndCount(Article, { $skip: 5 });
   await client.findManyAndCount(Article, { $skip: 5 });
+
+  await server.findManyPage(Article, { $sort: { id: 1 }, $limit: 10, $after: 'x' });
+  await client.findManyPage(Article, { $sort: { id: 1 }, $limit: 10, $after: 'x' });
 
   await server.count(Article);
   await client.count(Article);

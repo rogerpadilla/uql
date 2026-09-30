@@ -212,6 +212,8 @@ describe('derived constraint names', () => {
   it('should name each kind after the table and its columns, kind last', () => {
     expect(derivedIndexName('Order', ['total'])).toBe('Order__total_idx');
     expect(derivedIndexName('User', ['email'], true)).toBe('User__email_uk');
+    // A name is one identifier, so a table's schema stays out of it.
+    expect(derivedIndexName('sales.Order', ['total'])).toBe('Order__total_idx');
     expect(derivedForeignKeyName('Order', ['customerId'])).toBe('Order__customerId_fk');
     expect(derivedPrimaryKeyName('Enrolment', ['studentId', 'courseId'])).toBe('Enrolment__studentId_courseId_pk');
     expect(derivedCheckName('Order', 1)).toBe('Order__1_ck');
@@ -420,7 +422,7 @@ describe('buildUpdateResult', () => {
     expect(buildUpdateResult({ upsertStatus: undefined }).created).toBe(undefined);
   });
 
-  it('should ignore upsertStatus for RETURNING dialects without a `_created` column', () => {
+  it('should ignore upsertStatus for RETURNING dialects without a created flag', () => {
     // MariaDB's `ON DUPLICATE KEY UPDATE ... RETURNING` doesn't follow the MySQL 1/2/0
     // affectedRows convention (driver-dependent, sometimes non-numeric, sometimes a stale/wrong
     // value); treating it as a `created` signal produced a real false positive/negative on insert.

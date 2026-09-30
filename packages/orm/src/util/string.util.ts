@@ -91,3 +91,16 @@ export function pluralize(name: string): string {
   }
   return name + 's';
 }
+
+/**
+ * The FNV-1a hash of `value`, written by hand because the package has zero runtime dependencies and the
+ * browser and edge entries cannot reach `node:crypto`. It is not a security hash; it only tells inputs apart.
+ */
+export function fnv1a(value: string): number {
+  let hash = 0x811c9dc5;
+  for (let i = 0; i < value.length; i++) {
+    hash ^= value.charCodeAt(i);
+    hash = Math.imul(hash, 0x01000193) >>> 0;
+  }
+  return hash;
+}

@@ -162,16 +162,16 @@ describe('canonicalType', () => {
       expect(canonicalToSql({ category: 'timestamp', withTimezone: true }, pg)).toBe('TIMESTAMPTZ');
     });
 
-    it('should store a Date field as an instant where the engine has one, and as its own timestamp elsewhere', () => {
+    it('should store a Date field as an instant to the millisecond where the engine has one, and as its own timestamp elsewhere', () => {
       const date = fieldOptionsToCanonical({ type: Date });
-      expect(canonicalToSql(date, pg)).toBe('TIMESTAMPTZ');
-      expect(canonicalToSql(date, cockroach)).toBe('TIMESTAMPTZ');
+      expect(canonicalToSql(date, pg)).toBe('TIMESTAMPTZ(3)');
+      expect(canonicalToSql(date, cockroach)).toBe('TIMESTAMPTZ(3)');
       expect(canonicalToSql(date, mysql)).toBe('DATETIME(3)');
       expect(canonicalToSql(date, sqlite)).toBe('TEXT');
     });
 
     it('should keep a declared timestamp without time zone', () => {
-      expect(canonicalToSql(fieldOptionsToCanonical({ type: Date, columnType: 'timestamp' }), pg)).toBe('TIMESTAMP');
+      expect(canonicalToSql(fieldOptionsToCanonical({ type: Date, columnType: 'timestamp' }), pg)).toBe('TIMESTAMP(3)');
     });
 
     it('should handle raw types', () => {
@@ -254,7 +254,11 @@ describe('canonicalType', () => {
       expect(fieldOptionsToCanonical({ type: String })).toEqual({ category: 'string', length: undefined });
       expect(fieldOptionsToCanonical({ type: Number })).toEqual({ category: 'integer', size: 'big' });
       expect(fieldOptionsToCanonical({ type: Boolean })).toEqual({ category: 'boolean' });
-      expect(fieldOptionsToCanonical({ type: Date })).toEqual({ category: 'timestamp', withTimezone: true });
+      expect(fieldOptionsToCanonical({ type: Date })).toEqual({
+        category: 'timestamp',
+        withTimezone: true,
+        precision: 3,
+      });
       expect(fieldOptionsToCanonical({ type: BigInt })).toEqual({ category: 'integer', size: 'big' });
     });
 
@@ -490,15 +494,27 @@ describe('timestamp precision', () => {
     expect(canonicalToSql(fieldOptionsToCanonical({ type: Date, precision: 6 }), mysql)).toBe('DATETIME(6)');
   });
 
-  /** Postgres's unstated one is its own 6; MySQL's introspector states its 0, where uql's unstated one is 3. */
+  /**
+   * uql's unstated one is 3 on every engine, a `Date`'s milliseconds; Postgres's own unstated one is 6, so
+   * a column created before holds more than a `Date` reads and differs, which is the migration to 3.
+   */
   it('should compare a Date field against the column the engine reports', () => {
     const date = fieldOptionsToCanonical({ type: Date });
     const same = (dialect: AbstractDialect, stored: CanonicalType) =>
       areTypesEqual(engineType(dialect)(date), engineType(dialect)(stored));
-    expect(same(pg, sqlToCanonical('timestamp with time zone'))).toBe(true);
-    expect(same(pg, canonicalColumnType('timestamp with time zone', { precision: 6 }))).toBe(true);
-    expect(same(pg, sqlToCanonical('timestamp(3) with time zone'))).toBe(false);
+    expect(same(pg, sqlToCanonical('timestamp(3) with time zone'))).toBe(true);
+    expect(same(pg, sqlToCanonical('timestamp with time zone'))).toBe(false);
+    expect(same(pg, canonicalColumnType('timestamp with time zone', { precision: 6 }))).toBe(false);
     expect(same(mysql, sqlToCanonical('DATETIME(3)'))).toBe(true);
     expect(same(mysql, canonicalColumnType('DATETIME', { precision: 0 }))).toBe(false);
+  });
+
+  /** A `raw` type is the SQL itself, so it keeps the engine's own digits and compares as the column reports them. */
+  it("should leave a raw timestamp type the engine's own precision", () => {
+    const declared = fieldOptionsToCanonical({ type: Date, columnType: raw`TIMESTAMP` });
+    const stored = canonicalColumnType('timestamp without time zone', { precision: 6 });
+
+    expect(canonicalToSql(declared, pg)).toBe('TIMESTAMP');
+    expect(areTypesEqual(engineType(pg)(declared), engineType(pg)(stored))).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnSchema,
@@ -16,6 +17,7 @@ import type {
 import { isSqlQuerier } from '../../type/index.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
+import { expr, sameDefault } from '../builder/expressions.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -231,11 +233,10 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected abstract getPrimaryKeyQuery(tableName: string): string;
 
   /**
-   * SQL listing every trigger in the schema as a `table`, a `name`, the engine's reprint of it as a
-   * `definition`, and where the body lives apart, the `requires` recreated first: what is installed, not
-   * what uql wrote, which is exactly what a rollback puts back.
+   * SQL listing the triggers on the table named by its single parameter: each one's `name`, its `definition`
+   * as the engine reprints it, and what it `requires` to be recreated first. It reads what is installed, not
+   * what uql wrote, which is exactly what a rollback restores.
    */
-  /** The triggers on the table its one parameter names: each one's `name`, `definition`, and what it `requires`. */
   protected abstract triggersQuery(): string;
 
   /**
@@ -289,8 +290,17 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     return name === undefined || name === null ? undefined : String(name);
   }
 
-  /** Parse default value string to appropriate type. */
+  /** Parses a default as the catalogue reports it: to its literal value, or through {@link sqlDefault} if SQL. */
   protected abstract parseDefaultValue(defaultValue: string | null): unknown;
+
+  /**
+   * A SQL default, wrapped in parentheses. The current timestamp uql declares reads back as `expr.now()`, so
+   * it compares equal on every engine and `generate:from-db` writes it as `currentTimestamp`.
+   */
+  protected sqlDefault(sql: string): SqlExpression {
+    const expression = SqlExpression.parenthesized(sql);
+    return sameDefault(expr.now(), expression, this.dialect) ? expr.now() : expression;
+  }
 }
 
 /** A {@link TableRowReader} over one querier: the same statement is only ever sent once. */

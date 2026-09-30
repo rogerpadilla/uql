@@ -1,6 +1,7 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
+import { expr } from '../builder/expressions.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
@@ -128,7 +129,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       name: row.column_name,
       type: row.column_type.toUpperCase(),
       nullable: row.is_nullable === 'YES',
-      defaultValue: this.parseDefaultValue(row.column_default),
+      defaultValue: this.parseDefaultValue(row.column_default, row.extra),
       isPrimaryKey: row.column_key === 'PRI',
       isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
       isUnique: row.column_key === 'UNI',
@@ -167,29 +168,39 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   /**
-   * MariaDB prints a string default as the literal it is (`'it''s'`). MySQL prints one bare, save an
-   * expression default (`DEFAULT ('x')`, what a `TEXT` column takes), which comes with a charset
-   * introducer and every quote and backslash escaped once more: `_utf8mb4\'x\'`.
+   * MySQL prints a literal default unquoted, except one wrapped as `DEFAULT ('x')`, the form a `TEXT`
+   * column takes. That one comes with a charset introducer and every quote and backslash escaped again:
+   * `_utf8mb4\'x\'`.
    */
-  protected parseDefaultValue(defaultValue: string | null): unknown {
+  protected parseDefaultValue(defaultValue: string | null, extra = ''): unknown {
     if (defaultValue === null) {
       return undefined;
     }
-    const normalized = defaultValue.toUpperCase();
-    if (normalized === 'NULL') {
+    if (defaultValue.toUpperCase() === 'NULL') {
       return null;
-    }
-    // Whatever precision it repeats from its column, which the column's own type already states.
-    if (/^CURRENT_TIMESTAMP(?:\(\d?\))?$/.test(normalized)) {
-      return 'CURRENT_TIMESTAMP';
     }
     if (/^-?\d+(\.\d+)?$/.test(defaultValue)) {
       return Number(defaultValue);
     }
     const introduced = /^_\w+(\\'.*\\')$/s.exec(defaultValue);
+    const sql = introduced ? undefined : this.sqlText(defaultValue, extra);
+    if (sql !== undefined) {
+      // Any precision here repeats the column's own, which the column type already states.
+      return /^CURRENT_TIMESTAMP(?:\(\d?\))?$/i.test(sql) ? expr.now() : this.sqlDefault(sql);
+    }
     const literal = introduced ? unescapeMysqlString(introduced[1]) : defaultValue;
     const quoted = /^'(.*)'$/s.exec(literal);
     return quoted ? unescapeMysqlString(quoted[1]) : literal;
+  }
+
+  /**
+   * A default's SQL, or `undefined` for a literal. MySQL flags a SQL default `DEFAULT_GENERATED` and prints
+   * it escaped like a literal, with charset introducers on its strings: `lower(_utf8mb4\'A\')`.
+   */
+  protected sqlText(defaultValue: string, extra: string): string | undefined {
+    return extra.includes('DEFAULT_GENERATED')
+      ? unescapeMysqlString(defaultValue).replace(/(?<![\w'])_[a-z0-9]+(?=')/gi, '')
+      : undefined;
   }
 }
 
@@ -220,6 +231,11 @@ type MysqlColumnRow = {
  * JSON, got LONGTEXT", flagged as data loss) on a table uql created itself.
  */
 export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
+  /** MariaDB prints a literal quoted, as SQL reads it (`'it''s'`), so an unquoted default is SQL. */
+  protected override sqlText(defaultValue: string): string | undefined {
+    return defaultValue.startsWith("'") ? undefined : defaultValue;
+  }
+
   /** Whether an index is MariaDB's vector index, and the distance it was built for. */
   override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['vector', 'distance']);
 

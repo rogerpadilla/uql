@@ -1,3 +1,4 @@
+import { hexToBytes } from '../util/bytes.js';
 import { decodeDate } from '../util/date.js';
 import { decodeWideNumber } from '../util/wideNumber.js';
 import { decodeFloat32s, parseVectorLiteral, type VectorCast } from './vectorCast.js';
@@ -33,7 +34,7 @@ function fromText(decode: (text: string, value: unknown) => unknown): Decoder {
 function vectorDecoder(cast: VectorCast): Decoder {
   return fromText((text, value) =>
     text.startsWith(BYTES_PREFIX)
-      ? decodeFloat32s(hexBytes(text.slice(BYTES_PREFIX.length)))
+      ? decodeFloat32s(hexToBytes(text.slice(BYTES_PREFIX.length)))
       : (parseVectorLiteral(text, cast) ?? value),
   );
 }
@@ -54,7 +55,7 @@ const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
   date: (value) => (typeof value === 'string' ? decodeDate(value) : value),
   // Only a string can be bytes that crossed JSON: bytes a driver already decoded stay as they are.
   bytes: (value) =>
-    typeof value === 'string' && value.startsWith(BYTES_PREFIX) ? hexBytes(value.slice(BYTES_PREFIX.length)) : value,
+    typeof value === 'string' && value.startsWith(BYTES_PREFIX) ? hexToBytes(value.slice(BYTES_PREFIX.length)) : value,
   // A number too, not just text: `type: BigInt` is BIGINT, which the pg pools decode at the wire.
   bigint: (value) => {
     if (typeof value === 'bigint') {
@@ -86,15 +87,6 @@ const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
  * which every dialect spells, so a string a driver reads from a column on its own is never mistaken.
  */
 export const BYTES_PREFIX = '\\x';
-
-/** Two hex digits per byte, back to bytes. */
-function hexBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let at = 0; at < bytes.length; at++) {
-    bytes[at] = Number.parseInt(hex.slice(at * 2, at * 2 + 2), 16);
-  }
-  return bytes;
-}
 
 /** Lazy so a consumer that never reads an encoded column never constructs one. */
 let decoder: TextDecoder | undefined;

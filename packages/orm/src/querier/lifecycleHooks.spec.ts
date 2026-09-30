@@ -404,6 +404,16 @@ describe('lifecycle hooks', () => {
     expect(log).toEqual(['afterLoad:One', 'afterLoad:Two']);
   });
 
+  /** A page reads one row past itself to tell whether another follows, which is no row it loaded. */
+  it("should run @AfterLoad on a page's rows alone", async () => {
+    await querier.insertMany(Book, [{ title: 'One' }, { title: 'Two' }, { title: 'Three' }]);
+    log = [];
+
+    await querier.findManyPage(Book, { $select: { title: true }, $sort: { id: 1 }, $limit: 2 });
+
+    expect(log).toEqual(['afterLoad:One', 'afterLoad:Two']);
+  });
+
   /**
    * A populated relation's rows are loaded rows too. Theirs run first, so a parent's hook sees its
    * children as their own hooks left them - whichever statement read them, and however they were paged.

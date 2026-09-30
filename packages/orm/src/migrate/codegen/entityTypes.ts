@@ -1,7 +1,7 @@
 import { getMeta } from '../../entity/index.js';
 import { canonicalToTypeScript, resolveColumnCanonicalType } from '../../schema/canonicalType.js';
 import type { EntityMeta, FieldMeta, RelationMeta, Type } from '../../type/index.js';
-import { isToManyRelation, upperFirst } from '../../util/index.js';
+import { declaresNotNull, isToManyRelation, upperFirst } from '../../util/index.js';
 import { isIdentifierName } from './sourceLiteral.js';
 
 /**
@@ -72,7 +72,7 @@ function fieldMember(key: string, field: FieldMeta | undefined): string {
     return `  ${name}?: ${type};`;
   }
   const written = field.computed === undefined ? '' : 'readonly ';
-  if (!field.isId && field.nullable !== false) {
+  if (!declaresNotNull(field)) {
     return `  ${written}${name}?: ${type} | null;`;
   }
   const optional =

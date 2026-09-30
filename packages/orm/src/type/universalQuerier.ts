@@ -1,8 +1,10 @@
 import type { EntityId, EntityWrite, FieldKey, RelationKey, UpdateWrite, WrittenId } from './entity.js';
 import type {
+  CursorPage,
   QueryConflictPaths,
   QueryFilter,
   QueryFindResult,
+  QueryKeysetProjected,
   QueryOneProjected,
   QueryOptions,
   QueryPage,
@@ -14,6 +16,53 @@ import type {
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
 import type { Type } from './utility.js';
 import type { QuerierCountedResult, QuerierRaw, QuerierResult, QuerierTransport } from './wire.js';
+
+/** The query type each projected read takes, keyed by the kind of read. */
+export type ProjectedQuery<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+  C extends RelationKey<E>,
+  Raw,
+> = {
+  readonly one: QueryOneProjected<E, S, V, X, P, C, Raw>;
+  readonly many: QueryProjected<E, S, V, X, P, C, Raw>;
+  readonly page: QueryKeysetProjected<E, S, V, X, P, C, Raw>;
+};
+
+/** The result type of each projected read on transport `W`, keyed by the kind of read. */
+export type ProjectedResult<W extends QuerierTransport, T> = {
+  readonly one: QuerierResult<W, T | undefined>;
+  readonly many: QuerierResult<W, T[]>;
+  readonly counted: QuerierCountedResult<W, T>;
+  readonly page: QuerierResult<W, CursorPage<T>>;
+  readonly stream: AsyncIterable<T>;
+};
+
+/**
+ * A read that takes an entity and a query, and returns rows narrowed to what the query projected. `Q` picks
+ * the query type, `R` the result type on transport `W`, and `O` the options. Declaring it once saves every
+ * such read from repeating the six type parameters.
+ */
+export type ProjectedRead<
+  Q extends keyof ProjectedQuery<object, never, never, never, never, never, never>,
+  R extends keyof ProjectedResult<QuerierTransport, unknown>,
+  W extends QuerierTransport,
+  O,
+> = <
+  E extends object,
+  const S extends FieldKey<E> = never,
+  const V = true,
+  const X extends FieldKey<E> = never,
+  const P extends RelationKey<E> = never,
+  const C extends RelationKey<E> = never,
+>(
+  entity: Type<E>,
+  q: ProjectedQuery<E, S, V, X, P, C, QuerierRaw<W>>[Q],
+  opts?: O,
+) => ProjectedResult<W, QueryFindResult<E, S, V, X, P, C>>[R];
 
 /**
  * The operations the server and the browser client declare alike, per transport `W`, options `O`,
@@ -41,18 +90,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param q the criteria options
    * @return the record
    */
-  findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C, QuerierRaw<W>>,
-    opts?: O,
-  ): QuerierResult<W, QueryFindResult<E, S, V, X, P, C> | undefined>;
+  findOne: ProjectedRead<'one', 'one', W, O>;
 
   /**
    * obtains the records matching the given search parameters.
@@ -60,32 +98,17 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
    * @param q the criteria options
    * @return the records
    */
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C, QuerierRaw<W>>,
-    opts?: O,
-  ): QuerierResult<W, QueryFindResult<E, S, V, X, P, C>[]>;
+  findMany: ProjectedRead<'many', 'many', W, O>;
 
   /** Find the records matching the query, and count every match past its page. */
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C, QuerierRaw<W>>,
-    opts?: O,
-  ): QuerierCountedResult<W, QueryFindResult<E, S, V, X, P, C>>;
+  findManyAndCount: ProjectedRead<'many', 'counted', W, O>;
+
+  /**
+   * Read a page of the records matching the query, from a cursor instead of an offset, so every page costs
+   * the same as the first and rows written in between shift no page. The sort must be total: it must end in
+   * the key or a unique, non-null field. Counts nothing.
+   */
+  findManyPage: ProjectedRead<'page', 'page', W, O>;
 
   /** Count the records matching the filter, or those a page of them takes. */
   count<E extends object>(entity: Type<E>, q?: QueryPage<E, QuerierRaw<W>>, opts?: O): QuerierResult<W, number>;
@@ -134,18 +157,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    * Stream the records matching the query one at a time, each with the relations and counts `findMany`
    * reads, for bulk reads. Fires no lifecycle hooks.
    */
-  findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
+  findManyStream: ProjectedRead<'many', 'stream', 'server', QueryOptions>;
 
   /** Insert a record and resolve to its id. See {@link UniversalQuerier.insertMany}. */
   insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined>;

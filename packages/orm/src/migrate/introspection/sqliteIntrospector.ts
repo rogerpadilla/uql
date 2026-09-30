@@ -12,11 +12,11 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     this.dialect.hasVectorIndex() ? ['vector', 'distance'] : [],
   );
 
-  /** Not SQLite's own tables, nor the ones libSQL keeps a vector index in: its metadata and `<index>_shadow`. */
   protected triggersQuery(): string {
     return /*sql*/ `SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?`;
   }
 
+  /** User tables only: skips SQLite's own and libSQL's vector index tables (its metadata and `<index>_shadow`). */
   protected getTableNamesQuery(): string {
     return /*sql*/ `
       SELECT name
@@ -48,19 +48,19 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * SQLite cannot do to an existing table anyway. PRAGMA takes no bound parameters, hence the splice.
    */
   protected getColumnsQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA table_xinfo(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA table_xinfo(${this.dialect.escapeId(tableName)})`;
   }
 
   protected getIndexesQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA index_list(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA index_list(${this.dialect.escapeId(tableName)})`;
   }
 
   protected getForeignKeysQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA foreign_key_list(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA foreign_key_list(${this.dialect.escapeId(tableName)})`;
   }
 
   protected getPrimaryKeyQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA table_info(${this.escapeId(tableName)})`;
+    return /*sql*/ `PRAGMA table_info(${this.dialect.escapeId(tableName)})`;
   }
 
   protected override getColumnsParams(_tableName: string): unknown[] {
@@ -237,7 +237,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {
-    return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.escapeId(indexName)})`);
+    return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.dialect.escapeId(indexName)})`);
   }
 
   protected normalizeType(type: string): string {
@@ -259,9 +259,6 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (defaultValue === 'NULL') {
       return null;
     }
-    if (defaultValue === 'CURRENT_TIMESTAMP' || defaultValue === 'CURRENT_DATE' || defaultValue === 'CURRENT_TIME') {
-      return defaultValue;
-    }
     if (/^'.*'$/.test(defaultValue)) {
       return defaultValue.slice(1, -1).replaceAll("''", "'");
     }
@@ -276,7 +273,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (upper === 'TRUE') return 1;
     if (upper === 'FALSE') return 0;
 
-    return defaultValue;
+    return this.sqlDefault(defaultValue);
   }
 }
 

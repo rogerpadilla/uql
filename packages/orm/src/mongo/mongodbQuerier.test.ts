@@ -201,6 +201,22 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   }
 
   /**
+   * A key MongoDB minted pages by the `ObjectId` it is: the cursor carries its hex text, which has to reach
+   * the next page's comparison as an `ObjectId` again, or it matches none, strings ordering apart.
+   */
+  async shouldPageByAKeyMongoDBMinted() {
+    await this.querier.insertMany(
+      Ticket,
+      [1, 2, 3, 4, 5].map((at) => ({ subject: `ticket ${at}` })),
+    );
+    const q = { $select: { subject: true }, $sort: { id: 1 } } as const;
+
+    const pages = await this.walkPages(Ticket, { ...q, $limit: 2 });
+
+    expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(Ticket, q));
+  }
+
+  /**
    * A key the driver minted comes back as its hex string, the type the docs promise, not the
    * `ObjectId` itself - which compared unequal to its own string form.
    */

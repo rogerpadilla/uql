@@ -29,7 +29,7 @@ const mongo = new MongoDialect();
 
 it('should project the stored column, never the property key', () => {
   expect(pgSql((d, ctx) => d.find(ctx, Renamed, { $select: { label: true } }))).toContain('"the_label"');
-  expect(mongo.select(Renamed, { label: true })).toEqual({ the_label: 1 });
+  expect(mongo.select(Renamed, { label: true })).toEqual({ the_label: 1, _id: 0 });
 });
 
 it('should sort by the stored column', () => {

@@ -17,6 +17,7 @@ type RouteShape = {
  */
 export const CRUD_ROUTES = {
   findMany: { method: 'GET', path: '' },
+  findManyPage: { method: 'GET', path: '/page' },
   findOne: { method: 'GET', path: '/one' },
   count: { method: 'GET', path: '/count' },
   findOneById: { method: 'GET', path: '/:id' },

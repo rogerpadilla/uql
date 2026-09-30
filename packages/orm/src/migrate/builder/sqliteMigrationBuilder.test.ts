@@ -1,8 +1,10 @@
 import { expect } from 'vitest';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createSpec } from '../../test/index.js';
+import { decodeDate } from '../../util/date.js';
 import { SqliteSchemaIntrospector } from '../introspection/sqliteIntrospector.js';
 import { AbstractMigrationBuilderIt, BUILDER_TABLES } from './abstractMigrationBuilder-test.js';
+import { expr } from './expressions.js';
 
 /**
  * SQLite extends the base rather than {@link AlterCapableMigrationBuilderIt}: it can neither rewrite
@@ -13,6 +15,29 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
   constructor() {
     const pool = new Sqlite3QuerierPool(':memory:');
     super(pool, new SqliteSchemaIntrospector(pool));
+  }
+
+  /**
+   * SQLite keeps a date as text, so the day it fills a default with has to be the text a bound `Date` at
+   * its UTC midnight is written as, or the row matches no `Date` read back off it.
+   */
+  async shouldFillTheDayAsTheTextABoundDateIs() {
+    const table = this.claim(BUILDER_TABLES.MAIN);
+    await this.withBuilder((builder) =>
+      builder.createTable(table, (t) => {
+        t.id();
+        t.date('day', { defaultValue: expr.currentDate() });
+      }),
+    );
+    const querier = await this.pool.getQuerier();
+    try {
+      await querier.run(`INSERT INTO ${table} DEFAULT VALUES`);
+      const [row] = await querier.all<{ day: string }>(`SELECT day FROM ${table}`);
+
+      expect(await querier.all(`SELECT id FROM ${table} WHERE day = ?`, [decodeDate(row.day)])).toHaveLength(1);
+    } finally {
+      await querier.release();
+    }
   }
 
   async shouldRefuseToAlterAColumn() {

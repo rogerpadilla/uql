@@ -72,6 +72,32 @@ describe('buildIndexDecoratorSource', () => {
     );
   });
 
+  /** Left off, the entity it writes searches with `simple` and ranks every column alike. */
+  it("should keep a fulltext index's config and its entries' weights", () => {
+    const index = indexNode([{ column: 'title', weight: 3 }, { column: 'body' }], {
+      type: 'fulltext',
+      config: 'english',
+    });
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
+      "@Index((t) => [{ column: t.title, weight: 3 }, t.body], { name: 'idx', type: 'fulltext', config: 'english' })",
+    );
+  });
+
+  it('should leave off the config and the weight an index has without stating one', () => {
+    const index = indexNode([{ column: 'title', weight: 1 }], { type: 'fulltext', config: 'simple' });
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
+      "@Index((t) => [t.title], { name: 'idx', type: 'fulltext' })",
+    );
+  });
+
+  it('should write a name holding a quote as source that still parses', () => {
+    const index = indexNode([{ column: 'a' }, { column: 'b' }], { name: "it's" });
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe("@Index((t) => [t.a, t.b], { name: 'it\\'s' })");
+  });
+
   it('should give a vector index the distance it was read back with', () => {
     const index = indexNode([{ column: 'embedding' }], { type: 'hnsw', distance: 'cosine' });
 

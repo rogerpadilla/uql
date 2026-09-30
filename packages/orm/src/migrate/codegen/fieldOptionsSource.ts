@@ -1,6 +1,9 @@
 import { canonicalToColumnType, isVectorCategory } from '../../schema/canonicalType.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ColumnNode, EnumValues } from '../../schema/types.js';
+import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
+import { UqlUsageError } from '../../util/uqlError.js';
 import { quoted, rawTag } from './sourceLiteral.js';
 
 /** What a column's decorator is written against beyond the column itself. */
@@ -26,7 +29,7 @@ const OPTION_SOURCE = {
       `type: ${quoted(columnType)}`,
       ...(col.type.length && col.type.category === 'string' ? [`length: ${col.type.length}`] : []),
       ...(col.type.length && isVectorCategory(col.type.category) ? [`dimensions: ${col.type.length}`] : []),
-      ...(col.type.precision === undefined ? [] : [`precision: ${col.type.precision}`]),
+      ...(writesPrecision(col.type) ? [`precision: ${col.type.precision}`] : []),
       ...(col.type.precision !== undefined && col.type.scale !== undefined ? [`scale: ${col.type.scale}`] : []),
     ];
   },
@@ -55,6 +58,11 @@ const OPTION_SOURCE = {
   referencedBy: null,
 } as const satisfies Record<keyof ColumnNode, OptionSource | null>;
 
+/** Whether to write `type`'s precision: not for a timestamp at a `Date`'s milliseconds, its default. */
+function writesPrecision(type: ColumnNode['type']): boolean {
+  return type.precision !== undefined && !(type.category === 'timestamp' && type.precision === DATE_PRECISION);
+}
+
 /** A column's `@Id({ ... })` or `@Field({ ... })` options as source. */
 export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, indexName?: string): string {
   const context = { propertyName, indexName };
@@ -72,21 +80,35 @@ export function enumMembersSource(members: EnumValues): string[] {
   return members.map((it) => (typeof it === 'number' ? String(it) : quoted(it)));
 }
 
-/** Whether the field's decorator needs `raw` imported, the way {@link indexNeedsRaw} does for an index. */
-export function fieldNeedsRaw(col: ColumnNode): boolean {
-  return col.generatedAs !== undefined;
+/** The uql imports the field's decorator needs besides `Field`, as {@link indexNeedsRaw} tells for an index. */
+export function fieldImports(col: ColumnNode): string[] {
+  const sql = SqlExpression.isExpression(col.defaultValue) ? [sqlDefaultSource(col.defaultValue).name] : [];
+  return [...(col.generatedAs === undefined ? [] : ['raw']), ...sql];
 }
 
-/** A default value as source, a string single-quoted and escaped, an expression included: `defaultValue: 'now()'`. */
+/** A default value as source code: SQL the way an entity declares it, a string single-quoted and escaped. */
 function defaultValueSource(value: unknown): string {
-  if (typeof value === 'string') {
-    return quoted(value);
+  if (SqlExpression.isExpression(value)) {
+    return sqlDefaultSource(value).source;
   }
-  if (typeof value === 'boolean' || typeof value === 'number') {
-    return value.toString();
+  return typeof value === 'string' ? quoted(value) : JSON.stringify(value);
+}
+
+/**
+ * A SQL default as an entity declares it, with the name to import for it: `currentTimestamp` for the
+ * current timestamp, and `raw` for any other SQL, as introspection reads it back.
+ */
+function sqlDefaultSource(value: SqlExpression): {
+  readonly name: 'currentTimestamp' | 'raw';
+  readonly source: string;
+} {
+  if (value.kind === 'now') {
+    return { name: 'currentTimestamp', source: 'currentTimestamp' };
   }
-  if (value === null) {
-    return 'null';
+  if (value.sql === undefined) {
+    throw new UqlUsageError(
+      `an entity declares a SQL default as raw or currentTimestamp, and '${value.kind}' is neither`,
+    );
   }
-  return JSON.stringify(value);
+  return { name: 'raw', source: rawTag(value.sql) };
 }

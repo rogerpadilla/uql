@@ -105,6 +105,24 @@ export function isAutoIncrement(field: FieldOptions, isPrimaryKey: boolean): boo
   return isPrimaryKey && columnFamily(field.type) === 'numeric' && !field.onInsert && !field.references;
 }
 
+/** The column family of a field, from its `columnType` if set, else from its `type`. */
+export function fieldFamily(field: FieldOptions): ColumnFamily | undefined {
+  return columnFamily(field.columnType ?? field.type);
+}
+
+/**
+ * Whether the column is NOT NULL: the field declares `nullable: false` or is a key. A key counts whatever its
+ * property says: `id?: number` is optional because the database assigns it, not because it can be null.
+ */
+export function declaresNotNull(field: FieldOptions): boolean {
+  return field.isId === true || field.nullable === false;
+}
+
+/** Whether `key` is a field of `meta`, as opposed to a relation, a JSON path or an unknown key. */
+export function isFieldKey<E>(meta: EntityMeta<E>, key: string): key is FieldKey<E> {
+  return meta.fields[key] !== undefined;
+}
+
 /** The fields `meta` declares whose options `pick` accepts, in declaration order, each as the entity's own key. */
 export function fieldKeys<E>(meta: EntityMeta<E>, pick: (field: FieldMeta) => unknown): FieldKey<E>[] {
   const fields: { readonly [K in FieldKey<E>]?: FieldMeta } = meta.fields;

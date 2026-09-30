@@ -1,7 +1,8 @@
-import { OWNED_PREFIX } from '../dialect/aliases.js';
+import { OWNED_PREFIX, UPSERT_CREATED_ALIAS } from '../dialect/aliases.js';
 import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
 import { hasKeys } from './object.util.js';
+import { fnv1a } from './string.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
 const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
@@ -70,6 +71,12 @@ export function qualifyName(name: string, schema?: string): string {
   return schema ? `${schema}.${name}` : name;
 }
 
+/** Reverses {@link qualifyName}: splits at the last dot into the schema, if any, and the name. */
+export function splitQualifiedName(qualified: string): { readonly name: string; readonly schema?: string } {
+  const dot = qualified.lastIndexOf('.');
+  return dot < 0 ? { name: qualified } : { name: qualified.slice(dot + 1), schema: qualified.slice(0, dot) };
+}
+
 /**
  * The longest identifier every engine here accepts. Postgres truncates silently at 63 bytes and
  * MySQL errors at 64, so one conservative limit needs no per-dialect plumbing to be safe on both -
@@ -81,15 +88,17 @@ const MAX_IDENTIFIER_LENGTH = 63;
 const NAME_HASH_LENGTH = 6;
 
 /**
- * The name a derived index or constraint gets, `Order__total_idx`, kind last as Postgres names its own.
- * One rule for the AST, the DDL and a `DROP`; not a naming strategy hook, since `name:` already overrides it.
+ * The name of a derived index or constraint, such as `Order__total_idx`, with the kind last as Postgres names
+ * its own. It leaves out the table's schema, since it is a single identifier. The AST, the DDL and a `DROP`
+ * all use this one rule.
  */
 export function derivedConstraintName(
   table: string,
   parts: readonly (string | number)[],
   kind: ConstraintKind,
 ): string {
-  const body = parts.length ? `${table}${TABLE_SEPARATOR}${parts.join('_')}` : table;
+  const { name } = splitQualifiedName(table);
+  const body = parts.length ? `${name}${TABLE_SEPARATOR}${parts.join('_')}` : name;
   return clampIdentifier(`${body}_${kind}`);
 }
 
@@ -131,18 +140,9 @@ function clampIdentifier(name: string, reserved = 0): string {
   return name.slice(0, max - suffix.length) + suffix;
 }
 
-/**
- * FNV-1a, by hand: the package ships zero runtime dependencies, and `node:crypto` is not reachable
- * from the browser and edge entries this module is bundled into. Not a security hash - it only has
- * to spread the names of one table's constraints.
- */
+/** A short hash that keeps one table's constraint names apart; it needs to do nothing more. */
 function hashIdentifier(value: string): string {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i++) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193) >>> 0;
-  }
-  return hash.toString(16).padStart(NAME_HASH_LENGTH, '0').slice(-NAME_HASH_LENGTH);
+  return fnv1a(value).toString(16).padStart(NAME_HASH_LENGTH, '0').slice(-NAME_HASH_LENGTH);
 }
 
 /**
@@ -247,10 +247,10 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
     }
   }
 
-  // Whether the row was created: Postgres's `_created` column, or MySQL's 1/2/0 `affectedRows`,
+  // Whether the row was created: Postgres's created flag, or MySQL's 1/2/0 `affectedRows`,
   // which is unreliable under `RETURNING`, so those dialects report nothing.
   const created =
-    (rows?.length === 1 ? (rows[0]?.['_created'] as boolean | undefined) : undefined) ??
+    (rows?.length === 1 ? (rows[0]?.[UPSERT_CREATED_ALIAS] as boolean | undefined) : undefined) ??
     (insertIdSource !== 'returning' && typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2
       ? upsertStatus === 1
       : undefined);

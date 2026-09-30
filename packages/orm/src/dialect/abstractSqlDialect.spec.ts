@@ -39,25 +39,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return 'SERIAL PRIMARY KEY';
   }
 
-  get tableOptions() {
-    return '';
-  }
-
-  get beginTransactionCommand() {
-    return 'BEGIN';
-  }
-
-  get commitTransactionCommand() {
-    return 'COMMIT';
-  }
-
-  get rollbackTransactionCommand() {
-    return 'ROLLBACK';
-  }
-
-  override get insertIdSource(): 'firstId' {
-    return 'firstId';
-  }
+  override readonly insertIdSource = 'firstId';
 
   protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
     const { from, pairs } = this.derivedRelation(ctx, rows);
@@ -103,15 +85,7 @@ class TestSqlDialect extends AbstractSqlDialect {
     return this.unsupported();
   }
 
-  protected jsonSet(): string {
-    return this.unsupported();
-  }
-
   protected jsonPush(): string {
-    return this.unsupported();
-  }
-
-  protected jsonUnset(): string {
     return this.unsupported();
   }
 

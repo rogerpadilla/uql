@@ -606,15 +606,13 @@ export abstract class AbstractIntrospectorIt implements Spec {
   }
 
   async shouldBuildIndexesInAST() {
-    const ast = await this.introspector.introspect();
+    const indexes = (await this.introspector.introspect()).getTables().flatMap((table) => table.indexes);
 
-    expect(ast.indexes.length).toBeGreaterThanOrEqual(2);
-
-    const idxBCols = ast.indexes.find((i) => i.name === 'test_b_cols_idx');
+    const idxBCols = indexes.find((i) => i.name === 'test_b_cols_idx');
     expect(idxBCols).toBeDefined();
     expect(idxBCols?.entries.map((entry) => entry.column)).toEqual(['col1', 'col2']);
 
-    const idxCPriority = ast.indexes.find((i) => i.name === 'test_c_priority_idx');
+    const idxCPriority = indexes.find((i) => i.name === 'test_c_priority_idx');
     expect(idxCPriority).toBeDefined();
     expect(idxCPriority?.entries.map((entry) => entry.column)).toEqual(['priority']);
   }

@@ -1,21 +1,18 @@
 import { getMeta } from '../entity/index.js';
 import type {
   EntityMeta,
-  FieldOptions,
   InsertIdSource,
   Query,
   QueryBuildFn,
   QueryConflictPaths,
   QueryContext,
   QueryOptions,
-  QueryPager,
   QueryTextSearchOptions,
   RowLockFeatures,
   SqlDialectFeatures,
   SqlDialectName,
   Type,
 } from '../type/index.js';
-import { utcTimestamp } from '../util/date.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import {
@@ -26,7 +23,7 @@ import {
 } from './abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
-import { jsonSetCall, jsonPath, jsonRemoveCall, type JsonSlot, jsonSetTarget } from './jsonSql.js';
+import { jsonPath, type JsonSlot } from './jsonSql.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -35,10 +32,10 @@ import { aggregatesRelations } from './queryJoins.js';
  */
 const MAX_LIMIT = BigInt.asUintN(64, -1n);
 
-/** What the MySQL-family engines have. */
 /** Declared apart so MariaDB, which has no `FOR UPDATE OF`, can restate that one part of it. */
 export const MYSQL_ROW_LOCKS: RowLockFeatures = { of: true, withWindow: true, placement: 'suffix' };
 
+/** The features of MySQL, which MariaDB starts from. */
 export const MYSQL_FEATURES: SqlDialectFeatures = {
   indexIfNotExists: false,
   schemas: true,
@@ -54,6 +51,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: MYSQL_ROW_LOCKS,
+  nullsSortLowest: true,
   nullsOrdering: 'expression',
   textScoreIndexes: true,
   orderedUpsertReturning: true,
@@ -62,7 +60,6 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: false,
   triggers: {
-    preamble: '',
     assignsRow: true,
     body: 'inline',
     fires: 'eachRowIf',
@@ -104,38 +101,21 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.addValue(this.resolveTableAlias(meta));
   }
 
-  /** `OFFSET` is only legal after a `LIMIT` here, so a bare `$skip` needs one. */
-  override pager(ctx: QueryContext, opts: QueryPager): void {
-    if (opts.$limit === undefined && opts.$skip !== undefined) {
-      ctx.append(` LIMIT ${MAX_LIMIT}`);
-    }
-    super.pager(ctx, opts);
-  }
+  protected override readonly unboundedLimit = String(MAX_LIMIT);
 
   /** A signed key, so a foreign key taking its type from it matches, as MySQL refuses an `UNSIGNED` mismatch. */
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
   override readonly escapeIdChar = '`';
 
-  override readonly tableOptions = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
-
   override readonly beginTransactionCommand = 'START TRANSACTION';
-
-  override readonly commitTransactionCommand = 'COMMIT';
-
-  override readonly rollbackTransactionCommand = 'ROLLBACK';
 
   override readonly isolationLevelStrategy = 'set-before';
 
-  override readonly dropForeignKeySyntax = 'DROP FOREIGN KEY';
-
-  override readonly dropPrimaryKeySyntax = 'DROP PRIMARY KEY';
-
-  override readonly dropIndexSyntax = 'on-table';
-
-  override readonly alterColumnSyntax = 'MODIFY COLUMN';
-
   override readonly booleanLiteral = 'integer';
+
+  /** `(3)` keeps milliseconds; a bare `CURRENT_TIMESTAMP` has whole seconds only. */
+  override readonly currentTimestamp = 'CURRENT_TIMESTAMP(3)';
 
   // No `RETURNING` support, so multi-row insert IDs are inferred from the header - see the
   // `innodb_autoinc_lock_mode` caveat on `buildUpdateResult` in `util/sql.util.ts`.
@@ -153,7 +133,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
       alias ? `${alias}.${name}` : `VALUE(${name})`,
     );
 
-    const returning = this.upsertReturning(meta);
+    const idReturning = this.insertedIdReturning(meta);
+    const returning = idReturning && ` ${idReturning}`;
 
     if (update) {
       this.appendInsertValues(ctx, entity, payload);
@@ -166,11 +147,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
     ctx.append(returning);
     ctx.pushValue(...insertCtx.values);
-  }
-
-  /** Appended to both branches above: empty on MySQL, which has no `INSERT ... RETURNING`. */
-  protected upsertReturning<E>(_meta: EntityMeta<E>): string {
-    return '';
   }
 
   /**
@@ -250,9 +226,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /** A date as UTC text, which a `DATETIME` stores as is, where a driver would convert it to its own zone. */
-  override normalizeValue(value: unknown): unknown {
-    return value instanceof Date ? utcTimestamp(value) : super.normalizeValue(value);
-  }
+  protected override readonly dateZone = '';
 
   /**
    * `MATCH(cols) AGAINST(?)`, which needs a `FULLTEXT` index over exactly those columns: without one
@@ -295,24 +269,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * Omitting the `COALESCE` on a NOT NULL column keeps MySQL's partial in-place JSON update
-   * applicable: it requires the target column as the direct `JSON_SET` input.
-   */
-  protected override jsonSet(
-    ctx: QueryContext,
-    expr: string,
-    set: Record<string, unknown>,
-    field?: FieldOptions,
-  ): string {
-    return jsonSetCall(
-      (value) => this.jsonScalarParam(ctx, value),
-      jsonSetTarget(expr, field, `'{}'`),
-      set,
-      this.maxFunctionArgs,
-    );
-  }
-
-  /**
    * `JSON_MERGE_PRESERVE` concatenates arrays and creates absent keys, so every pushed key is
    * handled in one call that references `expr` once - unlike `JSON_ARRAY_APPEND`, which needs a
    * second reference for the array source and returns NULL on MariaDB for an absent key.
@@ -335,10 +291,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   /** `JSON_CONTAINS` of the array as the path reads it, which is what a multi-valued index is matched by. */
   protected override jsonContains(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
     return `JSON_CONTAINS(${this.jsonValue(slot)}, ${this.addValue(ctx, JSON.stringify(values))})`;
-  }
-
-  protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall(expr, unset, this.maxFunctionArgs);
   }
 
   /** Only an array's, where `JSON_LENGTH` counts a scalar as 1 and an object by its keys. */

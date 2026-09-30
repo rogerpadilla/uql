@@ -208,7 +208,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.columns[0].name).toBe('createdAt');
-      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true });
+      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true, precision: 3 });
       expect(def.columns[0].nullable).toBe(false);
       expect(def.columns[0].defaultValue).toBeDefined();
     });
@@ -219,7 +219,7 @@ describe('TableBuilder', () => {
       const def = table.build();
 
       expect(def.columns[0].name).toBe('updatedAt');
-      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true });
+      expect(def.columns[0].type).toEqual({ category: 'timestamp', withTimezone: true, precision: 3 });
     });
 
     it('should add timestamps', () => {
@@ -272,6 +272,16 @@ describe('TableBuilder', () => {
       expect(def.indexes[0].name).toBe('users__name_idx');
       expect(def.indexes[0].entries).toEqual([{ column: 'lastName' }, { column: 'firstName' }]);
       expect(def.indexes[0].unique).toBe(false);
+    });
+
+    /** `unique` is one of `@Index`'s options, so `index` takes it; only `unique()` derives the `_uk` name. */
+    it('should make an index unique where its options say so', () => {
+      const table = new TableBuilder('users');
+      table.index(['email'], { unique: true });
+
+      expect(table.build().indexes).toEqual([
+        { name: 'users__email_idx', entries: [{ column: 'email' }], unique: true },
+      ]);
     });
 
     it('should take the same entries and options as the @Index decorator', () => {

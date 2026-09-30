@@ -1,4 +1,5 @@
 export * from './dialect.util.js';
+export * from './query.util.js';
 export * from './field.util.js';
 export * from './fieldOption.util.js';
 export * from './filters.util.js';

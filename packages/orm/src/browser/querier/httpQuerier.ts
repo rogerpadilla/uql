@@ -1,24 +1,6 @@
 import { CRUD_ROUTES, entityPath, type HttpMethod } from '../../http/contract.js';
 import { stringifyQuery } from '../../http/query.js';
-import type {
-  EntityWrite,
-  EntityId,
-  FieldKey,
-  QueryFilter,
-  QueryFindResult,
-  QueryOneProjected,
-  QueryOptions,
-  QueryPage,
-  QueryProjected,
-  QuerySearch,
-  RelationKey,
-  RequestCountedSuccessResponse,
-  RequestSuccessResponse,
-  Type,
-  UpdateWrite,
-  WireQuery,
-  WrittenId,
-} from '../../type/index.js';
+import type { EntityId, SharedQuerier, Type } from '../../type/index.js';
 import { isScalarId } from '../../util/object.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { get, query as httpQuery, patch, post, put, remove } from '../http/index.js';
@@ -31,7 +13,7 @@ export type HttpQuerierDefaults = {
    */
   readonly headers?: Record<string, string>;
   /**
-   * transport for read queries (findOne, findMany, count). 'QUERY' (RFC 10008) sends the
+   * transport for read queries (findOne, findMany, findManyPage, count). 'QUERY' (RFC 10008) sends the
    * JSON query in the request body, avoiding URL-length limits for large queries; requires
    * infrastructure (proxies, CDNs) that forwards the QUERY method. Defaults to 'GET'.
    */
@@ -58,154 +40,68 @@ export class HttpQuerier implements ClientQuerier {
     readonly defaults: HttpQuerierDefaults = {},
   ) {}
 
-  async findOneById<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    id: EntityId<E>,
-    q?: QueryOneProjected<E, S, V, X, P, C, never>,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
-    const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(q);
-    return get<QueryFindResult<E, S, V, X, P, C> | undefined>(
-      `${basePath}/${idSegment(entity, id)}${qs}`,
-      this.buildOptions(opts),
-    );
-  }
+  // Typed properties instead of methods, so each takes its signature from `ClientQuerier` rather than repeating it.
+  readonly findOneById: ClientQuerier['findOneById'] = async (entity, id, q, opts) =>
+    get(`${this.getBasePath(entity)}/${idSegment(entity, id)}${stringifyQuery(q)}`, this.buildOptions(opts));
 
-  findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C, never>,
-    opts?: RequestOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C> | undefined>> {
-    return this.read<QueryFindResult<E, S, V, X, P, C> | undefined>(
-      `${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`,
-      q,
-      opts,
-    );
-  }
+  readonly findOne: ClientQuerier['findOne'] = (entity, q, opts) =>
+    this.read(`${this.getBasePath(entity)}${CRUD_ROUTES.findOne.path}`, q, opts);
 
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C, never>,
-    opts?: RequestFindOptions,
-  ): Promise<RequestSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
-    const data: WireQuery<E> & { count?: boolean } = { ...q };
-    if (opts?.count) {
-      data.count = true;
-    }
-    return this.read<QueryFindResult<E, S, V, X, P, C>[]>(this.getBasePath(entity), data, opts);
-  }
+  readonly findMany: SharedQuerier<'client', RequestFindOptions>['findMany'] = (entity, q, opts) =>
+    this.read(this.getBasePath(entity), opts?.count ? { ...q, count: true } : q, opts);
 
-  async findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C, never>,
-    opts?: RequestFindOptions,
-  ): Promise<RequestCountedSuccessResponse<QueryFindResult<E, S, V, X, P, C>[]>> {
+  readonly findManyAndCount: SharedQuerier<'client', RequestFindOptions>['findManyAndCount'] = async (
+    entity,
+    q,
+    opts,
+  ) => {
     const response = await this.findMany(entity, q, { ...opts, count: true });
     if (typeof response.count !== 'number') {
       throw new TypeError('findManyAndCount response has an invalid count');
     }
     return { ...response, count: response.count };
-  }
+  };
 
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E, never>, opts?: RequestOptions) {
-    return this.read<number>(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
-  }
+  readonly findManyPage: ClientQuerier['findManyPage'] = (entity, q, opts) =>
+    this.read(`${this.getBasePath(entity)}${CRUD_ROUTES.findManyPage.path}`, q, opts);
+
+  readonly count: ClientQuerier['count'] = (entity, q, opts) =>
+    this.read(`${this.getBasePath(entity)}${CRUD_ROUTES.count.path}`, q, opts);
 
   /** The `count` route capped at one row, so existence needs no endpoint of its own. */
-  async exists<E extends object>(entity: Type<E>, q?: QueryFilter<E, never>, opts?: RequestOptions) {
+  readonly exists: ClientQuerier['exists'] = async (entity, q, opts) => {
     const res = await this.count(entity, { ...q, $limit: 1 }, opts);
     return { ...res, data: res.data > 0 };
-  }
+  };
 
-  insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: RequestOptions) {
-    const basePath = this.getBasePath(entity);
-    return post<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
-  }
+  readonly insertOne: ClientQuerier['insertOne'] = (entity, payload, opts) =>
+    post(this.getBasePath(entity), payload, this.buildOptions(opts));
 
-  insertMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: RequestOptions) {
-    const basePath = this.getBasePath(entity);
-    return post<(WrittenId<E> | undefined)[]>(
-      `${basePath}${CRUD_ROUTES.insertMany.path}`,
-      payload,
-      this.buildOptions(opts),
-    );
-  }
+  readonly insertMany: ClientQuerier['insertMany'] = (entity, payload, opts) =>
+    post(`${this.getBasePath(entity)}${CRUD_ROUTES.insertMany.path}`, payload, this.buildOptions(opts));
 
-  async updateOneById<E extends object>(
-    entity: Type<E>,
-    id: EntityId<E>,
-    payload: UpdateWrite<E, never>,
-    opts?: RequestOptions,
-  ) {
-    const basePath = this.getBasePath(entity);
-    return patch<number>(`${basePath}/${idSegment(entity, id)}`, payload, this.buildOptions(opts));
-  }
+  readonly updateOneById: ClientQuerier['updateOneById'] = async (entity, id, payload, opts) =>
+    patch(`${this.getBasePath(entity)}/${idSegment(entity, id)}`, payload, this.buildOptions(opts));
 
-  updateMany<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E, never>,
-    payload: UpdateWrite<E, never>,
-    opts?: RequestOptions,
-  ) {
-    const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(q);
-    return patch<number>(`${basePath}${qs}`, payload, this.buildOptions(opts));
-  }
+  readonly updateMany: ClientQuerier['updateMany'] = (entity, q, payload, opts) =>
+    patch(`${this.getBasePath(entity)}${stringifyQuery(q)}`, payload, this.buildOptions(opts));
 
-  saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>, opts?: RequestOptions) {
-    const basePath = this.getBasePath(entity);
-    return put<WrittenId<E> | undefined>(basePath, payload, this.buildOptions(opts));
-  }
+  readonly saveOne: ClientQuerier['saveOne'] = (entity, payload, opts) =>
+    put(this.getBasePath(entity), payload, this.buildOptions(opts));
 
-  saveMany<E extends object>(entity: Type<E>, payload: readonly EntityWrite<E>[], opts?: RequestOptions) {
-    const basePath = this.getBasePath(entity);
-    return put<(WrittenId<E> | undefined)[]>(
-      `${basePath}${CRUD_ROUTES.saveMany.path}`,
-      payload,
-      this.buildOptions(opts),
-    );
-  }
+  readonly saveMany: ClientQuerier['saveMany'] = (entity, payload, opts) =>
+    put(`${this.getBasePath(entity)}${CRUD_ROUTES.saveMany.path}`, payload, this.buildOptions(opts));
 
-  async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts: QueryOptions & RequestOptions = {}) {
-    const basePath = this.getBasePath(entity);
+  readonly deleteOneById: ClientQuerier['deleteOneById'] = async (entity, id, opts = {}) => {
     const qs = opts.hardDelete ? stringifyQuery({ hardDelete: opts.hardDelete }) : '';
-    return remove<number>(`${basePath}/${idSegment(entity, id)}${qs}`, this.buildOptions(opts));
-  }
+    return remove(`${this.getBasePath(entity)}/${idSegment(entity, id)}${qs}`, this.buildOptions(opts));
+  };
 
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E, never>, opts: QueryOptions & RequestOptions = {}) {
-    const basePath = this.getBasePath(entity);
-    const qs = stringifyQuery(opts.hardDelete ? { ...q, hardDelete: opts.hardDelete } : q);
-    return remove<number>(`${basePath}${qs}`, this.buildOptions(opts));
-  }
+  readonly deleteMany: ClientQuerier['deleteMany'] = (entity, q, opts = {}) =>
+    remove(
+      `${this.getBasePath(entity)}${stringifyQuery(opts.hardDelete ? { ...q, hardDelete: opts.hardDelete } : q)}`,
+      this.buildOptions(opts),
+    );
 
   getBasePath<E>(entity: Type<E>) {
     return `${this.basePath}/${(this.defaults.entityPath ?? entityPath)(entity)}`;

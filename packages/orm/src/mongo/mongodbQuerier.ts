@@ -38,8 +38,6 @@ import {
   hasTriggers,
   populatesRelations,
   textSortOf,
-  throwNoPendingTransaction,
-  throwPendingTransaction,
   vectorCandidates,
   withoutSoftDeleteFilter,
   whereEach,
@@ -482,40 +480,20 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     return this.conn.db();
   }
 
-  override async beginTransaction(_opts?: TransactionOptions) {
-    return this.serialize(async () => {
-      if (this.hasOpenTransaction) {
-        throwPendingTransaction();
-      }
-      this.logger.logInfo('beginTransaction');
-      await this.session?.endSession();
-      this.session = this.conn.startSession();
-      this.session.startTransaction();
-    });
+  protected override async openTransaction(_opts?: TransactionOptions) {
+    this.logger.logInfo('beginTransaction');
+    await this.session?.endSession();
+    this.session = this.conn.startSession();
+    this.session.startTransaction();
   }
 
   /**
    * The driver owns the transaction state here and settles it in its own `finally`, so a failed commit
    * or abort still leaves `inTransaction()` false and the querier releasable.
    */
-  override async commitTransaction() {
-    return this.serialize(async () => {
-      if (!this.hasOpenTransaction) {
-        throwNoPendingTransaction();
-      }
-      this.logger.logInfo('commitTransaction');
-      await this.session?.commitTransaction();
-    });
-  }
-
-  override async rollbackTransaction() {
-    return this.serialize(async () => {
-      if (!this.hasOpenTransaction) {
-        return;
-      }
-      this.logger.logInfo('rollbackTransaction');
-      await this.session?.abortTransaction();
-    });
+  protected override async endTransaction(commit: boolean) {
+    this.logger.logInfo(commit ? 'commitTransaction' : 'rollbackTransaction');
+    await (commit ? this.session?.commitTransaction() : this.session?.abortTransaction());
   }
 
   override async internalRelease() {

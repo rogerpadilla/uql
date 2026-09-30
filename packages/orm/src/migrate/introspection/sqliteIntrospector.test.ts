@@ -3,6 +3,7 @@ import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createMockQuerier, createMockQuerierPool, createSpec } from '../../test/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
+import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -88,32 +89,40 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     const createdAtCol = this.getColumn(schema, 'created_at');
     expect(createdAtCol.type).toBe('TEXT');
-    expect(createdAtCol.defaultValue).toBe('CURRENT_TIMESTAMP');
+    expect(createdAtCol.defaultValue).toEqual(expr.now());
   }
 
-  /** A boolean is stored as 0/1, so `TRUE`/`FALSE` read back as those numbers. */
+  /**
+   * A boolean is stored as 0/1, so `TRUE`/`FALSE` read back as those numbers. The clock uql declares reads
+   * back as the clock; SQLite's own `CURRENT_TIMESTAMP`, whole seconds in other text, is other SQL.
+   */
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
       querier.run(/*sql*/ `
         CREATE TABLE ${table} (
           blank TEXT DEFAULT NULL, today TEXT DEFAULT CURRENT_DATE, word TEXT DEFAULT 'x',
           quoted TEXT DEFAULT 'it''s', negative INTEGER DEFAULT -3, fraction REAL DEFAULT 1.5,
-          truthy INTEGER DEFAULT TRUE, falsy INTEGER DEFAULT false, computed TEXT DEFAULT (lower('Y')), bare TEXT
+          truthy INTEGER DEFAULT TRUE, falsy INTEGER DEFAULT false, computed TEXT DEFAULT (lower('Y')), bare TEXT,
+          clock TEXT DEFAULT CURRENT_TIMESTAMP,
+          dated TEXT DEFAULT (strftime('%Y-%m-%d 00:00:00.000', 'now')), spelled TEXT DEFAULT 'CURRENT_TIMESTAMP'
         )
       `),
     );
 
     expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
       blank: null,
-      today: 'CURRENT_DATE',
+      today: expr.raw('(CURRENT_DATE)'),
       word: 'x',
       quoted: "it's",
       negative: -3,
       fraction: 1.5,
       truthy: 1,
       falsy: 0,
-      computed: "lower('Y')",
+      computed: expr.raw("(lower('Y'))"),
       bare: undefined,
+      clock: expr.raw('(CURRENT_TIMESTAMP)'),
+      dated: expr.raw("(strftime('%Y-%m-%d 00:00:00.000', 'now'))"),
+      spelled: 'CURRENT_TIMESTAMP',
     });
   }
 

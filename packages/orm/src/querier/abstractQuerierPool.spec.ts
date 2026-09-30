@@ -94,6 +94,7 @@ function createReadStubQuerier() {
   querier.findOne.mockResolvedValue({ id: 1 });
   querier.findMany.mockResolvedValue([{ id: 1 }]);
   querier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 1]);
+  querier.findManyPage.mockResolvedValue({ items: [{ id: 1 }], hasNextPage: false, hasPrevPage: false });
   querier.count.mockResolvedValue(7);
   querier.aggregate.mockResolvedValue([{ total: 3 }]);
   return querier;
@@ -128,15 +129,21 @@ it('should delegate every read to a fresh querier, and release it', async () => 
   expect(await pool.findOneById(entity, 1)).toEqual({ id: 1 });
   expect(await pool.findOne(entity, {})).toEqual({ id: 1 });
   expect(await pool.findManyAndCount(entity, {})).toEqual([[{ id: 1 }], 1]);
+  expect(await pool.findManyPage(entity, { $sort: { id: 1 }, $limit: 1 })).toEqual({
+    items: [{ id: 1 }],
+    hasNextPage: false,
+    hasPrevPage: false,
+  });
   expect(await pool.aggregate(entity, { $group: {} })).toEqual([{ total: 3 }]);
 
-  const [byId, one, andCount, agg] = pool.acquired;
+  const [byId, one, andCount, page, agg] = pool.acquired;
   expect(byId.findOneById).toHaveBeenCalledWith(entity, 1, undefined, undefined);
   expect(one.findOne).toHaveBeenCalledWith(entity, {}, undefined);
   expect(andCount.findManyAndCount).toHaveBeenCalledWith(entity, {}, undefined);
+  expect(page.findManyPage).toHaveBeenCalledWith(entity, { $sort: { id: 1 }, $limit: 1 }, undefined);
   expect(agg.aggregate).toHaveBeenCalledWith(entity, { $group: {} }, undefined);
   // One fresh connection acquired and released per call.
-  expect(pool.acquired).toHaveLength(4);
+  expect(pool.acquired).toHaveLength(5);
   for (const acquired of pool.acquired) {
     expect(acquired.release).toHaveBeenCalledTimes(1);
   }

@@ -1,12 +1,12 @@
-// A stamp on every engine that needs a trigger for one, and on the MySQL family, whose column stamps
-// itself. The point of the feature is the write uql did not make: each test updates through raw SQL.
+// A stamp on every engine, each written by a trigger. The point of the feature is the write uql did not
+// make: each test updates through raw SQL.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, removeEntity } from '../entity/index.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
-import { raw } from '../util/raw.js';
+import { currentTimestamp, raw } from '../util/raw.js';
 import { Migrator } from './migrator.js';
 
 const STAMP_POOLS = sqlPools('test_stamp', 'pglite');
@@ -24,18 +24,27 @@ class StampNote {
   @Id({ type: Number }) id?: number;
   @Field({ type: String }) body?: string | null;
   @Field({ type: Number, computed: raw`1`, stored: ['insert', 'update'] }) readonly touched?: number | null;
+  @Field({ type: Date, computed: currentTimestamp, stored: ['insert', 'update'] }) readonly stampedAt?: Date | null;
+}
+
+@Entity({ name: 'StampClocks' })
+class StampClocks {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) body?: string | null;
+  @Field({ type: Date, computed: currentTimestamp, stored: ['update'] }) readonly editedAt?: Date | null;
+  @Field({ type: Date, computed: currentTimestamp, stored: ['update'] }) readonly savedAt?: Date | null;
 }
 
 describe.each(STAMP_POOLS)('a stamp on %s', (_name, connect) => {
   let pool: SqlQuerierPool;
   const escapeId = (name: string) => pool.dialect.escapeId(name);
 
-  const tables = ['StampNote', 'StampTouch', 'StampRetyped'] as const;
+  const tables = ['StampNote', 'StampTouch', 'StampClocks', 'StampRetyped'] as const;
 
   beforeAll(async () => {
     pool = connect();
     await dropTables(pool, ...tables);
-    await new Migrator(pool, { entities: [StampNote, StampTouch] }).sync({ logging: false });
+    await new Migrator(pool, { entities: [StampNote, StampTouch, StampClocks] }).sync({ logging: false });
   }, provisioningTimeout);
 
   afterAll(async () => {
@@ -53,6 +62,21 @@ describe.each(STAMP_POOLS)('a stamp on %s', (_name, connect) => {
       `SELECT ${escapeId('touched')} FROM ${escapeId('StampNote')} WHERE ${escapeId('id')} = ${inserted}`,
     );
     expect(Number(row.touched)).toBe(1);
+  });
+
+  // The database's clock in the text and digits a bound `Date` takes: the stamp is now, and matches itself read back.
+  it('should stamp the time as the value it reads back as', async () => {
+    const id = await pool.insertOne(StampNote, { body: 'timed' });
+    const [row] = await pool.findMany(StampNote, { $select: { stampedAt: true }, $where: { id } });
+    expect(Math.abs(Number(row.stampedAt) - Date.now())).toBeLessThan(60_000);
+    expect(await pool.count(StampNote, { $where: { id, stampedAt: row.stampedAt } })).toBe(1);
+  });
+
+  // SQL Server reads its clock per statement, so a clock stamp restating its row always moves the other's.
+  it('should stamp two clocks on one update, neither firing the other without end', async () => {
+    const id = await pool.insertOne(StampClocks, { body: 'first' });
+    await pool.run(`UPDATE ${escapeId('StampClocks')} SET ${escapeId('body')} = 'raw' WHERE ${escapeId('id')} = ${id}`);
+    expect(await pool.count(StampClocks, { $where: { id, editedAt: { $ne: null }, savedAt: { $ne: null } } })).toBe(1);
   });
 
   // The line between the two: `onUpdate` puts the expression in uql's own statement and nowhere else.
@@ -134,4 +158,5 @@ describe.each(STAMP_POOLS)('a stamp on %s', (_name, connect) => {
 afterAll(() => {
   removeEntity(StampNote);
   removeEntity(StampTouch);
+  removeEntity(StampClocks);
 });

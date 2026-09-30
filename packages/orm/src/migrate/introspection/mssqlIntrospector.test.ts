@@ -2,6 +2,7 @@ import { expect } from 'vitest';
 import { MsSqlQuerierPool } from '../../mssql/mssqlQuerierPool.js';
 import type { ForeignKeyAction } from '../../schema/types.js';
 import { createSpec, mssqlConnection } from '../../test/index.js';
+import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { MsSqlSchemaIntrospector } from './mssqlIntrospector.js';
 
@@ -66,7 +67,7 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
         CREATE TABLE ${table} (
           quoted NVARCHAR(9) DEFAULT N'it''s', plain VARCHAR(9) DEFAULT 'x', negative INT DEFAULT -3,
           fraction DECIMAL(6, 2) DEFAULT -1.5, blank NVARCHAR(9) DEFAULT NULL, stamped DATETIME2 DEFAULT CURRENT_TIMESTAMP,
-          summed INT DEFAULT (1) + (2), bare INT
+          summed INT DEFAULT (1) + (2), bare INT, clock DATETIME2 DEFAULT SYSUTCDATETIME()
         )
       `),
     );
@@ -77,9 +78,10 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
       negative: -3,
       fraction: -1.5,
       blank: null,
-      stamped: 'getdate()',
-      summed: '(1)+(2)',
+      stamped: expr.raw('(getdate())'),
+      summed: expr.raw('((1)+(2))'),
       bare: undefined,
+      clock: expr.now(),
     });
   }
 

@@ -180,6 +180,19 @@ describe('MongoSchemaGenerator', () => {
     expect(create().options.default_language).toBe('none');
   });
 
+  it('should build the text index an entity declares in the language it names', () => {
+    @Index((article) => [article.body], { type: 'fulltext', config: 'spanish' })
+    @Entity()
+    class MongoArticle {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String }) body?: string | null;
+    }
+
+    const [, index] = generator.generateCreateTable(MongoArticle).map((json) => JSON.parse(json));
+
+    expect(index.options.default_language).toBe('spanish');
+  });
+
   describe('Atlas vector search index', () => {
     const chunkIndex = {
       action: 'createSearchIndex',
@@ -400,6 +413,18 @@ describe('MongoSchemaGenerator', () => {
       ['dropIndex', 'email_idx', undefined],
       ['createIndex', 'email_idx', false],
     ]);
+  });
+
+  /** A plan is data a caller logs or stores, so an index it drops points back at no table. */
+  it('should plan a diff that serializes as JSON', () => {
+    const current = collectionWith(
+      'MongoUser',
+      { name: 'MongoUser__username_idx', unique: false },
+      { name: 'email_idx', unique: false },
+    );
+    const diff = generator.diffSchema(MongoUser, current);
+
+    expect(JSON.parse(JSON.stringify(diff))).toEqual(diff);
   });
 });
 

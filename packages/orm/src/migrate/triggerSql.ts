@@ -231,7 +231,7 @@ function condition<E>(
 /**
  * The triggers a stamp needs: one per event it names, each assigning the field's expression to its
  * column. Generated rather than authored, so unlike an authored body it renders on every engine from
- * one declaration - and not at all on the MySQL family, whose columns stamp themselves.
+ * one declaration.
  */
 export function stampTriggers<E extends object>(
   dialect: AbstractSqlDialect,
@@ -264,10 +264,10 @@ const STAMP_EVENTS = {
 } as const satisfies Record<'before' | 'after', Record<StampEvent, TriggerEvent>>;
 
 /**
- * The one statement a stamp runs, in whichever of the two shapes the engine leaves open: an assignment
- * to the incoming row, or where it may not be written, the row restated after the write, as any write in
- * a trigger's body is, keyed on its whole key and only where the stamp still differs: that `UPDATE` fires
- * the trigger again, and with recursive triggers on it then finds nothing left to change.
+ * The statement a stamp runs: an assignment to the incoming row where the engine allows one, else an
+ * `UPDATE` of the written row after the write, by its whole key and only where the stamp still differs.
+ * That `UPDATE` fires the table's triggers again; where a running trigger can fire again, `reentryGuard`
+ * makes the nested run return.
  */
 function stampBody<E extends object>(
   dialect: AbstractSqlDialect,
@@ -289,7 +289,9 @@ function stampBody<E extends object>(
     ctx.append(dialect.neExpr(`${escapedPrefix}${dialect.escapedColumnName(meta, key)}`, stamped)),
   );
   const where = { $and: [...keyed, differs] };
-  return written({ kind: 'update', entity, set: { [key]: value }, where });
+  const restated = written({ kind: 'update', entity, set: { [key]: value }, where });
+  const { reentryGuard } = dialect.features.triggers;
+  return reentryGuard ? raw`${raw(() => reentryGuard)}\n${restated}` : restated;
 }
 
 /** A dollar quote the body does not contain, so no `$$` in it - a literal, a comment - ends the function early. */

@@ -278,6 +278,19 @@ describe('OperationRecorder', () => {
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('alterColumn');
     });
+
+    /** An alter restates the column alone, so an index or a key declared on it would be lost without a word. */
+    it('should refuse an index or a foreign key declared on the column', async () => {
+      const recorder = new OperationRecorder();
+
+      await expect(recorder.alterColumn('users', (c) => c.string('email').index())).rejects.toThrow(
+        /alterColumn changes 'email' alone: add its index with createIndex/,
+      );
+      await expect(recorder.alterColumn('users', (c) => c.integer('orgId').references('orgs'))).rejects.toThrow(
+        /alterColumn changes 'orgId' alone: .*its foreign key with addForeignKey/,
+      );
+      expect(recorder.getOperations()).toEqual([]);
+    });
   });
 
   describe('alterTable operations', () => {

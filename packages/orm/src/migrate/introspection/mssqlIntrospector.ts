@@ -1,4 +1,3 @@
-import { defaultTimestampPrecision } from '../../schema/canonicalType.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import {
   AbstractSqlSchemaIntrospector,
@@ -208,7 +207,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (quoted) {
       return quoted[1].replaceAll("''", "'");
     }
-    return text === 'NULL' ? null : text;
+    return text === 'NULL' ? null : this.sqlDefault(text);
   }
 }
 
@@ -217,16 +216,12 @@ const CHARACTER_TYPES = new Set(['CHAR', 'NCHAR', 'VARCHAR', 'NVARCHAR', 'BINARY
 
 const NUMERIC_TYPES = new Set(['DECIMAL', 'NUMERIC']);
 
-/** `(MAX)` on an unbounded character type, and a timestamp's fractional digits where not the engine's default. */
+/** The type as DDL spells it: `(MAX)` on an unbounded character type, or a timestamp's fractional digits. */
 function spelledType(type: string, bytes: number | undefined, scale: number | undefined): string {
   if (bytes === -1 && CHARACTER_TYPES.has(type)) {
     return `${type}(MAX)`;
   }
-  return (type === 'DATETIME2' || type === 'DATETIMEOFFSET') &&
-    scale !== undefined &&
-    scale !== defaultTimestampPrecision('mssql')
-    ? `${type}(${scale})`
-    : type;
+  return (type === 'DATETIME2' || type === 'DATETIMEOFFSET') && scale !== undefined ? `${type}(${scale})` : type;
 }
 
 /**

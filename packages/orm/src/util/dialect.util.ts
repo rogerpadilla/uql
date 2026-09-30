@@ -1,11 +1,9 @@
 import { getContext } from '../context/context.js';
-import { soleIdOf } from '../entity/metadata/definition.js';
 import type { IndexType } from '../schema/types.js';
 import {
   type AggregateCall,
   type CascadeType,
   type EntityData,
-  type EntityId,
   type EntityIndexMeta,
   type EntityMeta,
   type FieldKey,
@@ -15,9 +13,7 @@ import {
   type FilterOptions,
   type JsonUpdateOp,
   type OnFieldCallback,
-  type Query,
   type QueryAggMap,
-  type QueryConflictPaths,
   type QueryExclude,
   type QueryGroupMap,
   type QueryOptions,
@@ -32,7 +28,6 @@ import {
   type QueryVectorQuery,
   type QueryVectorSearch,
   type QueryWhere,
-  type QueryWhereArray,
   type RelationKey,
   resolveAggregateOp,
   SOFT_DELETE_FILTER,
@@ -41,16 +36,8 @@ import {
 } from '../type/index.js';
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { defaultReadKeys, fieldKeys, isDatabaseWritten } from './field.util.js';
-import {
-  entityName,
-  getKeys,
-  hasKeys,
-  isOperatorObject,
-  isScalarId,
-  isRecord,
-  isWhereMap,
-  someKey,
-} from './object.util.js';
+import { entityName, getKeys, hasKeys, isOperatorObject, isRecord, someKey } from './object.util.js';
+import { whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
@@ -191,35 +178,6 @@ export function isCascadable(action: CascadeType, configuration?: boolean | Casc
  */
 export function isPagedQuery<E>(q: QuerySearch<E>): boolean {
   return q.$sort !== undefined || q.$limit !== undefined || q.$skip !== undefined;
-}
-
-/**
- * Each of `keys` switched on, as a `$select` or conflict paths name them. This and the `where*` builders
- * below hold the casts a statement built in generic code needs: a key read at run time is no key of
- * these maps to the compiler, whose values it works out per entity.
- */
-export function keySet<E>(keys: readonly FieldKey<E>[]): QueryConflictPaths<E> {
-  return Object.fromEntries(keys.map((key) => [key, true])) as QueryConflictPaths<E>;
-}
-
-/** `where`, or no `$where`, with `key` held to `value` as well: spread, so the two `AND`. */
-export function whereWith<E>(key: FieldKey<E>, value: unknown, where?: QueryWhere<E>): QueryWhere<E> {
-  return { ...where, [key]: value } as QueryWhere<E>;
-}
-
-/** The `$where` holding each of `keys` to what `valueOf` reads for it. */
-export function whereEach<E>(keys: readonly FieldKey<E>[], valueOf: (key: FieldKey<E>) => unknown): QueryWhere<E> {
-  return Object.fromEntries(keys.map((key) => [key, valueOf(key)])) as QueryWhere<E>;
-}
-
-/** The `$where` any one of `clauses` satisfies. */
-export function whereAnyOf<E>(clauses: QueryWhereArray<E>): QueryWhere<E> {
-  return { $or: clauses } as QueryWhere<E>;
-}
-
-/** `q` selecting nothing but the id: what a write hands its backend's own read builder to settle the rows it will name. */
-export function idOnlyQuery<E>(meta: EntityMeta<E>, q: QuerySearch<E>): Query<E> {
-  return { ...q, $select: keySet(meta.ids) };
 }
 
 /** Whether `select` is the list form `raw()` fills, narrowing both ways, which `Array.isArray` does not for a `readonly` array. */
@@ -379,27 +337,6 @@ export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUp
   return value.$inc === undefined ? ['$mul', value.$mul] : ['$inc', value.$inc];
 }
 
-/**
- * The `$where` naming rows by key: a bare value names the one key column (refused on a composite), a
- * composite's key map is a `$where` already, and a list is an `IN` of bare values or an OR of maps.
- */
-export function whereIds<E>(meta: EntityMeta<E>, ids: EntityId<E> | EntityId<E>[]): QueryWhere<E> {
-  if (Array.isArray(ids) ? ids.every(isScalarId) : isScalarId(ids)) {
-    return whereWith(soleIdOf(meta, 'addressing by a bare id value'), ids);
-  }
-  return (Array.isArray(ids) ? { $or: ids } : ids) as QueryWhere<E>;
-}
-
-/**
- * Refuses a `$where` that is not a map. Untyped JS and parsed JSON can still pass an id or a list of
- * them, and a scalar read as a map has no keys: the statement would address every row.
- */
-export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
-  if (!isWhereMap(where)) {
-    throw new UqlUsageError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
-  }
-}
-
 /** Returns a `QueryOptions.filters` value with the built-in soft-delete filter disabled (used by hard delete). */
 export function withoutSoftDeleteFilter(filters: QueryOptions['filters']): QueryOptions['filters'] {
   return filters === false ? false : { ...filters, [SOFT_DELETE_FILTER]: false };
@@ -426,12 +363,9 @@ export function applyFilters<E>(meta: EntityMeta<E>, whereMap: QueryWhere<E>, op
       }
     }
   }
+  const merged = result as QueryWhere<E>;
   const security = securityConditions(meta).map(([, condition]) => condition);
-  if (security.length) {
-    const existing = result['$and'] as unknown[] | undefined;
-    result['$and'] = existing ? [...existing, ...security] : security;
-  }
-  return result as QueryWhere<E>;
+  return security.length ? whereAnd(merged, security) : merged;
 }
 
 /**

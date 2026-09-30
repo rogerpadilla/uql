@@ -3,7 +3,6 @@ import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
 import { MYSQL_FEATURES, MYSQL_ROW_LOCKS, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type {
-  EntityMeta,
   FieldOptions,
   Query,
   QueryContext,
@@ -52,11 +51,6 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     const object = this.jsonObject(terms.map((term) => [relationTermKey(term), term.sql]));
     const rows = `${query.$distinct ? 'DISTINCT ' : ''}${object}${order}${page}`;
     ctx.append(`COALESCE((SELECT JSON_ARRAYAGG(${rows}) FROM ${this.tableRef(meta, alias).ref}${from}), JSON_ARRAY())`);
-  }
-
-  protected override upsertReturning<E>(meta: EntityMeta<E>): string {
-    const returning = this.returningId(meta);
-    return returning ? ` ${returning}` : '';
   }
 
   /**
@@ -112,7 +106,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
   }
 
   /**
-   * The reverse: a `VECTOR` column reads back as its packed bytes in hex, which every driver hands over
+   * Reads a `VECTOR` column back as its packed bytes in hex, which every driver hands over
    * alike, and never through `VEC_ToText`, which keeps six of the nine digits a float32 needs.
    */
   protected override selectFieldExpr(escapedColumn: string, field: FieldOptions): string {

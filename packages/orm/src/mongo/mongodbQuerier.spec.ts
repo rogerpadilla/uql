@@ -196,7 +196,7 @@ describe('MongodbQuerier vector search', () => {
     const unwindIndex = pipeline.findIndex((stage) => '$unwind' in stage);
     const projectIndex = pipeline.findIndex((stage) => '$project' in stage);
     expect(projectIndex).toBeGreaterThan(unwindIndex);
-    expect(pipeline[projectIndex]).toEqual({ $project: { text: 1, author: 1, score: 1 } });
+    expect(pipeline[projectIndex]).toEqual({ $project: { text: 1, author: 1, score: 1, _id: 0 } });
   });
 
   /**

@@ -1,12 +1,6 @@
-import type { QueryOptions, WireQuery } from '../type/index.js';
-// the clause lists themselves, not the barrel: this module is in the browser bundle's graph
-import {
-  QUERY_BOOLEAN_CLAUSES,
-  QUERY_NUMBER_CLAUSES,
-  QUERY_OBJECT_CLAUSES,
-  QUERY_ROOT_NUMBER_CLAUSES,
-  QUERY_ROOT_OBJECT_CLAUSES,
-} from '../type/query.js';
+import type { QueryKeyset, QueryOptions, WireQuery } from '../type/index.js';
+// the clause table itself, not the barrel: this module is in the browser bundle's graph
+import { QUERY_CLAUSES, type QueryClause } from '../type/query.js';
 // the brand alone, not the class: importing `QueryRaw` for an `instanceof` kept it, and `ColumnRef`
 // with it, in the browser bundle, which is on a size budget
 import { RAW_VALUE } from '../type/queryRaw.js';
@@ -21,20 +15,8 @@ const WIRE_FLAGS = ['hardDelete', 'count'] as const satisfies (keyof Pick<QueryO
 /** {@link WIRE_FLAGS} as the booleans {@link parseQueryParams} decodes them to, where a hook may also set them. */
 export type WireFlags = { readonly [K in (typeof WIRE_FLAGS)[number]]?: boolean };
 
-/**
- * Keys accepted from the wire - query structure ({@link Query}) plus the {@link WIRE_FLAGS}. Anything else
- * (e.g. `filters`, `context`, `$entity`) is dropped so a remote client can't bypass a security filter or
- * inject ambient context - those are server-only. The `satisfies` ties
- * every entry to a real query/option key, so a typo or a renamed option fails to compile.
- */
-const ALLOWED_QUERY_KEYS = new Set<string>([
-  ...QUERY_OBJECT_CLAUSES,
-  ...QUERY_ROOT_OBJECT_CLAUSES,
-  ...QUERY_NUMBER_CLAUSES,
-  ...QUERY_ROOT_NUMBER_CLAUSES,
-  ...QUERY_BOOLEAN_CLAUSES,
-  ...WIRE_FLAGS,
-] satisfies (keyof WireQuery<unknown> | (typeof WIRE_FLAGS)[number])[]);
+/** The cursors a page request carries; only `findManyPage` reads them. */
+export type WireCursors = Pick<QueryKeyset<unknown>, '$after' | '$before'>;
 
 /**
  * Keys that mean something locally but that this transport can never honor, so they are rejected
@@ -45,10 +27,20 @@ const ALLOWED_QUERY_KEYS = new Set<string>([
 const REJECTED_QUERY_KEYS = new Set<string>(['$lock'] satisfies (keyof WireQuery<unknown>)[]);
 
 /**
- * Parse raw query-string entries (with JSON-stringified values), or a `QUERY` body, into a UQL query
- * object. Symmetric counterpart of {@link stringifyQuery}. Only {@link ALLOWED_QUERY_KEYS} are honored.
+ * The keys accepted from the wire, mapped to how each value is decoded: every query clause ({@link QUERY_CLAUSES})
+ * plus the {@link WIRE_FLAGS}. Anything else (e.g. `filters`, `context`, `$entity`) is dropped, so a remote
+ * client can't bypass a security filter or inject ambient context.
  */
-export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E> & WireFlags {
+const WIRE_VALUES: ReadonlyMap<string, QueryClause['value']> = new Map([
+  ...getKeys(QUERY_CLAUSES).map((key) => [key, QUERY_CLAUSES[key].value] as const),
+  ...WIRE_FLAGS.map((flag) => [flag, 'boolean'] as const),
+]);
+
+/**
+ * Parse raw query-string entries (with JSON-stringified values), or a `QUERY` body, into a UQL query
+ * object. Symmetric counterpart of {@link stringifyQuery}. Only the keys in {@link WIRE_VALUES} are honored.
+ */
+export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E> & WireFlags & WireCursors {
   if (!isRecord(params)) {
     throw new UqlUsageError('the query must be a JSON object');
   }
@@ -57,42 +49,45 @@ export function parseQueryParams<E = unknown>(params: unknown = {}): WireQuery<E
     if (REJECTED_QUERY_KEYS.has(key)) {
       throw new UqlUsageError(`'${key}' is not supported over HTTP`);
     }
-    if (ALLOWED_QUERY_KEYS.has(key)) {
-      query[key] = params[key];
+    const shape = WIRE_VALUES.get(key);
+    if (shape && params[key] !== undefined) {
+      query[key] = decodeWireValue(key, shape, params[key]);
     }
   }
-
-  for (const key of [...QUERY_OBJECT_CLAUSES, ...QUERY_ROOT_OBJECT_CLAUSES]) {
-    const value = query[key];
-    if (typeof value === 'string') {
-      try {
-        query[key] = JSON.parse(value);
-      } catch {
-        throw new UqlUsageError(`invalid JSON in '${key}'`);
-      }
-    }
-  }
-
   query['$where'] ??= {};
   if (!isWhereMap(query['$where'])) {
     throw new UqlUsageError("'$where' must be a JSON object");
   }
-
-  // A query string carries every value as text, so what decodes a clause is the shape its group
-  // declares. `'false'` is the reason the boolean pass exists rather than the raw value being taken:
-  // it is a non-empty string, so a `$distinct=false` would otherwise read as asking for one.
-  for (const key of [...QUERY_NUMBER_CLAUSES, ...QUERY_ROOT_NUMBER_CLAUSES]) {
-    if (query[key] !== undefined) {
-      query[key] = Number(query[key]);
-    }
-  }
-  for (const key of [...QUERY_BOOLEAN_CLAUSES, ...WIRE_FLAGS]) {
-    if (query[key] !== undefined) {
-      query[key] = query[key] === true || query[key] === 'true';
-    }
-  }
-
   return query;
+}
+
+/**
+ * Decodes a value to the type its clause declares. A query string carries every value as text, so a boolean
+ * must be decoded: `'false'` is a non-empty string, and taken as is, `$distinct=false` would turn it on.
+ */
+function decodeWireValue(key: string, shape: QueryClause['value'], value: unknown): unknown {
+  switch (shape) {
+    case 'object':
+      return typeof value === 'string' ? parseJson(key, value) : value;
+    case 'number':
+      return Number(value);
+    case 'boolean':
+      return value === true || value === 'true';
+    case 'string':
+      // A cursor arrives as the exact text a page handed out, never as JSON, so any other value is not a cursor.
+      if (typeof value !== 'string') {
+        throw new UqlUsageError(`'${key}' must be a cursor a page handed out`);
+      }
+      return value;
+  }
+}
+
+function parseJson(key: string, text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    throw new UqlUsageError(`invalid JSON in '${key}'`);
+  }
 }
 
 /**

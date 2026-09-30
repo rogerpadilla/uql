@@ -1,4 +1,4 @@
-import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
+import { AGGREGATE_VALUE_ALIAS, UPSERT_CREATED_ALIAS } from '../dialect/aliases.js';
 import { PG_FEATURES, PgLikeSqlDialect } from '../dialect/pgLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type { QueryConflictPaths, QueryContext, SqlDialectFeatures, SqlDialectName, Type } from '../type/index.js';
@@ -14,7 +14,7 @@ export class PostgresDialect extends PgLikeSqlDialect {
 
   override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     // The xmax system column is 0 for a newly inserted row and non-zero for an updated one (MVCC).
-    super.upsert(ctx, entity, conflictPaths, payload, `(xmax = 0) AS ${this.escapeId('_created')}`);
+    super.upsert(ctx, entity, conflictPaths, payload, `(xmax = 0) AS ${this.escapeId(UPSERT_CREATED_ALIAS)}`);
   }
 
   /**

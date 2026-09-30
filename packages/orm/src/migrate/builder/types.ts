@@ -82,14 +82,14 @@ export interface VectorColumnOptions extends BaseColumnOptions {
 }
 
 /** A column as the builder describes one: a {@link ColumnNode} without its graph links. */
-export type ColumnDefinition = Omit<ColumnNode, 'table' | 'referencedBy' | 'references'>;
+export type ColumnDefinition = Except<ColumnNode, 'table' | 'referencedBy' | 'references'>;
 
 /**
  * The foreign key a single column declares: {@link ForeignKeySchema} without the local columns, which
  * are the column itself. Derived for the reason {@link ColumnDefinition} is - restated, the two spelled
  * their target differently and every hand-off between them had to translate.
  */
-export type ForeignKeyDefinition = Omit<ForeignKeySchema, 'columns'>;
+export type ForeignKeyDefinition = Except<ForeignKeySchema, 'columns'>;
 
 /**
  * Full column definition including foreign key.

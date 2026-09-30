@@ -6,7 +6,7 @@ import { indexNodeToSchema } from '../migrate/generator/indexNodeToSchema.js';
 import { assertIndexPredicate, refusedIndexPredicate } from '../migrate/indexPredicate.js';
 import { sides } from '../migrate/schemaChange.js';
 import { indexChanges } from '../schema/indexDifferences.js';
-import type { ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
+import type { IndexType, TableNode } from '../schema/types.js';
 import {
   type CreateSchemaOptions,
   type EntityIndexMeta,
@@ -43,10 +43,8 @@ const ATLAS_SIMILARITY: Partial<Record<VectorDistance, string>> = {
 };
 
 export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerator {
-  constructor(
-    namingStrategy?: NamingStrategy,
-    protected readonly defaultForeignKeyAction?: ForeignKeyAction,
-  ) {
+  /** Takes no default foreign key action, since a document store has no foreign keys. */
+  constructor(namingStrategy?: NamingStrategy) {
     super({ namingStrategy });
   }
 
@@ -84,29 +82,31 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     return declaredIndexes(meta).map((index) => this.indexSchema(meta, collectionName, index));
   }
 
-  /** One declared index, its members resolved to document paths and its `where` to a filter document. */
+  /**
+   * A declared index, with its members resolved to document paths and its `where` to a filter document.
+   * Every other option is spread through, so a newly added one, such as the text `config`, cannot be lost.
+   */
   private indexSchema<E extends object>(
     meta: EntityMeta<E>,
     collectionName: string,
-    index: EntityIndexMeta<E>,
+    { columns, where, ...options }: EntityIndexMeta<E>,
   ): IndexSchema {
-    const entries = index.columns
+    const entries = columns
       .map((entry) => renderIndexColumn(entry, () => this.compileDdl()))
       .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
-    const [first] = index.columns;
+    const [first] = columns;
     const vector =
-      index.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
+      options.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
     const name = vector
-      ? this.vectorSearchIndexName(index.name, entries[0].column)
-      : declaredIndexName(index.name, collectionName, entries);
+      ? this.vectorSearchIndexName(options.name, entries[0].column)
+      : declaredIndexName(options.name, collectionName, entries);
     return {
+      ...options,
       name,
       entries,
-      unique: index.unique ?? false,
-      type: index.type,
-      include: index.include,
-      where: index.where && this.compileIndexPredicate(index.where, meta.entity, name),
-      distance: index.distance ?? vector?.distance,
+      unique: options.unique ?? false,
+      where: where && this.compileIndexPredicate(where, meta.entity, name),
+      distance: options.distance ?? vector?.distance,
       dimensions: vector?.dimensions,
     };
   }
@@ -264,17 +264,13 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
       return { tableName: collectionName, type: 'create' };
     }
 
-    const { toAdd, toDrop, toAlter } = indexChanges(
+    const { changes } = indexChanges(
       collectionName,
       this.indexesOf(meta, collectionName),
       currentTable.indexes,
       currentTable.indexFacets,
     );
-    const indexes = [
-      ...toAdd.map((to) => ({ to })),
-      ...toDrop.map((from) => ({ from: indexNodeToSchema(from) })),
-      ...toAlter.map(({ from, to }) => ({ from: indexNodeToSchema(from), to })),
-    ];
+    const indexes = changes.map(({ from, to }) => ({ from: from && indexNodeToSchema(from), to }));
     return indexes.length ? { tableName: collectionName, type: 'alter', indexes } : undefined;
   }
 }

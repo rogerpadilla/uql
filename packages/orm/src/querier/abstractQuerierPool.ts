@@ -1,33 +1,13 @@
 import { withContext } from '../context/context.js';
 import type { AbstractDialect } from '../dialect/index.js';
 import type {
-  EntityWrite,
-  EntityId,
   ExtraOptions,
-  FieldKey,
   PoolRunOptions,
   Querier,
   QuerierPool,
-  QueryAggMap,
-  QueryAggregate,
-  QueryAggregateResult,
-  QueryConflictPaths,
-  QueryFilter,
-  QueryFindResult,
-  QueryGroupMap,
-  QueryOneProjected,
-  QueryOptions,
-  QueryPage,
-  QueryProjected,
-  QuerySearch,
-  QueryUpsertOneResult,
-  QueryUpsertManyResult,
-  RelationKey,
   TransactionOptions,
-  Type,
-  UpdateWrite,
+  UniversalQuerier,
   UqlContext,
-  WrittenId,
 } from '../type/index.js';
 
 /**
@@ -71,178 +51,61 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
     return context ? withContext(context, fn) : fn();
   }
 
-  findOneById<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    id: EntityId<E>,
-    q?: QueryOneProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined> {
-    return this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
-  }
-
-  findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined> {
-    return this.withQuerier((querier) => querier.findOne(entity, q, opts));
-  }
-
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C>[]> {
-    return this.withQuerier((querier) => querier.findMany(entity, q, opts));
-  }
+  readonly findOneById: UniversalQuerier['findOneById'] = (entity, id, q, opts) =>
+    this.withQuerier((querier) => querier.findOneById(entity, id, q, opts));
+  readonly findOne: UniversalQuerier['findOne'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.findOne(entity, q, opts));
+  readonly findMany: UniversalQuerier['findMany'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.findMany(entity, q, opts));
 
   /**
-   * The connection outlives the call here: it is held until the iterator is drained or closed by a
-   * `break`/`throw`. Abandoning the iterator instead leaks it until GC, so consume it in a `for await`.
+   * The connection outlives the call: it is held until the iterator is drained or closed by a `break` or
+   * `throw`. Abandoning the iterator leaks it until GC, so consume it in a `for await`.
    */
-  async *findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): AsyncGenerator<QueryFindResult<E, S, V, X, P, C>> {
+  readonly findManyStream: UniversalQuerier['findManyStream'] = (entity, q, opts) =>
+    this.streamWithQuerier((querier) => querier.findManyStream(entity, q, opts));
+
+  private async *streamWithQuerier<T>(read: (querier: Q) => AsyncIterable<T>): AsyncGenerator<T> {
     await using querier = await this.getQuerier();
-    yield* querier.findManyStream(entity, q, opts);
+    yield* read(querier);
   }
 
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]> {
-    return this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
-  }
-
-  count<E extends object>(entity: Type<E>, q?: QueryPage<E>, opts?: QueryOptions): Promise<number> {
-    return this.withQuerier((querier) => querier.count(entity, q, opts));
-  }
-
-  exists<E extends object>(entity: Type<E>, q?: QueryFilter<E>, opts?: QueryOptions): Promise<boolean> {
-    return this.withQuerier((querier) => querier.exists(entity, q, opts));
-  }
-
-  aggregate<E extends object, const G extends QueryGroupMap<E>, const A extends QueryAggMap<E>>(
-    entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
-    opts?: QueryOptions,
-  ): Promise<QueryAggregateResult<E, G, A>[]> {
-    return this.withQuerier((querier) => querier.aggregate(entity, q, opts));
-  }
-
-  estimatedCount<E extends object>(entity: Type<E>): Promise<number> {
-    return this.withQuerier((querier) => querier.estimatedCount(entity));
-  }
-
-  insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined> {
-    return this.withQuerier((querier) => querier.insertOne(entity, payload));
-  }
-
-  insertMany<E extends object>(
-    entity: Type<E>,
-    payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]> {
-    return this.withQuerier((querier) => querier.insertMany(entity, payload));
-  }
-
-  updateOneById<E extends object>(
-    entity: Type<E>,
-    id: EntityId<E>,
-    payload: UpdateWrite<E>,
-    opts?: QueryOptions,
-  ): Promise<number> {
-    return this.withQuerier((querier) => querier.updateOneById(entity, id, payload, opts));
-  }
-
-  updateMany<E extends object>(
-    entity: Type<E>,
-    q: QuerySearch<E>,
-    payload: UpdateWrite<E>,
-    opts?: QueryOptions,
-  ): Promise<number> {
-    return this.withQuerier((querier) => querier.updateMany(entity, q, payload, opts));
-  }
-
-  upsertOne<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: EntityWrite<E>,
-  ): Promise<QueryUpsertOneResult<E>> {
-    return this.withQuerier((querier) => querier.upsertOne(entity, conflictPaths, payload));
-  }
-
-  upsertMany<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: readonly EntityWrite<E>[],
-  ): Promise<QueryUpsertManyResult<E>> {
-    return this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
-  }
-
-  saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined> {
-    return this.withQuerier((querier) => querier.saveOne(entity, payload));
-  }
-
-  saveMany<E extends object>(
-    entity: Type<E>,
-    payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]> {
-    return this.withQuerier((querier) => querier.saveMany(entity, payload));
-  }
-
-  deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions): Promise<number> {
-    return this.withQuerier((querier) => querier.deleteOneById(entity, id, opts));
-  }
-
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
-    return this.withQuerier((querier) => querier.deleteMany(entity, q, opts));
-  }
-
-  restoreOneById<E extends object>(entity: Type<E>, id: EntityId<E>): Promise<number> {
-    return this.withQuerier((querier) => querier.restoreOneById(entity, id));
-  }
-
-  restoreMany<E extends object>(entity: Type<E>, q: QuerySearch<E>): Promise<number> {
-    return this.withQuerier((querier) => querier.restoreMany(entity, q));
-  }
+  readonly findManyAndCount: UniversalQuerier['findManyAndCount'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.findManyAndCount(entity, q, opts));
+  readonly findManyPage: UniversalQuerier['findManyPage'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.findManyPage(entity, q, opts));
+  readonly count: UniversalQuerier['count'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.count(entity, q, opts));
+  readonly exists: UniversalQuerier['exists'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.exists(entity, q, opts));
+  readonly aggregate: UniversalQuerier['aggregate'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.aggregate(entity, q, opts));
+  readonly estimatedCount: UniversalQuerier['estimatedCount'] = (entity) =>
+    this.withQuerier((querier) => querier.estimatedCount(entity));
+  readonly insertOne: UniversalQuerier['insertOne'] = (entity, payload) =>
+    this.withQuerier((querier) => querier.insertOne(entity, payload));
+  readonly insertMany: UniversalQuerier['insertMany'] = (entity, payload) =>
+    this.withQuerier((querier) => querier.insertMany(entity, payload));
+  readonly updateOneById: UniversalQuerier['updateOneById'] = (entity, id, payload, opts) =>
+    this.withQuerier((querier) => querier.updateOneById(entity, id, payload, opts));
+  readonly updateMany: UniversalQuerier['updateMany'] = (entity, q, payload, opts) =>
+    this.withQuerier((querier) => querier.updateMany(entity, q, payload, opts));
+  readonly upsertOne: UniversalQuerier['upsertOne'] = (entity, conflictPaths, payload) =>
+    this.withQuerier((querier) => querier.upsertOne(entity, conflictPaths, payload));
+  readonly upsertMany: UniversalQuerier['upsertMany'] = (entity, conflictPaths, payload) =>
+    this.withQuerier((querier) => querier.upsertMany(entity, conflictPaths, payload));
+  readonly saveOne: UniversalQuerier['saveOne'] = (entity, payload) =>
+    this.withQuerier((querier) => querier.saveOne(entity, payload));
+  readonly saveMany: UniversalQuerier['saveMany'] = (entity, payload) =>
+    this.withQuerier((querier) => querier.saveMany(entity, payload));
+  readonly deleteOneById: UniversalQuerier['deleteOneById'] = (entity, id, opts) =>
+    this.withQuerier((querier) => querier.deleteOneById(entity, id, opts));
+  readonly deleteMany: UniversalQuerier['deleteMany'] = (entity, q, opts) =>
+    this.withQuerier((querier) => querier.deleteMany(entity, q, opts));
+  readonly restoreOneById: UniversalQuerier['restoreOneById'] = (entity, id) =>
+    this.withQuerier((querier) => querier.restoreOneById(entity, id));
+  readonly restoreMany: UniversalQuerier['restoreMany'] = (entity, q) =>
+    this.withQuerier((querier) => querier.restoreMany(entity, q));
 
   /**
    * end the pool.

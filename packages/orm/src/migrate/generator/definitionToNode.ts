@@ -1,15 +1,11 @@
 import { createTableNode, keyOfColumns } from '../../schema/schemaAST.js';
-import type { ColumnNode, RelationshipNode, TableNode } from '../../schema/types.js';
+import type { TableNode } from '../../schema/types.js';
+import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QueryRaw } from '../../type/queryRaw.js';
-import { renderIndexColumn } from '../../util/ddlExpression.util.js';
-import { derivedForeignKeyName, derivedIndexName } from '../../util/sql.util.js';
-import type { FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
-
-/** A table the builder names but has not seen, which the generator reads only the name of. */
-function unresolvedTable(name: string): TableNode {
-  return { name } as TableNode;
-}
+import { indexNameParts, normalizeIndexColumn, renderIndexColumn } from '../../util/ddlExpression.util.js';
+import { derivedIndexName, splitQualifiedName } from '../../util/sql.util.js';
+import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
 /**
  * A migration builder's table definition as the AST nodes the generators render from, so a hand-written
@@ -17,13 +13,17 @@ function unresolvedTable(name: string): TableNode {
  * `render`. Free functions and not generator methods: the dialect reaches them only through `render`.
  */
 export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryRaw) => string): TableNode {
-  const table: TableNode = { ...createTableNode(def.name), comment: def.comment };
+  const { name, schema } = splitQualifiedName(def.name);
+  // Foreign keys stay external: each names its target table, which has no node in this build.
+  const table: TableNode = {
+    ...createTableNode(name, schema),
+    comment: def.comment,
+    externalForeignKeys: [...def.foreignKeys],
+  };
   const { columns } = table;
 
   for (const colDef of def.columns) {
-    const node = fullColumnDefinitionToNode(colDef, def.name);
-    (node as { table: TableNode }).table = table;
-    columns.set(node.name, node);
+    columns.set(colDef.name, { ...bareColumn(colDef), table, referencedBy: [] });
   }
   // A declared key keeps only the columns the table has, in its own order.
   table.primaryKey = def.primaryKey
@@ -34,34 +34,16 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryR
     table.indexes.push({ ...renderIndexDefinition(idxDef, render), table });
   }
 
-  for (const fkDef of def.foreignKeys) {
-    const relNode: RelationshipNode = {
-      name: fkDef.name ?? derivedForeignKeyName(def.name, fkDef.columns),
-      type: 'ManyToOne', // Builder default
-      from: {
-        table,
-        columns: fkDef.columns.map((name) => columns.get(name)).filter((c): c is ColumnNode => c !== undefined),
-      },
-      to: {
-        table: unresolvedTable(fkDef.references.table),
-        columns: fkDef.references.columns.map((name) => ({ name }) as ColumnNode),
-      },
-      onDelete: fkDef.onDelete,
-      onUpdate: fkDef.onUpdate,
-    };
-    table.outgoingRelations.push(relNode);
-  }
-
   return table;
 }
 
-/**
- * A builder's column as the node the generators render, spread so a field the node gains carries over.
- * `index` and `foreignKey` are lifted onto the table elsewhere; `addRelationship` sets `references`.
- */
-export function fullColumnDefinitionToNode(col: FullColumnDefinition, tableName: string): ColumnNode {
-  const { index: _index, foreignKey: _foreignKey, ...column } = col;
-  return { ...column, table: unresolvedTable(tableName), referencedBy: [] };
+/** A builder's column without its `index` and `foreignKey`, which are lifted onto the table. */
+export function bareColumn({
+  index: _index,
+  foreignKey: _foreignKey,
+  ...column
+}: FullColumnDefinition): ColumnDefinition {
+  return column;
 }
 
 /**
@@ -81,6 +63,26 @@ export function columnIndex(
     name: typeof col.index === 'string' ? col.index : derivedIndexName(tableName, [col.name]),
     entries: [{ column: col.name }],
     unique: col.isUnique,
+  };
+}
+
+/**
+ * The index that `table.index`, `table.unique` and `createIndex` record. Its entries are normalized, since
+ * an entry left as written reaches the generator as a column named `[object Object]`. An unnamed index is
+ * named after its entries, with `_uk` only for `table.unique`, so names earlier migrations installed stay.
+ */
+export function indexDefinition(
+  tableName: string,
+  columns: readonly IndexColumnInput[],
+  { name, unique = false, ...options }: IndexOptions = {},
+  uniqueName = false,
+): IndexDefinition {
+  const entries = columns.map(normalizeIndexColumn);
+  return {
+    ...options,
+    name: name ?? derivedIndexName(tableName, indexNameParts(entries), uniqueName),
+    entries,
+    unique,
   };
 }
 

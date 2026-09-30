@@ -40,6 +40,12 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   }
 
   /** A schema the entity names is bound where the connection's own database would be. */
+  /** The MySQL family takes an `OFFSET` only behind a `LIMIT`, and its manual gives the largest for every row. */
+  shouldReadEveryRowPastAnOffset() {
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $skip: 5 }));
+    expect(sql).toMatch(/ LIMIT 18446744073709551615 OFFSET 5$/);
+  }
+
   shouldEstimateTheCountInTheSchemaTheEntityNames() {
     @Entity({ schema: 'crm' })
     class Ledger {

@@ -424,7 +424,7 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   /**
    * Where {@link FieldOptions.computed} lives instead of being spliced into each read. `true` makes it a
    * generated column, which takes only an immutable expression; a list of events makes it a stamp a trigger
-   * writes on each, whoever writes the row - how `CURRENT_TIMESTAMP` is kept, where `onUpdate` sees only uql's writes.
+   * writes on each, whoever writes the row. It keeps a `currentTimestamp` current; `onUpdate` sees only uql's writes.
    */
   readonly stored?: boolean | readonly StampEvent[];
   readonly updatable?: boolean;
@@ -457,8 +457,8 @@ export type FieldOptions<V = TsTypeOf<FieldType>, E = unknown> = {
   readonly scale?: number;
   readonly nullable?: boolean;
   readonly unique?: boolean;
-  /** The column's DDL default. */
-  readonly defaultValue?: DdlDefault<V>;
+  /** The column's DDL default: a literal, or SQL the database evaluates per inserted row (`currentTimestamp`, `raw`). */
+  readonly defaultValue?: DdlDefault<V> | QueryRaw;
   /** Whether the database generates the value; a numeric sole key does unless something else fills it. */
   readonly autoIncrement?: boolean;
   /**

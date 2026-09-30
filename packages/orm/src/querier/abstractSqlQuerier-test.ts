@@ -16,7 +16,7 @@ import {
   violateConstraints,
 } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
-import { raw, refs } from '../util/index.js';
+import { currentTimestamp, raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -194,12 +194,48 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldReadADatabaseStampAsTheCurrentInstant() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'stamped' });
     await this.querier.insertOne(TypedRow, { groupId, name: 'stamped' });
-    await this.querier.updateMany(TypedRow, { $where: { groupId } }, { at: raw`CURRENT_TIMESTAMP` });
+    await this.querier.updateMany(TypedRow, { $where: { groupId } }, { at: currentTimestamp });
 
     const [own, populated] = await inTimeZone('Asia/Tokyo', () => this.readDatesBothWays(groupId));
 
     expect(Math.abs(Number(own.at) - Date.now())).toBeLessThan(60_000);
     expect(populated).toEqual(own);
+    // Read back as the value it stored, so it matches itself, where SQLite's `CURRENT_TIMESTAMP` wrote other text.
+    expect(await this.querier.count(TypedRow, { $where: { groupId, at: own.at } })).toBe(1);
+  }
+
+  /**
+   * Rows the database's clock stamped page as the engine orders them, on every engine: each timestamp holds
+   * the milliseconds a `Date` holds, as text a bound one matches on SQLite, so the cursor carries the
+   * boundary row's value whole and never repeats it or skips the rows after it.
+   */
+  async shouldPageByTimestampsTheDatabaseWrote() {
+    for (const id of [1, 2, 3, 4, 5]) {
+      await this.querier.insertOne(TypedRow, { id, name: 'stamped' });
+      await this.querier.updateMany(TypedRow, { $where: { id } }, { at: currentTimestamp });
+    }
+    const q = { $select: { id: true }, $sort: { at: -1, id: 1 } } as const;
+
+    const pages = await this.walkPages(TypedRow, { ...q, $limit: 2 });
+
+    expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(TypedRow, q));
+  }
+
+  /**
+   * A BIGINT past 2^53 reads as its exact text, and bound back as text it compares exactly on every SQL
+   * engine, so a page by one walks as the engine orders it.
+   */
+  async shouldPageByAnIntegerPastADoublesPrecision() {
+    const counts = [raw`9007199254740995`, raw`9007199254740993`, raw`9007199254740994`, raw`9007199254740993`];
+    for (const [at, id] of [1, 2, 3, 4].entries()) {
+      await this.querier.insertOne(TypedRow, { id, name: 'wide' });
+      await this.querier.updateMany(TypedRow, { $where: { id } }, { count: counts[at] });
+    }
+    const q = { $select: { id: true }, $sort: { count: 1, id: 1 } } as const;
+
+    const pages = await this.walkPages(TypedRow, { ...q, $limit: 1 });
+
+    expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(TypedRow, q));
   }
 
   private async readDatesBothWays(groupId: TypedRow['groupId']) {

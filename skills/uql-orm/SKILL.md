@@ -74,18 +74,20 @@ export class Post {
 }
 ```
 
-- Every `@Field` states its `type` (`String`, `Number`, `Boolean`, `Date` (an instant, bound and read as UTC on every engine; `TIMESTAMPTZ` on Postgres and CockroachDB, `DATETIME(3)` on MySQL and MariaDB; `precision` sets its fractional-second digits), `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`), except a foreign key, which takes `references` and inherits the target key's type.
+- Every `@Field` states its `type`: `String`, `Number`, `Boolean`, `Date`, `BigInt`, or a column type such as `'uuid'`, `'text'`, `'jsonb'`. A foreign key takes `references` instead and inherits the target key's type. A `Date` is an instant, stored in UTC to the millisecond on every engine; `precision` sets other fractional digits.
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
 - Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. Declare `?` whatever an insert may leave out: a nullable, `onInsert`, `defaultValue`, `eager: false` or `computed` field, and relations.
 - An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
+- `defaultValue` is a value of the field's type, or SQL the database evaluates per row: `currentTimestamp` or ``raw`gen_random_uuid()` ``. A string is always text, `'CURRENT_TIMESTAMP'` included.
+- `currentTimestamp` is the database clock, UTC to the millisecond on every engine, where a raw `CURRENT_TIMESTAMP` is not on SQLite, MySQL or SQL Server. Use it for a default, a stamp, `onUpdate` or `$where`.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
 - `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })` states a partial index's filter as the predicate the query passes, never as `raw`: a planner matches the two by shape, so `raw` that means the same thing leaves the index unused.
 - `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, is an optimistic lock:
   an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
 - `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`.
-  `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, a trigger writing it on those events whoever writes the row (``computed: raw`CURRENT_TIMESTAMP` ``), where `onUpdate` covers only uql's own writes.
-- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires (`defineEntity`'s `triggers` or `defineTrigger` without decorators); `where` holds a `$where` predicate per row it names, or SQL off the rows. `run` takes `(newRow, oldRow)`, each only where the event has it (no `oldRow` on insert, no `newRow` on delete), and returns the body: `insertInto(Audit, { postId: newRow.id })`, `updateTable(Audit, { $where: { postId: newRow.id } }, { status: newRow.status })` or `deleteFrom(Audit, { $where: { postId: oldRow.id } })`, typed by the entity written and rendered on every engine (no `onInsert`/`onUpdate` fills, so an insert names each field uql fills on insert unless its column has a `defaultValue`; `$where` reads the entity's own fields; no entity filters, security ones included, so a soft-delete entity is hard-deleted; an update or delete naming no rows is refused; no `$inc`/`$mul`/`$push` on SQL Server), several joined in one `raw`. Anything else is `raw` SQL over the refs, one body for every engine or `{ postgres, mssql, ... }` where they differ (SQL Server fires per statement, reading `inserted`/`deleted` as tables, with no `before*`; `of` and `where` narrow what the write helpers read there, so SQL of its own is refused beside them). MongoDB has none, and refuses a write to an entity declaring one.
+  `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, which a trigger writes on those events whoever writes the row (`computed: currentTimestamp`), where `onUpdate` covers only uql's own writes.
+- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires. `run(newRow, oldRow)` returns the body, written with `insertInto`, `updateTable` and `deleteFrom`, which are typed by the entity written and render on every engine; anything else is `raw` SQL over the rows, per engine where they differ. A trigger's writes skip uql's fills and entity filters, soft delete included. MongoDB has none. Details, SQL Server's per-statement shape included: https://uql-orm.dev/entities/triggers.md
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries
@@ -108,8 +110,12 @@ const users = await pool.findMany(User, {
   `$count: { posts: true }` tallies a to-many under `_count` without loading it.
 - `$sort` takes `'asc'`/`1` or `'desc'`/`-1`, and `'ascNullsLast'`, `'ascNullsFirst'`, `'descNullsFirst'` or
   `'descNullsLast'` to say where nulls land, which reads the same on every engine (emulated where there is no
-  `NULLS FIRST`). Unqualified, each engine keeps its own answer: Postgres and CockroachDB sort nulls last on `asc`,
-  the rest sort them first.
+  `NULLS FIRST`). Unqualified, each engine keeps its own answer: Postgres sorts nulls last on `asc`, the rest sort them first.
+- `findManyPage(User, { $sort: { createdAt: -1, id: 1 }, $limit: 20, $after })` pages by cursor, so page 1,000
+  costs what page 1 does, and answers `{ items, startCursor, endCursor, hasNextPage, hasPrevPage }`: pass
+  `endCursor` as `$after`, or `startCursor` as `$before` to go back. `$sort` must include the key or a unique
+  `nullable: false` field, uses the entity's own fields, and takes no `$skip`. A nullable leading sort key pages
+  correctly but cannot use an index.
 - `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
   `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
   `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
@@ -122,7 +128,7 @@ const users = await pool.findMany(User, {
 - `$populate` loads relations in the same statement. Nothing is lazy: a relation not populated is not there.
 - A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`,
   whose handler serves only the entities its required `include` names.
-- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyStream`, `count`, `exists`,
+- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`,
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
 - `updateMany` and `deleteMany` naming no rows - no `$where` holding a value (an `undefined` or an empty group holds none), no `$limit` - throw; `{ unfiltered: true }` means the whole table.
@@ -154,10 +160,15 @@ transaction. A querier from `pool.getQuerier()` is yours to release: bind it wit
 
 ## Migrations
 
-`npx uql-migrate` reads `uql.config.ts`. `sync` creates what the entities imply (development only);
-`generate:entities` writes the diff as a migration file to review, renaming a column its field was renamed from, printing `renameTable` for a table that may have been, rebuilding a SQLite table for what it cannot alter, and refusing a required column with no default on a table holding rows; `up` applies migrations; `generate:from-db`
-writes entity classes from an existing database; `drift:check` fails when the database no longer matches.
-Triggers are part of the diff: uql installs its own under `_uql_`-prefixed names and never touches another.
+`npx uql-migrate` reads `uql.config.ts`:
+
+- `sync` applies what the entities imply (development only).
+- `generate:entities` writes the diff as a migration file to review. It renames a column whose field was renamed and refuses a required column with no default on a table holding rows.
+- `up` and `down` apply and revert migrations.
+- `generate:from-db` writes entity classes from an existing database.
+- `drift:check` fails when the database no longer matches.
+
+Triggers are part of the diff: uql owns the `_uql_`-prefixed ones and never touches another.
 
 ## Where to read more
 

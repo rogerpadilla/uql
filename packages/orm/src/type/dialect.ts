@@ -143,6 +143,12 @@ export interface DialectFeatures {
    * value rather than a flag each, since the details mean nothing without a lock.
    */
   readonly rowLocks: RowLockFeatures | false;
+  /**
+   * Whether a sort without `NULLS FIRST/LAST` treats nulls as lower than every value, putting them first on
+   * `asc`. True everywhere but Postgres, which treats them as higher. Cursor pagination reads it to know which
+   * side of a value the nulls fall on.
+   */
+  readonly nullsSortLowest: boolean;
 }
 
 /** How a dialect spells a row lock, once {@link DialectFeatures.rowLocks} says it has one. */
@@ -216,11 +222,17 @@ export interface TriggerFeatures {
    */
   readonly layout: 'timingFirst' | 'tableFirst';
   /**
-   * What every body opens with, or `''`. T-SQL wants `SET NOCOUNT ON`: a trigger running its own DML
+   * SQL that every trigger body starts with, if any. T-SQL wants `SET NOCOUNT ON`: a trigger running its own DML
    * otherwise sends a rowcount of its own back, and the client reads that as what the original statement
-   * affected. Nothing else here needs a preamble.
+   * affected.
    */
-  readonly preamble: string;
+  readonly preamble?: string;
+  /**
+   * SQL a stamp that restates its row runs first, to return early when its own write fired it; unset where not
+   * needed. SQL Server fires a trigger once per statement, even for no rows, and reads its clock anew each time,
+   * so two stamps on one table would otherwise keep firing each other up to the nesting limit.
+   */
+  readonly reentryGuard?: string;
   /**
    * Whether a body may assign to the row it was handed, `NEW."col" := ...`. SQLite forbids writing `NEW`
    * at all, and SQL Server is handed a set rather than a row, so on both a trigger that fills a column
@@ -282,6 +294,12 @@ export interface SqlQueryDialect {
 
   /** What the engine can do. */
   readonly features: SqlDialectFeatures;
+
+  /**
+   * SQL for the database's current time the way uql stores a timestamp: UTC, to the millisecond, in the same
+   * form as a bound `Date`. A bare `CURRENT_TIMESTAMP` falls short of this on SQLite, MySQL and SQL Server.
+   */
+  readonly currentTimestamp: string;
 
   /** A read; with `totalAlias`, every row also carries the unpaged match count under that alias. */
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions, totalAlias?: string): void;

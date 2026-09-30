@@ -3,18 +3,10 @@ import type { SqlDialectName } from './dialect.js';
 import type { FieldKey, HookEvent, RelationKey } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type {
-  QueryFilter,
-  QueryFindResult,
-  QueryOneProjected,
-  QueryOptions,
-  QueryPage,
-  QueryProjected,
-  QuerySearch,
-  QueryUpdateResult,
-} from './query.js';
-import type { UniversalQuerier } from './universalQuerier.js';
+import type { QueryFilter, QueryFindResult, QueryOptions, QueryPage, QuerySearch, QueryUpdateResult } from './query.js';
+import type { ProjectedQuery, ProjectedRead, ProjectedResult, UniversalQuerier } from './universalQuerier.js';
 import type { Type } from './utility.js';
+import type { QuerierRaw } from './wire.js';
 
 /**
  * Isolation levels for transactions.
@@ -35,111 +27,40 @@ export type TransactionOptions = {
 export type DialectName = SqlDialectName | 'mongodb';
 
 /**
- * The read and delete methods below take the entity as an argument or as the query's `$entity` key.
- * In each pair the `$entity` overload comes **first** on purpose: when no overload matches,
- * TypeScript reports the error from the *last* one, so keeping the entity-argument form last is
- * what makes a typo'd query key report as itself rather than as a missing `$entity`.
+ * A projected read that takes the entity first or as the query's `$entity`. The `$entity` form comes
+ * **first** on purpose: when no signature matches, TypeScript reports the error of the *last* one, so a
+ * typo'd query key is reported as itself rather than as a missing `$entity`.
  */
+type DualRead<
+  Q extends keyof ProjectedQuery<object, never, never, never, never, never, never>,
+  R extends keyof ProjectedResult<'server', unknown>,
+> = (<
+  E extends object,
+  const S extends FieldKey<E> = never,
+  const V = true,
+  const X extends FieldKey<E> = never,
+  const P extends RelationKey<E> = never,
+  const C extends RelationKey<E> = never,
+>(
+  q: ProjectedQuery<E, S, V, X, P, C, QuerierRaw<'server'>>[Q] & { $entity: Type<E> },
+  opts?: QueryOptions,
+) => ProjectedResult<'server', QueryFindResult<E, S, V, X, P, C>>[R]) &
+  ProjectedRead<Q, R, 'server', QueryOptions>;
+
+/** The reads, counts and deletes below take the entity first or as the query's `$entity`, as {@link DualRead} does. */
 export interface Querier extends UniversalQuerier {
-  /** Find one record, the entity passed first or as the query's `$entity`. */
-  findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryOneProjected<E, S, V, X, P, C> & { $entity: Type<E> },
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
-  findOne<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryOneProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C> | undefined>;
+  findOne: DualRead<'one', 'one'>;
 
-  /** Find many records, the entity passed first or as the query's `$entity`. */
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
-  findMany<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<QueryFindResult<E, S, V, X, P, C>[]>;
+  findMany: DualRead<'many', 'many'>;
 
-  /** Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`. No hooks fire. */
-  findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
-    opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
-  findManyStream<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): AsyncIterable<QueryFindResult<E, S, V, X, P, C>>;
+  /** Stream records with the relations and counts `findMany` reads. No hooks fire. */
+  findManyStream: DualRead<'many', 'stream'>;
 
-  /** Find many records and count every match, the entity passed first or as the query's `$entity`. */
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    q: QueryProjected<E, S, V, X, P, C> & { $entity: Type<E> },
-    opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
-  findManyAndCount<
-    E extends object,
-    const S extends FieldKey<E> = never,
-    const V = true,
-    const X extends FieldKey<E> = never,
-    const P extends RelationKey<E> = never,
-    const C extends RelationKey<E> = never,
-  >(
-    entity: Type<E>,
-    q: QueryProjected<E, S, V, X, P, C>,
-    opts?: QueryOptions,
-  ): Promise<[QueryFindResult<E, S, V, X, P, C>[], number]>;
+  /** Find many records and count every match. */
+  findManyAndCount: DualRead<'many', 'counted'>;
+
+  /** Read a page of records from a cursor. */
+  findManyPage: DualRead<'page', 'page'>;
 
   /** Count records, the entity passed first or as the query's `$entity`. */
   count<E extends object>(q: QueryPage<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;

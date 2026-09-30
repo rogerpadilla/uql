@@ -57,7 +57,6 @@ describe('SchemaAST', () => {
     ast.addIndex(idx);
 
     expect(users.indexes).toEqual([idx]);
-    expect(ast.indexes).toEqual([idx, idx]);
   });
 });
 

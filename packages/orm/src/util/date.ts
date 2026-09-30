@@ -1,4 +1,10 @@
 /**
+ * The fractional-second digits of a timestamp column uql declares when its field states no precision. It
+ * matches the milliseconds of a JS `Date` on every engine, so a value the database writes reads back exactly.
+ */
+export const DATE_PRECISION = 3;
+
+/**
  * `YYYY-MM-DD HH:mm:ss.SSS` in UTC, then `zone`: how a date is written, whichever machine writes it. Not
  * `toISOString` as it is, whose `T` and `Z` MySQL rejects outright ("Invalid default value").
  */

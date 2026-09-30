@@ -15,16 +15,17 @@ describe('http', () => {
     await post('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'post' }),
+      expect.objectContaining({ body: JSON.stringify(body), method: 'POST' }),
     );
   });
 
+  /** `fetch` upper-cases the classic verbs alone, and a server refuses a lower-case `patch`. */
   it('should send a PATCH with the JSON body', async () => {
     const body = {};
     await patch('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'patch' }),
+      expect.objectContaining({ body: JSON.stringify(body), method: 'PATCH' }),
     );
   });
 
@@ -33,18 +34,18 @@ describe('http', () => {
     await put('/', body);
     expect(globalThis.fetch).toHaveBeenCalledWith(
       '/',
-      expect.objectContaining({ body: JSON.stringify(body), method: 'put' }),
+      expect.objectContaining({ body: JSON.stringify(body), method: 'PUT' }),
     );
   });
 
   it('should send a GET', async () => {
     await get('/?a=1');
-    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'get' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'GET' }));
   });
 
   it('should send a DELETE', async () => {
     await remove('/?a=1');
-    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'delete' }));
+    expect(globalThis.fetch).toHaveBeenCalledWith('/?a=1', expect.objectContaining({ method: 'DELETE' }));
   });
 
   it('should send the uppercase QUERY method with a JSON body', async () => {

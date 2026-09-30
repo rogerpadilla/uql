@@ -16,6 +16,7 @@ import {
   Tax,
   TaxCategory,
   TenantNote,
+  TypedRow,
   User,
   VectorChunk,
   VectorCitation,
@@ -23,7 +24,7 @@ import {
   VersionedNote,
   WideVersionedNote,
 } from '../test/index.js';
-import type { Querier, QuerierPool, QuerySearch, QueryWhere } from '../type/index.js';
+import type { CursorPage, Querier, QuerierPool, QueryKeyset, QuerySearch, QueryWhere, Type } from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
 import { UqlOptimisticLockError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
@@ -996,9 +997,140 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
-   * Where nulls land is asked for rather than left to the engine: unqualified, Postgres and CockroachDB
-   * sort them last on `asc` where every other engine sorts them first. A placement reads the same
-   * everywhere - through `NULLS FIRST/LAST` where the engine has it, a leading term where it does not.
+   * A page walks the rows as the engine's own `ORDER BY` puts them, nulls and ties included: every page
+   * read past the one before is the next slice of the one `findMany` sorted the same way, and a key the
+   * projection leaves out is read for the cursor and taken back off the rows.
+   */
+  async shouldPageByCursorAsTheSortOrdersTheRows() {
+    await this.insertPricedItems();
+    const q = { $select: { name: true }, $sort: { salePrice: -1, id: 1 } } as const;
+
+    const pages = await this.walkPages(Item, { ...q, $limit: 2 });
+
+    expect(pages.map((page) => page.items.length)).toEqual([2, 2, 2, 1]);
+    expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(Item, q));
+  }
+
+  /** The same walk under a placement, which reads the same on every engine, the null block last. */
+  async shouldPageByCursorUnderANullPlacement() {
+    await this.insertPricedItems();
+    const q = { $select: { name: true }, $sort: { code: 'ascNullsLast', id: -1 } } as const;
+
+    const items = (await this.walkPages(Item, { ...q, $limit: 3 })).flatMap((page) => page.items);
+
+    expect(items).toEqual(await this.querier.findMany(Item, q));
+    expect(items.slice(-2)).toEqual([{ name: 'priced 4' }, { name: 'priced 1' }]);
+  }
+
+  /**
+   * `$before` walks the same pages back, from the last page's start to the first, across the null block
+   * wherever the engine puts it: each page is the one `$after` read forward.
+   */
+  async shouldPageBackFromTheLastPageToTheFirst() {
+    await this.insertPricedItems();
+    const q = { $select: { name: true }, $sort: { salePrice: -1, id: 1 }, $limit: 2 } as const;
+    const forward = await this.walkPages(Item, q);
+
+    const back = await this.walkPagesBack(Item, q, forward[forward.length - 1]);
+
+    expect(back.map((page) => page.items)).toEqual(
+      forward
+        .slice(0, -1)
+        .map((page) => page.items)
+        .reverse(),
+    );
+    expect(back.map((page) => [page.hasPrevPage, page.hasNextPage])).toEqual([
+      [true, true],
+      [true, true],
+      [false, true],
+    ]);
+  }
+
+  /**
+   * A date and a bigint cross the cursor as what they are, on every engine: the next page compares against
+   * the same instant and the same exact integer, ties and nulls included.
+   */
+  async shouldPageByADateAndABigIntKey() {
+    const at = (ms: number) => new Date(Date.UTC(2026, 8, 28, 10, 0, 0, ms));
+    const rows = [
+      { id: 1, at: at(5), wide: 2n ** 62n },
+      { id: 2, at: null, wide: -(2n ** 62n) },
+      { id: 3, at: at(5), wide: null },
+      { id: 4, at: at(1), wide: 2n ** 62n + 1n },
+      { id: 5, at: at(9), wide: 2n ** 62n },
+    ];
+    await this.querier.insertMany(
+      TypedRow,
+      rows.map((row) => ({ ...row, name: 'paged' })),
+    );
+    const byDate = { $select: { id: true }, $sort: { at: -1, id: 1 } } as const;
+    const byBigInt = { $select: { id: true }, $sort: { wide: 1, id: 1 } } as const;
+
+    const dated = await this.walkPages(TypedRow, { ...byDate, $limit: 2 });
+    const wide = await this.walkPages(TypedRow, { ...byBigInt, $limit: 2 });
+
+    expect(dated.flatMap((page) => page.items)).toEqual(await this.querier.findMany(TypedRow, byDate));
+    expect(wide.flatMap((page) => page.items)).toEqual(await this.querier.findMany(TypedRow, byBigInt));
+  }
+
+  /** A page populates as `findMany` does, the key it reads for the cursor taken back off each row. */
+  async shouldPageWithItsRelationsPopulated() {
+    const [mass, length] = await this.querier.insertMany(MeasureUnitCategory, [{ name: 'mass' }, { name: 'length' }]);
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'kg', categoryId: mass },
+      { name: 'g', categoryId: mass },
+      { name: 'm', categoryId: length },
+    ]);
+    const q = {
+      $select: { name: true },
+      $populate: { measureUnits: { $select: { name: true }, $sort: { name: 1 } } },
+      $sort: { id: 1 },
+    } as const;
+
+    const pages = await this.walkPages(MeasureUnitCategory, { ...q, $limit: 1 });
+
+    expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(MeasureUnitCategory, q));
+  }
+
+  /** Seven items: a tie on each price, two with none, and codes where the nulls fall apart from the prices'. */
+  private async insertPricedItems() {
+    const prices = [3, null, 1, 3, null, 2, 1];
+    const codes = ['b', null, 'a', 'b', null, 'c', 'a'];
+    for (const [at, salePrice] of prices.entries()) {
+      // One at a time, so each key is minted after the last and the ties break in insertion order.
+      await this.querier.insertOne(Item, { name: `priced ${at}`, salePrice, code: codes[at] });
+    }
+  }
+
+  /**
+   * Every page `q` reads from its first, each past the one before's end. At most 20, so a cursor that never
+   * moves on fails the comparison instead of looping.
+   */
+  protected async walkPages<E extends object>(entity: Type<E>, q: QueryKeyset<E>) {
+    const pages: CursorPage<E>[] = [];
+    let page: CursorPage<E> | undefined;
+    do {
+      page = await this.querier.findManyPage(entity, { ...q, $after: page?.endCursor });
+      pages.push(page);
+    } while (page.hasNextPage && pages.length < 20);
+    return pages;
+  }
+
+  /** Every page `q` reads ahead of `last`, each ahead of the one before's start, as {@link walkPages} does. */
+  private async walkPagesBack<E extends object>(entity: Type<E>, q: QueryKeyset<E>, last: CursorPage<E>) {
+    const pages: CursorPage<E>[] = [];
+    let page = last;
+    do {
+      page = await this.querier.findManyPage(entity, { ...q, $before: page.startCursor });
+      pages.push(page);
+    } while (page.hasPrevPage && pages.length < 20);
+    return pages;
+  }
+
+  /**
+   * Where nulls land is asked for rather than left to the engine: unqualified, Postgres sorts them last
+   * on `asc` where every other engine sorts them first. A placement reads the same everywhere - through
+   * `NULLS FIRST/LAST` where the engine has it, a leading term where it does not.
    */
   async shouldSortByNullPlacement() {
     const names = ['nulls valued a', 'nulls null', 'nulls valued c'];

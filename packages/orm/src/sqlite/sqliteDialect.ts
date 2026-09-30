@@ -14,15 +14,12 @@ import {
   jsonArraySlotArgs,
   type JsonSlot,
   jsonSlotArgs,
-  jsonRemoveCall,
-  jsonSetTarget,
 } from '../dialect/jsonSql.js';
 import {
   type EntityMeta,
   type FieldOptions,
   type Query,
   type QueryContext,
-  type QueryPager,
   QueryRaw,
   type QueryTextSearchOptions,
   type QueryWhere,
@@ -31,7 +28,6 @@ import {
   type VectorMetric,
 } from '../type/index.js';
 import { indexDistance, isVectorIndexType } from '../type/vector.js';
-import { utcTimestamp } from '../util/date.js';
 import { declaredIndexName } from '../util/ddlExpression.util.js';
 import { findVectorIndex, findVectorSort, textSearchFields, vectorCandidates } from '../util/dialect.util.js';
 import { isIntegerColumn } from '../util/field.util.js';
@@ -62,6 +58,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: false,
+  nullsSortLowest: true,
   nullsOrdering: 'clause',
   textScoreIndexes: false,
   orderedUpsertReturning: true,
@@ -70,7 +67,6 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   vectorTuningNeedsTransaction: false,
   serialDeclaresPrimaryKey: true,
   triggers: {
-    preamble: '',
     assignsRow: false,
     body: 'inline',
     fires: 'eachRowWhen',
@@ -89,23 +85,20 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   override readonly autoIncrementSuffix = 'PRIMARY KEY AUTOINCREMENT';
 
-  override readonly tableOptions = '';
-
   override readonly beginTransactionCommand = 'BEGIN TRANSACTION';
-
-  override readonly commitTransactionCommand = 'COMMIT';
-
-  override readonly rollbackTransactionCommand = 'ROLLBACK';
 
   override readonly isolationLevelStrategy = 'none';
 
   override readonly booleanLiteral = 'integer';
 
+  /**
+   * Writes the same text as a bound `Date`. `CURRENT_TIMESTAMP` writes whole seconds with no fraction, so the
+   * two would not compare correctly. The parentheses also let SQLite take it as a column default.
+   */
+  override readonly currentTimestamp = "(strftime('%Y-%m-%d %H:%M:%f', 'now'))";
+
   /** SQLite's own cap on a function call before 3.48, which libSQL and `bun:sqlite`'s build still have. */
   override readonly maxFunctionArgs: number = 127;
-
-  // SQLite supports `RETURNING` (including on `INSERT ... ON CONFLICT`), so IDs are exact per row.
-  override readonly insertIdSource = 'returning';
 
   /**
    * The [sqlite-vec](https://github.com/asg017/sqlite-vec) functions, which need that extension
@@ -174,21 +167,10 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `${field} IS NOT ${ph}`;
   }
 
-  override normalizeValue(value: unknown): unknown {
-    if (value instanceof Date) return utcTimestamp(value);
-    return super.normalizeValue(value);
-  }
+  protected override readonly dateZone = '';
 
-  /**
-   * `OFFSET` is only legal after a `LIMIT` here too, so a bare `$skip` needs one - `-1` being
-   * SQLite's own spelling of "no limit", where the MySQL family uses its largest `BIGINT`.
-   */
-  override pager(ctx: QueryContext, opts: QueryPager): void {
-    if (opts.$limit === undefined && opts.$skip !== undefined) {
-      ctx.append(' LIMIT -1');
-    }
-    super.pager(ctx, opts);
-  }
+  /** SQLite's own spelling of no limit. */
+  protected override readonly unboundedLimit = '-1';
 
   /** `json_group_array` of each row's object, ordered by the sort terms carried out beside them. */
   protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
@@ -294,26 +276,8 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON_GROUP_ARRAY(JSON(${elem}))`;
   }
 
-  protected override jsonSet(
-    ctx: QueryContext,
-    expr: string,
-    set: Record<string, unknown>,
-    field?: FieldOptions,
-  ): string {
-    return jsonSetCall(
-      (value) => this.jsonScalarParam(ctx, value),
-      jsonSetTarget(expr, field, `'{}'`),
-      set,
-      this.maxFunctionArgs,
-    );
-  }
-
   /** `[#]` appends, creating the array where it is absent: `JSON_SET`, since Turso's `JSON_INSERT` will not touch an existing array. */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
     return jsonSetCall((value) => this.jsonScalarParam(ctx, value), expr, push, this.maxFunctionArgs, '[#]');
-  }
-
-  protected override jsonUnset(_ctx: QueryContext, expr: string, unset: readonly string[]): string {
-    return jsonRemoveCall(expr, unset, this.maxFunctionArgs);
   }
 }

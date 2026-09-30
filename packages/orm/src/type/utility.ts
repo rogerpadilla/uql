@@ -59,6 +59,16 @@ export type Writable<T> = { -readonly [K in keyof T]: T[K] };
 /**
  * `Omit` whose key has to exist, which distributes over a union rather than flattening it, and removes
  * a key from a type with an index signature.
+ *
+ * `Omit<T, K>` is `Pick<T, Exclude<keyof T, K>>`; its `K extends keyof any` admits any string, so a typo
+ * (`Omit<Post, 'titl'>`) compiles and silently drops nothing. `Except` requires `K extends keyof T`, so a
+ * misspelled key is a compile error the instant it is written.
+ *
+ * Beyond the key check, the two differ structurally. `Omit` computes `keyof (A | B)` (the common keys),
+ * then `Pick`s from that flat set, so `Omit<A | B, 'x'>` loses every key unique to one arm. `Except` is a
+ * homomorphic mapped type over `T`, which TypeScript distributes over unions: `Except<A | B, 'x'>` is
+ * `Except<A, 'x'> | Except<B, 'x'>`, each arm keeping its own keys. It also preserves index signatures
+ * and property modifiers that `Pick` over a computed key set drops.
  */
 export type Except<T, K extends keyof T> = { [P in keyof T as P extends K ? never : P]: T[P] };
 

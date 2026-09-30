@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../../entity/index.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
-import { assertDefined, mockSqlTableNode } from '../../test/index.js';
+import { assertDefined, mockSqlTableNode, sqlTypeOf } from '../../test/index.js';
 import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
@@ -51,12 +51,12 @@ describe('SqliteSchemaGenerator Specifics', () => {
 
   it('should map column types correctly', () => {
     // Affinity, so a length is not a different column type here as it is everywhere else.
-    expect(generator.getSqlType({ type: String })).toBe('TEXT');
-    expect(generator.getSqlType({ type: String, length: 100 })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
-    expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
+    expect(sqlTypeOf(new SqliteDialect(), { type: String })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { type: String, length: 100 })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'varchar' })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'varchar', length: 100 })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'int' })).toBe('INTEGER');
+    expect(sqlTypeOf(new SqliteDialect(), { type: Boolean })).toBe('INTEGER');
   });
 
   it('should refuse a hand-written column alteration, which only a generated rebuild makes', () => {

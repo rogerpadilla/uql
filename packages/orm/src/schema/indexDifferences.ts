@@ -57,12 +57,17 @@ export function indexNameStem(name: string): string {
 export function pairIndexes<S extends ComparableIndex, T extends ComparableIndex>(
   source: readonly S[],
   target: readonly T[],
-  normalizeName: (name: string) => string = (name) => name,
 ) {
-  const byName = matchByKey(source, target, (index) => normalizeName(indexNameStem(index.name)));
+  const byName = matchByKey(source, target, (index) => indexNameStem(index.name));
   const byShape = matchByKey(byName.created, byName.dropped, indexSignature);
   return { created: byShape.created, dropped: byShape.dropped, matched: [...byName.matched, ...byShape.matched] };
 }
+
+/** One index change: create (`to`), drop (`from`), or rebuild (both, with a `description` of what differs). */
+export type IndexChange<I> =
+  | { readonly from?: undefined; readonly to: I }
+  | { readonly from: IndexNode; readonly to?: undefined }
+  | { readonly from: IndexNode; readonly to: I; readonly description: string };
 
 /**
  * The indexes a table lacks, the ones it no longer needs, and the ones to rebuild, differing in what
@@ -74,15 +79,17 @@ export function indexChanges<I extends IndexSchema>(
   declared: readonly I[],
   current: readonly IndexNode[],
   facets: ReadonlySet<IndexFacet>,
-): { toAdd: I[]; toDrop: IndexNode[]; toAlter: { from: IndexNode; to: I }[]; kept: IndexNode[] } {
+): { changes: IndexChange<I>[]; kept: IndexNode[] } {
   const { created, dropped, matched } = pairIndexes(declared, current);
   const claimed = new Set(declared.map((index) => index.name));
   const owned = (index: IndexNode) => claimed.has(index.name) || hasDerivedName(table, index);
+  const rebuilt = matched.flatMap(([to, from]): IndexChange<I>[] => {
+    const differences = describeIndexDifferences(to, from, facets);
+    return differences.length ? [{ from, to, description: differences.join(', ') }] : [];
+  });
   return {
-    toAdd: created,
-    toDrop: dropped.filter(owned),
+    changes: [...created.map((to) => ({ to })), ...dropped.filter(owned).map((from) => ({ from })), ...rebuilt],
     kept: dropped.filter((index) => !owned(index)),
-    toAlter: matched.flatMap(([to, from]) => (describeIndexDifferences(to, from, facets).length ? [{ from, to }] : [])),
   };
 }
 

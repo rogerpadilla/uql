@@ -18,30 +18,31 @@ export class RequestError extends Error {
   }
 }
 
+// Methods are upper-case because `fetch` normalizes only the classic verbs: a lowercase `patch` or `query`
+// is sent as written, and servers refuse it.
 export function get<T>(url: string, opts?: RequestOptions) {
-  return request<T>(url, { method: 'get' }, opts);
+  return request<T>(url, { method: 'GET' }, opts);
 }
 
 export function post<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  return request<T>(url, { method: 'post', body: wireJson(payload) }, opts);
+  return request<T>(url, { method: 'POST', body: wireJson(payload) }, opts);
 }
 
 export function patch<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  return request<T>(url, { method: 'patch', body: wireJson(payload) }, opts);
+  return request<T>(url, { method: 'PATCH', body: wireJson(payload) }, opts);
 }
 
 export function put<T>(url: string, payload: unknown, opts?: RequestOptions) {
-  return request<T>(url, { method: 'put', body: wireJson(payload) }, opts);
+  return request<T>(url, { method: 'PUT', body: wireJson(payload) }, opts);
 }
 
 export function remove<T>(url: string, opts?: RequestOptions) {
-  return request<T>(url, { method: 'delete' }, opts);
+  return request<T>(url, { method: 'DELETE' }, opts);
 }
 
 /**
  * HTTP QUERY (RFC 10008): a safe, idempotent read whose JSON query travels in the
- * request body, avoiding URL-length limits. Method name must stay uppercase
- * (fetch only normalizes the classic verbs).
+ * request body, avoiding URL-length limits.
  */
 export function query<T>(url: string, payload: unknown, opts?: RequestOptions) {
   return request<T>(url, { method: 'QUERY', body: wireJson(payload) }, opts);

@@ -288,8 +288,8 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   /**
    * Postgres quotes a negative number (`'-3'::integer`); CockroachDB parenthesizes one (`(-3)`) and
-   * writes a quote-bearing string in escape syntax (`e'it\'s'`). Any other cast is dropped, and a
-   * function call (`now()`, `nextval(...)`) is returned as written.
+   * writes a string containing a quote in escape syntax (`e'it\'s'`). Other casts are dropped, and a
+   * default that is not a literal is SQL, such as `now()` or `nextval(...)`.
    */
   protected parseDefaultValue(defaultValue: string | null): unknown {
     if (!defaultValue) {
@@ -311,7 +311,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     if (cleaned === 'true' || cleaned === 'false') {
       return cleaned === 'true';
     }
-    return cleaned === 'NULL' ? null : cleaned;
+    return cleaned === 'NULL' ? null : this.sqlDefault(cleaned);
   }
 
   protected isAutoIncrement(columnDefault: string | null, isIdentity: string): boolean {

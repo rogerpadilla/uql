@@ -45,6 +45,7 @@ const REMOVED_EXPORTS = new Map([
   ],
   ['getQuerierPool', 'take the pool from the module that builds it, or from Nest DI'],
   ['getQuerier', 'use `pool.withQuerier(...)` / `pool.transaction(...)`, which release the connection'],
+  ['ClientQuerierPool', "construct the `HttpQuerier` where it is used, `new HttpQuerier('/api')`"],
   ['QueryWhereFieldMap', 'use `QueryWhere`'],
   ['QueryStreamProjected', 'use `QueryProjected`'],
   ['RelationMappedBy', "a 'mappedBy' is `(keys: KeyMap<E>) => Key<E>` now"],

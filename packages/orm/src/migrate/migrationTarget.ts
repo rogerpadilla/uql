@@ -79,12 +79,9 @@ const mongoSession = (querier: MongoQuerier): MigrationSession => ({
 });
 
 /** Imported on use, so the optional `mongodb` peer loads only on MongoDB. */
-async function mongoSchemaGenerator(
-  namingStrategy?: NamingStrategy,
-  defaultForeignKeyAction?: ForeignKeyAction,
-): Promise<SchemaGenerator> {
+async function mongoSchemaGenerator(namingStrategy?: NamingStrategy): Promise<SchemaGenerator> {
   const { MongoSchemaGenerator } = await import('../mongo/mongoSchemaGenerator.js');
-  return new MongoSchemaGenerator(namingStrategy, defaultForeignKeyAction);
+  return new MongoSchemaGenerator(namingStrategy);
 }
 
 export function migrationTargetFor(
@@ -96,7 +93,7 @@ export function migrationTargetFor(
     return {
       source: migrationSource.MongoQuerier,
       storage: (tableName) => new MongoMigrationStorage(pool, { tableName }),
-      generator: () => mongoSchemaGenerator(dialect.namingStrategy, defaultForeignKeyAction),
+      generator: () => mongoSchemaGenerator(dialect.namingStrategy),
       withSession: (task) => withMongoQuerierForMigrations(pool, 'Migrator', (querier) => task(mongoSession(querier))),
     };
   }

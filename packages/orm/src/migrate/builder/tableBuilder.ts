@@ -4,11 +4,10 @@
  * Fluent API for defining tables in migrations.
  */
 
-import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
+import { type CanonicalType, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
-import { indexNameParts, normalizeIndexColumn } from '../../util/index.js';
-import { derivedIndexName } from '../../util/sql.util.js';
-import { columnForeignKey, columnIndex } from '../generator/definitionToNode.js';
+import { DATE_PRECISION } from '../../util/date.js';
+import { columnForeignKey, columnIndex, indexDefinition } from '../generator/definitionToNode.js';
 import { ColumnBuilder } from './columnBuilder.js';
 import { expr } from './expressions.js';
 import type {
@@ -23,20 +22,22 @@ import type {
   VectorColumnOptions,
 } from './types.js';
 
+/** Normalizes `table.index` options, where a bare string is the index name. */
+function namedOptions(options?: string | IndexOptions): IndexOptions {
+  return typeof options === 'string' ? { name: options } : (options ?? {});
+}
+
 /**
  * Builder for table-level foreign keys.
  */
 class TableForeignKeyBuilder implements ITableForeignKeyBuilder {
-  private _columns: string[];
   private _referencedTable?: string;
   private _referencedColumns: string[] = [];
-  private _onDelete: ForeignKeyAction = 'NO ACTION';
-  private _onUpdate: ForeignKeyAction = 'NO ACTION';
+  private _onDelete: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION;
+  private _onUpdate: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION;
   private _name?: string;
 
-  constructor(columns: string[], _parent: TableBuilder) {
-    this._columns = columns;
-  }
+  constructor(private readonly _columns: string[]) {}
 
   references(table: string, columns: string[]): this {
     this._referencedTable = table;
@@ -147,11 +148,11 @@ export class TableBuilder implements ITableBuilder {
   }
 
   timestamp(name: string, options?: BaseColumnOptions): IColumnBuilder {
-    return this.add(name, { category: 'timestamp' }, options);
+    return this.add(name, { category: 'timestamp', precision: DATE_PRECISION }, options);
   }
 
   timestamptz(name: string, options?: BaseColumnOptions): IColumnBuilder {
-    return this.add(name, { category: 'timestamp', withTimezone: true }, options);
+    return this.add(name, { category: 'timestamp', withTimezone: true, precision: DATE_PRECISION }, options);
   }
 
   json(name: string, options?: BaseColumnOptions): IColumnBuilder {
@@ -205,37 +206,17 @@ export class TableBuilder implements ITableBuilder {
   }
 
   unique(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    return this.addIndex(columns, options, true);
+    this._indexes.push(indexDefinition(this._name, columns, { ...namedOptions(options), unique: true }, true));
+    return this;
   }
 
   index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this {
-    return this.addIndex(columns, options, false);
-  }
-
-  /**
-   * `@Index` and `table.index(...)` differ only in how the name is defaulted, so both normalize their
-   * entries here: the generator renders expressions and per-column modifiers from the normalized
-   * form, and anything left as a bare string would reach it as a column literally named `[object
-   * Object]`.
-   */
-  private addIndex(
-    columns: readonly IndexColumnInput[],
-    options: string | IndexOptions | undefined,
-    unique: boolean,
-  ): this {
-    const { name, ...rest } = typeof options === 'string' ? { name: options } : (options ?? {});
-    const entries = columns.map(normalizeIndexColumn);
-    this._indexes.push({
-      ...rest,
-      name: name ?? derivedIndexName(this._name, indexNameParts(entries), unique),
-      entries,
-      unique,
-    });
+    this._indexes.push(indexDefinition(this._name, columns, namedOptions(options)));
     return this;
   }
 
   foreignKey(columns: string[]): ITableForeignKeyBuilder {
-    const fk = new TableForeignKeyBuilder(columns, this);
+    const fk = new TableForeignKeyBuilder(columns);
     this._foreignKeyBuilders.push(fk);
     return fk;
   }

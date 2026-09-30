@@ -5,6 +5,7 @@ import type { VectorCast } from '../dialect/vectorCast.js';
 import { fieldOf, getMeta, soleIdOf } from '../entity/metadata/definition.js';
 import type { ColumnType, EntityGetter, FieldMeta, FieldOptions } from '../type/entity.js';
 import { type DialectFeatures, type DialectName, QueryRaw } from '../type/index.js';
+import { DATE_PRECISION } from '../util/date.js';
 import { columnFamily, isIntegerColumn } from '../util/field.util.js';
 import { constantSql } from '../util/raw.js';
 import type { CanonicalType, SizeVariant, TypeCategory } from './types.js';
@@ -152,8 +153,7 @@ const MYSQL_SCALAR_MAP: ScalarTypeMap = {
   boolean: 'TINYINT(1)',
   date: 'DATE',
   time: 'TIME',
-  // The milliseconds a `Date` holds, which a bare `DATETIME` rounds away.
-  timestamp: 'DATETIME(3)',
+  timestamp: 'DATETIME',
   json: 'JSON',
   uuid: 'CHAR(36)',
   blob: 'BLOB',
@@ -374,7 +374,7 @@ export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): s
     sqlType = 'TIMESTAMPTZ';
   }
   if (type.category === 'timestamp' && type.precision !== undefined && engine.timestampPrecision !== undefined) {
-    sqlType = `${sqlType.replace(/\(\d+\)$/, '')}(${type.precision})`;
+    sqlType = `${sqlType}(${type.precision})`;
   }
 
   return type.unsigned && features.supportsUnsigned ? `${sqlType} UNSIGNED` : sqlType;
@@ -412,24 +412,27 @@ export function defaultTimestampPrecision(dialectName: DialectName): number | un
   return ENGINE_TYPES[dialectName].timestampPrecision;
 }
 
+/** Gives a timestamp type that states no precision `digits` fractional seconds; other types pass through. */
+export function withTimestampPrecision(type: CanonicalType, digits: number | undefined): CanonicalType {
+  return type.category === 'timestamp' && type.precision === undefined ? { ...type, precision: digits } : type;
+}
+
 /**
  * A type as `dialect` stores it, rendered and read back: several types share one storage type, and only
  * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
   const timestampPrecision = defaultTimestampPrecision(dialect.dialectName);
-  return (type) => {
-    const stored = sqlToCanonical(canonicalToSql(type, dialect));
-    return stored.category === 'timestamp' && stored.precision === undefined
-      ? { ...stored, precision: timestampPrecision }
-      : stored;
-  };
+  return (type) => withTimestampPrecision(sqlToCanonical(canonicalToSql(type, dialect)), timestampPrecision);
 }
 
-/**
- * Convert UQL FieldOptions to a canonical type.
- */
+/** A field's canonical type; a timestamp without precision gets a `Date`'s milliseconds, unless it is `raw` SQL. */
 export function fieldOptionsToCanonical(options: FieldOptions): CanonicalType {
+  const type = fieldType(options);
+  return options.columnType instanceof QueryRaw ? type : withTimestampPrecision(type, DATE_PRECISION);
+}
+
+function fieldType(options: FieldOptions): CanonicalType {
   // A SQL type is read exactly as an introspected one is, whichever option named it, so a bound stated
   // beside it is read the same way either way.
   const declared = declaredSqlType(options);

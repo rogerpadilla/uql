@@ -1,6 +1,6 @@
 // A database schema as a graph, whichever side it came from: the entities or the database itself.
 
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, StoredDefinition } from '../type/migration.js';
+import type { Change, ForeignKeySchema, IndexSchema, PrimaryKeySchema, StoredDefinition } from '../type/migration.js';
 import type { IndexFacet } from './indexDifferences.js';
 
 /**
@@ -110,7 +110,7 @@ export interface ColumnNode {
   readonly type: CanonicalType;
   /** Whether the column allows NULL values */
   readonly nullable: boolean;
-  /** Default value expression or literal */
+  /** The column's default: a literal value, or an `SqlExpression` for SQL. */
   readonly defaultValue?: unknown;
   /** Whether this column is part of the primary key */
   readonly isPrimaryKey: boolean;
@@ -199,9 +199,6 @@ export interface RelationshipNode {
     readonly columns: ColumnNode[];
   };
 
-  /** Junction table for ManyToMany relationships */
-  readonly through?: TableNode;
-
   /** Action on delete of referenced row */
   readonly onDelete?: ForeignKeyAction;
   /** Action on update of referenced row */
@@ -218,116 +215,60 @@ export type IndexNode = IndexSchema & {
 };
 
 /**
- * Root of the schema graph.
- * Contains all tables, relationships, and provides graph operations.
+ * One node's difference, shaped like a migration's `Change`: `to` is the entities' side and `from` the
+ * database's. `to` alone means create, `from` alone means drop, and both mean alter. Being a union, testing
+ * one end narrows which ends are present; `Altered` holds the extra fields an alter carries.
  */
-export interface SchemaAST {
-  /** Map of table name to table node */
-  readonly tables: Map<string, TableNode>;
-  /** All relationships in the schema */
-  readonly relationships: RelationshipNode[];
-  /** All indexes (also accessible via TableNode.indexes) */
-  readonly indexes: IndexNode[];
-}
+export type NodeChange<T, Altered = unknown> =
+  | { readonly from?: undefined; readonly to: T }
+  | { readonly from: T; readonly to?: undefined }
+  | ({ readonly from: T; readonly to: T } & Altered);
 
-/** How two columns differ, a union so which side is present follows from the kind of difference. */
-export type ColumnDiff = ColumnDiffBase &
-  (
-    | { readonly type: 'add'; readonly expected: ColumnNode; readonly actual?: undefined }
-    | { readonly type: 'drop'; readonly expected?: undefined; readonly actual: ColumnNode }
-    | { readonly type: 'alter'; readonly expected: ColumnNode; readonly actual: ColumnNode }
-  );
-
-interface ColumnDiffBase {
+/** A column to create, drop or alter; an alter lists in `changed` which parts of the column differ. */
+export type ColumnDiff = NodeChange<ColumnNode, { readonly changed: readonly ColumnFacet[] }> & {
   readonly table: string;
   readonly column: string;
-  /** Whether this change could cause data loss */
+  /** Whether the change can lose data: a drop, or a type change that narrows the column. */
   readonly isBreaking?: boolean;
   readonly description?: string;
-}
+};
 
-/**
- * Difference between two table definitions.
- */
-export interface TableDiff {
-  readonly name: string;
-  readonly type: 'create' | 'drop' | 'alter';
-  readonly columnDiffs?: ColumnDiff[];
-  readonly indexDiffs?: IndexDiff[];
-  /** Set only where the two keys hold different columns. See {@link PrimaryKeyDiff}. */
-  readonly primaryKeyDiff?: PrimaryKeyDiff;
-}
+/** A part of a column the differ compares. */
+export type ColumnFacet = 'type' | 'nullable' | 'default';
 
-/**
- * Two primary keys that hold different columns.
- *
- * By columns and in order, never by name: `(a, b)` is a different key from `(b, a)`, while the same
- * key called `Member_pkey` on one side and `Member__userId_pk` on the other is one key, not two.
- */
-export interface PrimaryKeyDiff {
+/** An index to create, drop or alter; an alter's `description` says what differs. */
+export type IndexDiff = NodeChange<IndexNode> & {
   readonly table: string;
-  readonly expected?: PrimaryKeySchema;
-  /** Named as the database reported it, which is the only name a `DROP` can use. */
-  readonly actual?: PrimaryKeySchema;
-}
-
-/**
- * Difference between two index definitions.
- */
-export interface IndexDiff {
   readonly name: string;
-  readonly table: string;
-  readonly type: 'create' | 'drop' | 'alter';
-  readonly expected?: IndexNode;
-  readonly actual?: IndexNode;
   readonly description?: string;
+};
+
+/** A foreign key to create, drop or alter, matched by its tables and columns, never by name. */
+export type RelationshipDiff = NodeChange<RelationshipNode> & { readonly name: string; readonly fromTable: string };
+
+/**
+ * Two primary keys with different columns. Keys are compared by their columns in order, never by name:
+ * `(a, b)` differs from `(b, a)`, while `Member_pkey` and `Member__userId_pk` over the same columns are equal.
+ * `from` keeps the name the database reported, the only name a `DROP` can use.
+ */
+export type PrimaryKeyDiff = Change<PrimaryKeySchema> & { readonly table: string };
+
+/** The differences within a table that exists on both sides. */
+export interface TableDiff {
+  readonly columns: ColumnDiff[];
+  readonly indexes: IndexDiff[];
+  /** Set only when the two primary keys have different columns. */
+  readonly primaryKey?: PrimaryKeyDiff;
 }
 
-/**
- * Difference between two relationship definitions.
- */
-interface RelationshipDiffBase {
-  readonly name: string;
-  readonly fromTable: string;
-  readonly toTable: string;
-}
-
-/**
- * Difference between two relationships, shaped like {@link ColumnDiff} and for the same reason: which
- * node is present follows from the kind of difference, so a reader never asserts its way past an
- * `undefined` the kind had already ruled out.
- */
-export type RelationshipDiff = RelationshipDiffBase &
-  (
-    | { readonly type: 'create'; readonly expected: RelationshipNode; readonly actual?: undefined }
-    | { readonly type: 'drop'; readonly expected?: undefined; readonly actual: RelationshipNode }
-    | { readonly type: 'alter'; readonly expected: RelationshipNode; readonly actual: RelationshipNode }
-  );
-
-/**
- * Complete diff between two schemas.
- */
+/** How two schemas differ, as the changes a migration would make, grouped by kind. */
 export interface SchemaDiffResult {
-  /** Tables that need to be created */
-  readonly tablesToCreate: TableNode[];
-  /** Tables that need to be dropped */
-  readonly tablesToDrop: TableNode[];
-  /** Tables that need alterations */
-  readonly tablesToAlter: TableDiff[];
-
-  /** All column-level diffs */
-  readonly columnDiffs: ColumnDiff[];
-  /** All index diffs */
-  readonly indexDiffs: IndexDiff[];
-  /** Every table whose primary key holds different columns than the entity declares. */
-  readonly primaryKeyDiffs: PrimaryKeyDiff[];
-  /** All relationship/FK diffs */
-  readonly relationshipDiffs: RelationshipDiff[];
-
-  /** Whether there are any differences */
-  readonly hasDifferences: boolean;
-  /** Whether any changes are breaking (could cause data loss) */
-  readonly hasBreakingChanges: boolean;
+  /** Tables only one side has: `to` for a table the database lacks, `from` for one no entity declares. */
+  readonly tables: NodeChange<TableNode>[];
+  readonly columns: ColumnDiff[];
+  readonly indexes: IndexDiff[];
+  readonly primaryKeys: PrimaryKeyDiff[];
+  readonly relationships: RelationshipDiff[];
 }
 
 /**

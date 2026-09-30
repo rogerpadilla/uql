@@ -144,6 +144,23 @@ describe('parseQueryParams', () => {
     });
   });
 
+  describe('cursors', () => {
+    it('should keep a cursor as the text it came as, never parsing it as JSON', () => {
+      expect(parseQueryParams({ $after: 'WyJhIiwxXQ', $limit: '2' })).toEqual({
+        $where: {},
+        $after: 'WyJhIiwxXQ',
+        $limit: 2,
+      });
+      expect(parseQueryParams({ $before: '123' })).toEqual({ $where: {}, $before: '123' });
+    });
+
+    it('should refuse a cursor a page never handed out', () => {
+      expect(() => parseQueryParams({ $after: { $gt: 1 } })).toThrow(
+        expect.objectContaining({ message: "'$after' must be a cursor a page handed out", status: 400 }),
+      );
+    });
+  });
+
   describe('boolean coercion defense', () => {
     it('should honor $distinct from the wire', () => {
       expect(parseQueryParams({ $distinct: 'true' })).toEqual({ $where: {}, $distinct: true });
@@ -252,5 +269,11 @@ describe('round trip', () => {
 
   it('should default $where when absent', () => {
     expect(roundTrip({ $limit: 5 })).toEqual({ $limit: 5, $where: {} });
+  });
+
+  /** base64url's `-` and `_` are safe in a query string, where base64's `+` would read back as a space. */
+  it('should carry a cursor through as the text a page minted', () => {
+    const source = { $sort: { id: 1 }, $limit: 2, $after: 'WyJhIi_-fQ' };
+    expect(roundTrip(source)).toEqual({ ...source, $where: {} });
   });
 });

@@ -8,14 +8,17 @@ import type {
   Type,
 } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
+import { QueryRaw } from '../type/queryRaw.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
-import { isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
+import { declaresNotNull, isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
+import { currentTimestamp } from '../util/raw.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
+import { SqlExpression } from './sqlExpression.js';
 import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
 
 /**
@@ -133,10 +136,8 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
     const column: ColumnNode = {
       name: columnName,
       type,
-      // A primary key is NOT NULL in every engine, whatever the entity's property says: `id?: number`
-      // is optional because the database assigns it, not because the column accepts a null.
-      nullable: isPrimaryKey || notNull.has(key) ? false : (field.nullable ?? true),
-      defaultValue: field.defaultValue,
+      nullable: !declaresNotNull(field) && !notNull.has(key),
+      defaultValue: columnDefault(ctx, meta, field.defaultValue),
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
@@ -154,6 +155,19 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   table.primaryKey = keyOfColumns(columns.values());
 
   ctx.ast.addTable(table);
+}
+
+/**
+ * A field's default in schema form: SQL becomes an {@link SqlExpression}, and `currentTimestamp` stays
+ * symbolic (`now`) so each engine spells it for the column it fills.
+ */
+function columnDefault(ctx: BuildContext, meta: EntityMeta<object>, value: unknown): unknown {
+  if (!(value instanceof QueryRaw)) {
+    return value;
+  }
+  return value === currentTimestamp
+    ? new SqlExpression('now')
+    : SqlExpression.parenthesized(ctx.compileDdl(value, meta.entity));
 }
 
 /** The node an entity maps to, found under the key {@link SchemaAST} stores it by. */
@@ -271,18 +285,18 @@ function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<object>, colum
 
 /**
  * One index the entity declares. Its entries keep the authored form (expression, prefix length, order) with
- * names resolved, so the generator renders exactly what was declared; `columns` is the resolvable
- * subset, which is what diffing and introspection compare.
+ * names resolved, so the generator renders exactly what was declared. Every option not resolved here is
+ * spread through, so an option added to indexes later cannot be lost.
  */
 function addCompositeIndex(
   ctx: BuildContext,
   table: TableNode,
   meta: EntityMeta<object>,
-  idxMeta: EntityIndexMeta,
+  { columns, include, where, ...options }: EntityIndexMeta,
 ): void {
   // An entry survives if it is an expression (nothing to resolve) or names a column that exists;
   // an index left with none is dropped, the same as one naming only unknown columns always was.
-  const resolved = idxMeta.columns.flatMap((entry) => {
+  const resolved = columns.flatMap((entry) => {
     if (typeof entry.column !== 'string') return [entry];
     const field = meta.fields[entry.column as keyof typeof meta.fields];
     const column = field && ctx.resolveColumnName(entry.column, field);
@@ -290,23 +304,18 @@ function addCompositeIndex(
   });
   if (!resolved.length) return;
 
-  const name = declaredIndexName(idxMeta.name, table.name, resolved);
+  const name = declaredIndexName(options.name, table.name, resolved);
   ctx.ast.addIndex({
+    ...options,
     name,
     table,
     entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
-    include: idxMeta.include?.map((column) => resolveIncludeColumn(ctx, meta, column)),
-    unique: idxMeta.unique ?? false,
-    type: idxMeta.type,
-    where: idxMeta.where && ctx.compileIndexPredicate(idxMeta.where, meta.entity, name),
-    distance: idxMeta.distance,
-    m: idxMeta.m,
-    efConstruction: idxMeta.efConstruction,
-    lists: idxMeta.lists,
-    config: idxMeta.config,
+    include: include?.map((column) => resolveIncludeColumn(ctx, meta, column)),
+    unique: options.unique ?? false,
+    where: where && ctx.compileIndexPredicate(where, meta.entity, name),
   });
   if (ctx.textScoreIndexes) {
-    addTextScoreIndexes(ctx, table, idxMeta.type, resolved);
+    addTextScoreIndexes(ctx, table, options.type, resolved);
   }
 }
 

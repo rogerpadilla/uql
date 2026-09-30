@@ -1,6 +1,6 @@
 import type { RequestCallback, RequestNotification } from '../type/index.js';
 
-const subscriptors: RequestCallback[] = [];
+const subscriptors = new Set<RequestCallback>();
 
 export function notify(notification: RequestNotification): void {
   for (const subscriptor of subscriptors) {
@@ -9,9 +9,8 @@ export function notify(notification: RequestNotification): void {
 }
 
 export function on(cb: RequestCallback): () => void {
-  subscriptors.push(cb);
-  const index = subscriptors.length - 1;
+  subscriptors.add(cb);
   return (): void => {
-    subscriptors.splice(index, 1);
+    subscriptors.delete(cb);
   };
 }

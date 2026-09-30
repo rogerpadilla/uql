@@ -9,13 +9,13 @@ description: Cut and publish a uql release - review the change, changelog entry,
 
 ## 1. Review the change
 
-Everything `git status` lists, untracked files included, since `lerna version` leaves them out silently. Understand all of it first, then fix what is wrong, unify, simplify, and delete comments the change made stale. Every fix needs a test that failed before it, at the cheapest level that pins it: exact SQL in a dialect spec, cross-backend behaviour in the shared suite. A public API change updates `skills/uql-orm/SKILL.md` too.
+Everything `git status` lists, untracked files included, since `lerna version` leaves them out silently. Understand all of it first, then fix what is wrong, remove/refactor what is unnecesary or over-complicated, unify, simplify, and delete comments the change made stale. Every fix needs a test that failed before it, at the cheapest level that pins it: exact SQL in a dialect spec, cross-backend behaviour in the shared suite. A public API change updates `skills/uql-orm/SKILL.md` too. Avoid putting unnecesary or overcomplicated code, always unify and simplify for the best clean code (refactor if convenient or necessary to unify or simplify).
 
 `bun run check` passes, with the databases up (`docker compose up -d --wait`).
 
 ## 2. Settle the changelog entry and the level
 
-Compress `[Unreleased]` as the CHANGELOG.md header says, related bullets together, only what a user really needs (what worth it). Rename the heading to the version the bump will produce, dated today. Summarize, simplify and unify.
+Compress the last entry, unify related bullets together, simplify for humans, only what a user _really_ needs/wants (and what worth it). Rename the heading to the version the bump will produce, dated today. Summarize, simplify and unify.
 
 Nothing checks the level, so take it from the entry. Pre-1.0 a caret range takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked:
 

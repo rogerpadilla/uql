@@ -64,6 +64,12 @@ export function constantSql(value: QueryRaw): string | undefined {
 }
 
 /**
+ * The database's current time in UTC to the millisecond, in each engine's SQL, so uql reads the timestamp
+ * back exactly. Use it for a stamp, an `onUpdate`, a `$where` or a `defaultValue`.
+ */
+export const currentTimestamp: QueryRaw = raw(({ dialect }) => dialect.currentTimestamp);
+
+/**
  * The fields of `entity` as {@link ColumnRef}s, each rendering inside `raw` as its column: named the way
  * the dialect names it, so the naming strategy and `@Field({ name })` apply, and qualified by the alias
  * in scope. Metadata is read when a ref renders, so the map serves before the fields are registered.

@@ -204,12 +204,14 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.count).not.toHaveBeenCalled();
   });
 
-  it('should find rows with their count', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
-    mockQuerier.count.mockResolvedValue(1);
+  /** The querier's own read-and-count, whose count is every matching row: `count` counts the page a `$limit` takes. */
+  it('should find rows with the count of every one matching', async () => {
+    mockQuerier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 6]);
     const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'GET', entityPath: 'user', query: { count: 'true' } }));
-    expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
+    const resp = await handle(req({ method: 'GET', entityPath: 'user', query: { $limit: '1', count: 'true' } }));
+    expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 6 } });
+    expect(mockQuerier.findManyAndCount).toHaveBeenCalledWith(User, expect.objectContaining({ $limit: 1 }));
+    expect(mockQuerier.count).not.toHaveBeenCalled();
   });
 
   it('should not count rows on ?count=false', async () => {
@@ -218,9 +220,26 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.count).not.toHaveBeenCalled();
   });
 
+  it('should read a page past the cursor the query string carries', async () => {
+    const page = { items: [{ id: 1 }], endCursor: 'b', hasNextPage: true, hasPrevPage: true };
+    mockQuerier.findManyPage.mockResolvedValue(page);
+    const handle = createRequestHandler({ pool, include: [User] });
+    const resp = await handle(
+      req({ method: 'GET', entityPath: 'user', subPath: 'page', query: { $limit: '1', $after: 'a' } }),
+    );
+    expect(resp).toEqual({ status: 200, body: { data: page } });
+    expect(mockQuerier.findManyPage).toHaveBeenCalledWith(User, { $where: {}, $limit: 1, $after: 'a' });
+  });
+
+  it('should refuse a page that names no size', async () => {
+    const handle = createRequestHandler({ pool, include: [User] });
+    await expect(handle(req({ method: 'GET', entityPath: 'user', subPath: 'page' }))).rejects.toThrow(
+      'a page names how many rows it holds in $limit',
+    );
+  });
+
   it("should take a QUERY read's query from the body, through preFilter", async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1 }]);
-    mockQuerier.count.mockResolvedValue(1);
+    mockQuerier.findManyAndCount.mockResolvedValue([[{ id: 1 }], 1]);
     const preFilter = vi.fn();
     const preSave = vi.fn();
     const handle = createRequestHandler({ pool, include: [User], preFilter, preSave });
@@ -228,7 +247,7 @@ describe('createRequestHandler', () => {
       req({ method: 'QUERY', entityPath: 'user', body: { $where: { name: 'John' }, $limit: 5, count: true } }),
     );
     expect(resp).toEqual({ status: 200, body: { data: [{ id: 1 }], count: 1 } });
-    expect(mockQuerier.findMany).toHaveBeenCalledWith(
+    expect(mockQuerier.findManyAndCount).toHaveBeenCalledWith(
       User,
       expect.objectContaining({ $where: { name: 'John' }, $limit: 5 }),
     );
@@ -280,7 +299,7 @@ describe('createRequestHandler', () => {
     mockQuerier.updateMany.mockResolvedValue(1);
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'PATCH', entityPath: 'user', subPath: '1', body: { name: 'John' } }));
-    expect(resp).toEqual({ status: 200, body: { data: '1', count: 1 } });
+    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
     expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
       name: 'John',
     });
@@ -304,27 +323,22 @@ describe('createRequestHandler', () => {
     const resp = await handle(
       req({ method: 'DELETE', entityPath: 'user', subPath: '1', query: { hardDelete: 'true' } }),
     );
-    expect(resp).toEqual({ status: 200, body: { data: '1', count: 1 } });
+    expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
     expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
       hardDelete: true,
     });
   });
 
-  it('should delete by the ids it found, softly by default', async () => {
-    mockQuerier.findMany.mockResolvedValue([{ id: 1 }, { id: 2 }]);
+  /** The querier's own delete, so it refuses what the querier refuses, a delete naming no rows included. */
+  it('should delete the rows a query matches, softly by default', async () => {
     mockQuerier.deleteMany.mockResolvedValue(2);
     const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
-    expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
-    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, { $where: { id: [1, 2] } }, { hardDelete: false });
-  });
-
-  it('should delete nothing where nothing is found', async () => {
-    mockQuerier.findMany.mockResolvedValue([]);
-    const handle = createRequestHandler({ pool, include: [User] });
-    const resp = await handle(req({ method: 'DELETE', entityPath: 'user' }));
-    expect(resp).toEqual({ status: 200, body: { data: [], count: 0 } });
-    expect(mockQuerier.deleteMany).not.toHaveBeenCalled();
+    const resp = await handle(req({ method: 'DELETE', entityPath: 'user', query: { $where: '{"status":1}' } }));
+    expect(resp).toEqual({ status: 200, body: { data: 2, count: 2 } });
+    expect(mockQuerier.deleteMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { status: 1 } }), {
+      hardDelete: false,
+    });
+    expect(mockQuerier.findMany).not.toHaveBeenCalled();
   });
 
   it('should release the querier and propagate a read error', async () => {

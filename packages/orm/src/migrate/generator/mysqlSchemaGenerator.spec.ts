@@ -1,24 +1,34 @@
 import { describe, expect, it } from 'vitest';
+import { Entity, Id } from '../../entity/index.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
+import { sqlTypeOf } from '../../test/index.js';
 import { tableDdlFor } from '../ddl/index.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('MysqlSchemaGenerator Specifics', () => {
-  const generator = new SqlSchemaGenerator(new MySqlDialect());
+  const dialect = new MySqlDialect();
+  const generator = new SqlSchemaGenerator(dialect);
   const tableDdl = tableDdlFor(new MySqlDialect());
 
   it('should map column types correctly', () => {
-    expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ type: String })).toBe('VARCHAR(255)');
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('VARCHAR(255)');
-    expect(generator.getSqlType({ columnType: 'text' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' })).toBe('INT');
-    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('BIGINT');
-    expect(generator.getSqlType({ type: Boolean })).toBe('TINYINT(1)');
-    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 })).toBe('DECIMAL(10, 2)');
-    expect(generator.getSqlType({ type: Number, isId: true })).toBe('BIGINT AUTO_INCREMENT');
-    expect(generator.getSqlType({ type: Number, isId: true, columnType: 'int' })).toBe('INT AUTO_INCREMENT');
+    expect(sqlTypeOf(dialect, { type: String, length: 100 })).toBe('VARCHAR(100)');
+    expect(sqlTypeOf(dialect, { type: String })).toBe('VARCHAR(255)');
+    expect(sqlTypeOf(dialect, { columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
+    expect(sqlTypeOf(dialect, { columnType: 'varchar' })).toBe('VARCHAR(255)');
+    expect(sqlTypeOf(dialect, { columnType: 'text' })).toBe('TEXT');
+    expect(sqlTypeOf(dialect, { columnType: 'int' })).toBe('INT');
+    expect(sqlTypeOf(dialect, { columnType: 'bigint' })).toBe('BIGINT');
+    expect(sqlTypeOf(dialect, { type: Boolean })).toBe('TINYINT(1)');
+    expect(sqlTypeOf(dialect, { columnType: 'decimal', precision: 10, scale: 2 })).toBe('DECIMAL(10, 2)');
+  });
+
+  it('should spell a generated key from its own column type', () => {
+    @Entity()
+    class IntKeyed {
+      @Id({ type: Number, columnType: 'int' }) id?: number;
+    }
+
+    expect(generator.generateCreateSchema([IntKeyed]).join('\n')).toContain('`id` INT AUTO_INCREMENT');
   });
 
   it('should generate ALTER COLUMN statements', () => {

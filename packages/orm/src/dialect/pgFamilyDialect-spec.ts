@@ -28,7 +28,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
    * Postgres reports insert-vs-update from `xmax`, a system column CockroachDB does not have, so its
    * upserts return the id alone. The only difference between the two in this whole suite.
    */
-  protected readonly upsertCreatedFlag: string = ', (xmax = 0) AS "_created"';
+  protected readonly upsertCreatedFlag: string = ', (xmax = 0) AS "_uql_created"';
 
   /** How this engine types a config literal, and the function reading a search's text. */
   protected readonly textConfigCast: string = '::regconfig';

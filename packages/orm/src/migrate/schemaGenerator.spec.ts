@@ -10,7 +10,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { IndexNode, TableNode } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { assertDefined, mockSqlTableNode, mockTableNode } from '../test/index.js';
+import { assertDefined, mockSqlTableNode, mockTableNode, sqlTypeOf } from '../test/index.js';
 import type { ColumnSchema, SchemaDiff } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
@@ -407,7 +407,7 @@ describe('SqlSchemaGenerator (MySQL)', () => {
   });
 
   it('should generate boolean as TINYINT(1)', () => {
-    const boolType = generator.getSqlType({ type: Boolean });
+    const boolType = sqlTypeOf(new MySqlDialect(), { type: Boolean });
     expect(boolType).toBe('TINYINT(1)');
   });
 
@@ -431,15 +431,15 @@ describe('SqlSchemaGenerator (SQLite)', () => {
   });
 
   it('should use TEXT for most types (SQLite dynamic typing)', () => {
-    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'json' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'uuid' })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'varchar' })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'json' })).toBe('TEXT');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'uuid' })).toBe('TEXT');
   });
 
   it('should use INTEGER for numeric types', () => {
-    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
-    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('INTEGER');
-    expect(generator.getSqlType({ type: Boolean })).toBe('INTEGER');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'int' })).toBe('INTEGER');
+    expect(sqlTypeOf(new SqliteDialect(), { columnType: 'bigint' })).toBe('INTEGER');
+    expect(sqlTypeOf(new SqliteDialect(), { type: Boolean })).toBe('INTEGER');
   });
 
   it('should split non-inline indexes into statements of their own', () => {
@@ -701,6 +701,23 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     expect(createSql).toMatch(/\) .*COMMENT='Who belongs where';$/);
   });
 
+  /** A table in a schema: qualified where the statement names it, bare in every name derived from it. */
+  it('should create a table in a schema, referencing one in another', () => {
+    const sql = generator
+      .generateCreateTableFromDefinition(
+        tableDefinition({
+          name: 'sales.orders',
+          primaryKey: ['userId'],
+          foreignKeys: [{ columns: ['groupId'], references: { table: 'auth.users', columns: ['id'] } }],
+        }),
+      )
+      .join('\n');
+
+    expect(sql).toContain('CREATE TABLE "sales"."orders"');
+    expect(sql).toContain('CONSTRAINT "orders__userId_pk" PRIMARY KEY ("userId")');
+    expect(sql).toContain('REFERENCES "auth"."users" ("id")');
+  });
+
   it('should ignore a declared key column that no column definition matches', () => {
     const sql = generator
       .generateCreateTableFromDefinition(tableDefinition({ primaryKey: ['userId', 'nope', 'groupId'] }))
@@ -737,15 +754,19 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
 
   it('should render the SQL of a builder index for its engine', () => {
     expect(
-      generator.generateCreateIndexFromDefinition('memberships', {
-        name: 'memberships_email_uk',
-        entries: [{ column: raw`lower("email")` }],
-        unique: true,
-        where: raw`"deletedAt" IS NULL`,
+      generator.generateOperation({
+        type: 'createIndex',
+        tableName: 'memberships',
+        index: {
+          name: 'memberships_email_uk',
+          entries: [{ column: raw`lower("email")` }],
+          unique: true,
+          where: raw`"deletedAt" IS NULL`,
+        },
       }),
-    ).toBe(
+    ).toEqual([
       'CREATE UNIQUE INDEX IF NOT EXISTS "memberships_email_uk" ON "memberships" ((lower("email"))) WHERE "deletedAt" IS NULL;',
-    );
+    ]);
   });
 
   it('should keep the index options a definition declares, not just its columns', () => {
@@ -957,7 +978,7 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     }
     const { ownerId } = getMeta(RefSource).fields;
     assertDefined(ownerId);
-    expect(generator.getSqlType(ownerId)).toBe('UUID');
+    expect(sqlTypeOf(new PostgresDialect(), ownerId)).toBe('UUID');
   });
 
   /** One resolution for the column a table gets and the type this reports, so the two cannot disagree. */
@@ -976,8 +997,6 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     assertDefined(backupId);
     const ddl = generator.generateCreateSchema([Account, AccountProfile]).join('\n');
 
-    expect(generator.getSqlType(id)).toBe('BIGINT');
-    expect(generator.getSqlType(backupId)).toBe('INTEGER');
     expect(ddl).toContain('CREATE TABLE "AccountProfile" (\n  "id" BIGINT NOT NULL,\n  "backupId" INTEGER,');
   });
 
@@ -1024,10 +1043,6 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   it('should diff nothing where the desired schema has no table for the entity', () => {
     const current = buildEntityAST(generator, [DiffUser]).getTable('DiffUser');
     expect(generator.diffSchema(DiffUser, current, new SchemaAST())).toBeUndefined();
-  });
-
-  it('should read a cast NULL as no default, whichever side spells it', () => {
-    expect(generator.defaultsEqual('NULL', 'NULL::character varying')).toBe(true);
   });
 
   it('should detect new columns', () => {
@@ -1190,20 +1205,13 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     expect(generator.defaultsEqual(0, undefined)).toBe(false);
   });
 
-  /** A default comes back in the engine's own spelling, quoted and cast, and still reads as the entity's. */
-  it('should treat engine-spelled defaults as unchanged', () => {
-    const currentSchema = defaultsTableNode("'active'::character varying");
-
-    expect(generator.diffSchema(DefaultsEntity, currentSchema)).toBeUndefined();
-  });
-
   it('should detect a genuinely changed default', () => {
-    const currentSchema = defaultsTableNode("'inactive'::character varying");
+    const currentSchema = defaultsTableNode('inactive');
 
     const diff = generator.diffSchema(DefaultsEntity, currentSchema);
 
     expect(alterations(diff?.columns)).toHaveLength(1);
-    expect(alterations(diff?.columns)[0].from.defaultValue).toBe("'inactive'::character varying");
+    expect(alterations(diff?.columns)[0].from.defaultValue).toBe('inactive');
     expect(alterations(diff?.columns)[0].to.defaultValue).toBe('active');
   });
 
@@ -1340,7 +1348,7 @@ describe('SqlSchemaGenerator on every dialect', () => {
       });
 
       it('should generate correct SQL type for Boolean', () => {
-        expect(generator.getSqlType({ type: Boolean })).toBe(booleanType);
+        expect(sqlTypeOf(dialect, { type: Boolean })).toBe(booleanType);
       });
 
       it('should generate correct column comments', () => {

@@ -162,7 +162,7 @@ function buildTable({ name, indexes = [] }: TableSchema, indexFacets: ReadonlySe
         });
       }
     }
-    table.indexes.push({ name: index.name, table, entries: index.entries, unique: index.unique, type: index.type });
+    table.indexes.push({ ...index, table });
   }
 
   return table;

@@ -46,9 +46,10 @@ export const TEXT_SCORE_ALIAS = '_uql_text_score';
 /**
  * The field a MongoDB `$sort` placing nulls orders by first: 1 where the value is null or missing, 0
  * where it is not. MongoDB takes no `NULLS FIRST`, so the placement is this flag plus the sort on it.
+ * A dot becomes `_o` and an underscore `__`, so two paths such as `a.b` and `a_b` never share a flag.
  */
 export function nullsSortField(path: string): string {
-  return `_uql_nulls_${path.replace(/\./g, '_')}`;
+  return `_uql_nulls_${path.replace(/[._]/g, (char) => (char === '.' ? '_o' : '__'))}`;
 }
 
 /** Prefix for the field a MongoDB relation lookup parks its result on, one per condition. */
@@ -60,12 +61,15 @@ export const REL_NESTED_KEY = '_uql_target';
 /**
  * The alias MySQL's upsert gives the row being inserted, so its `ON DUPLICATE KEY UPDATE`
  * assignments read `_uql_new.col` instead of the deprecated `VALUES(col)`. MariaDB has no such
- * syntax and keeps `VALUES(col)`.
+ * syntax and reads `VALUE(col)`.
  */
 export const UPSERT_NEW_ROW_ALIAS = '_uql_new';
 
 /** The row source a `MERGE` upsert reads its incoming values from, on SQL Server and Oracle. */
 export const UPSERT_SOURCE_ALIAS = '_uql_src';
+
+/** The column a Postgres upsert returns beside the id: `(xmax = 0)`, true when it inserted the row. */
+export const UPSERT_CREATED_ALIAS = '_uql_created';
 
 /**
  * Where a `$sort` by a relation's aggregate - its size, or its nearest row - parks the value until the

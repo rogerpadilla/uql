@@ -25,16 +25,11 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
   }
 
   /**
-   * `MERGE`, its rows a `VALUES` source built by {@link AbstractSqlDialect.insertShape}. Every value binds
-   * before the assignments, so `?` placeholders read in order.
+   * `MERGE` with its rows as a `VALUES` source built by {@link AbstractSqlDialect.insertShape}. The update
+   * assignments bind their values before the rows, though they follow them in the SQL; this works only because
+   * SQL Server numbers each placeholder (`@p1`).
    */
-  override upsert<E>(
-    ctx: QueryContext,
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E | E[],
-    extraReturning = '',
-  ): void {
+  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
     const meta = getMeta(entity);
     const table = this.escapedTableName(meta);
     const source = this.escapeId(UPSERT_SOURCE_ALIAS, true);
@@ -55,7 +50,7 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
       ` WHEN NOT MATCHED THEN INSERT (${columns}) VALUES (${shape.columns.map((col) => `${source}.${col}`).join(', ')})`,
     );
 
-    const returning = [this.returningIdExpression(meta), extraReturning].filter(Boolean).join(', ');
+    const returning = this.returningIdExpression(meta);
     if (returning) {
       ctx.append(` ${this.mergeReturning(returning)}`);
     }

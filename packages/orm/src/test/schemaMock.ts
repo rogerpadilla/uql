@@ -1,7 +1,9 @@
-import { sqlToCanonical } from '../schema/canonicalType.js';
+import type { AbstractSqlDialect } from '../dialect/index.js';
+import { canonicalToSql, resolveColumnCanonicalType, sqlToCanonical } from '../schema/canonicalType.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import { createTableNode, keyOfColumns, SchemaAST } from '../schema/schemaAST.js';
 import type { ColumnNode, TableNode } from '../schema/types.js';
+import type { FieldMeta } from '../type/index.js';
 import { assertDefined } from './spec.util.js';
 
 /**
@@ -116,4 +118,9 @@ export function mockGeneratedSchema(): SchemaAST {
     to: { table: users, columns: columnsOf(users, 'id') },
   });
   return ast;
+}
+
+/** The SQL type `dialect` writes for a field's column when the column is not a generated key. */
+export function sqlTypeOf(dialect: AbstractSqlDialect, field: FieldMeta): string {
+  return canonicalToSql(resolveColumnCanonicalType(field), dialect);
 }

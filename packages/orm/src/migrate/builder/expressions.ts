@@ -1,18 +1,19 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import type { ColumnSchema, SqlDialectName } from '../../type/index.js';
+import { SqlExpression, type SqlExpressionKind, writtenDefault } from '../../schema/sqlExpression.js';
+import type { SqlDialectName } from '../../type/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 
-/**
- * A {@link ColumnSchema.defaultValue} that is SQL rather than a literal. Kinds are symbolic: the
- * dialect names the spelling and {@link formatDefaultValue} renders one at DDL time.
- */
-export type SqlExpressionKind = 'now' | 'currentDate' | 'currentTime' | 'uuid' | 'uuidv7' | 'onUpdateNow' | 'raw';
+export { SqlExpression, type SqlExpressionKind };
 
-/** Every kind's DDL spelling, `null` where an engine has none. `raw` carries its own text instead. */
-export type SqlExpressionMap = Readonly<Record<Exclude<SqlExpressionKind, 'raw'>, string | null>>;
+/**
+ * Each kind's DDL spelling, or `null` where the engine has none. `raw` carries its own SQL instead. `now`
+ * defaults to the dialect's `currentTimestamp`, the clock every other statement reads, unless set here.
+ */
+export type SqlExpressionMap = Readonly<Record<Exclude<SqlExpressionKind, 'raw' | 'now'>, string | null>> & {
+  readonly now?: string;
+};
 
 const ANSI: SqlExpressionMap = {
-  now: 'CURRENT_TIMESTAMP',
   currentDate: 'CURRENT_DATE',
   currentTime: 'CURRENT_TIME',
   uuid: null,
@@ -24,6 +25,8 @@ const PG: SqlExpressionMap = { ...ANSI, uuid: 'gen_random_uuid()' };
 
 const MYSQL: SqlExpressionMap = {
   ...ANSI,
+  // Bare, unlike the dialect's `CURRENT_TIMESTAMP(3)`: `preciseTypes` adds the column's own precision.
+  now: 'CURRENT_TIMESTAMP',
   uuid: 'UUID()',
   onUpdateNow: 'CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP',
 };
@@ -46,7 +49,7 @@ export type DialectDefaults = {
 
 /**
  * Looked up by name rather than carried on the dialect, which keeps DDL data out of the query
- * bundle - the same split that keeps `CANONICAL_TO_SQL` in `schema/canonicalType.ts`. `uuidv7()` is
+ * bundle - the same split that keeps `ENGINE_TYPES` in `schema/canonicalType.ts`. `uuidv7()` is
  * Postgres 18+ and `UUID_v7()` MariaDB 11.7+; a server below those rejects it itself, the version
  * not being knowable here.
  */
@@ -59,29 +62,13 @@ export const DIALECT_DEFAULTS: Readonly<Record<SqlDialectName, DialectDefaults>>
     wrapTypes: MYSQL_LARGE_TYPES,
     preciseTypes: MYSQL_PRECISE_TYPES,
   },
-  sqlite: { expressions: ANSI },
-  // `SYSUTCDATETIME()` over `CURRENT_TIMESTAMP`, which is local time in the server's zone. No
-  // `uuidv7`: `NEWSEQUENTIALID()` is an ordered v4 GUID, so it carries no readable timestamp and
+  // Writes today in the same text as a bound `Date` at UTC midnight; `CURRENT_DATE` writes a different text.
+  sqlite: { expressions: { ...ANSI, currentDate: "(strftime('%Y-%m-%d 00:00:00.000', 'now'))" } },
+  // No `uuidv7`: `NEWSEQUENTIALID()` is an ordered v4 GUID, so it carries no readable timestamp and
   // does not sort the way a v7 does elsewhere - a `uuidv7()` default is refused rather than served
   // something that only looks like one.
-  mssql: { expressions: { ...ANSI, now: 'SYSUTCDATETIME()', uuid: 'NEWID()' } },
+  mssql: { expressions: { ...ANSI, uuid: 'NEWID()' } },
 };
-
-/**
- * A DDL default that is SQL rather than a literal. A class, not a plain object, so a JSON default
- * cannot masquerade as one: `defaultValue` accepts `unknown`.
- */
-export class SqlExpression {
-  /** `sql` is set only for the `raw` kind, which carries its own text verbatim. */
-  constructor(
-    readonly kind: SqlExpressionKind,
-    readonly sql?: string,
-  ) {}
-
-  static isExpression(value: unknown): value is SqlExpression {
-    return value instanceof SqlExpression;
-  }
-}
 
 /**
  * Symbolic DDL defaults. Each builds a token the dialect spells at DDL time, so `expr.uuid()` is
@@ -126,28 +113,41 @@ export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, 
   return columnType !== undefined && wrapTypes?.test(columnType) ? `(${sql})` : sql;
 }
 
-/** Whether a stored default is the declared one, as the engine reprints it: `'a'::character varying` is `'a'`. */
+/**
+ * Whether a stored default matches the declared one. A literal never matches SQL, even SQL that spells it,
+ * and two SQL defaults match when the dialect renders them alike once {@link reprinted} normalizes them.
+ */
 export function sameDefault(desired: unknown, current: unknown, dialect: AbstractSqlDialect): boolean {
-  if (current === desired) return true;
   // Both spellings of "no default" are the same fact, and engines disagree on which they report:
   // MariaDB says `null` where MySQL says nothing at all. Reading them as different values asked to
   // `MODIFY` every nullable column, on every sync, forever.
-  if (current == null || desired == null) return current == null && desired == null;
+  if (desired == null || current == null) return desired == null && current == null;
+  if (SqlExpression.isExpression(desired) || SqlExpression.isExpression(current)) {
+    return (
+      SqlExpression.isExpression(desired) &&
+      SqlExpression.isExpression(current) &&
+      reprinted(formatDefaultValue(desired, dialect)) === reprinted(formatDefaultValue(current, dialect))
+    );
+  }
+  // Compared as text, since a catalogue may report a number either as a number or as its text.
+  return writtenDefault(desired) === writtenDefault(current);
+}
 
-  const normalize = (value: unknown): string => {
-    // Render first: the desired side may be a symbolic expression, the current side is always the
-    // engine's own text, and `{"kind":"now"}` matches no spelling of `CURRENT_TIMESTAMP`.
-    const val = SqlExpression.isExpression(value) ? formatDefaultValue(value, dialect) : value;
-    if (typeof val === 'string') {
-      let s = val.replace(/::[a-z_]+(\s+[a-z_]+)*(\[\])?$/i, '');
-      s = s.replace(/^'(.*)'$/, '$1');
-      if (s.toLowerCase() === 'null') return 'null';
-      return s;
-    }
-    return typeof val === 'object' ? JSON.stringify(val) : String(val);
-  };
-
-  return normalize(current) === normalize(desired);
+/**
+ * Normalizes what engines reprint differently in SQL: it lowercases, collapses spacing, and strips wrapping
+ * parentheses (SQLite and MySQL drop them, SQL Server adds them) and the empty argument list of
+ * CockroachDB's `current_timestamp()`.
+ */
+function reprinted(sql: string): string {
+  let text = sql
+    .toLowerCase()
+    .replace(/\s*([(),])\s*/g, '$1')
+    .replace(/\s+/g, ' ')
+    .trim();
+  while (/^\(.*\)$/s.test(text)) {
+    text = text.slice(1, -1);
+  }
+  return text.replace(/\(\)$/, '');
 }
 
 /**
@@ -172,7 +172,7 @@ function defaultLiteral(value: unknown, dialect: AbstractSqlDialect, columnType?
 function expressionSql(expression: SqlExpression, dialect: AbstractSqlDialect, columnType?: string): string {
   const { expressions, preciseTypes } = DIALECT_DEFAULTS[dialect.dialectName];
   const raw = expression.kind === 'raw';
-  const sql = raw ? expression.sql : expressions[expression.kind];
+  const sql = raw ? expression.sql : { now: dialect.currentTimestamp, ...expressions }[expression.kind];
   if (sql == null) {
     throw new UqlUsageError(
       `${dialect.dialectName} has no '${expression.kind}' default; pass expr.raw(...) with SQL this engine accepts`,

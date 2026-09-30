@@ -26,6 +26,12 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     super(new SqliteDialect({}));
   }
 
+  /** SQLite takes an `OFFSET` only behind a `LIMIT`, and -1 is its every row. */
+  shouldReadEveryRowPastAnOffset() {
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $skip: 5 }));
+    expect(sql).toMatch(/ LIMIT -1 OFFSET 5$/);
+  }
+
   override shouldBeginTransaction() {
     expect(this.dialect.beginTransactionCommand).toBe('BEGIN TRANSACTION');
   }

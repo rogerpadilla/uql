@@ -62,7 +62,7 @@ describe('querierMiddleware', () => {
     mockQuerier.updateMany.mockResolvedValue(1);
     const res = await request(app).patch('/api/user/1').send({ name: 'John' });
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: '1', count: 1 });
+    expect(res.body).toEqual({ data: 1, count: 1 });
     expect(mockQuerier.updateMany).toHaveBeenCalledWith(User, expect.objectContaining({ $where: { id: '1' } }), {
       name: 'John',
     });
@@ -72,7 +72,7 @@ describe('querierMiddleware', () => {
     mockQuerier.deleteMany.mockResolvedValue(1);
     const res = await request(app).delete('/api/user/1');
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ data: '1', count: 1 });
+    expect(res.body).toEqual({ data: 1, count: 1 });
   });
 
   it('should read bracket params as a $where map ($where[name]=John) with the extended parser', async () => {

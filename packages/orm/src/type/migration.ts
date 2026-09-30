@@ -6,6 +6,7 @@ import type { ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../sche
 import type {
   EntityMeta,
   EntityWhereMeta,
+  Except,
   FieldOptions,
   IndexColumnSchema,
   IndexedVectorField,
@@ -130,7 +131,7 @@ export interface MigrationResult {
 }
 
 /** A column as a statement renders one: a {@link ColumnNode} with the engine's type spelling and no graph links. */
-export interface ColumnSchema extends Omit<ColumnNode, 'type' | 'table' | 'referencedBy' | 'references'> {
+export interface ColumnSchema extends Except<ColumnNode, 'type' | 'table' | 'referencedBy' | 'references'> {
   /**
    * The engine's own type spelling, `TINYINT(1)`, compared as stored: canonical types would differ where
    * the engine stores them alike. `sqlToCanonical` reads it.
@@ -213,11 +214,6 @@ export interface ForeignKeySchema {
   readonly onUpdate?: ForeignKeyAction;
 }
 
-/**
- * One object's change: added (`to` alone), dropped (`from` alone), or altered (both), each whole so the
- * change is undone by swapping its ends. No engine alters an index, a key or a foreign key in place, so
- * an alter of one is its drop and its add, which safe mode holds back together.
- */
 /** A column's change, and whether it can lose what the column holds: a drop, or a retype that narrows it. */
 export type ColumnChange = Change<ColumnSchema> & { readonly isBreaking?: boolean };
 
@@ -227,6 +223,11 @@ export type Rename = { readonly from: string; readonly to: string };
 /** Renamed columns by qualified table name. */
 export type ColumnRenames = ReadonlyMap<string, readonly Rename[]>;
 
+/**
+ * One object's change: added (`to` alone), dropped (`from` alone), or altered (both). Each side is the whole
+ * object, so swapping them undoes the change. No engine alters an index, a key or a foreign key in place, so
+ * altering one is a drop plus an add, which safe mode holds back together.
+ */
 export interface Change<T> {
   readonly from?: T;
   readonly to?: T;

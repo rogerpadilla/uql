@@ -2,6 +2,21 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.92.0] - 2026-09-30
+
+- **Breaking:** timestamps store milliseconds on every engine; `sync` migrates existing columns, and `precision: 6` keeps one as is.
+- **Breaking:** on MongoDB, a `$select` without the key no longer returns `id`.
+- **Breaking:** over HTTP, an update or a delete answers the number of rows it changed, as the client declares, where it answered ids. A delete naming no rows is a `400`, as on the querier, and `hardDelete` also removes rows already soft-deleted.
+- **Breaking:** `uql-orm/browser` no longer exports `getQuerier`, `getQuerierPool`, `setQuerierPool` or `ClientQuerierPool`: construct the `HttpQuerier` where it is used. `npx uql-codemod` points at each use.
+- **Breaking:** a custom SQL dialect no longer declares `tableOptions`, `alterColumnStrategy`, `alterColumnSyntax` or the `drop*Syntax` members: `PgTableDdl`, `MySqlTableDdl` and `MsSqlTableDdl` in `uql-orm/migrate` spell them.
+- `findManyPage` pages by cursor with `$after`/`$before`, over HTTP too.
+- `currentTimestamp` is the database clock on every engine. A `defaultValue` takes it, or `raw` SQL.
+- **Fixed:** `generate:from-db` and migration `down` no longer quote SQL defaults like `CURRENT_TIMESTAMP`, and `generate:from-db` keeps a fulltext index's `config` and `weight`. `drift:check` no longer reports a key column's nullability, and `getDiffs()` answers plain JSON.
+- **Fixed:** in the migration builder, `createTable('sales.orders')` creates the table in that schema, `table.index(columns, { unique: true })` is unique, and `alterColumn` refuses an `.index()` or `.references()` it used to drop.
+- **Fixed:** on MongoDB, `$gt`, `$in` and the like match an `ObjectId` key or reference, and a text index uses the language its `config` names and stops reporting drift.
+- **Fixed:** on SQLite, timestamps the database writes compare equal to a `Date`; on SQL Server, two stamps on one table no longer loop to the nesting limit.
+- **Fixed:** over HTTP, `findManyAndCount` and `?count=true` count every match, not one page. The browser client sends `PATCH` upper-case, so updates reach a Node server, and unsubscribing one listener no longer removes another.
+
 ## [0.91.1] - 2026-09-28
 
 - `Filled<T>` is gone: declare a field that `onInsert` or a `defaultValue` fills `?`, as before 0.91.0.

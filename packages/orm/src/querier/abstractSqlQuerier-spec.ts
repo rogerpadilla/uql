@@ -87,6 +87,18 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     ).rejects.toThrow('Cannot combine $select and $exclude');
   }
 
+  /** Checked as written, before the page reads a sort key the projection left out and spells `$select` whole. */
+  async shouldThrowWhenSelectAndExcludeConflictOnFindManyPage() {
+    await expect(
+      this.querier.findManyPage(User, {
+        $select: { name: true },
+        $exclude: { email: true },
+        $sort: { createdAt: -1, id: 1 },
+        $limit: 2,
+      }),
+    ).rejects.toThrow('Cannot combine $select and $exclude');
+  }
+
   async shouldThrowWhenSelectAndExcludeConflictOnFindManyAndCount() {
     await expect(
       this.querier.findManyAndCount(User, {

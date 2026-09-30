@@ -153,8 +153,8 @@ export type FilterOptions<E = unknown> = {
 /**
  * direction for the sort, and where nulls land in it.
  *
- * Unqualified, each engine has its own answer - Postgres and CockroachDB sort nulls last on `asc`, the
- * rest sort them first - so a placement is the only portable one. Engines with no `NULLS FIRST/LAST`
+ * Without a placement, engines disagree: Postgres sorts nulls last on `asc` and the rest sort them first,
+ * so only an explicit placement is portable. Engines with no `NULLS FIRST/LAST`
  * emulate it with a leading term, which no index can serve, which is why it is asked for and never
  * applied by default.
  */
@@ -342,52 +342,50 @@ export type Query<E, Raw = QueryRaw> = {
 export type WireQuery<E> = Query<E, never>;
 
 /**
- * `Query`'s clauses grouped by the shape of their value, for the wire parser and the relation query
- * check alike; `satisfies` keeps them in step with `Query`.
+ * The type of a clause's value, and where the clause may appear: a `relation` clause is also allowed in a
+ * populated relation's own query, a `statement` clause only in the statement itself.
  */
-export const QUERY_OBJECT_CLAUSES = [
-  '$select',
-  '$populate',
-  '$exclude',
-  '$where',
-  '$sort',
-] as const satisfies readonly (keyof Query<unknown>)[];
+export type QueryClause = {
+  readonly value: 'object' | 'number' | 'boolean' | 'string';
+  readonly scope: 'relation' | 'statement';
+};
 
 /**
- * Object clauses only the statement itself takes: a populated relation's rows keep their declared type,
- * so a `$count` inside one would have no `_count` to land in.
+ * Every clause of `Query` and `QueryKeyset`, read by both the wire parser and the relation query check. It
+ * must cover both types, so a clause added to either fails to compile until it is declared here.
  */
-export const QUERY_ROOT_OBJECT_CLAUSES = ['$count'] as const satisfies readonly (keyof Query<unknown>)[];
+export const QUERY_CLAUSES = {
+  $select: { value: 'object', scope: 'relation' },
+  $populate: { value: 'object', scope: 'relation' },
+  $exclude: { value: 'object', scope: 'relation' },
+  $where: { value: 'object', scope: 'relation' },
+  $sort: { value: 'object', scope: 'relation' },
+  $skip: { value: 'number', scope: 'relation' },
+  $limit: { value: 'number', scope: 'relation' },
+  $distinct: { value: 'boolean', scope: 'relation' },
+  // A populated relation's rows keep their declared type, so they have no `_count` for a `$count` to fill.
+  $count: { value: 'object', scope: 'statement' },
+  // A vector search ranks only the statement's rows, so a relation's own query has nothing for it to tune.
+  $candidates: { value: 'number', scope: 'statement' },
+  // Never decoded: HTTP refuses it, because a request cannot hold a lock past its response.
+  $lock: { value: 'object', scope: 'statement' },
+  // Statement only: keyset paging per parent of a populated relation is not supported.
+  $after: { value: 'string', scope: 'statement' },
+  $before: { value: 'string', scope: 'statement' },
+} as const satisfies { readonly [K in keyof Query<unknown> | keyof QueryKeyset<unknown>]-?: QueryClause };
 
-export const QUERY_NUMBER_CLAUSES = ['$skip', '$limit'] as const satisfies readonly (keyof Query<unknown>)[];
+type QueryClauseKey = keyof typeof QUERY_CLAUSES;
+
+/** The keys of the `QUERY_CLAUSES` entries that match `Shape`, such as `{ scope: 'relation' }`. */
+export type QueryClauseOf<Shape extends Partial<QueryClause>> = {
+  [K in QueryClauseKey]: (typeof QUERY_CLAUSES)[K] extends Shape ? K : never;
+}[QueryClauseKey];
 
 /**
- * Number clauses only the statement itself takes - the numeric mirror of {@link QUERY_ROOT_OBJECT_CLAUSES}.
- * `$candidates` tunes the index behind a vector search, and a vector search only ever ranks the rows
- * the statement returns, so a relation's own query has nothing to tune.
+ * A populated relation's own query: the clauses {@link QUERY_CLAUSES} gives the `relation` scope. Its runtime
+ * check reads the same table, so the two cannot drift.
  */
-export const QUERY_ROOT_NUMBER_CLAUSES = ['$candidates'] as const satisfies readonly (keyof Query<unknown>)[];
-
-export const QUERY_BOOLEAN_CLAUSES = ['$distinct'] as const satisfies readonly (keyof Query<unknown>)[];
-
-/** The clauses that describe the statement, which a populated relation's own query refuses by name. */
-export const QUERY_STATEMENT_CLAUSES = [
-  '$lock',
-  ...QUERY_ROOT_OBJECT_CLAUSES,
-  ...QUERY_ROOT_NUMBER_CLAUSES,
-] as const satisfies readonly (keyof Query<unknown>)[];
-
-type RelationClause = (
-  | typeof QUERY_OBJECT_CLAUSES
-  | typeof QUERY_NUMBER_CLAUSES
-  | typeof QUERY_BOOLEAN_CLAUSES
-)[number];
-
-/**
- * A populated relation's own query: the clause groups its runtime check accepts, so the two cannot
- * drift, and a clause added to {@link Query} stays off it until it joins one of them.
- */
-export type RelationQuery<E = object, Raw = QueryRaw> = Pick<Query<E, Raw>, RelationClause> & {
+export type RelationQuery<E = object, Raw = QueryRaw> = Pick<Query<E, Raw>, QueryClauseOf<{ scope: 'relation' }>> & {
   $required?: boolean;
 };
 
@@ -448,6 +446,45 @@ export type QueryOneProjected<
   C extends RelationKey<E> = never,
   Raw = QueryRaw,
 > = QueryOne<E, Raw> & QueryProjection<E, S, V, X, P, C, Raw>;
+
+/**
+ * The query `findManyPage` takes: a {@link Query} paged by cursor instead of offset, so it has no `$skip` and
+ * `$limit` is the page size. `$after` reads the page after a cursor, `$before` the page before it.
+ */
+export type QueryKeyset<E, Raw = QueryRaw> = Except<Query<E, Raw>, '$skip'> & {
+  /** The page size, required here although `Query` leaves it optional. */
+  $limit: number;
+  /** A page's `endCursor`, to read the rows after it. */
+  $after?: string;
+  /** A page's `startCursor`, to read the rows before it. */
+  $before?: string;
+};
+
+/** A {@link QueryKeyset} with its projection captured, so {@link QueryFindResult} can narrow the row. */
+export type QueryKeysetProjected<
+  E,
+  S extends FieldKey<E>,
+  V,
+  X extends FieldKey<E>,
+  P extends RelationKey<E>,
+  C extends RelationKey<E> = never,
+  Raw = QueryRaw,
+> = QueryKeyset<E, Raw> & QueryProjection<E, S, V, X, P, C, Raw>;
+
+/**
+ * One page of `findManyPage`. Each cursor is opaque, and absent on an empty page. The flag in the reading
+ * direction is exact. The other one only says whether the page was read from a cursor (`hasPrevPage` forward,
+ * `hasNextPage` backward), since checking for rows on that side would cost another statement.
+ */
+export type CursorPage<T> = {
+  readonly items: T[];
+  /** Pass as `$before` to read the page before this one. */
+  readonly startCursor?: string;
+  /** Pass as `$after` to read the page after this one. */
+  readonly endCursor?: string;
+  readonly hasNextPage: boolean;
+  readonly hasPrevPage: boolean;
+};
 
 /**
  * The keys a query comes back with, as the runtime projects them: a positive `$select`'s, or every

@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { SchemaAST } from '../../schema/schemaAST.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { RelationshipNode } from '../../schema/types.js';
 import { assertDefined, columnsOf, mockGeneratedSchema, mockTableNode } from '../../test/index.js';
 import { createEntityCodeGenerator, EntityCodeGenerator } from './entityCodeGenerator.js';
@@ -578,6 +579,22 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain("@Field({ type: 'timestamp', precision: 0 })");
     });
 
+    /** Three digits is what a `Date` field declares stating none, so writing them says nothing. */
+    it("should leave off the precision a timestamp has where it is a Date's own", () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('test', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'at', type: { category: 'timestamp', precision: 3 } },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('test');
+      assertDefined(result);
+
+      expect(result.code).toContain("@Field({ type: 'timestamp' })");
+    });
+
     it('should format complex default values correctly', () => {
       const ast = new SchemaAST();
       const table = mockTableNode('test', [
@@ -603,6 +620,27 @@ describe('EntityCodeGenerator', () => {
       expect(result.code).toContain('defaultValue: 123');
     });
 
+    /** A literal is text, whatever it spells; SQL is what an entity declares SQL with, imported with it. */
+    it('should write an SQL default as SQL, the clock as currentTimestamp, and a literal spelling one as text', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('stamped', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'spelled', type: { category: 'string' }, defaultValue: 'CURRENT_TIMESTAMP' },
+          { name: 'created', type: { category: 'timestamp' }, defaultValue: new SqlExpression('now') },
+          { name: 'derived', type: { category: 'string' }, defaultValue: SqlExpression.parenthesized("lower('A')") },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('stamped');
+      assertDefined(result);
+
+      expect(result.code).toContain("@Field({ type: 'text', defaultValue: 'CURRENT_TIMESTAMP' })");
+      expect(result.code).toContain('defaultValue: currentTimestamp');
+      expect(result.code).toContain("defaultValue: raw`(lower('A'))`");
+      expect(result.code).toContain("import { Entity, Field, Id, currentTimestamp, raw } from 'uql-orm';");
+    });
+
     it('should handle OneToOne and ManyToMany relations', () => {
       const ast = new SchemaAST();
       const users = mockTableNode('users', [{ name: 'id', type: { category: 'integer' }, isPrimaryKey: true }]);
@@ -624,7 +662,6 @@ describe('EntityCodeGenerator', () => {
         type: 'ManyToMany',
         from: { table: users, columns: [userId] },
         to: { table: tags, columns: [] },
-        through: userTags,
       };
 
       users.outgoingRelations.push(profileRel);

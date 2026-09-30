@@ -1,18 +1,19 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
-import { canonicalToSql, engineType, isVectorCategory, resolveColumnCanonicalType } from '../schema/canonicalType.js';
+import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
 import { indexChanges } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { type BuildSchemaASTOptions, buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
-import type {
-  CanonicalType,
-  ColumnNode,
-  EnumValues,
-  ForeignKeyAction,
-  IndexNode,
-  RelationshipNode,
-  TableNode,
+import {
+  type CanonicalType,
+  type ColumnNode,
+  DEFAULT_FOREIGN_KEY_ACTION,
+  type EnumValues,
+  type ForeignKeyAction,
+  type IndexNode,
+  type RelationshipNode,
+  type TableNode,
 } from '../schema/types.js';
 import type {
   Change,
@@ -24,7 +25,6 @@ import type {
   EntityMeta,
   InstalledTriggers,
   EntityWhereMeta,
-  FieldMeta,
   FieldOptions,
   ForeignKeySchema,
   IndexSchema,
@@ -37,19 +37,19 @@ import type {
   SchemaGenerator,
   Type,
 } from '../type/index.js';
-import { isAutoIncrement, qualifyName } from '../util/index.js';
+import { qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { formatDefaultValue, sameDefault } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
-import type { AnyMigrationOperation, FullColumnDefinition, IndexDefinition, TableDefinition } from './builder/types.js';
+import type { AnyMigrationOperation, FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
 import { sizedType } from './ddl/tableDdl.js';
 import { rebuildTable } from './ddl/tableRebuild.js';
 import {
   columnForeignKey,
   columnIndex,
-  fullColumnDefinitionToNode,
+  bareColumn,
   renderIndexDefinition,
   tableDefinitionToNode,
 } from './generator/definitionToNode.js';
@@ -71,7 +71,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   constructor(
     protected readonly dialect: AbstractSqlDialect,
-    protected readonly defaultForeignKeyAction: ForeignKeyAction = 'NO ACTION',
+    protected readonly defaultForeignKeyAction: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION,
   ) {
     this.indexDdl = indexDdlFor(dialect);
     this.tableDdl = tableDdlFor(dialect);
@@ -124,7 +124,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /** The SQL type a column is spelled with: the generated-key form for an auto-increment key, the canonical type otherwise. */
-  protected columnSqlType(col: ColumnNode): string {
+  protected columnSqlType(col: Pick<ColumnNode, 'type' | 'isPrimaryKey' | 'isAutoIncrement'>): string {
     return col.isPrimaryKey && col.isAutoIncrement ? this.serialType(col.type) : this.canonicalTypeToSql(col.type);
   }
 
@@ -350,10 +350,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * operand instead, which is already qualified.
    */
   generateDropIndex(tableName: string, indexName: string, schema?: string): string {
-    if (this.dialect.dropIndexSyntax === 'on-table') {
-      return `DROP INDEX ${this.escapeId(indexName)} ON ${this.escapeId(tableName)};`;
-    }
-    return `DROP INDEX IF EXISTS ${this.dialect.escapeQualifiedId(indexName, schema)};`;
+    return this.tableDdl.dropIndex(tableName, indexName, schema);
   }
 
   /**
@@ -399,17 +396,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     return def;
-  }
-
-  /**
-   * The column type a field gets, resolved as its table resolves it. A field alone cannot tell that it is
-   * one column of a composite key, which its table never makes serial.
-   */
-  public getSqlType(field: FieldMeta): string {
-    const canonical = resolveColumnCanonicalType(field);
-    return isAutoIncrement(field, field.isId === true)
-      ? this.serialType(canonical)
-      : this.canonicalTypeToSql(canonical);
   }
 
   /** The inline ` COMMENT '...'` a column declaration carries, where the engine takes one there. */
@@ -475,39 +461,30 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     // restated `CHECK` by adding a *second* constraint rather than replacing the first, so the column
     // would accumulate one per alter. An enum's values reach the database with the column and are never
     // restated - which is also why changing them is a hand-written migration. See architecture/roadmap.md.
-    const columns = (tableDiff?.columnDiffs ?? []).map((it): ColumnChange => {
-      if (it.type === 'add') {
-        return { to: this.columnNodeToSchema(it.expected) };
+    const columns = (tableDiff?.columns ?? []).map((it): ColumnChange => {
+      if (it.from === undefined) {
+        return { to: this.columnNodeToSchema(it.to) };
       }
-      if (it.type === 'drop') {
-        return { from: this.columnNodeToSchema(it.actual), isBreaking: true };
+      if (it.to === undefined) {
+        return { from: this.columnNodeToSchema(it.from), isBreaking: true };
       }
       return {
-        from: this.columnNodeToSchema(it.actual),
-        to: { ...this.columnNodeToSchema(it.expected), enum: undefined },
+        from: this.columnNodeToSchema(it.from),
+        to: { ...this.columnNodeToSchema(it.to), enum: undefined },
         isBreaking: it.isBreaking,
       };
     });
 
-    const keyDiff = tableDiff?.primaryKeyDiff;
+    const keyDiff = tableDiff?.primaryKey;
     // The key added named as this generator names it, so the rollback can drop it by that name.
     const primaryKey: Change<PrimaryKeySchema> | undefined = keyDiff && {
-      from: keyDiff.actual,
-      to: keyDiff.expected && {
-        columns: keyDiff.expected.columns,
-        name: derivedPrimaryKeyName(tableName, keyDiff.expected.columns),
-      },
+      from: keyDiff.from,
+      to: keyDiff.to && { columns: keyDiff.to.columns, name: derivedPrimaryKeyName(tableName, keyDiff.to.columns) },
     };
 
-    const relationDiffs = diffRelationshipNodes(
-      desired.outgoingRelations,
-      currentTable.outgoingRelations,
-      this.diffOptions(),
+    const foreignKeys = diffRelationshipNodes(desired.outgoingRelations, currentTable.outgoingRelations).map(
+      ({ from, to }) => ({ from: from && foreignKeyOf(from), to: to && foreignKeyOf(to) }),
     );
-    const foreignKeys = relationDiffs.map(({ actual, expected }) => ({
-      from: actual && foreignKeyOf(actual),
-      to: expected && foreignKeyOf(expected),
-    }));
 
     const alter: SchemaDiff = {
       tableName,
@@ -515,11 +492,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       type: 'alter',
       primaryKey,
       columns: nonEmpty(columns),
-      indexes: nonEmpty([
-        ...indexes.toAdd.map((to) => ({ to: indexNodeToSchema(to) })),
-        ...indexes.toDrop.map((from) => ({ from: indexNodeToSchema(from) })),
-        ...indexes.toAlter.map(({ from, to }) => ({ from: indexNodeToSchema(from), to: indexNodeToSchema(to) })),
-      ]),
+      indexes: nonEmpty(
+        indexes.changes.map(({ from, to }) => ({
+          from: from && indexNodeToSchema(from),
+          to: to && indexNodeToSchema(to),
+        })),
+      ),
       foreignKeys: nonEmpty(foreignKeys),
       renamedColumns: nonEmpty(renamedColumns ?? []),
     };
@@ -573,6 +551,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       normalizeType: engineType(this.dialect),
       defaultsEqual: this.defaultsEqual,
     };
+  }
+
+  /** Converts a builder's column to the `ColumnSchema` its DDL is rendered from. */
+  private definitionColumn(col: FullColumnDefinition): ColumnSchema {
+    const column = bareColumn(col);
+    return { ...column, type: this.columnSqlType(column) };
   }
 
   /** Spread, not copied field by field, so a field the node gains cannot go missing here. */
@@ -631,8 +615,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
     createSql += '\n)';
 
-    if (this.dialect.tableOptions) {
-      createSql += ` ${this.dialect.tableOptions}`;
+    if (this.tableDdl.tableOptions) {
+      createSql += ` ${this.tableDdl.tableOptions}`;
     }
     if (table.comment && this.features.commentSyntax === 'inline') {
       createSql += ` COMMENT=${this.dialect.escape(table.comment)}`;
@@ -658,8 +642,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   /**
-   * Generate a column definition from a ColumnNode. A composite key is declared as a table constraint,
-   * so only a lone primary key column carries `PRIMARY KEY` inline.
+   * Generate a column definition from a ColumnNode. The primary key is never inline: it is always a table
+   * constraint, so a later `DROP` can name it.
    */
   protected generateColumnFromNode(col: ColumnNode): string {
     return this.renderColumn({ ...col, type: this.columnSqlType(col) });
@@ -681,13 +665,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   generateCreateTableFromDefinition(table: TableDefinition, options: { ifNotExists?: boolean } = {}): string[] {
     const tableNode = tableDefinitionToNode(table, (sql) => this.dialect.compileDdl(sql));
     return this.generateCreateTableFromNode(tableNode, options);
-  }
-
-  generateCreateIndexFromDefinition(tableName: string, index: IndexDefinition): string {
-    return this.generateCreateIndex(
-      tableName,
-      renderIndexDefinition(index, (sql) => this.dialect.compileDdl(sql)),
-    );
   }
 
   generateRenameTableSql(oldName: string, newName: string): string {
@@ -730,10 +707,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /** `ADD COLUMN`, plus the foreign key and index the column declares, as `CREATE TABLE` lifts them. */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string[] {
-    const statements = this.addColumnStatements(
-      tableName,
-      this.columnNodeToSchema(fullColumnDefinitionToNode(column, tableName)),
-    );
+    const statements = this.addColumnStatements(tableName, this.definitionColumn(column));
 
     const foreignKey = columnForeignKey(column);
     if (foreignKey) {
@@ -748,12 +722,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   generateAlterColumnSql(tableName: string, columnName: string, column: FullColumnDefinition): string[] {
     this.assertAlterable(`Altering the column "${columnName}" of "${tableName}"`);
-    const node = fullColumnDefinitionToNode(column, tableName);
-    return this.tableDdl.alterColumn(
-      tableName,
-      { ...this.columnNodeToSchema(node), name: columnName },
-      this.generateColumnFromNode(node),
-    );
+    const schema = this.definitionColumn(column);
+    return this.tableDdl.alterColumn(tableName, { ...schema, name: columnName }, this.renderColumn(schema));
   }
 
   generateDropColumnSql(tableName: string, columnName: string): string[] {
@@ -788,7 +758,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   generateDropForeignKeySql(tableName: string, constraintName: string): string {
-    return `ALTER TABLE ${this.escapeId(tableName)} ${this.dialect.dropForeignKeySyntax} ${this.escapeId(constraintName)};`;
+    return this.tableDdl.dropForeignKey(tableName, constraintName);
   }
 
   /**
@@ -809,17 +779,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    */
   generateDropPrimaryKeySql(tableName: string, constraintName?: string): string {
     this.assertAlterable(`Changing the primary key of "${tableName}"`);
-    const table = this.escapeId(tableName);
-    if (this.dialect.dropPrimaryKeySyntax === 'DROP PRIMARY KEY') {
-      return `ALTER TABLE ${table} DROP PRIMARY KEY;`;
-    }
-    if (!constraintName) {
-      throw new UqlUsageError(
-        `Cannot drop the primary key of "${tableName}": ${this.dialect} names the constraint, and ` +
-          'introspection did not report a name for it.',
-      );
-    }
-    return `ALTER TABLE ${table} DROP CONSTRAINT ${this.escapeId(constraintName)};`;
+    return this.tableDdl.dropPrimaryKey(tableName, constraintName);
   }
 
   /** A stored generated column, which an engine that rebuilds tables takes only in a `CREATE TABLE`. */

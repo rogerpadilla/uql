@@ -23,6 +23,8 @@ describe('matchRoute', () => {
   it('should match literal sub-paths', () => {
     expect(matchRoute('GET', 'one')).toEqual({ op: 'findOne', method: 'GET' });
     expect(matchRoute('GET', 'count')).toEqual({ op: 'count', method: 'GET' });
+    expect(matchRoute('GET', 'page')).toEqual({ op: 'findManyPage', method: 'GET' });
+    expect(matchRoute('QUERY', 'page')).toEqual({ op: 'findManyPage', method: 'QUERY' });
     expect(matchRoute('POST', 'many')).toEqual({ op: 'insertMany', method: 'POST' });
     expect(matchRoute('PUT', 'many')).toEqual({ op: 'saveMany', method: 'PUT' });
   });

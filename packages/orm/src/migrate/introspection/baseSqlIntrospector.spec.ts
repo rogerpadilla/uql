@@ -166,15 +166,15 @@ describe('BaseSqlIntrospector indexes', () => {
   it('should read indexes over known columns and attach them to their table', async () => {
     const ast = await introspect([indexed]);
 
-    const [index] = ast.indexes;
-    expect(ast.getTable('users')?.indexes).toEqual([index]);
-    expect(index).toMatchObject({ name: 'users__email_uk', unique: true, entries: [{ column: 'email' }] });
+    expect(ast.getTable('users')?.indexes).toMatchObject([
+      { name: 'users__email_uk', unique: true, entries: [{ column: 'email' }] },
+    ]);
   });
 
   it('should skip an index over a column that does not exist', async () => {
     const ast = await introspect([indexed]);
 
-    expect(ast.indexes.map((index) => index.name)).toEqual(['users__email_uk']);
+    expect(ast.getTable('users')?.indexes.map((index) => index.name)).toEqual(['users__email_uk']);
   });
 });
 

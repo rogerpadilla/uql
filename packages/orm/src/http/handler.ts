@@ -2,7 +2,6 @@ import { withContext } from '../context/context.js';
 import { getMeta, soleIdOf } from '../entity/index.js';
 import type {
   EntityMeta,
-  IdValue,
   Querier,
   QuerierPool,
   Query,
@@ -12,7 +11,7 @@ import type {
   UpdateWrite,
   UqlContext,
 } from '../type/index.js';
-import { whereIds, whereWith } from '../util/dialect.util.js';
+import { whereWith } from '../util/query.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import {
   CRUD_ROUTES,
@@ -22,7 +21,7 @@ import {
   matchRoute,
   type RouteMatch,
 } from './contract.js';
-import { parseQueryParams, type WireFlags } from './query.js';
+import { parseQueryParams, type WireCursors, type WireFlags } from './query.js';
 
 /**
  * Framework-normalized request: adapters (express, fetch, ...) reduce their native
@@ -56,7 +55,7 @@ export type HookContext<E extends object, Ctx = unknown> = {
   readonly op: CrudOperation;
   readonly method: HttpMethod;
   /** The parsed query, to reshape in place. Scope rows with a `security` filter instead, which a client cannot override. */
-  query: Query<E> & WireFlags;
+  query: Query<E> & WireFlags & WireCursors;
   /**
    * request payload - reassignable for sanitization or field injection.
    */
@@ -208,11 +207,19 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
           return { data: count, count };
         }
         case 'findMany': {
-          const [data, count] = await Promise.all([
-            querier.findMany(entity, query),
-            counts ? querier.count(entity, query) : undefined,
-          ]);
+          if (!counts) {
+            return { data: await querier.findMany(entity, query) };
+          }
+          // `findManyAndCount` counts every matching row, whereas `count` would count only the page `$limit` takes.
+          const [data, count] = await querier.findManyAndCount(entity, query);
           return { data, count };
+        }
+        case 'findManyPage': {
+          const { $limit } = query;
+          if ($limit === undefined) {
+            throw new UqlUsageError('a page names how many rows it holds in $limit');
+          }
+          return { data: await querier.findManyPage(entity, { ...query, $limit }) };
         }
         case 'insertOne':
           return { data: await querier.insertOne(entity, body as E), count: 1 };
@@ -226,26 +233,16 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
           const data = await querier.saveMany(entity, body as E[]);
           return { data, count: data.length };
         }
+        // A write returns how many rows it changed, and the querier still refuses a delete that names no rows.
         case 'updateMany':
         case 'updateOneById': {
           const count = await querier.updateMany(entity, scoped, body as UpdateWrite<E>);
-          return { data: id ?? count, count };
+          return { data: count, count };
         }
+        case 'deleteMany':
         case 'deleteOneById': {
           const count = await querier.deleteMany(entity, scoped, { hardDelete });
-          return { data: id, count };
-        }
-        case 'deleteMany': {
-          const founds = await querier.findMany(entity, query);
-          if (!founds.length) {
-            return { data: [], count: 0 };
-          }
-          const idKey = soleIdOf(meta, 'the HTTP handler');
-          const ids: IdValue<E>[] = founds.map((found) => found[idKey]);
-          return {
-            data: ids,
-            count: await querier.deleteMany(entity, { $where: whereIds(meta, ids) }, { hardDelete }),
-          };
+          return { data: count, count };
         }
       }
     }

@@ -1,24 +1,26 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
+import { sqlTypeOf } from '../../test/index.js';
 import { expr } from '../builder/expressions.js';
 import { tableDdlFor } from '../ddl/index.js';
 import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
 describe('PostgresSchemaGenerator Specifics', () => {
-  const generator = new SqlSchemaGenerator(new PostgresDialect());
+  const dialect = new PostgresDialect();
+  const generator = new SqlSchemaGenerator(dialect);
   const tableDdl = tableDdlFor(new PostgresDialect());
 
   it('should map column types correctly', () => {
-    expect(generator.getSqlType({ type: String, length: 100 })).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ type: String })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
-    expect(generator.getSqlType({ columnType: 'varchar' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'text' })).toBe('TEXT');
-    expect(generator.getSqlType({ columnType: 'int' })).toBe('INTEGER');
-    expect(generator.getSqlType({ columnType: 'bigint' })).toBe('BIGINT');
-    expect(generator.getSqlType({ type: Boolean })).toBe('BOOLEAN');
-    expect(generator.getSqlType({ columnType: 'decimal', precision: 10, scale: 2 })).toBe('NUMERIC(10, 2)');
+    expect(sqlTypeOf(dialect, { type: String, length: 100 })).toBe('VARCHAR(100)');
+    expect(sqlTypeOf(dialect, { type: String })).toBe('TEXT');
+    expect(sqlTypeOf(dialect, { columnType: 'varchar', length: 100 })).toBe('VARCHAR(100)');
+    expect(sqlTypeOf(dialect, { columnType: 'varchar' })).toBe('TEXT');
+    expect(sqlTypeOf(dialect, { columnType: 'text' })).toBe('TEXT');
+    expect(sqlTypeOf(dialect, { columnType: 'int' })).toBe('INTEGER');
+    expect(sqlTypeOf(dialect, { columnType: 'bigint' })).toBe('BIGINT');
+    expect(sqlTypeOf(dialect, { type: Boolean })).toBe('BOOLEAN');
+    expect(sqlTypeOf(dialect, { columnType: 'decimal', precision: 10, scale: 2 })).toBe('NUMERIC(10, 2)');
   });
 
   it('should generate DROP INDEX statement', () => {
@@ -48,7 +50,7 @@ describe('PostgresSchemaGenerator Specifics', () => {
       name: 'createdAt',
       type: 'TIMESTAMP',
       nullable: true,
-      defaultValue: 'CURRENT_TIMESTAMP',
+      defaultValue: expr.now(),
       isPrimaryKey: false,
       isAutoIncrement: false,
       isUnique: false,
