@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.95.0] - 2026-10-01
+
+- **Breaking:** an upsert takes its update as the fourth argument, `upsertOne(Entity, { term: true }, row, { uses: { $inc: 1 } })`, where it took `{ update }`; `{}` still leaves a conflicting row as it is. `npx uql-codemod` rewrites it.
+- **Fixed:** `upsertOne`, `upsertMany`, and `saveOne`/`saveMany` on a row naming its key write cascaded relations, which they dropped; a found row's are replaced, as `updateMany` does.
+- **Fixed:** a boolean column default no longer reports drift on SQLite, MySQL, MariaDB and SQL Server.
+- On Node, `uql-migrate` loads a TypeScript `uql.config.ts` through the project's `tsx` (`npm i -D tsx`), with no `--import` flag; `--dry-run` prints only SQL to stdout.
+
 ## [0.94.0] - 2026-10-01
 
 - **Breaking:** inside a `findManyStream` loop, a statement on the same querier is refused where most engines hung: run it on another connection, or after the loop on SQLite and PGlite, whose pool has one. A stream runs `@AfterLoad` on each row, answers null columns as `findMany` does, and is logged; `release()` closes one left open.

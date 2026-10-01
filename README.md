@@ -101,6 +101,8 @@ npx uql-migrate generate:entities initial   # diffs the entities against the dat
 npx uql-migrate up                          # applies it
 ```
 
+On Node, `npm i -D tsx`: Node's type stripping does not run decorators, and the CLI imports a TypeScript config through the project's `tsx`. Bun needs nothing.
+
 ### 3. Query on the server
 
 ```ts
@@ -196,6 +198,7 @@ Only the entities in `include` are served: a `$populate: { author: true }` here 
 - [Querying](https://uql-orm.dev/querying/querier) - operators, relations, aggregates, transactions
 - [Entities](https://uql-orm.dev/entities/basic) - decorators, relations, hooks, or the decorator-free [imperative API](https://uql-orm.dev/entities/imperative)
 - [Switching to UQL](https://uql-orm.dev/switching-to-uql) - coming from Prisma, Drizzle, TypeORM, or MikroORM
+- [Examples](examples) - runnable apps on [Node](examples/node), [Bun](examples/bun), [Next.js](examples/nextjs) and [Cloudflare D1](examples/cloudflare-d1), each checked in CI
 
 Using a coding agent? The package ships a [skill](skills/uql-orm/SKILL.md) for it, and every docs page is Markdown: [set it up](https://uql-orm.dev/ai-agents).
 

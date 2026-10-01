@@ -197,8 +197,8 @@ it('should delegate every write to a fresh querier, and release it', async () =>
   expect(await pool.insertMany(entity, [{ id: 1 }])).toEqual([1, 2]);
   expect(await pool.updateOneById(entity, 1, { id: 2 }, { filters: false })).toBe(1);
   expect(await pool.updateMany(entity, {}, { id: 2 })).toBe(2);
-  expect(await pool.upsertOne(entity, { id: true }, { id: 1 }, { update: {} })).toEqual({ changes: 1 });
-  expect(await pool.upsertMany(entity, { id: true }, [{ id: 1 }], { update: { id: 3 } })).toEqual({ changes: 2 });
+  expect(await pool.upsertOne(entity, { id: true }, { id: 1 }, {})).toEqual({ changes: 1 });
+  expect(await pool.upsertMany(entity, { id: true }, [{ id: 1 }], { id: 3 })).toEqual({ changes: 2 });
   expect(await pool.saveOne(entity, { id: 1 })).toBe(1);
   expect(await pool.saveMany(entity, [{ id: 1 }])).toEqual([1, 2]);
   expect(await pool.deleteOneById(entity, 1)).toBe(1);
@@ -208,8 +208,8 @@ it('should delegate every write to a fresh querier, and release it', async () =>
 
   const [, , updateOne, , upsertOne, upsertMany] = pool.acquired;
   expect(updateOne.updateOneById).toHaveBeenCalledWith(entity, 1, { id: 2 }, { filters: false });
-  expect(upsertOne.upsertOne).toHaveBeenCalledWith(entity, { id: true }, { id: 1 }, { update: {} });
-  expect(upsertMany.upsertMany).toHaveBeenCalledWith(entity, { id: true }, [{ id: 1 }], { update: { id: 3 } });
+  expect(upsertOne.upsertOne).toHaveBeenCalledWith(entity, { id: true }, { id: 1 }, {});
+  expect(upsertMany.upsertMany).toHaveBeenCalledWith(entity, { id: true }, [{ id: 1 }], { id: 3 });
   // A pool call is one unit of work, and two of them are not one.
   expect(pool.acquired).toHaveLength(12);
   for (const acquired of pool.acquired) {

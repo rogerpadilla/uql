@@ -2398,13 +2398,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const id = '507f1f77bcf86cd799439012';
     const row = { id, name: 'VAT', percentage: 10 };
     const update = { percentage: { $inc: 5 } } as const;
-    await this.querier.upsertOne(Tax, { id: true }, row, { update });
+    await this.querier.upsertOne(Tax, { id: true }, row, update);
     expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
       name: 'VAT',
       percentage: 10,
     });
-    await this.querier.upsertOne(Tax, { id: true }, { ...row, name: 'renamed' }, { update });
-    await this.querier.upsertMany(Tax, { id: true }, [row], { update });
+    await this.querier.upsertOne(Tax, { id: true }, { ...row, name: 'renamed' }, update);
+    await this.querier.upsertMany(Tax, { id: true }, [row], update);
     expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
       name: 'VAT',
       percentage: 20,
@@ -2414,13 +2414,64 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /** An empty `update` leaves a conflicting row as it is, `onUpdate` fills included: insert only if absent. */
   async shouldUpsertWithAnEmptyUpdateLeavingTheRowAsItIs() {
     const id = '507f1f77bcf86cd799439013';
-    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT' }, { update: {} });
-    const ignored = await this.querier.upsertOne(Tax, { id: true }, { id, name: 'renamed' }, { update: {} });
-    const batch = await this.querier.upsertMany(Tax, { id: true }, [{ id, name: 'renamed' }], { update: {} });
+    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT' }, {});
+    const ignored = await this.querier.upsertOne(Tax, { id: true }, { id, name: 'renamed' }, {});
+    const batch = await this.querier.upsertMany(Tax, { id: true }, [{ id, name: 'renamed' }], {});
     expect([ignored.id, ignored.changes, batch.ids, batch.changes]).toEqual([id, 0, [id], 0]);
     const stored = await this.querier.findOneById(Tax, id, { $select: { name: true, updatedAt: true } });
     assertDefined(stored);
     expect([stored.name, stored.updatedAt == null]).toEqual(['VAT', true]);
+  }
+
+  private async adjustmentPrices(inventoryAdjustmentId: string) {
+    const rows = await this.querier.findMany(ItemAdjustment, {
+      $select: { buyPrice: true },
+      $where: { inventoryAdjustmentId },
+    });
+    return rows.map((it) => it.buyPrice).sort();
+  }
+
+  /** An upsert writes a row's relations on either branch, as an insert or an update does: a found row's are replaced. */
+  async shouldUpsertAndCascadeOneToManyOnEitherBranch() {
+    const id = '507f1f77bcf86cd799439041';
+    await this.querier.upsertOne(InventoryAdjustment, { id: true }, { id, itemAdjustments: [{ buyPrice: 5 }] });
+    expect(await this.adjustmentPrices(id)).toEqual([5]);
+    await this.querier.upsertMany(InventoryAdjustment, { id: true }, [
+      { id, description: 'found', itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] },
+    ]);
+    expect(await this.adjustmentPrices(id)).toEqual([7, 9]);
+  }
+
+  /** A found row takes the relations its `update` names, and an inserted one the payload's. */
+  async shouldUpsertWithAnUpdateCascadingOneToMany() {
+    const found = '507f1f77bcf86cd799439042';
+    const inserted = '507f1f77bcf86cd799439043';
+    await this.querier.insertOne(InventoryAdjustment, {
+      id: found,
+      description: 'there',
+      itemAdjustments: [{ buyPrice: 1 }],
+    });
+    await this.querier.upsertMany(
+      InventoryAdjustment,
+      { id: true },
+      [
+        { id: found, description: 'payload', itemAdjustments: [{ buyPrice: 3 }] },
+        { id: inserted, description: 'payload', itemAdjustments: [{ buyPrice: 3 }] },
+      ],
+      { itemAdjustments: [{ buyPrice: 2 }] },
+    );
+    expect([await this.adjustmentPrices(found), await this.adjustmentPrices(inserted)]).toEqual([[2], [3]]);
+    const row = await this.querier.findOneById(InventoryAdjustment, found, { $select: { description: true } });
+    assertDefined(row);
+    expect(row.description).toBe('there');
+  }
+
+  /** A save naming its key upserts, so it writes the row's relations as an insert would. */
+  async shouldSaveOneNamingItsKeyAndCascadeOneToMany() {
+    const id = await this.querier.insertOne(InventoryAdjustment, { description: 'first' });
+    assertDefined(id);
+    await this.querier.saveOne(InventoryAdjustment, { id, itemAdjustments: [{ buyPrice: 4 }] });
+    expect(await this.adjustmentPrices(id)).toEqual([4]);
   }
 
   async shouldUpsertManyEmpty() {
@@ -2600,7 +2651,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     assertDefined(id);
 
     await asTenant('a', () =>
-      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { update: { title: 'update' } }),
+      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { title: 'update' }),
     );
 
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
@@ -2612,7 +2663,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     assertDefined(id);
 
     const result = await asTenant('a', () =>
-      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { update: {} }),
+      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, {}),
     );
 
     expect(result).toMatchObject({ id, changes: 0 });

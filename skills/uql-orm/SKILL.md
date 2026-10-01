@@ -22,6 +22,8 @@ npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/
 
 ESM only. Node 24+, Bun, Deno or an edge runtime, TypeScript 5.2+. Decorators are the TC39 standard: never enable `experimentalDecorators` or `emitDecoratorMetadata`, never import `reflect-metadata`. In `tsconfig.json`, `module` is `nodenext` or `preserve`, and `target` is a dated one (`es2022`+), not `esnext`.
 
+Node's type stripping runs no decorators: on Node, add `tsx` (`npm i -D tsx`), which `uql-migrate` imports `uql.config.ts` through. Next.js compiles TC39 decorators only through a `babel.config.json` with `@babel/plugin-proposal-decorators` at `version: '2023-11'`. A bundle that minifies class names (Next's server build, or any bundler's `minify`) needs `@Entity({ name: 'todo' })`: a table name is the class name otherwise.
+
 ```ts
 // uql.config.ts
 import type { Config } from 'uql-orm';
@@ -108,7 +110,7 @@ const users = await pool.findMany(User, {
 - `$populate` loads relations in the same statement. Nothing is lazy: a relation not populated is not there.
 - A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`, whose handler serves only the entities its required `include` names.
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
-- `upsertOne(Entity, { email: true }, row, { update })`: a conflicting row takes `update`, an update's payload with its operators, instead of `row`; a new one inserts `row`. `{ update: {} }` leaves a conflicting row as it is: insert if absent.
+- `upsertOne(Entity, { email: true }, row, update?)`: a conflicting row takes `update`, an update's payload with its operators (`{ uses: { $inc: 1 } }`), instead of `row`; a new one inserts `row`. An empty `{}` leaves a conflicting row as it is: insert if absent. Cascaded relations write on either branch, a found row's replaced, as `updateMany` does.
 - `updateMany` and `deleteMany` naming no rows - no `$where` holding a value (an `undefined` or an empty group holds none), no `$limit` - throw; `{ unfiltered: true }` means the whole table.
 - An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0, so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. On SQL the step may be a ref or `raw` of the field's type (`{ total: { $inc: newRow.amount } }` in a trigger). JSON fields take `$set`, `$unset`, `$push`, `$pull`.
 - `$lock: true` locks the rows a read returns (`{ $wait: 'skip' | 'nowait' }` says what to do about a row someone else holds) and needs an open transaction; SQLite, libSQL, Turso, D1 and MongoDB have no row lock and refuse it.
@@ -132,13 +134,14 @@ A `findManyStream` holds its querier until the loop ends, which refuses any othe
 
 ## Migrations
 
-`npx uql-migrate` reads `uql.config.ts`:
+`npx uql-migrate` reads `uql.config.ts` (`bun --bun uql-migrate` on Bun):
 
 - `sync` applies what the entities imply (development only).
 - `generate:entities` writes the diff as a migration file to review. It renames a column whose field was renamed and refuses a required column with no default on a table holding rows.
 - `up` and `down` apply and revert migrations.
 - `generate:from-db` writes entity classes from an existing database.
 - `drift:check` fails when the database no longer matches.
+- `sync --dry-run` prints only SQL on stdout, to append to a migration file another tool applies: on Cloudflare D1, wrangler's (https://uql-orm.dev/cloudflare-d1.md).
 
 Triggers are part of the diff: uql owns the `_uql_`-prefixed ones and never touches another.
 

@@ -26,7 +26,7 @@ import type {
   SqlValues,
   TriggerRows,
   Type,
-  UpsertOptions,
+  UpdatePayload,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
@@ -241,9 +241,9 @@ export class MsSqlDialect extends MergeSqlDialect {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    opts?: UpsertOptions<E>,
+    update?: UpdatePayload<E>,
   ): void {
-    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload, opts));
+    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload, update));
   }
 
   /**

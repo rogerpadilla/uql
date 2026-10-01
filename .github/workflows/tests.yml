@@ -55,6 +55,31 @@ jobs:
       - name: Check type resolution
         run: bunx --bun @arethetypeswrong/cli --pack --ignore-rules cjs-resolves-to-esm no-resolution
         working-directory: packages/orm
+  # Each example runs as a user would: the CLI on its runtime, a drift check, then its server answering a
+  # write and a read. They catch what unit tests cannot: a bundler or runtime calling the decorators wrong.
+  examples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        example: [node, nextjs, bun, cloudflare-d1]
+    name: Example (${{ matrix.example }})
+    steps:
+      - uses: actions/checkout@v6
+      - uses: ./.github/actions/setup
+        with:
+          node-version: lts/*
+      - name: Build
+        run: bun run --filter uql-orm build
+      # Links `uql-migrate` again, now that its target exists, so the bin is executable.
+      - name: Link the built package
+        run: bun install --frozen-lockfile
+      - name: Check
+        run: bun run --filter uql-example-${{ matrix.example }} check
+      - name: Smoke
+        run: bun run --filter uql-example-${{ matrix.example }} smoke
+
   tests:
     runs-on: ubuntu-latest
     timeout-minutes: 15

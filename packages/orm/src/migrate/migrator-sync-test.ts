@@ -143,6 +143,8 @@ export function describeMigratorSync(db: DatabaseConfig) {
         @Field({ type: String, defaultValue: 'a\\b' }) slash?: string | null;
         @Field({ type: 'text', defaultValue: 'none' }) note?: string | null;
         @Field({ type: Number, defaultValue: -3 }) negative?: number | null;
+        @Field({ type: Boolean, defaultValue: false }) off?: boolean | null;
+        @Field({ type: Boolean, defaultValue: true }) on?: boolean | null;
       }
 
       await givenNoTable('AutoSyncDefaultsTest');

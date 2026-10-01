@@ -1,23 +1,45 @@
 import { stat } from 'node:fs/promises';
+import { createRequire } from 'node:module';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Config } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
+type ConfigModule = { default?: unknown };
+
+type TsxApi = { tsImport(specifier: string, parentURL: string): Promise<ConfigModule> };
+
 /**
- * Loads the config with a plain `import()`, leaving TypeScript to the runtime: uql bundles no transpiler,
- * since only the project knows its decorator spec. Node's type stripping handles no decorators.
+ * The project's own `tsx/esm/api` where Node must load a TypeScript config: Node's type stripping runs
+ * no decorators, and Bun and Deno transform them natively. uql bundles no transpiler, so the project's
+ * loader reads the project's `tsconfig.json`.
  */
+export function tsxApiFor(path: string, versions: { bun?: string; deno?: string }): string | undefined {
+  if (!/\.[mc]?ts$/.test(path) || versions.bun || versions.deno) {
+    return undefined;
+  }
+  try {
+    return createRequire(path).resolve('tsx/esm/api');
+  } catch {
+    return undefined;
+  }
+}
+
 async function importConfig(path: string): Promise<unknown> {
-  const mod = (await import(pathToFileURL(path).href).catch((cause: unknown) => {
+  const url = pathToFileURL(path).href;
+  const tsxApi = tsxApiFor(path, process.versions);
+  const loading: Promise<ConfigModule> = tsxApi
+    ? import(pathToFileURL(tsxApi).href).then((api: TsxApi) => api.tsImport(url, import.meta.url))
+    : import(url);
+  const mod = await loading.catch((cause: unknown) => {
     throw new UqlUsageError(
       `Could not import ${path}: ${(cause as Error)?.message}\n` +
         'If it reaches entity classes, their decorators need a runtime that transforms TypeScript, not ' +
-        'just one that strips its types. Run the CLI with `bun`, or with `node --import tsx` ' +
-        '(`npm i -D tsx`). A JavaScript config, or passing the config inline, needs neither.',
+        'just one that strips its types. Run the CLI with `bun`, or install tsx (`npm i -D tsx`), which the ' +
+        'CLI uses when it finds one. See https://uql-orm.dev/migrations#running-the-cli',
       { cause },
     );
-  })) as { default?: unknown };
+  });
   return mod.default ?? mod;
 }
 

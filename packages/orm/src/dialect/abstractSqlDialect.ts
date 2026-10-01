@@ -58,7 +58,6 @@ import {
   type TriggerWrite,
   type Type,
   type UpdatePayload,
-  type UpsertOptions,
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
 import { isInlinedExpression } from '../util/field.util.js';
@@ -2158,7 +2157,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    { update }: UpsertOptions<E> = {},
+    update?: UpdatePayload<E>,
   ): void {
     const meta = getMeta(entity);
     const updateCtx = this.upsertUpdateBindsInPlace ? ctx : this.createContext();

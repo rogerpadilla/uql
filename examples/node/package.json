@@ -1,0 +1,19 @@
+{
+  "name": "uql-example-node",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "start": "tsx src/server.ts",
+    "check": "tsc --noEmit",
+    "smoke": "node ../smoke.ts --schema 'uql-migrate sync' --drift 'uql-migrate sync --dry-run' --serve 'tsx src/server.ts' --url http://localhost:3102/todos"
+  },
+  "dependencies": {
+    "uql-orm": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^26.6.3",
+    "tsx": "^4.23.15",
+    "typescript": "^7.0.2"
+  }
+}

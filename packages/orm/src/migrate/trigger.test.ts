@@ -404,7 +404,7 @@ describe.each(sqlPools('test_trigger', 'cockroachdb', 'mysql', 'mariadb', 'sqlit
   {
     on: 'afterInsert',
     name: 'first',
-    run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, { update: {} }),
+    run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, {}),
   },
 )
 @Entity({ name: 'TgSale' })
@@ -450,8 +450,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
   {
     on: 'afterInsert',
     name: 'count',
-    run: (newRow) =>
-      upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { update: { hits: { $inc: 1 } } }),
+    run: (newRow) => upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { hits: { $inc: 1 } }),
   },
   {
     on: 'afterInsert',
@@ -461,7 +460,7 @@ describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) 
         TgTotal,
         { sku: true },
         { sku: newRow.sku, total: newRow.qty },
-        { update: { total: raw`${refs(TgTotal).total} + ${newRow.qty}` } },
+        { total: raw`${refs(TgTotal).total} + ${newRow.qty}` },
       ),
   },
 )

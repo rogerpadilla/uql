@@ -10,7 +10,7 @@ import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
 import type { Config } from '../type/index.js';
 import * as cliConfig from './cli-config.js';
 import * as cli from './cli.js';
-import type { Migrator } from './migrator.js';
+import { type Migrator, Migrator as MockedMigrator } from './migrator.js';
 
 @Entity()
 class TestEntity {
@@ -127,6 +127,16 @@ describe('CLI', () => {
 
     expect(readFileSync(output, 'utf-8')).toContain('export interface TestEntity {');
     rmSync(dirname(output), { recursive: true, force: true });
+  });
+
+  it('should log to stderr on a --dry-run, leaving stdout to the SQL', async () => {
+    await cli.main(['sync', '--dry-run']);
+    expect(MockedMigrator).toHaveBeenCalledWith(pool, expect.objectContaining({ logger: console.error }));
+  });
+
+  it('should log to stdout on any other command', async () => {
+    await cli.main(['sync']);
+    expect(MockedMigrator).toHaveBeenCalledWith(pool, expect.objectContaining({ logger: console.log }));
   });
 
   it('should force a sync with --force', async () => {
@@ -264,14 +274,15 @@ describe('CLI', () => {
 
     await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
 
-    expect(console.log).toHaveBeenCalledWith('\nALTER TABLE "users" ADD COLUMN "age" INTEGER;');
+    expect(console.log).toHaveBeenCalledWith('ALTER TABLE "users" ADD COLUMN "age" INTEGER;');
     expect(migrator.sync).not.toHaveBeenCalled();
   });
 
-  it('should say so where a --dry-run has nothing to do', async () => {
+  it('should say so on stderr where a --dry-run has nothing to do, keeping stdout a SQL file', async () => {
     await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
 
-    expect(console.log).toHaveBeenCalledWith('\nSchema is already in sync.');
+    expect(console.error).toHaveBeenCalledWith('Schema is already in sync.');
+    expect(console.log).not.toHaveBeenCalled();
   });
 
   it('should exit a drift check with no entities', async () => {

@@ -641,6 +641,34 @@ function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
   rewriteIndexWhere(options && ts.isObjectLiteralExpression(options) ? options : undefined, ctx);
 }
 
+const UPSERT_CALLS: ReadonlySet<string> = new Set(['upsertOne', 'upsertMany', 'upsertInto']);
+
+/**
+ * Rewrites an upsert's options holding `update` alone into that update, its fourth argument now. Read wherever it is
+ * called, since a querier is seldom imported from uql where it is used. Any other fourth argument is already an
+ * update, `{}` included, so a second run changes nothing.
+ */
+function rewriteUpsertCall(call: ts.CallExpression, ctx: Context): void {
+  const callee = call.expression;
+  const name = ts.isPropertyAccessExpression(callee) ? callee.name : callee;
+  const options = call.arguments[3];
+  const update = options && upsertUpdate(options);
+  if (ts.isIdentifier(name) && UPSERT_CALLS.has(name.text) && options && update) {
+    ctx.edits.push(replaced(options, update.getText()));
+  }
+}
+
+/** The value of options holding `update` alone, `{ update: value }` or `{ update }`. */
+function upsertUpdate(options: ts.Expression): ts.Expression | undefined {
+  const [property] = ts.isObjectLiteralExpression(options) && options.properties.length === 1 ? options.properties : [];
+  if (property && ts.isPropertyAssignment(property) && propertyKey(property.name) === 'update') {
+    return property.initializer;
+  }
+  return property && ts.isShorthandPropertyAssignment(property) && property.name.text === 'update'
+    ? property.name
+    : undefined;
+}
+
 /**
  * `owner` is the declaring class's parameter and `target` the related one's, read off the `entity`
  * getter unless the caller knows it from the property's type.
@@ -1332,6 +1360,7 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     }
     if (ts.isCallExpression(node)) {
       rewriteDefineCall(node, ctx);
+      rewriteUpsertCall(node, ctx);
       if (importsUql) {
         rewriteBuilderCall(node, ctx);
       }

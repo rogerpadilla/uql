@@ -6,7 +6,6 @@ import {
   TriggerWriteRaw,
   type Type,
   type UpdatePayload,
-  type UpsertOptions,
   type WritableKey,
   type WriteRow,
 } from '../type/index.js';
@@ -22,13 +21,13 @@ export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>):
 
 /**
  * A row inserted by a trigger's body, or what its conflict paths find taking `update` instead, as `upsertOne`
- * does: `upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, { update: { count: { $inc: 1 } } })`.
+ * does: `upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, { count: { $inc: 1 } })`.
  */
 export function upsertInto<E extends object>(
   entity: Type<E>,
   conflictPaths: QueryConflictPaths<E>,
   row: WriteRow<E>,
-  { update }: UpsertOptions<E, UpdatePayload<E, QueryRaw, WritableKey<E>, never>> = {},
+  update?: UpdatePayload<E, QueryRaw, WritableKey<E>, never>,
 ): QueryRaw {
   return written({ kind: 'upsert', entity, conflictPaths, row, update });
 }

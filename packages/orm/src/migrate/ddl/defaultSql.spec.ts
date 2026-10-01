@@ -4,7 +4,22 @@ import { SqlExpression, schemaDefault } from '../../schema/sqlExpression.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
 import { type QueryRaw, SQL_VALUE_NAMES } from '../../type/index.js';
 import { currentTimestamp, uuid, raw, SQL_VALUES } from '../../util/raw.js';
-import { knownDefault } from './defaultSql.js';
+import { knownDefault, sameDefault } from './defaultSql.js';
+
+describe('sameDefault', () => {
+  it('should read a boolean default as the integer an engine without booleans stores', () => {
+    const sqlite = new SqliteDialect();
+    expect(sameDefault(false, 0, sqlite)).toBe(true);
+    expect(sameDefault(true, '1', sqlite)).toBe(true);
+    expect(sameDefault(true, 0, sqlite)).toBe(false);
+  });
+
+  it('should keep a boolean default a boolean where the engine has them', () => {
+    const postgres = new PostgresDialect();
+    expect(sameDefault(false, false, postgres)).toBe(true);
+    expect(sameDefault(false, 0, postgres)).toBe(false);
+  });
+});
 
 describe('SQL values', () => {
   const postgres = new PostgresDialect();

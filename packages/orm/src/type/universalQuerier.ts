@@ -11,7 +11,6 @@ import type {
   QueryProjected,
   QuerySearch,
   QueryUpsertOneResult,
-  UpsertOptions,
   QueryUpsertManyResult,
 } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
@@ -173,20 +172,24 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     payload: readonly EntityWrite<E>[],
   ): Promise<(WrittenId<E> | undefined)[]>;
 
-  /** Insert or update a record by its conflict paths; resolves to its id and whether it was created. */
+  /**
+   * Insert or update a record by its conflict paths; resolves to its id and whether it was created. A conflicting
+   * row takes the payload less those paths, or `update` as `updateMany` takes one: `{ uses: { $inc: 1 } }` counts,
+   * and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
+   */
   upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
-    opts?: UpsertOptions<E>,
+    update?: UpdateWrite<E>,
   ): Promise<QueryUpsertOneResult<E>>;
 
-  /** Insert or update records by their conflict paths; resolves to their ids in payload order. */
+  /** Insert or update records by their conflict paths, as `upsertOne` does; resolves to their ids in payload order. */
   upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
-    opts?: UpsertOptions<E>,
+    update?: UpdateWrite<E>,
   ): Promise<QueryUpsertManyResult<E>>;
 
   /**

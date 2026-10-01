@@ -858,7 +858,7 @@ describe('an upsert in the body, to another table', () => {
     on: 'afterInsert',
     run: (newRow) => upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, update),
   });
-  const counted = tally({ update: { count: { $inc: 1 } } });
+  const counted = tally({ count: { $inc: 1 } });
 
   it('should take the incoming row on a conflict, less the conflict paths, as each engine reads it', () => {
     expect(render(new PostgresDialect(), tally()).join('\n')).toContain(
@@ -886,7 +886,7 @@ describe('an upsert in the body, to another table', () => {
 
   /** The engine has the incoming row in scope beside the one there, so a ref to the table is qualified by it. */
   it('should read the row already there through SQL in its update', () => {
-    const summed = tally({ update: { count: raw`${refs(Tally).count} + 1` } });
+    const summed = tally({ count: raw`${refs(Tally).count} + 1` });
     expect(render(new PostgresDialect(), summed).join('\n')).toContain('DO UPDATE SET "count" = "Tally"."count" + 1;');
     expect(render(new MySqlDialect(), summed).join('\n')).toContain(
       'ON DUPLICATE KEY UPDATE `count` = `Tally`.`count` + 1;',
@@ -894,10 +894,10 @@ describe('an upsert in the body, to another table', () => {
   });
 
   it('should leave a conflicting row as it is on an empty update', () => {
-    expect(render(new PostgresDialect(), tally({ update: {} })).join('\n')).toContain(
+    expect(render(new PostgresDialect(), tally({})).join('\n')).toContain(
       'VALUES (NEW."id", 1) ON CONFLICT ("postId") DO NOTHING;',
     );
-    expect(render(new MySqlDialect(), tally({ update: {} })).join('\n')).toContain(
+    expect(render(new MySqlDialect(), tally({})).join('\n')).toContain(
       'INSERT IGNORE INTO `Tally` (`postId`, `count`) VALUES (NEW.`id`, 1);',
     );
   });

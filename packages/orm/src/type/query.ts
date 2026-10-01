@@ -5,7 +5,6 @@ import type {
   RelationKey,
   RelationTarget,
   ToManyRelationKey,
-  UpdatePayload,
   WrittenId,
 } from './entity.js';
 import type { QueryLock } from './queryLock.js';
@@ -552,18 +551,6 @@ type QueryProjectedRow<
 
 /** The to-many relations a query populated, which come back as lists rather than as optional ones. */
 type PopulatedToMany<E, P> = Extract<P, ToManyRelationKey<E>>;
-
-/**
- * How an upsert treats a row its conflict paths find: by default it takes the payload, less those paths. `U` is
- * what a trigger's `upsertInto` narrows the update to.
- */
-export type UpsertOptions<E, U = UpdatePayload<E>> = {
-  /**
-   * What such a row takes instead, as an update does, `{ uses: { $inc: 1 } }` counting; `{}` leaves it as it is,
-   * inserting only where none is. The payload still inserts.
-   */
-  readonly update?: U;
-};
 
 /** What upserting one row reports. `created` is only knowable for a single statement, so a batch has none. */
 export type QueryUpsertOneResult<E> = {

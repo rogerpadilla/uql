@@ -7,7 +7,7 @@ import type {
   QueryPager,
   TriggerRows,
   Type,
-  UpsertOptions,
+  UpdatePayload,
 } from '../type/index.js';
 import { assertNonNegativeInteger, getKeys } from '../util/index.js';
 import { AbstractSqlDialect, fromRows } from './abstractSqlDialect.js';
@@ -43,7 +43,7 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    { update }: UpsertOptions<E> = {},
+    update?: UpdatePayload<E>,
   ): void {
     const meta = getMeta(entity);
     // Before the row source, which is what fills the payload's `onInsert` fields: a column that

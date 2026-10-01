@@ -80,14 +80,17 @@ export async function arithmeticSafety() {
   // @ts-expect-error an upsert writes whole rows, with no update operator
   await querier.upsertOne(Counter, { id: true }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
 
-  // A conflicting row takes `update`, an update's payload, operators included.
+  // A conflicting row takes the fourth argument as `updateMany` takes an update, operators and relations included.
   const row = { id: 1, label: 'x', total: 1n };
-  await querier.upsertOne(Counter, { id: true }, row, { update: { hits: { $inc: 1 } } });
-  await querier.upsertMany(Counter, { id: true }, [row], { update: { total: { $inc: 1n } } });
-  // @ts-expect-error `update` is checked as an update is: 'hit' is not a field of Counter
-  await querier.upsertOne(Counter, { id: true }, row, { update: { hit: { $inc: 1 } } });
+  await querier.upsertOne(Counter, { id: true }, row, { hits: { $inc: 1 } });
+  await querier.upsertMany(Counter, { id: true }, [row], { total: { $inc: 1n } });
+  // @ts-expect-error it is checked as an update is: 'hit' is not a field of Counter
+  await querier.upsertOne(Counter, { id: true }, row, { hit: { $inc: 1 } });
   // @ts-expect-error and only a numeric field increments there too
-  await querier.upsertOne(Counter, { id: true }, row, { update: { label: { $inc: 1 } } });
+  await querier.upsertOne(Counter, { id: true }, row, { label: { $inc: 1 } });
+  await querier.upsertMany(Counter, { id: true }, [row], { owner: { id: 1, name: 'Acme' } });
+  // @ts-expect-error a relation's value is checked against its own entity's fields
+  await querier.upsertMany(Counter, { id: true }, [row], { owner: { id: 1, naem: 'Acme' } });
 }
 
 export async function conflictPathSafety() {

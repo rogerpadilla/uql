@@ -13,7 +13,7 @@ import type {
   SqlDialectName,
   SqlValues,
   Type,
-  UpsertOptions,
+  UpdatePayload,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
@@ -138,7 +138,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    { update }: UpsertOptions<E> = {},
+    update?: UpdatePayload<E>,
   ): void {
     const meta = getMeta(entity);
     const updateCtx = this.createContext();

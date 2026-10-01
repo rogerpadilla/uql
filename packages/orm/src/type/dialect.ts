@@ -1,13 +1,5 @@
 import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
-import type {
-  Query,
-  QueryConflictPaths,
-  QueryPage,
-  QueryRenderOptions,
-  QuerySearch,
-  RelationQuery,
-  UpsertOptions,
-} from './query.js';
+import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { QueryRawRenderOptions } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -346,13 +338,13 @@ export interface SqlQueryDialect {
     opts?: QueryRenderOptions,
   ): void;
 
-  /** An upsert of one record or many by their conflict paths, taking the options `upsertMany` takes. */
+  /** An upsert of one record or many by their conflict paths, a conflicting row taking `update` where given. */
   upsert<E>(
     ctx: QueryContext,
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    opts?: UpsertOptions<E>,
+    update?: UpdatePayload<E>,
   ): void;
 
   /** A write in a trigger's body; `rows` are what a set-based engine's body reads, narrowed to the ones it fires for. */

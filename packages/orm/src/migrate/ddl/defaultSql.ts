@@ -65,8 +65,12 @@ export function sameDefault(desired: unknown, current: unknown, dialect: Abstrac
     );
   }
   // Compared as text, since a catalogue may report a number either as a number or as its text.
-  return writtenDefault(want) === writtenDefault(have);
+  return writtenDefault(storedLiteral(want, dialect)) === writtenDefault(storedLiteral(have, dialect));
 }
+
+/** A boolean as the engine stores it: the integer {@link defaultLiteral} writes where it has no booleans. */
+const storedLiteral = (value: unknown, dialect: AbstractSqlDialect): unknown =>
+  typeof value === 'boolean' && dialect.booleanLiteral !== 'native' ? Number(value) : value;
 
 /**
  * Reads SQL a catalogue reports as the value uql exports that renders alike, so a declared `currentTimestamp`

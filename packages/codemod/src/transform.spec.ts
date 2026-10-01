@@ -1372,6 +1372,38 @@ export default defineBuilderMigration({
     ]);
   });
 
+  it("passes an upsert's update itself, wherever the querier comes from", () => {
+    const { text, unresolved } = codemodFile(`declare function upsertInto(...args: unknown[]): void;
+declare const pool: { upsertOne(...args: unknown[]): void; upsertMany(...args: unknown[]): void };
+declare const Tally: unknown;
+const update = { hits: { $inc: 1 } };
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { update: { hits: { $inc: 1 } } });
+pool.upsertMany(Tally, { sku: true }, [{ sku: 'a' }], { update });
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { update: {} });
+upsertInto(Tally, { sku: true }, { sku: 'a' }, { 'update': update });
+`);
+
+    expect(text).toContain("pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { hits: { $inc: 1 } });");
+    expect(text).toContain("pool.upsertMany(Tally, { sku: true }, [{ sku: 'a' }], update);");
+    expect(text).toContain("pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, {});");
+    expect(text).toContain("upsertInto(Tally, { sku: true }, { sku: 'a' }, update);");
+    expect(unresolved).toEqual([]);
+  });
+
+  it('leaves an upsert already passing its update alone, so a second run changes nothing', () => {
+    const body = `declare const pool: { upsertOne(...args: unknown[]): void };
+declare const Tally: unknown;
+declare const update: object;
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, { hits: { $inc: 1 } });
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, update);
+pool.upsertOne(Tally, { sku: true }, { sku: 'a' }, {});
+`;
+    const { text, unresolved } = codemodFile(body);
+
+    expect(text).toBe(body);
+    expect(unresolved).toEqual([]);
+  });
+
   it('leaves a method of the same name alone in a file that does not import uql-orm', () => {
     const body = `declare const t: { index(columns: unknown[], options?: unknown): void };
 declare function raw(strings: TemplateStringsArray): unknown;

@@ -30,7 +30,6 @@ import type {
   TransactionOptions,
   Type,
   UpdatePayload,
-  UpsertOptions,
 } from '../type/index.js';
 import {
   clone,
@@ -298,8 +297,6 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       for (let index = 0; index < rows.length; index++) {
         rows[index][idKey] = ids[index];
       }
-
-      await this.insertRelations(entity, rows);
     });
   }
 
@@ -387,7 +384,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E,
-    { update }: UpsertOptions<E>,
+    update?: UpdatePayload<E>,
   ) {
     refuseTriggers(entity);
     if (update) {
@@ -421,7 +418,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
-    { update }: UpsertOptions<E>,
+    update?: UpdatePayload<E>,
   ) {
     refuseTriggers(entity);
     if (update) {

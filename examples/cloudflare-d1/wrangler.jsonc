@@ -1,0 +1,14 @@
+{
+  "name": "uql-example-d1",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-09-01",
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "uql-example",
+      // `wrangler d1 create uql-example` prints the id to put here before deploying.
+      "database_id": "00000000-0000-0000-0000-000000000000",
+      "migrations_dir": "migrations",
+    },
+  ],
+}

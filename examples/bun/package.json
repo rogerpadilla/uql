@@ -1,0 +1,18 @@
+{
+  "name": "uql-example-bun",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "bun --watch src/server.ts",
+    "start": "bun src/server.ts",
+    "check": "tsc --noEmit",
+    "smoke": "bun ../smoke.ts --schema 'bun --bun uql-migrate sync' --drift 'bun --bun uql-migrate sync --dry-run' --serve 'bun src/server.ts' --url http://localhost:3103/todos"
+  },
+  "dependencies": {
+    "uql-orm": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/bun": "^1.4.2",
+    "typescript": "^7.0.2"
+  }
+}

@@ -1,7 +1,25 @@
 import fs from 'node:fs/promises';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig } from './cli-config.js';
+import { loadConfig, tsxApiFor } from './cli-config.js';
+
+/** A project holding a stub `tsx` whose `tsImport` answers a config tagged with the loader. */
+async function projectWithTsx(): Promise<string> {
+  const dir = await fs.mkdtemp(path.join(tmpdir(), 'uql-tsx-'));
+  const tsx = path.join(dir, 'node_modules', 'tsx');
+  await fs.mkdir(path.join(tsx, 'dist'), { recursive: true });
+  await fs.writeFile(
+    path.join(tsx, 'package.json'),
+    JSON.stringify({ name: 'tsx', type: 'module', exports: { './esm/api': './dist/api.js' } }),
+  );
+  await fs.writeFile(
+    path.join(tsx, 'dist', 'api.js'),
+    'export const tsImport = async () => ({ default: { pool: { dialect: { dialectName: "loadedByTsx" } } } });',
+  );
+  await fs.writeFile(path.join(dir, 'uql.config.ts'), 'export default {};');
+  return dir;
+}
 
 describe('cli-config', () => {
   const configPath = path.resolve(process.cwd(), 'uql.config.js');
@@ -80,6 +98,75 @@ describe('cli-config', () => {
       expect(config.pool.dialect.dialectName).toBe('sqlite');
     } finally {
       await fs.unlink(namedPath).catch(() => {});
+    }
+  });
+
+  it('should import a TypeScript config through the tsx the project installed', async () => {
+    const dir = await projectWithTsx();
+    try {
+      const config = await loadConfig(path.join(dir, 'uql.config.ts'));
+      expect(config.pool.dialect.dialectName).toBe('loadedByTsx');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should find the tsx beside a TypeScript config', async () => {
+    const dir = await projectWithTsx();
+    try {
+      expect(tsxApiFor(path.join(dir, 'uql.config.ts'), {})).toBe(
+        await fs.realpath(path.join(dir, 'node_modules', 'tsx', 'dist', 'api.js')),
+      );
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should leave a JavaScript config to the runtime', async () => {
+    const dir = await projectWithTsx();
+    try {
+      expect(tsxApiFor(path.join(dir, 'uql.config.js'), {})).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should leave a TypeScript config to Bun', async () => {
+    const dir = await projectWithTsx();
+    try {
+      expect(tsxApiFor(path.join(dir, 'uql.config.ts'), { bun: '1.4.2' })).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should leave a TypeScript config to Deno', async () => {
+    const dir = await projectWithTsx();
+    try {
+      expect(tsxApiFor(path.join(dir, 'uql.config.ts'), { deno: '2.5.0' })).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should leave a TypeScript config to the runtime where the project has no tsx', async () => {
+    const dir = await fs.mkdtemp(path.join(tmpdir(), 'uql-no-tsx-'));
+    try {
+      expect(tsxApiFor(path.join(dir, 'uql.config.ts'), {})).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('should name tsx where a config fails to import', async () => {
+    const brokenPath = path.resolve(process.cwd(), 'broken-tsx-uql.config.js');
+    try {
+      await fs.writeFile(brokenPath, 'export default {');
+      await expect(loadConfig('broken-tsx-uql.config.js')).rejects.toThrow(
+        'install tsx (`npm i -D tsx`), which the CLI uses when it finds one. See https://uql-orm.dev/migrations#running-the-cli',
+      );
+    } finally {
+      await fs.unlink(brokenPath).catch(() => {});
     }
   });
 

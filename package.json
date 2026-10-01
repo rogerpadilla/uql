@@ -3,7 +3,8 @@
   "type": "module",
   "sideEffects": false,
   "workspaces": [
-    "packages/*"
+    "packages/*",
+    "examples/*"
   ],
   "scripts": {
     "release": "bun run check && lerna version",

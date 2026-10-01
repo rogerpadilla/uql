@@ -2,6 +2,8 @@
 node_modules
 *.tsbuildinfo
 *.db
+*.db-shm
+*.db-wal
 *.log
 dist
 coverage
@@ -13,3 +15,6 @@ mongodb-*
 # prepack copies (removed by postpack; stale if a pack is interrupted)
 packages/orm/README.md
 .env
+*.next
+.wrangler
+next-env.d.ts

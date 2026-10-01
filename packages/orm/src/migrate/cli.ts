@@ -39,7 +39,8 @@ export async function main(args = process.argv.slice(2)) {
     const options: MigratorOptions = {
       migrationsPath: config.migrationsPath ?? './migrations',
       tableName: config.tableName,
-      logger: console.log,
+      // A dry run's stdout is the SQL alone, so what the migrator notes on the way goes to stderr.
+      logger: filteredArgs.includes('--dry-run') ? console.error : console.log,
       entities: config.entities,
       defaultForeignKeyAction: config.defaultForeignKeyAction,
     };
@@ -233,9 +234,14 @@ export async function runSync(migrator: Migrator, args: string[], config: Partia
   const options = { force, safe, drop: !safe };
 
   // Ahead of the warning and the run: `--dry-run` means the same whatever else was asked for, `--force` included.
+  // Its stdout is only SQL, so it can be appended to a migration file another tool applies.
   if (args.includes('--dry-run')) {
     const statements = await migrator.planSync(options);
-    console.log(statements.length ? `\n${statements.join('\n')}` : '\nSchema is already in sync.');
+    if (statements.length) {
+      console.log(statements.join('\n'));
+    } else {
+      console.error('Schema is already in sync.');
+    }
     return;
   }
 

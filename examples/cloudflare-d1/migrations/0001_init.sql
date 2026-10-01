@@ -1,0 +1,6 @@
+-- Migration number: 0001 	 2026-10-01T22:01:08.798Z
+CREATE TABLE `Todo` (
+  `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+  `title` TEXT NOT NULL,
+  `completed` INTEGER DEFAULT 0
+);

@@ -73,7 +73,7 @@ describe('insertMany id semantics', () => {
     await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)');
     const payload = Array.from({ length: 6 }, (_, index) => ({ code: `c${index}`, label: 'new' }));
 
-    await querier.upsertMany(Coupon, { code: true }, payload, { update: { label: 'updated' } });
+    await querier.upsertMany(Coupon, { code: true }, payload, { label: 'updated' });
 
     expect(await querier.count(Coupon, {})).toBe(6);
     await querier.release();

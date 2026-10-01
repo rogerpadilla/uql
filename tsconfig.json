@@ -33,5 +33,5 @@
       "uql-orm/*": ["./packages/orm/src/*"]
     }
   },
-  "exclude": ["node_modules", "data", "dist", "coverage", "**/*/dist"]
+  "exclude": ["node_modules", "data", "dist", "coverage", "**/*/dist", "examples"]
 }
