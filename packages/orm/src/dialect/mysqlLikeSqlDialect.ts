@@ -27,6 +27,7 @@ import {
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonPath, type JsonSlot } from './jsonSql.js';
+import { bindAll } from './queryContext.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -146,7 +147,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     this.appendInsertValues(insertCtx, entity, payload);
     const idReturning = this.insertedIdReturning(meta);
     ctx.append(`${this.onDuplicateKey(insertCtx.sql, assignments)}${idReturning && ` ${idReturning}`}`);
-    ctx.pushValue(...insertCtx.values, ...updateCtx.values);
+    bindAll(ctx, insertCtx.values);
+    bindAll(ctx, updateCtx.values);
   }
 
   protected override appendTriggerUpsert<E>(
@@ -186,6 +188,8 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   protected readonly upsertNewRowAlias: string | undefined = undefined;
 
   override readonly maxBindValues: number = 65535;
+
+  protected override readonly emptyRowValues = '() VALUES ()';
 
   /**
    * An ordered `GROUP_CONCAT` of each row's object, which reads as a JSON array: MySQL's `JSON_ARRAYAGG`

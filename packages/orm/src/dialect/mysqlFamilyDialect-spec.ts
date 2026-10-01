@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
-import { JsonRecord, User } from '../test/index.js';
+import { InvoiceLine, JsonRecord, User } from '../test/index.js';
 import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
 
 /**
@@ -10,6 +10,10 @@ import { AbstractSqlDialectSpec } from './abstractSqlDialect-spec.js';
  * which MySQL hints).
  */
 export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
+  protected override emptyRowInsert(): string {
+    return 'INSERT INTO `InvoiceLine` () VALUES ()' + this.returningClause(InvoiceLine);
+  }
+
   /** MySQL and MariaDB have no `NULLS FIRST`, so the placement is a leading term of its own. */
   protected override expectedNullsOrdering(column: string): string {
     return `${column} IS NOT NULL, ${column} DESC`;

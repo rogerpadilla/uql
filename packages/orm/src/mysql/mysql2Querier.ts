@@ -17,16 +17,9 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
     });
   }
 
-  override async *internalStream<T>(query: string, values?: unknown[]) {
+  override async *internalStream(query: string, values?: unknown[]) {
     const rawConn = this.getConn().connection as unknown as Connection;
-    const stream = rawConn.query(query, values).stream();
-    try {
-      for await (const row of stream) {
-        yield row as T;
-      }
-    } finally {
-      stream.destroy();
-    }
+    yield* rawConn.query(query, values).stream();
   }
 
   protected override async releaseConn(conn: PoolConnection, discard: boolean) {

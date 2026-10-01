@@ -47,8 +47,8 @@ class StubSqlQuerier extends AbstractSqlQuerier {
     return this.rows as T[];
   }
 
-  protected override async *internalStream<T>(): AsyncIterable<T> {
-    yield* this.rows as T[];
+  protected override async *internalStream(): AsyncIterable<RawRow> {
+    yield* this.rows;
     throw new TypeError('driver stream failed');
   }
 
@@ -274,6 +274,7 @@ describe('AbstractSqlQuerier stream', () => {
   /** A driver with no stream of its own, recording the first word of every statement it reads. */
   class ReadingSqlQuerier extends AbstractSqlQuerier {
     readonly reads: string[] = [];
+    discarded?: boolean;
 
     protected override async internalAll<T>(query: string): Promise<T[]> {
       this.reads.push(query.split(' ')[0]);
@@ -284,7 +285,19 @@ describe('AbstractSqlQuerier stream', () => {
       return { changes: 0 };
     }
 
-    protected override async internalRelease(): Promise<void> {}
+    protected override async internalRelease(discard: boolean): Promise<void> {
+      this.discarded = discard;
+    }
+  }
+
+  /** One whose connection drops as a cursor closes. */
+  class ClosingSqlQuerier extends ReadingSqlQuerier {
+    protected override async internalAll<T>(query: string): Promise<T[]> {
+      if (query.startsWith('CLOSE')) {
+        throw new Error('connection lost');
+      }
+      return super.internalAll<T>(query);
+    }
   }
 
   it('should page through a server-side cursor where the engine has one', async () => {
@@ -303,5 +316,29 @@ describe('AbstractSqlQuerier stream', () => {
 
     expect(rows).toEqual([{ id: 1 }]);
     expect(querier.reads).toEqual(['SELECT']);
+  });
+
+  it('should log the statement a stream read, timed', async () => {
+    const logQuery = vi.fn();
+    const querier = new ReadingSqlQuerier(new SqliteDialect(), { logger: { logQuery } });
+
+    await Array.fromAsync(querier.findManyStream(HydratedParent, {}));
+
+    expect(logQuery).toHaveBeenCalledWith(expect.stringMatching(/^SELECT /), undefined, expect.any(Number));
+  });
+
+  /** A stream that cannot close leaves the connection mid-read, which the next borrower would inherit. */
+  it('should discard the connection when a stream left open fails to close at release', async () => {
+    const logError = vi.fn();
+    const querier = new ClosingSqlQuerier(new PostgresDialect(), { logger: { logError } });
+    await querier.findManyStream(HydratedParent, {})[Symbol.asyncIterator]().next();
+
+    await querier.release();
+
+    expect(querier.discarded).toBe(true);
+    expect(logError).toHaveBeenCalledWith(
+      'closing an open stream failed; discarding the connection',
+      expect.any(Error),
+    );
   });
 });

@@ -148,7 +148,7 @@ import {
   VECTOR_QUERY_KEY_SET,
   whereOperators,
 } from './operators.js';
-import { SqlQueryContext } from './queryContext.js';
+import { bindAll, SqlQueryContext } from './queryContext.js';
 import {
   groupPathField,
   NO_JOINS,
@@ -392,11 +392,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   readonly sqlValues: SqlValues = ANSI_SQL_VALUES;
 
-  /**
-   * Maximum number of bind parameters the driver accepts in a single statement.
-   * `insertMany` splits larger batches into multiple statements based on this limit.
-   */
-  readonly maxBindValues: number = 32766;
+  /** The most values one statement binds: a statement past it is refused, and a list the ORM builds is split. */
+  abstract readonly maxBindValues: number;
+
+  /** The most rows one `INSERT ... VALUES` takes, which a narrow row can reach before the bind budget. */
+  readonly maxInsertRows: number = Infinity;
+
+  /** Half the bind budget, the rest left to the statement around the list. */
+  override keyListCapacity(keyCount: number): number {
+    return Math.max(1, Math.floor(this.maxBindValues / 2 / keyCount));
+  }
 
   /**
    * The most arguments one SQL function call takes. A variadic call past it, a wide relation row or JSON
@@ -1841,6 +1846,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** Where an insert's id clause goes: `RETURNING` at the end, or SQL Server's `OUTPUT` before `VALUES`. */
   readonly returningPosition: 'suffix' | 'after-target' = 'suffix';
 
+  /** How an insert writes a row with no column to name, every one its default: a single row. */
+  protected readonly emptyRowValues: string = 'DEFAULT VALUES';
+
   /**
    * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than
    * {@link insert}: their own clause has to come before the `RETURNING`, not after it.
@@ -1849,13 +1857,21 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     entity: Type<E>,
     payload: E | E[],
-    /** Spliced between the column list and `VALUES`; see {@link returningPosition}. */
+    /** Spliced between the target and its rows; see {@link returningPosition}. */
     afterTarget = '',
   ): void {
     const shape = this.insertShape(entity, payload);
-    const tableName = this.escapedTableName(getMeta(entity));
-    ctx.append(`INSERT INTO ${tableName} (${shape.columns.join(', ')})${afterTarget ? ` ${afterTarget}` : ''} VALUES `);
-    this.appendValueRows(ctx, shape);
+    const target = `INSERT INTO ${this.escapedTableName(getMeta(entity))}`;
+    const returning = afterTarget ? ` ${afterTarget}` : '';
+    if (shape.columns.length) {
+      ctx.append(`${target} (${shape.columns.join(', ')})${returning} VALUES `);
+      this.appendValueRows(ctx, shape);
+      return;
+    }
+    if (shape.payloads.length > 1) {
+      throw new UqlUsageError('a row with nothing to write is inserted in a statement of its own');
+    }
+    ctx.append(`${target}${returning} ${this.emptyRowValues}`);
   }
 
   /** The columns an insert writes and the rows it writes, resolved once, and shared with a `MERGE`'s row source. */
@@ -2153,8 +2169,20 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     this.appendInsertValues(ctx, entity, payload);
     ctx.append(`${this.onConflict(meta, conflictPaths, assignments)}${returning ? ` RETURNING ${returning}` : ''}`);
     if (updateCtx !== ctx) {
-      ctx.pushValue(...updateCtx.values);
+      bindAll(ctx, updateCtx.values);
     }
+  }
+
+  /** What an upsert's assignments bind once per statement, beside its rows. */
+  upsertAssignmentBinds<E>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E[],
+    update?: UpdatePayload<E>,
+  ): number {
+    const ctx = this.createContext();
+    this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, payload, update);
+    return ctx.values.length;
   }
 
   /** One more `RETURNING` item saying whether the row was created, where the engine can tell; else empty. */

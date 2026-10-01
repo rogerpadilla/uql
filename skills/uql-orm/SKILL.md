@@ -72,7 +72,7 @@ export class Post {
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
 - Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. Declare `?` whatever an insert may leave out: a nullable, `onInsert`, `defaultValue`, `eager: false` or `computed` field, and relations.
 - An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
-- `defaultValue` is a value of the field's type, or SQL the database evaluates per row: one of `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``raw`...` ``. A string is always text, `'CURRENT_TIMESTAMP'` included. The migration builder takes the same.
+- `defaultValue` is a value of the field's type (a JSON column's document, `[]` or `{}`), or SQL the database evaluates per row: one of `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``raw`...` ``. A string is always text, `'CURRENT_TIMESTAMP'` included. The migration builder takes the same.
 - `currentTimestamp` is the database clock, UTC to the millisecond on every engine, where a raw `CURRENT_TIMESTAMP` is not on SQLite, MySQL or SQL Server. Use it for a default, a stamp, `onUpdate` or `$where`.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
@@ -127,6 +127,8 @@ await pool.transaction(async (querier) => {
 ```
 
 Inside the callback, call `querier`, never `pool`: a `pool` call runs on another connection, outside the transaction. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
+
+A `findManyStream` holds its querier until the loop ends, which refuses any other statement meanwhile: inside the loop, run them on another connection, or after the loop on SQLite and PGlite, whose pool has one. A statement binding more values than the engine takes (100 on D1, 2098 on SQL Server) is refused too: split a long `$in`.
 
 ## Migrations
 

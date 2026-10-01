@@ -1224,10 +1224,12 @@ export class MongoDialect extends AbstractDialect {
   readonly #referenceKeys = new WeakMap<object, readonly string[]>();
 
   public normalizeIds<E extends Document>(meta: EntityMeta<E>, docs: Document[]): E[] {
-    return docs.map((doc) => this.normalizeId(meta, doc)) as E[];
+    return docs.map((doc) => this.normalizeId(meta, doc));
   }
 
   /** `doc` is the wire shape - `_id`, stored names, `ObjectId`s - and what comes back is the code's. */
+  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document): E;
+  public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document | undefined): E | undefined;
   public normalizeId<E extends Document>(meta: EntityMeta<E>, doc: Document | undefined): E | undefined {
     if (!doc) {
       return doc;

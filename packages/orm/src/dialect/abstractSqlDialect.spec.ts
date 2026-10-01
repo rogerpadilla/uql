@@ -12,6 +12,8 @@ class TestSqlDialect extends AbstractSqlDialect {
 
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';
 
+  override readonly maxBindValues = 65535;
+
   override readonly features: SqlDialectFeatures = {
     ...MYSQL_FEATURES,
     schemas: true,

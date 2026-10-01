@@ -1,4 +1,5 @@
 import { QueryRaw, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
+import { isRecord } from '../util/object.util.js';
 import { SQL_VALUES } from '../util/raw.js';
 
 /**
@@ -47,7 +48,25 @@ export function schemaDefault(value: unknown, compile: (sql: QueryRaw) => string
   return value instanceof QueryRaw ? SqlExpression.parenthesized(compile(value)) : value;
 }
 
-/** A default as text for an exact comparison: objects (SQL included) as JSON, numbers as their digits. */
+/**
+ * A default as text for an exact comparison: numbers as their digits, and objects (SQL included) and text
+ * holding a JSON document as JSON with its keys in order, since a `jsonb` column reprints what it stores.
+ */
 export function writtenDefault(value: unknown): string {
-  return typeof value === 'object' ? JSON.stringify(value) : String(value);
+  const document = typeof value === 'string' ? jsonDocument(value) : value;
+  return typeof document === 'object' && document !== null ? JSON.stringify(document, keysInOrder) : String(value);
+}
+
+/** What `text` spells as JSON, or nothing where it is no JSON at all. */
+function jsonDocument(text: string): unknown {
+  try {
+    return JSON.parse(text);
+  } catch {
+    return undefined;
+  }
+}
+
+/** A `JSON.stringify` replacer writing each object's keys in order. */
+function keysInOrder(_key: string, value: unknown): unknown {
+  return isRecord(value) ? Object.fromEntries(Object.entries(value).sort(([a], [b]) => (a < b ? -1 : 1))) : value;
 }

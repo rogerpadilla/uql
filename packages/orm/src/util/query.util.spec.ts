@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import { Entity, Field, getMeta, Id } from '../entity/index.js';
 import { User } from '../test/entityMock.js';
 import { idKey } from '../type/index.js';
-import { assertWhere, whereIds } from './query.util.js';
+import { assertWhere, whereIds, whereKeysIn } from './query.util.js';
 import { raw } from './raw.js';
 
 @Entity()
@@ -49,5 +49,28 @@ describe('assertWhere', () => {
     ['null', null],
   ])('refuses %s', (_, where) => {
     expect(() => assertWhere(getMeta(User), where)).toThrow("$where on 'User' must be a map of conditions");
+  });
+});
+
+describe('whereKeysIn', () => {
+  it('should name rows by one key as a list', () => {
+    expect(whereKeysIn<User>(['email'], [{ email: 'a' }, { email: 'b' }])).toEqual({ email: ['a', 'b'] });
+  });
+
+  it('should name rows by several keys as an alternative each', () => {
+    expect(
+      whereKeysIn<User>(
+        ['name', 'email'],
+        [
+          { name: 'a', email: 'x' },
+          { name: 'b', email: 'y' },
+        ],
+      ),
+    ).toEqual({
+      $or: [
+        { name: 'a', email: 'x' },
+        { name: 'b', email: 'y' },
+      ],
+    });
   });
 });

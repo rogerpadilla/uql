@@ -53,7 +53,7 @@ export interface Querier extends UniversalQuerier {
 
   findMany: DualRead<'many', 'many'>;
 
-  /** Stream records with the relations and counts `findMany` reads. No hooks fire. */
+  /** Stream records with the relations and counts `findMany` reads, `afterLoad` on each. The querier runs nothing else until the loop ends. */
   findManyStream: DualRead<'many', 'stream'>;
 
   /** Find many records and count every match. */

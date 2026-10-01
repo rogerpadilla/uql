@@ -29,6 +29,7 @@ import type {
 } from '../type/index.js';
 import {
   buildUpdateResult,
+  chunk,
   clone,
   getInsertFieldKeys,
   insertShapeOf,
@@ -36,7 +37,6 @@ import {
   isRecord,
   obtainAttrsPaths,
   unflatObject,
-  unflatObjects,
 } from '../util/index.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -78,26 +78,25 @@ function groupByInsertShape<E extends object>(meta: EntityMeta<E>, payload: Enti
 }
 
 /**
- * A group's row indexes split into statements within the dialect's bind budget, payload order kept.
- * `DEFAULT` cells bind no parameter, so fields-per-record is a safe upper bound. Every multi-row
- * write splits on this: D1 allows 100 binds, which a couple of dozen rows reach.
+ * A group's row indexes split into statements of at most `maxRows` rows within the bind budget, payload order
+ * kept, a row with no column to write in one of its own. `DEFAULT` cells bind no parameter, so fields-per-record
+ * is a safe upper bound. Every multi-row write splits on this: D1 allows 100 binds, which a couple of dozen reach.
  */
-function chunkByBindBudget<E extends object>(
+function chunkWithinLimits<E extends object>(
   meta: EntityMeta<E>,
   payload: EntityData<E>[],
   group: number[],
   maxBindValues: number,
+  maxRows = Infinity,
 ): number[][] {
   const fieldsPerRecord = getInsertFieldKeys(
     meta,
     group.map((index) => payload[index]),
   ).length;
-  const size = Math.max(1, Math.floor(maxBindValues / (fieldsPerRecord || 1)));
-  const chunks: number[][] = [];
-  for (let start = 0; start < group.length; start += size) {
-    chunks.push(group.slice(start, start + size));
-  }
-  return chunks;
+  return chunk(
+    group,
+    fieldsPerRecord ? Math.max(1, Math.min(maxRows, Math.floor(maxBindValues / fieldsPerRecord))) : 1,
+  );
 }
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
@@ -156,6 +155,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   async all<T>(query: string, values?: readonly unknown[]): Promise<T[]> {
+    this.assertBindBudget(values);
     return this.serialize(async () => {
       await this.lazyConnect();
       return this.timed(query, values, () => this.internalAll<T>(query, this.dialect.normalizeValues(values)));
@@ -163,10 +163,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   async run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult> {
+    this.assertBindBudget(values);
     return this.serialize(async () => {
       await this.lazyConnect();
       return this.timed(query, values, () => this.internalRun(query, this.dialect.normalizeValues(values)));
     });
+  }
+
+  /** Refused before the driver fails it, or PGlite answers it and every read after it wrong. */
+  private assertBindBudget(values: readonly unknown[] | undefined): void {
+    const { maxBindValues, dialectName } = this.dialect;
+    if (values && values.length > maxBindValues) {
+      throw new UqlUsageError(
+        `a statement binding ${values.length} values is past the ${maxBindValues} ${dialectName} takes; split the list it binds`,
+      );
+    }
   }
 
   /** The rows of a statement the dialect builds. */
@@ -206,7 +217,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    return this.hydrateRows(entity, await this.selectRows(entity, q, opts));
+    return (await this.selectRows(entity, q, opts)).map(this.rowReader(entity));
   }
 
   /** Every row `q` matches past its page, deduplicated where it reads `$distinct`. */
@@ -235,7 +246,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     for (const row of rows) {
       delete row[TOTAL_ALIAS];
     }
-    return [this.hydrateRows(entity, rows), total];
+    return [rows.map(this.rowReader(entity)), total];
   }
 
   private async selectRows<E extends object>(
@@ -253,53 +264,40 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return this.query<RawRow>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias));
   }
 
-  private hydrateRows<E extends object>(entity: Type<E>, rows: RawRow[]): E[] {
-    const founds = unflatObjects<E>(rows);
-    this.hydrateAll(entity, founds);
-    return founds;
-  }
-
+  /**
+   * The one read not going through `all`, so it checks its budget and connects on its own; its values go as
+   * the context holds them, each normalized as it was bound. The tuning is guarded as `selectRows` says.
+   */
   protected override async *internalFindManyStream<E extends object>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
   ) {
-    // Guarded for the reason `selectRows` above spells out.
+    const ctx = this.dialect.createContext();
+    this.dialect.find(ctx, entity, q, opts);
+    this.assertBindBudget(ctx.values);
     if (q.$candidates !== undefined) {
       await this.applyVectorTuning(entity, q);
     }
-    const meta = getMeta(entity);
-    // The one path not going through `all`/`run`, so it connects on its own.
     await this.lazyConnect();
-    // No `normalizeValues` here, unlike `all`/`run`: those also take raw SQL, while every value a
-    // context holds was normalized as it was bound.
-    const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q, opts);
-    const fields = this.dialect.hydratableFields(entity);
-    let attrsPaths: Record<string, string[]> | undefined;
-    try {
-      for await (const row of this.internalStream<RawRow>(ctx.sql, ctx.values)) {
-        attrsPaths ??= obtainAttrsPaths(row);
-        const found = unflatObject<E>(row, attrsPaths);
-        this.hydrateFields(meta, fields, found);
-        yield found;
-      }
-    } catch (err) {
-      throw enrichError(err, this.logger, ctx.sql, ctx.values);
+    const read = this.rowReader(entity);
+    for await (const row of this.timedStream(ctx.sql, ctx.values, this.internalStream(ctx.sql, ctx.values))) {
+      yield read(row);
     }
   }
 
   /**
    * A read's rows one at a time: paged through a server-side cursor where the engine has one, read whole
-   * where it has none. A driver that streams on its own overrides this.
+   * where it has none. A driver that streams on its own overrides this; a Node `Readable` it hands back
+   * closes itself when the loop exits early.
    */
-  protected async *internalStream<T>(query: string, values?: unknown[]): AsyncIterable<T> {
+  protected async *internalStream(query: string, values?: unknown[]): AsyncIterable<RawRow> {
     if (!this.dialect.features.serverSideCursors) {
-      yield* await this.internalAll<T>(query, values);
+      yield* await this.internalAll<RawRow>(query, values);
       return;
     }
-    yield* streamViaCursor<T>(
-      (sql, params) => this.internalAll<T>(sql, params),
+    yield* streamViaCursor<RawRow>(
+      (sql, params) => this.internalAll<RawRow>(sql, params),
       query,
       values,
       this.hasOpenTransaction,
@@ -307,21 +305,24 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /**
-   * Turn what a driver returned back into the types the entity declares, for every row and everything
-   * populated under them. Which columns, and as what, is `hydratableFields`, resolved once for all the
-   * rows; the per-cell decode is `decodeColumn`. Both live with the dialect, because a `sparsevec` is
-   * only sparse on Postgres.
+   * How each row of one statement becomes the entity's, for a read, a stream and a to-many alike: its dotted
+   * columns nested as the first row names them, and its values decoded as `hydratableFields` says, resolved
+   * once. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
    */
-  private hydrateAll<E extends object>(entity: Type<E>, dtos: readonly E[]): void {
+  private rowReader<E extends object>(entity: Type<E>): (row: RawRow) => E {
     const meta = getMeta(entity);
     const fields = this.dialect.hydratableFields(entity);
-    for (const dto of dtos) {
-      this.hydrateFields(meta, fields, dto);
-    }
+    let attrsPaths: Record<string, string[]> | undefined;
+    return (row) => {
+      attrsPaths ??= obtainAttrsPaths(row);
+      const found = unflatObject<E>(row, attrsPaths);
+      this.hydrateFields(meta, fields, found);
+      return found;
+    };
   }
 
   /**
-   * One row of {@link hydrateAll}. A related row arrives as its parent's statement read it: a to-one
+   * One row of {@link rowReader}. A related row arrives as its parent's statement read it: a to-one
    * joined and unflattened, there only when its key is, since an unmatched join still fills a computed
    * column or a to-many's empty array; a to-many as a JSON array, which a driver may hand over as text.
    * Each is an object of its own, so the walk reaches none twice.
@@ -357,9 +358,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       const relEntity = rel.entity();
       if (typeof value === 'string' || Array.isArray(value)) {
         // A to-many's rows, as flat as a statement's own.
-        const rows = unflatObjects<object>(typeof value === 'string' ? JSON.parse(value) : value);
-        row[key] = rows;
-        this.hydrateAll(relEntity, rows);
+        const rows: RawRow[] = typeof value === 'string' ? JSON.parse(value) : value;
+        row[key] = rows.map(this.rowReader(relEntity));
       } else if (isRecord(value)) {
         const relMeta = getMeta(relEntity);
         if (value[relMeta.ids[0]] == null) {
@@ -430,9 +430,15 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       }
       // Per group, not per batch: the two carry different columns - one names the key, one does not -
       // so a budget taken over their union would under-fill the statement that is missing one.
-      for (const indexes of chunkByBindBudget(meta, rows, group, this.dialect.maxBindValues)) {
-        const chunk = indexes.map((index) => rows[index]);
-        const { ids = [] } = await this.exec((ctx) => this.dialect.insert(ctx, entity, chunk));
+      for (const indexes of chunkWithinLimits(
+        meta,
+        rows,
+        group,
+        this.dialect.maxBindValues,
+        this.dialect.maxInsertRows,
+      )) {
+        const statementRows = indexes.map((index) => rows[index]);
+        const { ids = [] } = await this.exec((ctx) => this.dialect.insert(ctx, entity, statementRows));
         if (idsReliable) {
           for (let position = 0; position < indexes.length; position++) {
             rows[indexes[position]][idKey] ??= ids[position] as E[typeof idKey];
@@ -473,12 +479,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     payload = clone(payload);
     const meta = getMeta(entity);
-    // One statement per shape, each split again to stay inside the bind budget. Grouping first is
-    // what makes the budget arithmetic right: every row of a group carries the same columns, so the
-    // `DO UPDATE SET` resolves to non-binding `EXCLUDED` references rather than inlined values.
-    const statements = groupByInsertShape(meta, payload).flatMap((group) =>
-      chunkByBindBudget(meta, payload, group, this.dialect.maxBindValues),
-    );
+    // One statement per shape, each split again to stay inside the bind budget, less what its assignments bind
+    // once. Grouping first is what makes that one figure: every row of a group carries the same columns, so
+    // they assign the same. No row cap: SQL Server upserts through a MERGE, whose source takes any number.
+    const statements = groupByInsertShape(meta, payload).flatMap((group) => {
+      const rows = group.map((index) => payload[index]);
+      const assigned = this.dialect.upsertAssignmentBinds(entity, conflictPaths, rows, opts.update);
+      return chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - assigned);
+    });
     if (statements.length === 1) {
       return this.runUpsert(entity, conflictPaths, payload, opts);
     }

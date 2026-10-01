@@ -202,7 +202,7 @@ function checkPeerReach(): void {
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
   '.': 39_100,
-  './postgres': 36_700,
+  './postgres': 37_700,
   './migrate': 61_400,
   './browser': 2_100,
 };

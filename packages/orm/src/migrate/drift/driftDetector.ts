@@ -9,6 +9,7 @@ import type { AbstractDialect } from '../../dialect/abstractDialect.js';
 import { canonicalToSql, engineType } from '../../schema/canonicalType.js';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { defaultsEqualAsWritten, diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
+import { SqlExpression, writtenDefault } from '../../schema/sqlExpression.js';
 import type {
   CanonicalType,
   ColumnDiff,
@@ -224,8 +225,8 @@ function addAlterColumnDrifts(
       severity: 'info',
       table: colDiff.table,
       column: colDiff.column,
-      expected: String(colDiff.to.defaultValue ?? 'NULL'),
-      actual: String(colDiff.from.defaultValue ?? 'NULL'),
+      expected: shownDefault(colDiff.to.defaultValue),
+      actual: shownDefault(colDiff.from.defaultValue),
       details: `Default mismatch for "${colDiff.column}"`,
       suggestion: 'Align the default in the entity or the database',
     });
@@ -314,6 +315,11 @@ function detectRelationshipDrifts(diff: SchemaDiffResult): Drift[] {
   }
 
   return drifts;
+}
+
+/** A default as a report shows it: SQL as its SQL, a JSON document as JSON rather than `[object Object]`. */
+function shownDefault(value: unknown): string {
+  return value == null ? 'NULL' : SqlExpression.isExpression(value) ? String(value) : writtenDefault(value);
 }
 
 /** Both actions spelled out, so a side that left one unstated reads the same as one that stated the default. */

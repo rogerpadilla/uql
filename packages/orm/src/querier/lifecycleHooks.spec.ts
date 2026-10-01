@@ -19,6 +19,7 @@ import type { HookContext } from '../index.js';
 import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import type { Querier, QuerierListener } from '../type/index.js';
 import { getKeys } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 /**
  * Every hook, observed through the public querier API rather than through `emitHook`: the emission
@@ -225,6 +226,21 @@ class Unique {
   }
 }
 
+/** Queries through its own querier on load, which a stream holding that querier refuses. */
+@Entity()
+class Looked {
+  @Id({ type: Number })
+  id?: number;
+
+  @Field({ type: String })
+  title?: string | null;
+
+  @AfterLoad()
+  async lookAround(this: Looked, ctx: HookContext) {
+    log.push(`around:${await ctx.querier.count(Looked, {})}`);
+  }
+}
+
 @Entity()
 class Shelf {
   @Id({ type: Number })
@@ -304,6 +320,7 @@ const TABLES = {
   Late: '`id` INTEGER PRIMARY KEY, `title` TEXT',
   Stamped: '`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `createdAt` BIGINT',
   Unique: '`id` INTEGER PRIMARY KEY, `email` TEXT',
+  Looked: '`id` INTEGER PRIMARY KEY, `title` TEXT',
   Shelf: '`id` INTEGER PRIMARY KEY',
   ShelvedBook: '`id` INTEGER PRIMARY KEY, `shelfId` INTEGER, `title` TEXT',
   Author: '`id` INTEGER PRIMARY KEY, `name` TEXT',
@@ -452,6 +469,17 @@ describe('lifecycle hooks', () => {
       });
 
       expect(log).toEqual(['afterLoad:Ann', 'afterLoad:Ann', 'afterLoad:a', 'afterLoad:b']);
+    });
+
+    it('should run it on populated rows through a stream too', async () => {
+      await Array.fromAsync(
+        querier.findManyStream(Author, {
+          $select: { name: true },
+          $populate: { tomes: { $select: { title: true }, $sort: { title: 1 } } },
+        }),
+      );
+
+      expect(log).toEqual(['afterLoad:a', 'afterLoad:b', 'afterLoad:Ann']);
     });
 
     it('should run it on populated rows through findManyAndCount too', async () => {
@@ -611,15 +639,32 @@ describe('lifecycle hooks', () => {
     ]);
   });
 
-  it('should not run @AfterLoad on streamed rows', async () => {
-    await querier.insertOne(Book, { title: 'Streamed' });
+  /** Each row as it arrives, before the loop sees it, so a stream reads what `findMany` reads. */
+  it('should run @AfterLoad on each streamed row before yielding it', async () => {
+    await querier.insertMany(Book, [{ title: 'One' }, { title: 'Two' }]);
     log = [];
 
-    for await (const _ of querier.findManyStream(Book, { $select: { id: true } })) {
-      // drained: a stream has no point at which every row has been seen
+    for await (const book of querier.findManyStream(Book, { $select: { title: true }, $sort: { id: 1 } })) {
+      log.push(`yielded:${book.title}`);
     }
 
-    expect(log).toEqual([]);
+    expect(log).toEqual(['afterLoad:One', 'yielded:One', 'afterLoad:Two', 'yielded:Two']);
+  });
+
+  it("should refuse a statement a streamed row's @AfterLoad runs on the querier streaming", async () => {
+    await querier.insertOne(Looked, { title: 'seen' });
+
+    await expect(Array.fromAsync(querier.findManyStream(Looked, {}))).rejects.toThrow(UqlUsageError);
+    expect(await querier.findMany(Looked, {})).toEqual([{ id: 1, title: 'seen' }]);
+    expect(log).toEqual(['around:1']);
+  });
+
+  it('should stream what an @AfterLoad hook assigned', async () => {
+    await querier.insertOne(Secret, { code: 'plaintext' });
+
+    expect(await Array.fromAsync(querier.findManyStream(Secret, { $select: { id: true, code: true } }))).toEqual([
+      { id: 1, code: '***' },
+    ]);
   });
 });
 

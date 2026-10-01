@@ -111,6 +111,8 @@ export class SqliteDialect extends AbstractSqlDialect {
   /** SQLite's own cap on a function call before 3.48, which libSQL and `bun:sqlite`'s build still have. */
   override readonly maxFunctionArgs: number = 127;
 
+  override readonly maxBindValues: number = 32766;
+
   /**
    * The [sqlite-vec](https://github.com/asg017/sqlite-vec) functions, which need that extension
    * loaded on the connection (see `Sqlite3QuerierPool`'s `extensions` option). libSQL and Turso ship

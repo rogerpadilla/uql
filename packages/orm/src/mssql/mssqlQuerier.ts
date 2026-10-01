@@ -10,7 +10,7 @@ type MsSqlResult = {
 };
 
 /** The part of the `Readable` a request streams into that a querier drives. */
-type MsSqlRowStream = AsyncIterable<unknown> & {
+type MsSqlRowStream = AsyncIterable<RawRow> & {
   destroy(error: Error): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
 };
@@ -80,16 +80,14 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
    * rows arrive only as fast as they are read. A failure the driver reports through the promise alone
    * would leave the loop waiting for rows, so it ends the stream instead.
    */
-  override async *internalStream<T>(query: string, values?: unknown[]) {
+  override async *internalStream(query: string, values?: unknown[]) {
     const request = this.#request(values);
     const rows = request.toReadableStream();
     const completed = request.query(query).catch((err: unknown) => {
       rows.destroy(err instanceof Error ? err : new Error(String(err)));
     });
     try {
-      for await (const row of rows) {
-        yield row as T;
-      }
+      yield* rows;
     } finally {
       // The cancel reports itself as an error on the stream, and the loop that would hear it is gone.
       rows.on('error', () => {});

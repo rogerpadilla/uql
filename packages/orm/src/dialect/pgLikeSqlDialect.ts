@@ -309,6 +309,11 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * One array parameter, which a context that inlines values has none of: it lists them instead. The
    * array takes its type from `operand`, so it needs none of the casts `bind` would give each value.
    */
+  /** A single key's list binds as one array, whatever its length. */
+  override keyListCapacity(keyCount: number): number {
+    return keyCount > 1 ? super.keyListCapacity(keyCount) : Infinity;
+  }
+
   protected override formatIn(
     ctx: QueryContext,
     operand: string,

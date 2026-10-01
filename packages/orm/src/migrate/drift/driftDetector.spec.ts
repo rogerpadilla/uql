@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { SchemaAST } from '../../schema/schemaAST.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import { columnsOf, mockTableNode } from '../../test/index.js';
 import { detectDrift } from './driftDetector.js';
 
@@ -35,6 +36,33 @@ describe('DriftDetector', () => {
       const drifts = detectDrift(expected, actual, { ...options, checkDefaults: true }).drifts;
       expect(drifts).toHaveLength(1);
       expect(drifts[0].details).toContain('Default mismatch');
+    });
+
+    /** A `jsonb` column reprints its document, keys reordered and spaced: the same document is no drift. */
+    it('should report a JSON default only where the document differs, and show it as JSON', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      expected.addTable(
+        mockTableNode('users', [
+          { name: 'settings', defaultValue: { b: 1, a: [1, 2] } },
+          { name: 'tags', defaultValue: ['x'] },
+          { name: 'at', defaultValue: new SqlExpression('currentTimestamp') },
+        ]),
+      );
+      actual.addTable(
+        mockTableNode('users', [
+          { name: 'settings', defaultValue: '{"a": [1, 2], "b": 1}' },
+          { name: 'tags', defaultValue: '["y"]' },
+          { name: 'at' },
+        ]),
+      );
+
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true }).drifts;
+
+      expect(drifts).toMatchObject([
+        { column: 'tags', expected: '["x"]', actual: '["y"]' },
+        { column: 'at', expected: 'currentTimestamp', actual: 'NULL' },
+      ]);
     });
 
     /** The generator's own equality, so drift reports exactly the defaults a generated migration would change. */

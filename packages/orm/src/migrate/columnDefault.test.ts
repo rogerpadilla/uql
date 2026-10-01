@@ -9,7 +9,7 @@ import { Entity, Field, Id, removeEntity } from '../entity/index.js';
 import { SqlExpression } from '../schema/sqlExpression.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools } from '../test/sqlPools.js';
-import type { SqlQuerierPool } from '../type/index.js';
+import type { Json, SqlQuerierPool } from '../type/index.js';
 import { currentTimestamp, raw } from '../util/raw.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
@@ -24,6 +24,10 @@ class DefaultNote {
   @Field({ type: String, defaultValue: 'CURRENT_TIMESTAMP' }) spelled?: string | null;
   @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
   @Field({ type: String, defaultValue: raw`coalesce(NULL, 'a')` }) derived?: string | null;
+  /** JSON as the field holds it, and as text in another order and spacing than Postgres keeps it. */
+  @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
+  @Field({ type: 'jsonb', defaultValue: { b: 1, a: [1, 2] } }) settings?: Json<{ a: number[]; b: number }> | null;
+  @Field({ type: 'jsonb', defaultValue: '{"b":1,"a":2}' }) written?: Json<{ a: number; b: number }> | null;
 }
 
 describe.each(DEFAULT_POOLS)('a column default on %s', (_name, connect) => {
@@ -49,6 +53,7 @@ describe.each(DEFAULT_POOLS)('a column default on %s', (_name, connect) => {
     expect(row.spelled).toBe('CURRENT_TIMESTAMP');
     expect(Math.abs(Number(row.createdAt) - Date.now())).toBeLessThan(60_000);
     expect(row.derived).toBe('a');
+    expect([row.tags, row.settings, row.written]).toEqual([[], { a: [1, 2], b: 1 }, { a: 2, b: 1 }]);
     // The clock in the text and digits a bound `Date` takes, so the row matches itself read back.
     expect(await pool.count(DefaultNote, { $where: { id, createdAt: row.createdAt } })).toBe(1);
   });

@@ -1,20 +1,10 @@
 /**
- * What UQL's types cost the compiler in a consuming project, so a change to the query types cannot
- * quietly make everyone's build slower. Generates a small project and type-checks it twice: with no
- * queries, which is the fixed cost of materializing the querier's signatures, and with `--calls` of
- * them, whose difference is what one more query costs.
- *
- * Measured against `dist`, which is what a consumer actually compiles against, so **`bun run build`
- * first** - including in the worktree, when measuring a before against another ref. Pointing at the
- * source instead put uql's own 39k lines in the program: the fixed cost read as 414k instantiations
- * where a consumer pays 4k, it moved whenever an implementation did, and it could not compile at all
- * under `types: []` (17 errors on `console`, `Buffer`, `TextDecoder`), which is the shape a consumer
- * has. `verify-dist` is what proves the declarations do compile there.
- *
- * Instantiations are deterministic; the wall clock is not, so compare that only within one run.
+ * What UQL's types cost a consuming project's compiler, measured on `dist` as a consumer compiles it (build
+ * first): a project with no queries, the fixed cost, and one with `calls` blocks of them. A published version,
+ * `bun run ts.perf 200 0.93.1`, is measured beside it. Instantiations are deterministic; the clock is not.
  */
 
-import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -22,10 +12,11 @@ import { $ } from 'bun';
 
 const root = resolve(fileURLToPath(new URL('.', import.meta.url)), '..');
 const calls = Number(process.argv[2] ?? 200);
-const declarations = resolve(root, 'packages/orm/dist/index.d.ts');
+const version = process.argv[3];
+const built = resolve(root, 'packages/orm/dist/index.d.ts');
 
-if (!existsSync(declarations)) {
-  throw new Error(`no declarations at ${declarations} - run 'bun run build' first.`);
+if (!(await Bun.file(built).exists())) {
+  throw new Error(`no declarations at ${built} - run 'bun run build' first.`);
 }
 
 const entities = /*ts*/ `import { Entity, Field, Id, idKey, ManyToOne, OneToMany } from 'uql-orm';
@@ -79,7 +70,7 @@ export async function q${i}(q: Querier) {
   return [a[0]?.name, b?.name, c[0]?.users, d[0]?.companyName];
 }`;
 
-async function measure(blocks: number): Promise<string> {
+async function measure(declarations: string, blocks: number): Promise<string> {
   const dir = mkdtempSync(resolve(tmpdir(), 'uql-type-perf-'));
   try {
     writeFileSync(resolve(dir, 'entities.ts'), entities);
@@ -88,7 +79,7 @@ async function measure(blocks: number): Promise<string> {
       [
         /*ts*/ `import type { Querier } from 'uql-orm';`,
         /*ts*/ `import { Company, User } from './entities.js';`,
-        /*ts*/ `void (0 as unknown as [Querier, typeof Company, typeof User]);`,
+        /*ts*/ `export type Fixture = [Querier, typeof Company, typeof User];`,
         ...Array.from({ length: blocks }, (_, i) => block(i)),
       ].join('\n'),
     );
@@ -126,5 +117,20 @@ async function measure(blocks: number): Promise<string> {
   }
 }
 
-console.log(`fixed (0 queries)   ${await measure(0)}`);
-console.log(`${String(calls * 4).padEnd(5)} queries        ${await measure(calls)}`);
+/** A published version's declarations, unpacked from its own tarball into `dir`. */
+async function published(version: string, dir: string): Promise<string> {
+  await $`npm pack uql-orm@${version} --pack-destination ${dir} --silent`.quiet();
+  await $`tar -xzf ${resolve(dir, `uql-orm-${version}.tgz`)} -C ${dir}`;
+  return resolve(dir, 'package/dist/index.d.ts');
+}
+
+const downloads = mkdtempSync(resolve(tmpdir(), 'uql-type-perf-published-'));
+try {
+  const targets = [['dist', built], ...(version ? [[version, await published(version, downloads)]] : [])];
+  for (const [label, declarations] of targets) {
+    console.log(`${label.padEnd(8)} fixed (0 queries)  ${await measure(declarations, 0)}`);
+    console.log(`${label.padEnd(8)} ${String(calls * 4).padEnd(5)} queries      ${await measure(declarations, calls)}`);
+  }
+} finally {
+  rmSync(downloads, { recursive: true, force: true });
+}

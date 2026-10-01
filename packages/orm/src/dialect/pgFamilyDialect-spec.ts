@@ -53,6 +53,11 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     return `TS_RANK(${document}, ${query}`;
   }
 
+  /** One key's list binds as one array, so it never needs splitting. */
+  shouldFitASingleKeyListInOneArray() {
+    expect(this.dialect.keyListCapacity(1)).toBe(Infinity);
+  }
+
   override shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
   }
@@ -144,6 +149,10 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       'INSERT INTO "User" ("id", "name", "createdAt", "email") VALUES ($1, $2, $3, DEFAULT), ($4, $5, $6, $7) RETURNING "id" "id"',
     );
     expect(values).toEqual(['5', 'Some name 1', 123, anyUuid, 'Some name 2', 456, 'someemail2@example.com']);
+  }
+
+  protected override emptyRowInsert(): string {
+    return 'INSERT INTO "InvoiceLine" DEFAULT VALUES RETURNING "id" "id"';
   }
 
   override shouldInsertOne() {

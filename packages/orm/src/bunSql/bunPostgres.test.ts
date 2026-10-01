@@ -47,7 +47,8 @@ describe('server-side cursor', () => {
   });
 });
 
+/** On the connection itself, as the cursor's own statements run: `pg_cursors` lists this session's only, and the querier refuses a statement mid-stream. */
 async function countCursors(querier: BunSqlQuerier) {
-  const rows = await querier.all<{ n: number }>('SELECT count(*)::int AS n FROM pg_cursors');
+  const rows = await querier.internalAll<{ n: number }>('SELECT count(*)::int AS n FROM pg_cursors');
   return rows[0].n;
 }

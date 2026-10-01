@@ -1,54 +1,40 @@
 import { OWNED_PREFIX, UPSERT_CREATED_ALIAS } from '../dialect/aliases.js';
 import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
-import { hasKeys } from './object.util.js';
+import { hasKeys, isRecord } from './object.util.js';
 import { fnv1a } from './string.util.js';
 
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
 const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
 
+/** Every row nested as {@link unflatObject} nests one, by the columns the first row names. */
 export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
-  if (!objects.length) {
-    return objects as T[];
-  }
-
-  const attrsPaths = obtainAttrsPaths(objects[0]);
-
-  if (!hasKeys(attrsPaths)) {
-    return objects as T[];
-  }
-
+  const [first] = objects;
+  const attrsPaths = first ? obtainAttrsPaths(first) : {};
   return objects.map((row) => unflatObject<T>(row, attrsPaths));
 }
 
-/**
- * Unflattens a single raw row using pre-computed attribute paths.
- * Use this for streaming to avoid per-row array allocations.
- */
+/** A row with its dotted columns nested, by paths read once off its statement's first row: the row itself where none is. */
 export function unflatObject<T extends object>(row: RawRow, attrsPaths: Record<string, string[]>): T {
-  const dto = {} as T;
-
+  if (!hasKeys(attrsPaths)) {
+    return row as T;
+  }
+  const dto: RawRow = {};
   for (const col in row) {
-    if (row[col] === null) {
-      continue;
-    }
     const attrPath = attrsPaths[col];
     if (attrPath) {
-      let target = dto as Record<string, unknown>;
+      let target: Record<string, unknown> = dto;
       for (let i = 0; i < attrPath.length - 1; i++) {
         const seg = attrPath[i];
-        if (typeof target[seg] !== 'object') {
-          target[seg] = {};
-        }
-        target = target[seg] as Record<string, unknown>;
+        const next = target[seg];
+        target = isRecord(next) ? next : (target[seg] = {});
       }
       target[attrPath[attrPath.length - 1]] = row[col];
     } else {
-      (dto as RawRow)[col] = row[col];
+      dto[col] = row[col];
     }
   }
-
-  return dto;
+  return dto as T;
 }
 
 export function obtainAttrsPaths<T extends object>(row: T) {

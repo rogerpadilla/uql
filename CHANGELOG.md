@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.94.0] - 2026-10-01
+
+- **Breaking:** inside a `findManyStream` loop, a statement on the same querier is refused where most engines hung: run it on another connection, or after the loop on SQLite and PGlite, whose pool has one. A stream runs `@AfterLoad` on each row, answers null columns as `findMany` does, and is logged; `release()` closes one left open.
+- **Breaking:** a statement binding more values than its engine takes is refused with a `UqlUsageError`, 65535 on MySQL and MariaDB too, whose drivers took more: split a long `$in`.
+- **Fixed:** large writes no longer fail: `insertMany` and `upsertMany` past SQL Server's 1000 rows or 2098 values, or PGlite's 32767 (where nothing was written), a large `upsertMany` on MySQL or MariaDB, and an update, delete, cascade or guarded upsert over more rows than D1 or SQL Server bind at once.
+- **Fixed:** `findMany` keeps a null column beside a populated to-one, and an insert with nothing to write, every column its default, works on Postgres, SQLite and SQL Server.
+- **Fixed:** a JSON column defaults to a list as well as an object (`defaultValue: []`), and a JSON default no longer reports drift on Postgres or CockroachDB, which reprint the document; a drift report shows it as JSON.
+- A custom SQL dialect states its `maxBindValues`, and `maxInsertRows` where its engine caps an `INSERT`'s rows.
+
 ## [0.93.1] - 2026-10-01
 
 - **Fixed:** the pool passes every option to its querier, `upsertOne`/`upsertMany`'s `{ update }` included (which it dropped before).

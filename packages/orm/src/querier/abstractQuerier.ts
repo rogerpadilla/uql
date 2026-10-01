@@ -49,6 +49,7 @@ import { parseQueryLock } from '../type/index.js';
 import {
   cascadesOnDelete,
   childrenOf,
+  chunk,
   clone,
   entityName,
   fillOnFields,
@@ -73,9 +74,9 @@ import {
   securityConditions,
   someKey,
   targetKeyColumns,
-  whereAnyOf,
   whereEach,
   whereIds,
+  whereKeysIn,
   whereWith,
   withoutSoftDeleteFilter,
 } from '../util/index.js';
@@ -242,6 +243,9 @@ function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, 
 /** A parent's id and the value it writes into one of its relations. */
 type RelationWrite<E> = { readonly id: EntityId<E>; readonly value: unknown };
 
+const STREAM_HOLDS_QUERIER =
+  'a stream is reading on this querier: run the statement after its loop, or on another querier';
+
 /** Base class for all database queriers. */
 export abstract class AbstractQuerier implements Querier {
   /**
@@ -250,6 +254,9 @@ export abstract class AbstractQuerier implements Querier {
    * and ensuring that the database connection is used safely across concurrent calls.
    */
   private taskQueue: Promise<unknown> = Promise.resolve();
+
+  /** The stream reading on the connection, from its first row asked for until its loop ends. */
+  #stream?: AsyncGenerator<unknown>;
 
   /**
    * A querier is one unit of work, so releasing ends it. Checked where each backend reaches for its
@@ -409,7 +416,10 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<E[]>;
 
-  /** Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`. No hooks fire. */
+  /**
+   * Stream records with the relations and counts `findMany` reads, the entity passed first or as `$entity`.
+   * `afterLoad` runs on each row as it arrives, and the querier runs nothing else until the loop ends.
+   */
   findManyStream<
     E extends object,
     const S extends FieldKey<E> = never,
@@ -436,7 +446,44 @@ export abstract class AbstractQuerier implements Querier {
   findManyStream<E extends object>(...args: EntityArgs<E, Query<E>>): AsyncIterable<E> {
     const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
-    return this.internalFindManyStream(entity, q, opts);
+    const rows = this.internalFindManyStream(entity, q, opts);
+    return this.holdWhileReading(
+      this.listensForLoad(entity, q.$populate) ? this.loadedEach(entity, rows, q.$populate) : rows,
+    );
+  }
+
+  /** `afterLoad` on each row before the loop sees it, as `findMany` runs it on each row it read. */
+  private async *loadedEach<E extends object>(
+    entity: Type<E>,
+    rows: AsyncIterable<E>,
+    populate: QueryPopulate<E> | undefined,
+  ): AsyncGenerator<E> {
+    for await (const row of rows) {
+      await this.emitLoaded(entity, [row], populate);
+      yield row;
+    }
+  }
+
+  /**
+   * `rows`, holding the querier from the first row asked for until the loop ends. Most drivers queue a
+   * statement behind an open read, which a loop awaiting it never finishes, so `serialize` refuses one
+   * meanwhile, on every engine alike, and `release` closes the stream first.
+   */
+  private holdWhileReading<T>(rows: AsyncIterable<T>): AsyncGenerator<T> {
+    const read = async function* (querier: AbstractQuerier): AsyncGenerator<T> {
+      if (querier.#stream) {
+        throw new UqlUsageError(STREAM_HOLDS_QUERIER);
+      }
+      querier.#stream = stream;
+      try {
+        await querier.taskQueue;
+        yield* rows;
+      } finally {
+        querier.#stream = undefined;
+      }
+    };
+    const stream = read(this);
+    return stream;
   }
 
   protected abstract internalFindManyStream<E extends object>(
@@ -663,7 +710,10 @@ export abstract class AbstractQuerier implements Querier {
     if (!ids.length) {
       return 0;
     }
-    const changes = await this.updateColumns(entity, { $where: whereIds(meta, ids) }, row, opts, ids.length);
+    let changes = 0;
+    for (const batch of chunk(ids, this.dialect.keyListCapacity(meta.ids.length))) {
+      changes += await this.updateColumns(entity, { $where: whereIds(meta, batch) }, row, opts, batch.length);
+    }
     for (const relKey of relKeys) {
       await this.saveRelation(
         entity,
@@ -898,11 +948,14 @@ export abstract class AbstractQuerier implements Querier {
       return 0;
     }
     await this.emitHook(entity, 'beforeDelete', doomed);
-    // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
-    if (cascades) {
-      await this.deleteRelations(entity, ids, opts);
+    let changes = 0;
+    for (const batch of chunk(ids, this.dialect.keyListCapacity(meta.ids.length))) {
+      // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
+      if (cascades) {
+        await this.deleteRelations(entity, batch, opts);
+      }
+      changes += await this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
     }
-    const changes = await this.internalDeleteMany(entity, { $where: whereIds(meta, ids) }, opts);
     await this.emitHook(entity, 'afterDelete', doomed);
     return changes;
   }
@@ -1030,8 +1083,9 @@ export abstract class AbstractQuerier implements Querier {
     const holder = relOpts.through ? relOpts.through() : relEntity;
     const parentColumn = soleParentColumn(relOpts);
     if (isUpdate) {
-      const ids = writes.map(({ id }) => id);
-      await this.deleteMany(holder, { $where: { [parentColumn]: ids } });
+      for (const batch of chunk(writes, this.dialect.keyListCapacity(1))) {
+        await this.deleteMany(holder, { $where: { [parentColumn]: batch.map(({ id }) => id) } });
+      }
     }
     // Each parent gets its own copies, so a row listed for two parents is written twice.
     const children = writes.flatMap(({ id, value }) => [value ?? []].flat().map((row: object) => ({ id, row })));
@@ -1168,13 +1222,14 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const [idKey] = meta.ids;
     const keys = getKeys(conflictPaths);
-    const q: Query<E> = {
-      $select: keySet([idKey, ...keys]),
-      $where: whereAnyOf(rows.map((row) => whereEach(keys, (key) => row[key]))),
-    };
-    const found = await this.internalFindMany(entity, q, { filters: withoutSoftDeleteFilter(undefined) });
+    const distinct = [...new Map(rows.map((row) => [rowKey(row, keys), row])).values()];
+    const found: E[][] = [];
+    for (const batch of chunk(distinct, this.dialect.keyListCapacity(keys.length))) {
+      const q: Query<E> = { $select: keySet([idKey, ...keys]), $where: whereKeysIn(keys, batch) };
+      found.push(await this.internalFindMany(entity, q, { filters: withoutSoftDeleteFilter(undefined) }));
+    }
     const byConflict = new Map<string, PrimaryKey | undefined>();
-    for (const row of found) {
+    for (const row of found.flat()) {
       const key = rowKey(row, keys);
       byConflict.set(key, byConflict.has(key) ? undefined : (row[idKey] as PrimaryKey));
     }
@@ -1220,6 +1275,9 @@ export abstract class AbstractQuerier implements Querier {
 
   /** Runs `task` after everything already queued, one at a time. Not re-entrant: never nest `serialize` calls. */
   protected serialize<T>(task: () => Promise<T>): Promise<T> {
+    if (this.#stream) {
+      return Promise.reject(new UqlUsageError(STREAM_HOLDS_QUERIER));
+    }
     const res = this.taskQueue.then(task);
     this.taskQueue = res.catch(() => {});
     return res;
@@ -1234,6 +1292,29 @@ export abstract class AbstractQuerier implements Querier {
       throw enrichError(err, this.logger, query, values);
     } finally {
       this.logger.logQuery(query, values, Math.round(performance.now() - startTime));
+    }
+  }
+
+  /**
+   * `rows` as {@link timed} runs a statement: logged once they end, timed to the first row since the
+   * time after it is the loop's, and a failure tagged with `query`.
+   */
+  protected async *timedStream<T>(
+    query: string,
+    values: readonly unknown[] | undefined,
+    rows: AsyncIterable<T>,
+  ): AsyncGenerator<T> {
+    const startTime = performance.now();
+    let answeredAt: number | undefined;
+    try {
+      for await (const row of rows) {
+        answeredAt ??= performance.now();
+        yield row;
+      }
+    } catch (err) {
+      throw enrichError(err, this.logger, query, values);
+    } finally {
+      this.logger.logQuery(query, values, Math.round((answeredAt ?? performance.now()) - startTime));
     }
   }
 
@@ -1275,11 +1356,16 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract endTransaction(commit: boolean): Promise<void>;
 
   /**
-   * Rolls back an unfinished transaction, then hands the connection back, discarding it if the rollback
-   * failed. Never throws first, since `await using` has no other way to release.
+   * Closes a stream left open and rolls back an unfinished transaction, then hands the connection back,
+   * discarding it if either failed: the pool would otherwise take one still reading. Never throws first,
+   * since `await using` has no other way to release.
    */
   async release(): Promise<void> {
     let discard = false;
+    await this.#stream?.return(undefined).catch((err: unknown) => {
+      this.logger.logError('closing an open stream failed; discarding the connection', err);
+      discard = true;
+    });
     if (this.hasOpenTransaction) {
       this.logger.logWarn('rolling back a transaction left open at release');
       // The rollback doubles as a health check. One that succeeds proves the connection round-trips and

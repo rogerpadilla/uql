@@ -1,8 +1,9 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { describe, expect, it, vi } from 'vitest';
+import { withContext } from '../context/context.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
-import { Coupon, createSpec, probeForeignKeys } from '../test/index.js';
+import { Coupon, createSpec, probeForeignKeys, TenantNote } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
@@ -33,6 +34,11 @@ class TinyBatchDialect extends SqliteDialect {
   override readonly maxBindValues = 6;
 }
 
+/** Forces short statements: 2 records per INSERT, whatever they bind. */
+class TwoRowDialect extends SqliteDialect {
+  override readonly maxInsertRows = 2;
+}
+
 /** A primary key the database does not generate (no auto-increment, no `onInsert`). */
 @Entity()
 class TextPkNote {
@@ -58,6 +64,60 @@ describe('insertMany id semantics', () => {
     const founds = await querier.findMany(Coupon, { $select: { id: true, label: true }, $sort: { id: 1 } });
     expect(founds.map(({ id }) => id)).toEqual(ids);
     expect(founds.map(({ label }) => label)).toEqual(payload.map(({ label }) => label));
+    await querier.release();
+  });
+
+  /** The assignments bind once per statement beside the rows, so a split filling the budget would bind one too many. */
+  it('should split an upsert leaving room for what its assignments bind', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
+    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)');
+    const payload = Array.from({ length: 6 }, (_, index) => ({ code: `c${index}`, label: 'new' }));
+
+    await querier.upsertMany(Coupon, { code: true }, payload, { update: { label: 'updated' } });
+
+    expect(await querier.count(Coupon, {})).toBe(6);
+    await querier.release();
+  });
+
+  /** Each key is read back once, so one listed in two batches is not taken for two rows sharing it. */
+  it('should read a guarded upsert back once per key, however the batches fall', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
+    await querier.run('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)');
+    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
+    await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: 'old' }));
+
+    const { ids } = await asTenant(() =>
+      querier.upsertMany(TenantNote, { id: true }, [
+        { id: 'a', title: 'first' },
+        { id: 'b', title: 'b' },
+        { id: 'c', title: 'c' },
+        { id: 'd', title: 'd' },
+        { id: 'a', title: 'last' },
+      ]),
+    );
+
+    expect(ids).toEqual(['a', 'b', 'c', 'd', 'a']);
+    expect(await asTenant(() => querier.findMany(TenantNote, { $select: { title: true }, $sort: { id: 1 } }))).toEqual([
+      { title: 'last' },
+      { title: 'b' },
+      { title: 'c' },
+      { title: 'd' },
+    ]);
+    await querier.release();
+  });
+
+  it('should split oversized batches by maxInsertRows', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
+    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)');
+    const runSpy = vi.spyOn(querier, 'run');
+
+    const ids = await querier.insertMany(
+      Coupon,
+      Array.from({ length: 5 }, (_, index) => ({ code: `c${index}` })),
+    );
+
+    expect(ids).toEqual([1, 2, 3, 4, 5]);
+    expect(runSpy.mock.calls.filter(([sql]) => sql.startsWith('INSERT'))).toHaveLength(3);
     await querier.release();
   });
 

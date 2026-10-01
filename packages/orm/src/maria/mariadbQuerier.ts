@@ -26,14 +26,9 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
     return this.buildUpdateResult({ rows, changes, upsertStatus: res.affectedRows });
   }
 
-  override async *internalStream<T>(query: string, values?: unknown[]) {
-    const stream = this.getConn().queryStream(query, toBindValues(values));
-    try {
-      for await (const row of stream) {
-        yield decodeBigInts(row) as T;
-      }
-    } finally {
-      stream.destroy();
+  override async *internalStream(query: string, values?: unknown[]) {
+    for await (const row of this.getConn().queryStream(query, toBindValues(values))) {
+      yield decodeBigInts(row);
     }
   }
 

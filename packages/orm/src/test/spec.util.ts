@@ -34,6 +34,7 @@ export function createSpec<T extends Spec>(spec: T) {
 function createTestCases(spec: Spec) {
   let proto: FunctionConstructor = Object.getPrototypeOf(spec);
   const requirements: Readonly<Record<string, boolean | undefined>> = spec.requirements?.() ?? {};
+  const timeouts: Readonly<Record<string, number | undefined>> = spec.timeouts?.() ?? {};
 
   const processedMethodsMap: { [k: string]: true } = {};
 
@@ -50,7 +51,7 @@ function createTestCases(spec: Spec) {
       if (hookFn) {
         hookFn(callback);
       } else if (key.startsWith('should')) {
-        (requirements[key] === false ? it.skip : it)(key, callback);
+        (requirements[key] === false ? it.skip : it)(key, callback, timeouts[key]);
       } else if (key.startsWith('fffShould')) {
         it.only(key, callback);
       } else if (key.startsWith('xxxShould')) {
@@ -62,10 +63,10 @@ function createTestCases(spec: Spec) {
 }
 
 /**
- * Budget for a suite's setup and teardown, which drop and create every fixture table over the wire: a
- * contended CI database can take seconds to serve that, so holding it to a test's budget turns a slow
- * database into a red build. Exported for the few such hooks written by hand rather than through
- * {@link createSpec}. Both runners honour it as a hook's second argument.
+ * Budget for a suite's setup and teardown, which drop and create every fixture table over the wire, and for
+ * a case writing as many rows: a contended CI database can take seconds to serve that, so holding it to a
+ * test's budget turns a slow database into a red build. Exported for hooks written by hand; both runners
+ * honour it as a hook's second argument.
  */
 export const provisioningTimeout = 60_000;
 
@@ -88,8 +89,12 @@ export type SpecCase<T> = Extract<keyof T, `should${string}`>;
  */
 export type SpecRequirements<T> = { readonly [K in SpecCase<T>]?: boolean };
 
+/** The cases given {@link provisioningTimeout} or a budget of their own, the rest keeping the runner's default. */
+export type SpecTimeouts<T> = { readonly [K in SpecCase<T>]?: number };
+
 export type Spec = Partial<typeof hooks> & {
   readonly requirements?: () => Readonly<Record<string, boolean | undefined>>;
+  readonly timeouts?: () => Readonly<Record<string, number | undefined>>;
   // oxlint-disable-next-line typescript/no-explicit-any -- `any` is required - `unknown` makes index signature incompatible with concrete spec classes
   readonly [k: string]: SpecHook | any;
 };

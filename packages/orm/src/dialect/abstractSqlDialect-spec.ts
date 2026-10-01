@@ -6,6 +6,7 @@ import {
   anyUuid,
   Company,
   InventoryAdjustment,
+  InvoiceLine,
   Item,
   ItemAdjustment,
   JsonRecord,
@@ -308,6 +309,11 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return this.exec((ctx) => this.dialect.find(ctx, User, q)).sql;
   }
 
+  /** A list the ORM builds takes half the bind budget, the rest left to the statement around it. */
+  shouldFitAKeyListInHalfTheBindBudget() {
+    expect(this.dialect.keyListCapacity(2)).toBe(Math.floor(this.dialect.maxBindValues / 4));
+  }
+
   shouldFindWithLock() {
     expect(this.lockedSql({ $select: { id: true }, $lock: true })).toContain(this.lockClause());
   }
@@ -488,6 +494,25 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
     expect(res.values[0]).toBe('2021-12-31 23:59:59.999');
     expect(res.values[1]).toBe(123);
+  }
+
+  /** Every column the key or its default, so the statement names none. */
+  shouldInsertARowWithNothingToWrite() {
+    const { sql, values } = this.exec((ctx) => this.dialect.insert(ctx, InvoiceLine, {}));
+    expect(sql).toBe(this.emptyRowInsert());
+    expect(values).toEqual([]);
+  }
+
+  /** `DEFAULT VALUES` writes one row, so two in one statement would silently write one. */
+  shouldRefuseSeveralRowsWithNothingToWriteInOneStatement() {
+    expect(() => this.exec((ctx) => this.dialect.insert(ctx, InvoiceLine, [{}, {}]))).toThrow(
+      'a row with nothing to write is inserted in a statement of its own',
+    );
+  }
+
+  /** How the dialect inserts {@link InvoiceLine} with nothing to write. */
+  protected emptyRowInsert(): string {
+    return 'INSERT INTO `InvoiceLine` DEFAULT VALUES' + this.returningClause(InvoiceLine);
   }
 
   shouldInsertWithOnInsertId() {

@@ -155,6 +155,9 @@ it('should unflatten deeply nested dotted columns', () => {
           name: 'Unidad',
         },
         inventoryable: 1,
+        // Kept as read: the querier drops a to-one whose key is null.
+        creatorId: null,
+        creator: { id: null, name: null },
       },
     },
     {
@@ -337,11 +340,11 @@ it('should unflatten a deeply nested row', () => {
   });
 });
 
-it('should skip null values', () => {
+it('should keep null values, as a flat row does', () => {
   const row = { id: 1, name: null, 'item.id': null };
   const attrsPaths = obtainAttrsPaths(row);
   const result = unflatObject(row, attrsPaths);
-  expect(result).toEqual({ id: 1 });
+  expect(result).toEqual({ id: 1, name: null, item: { id: null } });
 });
 
 it('should unflatten a single row as unflatObjects does', () => {

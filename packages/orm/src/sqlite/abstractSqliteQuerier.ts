@@ -36,9 +36,9 @@ export abstract class AbstractSqliteQuerier extends AbstractSqlQuerier {
     return this.buildUpdateResult({ rows: rows.map(decodeBigInts), changes: rows.length || changes });
   }
 
-  override async *internalStream<T>(query: string, values?: unknown[]) {
+  override async *internalStream(query: string, values?: unknown[]) {
     for await (const row of await this.iterate(query, toBindValues(values))) {
-      yield decodeBigInts(row) as T;
+      yield decodeBigInts(row);
     }
   }
 

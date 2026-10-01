@@ -59,7 +59,7 @@ export abstract class AbstractQuerierPool<Q extends Querier, D extends AbstractD
 
   /**
    * The connection outlives the call: it is held until the iterator is drained or closed by a `break` or
-   * `throw`. Abandoning the iterator leaks it until GC, so consume it in a `for await`.
+   * `throw`. Abandoning the iterator leaks it, so consume it in a `for await`.
    */
   readonly findManyStream: UniversalQuerier['findManyStream'] = (...args) =>
     this.streamWithQuerier((querier) => querier.findManyStream(...args));

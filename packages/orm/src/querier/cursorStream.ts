@@ -1,6 +1,6 @@
 /**
  * Runs one statement of the cursor protocol on the querier's own connection, which holds the cursor, and
- * not through `all()`, whose `serialize` is not re-entrant.
+ * not through `all()`, which refuses a statement while a stream holds the querier.
  */
 type CursorExecutor<T> = (query: string, values?: unknown[]) => Promise<T[]>;
 

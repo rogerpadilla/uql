@@ -139,8 +139,10 @@ export class MsSqlDialect extends MergeSqlDialect {
     return `${touched}THROW 50000, ${message}, 1;`;
   }
 
-  /** [The hard server limit](https://github.com/yiisoft/yii2/issues/10371), not a driver preference. */
-  override readonly maxBindValues = 2100;
+  /** The server's 2100 per request, less the two `sp_executesql` takes for the statement and its parameter list. */
+  override readonly maxBindValues = 2098;
+
+  override readonly maxInsertRows = 1000;
 
   /** `OUTPUT` has no trailing form: it sits between the column list and `VALUES`. */
   override readonly returningPosition = 'after-target';

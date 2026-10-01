@@ -1,10 +1,10 @@
 import type { PGliteOptions } from '@electric-sql/pglite';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
-import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
 import { decodeDate } from '../util/date.js';
 import { decodeWideNumber } from '../util/wideNumber.js';
+import { PgliteDialect } from './pgliteDialect.js';
 import { type PgliteDatabase, PgliteQuerier } from './pgliteQuerier.js';
 
 /** PGlite's own options but `dataDir`, the pool's first argument; `extensions: { vector }` enables pgvector. Type-only. */
@@ -15,13 +15,13 @@ export type PglitePoolOptions = Omit<PGliteOptions, 'dataDir'>;
  * the open transaction, so a unit of work needing its own needs its own pool. Transactions are plain
  * statements, so pass `relaxedDurability` on a persistent `dataDir` to skip a flush per statement.
  */
-export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PostgresDialect> {
+export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDatabase, PgliteQuerier, PgliteDialect> {
   constructor(
     readonly dataDir = 'memory://',
     readonly opts?: PglitePoolOptions,
     extra?: ExtraOptions,
   ) {
-    super(new PostgresDialect(dialectOptionsFrom(extra)), extra);
+    super(new PgliteDialect(dialectOptionsFrom(extra)), extra);
   }
 
   protected override async openDb(): Promise<PgliteDatabase> {

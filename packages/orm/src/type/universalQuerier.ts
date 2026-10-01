@@ -156,7 +156,7 @@ export interface SharedQuerier<W extends QuerierTransport, O, DO = O> {
 export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> {
   /**
    * Stream the records matching the query one at a time, each with the relations and counts `findMany`
-   * reads, for bulk reads. Fires no lifecycle hooks.
+   * reads, for bulk reads. `afterLoad` runs on each row as it arrives.
    */
   findManyStream: ProjectedRead<'many', 'stream', 'server', QueryOptions>;
 

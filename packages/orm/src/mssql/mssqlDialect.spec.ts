@@ -112,6 +112,13 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(sql.indexOf('UPDLOCK')).toBeLessThan(sql.indexOf('FETCH NEXT'));
   }
 
+  protected override emptyRowInsert(): string {
+    return (
+      'DECLARE @_uql_output TABLE ("id" BIGINT); INSERT INTO "InvoiceLine" OUTPUT INSERTED."id" "id" INTO @_uql_output' +
+      ' DEFAULT VALUES; SET NOCOUNT ON; SELECT "id" FROM @_uql_output; SET NOCOUNT OFF;'
+    );
+  }
+
   override shouldInsertOne() {
     const { sql } = this.exec((ctx) =>
       this.dialect.insert(ctx, User, { name: 'Some Name', email: 'someemail@example.com', id: '123' }),

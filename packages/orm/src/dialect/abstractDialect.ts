@@ -54,6 +54,11 @@ export abstract class AbstractDialect {
   /** What the engine has. Each concrete dialect declares its own. */
   abstract readonly features: DialectFeatures;
 
+  /** The most rows a list the ORM builds, naming them by `keyCount` keys, takes in one statement: unbounded here. */
+  keyListCapacity(_keyCount: number): number {
+    return Infinity;
+  }
+
   readonly namingStrategy: NamingStrategy | undefined;
 
   constructor(protected readonly options: DialectOptions = {}) {

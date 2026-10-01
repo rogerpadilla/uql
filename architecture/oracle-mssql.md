@@ -55,7 +55,8 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 | `commentSyntax`           | `none` - extended properties are not comments                                  | `statement`                                   |
 | `dropTableCascade`        | false                                                                          | true (`CASCADE CONSTRAINTS`)                  |
 | `features.rowLocks`       | true, as table hints                                                           | true, `FOR UPDATE` verbatim                   |
-| `maxBindValues`           | **2100** - [a hard server limit](https://github.com/yiisoft/yii2/issues/10371) | 65535                                         |
+| `maxBindValues`           | **2098** - the server's 2100, less the two `sp_executesql` takes               | 65535                                         |
+| `maxInsertRows`           | **1000** - an `INSERT ... VALUES` refuses more                                 | unset                                         |
 | `schemas`                 | true, default `dbo`                                                            | true                                          |
 | `regexCondition`          | `REGEXP_LIKE`, which a server below 2025 refuses itself                        | `REGEXP_LIKE`                                 |
 | `$text`                   | throws - needs a full-text index and the FTS component                         | throws - needs a CONTEXT index                |

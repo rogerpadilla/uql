@@ -3,7 +3,7 @@ import type { RawRow } from '../type/index.js';
 
 export interface PgAnyClient {
   query(text: string, values?: unknown[]): Promise<{ rows: RawRow[]; rowCount: number | null }>;
-  query(stream: object): AsyncIterable<RawRow> & { destroy(): void };
+  query(stream: object): AsyncIterable<RawRow>;
   /** Any truthy argument makes `pg-pool` evict the client instead of returning it to the idle list. */
   release(discard?: boolean): void | Promise<void>;
 }
@@ -23,16 +23,9 @@ export class PgQuerier<C extends PgAnyClient = PgAnyClient> extends AbstractPool
     return this.buildUpdateResult({ rows: res.rows, changes: res.rowCount ?? 0 });
   }
 
-  override async *internalStream<T>(query: string, values?: unknown[]) {
+  override async *internalStream(query: string, values?: unknown[]) {
     const { default: QueryStream } = await import('pg-query-stream');
-    const stream = this.getConn().query(new QueryStream(query, values));
-    try {
-      for await (const row of stream) {
-        yield row as T;
-      }
-    } finally {
-      stream.destroy();
-    }
+    yield* this.getConn().query(new QueryStream(query, values));
   }
 
   protected override async releaseConn(conn: C, discard: boolean) {

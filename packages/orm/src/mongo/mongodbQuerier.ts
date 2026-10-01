@@ -11,7 +11,7 @@ import type {
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { hasRequiredJoin } from '../dialect/queryJoins.js';
 import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
-import { AbstractQuerier, enrichError } from '../querier/index.js';
+import { AbstractQuerier } from '../querier/index.js';
 import type {
   EntityData,
   ExtraOptions,
@@ -108,14 +108,8 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       return;
     }
     const meta = getMeta(entity);
-    const cursor = this.readCursor(entity, q, opts);
-    try {
-      for await (const doc of cursor) {
-        const [normalized] = this.dialect.normalizeIds(meta, [doc]);
-        yield normalized;
-      }
-    } catch (err) {
-      throw enrichError(err, this.logger, 'internalFindManyStream');
+    for await (const doc of this.timedStream('internalFindManyStream', undefined, this.readCursor(entity, q, opts))) {
+      yield this.dialect.normalizeId(meta, doc);
     }
   }
 

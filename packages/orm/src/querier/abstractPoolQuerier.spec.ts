@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import type { QueryUpdateResult } from '../type/index.js';
+import type { QueryUpdateResult, RawRow } from '../type/index.js';
 import { AbstractPoolQuerier } from './abstractPoolQuerier.js';
 
 /** Stands in for a pooled driver connection: `release` hands it back, and can be made to fail. */
@@ -33,7 +33,7 @@ class StubPoolQuerier extends AbstractPoolQuerier<Conn> {
     return [] as T[];
   }
 
-  protected override async *internalStream<T>(): AsyncIterable<T> {}
+  protected override async *internalStream(): AsyncIterable<RawRow> {}
 
   protected override async internalRun(): Promise<QueryUpdateResult> {
     return { changes: 0 };

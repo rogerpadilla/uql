@@ -10,6 +10,15 @@ export function clone<T>(value: T): T {
   return { ...value };
 }
 
+/** `items` in consecutive lists of at most `size`, in order: one list where `size` is unbounded. */
+export function chunk<T>(items: readonly T[], size: number): T[][] {
+  const chunks: T[][] = [];
+  for (let start = 0; start < items.length; start += size) {
+    chunks.push(items.slice(start, start + size));
+  }
+  return chunks;
+}
+
 /** Whether `obj` has at least one enumerable key. Narrows away `undefined`/`null` for callers. */
 export function hasKeys<T>(obj: T): obj is NonNullable<T> {
   if (typeof obj !== 'object' || obj === null) return false;

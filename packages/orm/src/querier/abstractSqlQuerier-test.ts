@@ -1,4 +1,5 @@
 import { expect } from 'vitest';
+import { withContext } from '../context/context.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
@@ -7,10 +8,14 @@ import {
   dropTables,
   InventoryAdjustment,
   Invoice,
+  InvoiceLine,
   ItemAdjustment,
   LedgerAccount,
+  provisioningTimeout,
   type SpecRequirements,
+  type SpecTimeouts,
   Tax,
+  TenantNote,
   TaxCategory,
   TypedGroup,
   TypedRow,
@@ -18,6 +23,7 @@ import {
 } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
 import { currentTimestamp, raw, refs } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -57,7 +63,14 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     };
   }
 
-  /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
+  /** Tens of thousands of rows where an engine binds 65535 values, which CockroachDB takes seconds over. */
+  timeouts(): SpecTimeouts<this> {
+    return {
+      shouldWriteRowsPastEveryLimit: provisioningTimeout,
+      shouldUpsertGuardedRowsPastTheBindBudget: provisioningTimeout,
+    };
+  }
+
   /** SQL in an upsert's `update` reads the row already there: an engine also has the incoming one in scope. */
   async shouldUpsertWithSqlOverTheRowAlreadyThere() {
     const id = '507f1f77bcf86cd799439014';
@@ -69,6 +82,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
   }
 
+  /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
   async shouldRejectLockOutsideTransaction() {
     await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow('requires an open transaction');
   }
@@ -499,6 +513,79 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     const found = await this.querier.findMany(Coupon, { $select: { id: true }, $sort: { code: 1 } });
 
     expect(ids.map(String)).toEqual(found.map(({ id }) => String(id)));
+  }
+
+  /** Every column the key or its default: each row its own `DEFAULT VALUES`, or MySQL's `() VALUES ()`. */
+  async shouldInsertRowsWithNothingToWrite() {
+    const id = await this.querier.insertOne(InvoiceLine, {});
+    const ids = await this.querier.insertMany(InvoiceLine, [{}, {}]);
+
+    expect(new Set([id, ...ids].map(String)).size).toBe(3);
+    expect(await this.querier.count(InvoiceLine, {})).toBe(3);
+  }
+
+  /** Pins each engine's bind budget against its server: a statement binding that many values has to run. */
+  async shouldRunAStatementFillingTheBindBudget() {
+    const rows = await this.querier.all(...this.readBinding(this.querier.dialect.maxBindValues));
+
+    expect(rows).toHaveLength(1);
+  }
+
+  /** Refused before the driver sees it, which would fail it, or on PGlite answer it and every read after wrong. */
+  async shouldRefuseAStatementPastTheBindBudget() {
+    await expect(this.querier.all(...this.readBinding(this.querier.dialect.maxBindValues + 1))).rejects.toThrow(
+      UqlUsageError,
+    );
+  }
+
+  /**
+   * Past every limit a write meets: the bind budget, SQL Server's 1000-row `INSERT ... VALUES`, and the id
+   * list the ORM builds itself for a paged update or delete, which it names its rows by.
+   */
+  async shouldWriteRowsPastEveryLimit() {
+    const count = Math.max(1001, Math.floor(this.querier.dialect.maxBindValues / 2) + 1);
+    const rows = Array.from({ length: count }, (_, index) => ({ code: `c${index}`, label: 'inserted' }));
+    const paged = { $sort: { id: 1 }, $limit: count } as const;
+
+    const ids = await this.querier.insertMany(Coupon, rows);
+    await this.querier.upsertMany(
+      Coupon,
+      { code: true },
+      rows.map(({ code }) => ({ code, label: 'upserted' })),
+    );
+    const updated = await this.querier.updateMany(
+      Coupon,
+      { $where: { label: 'upserted' }, ...paged },
+      { label: 'updated' },
+    );
+    const deleted = await this.querier.deleteMany(Coupon, { $where: { label: 'updated' }, ...paged });
+
+    expect(new Set(ids.map(String)).size).toBe(count);
+    expect([updated, deleted]).toEqual([count, count]);
+  }
+
+  /** A guarded upsert reads its rows back by key first, a list as long as the payload. */
+  async shouldUpsertGuardedRowsPastTheBindBudget() {
+    const count = Math.floor(this.querier.dialect.maxBindValues / 2) + 1;
+    const notes = Array.from({ length: count }, (_, index) => ({ id: `n${index}`, title: 'note' }));
+
+    const { ids } = await withContext({ tenantId: 'a' }, () =>
+      this.querier.upsertMany(TenantNote, { id: true }, notes),
+    );
+
+    expect(ids).toEqual(notes.map(({ id }) => id));
+    expect(await withContext({ tenantId: 'a' }, () => this.querier.count(TenantNote, {}))).toBe(count);
+  }
+
+  /** A read binding `count` values, a placeholder each, in the dialect's own spelling. */
+  private readBinding(count: number): [string, number[]] {
+    const { dialect } = this.querier;
+    const values = Array.from({ length: count }, (_, index) => index);
+    const placeholders = values.map((_, index) => dialect.placeholder(index + 1)).join(', ');
+    return [
+      `SELECT COUNT(*) AS n FROM ${dialect.escapeId('Coupon')} WHERE ${dialect.escapeId('id')} IN (${placeholders})`,
+      values,
+    ];
   }
 
   /** Matched on a column that is not the key, which leaves MySQL's header with no id for the row. */

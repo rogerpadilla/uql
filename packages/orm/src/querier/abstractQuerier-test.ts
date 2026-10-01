@@ -24,9 +24,18 @@ import {
   VersionedNote,
   WideVersionedNote,
 } from '../test/index.js';
-import type { CursorPage, Querier, QuerierPool, QueryKeyset, QuerySearch, QueryWhere, Type } from '../type/index.js';
+import type {
+  CursorPage,
+  Querier,
+  QuerierPool,
+  Query,
+  QueryKeyset,
+  QuerySearch,
+  QueryWhere,
+  Type,
+} from '../type/index.js';
 import { raw, withDeleted } from '../util/index.js';
-import { UqlOptimisticLockError } from '../util/uqlError.js';
+import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
 const thrownValue = (thrown: unknown) => thrown;
@@ -3291,20 +3300,70 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.commitTransaction();
   }
 
+  /** Past every driver's first batch, so the loop leaves the read mid-flight: the driver has to close it. */
   async shouldReleaseTheStreamWhenTheCallerStopsEarly() {
-    await this.querier.insertMany(User, [
-      { name: 'Alice', email: 'alice@test.com' },
-      { name: 'Bob', email: 'bob@test.com' },
-      { name: 'Charlie', email: 'charlie@test.com' },
-    ]);
+    await this.querier.insertMany(
+      User,
+      Array.from({ length: 250 }, (_, index) => ({ name: `u${String(index).padStart(3, '0')}` })),
+    );
 
     for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
-      expect(row.name).toBe('Alice');
+      expect(row.name).toBe('u000');
       break;
     }
 
     // An abandoned cursor holds its connection, so what proves the cleanup is the next statement.
-    expect(await this.querier.count(User, {})).toBe(3);
+    expect(await this.querier.count(User, {})).toBe(250);
+  }
+
+  /**
+   * A stream holds its querier's connection until the loop ends, and most drivers would queue another
+   * statement behind the read, which the loop never finishes: one is refused instead, on every engine.
+   */
+  async shouldRefuseAStatementOnTheQuerierAStreamHolds() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+
+    for await (const _row of this.querier.findManyStream(User, {})) {
+      await expect(this.querier.count(User, {})).rejects.toThrow(UqlUsageError);
+      await expect(this.querier.findManyStream(User, {})[Symbol.asyncIterator]().next()).rejects.toThrow(UqlUsageError);
+      break;
+    }
+
+    expect(await this.querier.count(User, {})).toBe(2);
+  }
+
+  /** `release` closes a stream left open, so the pool never takes back a connection still reading. */
+  async shouldCloseAStreamLeftOpenAtRelease() {
+    await this.querier.insertMany(User, [
+      { name: 'Alice', email: 'alice@test.com' },
+      { name: 'Bob', email: 'bob@test.com' },
+    ]);
+    const querier = await this.pool.getQuerier();
+    const rows = querier.findManyStream(User, { $sort: { name: 1 } })[Symbol.asyncIterator]();
+    await rows.next();
+
+    await querier.release();
+
+    expect(await rows.next()).toEqual({ done: true, value: undefined });
+    expect(await this.pool.count(User)).toBe(2);
+  }
+
+  /** A stream answers each row as `findMany` does, null columns, to-ones and to-manys alike. */
+  async shouldStreamTheRowsFindManyReads() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'weight' });
+    await this.querier.insertMany(MeasureUnit, [{ name: 'kg', categoryId }, { name: 'orphan' }]);
+    const units = { $populate: { category: true }, $sort: { name: 1 } } satisfies Query<MeasureUnit>;
+    const categories = { $populate: { measureUnits: true } } satisfies Query<MeasureUnitCategory>;
+
+    expect(await Array.fromAsync(this.querier.findManyStream(MeasureUnit, units))).toEqual(
+      await this.querier.findMany(MeasureUnit, units),
+    );
+    expect(await Array.fromAsync(this.querier.findManyStream(MeasureUnitCategory, categories))).toEqual(
+      await this.querier.findMany(MeasureUnitCategory, categories),
+    );
   }
 
   async shouldStreamTwiceOverOneQuerier() {

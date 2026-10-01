@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { defineField } from '../entity/index.js';
-import { clone, entityName, getKeys, hasKeys, isScalarId } from './object.util.js';
+import { chunk, clone, entityName, getKeys, hasKeys, isScalarId } from './object.util.js';
 
 describe('clone of what has nothing to copy', () => {
   it('should hand back a primitive and null as they are', () => {
@@ -67,5 +67,26 @@ describe('isScalarId', () => {
     expect(isScalarId([1, 2])).toBe(false);
     // What a query-string parser hands back (`qs`, express's `req.params`): still a map of columns.
     expect(isScalarId(Object.assign(Object.create(null), { studentId: 1 }))).toBe(false);
+  });
+});
+
+describe('chunk', () => {
+  it('should split a list into consecutive lists of the size, the last one shorter', () => {
+    expect(chunk([1, 2, 3, 4, 5], 2)).toEqual([[1, 2], [3, 4], [5]]);
+  });
+
+  it('should split an exact multiple into full lists', () => {
+    expect(chunk([1, 2, 3, 4], 2)).toEqual([
+      [1, 2],
+      [3, 4],
+    ]);
+  });
+
+  it('should keep a list whole where the size is unbounded', () => {
+    expect(chunk([1, 2, 3], Infinity)).toEqual([[1, 2, 3]]);
+  });
+
+  it('should answer no lists for none', () => {
+    expect(chunk([], 2)).toEqual([]);
   });
 });

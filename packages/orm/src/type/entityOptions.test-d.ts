@@ -103,14 +103,17 @@ export class Referrer {
   @Field({ references: () => Company }) misTypedId?: string | null;
 }
 // ─── Generators stamp the value the field declares ───
-// `defaultValue` does too, with one exception: a JSONB column defaults with the SQL literal it
-// stores. Requiring the field's own type there as well broke every such column in 0.24.3.
+// `defaultValue` does too, with one exception: a JSONB column defaults with a document, a list included,
+// or the SQL literal it stores. Requiring the field's own type there as well broke every such column in 0.24.3.
 class Generated {
   @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
   @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number | null;
   @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
   @Field({ type: Number, softDelete: () => Date.now() }) deletedEpoch?: number | null;
   @Field({ type: 'jsonb', defaultValue: '{}' }) settings?: Json<{ theme?: string }> | null;
+  @Field({ type: 'jsonb', defaultValue: { theme: 'dark' } }) theme?: Json<{ theme?: string }> | null;
+  @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
+  @Field({ type: 'jsonb', defaultValue: [{ at: 1 }] }) events?: Json<{ at: number }>[] | null;
 
   // @ts-expect-error a uuid column is not stamped with a number
   @Field({ type: 'uuid', onInsert: () => 42 }) badGenerator?: string | null;
