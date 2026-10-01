@@ -4,27 +4,27 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.95.1] - 2026-10-01
 
-- **Fixed:** a write split to fit the engine lands whole, in one transaction; on D1, which has none, a split or guarded upsert and a mixed `saveMany` run statement by statement where they failed.
-- **Fixed:** `insertMany` mixing rows that name fields with rows that name none no longer fails past D1's 100 rows or SQL Server's 1000.
-- **Fixed:** on MariaDB, leaving a `findManyStream` loop early no longer hangs the connection.
-- **Fixed:** an upsert no longer takes a row whose conflict key holds a null for an existing one, since null never conflicts.
-- A JSON column's `defaultValue` type-checks as a document, a list or its text, refusing a callback or a class instance. `uql-orm/util` no longer exports `unflatObjects`, nor `uql-orm/dialect` `bindAll`.
+- **Fixed:** a write split to fit the engine runs in one transaction; on D1, statement by statement.
+- **Fixed:** `insertMany` mixing rows with and without fields no longer fails on large batches (D1, SQL Server).
+- **Fixed:** leaving a `findManyStream` loop early no longer hangs MariaDB.
+- **Fixed:** an upsert no longer matches a row on a null conflict key.
+- A JSON `defaultValue` must be a document, a list or JSON text. Removed `unflatObjects` from `uql-orm/util` and `bindAll` from `uql-orm/dialect`.
 
 ## [0.95.0] - 2026-10-01
 
-- **Breaking:** an upsert takes its update as the fourth argument, `upsertOne(Entity, { term: true }, row, { uses: { $inc: 1 } })`, where it took `{ update }`; `{}` still leaves a conflicting row as it is. `npx uql-codemod` rewrites it.
-- **Fixed:** `upsertOne`, `upsertMany`, and `saveOne`/`saveMany` on a row naming its key write cascaded relations, which they dropped; a found row's are replaced, as `updateMany` does.
-- **Fixed:** a boolean column default no longer reports drift on SQLite, MySQL, MariaDB and SQL Server.
-- On Node, `uql-migrate` loads a TypeScript `uql.config.ts` through the project's `tsx` (`npm i -D tsx`), with no `--import` flag; `--dry-run` prints only SQL to stdout.
+- **Breaking:** an upsert takes its update as the fourth argument instead of `{ update }`. `npx uql-codemod` rewrites it.
+- **Fixed:** upserts and `saveOne`/`saveMany` with a key write cascaded relations.
+- **Fixed:** boolean defaults no longer report drift on SQLite, MySQL, MariaDB and SQL Server.
+- `uql-migrate` loads `uql.config.ts` on Node through the project's `tsx`; `--dry-run` prints only SQL.
 
 ## [0.94.0] - 2026-10-01
 
-- **Breaking:** inside a `findManyStream` loop, a statement on the same querier is refused where most engines hung: run it on another connection, or after the loop on SQLite and PGlite, whose pool has one. A stream runs `@AfterLoad` on each row, answers null columns as `findMany` does, and is logged; `release()` closes one left open.
-- **Breaking:** a statement binding more values than its engine takes is refused with a `UqlUsageError`, 65535 on MySQL and MariaDB too, whose drivers took more: split a long `$in`.
-- **Fixed:** large writes no longer fail: `insertMany` and `upsertMany` past SQL Server's 1000 rows or 2098 values, or PGlite's 32767 (where nothing was written), a large `upsertMany` on MySQL or MariaDB, and an update, delete, cascade or guarded upsert over more rows than D1 or SQL Server bind at once.
-- **Fixed:** `findMany` keeps a null column beside a populated to-one, and an insert with nothing to write, every column its default, works on Postgres, SQLite and SQL Server.
-- **Fixed:** a JSON column defaults to a list as well as an object (`defaultValue: []`), and a JSON default no longer reports drift on Postgres or CockroachDB, which reprint the document; a drift report shows it as JSON.
-- A custom SQL dialect states its `maxBindValues`, and `maxInsertRows` where its engine caps an `INSERT`'s rows.
+- **Breaking:** a statement on a querier inside its own `findManyStream` loop is refused instead of hanging. Streams now run `@AfterLoad`, are logged, and close on `release()`.
+- **Breaking:** a statement binding more values than its engine allows throws `UqlUsageError`: split a long `$in`.
+- **Fixed:** large `insertMany`, `upsertMany`, updates, deletes and cascades no longer fail on SQL Server, PGlite, MySQL, MariaDB or D1.
+- **Fixed:** `findMany` keeps a null column beside a populated to-one; an insert of only defaults works on Postgres, SQLite and SQL Server.
+- **Fixed:** a JSON column can default to a list, and JSON defaults no longer drift on Postgres or CockroachDB.
+- A custom SQL dialect declares `maxBindValues` and, when capped, `maxInsertRows`.
 
 ## [0.93.1] - 2026-10-01
 
