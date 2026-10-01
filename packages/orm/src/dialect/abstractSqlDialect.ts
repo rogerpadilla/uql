@@ -1969,8 +1969,14 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     } else if (isFieldUpdateOp(value)) {
       const [op, operand] = fieldUpdateOf(key, value);
       ctx.append(`${escapedCol} = COALESCE(${current}, 0) ${SQL_ARITHMETIC[op]} `);
-      ctx.addValue(operand);
-    } else if (qualifier && value instanceof QueryRaw) {
+      if (operand instanceof QueryRaw) {
+        ctx.append('(');
+        this.getRawValue(ctx, { value: operand, escapedPrefix: qualifier });
+        ctx.append(')');
+      } else {
+        ctx.addValue(operand);
+      }
+    } else if (value instanceof QueryRaw) {
       ctx.append(`${escapedCol} = `);
       this.getRawValue(ctx, { value, escapedPrefix: qualifier });
     } else {

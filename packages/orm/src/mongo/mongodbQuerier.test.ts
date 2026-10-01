@@ -96,7 +96,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   override async shouldCountBesideARawSelect() {
     await expect(
       this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } }),
-    ).rejects.toThrow('raw $select is not supported on MongoDB');
+    ).rejects.toThrow('raw() in $select is not supported on MongoDB');
   }
 
   /**

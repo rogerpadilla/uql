@@ -72,6 +72,11 @@ export async function arithmeticSafety() {
   await querier.updateOneById(Counter, 1, { hits: { $inc: '1' } });
   // @ts-expect-error a bigint field steps by a bigint, which keeps it exact
   await querier.updateOneById(Counter, 1, { total: { $inc: 1 } });
+  // The step may be SQL of the field's type, NULL still counting as 0: a ref, or a raw expression.
+  const counter = refs(Counter);
+  await querier.updateMany(Counter, { $where: { id: 1 } }, { hits: { $inc: counter.id }, total: { $mul: raw`2` } });
+  // @ts-expect-error a string column's ref is no step
+  await querier.updateOneById(Counter, 1, { hits: { $inc: counter.label } });
   // @ts-expect-error an upsert writes whole rows, with no update operator
   await querier.upsertOne(Counter, { id: true }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
 

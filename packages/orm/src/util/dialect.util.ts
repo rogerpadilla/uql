@@ -330,7 +330,7 @@ export function isFieldUpdateOp(value: unknown): value is FieldUpdateOp {
  * The one operator a scalar field's update carries, and its operand. Naming both throws rather than
  * reading one: their order would change the result, and an untyped payload is how both arrive.
  */
-export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint] {
+export function fieldUpdateOf(key: string, value: FieldUpdateOp): [keyof FieldUpdateOp, number | bigint | QueryRaw] {
   if (value.$inc !== undefined && value.$mul !== undefined) {
     throw new UqlUsageError(`'${key}' takes one of $inc and $mul`);
   }

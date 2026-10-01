@@ -6,7 +6,7 @@ import { MsSqlTableDdl } from './mssqlTableDdl.js';
 import { MariaIndexDdl, MySqlIndexDdl } from './mysqlIndexDdl.js';
 import { MySqlTableDdl } from './mysqlTableDdl.js';
 import { CockroachIndexDdl, PgIndexDdl } from './pgIndexDdl.js';
-import { PgTableDdl } from './pgTableDdl.js';
+import { CockroachTableDdl, PgTableDdl } from './pgTableDdl.js';
 import { SqliteIndexDdl } from './sqliteIndexDdl.js';
 import { TableDdl } from './tableDdl.js';
 
@@ -16,7 +16,7 @@ export { MsSqlTableDdl } from './mssqlTableDdl.js';
 export { MariaIndexDdl, MySqlIndexDdl, MysqlLikeIndexDdl } from './mysqlIndexDdl.js';
 export { MySqlTableDdl } from './mysqlTableDdl.js';
 export { CockroachIndexDdl, PgIndexDdl } from './pgIndexDdl.js';
-export { PgTableDdl } from './pgTableDdl.js';
+export { CockroachTableDdl, PgTableDdl } from './pgTableDdl.js';
 export { SqliteIndexDdl } from './sqliteIndexDdl.js';
 export { TableDdl } from './tableDdl.js';
 
@@ -40,7 +40,7 @@ export function indexDdlFor(dialect: AbstractSqlDialect): IndexDdl {
 /** Each engine's table DDL, keyed by `dialectName` and exhaustive, for the same reasons as {@link INDEX_DDL}. */
 const TABLE_DDL: Readonly<Record<SqlDialectName, new (dialect: AbstractSqlDialect) => TableDdl>> = {
   postgres: PgTableDdl,
-  cockroachdb: PgTableDdl,
+  cockroachdb: CockroachTableDdl,
   mysql: MySqlTableDdl,
   mariadb: MySqlTableDdl,
   mssql: MsSqlTableDdl,

@@ -297,8 +297,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
         const name = this.escapeId(column);
         return `UPDATE ${target} SET ${name} = ${value} WHERE ${name} IS NULL;`;
       }),
-      ...alterations(columns).flatMap(({ from, to }) =>
-        this.tableDdl.alterColumn(tableName, to, this.generateColumnDefinitionFromSchema(to), from),
+      ...this.tableDdl.alterColumns(tableName, alterations(columns), (column) =>
+        this.generateColumnDefinitionFromSchema(column),
       ),
       ...dropped(columns).flatMap((column) => this.tableDdl.dropColumn(tableName, column.name)),
       ...this.addIndexStatements(tableName, sides(diff.indexes, 'to')),

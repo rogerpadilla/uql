@@ -201,16 +201,16 @@ type JsonUpdateOpFor<V, T = UnwrapJson<NonNullable<V>>> = [T] extends [never]
 /**
  * A scalar field's update operator, as {@link JsonUpdateOp} is a JSON field's, computed in the statement:
  * `$inc` adds, `$mul` multiplies, a NULL counting as 0 on every engine. One per field, since their order
- * would change the result. A `bigint` steps by a `bigint`, exactly.
- * @example `{ stock: { $inc: -1 } }`
+ * would change the result. A `bigint` steps by a `bigint`, exactly, and the step may be SQL of the field's type.
+ * @example `{ stock: { $inc: -1 } }`, `{ total: { $inc: newRow.amount } }`
  */
-export type FieldUpdateOp<T extends number | bigint = number | bigint> = ExactlyOne<Record<'$inc' | '$mul', T>>;
+export type FieldUpdateOp<T = number | bigint | QueryRaw> = ExactlyOne<Record<'$inc' | '$mul', T>>;
 
 /** The {@link FieldUpdateOp} a field takes: `never` on one it has no operator for, which is any but a number. */
-type FieldUpdateOpFor<V> = [NonNullable<V>] extends [number]
-  ? FieldUpdateOp<number>
+type FieldUpdateOpFor<V, Raw> = [NonNullable<V>] extends [number]
+  ? FieldUpdateOp<number | RawFor<Raw, number>>
   : [NonNullable<V>] extends [bigint]
-    ? FieldUpdateOp<bigint>
+    ? FieldUpdateOp<bigint | RawFor<Raw, bigint>>
     : never;
 
 /** What an update takes beyond the value: `null` to clear an optional member, `raw` SQL, and update operators. */
@@ -218,7 +218,7 @@ type UpdateExtra<V, Raw> =
   | (undefined extends V ? null : never)
   | RawFor<Raw, V>
   | JsonUpdateOpFor<V>
-  | FieldUpdateOpFor<V>;
+  | FieldUpdateOpFor<V, Raw>;
 
 /**
  * What a whole-record write persists: the fields and relations with their declared optionality, a

@@ -105,7 +105,7 @@ it('should delegate findMany to a querier of its own, and release it', async () 
   const pool = new CountingPool(() => querier);
   const result = await pool.findMany(Item, { $where: { id: 1 } });
   expect(result).toEqual([{ id: 1 }]);
-  expect(querier.findMany).toHaveBeenCalledWith(Item, { $where: { id: 1 } }, undefined);
+  expect(querier.findMany).toHaveBeenCalledWith(Item, { $where: { id: 1 } });
   expect(pool.acquired).toHaveLength(1);
   expect(querier.release).toHaveBeenCalledTimes(1);
 });
@@ -137,11 +137,11 @@ it('should delegate every read to a fresh querier, and release it', async () => 
   expect(await pool.aggregate(entity, { $group: {} })).toEqual([{ total: 3 }]);
 
   const [byId, one, andCount, page, agg] = pool.acquired;
-  expect(byId.findOneById).toHaveBeenCalledWith(entity, 1, undefined, undefined);
-  expect(one.findOne).toHaveBeenCalledWith(entity, {}, undefined);
-  expect(andCount.findManyAndCount).toHaveBeenCalledWith(entity, {}, undefined);
-  expect(page.findManyPage).toHaveBeenCalledWith(entity, { $sort: { id: 1 }, $limit: 1 }, undefined);
-  expect(agg.aggregate).toHaveBeenCalledWith(entity, { $group: {} }, undefined);
+  expect(byId.findOneById).toHaveBeenCalledWith(entity, 1);
+  expect(one.findOne).toHaveBeenCalledWith(entity, {});
+  expect(andCount.findManyAndCount).toHaveBeenCalledWith(entity, {});
+  expect(page.findManyPage).toHaveBeenCalledWith(entity, { $sort: { id: 1 }, $limit: 1 });
+  expect(agg.aggregate).toHaveBeenCalledWith(entity, { $group: {} });
   // One fresh connection acquired and released per call.
   expect(pool.acquired).toHaveLength(5);
   for (const acquired of pool.acquired) {
@@ -161,7 +161,7 @@ it('should delegate exists and estimatedCount to a fresh querier, and release it
   expect(await pool.estimatedCount(User)).toBe(7);
 
   const [exists, estimated] = pool.acquired;
-  expect(exists.exists).toHaveBeenCalledWith(User, { $where: { name: 'a' } }, undefined);
+  expect(exists.exists).toHaveBeenCalledWith(User, { $where: { name: 'a' } });
   expect(estimated.estimatedCount).toHaveBeenCalledWith(User);
   expect(exists.release).toHaveBeenCalledTimes(1);
   expect(estimated.release).toHaveBeenCalledTimes(1);
@@ -195,10 +195,10 @@ it('should delegate every write to a fresh querier, and release it', async () =>
 
   expect(await pool.insertOne(entity, { id: 1 })).toBe(1);
   expect(await pool.insertMany(entity, [{ id: 1 }])).toEqual([1, 2]);
-  expect(await pool.updateOneById(entity, 1, { id: 2 })).toBe(1);
+  expect(await pool.updateOneById(entity, 1, { id: 2 }, { filters: false })).toBe(1);
   expect(await pool.updateMany(entity, {}, { id: 2 })).toBe(2);
-  expect(await pool.upsertOne(entity, { id: true }, { id: 1 })).toEqual({ changes: 1 });
-  expect(await pool.upsertMany(entity, { id: true }, [{ id: 1 }])).toEqual({ changes: 2 });
+  expect(await pool.upsertOne(entity, { id: true }, { id: 1 }, { update: {} })).toEqual({ changes: 1 });
+  expect(await pool.upsertMany(entity, { id: true }, [{ id: 1 }], { update: { id: 3 } })).toEqual({ changes: 2 });
   expect(await pool.saveOne(entity, { id: 1 })).toBe(1);
   expect(await pool.saveMany(entity, [{ id: 1 }])).toEqual([1, 2]);
   expect(await pool.deleteOneById(entity, 1)).toBe(1);
@@ -206,6 +206,10 @@ it('should delegate every write to a fresh querier, and release it', async () =>
   expect(await pool.restoreOneById(entity, 1)).toBe(1);
   expect(await pool.restoreMany(entity, {})).toBe(2);
 
+  const [, , updateOne, , upsertOne, upsertMany] = pool.acquired;
+  expect(updateOne.updateOneById).toHaveBeenCalledWith(entity, 1, { id: 2 }, { filters: false });
+  expect(upsertOne.upsertOne).toHaveBeenCalledWith(entity, { id: true }, { id: 1 }, { update: {} });
+  expect(upsertMany.upsertMany).toHaveBeenCalledWith(entity, { id: true }, [{ id: 1 }], { update: { id: 3 } });
   // A pool call is one unit of work, and two of them are not one.
   expect(pool.acquired).toHaveLength(12);
   for (const acquired of pool.acquired) {

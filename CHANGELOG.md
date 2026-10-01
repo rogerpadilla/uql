@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.93.1] - 2026-10-01
+
+- **Fixed:** the pool passes every option to its querier, `upsertOne`/`upsertMany`'s `{ update }` included, which it dropped.
+- **Fixed:** on MongoDB, `raw` in an update is refused rather than written.
+- On SQL, `$inc` and `$mul` step by a ref or `raw` of the field's type: `{ total: { $inc: newRow.amount } }`.
+- A generated migration alters a table's columns in one statement, so Postgres and MySQL rewrite the table once.
+
 ## [0.93.0] - 2026-10-01
 
 - **Breaking:** the migration builder's `expr` is gone; use the defaults entities use, from `uql-orm`: `currentTimestamp` for `expr.now()`, `raw` for `expr.raw`. `npx uql-codemod` rewrites them.

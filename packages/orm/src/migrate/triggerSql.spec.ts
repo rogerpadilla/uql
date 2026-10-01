@@ -717,6 +717,14 @@ describe('a write in the body, to another table', () => {
     );
   });
 
+  it('should step a counter by a column of the incoming row', () => {
+    const sql = render(new PostgresDialect(), {
+      on: 'afterInsert',
+      run: (newRow) => updateTable(WriteAudit, { $where: { postId: newRow.id } }, { hits: { $inc: newRow.id } }),
+    }).join('\n');
+    expect(sql).toContain('UPDATE "WriteAudit" SET "hits" = COALESCE("hits", 0) + (NEW."id") WHERE');
+  });
+
   // A set-based UPDATE writes a target once however many rows of the set match it, so what accumulates
   // per row would apply once.
   it('should refuse a counter where the body reads a set', () => {

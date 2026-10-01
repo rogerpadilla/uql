@@ -7,18 +7,18 @@
         "@arethetypeswrong/cli": "^0.18.5",
         "@types/bun": "^1.4.2",
         "@types/supertest": "^7.2.1",
-        "@vitest/coverage-v8": "^5.0.2",
+        "@vitest/coverage-v8": "^5.0.3",
         "esbuild": "^0.28.2",
         "lerna": "^10.0.1",
         "oxfmt": "^0.71.0",
         "oxlint": "^1.86.0",
-        "publint": "^0.3.24",
+        "publint": "^0.3.25",
         "rimraf": "6.1.3",
         "supertest": "^7.3.0",
         "typescript": "^7.0.2",
         "uuid": "^14.0.2",
-        "vite": "^8.3.1",
-        "vitest": "^5.0.2",
+        "vite": "^8.3.2",
+        "vitest": "^5.0.3",
       },
     },
     "packages/codemod": {
@@ -41,25 +41,25 @@
         "@electric-sql/pglite": "0.5.8",
         "@electric-sql/pglite-pgvector": "0.0.9",
         "@libsql/client": "^0.18.0",
-        "@neondatabase/serverless": "^1.1.0",
-        "@nestjs/common": "^12.1.1",
-        "@nestjs/core": "^12.1.1",
-        "@nestjs/testing": "^12.1.1",
-        "@tursodatabase/database": "^0.7.2",
+        "@neondatabase/serverless": "^1.2.0",
+        "@nestjs/common": "^12.1.2",
+        "@nestjs/core": "^12.1.2",
+        "@nestjs/testing": "^12.1.2",
+        "@tursodatabase/database": "^0.8.1",
         "@tursodatabase/serverless": "^1.4.0",
         "@types/better-sqlite3": "^9.6.0",
         "@types/express": "^5.0.6",
         "@types/mssql": "^12.3.0",
         "@types/pg": "^8.23.1",
-        "@types/ws": "^8.18.1",
+        "@types/ws": "^8.18.2",
         "better-sqlite3": "^13.0.3",
         "express": "^5.2.1",
         "mariadb": "^3.5.4",
         "mongodb": "^7.7.0",
         "mssql": "^12",
-        "mysql2": "^3.24.4",
-        "pg": "^8.23.0",
-        "pg-query-stream": "^4.17.0",
+        "mysql2": "^3.24.5",
+        "pg": "^8.23.1",
+        "pg-query-stream": "^4.17.1",
         "rxjs": "^7.8.2",
         "sqlite-vec": "^0.1.9",
         "ws": "^8.22.0",
@@ -551,17 +551,17 @@
 
     "@tufjs/models": ["@tufjs/models@4.1.0", "", { "dependencies": { "@tufjs/canonical-json": "2.0.0", "minimatch": "^10.1.1" } }, "sha512-Y8cK9aggNRsqJVaKUlEYs4s7CvQ1b1ta2DVPyAimb0I2qhzjNk+A+mxvll/klL0RlfuIUei8BF7YWiua4kQqww=="],
 
-    "@tursodatabase/database": ["@tursodatabase/database@0.7.2", "", { "dependencies": { "@tursodatabase/database-common": "^0.7.2" }, "optionalDependencies": { "@tursodatabase/database-darwin-arm64": "0.7.2", "@tursodatabase/database-linux-arm64-gnu": "0.7.2", "@tursodatabase/database-linux-x64-gnu": "0.7.2", "@tursodatabase/database-win32-x64-msvc": "0.7.2" } }, "sha512-B84QicyDYnKt97qxgb7861cQQC26kuv/LkUlCnpxGs4tuGT9zgS2z/Mt+BkG/wOo1fB4rsSycOgGCbi0xU0YOQ=="],
+    "@tursodatabase/database": ["@tursodatabase/database@0.8.1", "", { "dependencies": { "@tursodatabase/database-common": "^0.8.1" }, "optionalDependencies": { "@tursodatabase/database-darwin-arm64": "0.8.1", "@tursodatabase/database-linux-arm64-gnu": "0.8.1", "@tursodatabase/database-linux-x64-gnu": "0.8.1", "@tursodatabase/database-win32-x64-msvc": "0.8.1" } }, "sha512-48uYwMdDBQ3gIBfo+N6a307a6hQM/NQxsYRlZle6SnJscw1a1i1KYmNOAPyWVL8IDtVBdtgZMSEkqd6A8XdGUA=="],
 
-    "@tursodatabase/database-common": ["@tursodatabase/database-common@0.7.2", "", {}, "sha512-c4uWaA5m7nyDemUrjvX6lQQ89cBxv1jCv7nmwq5JoagyXgbMxDeBfLcY7N5kn0oEcnD0Y+cf09S0wKEXKFKbfg=="],
+    "@tursodatabase/database-common": ["@tursodatabase/database-common@0.8.1", "", {}, "sha512-l1XrojOmYVme5YHpEmDT2V4iavt5prNCimOS/bhg1FbmmQPM2HE59/6LcNRIaGwXoqHpBojoRflOTw+eZ3WxoA=="],
 
-    "@tursodatabase/database-darwin-arm64": ["@tursodatabase/database-darwin-arm64@0.7.2", "", { "os": "darwin", "cpu": "arm64" }, "sha512-pDYbrPnmsqzWsf21bQXXGKmGhcLdfQQVjx+yrpC/IboCue5o/h9fDZ1QFzQEP6CHRXXoc+pwQCyF8KBntI8fdA=="],
+    "@tursodatabase/database-darwin-arm64": ["@tursodatabase/database-darwin-arm64@0.8.1", "", { "os": "darwin", "cpu": "arm64" }, "sha512-sQ1khCELDd5ZovizEE8sJxRStyRDIeez7j00TgPsFxbT4FEPN5R7n5GEhpxz3++clGzEFZP2s84bd+Xs1riDFg=="],
 
-    "@tursodatabase/database-linux-arm64-gnu": ["@tursodatabase/database-linux-arm64-gnu@0.7.2", "", { "os": "linux", "cpu": "arm64" }, "sha512-/Blz7cRssWh7dk8vGs7Cq3kupHOnI0GROAg+u9J4MD5U5ABAabJGN7iW5YQ16jZW35Bv2AkmJAyjvsCWdTyfTg=="],
+    "@tursodatabase/database-linux-arm64-gnu": ["@tursodatabase/database-linux-arm64-gnu@0.8.1", "", { "os": "linux", "cpu": "arm64" }, "sha512-4wVJTZx99lC4STH3lUufwClqJ8ft0FfKqxkx8cfO7ZE9YukAbZ9O7GJWjjjUXiMjuekoGh2mlBRMaCJJWQBDAQ=="],
 
-    "@tursodatabase/database-linux-x64-gnu": ["@tursodatabase/database-linux-x64-gnu@0.7.2", "", { "os": "linux", "cpu": "x64" }, "sha512-rXxInfTxKRPG3XeOAZvzJuX4wF+m9t9BjLbFnKU83Ad8ob2z88r1x+EV7IBzEFhz2FbvrRgriH7PhIEZ7Lx5ug=="],
+    "@tursodatabase/database-linux-x64-gnu": ["@tursodatabase/database-linux-x64-gnu@0.8.1", "", { "os": "linux", "cpu": "x64" }, "sha512-I5rduYrrUurf33AumpDL5nZaPrIjIX1K/z8v4InmAD7QqSAZEkcCjLhfnAvbZ/OdQMGqKgBc1not+K2fE53prA=="],
 
-    "@tursodatabase/database-win32-x64-msvc": ["@tursodatabase/database-win32-x64-msvc@0.7.2", "", { "os": "win32", "cpu": "x64" }, "sha512-AUvN3KO1bZOpsXVofRIMM2+MJ6OghUhgK62t8/3Bsb0Zzt6PztaMvJrtaWI6u5Olx0WCfGdhaVKyegcjYPNAeA=="],
+    "@tursodatabase/database-win32-x64-msvc": ["@tursodatabase/database-win32-x64-msvc@0.8.1", "", { "os": "win32", "cpu": "x64" }, "sha512-qDSxpjMxOQp/cw03dA4yV0qYPp7Th20YE3VZclzprVmjTzvCH8R2GQrA6d/S7tcW1EaP/2B0jt+E8Xywj3pQsQ=="],
 
     "@tursodatabase/serverless": ["@tursodatabase/serverless@1.4.0", "", {}, "sha512-ZU3T76NG/E0NTKULqJ9TggJfbdPgRaChOS4HDOu3Srds7w7fSPie7jbPHzz+CLGrxs2TtMYtYB1lH5Bh6q1w7A=="],
 
@@ -1379,7 +1379,7 @@
 
     "proxy-from-env": ["proxy-from-env@2.1.0", "", {}, "sha512-cJ+oHTW1VAEa8cJslgmUZrc+sjRKgAKl3Zyse6+PV38hZe/V6Z14TbCuXcan9F9ghlz4QrFr2c92TNF82UkYHA=="],
 
-    "publint": ["publint@0.3.24", "", { "dependencies": { "@publint/pack": "^0.1.7", "package-manager-detector": "^1.8.0", "picocolors": "^1.1.1", "sade": "^1.8.1" }, "bin": { "publint": "./src/cli.js" } }, "sha512-9zS56KrKBoqi5Qt8h92uMP8TTM9AYZSgnmCo4u2priMqkOZvQnTsziZ2p5LJ2ywbYkAjoCDp2jda9u4cgFefIw=="],
+    "publint": ["publint@0.3.25", "", { "dependencies": { "@publint/pack": "^0.1.7", "package-manager-detector": "^1.8.0", "picocolors": "^1.1.1", "sade": "^1.8.1" }, "bin": { "publint": "./src/cli.js" } }, "sha512-WMMbn/d7JqRlfXQL/JUI4n5skC8cJ5WVr8/wT5mmiYWkUdENkZr1I5rgs2+dQPVRgoJd+JRYtB46MTsuDylw9g=="],
 
     "punycode": ["punycode@2.3.1", "", {}, "sha512-vYt7UD1U9Wg6138shLtLOvdAu+8DsC/ilFtEVHcH+wydcSpNE20AfSOduf6MkRFahL5FY7X1oU7nKVZFtfq8Fg=="],
 

@@ -1,6 +1,13 @@
 // A database schema as a graph, whichever side it came from: the entities or the database itself.
 
-import type { Change, ForeignKeySchema, IndexSchema, PrimaryKeySchema, StoredDefinition } from '../type/migration.js';
+import type {
+  Alteration,
+  Change,
+  ForeignKeySchema,
+  IndexSchema,
+  PrimaryKeySchema,
+  StoredDefinition,
+} from '../type/migration.js';
 import type { IndexFacet } from './indexDifferences.js';
 
 /**
@@ -222,7 +229,7 @@ export type IndexNode = IndexSchema & {
 export type NodeChange<T, Altered = unknown> =
   | { readonly from?: undefined; readonly to: T }
   | { readonly from: T; readonly to?: undefined }
-  | ({ readonly from: T; readonly to: T } & Altered);
+  | (Alteration<T> & Altered);
 
 /** A column to create, drop or alter; an alter lists in `changed` which parts of the column differ. */
 export type ColumnDiff = NodeChange<ColumnNode, { readonly changed: readonly ColumnFacet[] }> & {

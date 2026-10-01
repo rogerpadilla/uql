@@ -218,7 +218,7 @@ export interface ForeignKeySchema {
 export type ColumnChange = Change<ColumnSchema> & { readonly isBreaking?: boolean };
 
 /** A name changed, `from` the database's `to` the entity's. */
-export type Rename = { readonly from: string; readonly to: string };
+export type Rename = Alteration<string>;
 
 /** Renamed columns by qualified table name. */
 export type ColumnRenames = ReadonlyMap<string, readonly Rename[]>;
@@ -232,6 +232,9 @@ export interface Change<T> {
   readonly from?: T;
   readonly to?: T;
 }
+
+/** A {@link Change} with both sides: the object altered in place. */
+export type Alteration<T> = { readonly from: T; readonly to: T };
 
 /** A primary key, whichever side it is read from: the entities, the database, or a diff between them. */
 export interface PrimaryKeySchema {
@@ -265,7 +268,7 @@ export interface SchemaDiff {
    * The table copied into a new one, which is how an engine that {@link DialectFeatures.rebuildsTables}
    * applies the changes above. Its column renames are carried by the copy.
    */
-  readonly rebuild?: { readonly from: RebuiltTable; readonly to: RebuiltTable };
+  readonly rebuild?: Alteration<RebuiltTable>;
 }
 
 /**

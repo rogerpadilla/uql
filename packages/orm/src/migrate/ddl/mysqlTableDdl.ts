@@ -24,8 +24,8 @@ export class MySqlTableDdl extends TableDdl {
     ];
   }
 
-  override alterColumn(table: string, _column: ColumnSchema, definition: string): string[] {
-    return [`ALTER TABLE ${this.dialect.escapeId(table)} MODIFY COLUMN ${definition};`];
+  protected override alterClauses(_column: ColumnSchema, definition: string): string[] {
+    return [`MODIFY COLUMN ${definition}`];
   }
 
   /** Ignores `schema`: MySQL reads it from the table name, which is already qualified. */

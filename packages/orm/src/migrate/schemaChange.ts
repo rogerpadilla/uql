@@ -1,4 +1,4 @@
-import type { Change, ColumnChange, ColumnSchema, SchemaDiff } from '../type/index.js';
+import type { Alteration, Change, ColumnChange, ColumnSchema, SchemaDiff } from '../type/index.js';
 
 /** Each change's end on `side`, where it has one: what a drop half removes (`from`), or an add half creates (`to`). */
 export function sides<T>(changes: readonly Change<T>[] | undefined, side: 'from' | 'to'): T[] {
@@ -19,7 +19,7 @@ export function dropped<T>(changes: readonly Change<T>[] = []): T[] {
 }
 
 /** The changes that alter an object in place, which only a column can. */
-export function alterations<T>(changes: readonly Change<T>[] = []): { readonly from: T; readonly to: T }[] {
+export function alterations<T>(changes: readonly Change<T>[] = []): Alteration<T>[] {
   return changes.flatMap(({ from, to }) => (from === undefined || to === undefined ? [] : [{ from, to }]));
 }
 

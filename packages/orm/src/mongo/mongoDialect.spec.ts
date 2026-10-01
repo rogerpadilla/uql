@@ -224,17 +224,17 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnRawSelectArray() {
-    expect(() => this.dialect.select(Tax, [raw`*`])).toThrow('raw $select is not supported on MongoDB');
+    expect(() => this.dialect.select(Tax, [raw`*`])).toThrow('raw() in $select is not supported on MongoDB');
   }
 
   /** A relation's projection runs inside its lookup, which refuses a raw one as the statement's does. */
   shouldThrowOnRawSelectArrayInARelation() {
     const $select = [raw`*`];
     expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tax: { $select } } })).toThrow(
-      'raw $select is not supported on MongoDB',
+      'raw() in $select is not supported on MongoDB',
     );
     expect(() => this.dialect.aggregationPipeline(Item, { $populate: { tags: { $select } } })).toThrow(
-      'raw $select is not supported on MongoDB',
+      'raw() in $select is not supported on MongoDB',
     );
   }
 
@@ -1175,7 +1175,7 @@ class MongoDialectSpec implements Spec {
     ).toThrow("aggregate $where operator '$text' is not supported on MongoDB");
     expect(() =>
       this.dialect.buildAggregateStages(Item, { $select: { n: { $count: '*', $where: { $or: [raw`1 = 1`] } } } }),
-    ).toThrow('raw SQL is not supported in an aggregate $where on MongoDB');
+    ).toThrow('raw() in an aggregate $where is not supported on MongoDB');
     expect(() =>
       this.dialect.buildAggregateStages(MeasureUnit, { $group: { units: { category: { unitCount: true } } } }),
     ).toThrow("cannot $group by 'category.unitCount' on MongoDB: a joined row's relation aggregate is not read");
@@ -1879,6 +1879,16 @@ class MongoDialectSpec implements Spec {
         },
       },
     ]);
+  }
+
+  /** `raw()` renders SQL, which a document cannot hold: refused wherever a write persists a value, or steps by one. */
+  shouldRefuseRawInAWrite() {
+    expect(() => this.dialect.getPersistables(getMeta(Item), { name: raw`upper(name)` } as never, 'onInsert')).toThrow(
+      'raw() in a write is not supported on MongoDB',
+    );
+    expect(() => this.dialect.getUpdateFilter({ salePrice: { $inc: raw`2` } })).toThrow(
+      'raw() in a write is not supported on MongoDB',
+    );
   }
 
   /** Their order would change the result, so a field takes one; an untyped payload naming both is refused, not halved. */

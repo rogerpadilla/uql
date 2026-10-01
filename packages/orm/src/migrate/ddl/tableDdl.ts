@@ -1,5 +1,5 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
-import type { ColumnSchema } from '../../type/index.js';
+import type { Alteration, ColumnSchema } from '../../type/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { formatDefaultValue } from './defaultSql.js';
 
@@ -46,12 +46,31 @@ export class TableDdl {
     return [`ALTER TABLE ${this.dialect.escapeId(table)} DROP COLUMN ${this.dialect.escapeId(column)};`];
   }
 
-  /**
-   * The statements that change a column from `from`, what it was, to `column`, what it now declares.
-   * `definition` is the complete new column definition.
-   */
-  alterColumn(table: string, _column: ColumnSchema, definition: string, _from?: ColumnSchema): string[] {
-    return [`ALTER TABLE ${this.dialect.escapeId(table)} ALTER COLUMN ${definition};`];
+  /** The statements that change a column from `from`, what it was, to `column`, whose definition is `definition`. */
+  alterColumn(table: string, column: ColumnSchema, definition: string, from?: ColumnSchema): string[] {
+    return this.alterTable(table, this.alterClauses(column, definition, from));
+  }
+
+  /** The statements making `alterations` to one table, whose new definitions `render` writes. */
+  alterColumns(
+    table: string,
+    alterations: readonly Alteration<ColumnSchema>[],
+    render: (column: ColumnSchema) => string,
+  ): string[] {
+    return this.alterTable(
+      table,
+      alterations.flatMap(({ from, to }) => this.alterClauses(to, render(to), from)),
+    );
+  }
+
+  /** The `ALTER TABLE` clauses that change a column, as {@link alterColumn} takes it. */
+  protected alterClauses(_column: ColumnSchema, definition: string, _from?: ColumnSchema): string[] {
+    return [`ALTER COLUMN ${definition}`];
+  }
+
+  /** One `ALTER TABLE` making every clause, and none for no clause. */
+  protected alterTable(table: string, clauses: readonly string[]): string[] {
+    return clauses.length ? [`ALTER TABLE ${this.dialect.escapeId(table)} ${clauses.join(', ')};`] : [];
   }
 
   renameColumn(table: string, oldName: string, newName: string): string {

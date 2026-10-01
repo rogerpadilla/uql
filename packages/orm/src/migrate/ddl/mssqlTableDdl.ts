@@ -1,4 +1,4 @@
-import type { ColumnSchema } from '../../type/index.js';
+import type { Alteration, ColumnSchema } from '../../type/index.js';
 import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
 import { dropIndexOnTable, sizedType, TableDdl } from './tableDdl.js';
 
@@ -54,6 +54,11 @@ export class MsSqlTableDdl extends TableDdl {
       statements.push(/*sql*/ `ALTER TABLE ${target} ADD${this.defaultClause(column)} FOR ${name};`);
     }
     return statements;
+  }
+
+  /** One column an `ALTER COLUMN`, each with the batch {@link alterColumn} writes. */
+  override alterColumns(table: string, alterations: readonly Alteration<ColumnSchema>[]): string[] {
+    return alterations.flatMap(({ to }) => this.alterColumn(table, to));
   }
 
   override renameColumn(table: string, oldName: string, newName: string): string {

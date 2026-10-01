@@ -1,6 +1,6 @@
 import { OWNED_PREFIX } from '../../dialect/aliases.js';
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import type { RebuiltTable, Rename } from '../../type/index.js';
+import type { Alteration, RebuiltTable, Rename } from '../../type/index.js';
 
 /** The table a rebuild copies into, under a name no entity's table takes. */
 const NEW_TABLE_PREFIX = `${OWNED_PREFIX}_new_`;
@@ -23,7 +23,7 @@ export type RebuildCopy = {
 export function rebuildTable(
   dialect: AbstractSqlDialect,
   table: string,
-  { from, to }: { readonly from: RebuiltTable; readonly to: RebuiltTable },
+  { from, to }: Alteration<RebuiltTable>,
   copy: RebuildCopy,
 ): string[] {
   const id = (name: string) => dialect.escapeId(name);

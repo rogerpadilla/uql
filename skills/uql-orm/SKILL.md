@@ -10,11 +10,9 @@ description: >
 
 # UQL
 
-Entities are classes; a query is a JSON object checked key by key against the entity; the same query runs
-on every database UQL supports. There is no schema file, no generated client, and no query builder.
+Entities are classes; a query is a JSON object checked key by key against the entity; the same query runs on every database UQL supports. There is no schema file, no generated client, and no query builder.
 
-The full docs are Markdown at https://uql-orm.dev/llms.txt, one page per URL. Read the page for the task
-before guessing an option: every page listed there is a `.md` URL.
+The full docs are Markdown at https://uql-orm.dev/llms.txt, one page per URL. Read the page for the task before guessing an option: every page listed there is a `.md` URL.
 
 ## Setup
 
@@ -22,9 +20,7 @@ before guessing an option: every page listed there is a `.md` URL.
 npm install uql-orm pg   # or mysql2, mariadb, better-sqlite3, mongodb, @libsql/client, ...
 ```
 
-ESM only. Node 24+, Bun, Deno or an edge runtime, TypeScript 5.2+. Decorators are the TC39 standard:
-never enable `experimentalDecorators` or `emitDecoratorMetadata`, never import `reflect-metadata`.
-In `tsconfig.json`, `module` is `nodenext` or `preserve`, and `target` is a dated one (`es2022`+), not `esnext`.
+ESM only. Node 24+, Bun, Deno or an edge runtime, TypeScript 5.2+. Decorators are the TC39 standard: never enable `experimentalDecorators` or `emitDecoratorMetadata`, never import `reflect-metadata`. In `tsconfig.json`, `module` is `nodenext` or `preserve`, and `target` is a dated one (`es2022`+), not `esnext`.
 
 ```ts
 // uql.config.ts
@@ -37,9 +33,7 @@ export const pool = new PgQuerierPool({ connectionString: process.env.DATABASE_U
 export default { pool, entities: [User, Post] } satisfies Config;
 ```
 
-Each driver has its own entry point: `uql-orm/postgres`, `uql-orm/mysql`, `uql-orm/maria`, `uql-orm/sqlite`,
-`uql-orm/mongo`, `uql-orm/libsql`, `uql-orm/turso`, `uql-orm/neon`, `uql-orm/d1`, `uql-orm/pglite`,
-`uql-orm/bunSql`, `uql-orm/mssql`, `uql-orm/cockroachdb`. Build the pool once per process and import it.
+Each driver has its own entry point: `uql-orm/postgres`, `uql-orm/mysql`, `uql-orm/maria`, `uql-orm/sqlite`, `uql-orm/mongo`, `uql-orm/libsql`, `uql-orm/turso`, `uql-orm/neon`, `uql-orm/d1`, `uql-orm/pglite`, `uql-orm/bunSql`, `uql-orm/mssql`, `uql-orm/cockroachdb`. Build the pool once per process and import it.
 
 ## Entities
 
@@ -83,10 +77,8 @@ export class Post {
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
 - `@Index((post) => [post.authorId], { where: { archived: { $ne: true } } })` states a partial index's filter as the predicate the query passes, never as `raw`: a planner matches the two by shape, so `raw` that means the same thing leaves the index unused.
-- `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, is an optimistic lock:
-  an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
-- `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`.
-  `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, which a trigger writes on those events whoever writes the row (`computed: currentTimestamp`), where `onUpdate` covers only uql's own writes.
+- `@Field({ type: Number, version: true })`, with `[versionKey]?: 'version'` on the class, is an optimistic lock: an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
+- `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`. `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, which a trigger writes on those events whoever writes the row (`computed: currentTimestamp`), where `onUpdate` covers only uql's own writes.
 - `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires. `run(newRow, oldRow)` returns the body, written with `insertInto`, `upsertInto` (as `upsertOne` takes it), `updateTable`, `deleteFrom` and `refuse(message)` (fails the write), which are typed by the entity written and render on every engine; `deferred: true` fires an after trigger at commit, on Postgres only; anything else is `raw` SQL over the rows, per engine where they differ. A trigger's writes skip uql's fills and entity filters, soft delete included. MongoDB has none. Details, SQL Server's per-statement shape included: https://uql-orm.dev/entities/triggers.md
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
@@ -106,48 +98,26 @@ const users = await pool.findMany(User, {
 });
 ```
 
-- The keys are `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`;
-  `$count: { posts: true }` tallies a to-many under `_count` without loading it.
-- `$sort` takes `'asc'`/`1` or `'desc'`/`-1`, and `'ascNullsLast'`, `'ascNullsFirst'`, `'descNullsFirst'` or
-  `'descNullsLast'` to say where nulls land, which reads the same on every engine (emulated where there is no
-  `NULLS FIRST`). Unqualified, each engine keeps its own answer: Postgres sorts nulls last on `asc`, the rest sort them first.
-- `findManyPage(User, { $sort: { createdAt: -1, id: 1 }, $limit: 20, $after })` pages by cursor, so page 1,000
-  costs what page 1 does, and answers `{ items, startCursor, endCursor, hasNextPage, hasPrevPage }`: pass
-  `endCursor` as `$after`, or `startCursor` as `$before` to go back. `$sort` must include the key or a unique
-  `nullable: false` field, uses the entity's own fields, and takes no `$skip`. A nullable leading sort key pages
-  correctly but cannot use an index.
-- `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`,
-  `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`,
-  `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
+- The keys are `$select`, `$exclude`, `$where`, `$populate`, `$count`, `$distinct`, `$sort`, `$skip`, `$limit`; `$count: { posts: true }` tallies a to-many under `_count` without loading it.
+- `$sort` takes `'asc'`/`1` or `'desc'`/`-1`, and `'ascNullsLast'`, `'ascNullsFirst'`, `'descNullsFirst'` or `'descNullsLast'` to say where nulls land, which reads the same on every engine (emulated where there is no `NULLS FIRST`). Unqualified, each engine keeps its own answer: Postgres sorts nulls last on `asc`, the rest sort them first.
+- `findManyPage(User, { $sort: { createdAt: -1, id: 1 }, $limit: 20, $after })` pages by cursor, so page 1,000 costs what page 1 does, and answers `{ items, startCursor, endCursor, hasNextPage, hasPrevPage }`: pass `endCursor` as `$after`, or `startCursor` as `$before` to go back. `$sort` must include the key or a unique `nullable: false` field, uses the entity's own fields, and takes no `$skip`. A nullable leading sort key pages correctly but cannot use an index.
+- `$where` takes a value for equality or an operator map: `$eq`, `$ne`, `$lt`, `$lte`, `$gt`, `$gte`, `$in`, `$nin`, `$between`, `$like`, `$ilike`, `$regex`, `$startsWith`, `$endsWith`, `$includes`, `$isNull`, `$isNotNull`. `$and`, `$or`, `$not` and `$nor` combine clauses.
 - NULL compares the way the engine compares it: on SQL, `$ne`, `$nin`, `$not` and `$nor` leave out a NULL row, where MongoDB keeps it. Name NULL where you want it, `{ $or: [{ col: { $ne: 'a' } }, { col: null }] }`; ask for NULL with `{ col: null }` and its absence with `{ col: { $ne: null } }`.
-- `$text: { $value }` in `$where` searches text on every engine with full-text search, through the entity's
-  `@Index(..., { type: 'fulltext', config })`, whose columns may carry a `weight`. `$sort: { $text: 'desc' }` ranks by
-  relevance, and `{ $text: { $project: 'score' } }` also returns it, typed with `WithProjection<E, 'score'>`.
-- A result is narrowed to what the query selected and populated: reading an unselected field is a compile error.
-  Name that shape with `QueryFindResult<User, 'id' | 'email'>` rather than widening the query.
+- `$text: { $value }` in `$where` searches text on every engine with full-text search, through the entity's `@Index(..., { type: 'fulltext', config })`, whose columns may carry a `weight`. `$sort: { $text: 'desc' }` ranks by relevance, and `{ $text: { $project: 'score' } }` also returns it, typed with `WithProjection<E, 'score'>`.
+- A result is narrowed to what the query selected and populated: reading an unselected field is a compile error. Name that shape with `QueryFindResult<User, 'id' | 'email'>` rather than widening the query.
 - `$populate` loads relations in the same statement. Nothing is lazy: a relation not populated is not there.
-- A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`,
-  whose handler serves only the entities its required `include` names.
-- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`,
-  `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
-  `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
+- A query is plain data, so it can be built dynamically, stored, or sent from a browser to `uql-orm/http`, whose handler serves only the entities its required `include` names.
+- Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`, `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`, `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
 - `upsertOne(Entity, { email: true }, row, { update })`: a conflicting row takes `update`, an update's payload with its operators, instead of `row`; a new one inserts `row`. `{ update: {} }` leaves a conflicting row as it is: insert if absent.
 - `updateMany` and `deleteMany` naming no rows - no `$where` holding a value (an `undefined` or an empty group holds none), no `$limit` - throw; `{ unfiltered: true }` means the whole table.
-- An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0,
-  so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$set`, `$unset`,
-  `$push`, `$pull`.
-- `$lock: true` locks the rows a read returns (`{ $wait: 'skip' | 'nowait' }` says what to do about a row
-  someone else holds) and needs an open transaction; SQLite, libSQL, Turso, D1 and MongoDB have no row lock and
-  refuse it.
-- `queryErrorKind(err)` names any failure the same on every engine - `uniqueViolation`, `foreignKeyViolation`,
-  `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage`, `security` - so catch by kind
-  rather than by a driver's code or an `instanceof`. Every error UQL raises itself is a `UqlError`.
+- An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0, so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. On SQL the step may be a ref or `raw` of the field's type (`{ total: { $inc: newRow.amount } }` in a trigger). JSON fields take `$set`, `$unset`, `$push`, `$pull`.
+- `$lock: true` locks the rows a read returns (`{ $wait: 'skip' | 'nowait' }` says what to do about a row someone else holds) and needs an open transaction; SQLite, libSQL, Turso, D1 and MongoDB have no row lock and refuse it.
+- `queryErrorKind(err)` names any failure the same on every engine - `uniqueViolation`, `foreignKeyViolation`, `notNullViolation`, `checkViolation`, `optimisticLock`, `retryable`, `usage`, `security` - so catch by kind rather than by a driver's code or an `instanceof`. Every error UQL raises itself is a `UqlError`.
 - `raw()` embeds SQL anywhere a value or field goes; `pool.all(sql, values)` runs a raw `SELECT`. A field read off `refs(Entity)` carries its type: on its own as a value it fits only a field of that type.
 
 ## Connections and transactions
 
-Every method is on both the pool and a querier. A pool call acquires a connection for that call and releases it.
-To run several operations on one connection, or atomically, hold a querier:
+Every method is on both the pool and a querier. A pool call acquires a connection for that call and releases it. To run several operations on one connection, or atomically, hold a querier:
 
 ```ts
 await pool.transaction(async (querier) => {
@@ -156,8 +126,7 @@ await pool.transaction(async (querier) => {
 });
 ```
 
-Inside the callback, call `querier`, never `pool`: a `pool` call runs on another connection, outside the
-transaction. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
+Inside the callback, call `querier`, never `pool`: a `pool` call runs on another connection, outside the transaction. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 
 ## Migrations
 

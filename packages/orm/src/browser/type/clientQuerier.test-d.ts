@@ -86,6 +86,9 @@ export async function rawIsServerOnly() {
   await server.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
   // @ts-expect-error nor a raw value in an update
   await client.updateMany(Article, { $where: { id: 1 } }, { title: raw`upper(title)` });
+  await server.updateMany(Article, { $where: { id: 1 } }, { id: { $inc: raw`2` } });
+  // @ts-expect-error nor a raw step
+  await client.updateMany(Article, { $where: { id: 1 } }, { id: { $inc: raw`2` } });
 
   // Nested in an operator map, where the fragment is furthest from the method that refuses it.
   await server.findMany(Article, { $where: { title: { $not: raw`lower(title)` } } });

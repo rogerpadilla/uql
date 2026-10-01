@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { sqlTypeOf } from '../../test/index.js';
 import { currentTimestamp } from '../../util/raw.js';
@@ -37,11 +38,10 @@ describe('PostgresSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    const statements = tableDdl.alterColumn('users', col, 'INTEGER');
-
-    expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER;');
-    expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET NOT NULL;');
-    expect(statements).toContain('ALTER TABLE "users" ALTER COLUMN "age" SET DEFAULT 18;');
+    expect(tableDdl.alterColumn('users', col, 'INTEGER')).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER, ALTER COLUMN "age" SET NOT NULL, ' +
+        'ALTER COLUMN "age" SET DEFAULT 18;',
+    ]);
   });
 
   /** Postgres alters each part apart, so a part unchanged as the engine reprints it is not restated. */
@@ -83,6 +83,38 @@ describe('PostgresSchemaGenerator Specifics', () => {
 
     expect(generator.generateAlterTable(diff)).toEqual([
       'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER;',
+    ]);
+  });
+
+  /** Postgres rewrites the table once a statement, so one statement for a table's alters is one rewrite. */
+  it("should alter a table's columns in one statement", () => {
+    const age = {
+      name: 'age',
+      type: 'TEXT',
+      nullable: true,
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+    const rank = { ...age, name: 'rank' };
+    const diff = {
+      tableName: 'users',
+      type: 'alter' as const,
+      columns: [
+        { from: age, to: { ...age, type: 'INTEGER' } },
+        { from: rank, to: { ...rank, type: 'INTEGER', nullable: false } },
+      ],
+    };
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER, ' +
+        'ALTER COLUMN "rank" TYPE INTEGER USING "rank"::INTEGER, ALTER COLUMN "rank" SET NOT NULL;',
+    ]);
+    // CockroachDB refuses a rewriting retype beside any other clause, and changes a schema online anyway.
+    expect(new SqlSchemaGenerator(new CockroachDialect()).generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER;',
+      'ALTER TABLE "users" ALTER COLUMN "rank" TYPE INTEGER USING "rank"::INTEGER;',
+      'ALTER TABLE "users" ALTER COLUMN "rank" SET NOT NULL;',
     ]);
   });
 

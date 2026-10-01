@@ -77,6 +77,22 @@ describe('MysqlSchemaGenerator Specifics', () => {
     ]);
   });
 
+  /** Each statement copies the table, so one statement for a table's alters is one copy. */
+  it("should alter a table's columns in one statement", () => {
+    const diff = {
+      tableName: 'users',
+      type: 'alter',
+      columns: [
+        { from: { ...rank, type: 'INT' }, to: rank },
+        { from: { ...rank, name: 'age' }, to: { ...rank, name: 'age', nullable: true } },
+      ],
+    } as const;
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'ALTER TABLE `users` MODIFY COLUMN `rank` BIGINT NOT NULL, MODIFY COLUMN `age` BIGINT;',
+    ]);
+  });
+
   it('should generate column comment', () => {
     expect(generator.generateColumnComment("user's name")).toBe(" COMMENT 'user\\'s name'");
   });

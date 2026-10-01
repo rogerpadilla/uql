@@ -178,6 +178,20 @@ export const mongoDialectFeatures: DialectFeatures = {
 /** What `toWireId` converts: the hex spelling of an `ObjectId`, and nothing looser. */
 const HEX_24 = /^[0-9a-f]{24}$/i;
 
+/** Where a statement can carry a `raw()`, as its refusal names it. */
+type RawPlace = '$select' | '$where' | 'an aggregate $where' | 'a write';
+
+/** `raw()` renders SQL, which MongoDB has no equivalent of: refused rather than emitted as `{}`. */
+function rawRefusal(place: RawPlace): UqlUsageError {
+  return new UqlUsageError(`raw() in ${place} is not supported on MongoDB`);
+}
+
+function assertNoRaw<T>(value: T, place: RawPlace): asserts value is Exclude<T, QueryRaw> {
+  if (value instanceof QueryRaw) {
+    throw rawRefusal(place);
+  }
+}
+
 /** How a declared column type reads in a message: `Number`, `uuid` - not its whole source. */
 function declaredTypeName(type: unknown): string {
   return typeof type === 'function' ? type.name : String(type);
@@ -337,13 +351,13 @@ export class MongoDialect extends AbstractDialect {
         const { $value, $config } = val as QueryTextSearchOptions<E>;
         filter['$text'] = { $search: $value, ...($config && { $language: textLanguage($config) }) };
       } else if (meta.relations[key]) {
-        this.assertNoRaw(val);
+        assertNoRaw(val, '$where');
         if (!lookups) {
           throw new UqlUsageError(`filtering by relation '${key}' is not supported here on MongoDB`);
         }
         this.appendRelationLookup(filter, meta, key, val, lookups);
       } else {
-        this.assertNoRaw(val);
+        assertNoRaw(val, '$where');
         this.assertKnownPathRoot(meta, key);
         if (aggregateOf(meta.fields[key])) {
           if (!lookups) {
@@ -391,7 +405,7 @@ export class MongoDialect extends AbstractDialect {
     const { join, negate } = GROUP_OPS[key];
     const parts = groupClauses(key, val)
       .map((filterIt) => {
-        this.assertNoRaw(filterIt);
+        assertNoRaw(filterIt, '$where');
         return this.renderFilter(entity, filterIt, lookups);
       })
       .filter((part) => Object.keys(part).length > 0);
@@ -503,13 +517,6 @@ export class MongoDialect extends AbstractDialect {
       scope: hasKeys(scope) ? [{ $match: scope }] : [],
       target: this.columnOf(throughMeta, targetColumn),
     };
-  }
-
-  /** `raw()` renders SQL, so it has no MongoDB equivalent - say so instead of emitting `{}`. */
-  private assertNoRaw<T>(value: T): asserts value is Exclude<T, QueryRaw> {
-    if (value instanceof QueryRaw) {
-      throw new UqlUsageError('raw() in $where is not supported on MongoDB');
-    }
   }
 
   /**
@@ -632,7 +639,7 @@ export class MongoDialect extends AbstractDialect {
       return {};
     }
     if (isSelectList(select)) {
-      throw new UqlUsageError('raw $select is not supported on MongoDB');
+      throw rawRefusal('$select');
     }
     const fields = normalizeScalarFieldSelection(meta, select, exclude);
     // Projected by column, not by field key; `normalizeId` maps them back on the way out.
@@ -1341,6 +1348,7 @@ export class MongoDialect extends AbstractDialect {
     for (const [key, value] of Object.entries(persistable)) {
       if (isFieldUpdateOp(value)) {
         const [op, operand] = fieldUpdateOf(key, value);
+        assertNoRaw(operand, 'a write');
         arithmetic[key] = { [MONGO_ARITHMETIC[op]]: [{ $ifNull: [`$${key}`, 0] }, { $literal: operand }] };
         continue;
       }
@@ -1450,7 +1458,9 @@ export class MongoDialect extends AbstractDialect {
       for (const key of filterFieldKeys(meta, it, callbackKey)) {
         if (key === idKey) continue;
         const field = meta.fields[key]!;
-        doc[this.resolveColumnName(key, field)] = field.references ? this.toWireId(it[key]) : it[key];
+        const value = it[key];
+        assertNoRaw(value, 'a write');
+        doc[this.resolveColumnName(key, field)] = field.references ? this.toWireId(value) : value;
       }
       return doc as Partial<E>;
     });
@@ -1597,9 +1607,7 @@ export class MongoDialect extends AbstractDialect {
         if (isGroupOp(key)) {
           const { join, negate } = GROUP_OPS[key];
           const clauses = groupClauses(key, where[key]).map((clause) => {
-            if (clause instanceof QueryRaw) {
-              throw new UqlUsageError('raw SQL is not supported in an aggregate $where on MongoDB');
-            }
+            assertNoRaw(clause, 'an aggregate $where');
             return this.whereExpression(meta, clause, named);
           });
           return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };

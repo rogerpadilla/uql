@@ -536,6 +536,17 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(values).toEqual([-2, 123, '1']);
   }
 
+  /** A step in SQL is parenthesized, so the operator applies to the whole of it. */
+  shouldUpdateWithARawIncrement() {
+    const e = this.dialect.escapeIdChar;
+    const { sql } = this.exec((ctx) =>
+      this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: raw`2 - 1` }, updatedAt: 123 }),
+    );
+    expect(sql).toBe(
+      `UPDATE ${e}Item${e} SET ${e}salePrice${e} = COALESCE(${e}salePrice${e}, 0) + (2 - 1), ${e}updatedAt${e} = ${this.ph(1)} WHERE ${e}id${e} = ${this.ph(2)}`,
+    );
+  }
+
   /** Their order would change the result, so a field takes one; an untyped payload naming both is refused, not halved. */
   shouldRefuseTwoUpdateOperatorsOnOneField() {
     expect(() =>

@@ -407,8 +407,11 @@ describe('MigrationBuilder', () => {
       await builder.addForeignKey('t', ['c'], { table: 't2', columns: ['id'] });
       await builder.dropForeignKey('t', 'f');
 
-      // Each operation should have called querier.run
-      expect(mockQuerier.run).toHaveBeenCalledTimes(13);
+      // Each operation should have called querier.run, an alter once for all its clauses
+      expect(mockQuerier.run).toHaveBeenCalledTimes(11);
+      expect(mockQuerier.run).toHaveBeenCalledWith(
+        'ALTER TABLE "t" ALTER COLUMN "c" TYPE INTEGER USING "c"::INTEGER, ALTER COLUMN "c" DROP NOT NULL, ALTER COLUMN "c" DROP DEFAULT;',
+      );
     });
   });
 });
