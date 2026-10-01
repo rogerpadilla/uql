@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from 'vitest';
 import { withContext } from '../context/context.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
-import { Coupon, createSpec, probeForeignKeys, TenantNote } from '../test/index.js';
+import { Coupon, createSpec, Invoice, InvoiceLine, probeForeignKeys, TenantNote } from '../test/index.js';
 import { idKey } from '../type/index.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
@@ -73,9 +73,12 @@ describe('insertMany id semantics', () => {
     await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)');
     const payload = Array.from({ length: 6 }, (_, index) => ({ code: `c${index}`, label: 'new' }));
 
+    await querier.insertOne(Coupon, { code: 'c0', label: 'old' });
+
     await querier.upsertMany(Coupon, { code: true }, payload, { label: 'updated' });
 
-    expect(await querier.count(Coupon, {})).toBe(6);
+    const founds = await querier.findMany(Coupon, { $select: { label: true }, $sort: { code: 1 } });
+    expect(founds.map(({ label }) => label)).toEqual(['updated', 'new', 'new', 'new', 'new', 'new']);
     await querier.release();
   });
 
@@ -103,6 +106,24 @@ describe('insertMany id semantics', () => {
       { title: 'c' },
       { title: 'd' },
     ]);
+    await querier.release();
+  });
+
+  /** A null never conflicts, as a unique index reads it, so a row whose conflict key holds one is inserted. */
+  it('should insert a guarded row whose conflict key holds a null, not update one that holds it too', async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
+    await querier.run('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)');
+    const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
+    await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: null }));
+
+    await asTenant(() =>
+      querier.upsertMany(TenantNote, { tenantId: true, title: true }, [
+        { id: 'b', tenantId: 't', title: null },
+        { id: 'c', tenantId: 't', title: null },
+      ]),
+    );
+
+    expect(await asTenant(() => querier.count(TenantNote, {}))).toBe(3);
     await querier.release();
   });
 
@@ -163,6 +184,97 @@ describe('insertMany id semantics', () => {
     expect(founds.map(({ label }) => label)).toEqual(payload.map(({ label }) => label));
     await querier.release();
   });
+});
+
+/** Lists the ORM builds itself, split to fit a 6-value budget: 3 ids a statement. */
+describe('id lists past the bind budget', () => {
+  const tables = async () => {
+    const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
+    await querier.run('CREATE TABLE `Invoice` (`id` INTEGER PRIMARY KEY, `description` TEXT)');
+    await querier.run('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)');
+    return querier;
+  };
+  const seven = <T>(row: (index: number) => T) => Array.from({ length: 7 }, (_, index) => row(index));
+  const paged = { $sort: { id: 1 }, $limit: 7 } as const;
+
+  it('should update the rows a paged update settles, in batches', async () => {
+    const querier = await tables();
+    await querier.insertMany(
+      InvoiceLine,
+      seven(() => ({ amount: 1 })),
+    );
+
+    expect(await querier.updateMany(InvoiceLine, { $where: { amount: 1 }, ...paged }, { amount: 2 })).toBe(7);
+    expect(await querier.count(InvoiceLine, { $where: { amount: 2 } })).toBe(7);
+    await querier.release();
+  });
+
+  it('should delete the rows a paged delete settles, in batches', async () => {
+    const querier = await tables();
+    await querier.insertMany(
+      InvoiceLine,
+      seven(() => ({ amount: 1 })),
+    );
+
+    expect(await querier.deleteMany(InvoiceLine, { $where: { amount: 1 }, ...paged })).toBe(7);
+    expect(await querier.count(InvoiceLine, {})).toBe(0);
+    await querier.release();
+  });
+
+  it('should cascade a delete to the children of every batch', async () => {
+    const querier = await tables();
+    await querier.insertMany(
+      Invoice,
+      seven(() => ({ description: 'x', lines: [{ amount: 1 }] })),
+    );
+
+    expect(await querier.deleteMany(Invoice, { $where: { description: 'x' } })).toBe(7);
+    expect(await querier.count(InvoiceLine, {})).toBe(0);
+    await querier.release();
+  });
+
+  it('should replace the to-many of every row an update settles', async () => {
+    const querier = await tables();
+    await querier.insertMany(
+      Invoice,
+      seven(() => ({ description: 'x', lines: [{ amount: 1 }] })),
+    );
+
+    await querier.updateMany(Invoice, { $where: { description: 'x' } }, { lines: [{ amount: 2 }] });
+
+    expect(await querier.count(InvoiceLine, { $where: { amount: 2 } })).toBe(7);
+    expect(await querier.count(InvoiceLine, {})).toBe(7);
+    await querier.release();
+  });
+
+  /** A split write lands whole: a later batch failing takes the earlier ones with it. */
+  it('should roll every batch back when a later one fails', async () => {
+    const querier = await tables();
+    await querier.insertMany(
+      InvoiceLine,
+      seven(() => ({ amount: 1 })),
+    );
+    await querier.run(
+      "CREATE TRIGGER `refuseLast` BEFORE UPDATE ON `InvoiceLine` WHEN NEW.`id` = 7 BEGIN SELECT RAISE(ABORT, 'refused'); END",
+    );
+
+    await expect(querier.updateMany(InvoiceLine, { $where: { amount: 1 }, ...paged }, { amount: 2 })).rejects.toThrow(
+      'refused',
+    );
+    expect(await querier.count(InvoiceLine, { $where: { amount: 1 } })).toBe(7);
+    await querier.release();
+  });
+});
+
+/** A chunk of rows that name nothing is one `DEFAULT VALUES` each, however the rows around it chunk. */
+it('should insert the rows naming nothing in a chunk of their own one at a time', async () => {
+  const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
+  await querier.run('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)');
+
+  const ids = await querier.insertMany(InvoiceLine, [{ amount: 1 }, {}, {}, {}]);
+
+  expect(ids).toEqual([1, 2, 3, 4]);
+  await querier.release();
 });
 
 describe('foreign key enforcement', () => {

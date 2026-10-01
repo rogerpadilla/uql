@@ -14,6 +14,15 @@ describe('sameDefault', () => {
     expect(sameDefault(true, 0, sqlite)).toBe(false);
   });
 
+  /** A `jsonb` column reprints its document; text that holds no JSON document still compares letter for letter. */
+  it('should compare a JSON document as JSON, and other text as it is written', () => {
+    const postgres = new PostgresDialect();
+    expect(sameDefault({ b: 1, a: [1, 2] }, '{"a": [1, 2], "b": 1}', postgres)).toBe(true);
+    expect(sameDefault(['x'], '["y"]', postgres)).toBe(false);
+    expect(sameDefault('42', '42.0', postgres)).toBe(false);
+    expect(sameDefault('CURRENT_TIMESTAMP', 'current_timestamp', postgres)).toBe(false);
+  });
+
   it('should keep a boolean default a boolean where the engine has them', () => {
     const postgres = new PostgresDialect();
     expect(sameDefault(false, false, postgres)).toBe(true);

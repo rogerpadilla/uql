@@ -12,8 +12,13 @@ import {
   isPrimaryKey,
   obtainAttrsPaths,
   unflatObject,
-  unflatObjects,
 } from './sql.util.js';
+
+/** Every row of one statement nested by the paths its first row names, as the querier reads them. */
+const unflatRows = <T extends object>(rows: RawRow[]): T[] => {
+  const attrsPaths = obtainAttrsPaths(rows[0]);
+  return rows.map((row) => unflatObject<T>(row, attrsPaths));
+};
 
 it('should name a constraint over no parts after its table alone', () => {
   expect(derivedConstraintName('users', [], 'ck')).toBe('users_ck');
@@ -22,10 +27,6 @@ it('should name a constraint over no parts after its table alone', () => {
 /** A string key has no successor to infer, so only a single-row write can be named by it. */
 it('should infer no ids from a string key reported for several rows', () => {
   expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
-});
-
-it('should leave an empty list of rows as it is', () => {
-  expect(unflatObjects([])).toEqual([]);
 });
 
 it('should unflatten dotted columns into nested objects', () => {
@@ -51,7 +52,7 @@ it('should unflatten dotted columns into nested objects', () => {
       companyId: '1',
     },
   ];
-  const result = unflatObjects(source);
+  const result = unflatRows(source);
   const expected = [
     {
       id: '1',
@@ -121,7 +122,7 @@ it('should unflatten deeply nested dotted columns', () => {
       'item.creator.name': 'Roshi Master',
     },
   ];
-  const result = unflatObjects<Item>(source);
+  const result = unflatRows<Item>(source);
   const expected = [
     {
       id: '9',
@@ -304,7 +305,7 @@ it('should leave underscored keys flat', () => {
       USER_ROLE: 'admin',
     },
   ];
-  const result = unflatObjects(source);
+  const result = unflatRows(source);
   // Underscore columns stay flat (they are NOT treated as nested paths)
   expect(result).toEqual([
     {
@@ -345,19 +346,6 @@ it('should keep null values, as a flat row does', () => {
   const attrsPaths = obtainAttrsPaths(row);
   const result = unflatObject(row, attrsPaths);
   expect(result).toEqual({ id: 1, name: null, item: { id: null } });
-});
-
-it('should unflatten a single row as unflatObjects does', () => {
-  const row = {
-    id: '5',
-    'item.id': '2',
-    'item.name': 'Test',
-    'item.tax.name': 'IVA',
-  };
-  const attrsPaths = obtainAttrsPaths(row);
-  const single = unflatObject(row, attrsPaths);
-  const batched = unflatObjects([row])[0];
-  expect(single).toEqual(batched);
 });
 
 describe('buildUpdateResult', () => {

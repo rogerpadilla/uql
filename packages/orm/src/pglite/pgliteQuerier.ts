@@ -1,6 +1,6 @@
-import type { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerier } from '../querier/index.js';
 import type { ExtraOptions, RawRow } from '../type/index.js';
+import type { PgliteDialect } from './pgliteDialect.js';
 
 /** The two methods uql uses of `@electric-sql/pglite`, stated so its published types do not depend on a pre-1.0 package. */
 export type PgliteDatabase = {
@@ -17,7 +17,7 @@ export type PgliteDatabase = {
 export class PgliteQuerier extends AbstractSqlQuerier {
   constructor(
     readonly db: PgliteDatabase,
-    dialect: PostgresDialect,
+    dialect: PgliteDialect,
     override readonly extra?: ExtraOptions,
   ) {
     super(dialect, extra);

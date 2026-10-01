@@ -4,6 +4,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
 import type { ExtraOptions, Json, QueryUpdateResult, RawRow } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
 
@@ -268,6 +269,14 @@ describe('AbstractSqlQuerier error context', () => {
 
     await expect(querier.commitTransaction()).rejects.toBe('plain string failure');
   });
+});
+
+/** Refused before the driver sees it, which would fail it, or on PGlite answer it and every read after it wrong. */
+it('should refuse a statement past the bind budget', async () => {
+  const querier = new StubSqlQuerier();
+  const values = Array.from({ length: querier.dialect.maxBindValues + 1 }, (_, index) => index);
+
+  await expect(querier.all('SELECT 1', values)).rejects.toThrow(UqlUsageError);
 });
 
 describe('AbstractSqlQuerier stream', () => {

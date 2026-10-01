@@ -369,7 +369,6 @@ function typeCheck(checkDir: string): string {
   }
 }
 
-/** The diagnostics that are this package's problem: our own `dist`, minus what an absent peer explains. */
 /**
  * Diagnostics in the consumer's own files rather than in `dist`. {@link ownUnresolvedNames} discards
  * these deliberately - another package's declarations are that package's problem - which would also
@@ -388,6 +387,7 @@ function consumerErrors(output: string, checkDir: string, installed: string): st
   return problems;
 }
 
+/** The diagnostics that are this package's problem: our own `dist`, minus what an absent peer explains. */
 function ownUnresolvedNames(output: string, checkDir: string, installed: string): string[] {
   /** Declared optional, so a consumer who does not use that driver does not have its types either. */
   const isPeer = (specifier: string) => PEERS.includes(packageOf(specifier));

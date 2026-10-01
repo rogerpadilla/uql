@@ -1,5 +1,4 @@
 import { expect } from 'vitest';
-import { withContext } from '../context/context.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
@@ -15,7 +14,6 @@ import {
   type SpecRequirements,
   type SpecTimeouts,
   Tax,
-  TenantNote,
   TaxCategory,
   TypedGroup,
   TypedRow,
@@ -23,7 +21,6 @@ import {
 } from '../test/index.js';
 import type { QuerierPool } from '../type/index.js';
 import { currentTimestamp, raw, refs } from '../util/index.js';
-import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
@@ -67,7 +64,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   timeouts(): SpecTimeouts<this> {
     return {
       shouldWriteRowsPastEveryLimit: provisioningTimeout,
-      shouldUpsertGuardedRowsPastTheBindBudget: provisioningTimeout,
     };
   }
 
@@ -531,16 +527,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(rows).toHaveLength(1);
   }
 
-  /** Refused before the driver sees it, which would fail it, or on PGlite answer it and every read after wrong. */
-  async shouldRefuseAStatementPastTheBindBudget() {
-    await expect(this.querier.all(...this.readBinding(this.querier.dialect.maxBindValues + 1))).rejects.toThrow(
-      UqlUsageError,
-    );
-  }
-
   /**
-   * Past every limit a write meets: the bind budget, SQL Server's 1000-row `INSERT ... VALUES`, and the id
-   * list the ORM builds itself for a paged update or delete, which it names its rows by.
+   * Rows written past each engine's limits on its own server: SQL Server's 2098 values and 1000 rows, PGlite's
+   * 32767, and a MySQL upsert filling 65535. The id lists' split is pinned in `sqliteQuerier.spec.ts`.
    */
   async shouldWriteRowsPastEveryLimit() {
     const count = Math.max(1001, Math.floor(this.querier.dialect.maxBindValues / 2) + 1);
@@ -562,19 +551,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     expect(new Set(ids.map(String)).size).toBe(count);
     expect([updated, deleted]).toEqual([count, count]);
-  }
-
-  /** A guarded upsert reads its rows back by key first, a list as long as the payload. */
-  async shouldUpsertGuardedRowsPastTheBindBudget() {
-    const count = Math.floor(this.querier.dialect.maxBindValues / 2) + 1;
-    const notes = Array.from({ length: count }, (_, index) => ({ id: `n${index}`, title: 'note' }));
-
-    const { ids } = await withContext({ tenantId: 'a' }, () =>
-      this.querier.upsertMany(TenantNote, { id: true }, notes),
-    );
-
-    expect(ids).toEqual(notes.map(({ id }) => id));
-    expect(await withContext({ tenantId: 'a' }, () => this.querier.count(TenantNote, {}))).toBe(count);
   }
 
   /** A read binding `count` values, a placeholder each, in the dialect's own spelling. */

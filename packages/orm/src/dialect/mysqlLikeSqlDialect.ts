@@ -27,7 +27,6 @@ import {
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { jsonPath, type JsonSlot } from './jsonSql.js';
-import { bindAll } from './queryContext.js';
 import { aggregatesRelations } from './queryJoins.js';
 
 /**
@@ -143,12 +142,10 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     const meta = getMeta(entity);
     const updateCtx = this.createContext();
     const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
-    const insertCtx = this.createContext();
-    this.appendInsertValues(insertCtx, entity, payload);
+    const insert = this.buildFragment(ctx, (fragment) => this.appendInsertValues(fragment, entity, payload));
     const idReturning = this.insertedIdReturning(meta);
-    ctx.append(`${this.onDuplicateKey(insertCtx.sql, assignments)}${idReturning && ` ${idReturning}`}`);
-    bindAll(ctx, insertCtx.values);
-    bindAll(ctx, updateCtx.values);
+    ctx.append(`${this.onDuplicateKey(insert, assignments)}${idReturning && ` ${idReturning}`}`);
+    ctx.pushValue(...updateCtx.values);
   }
 
   protected override appendTriggerUpsert<E>(

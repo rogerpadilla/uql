@@ -104,7 +104,7 @@ export class Referrer {
 }
 // ─── Generators stamp the value the field declares ───
 // `defaultValue` does too, with one exception: a JSONB column defaults with a document, a list included,
-// or the SQL literal it stores. Requiring the field's own type there as well broke every such column in 0.24.3.
+// or the SQL literal it stores, unchecked against the field: the decorator types every JSON column alike.
 class Generated {
   @Id({ type: 'uuid', onInsert: () => crypto.randomUUID() }) id?: string;
   @Field({ type: Number, onInsert: () => Date.now(), onUpdate: () => Date.now() }) stamped?: number | null;
@@ -123,6 +123,9 @@ expectType<string | undefined>(new Generated().id);
 // The same check on the imperative path, which `FieldOptions<V>` carries into `FieldOptionsFor<V>`.
 expectType<FieldOptionsFor<number | null>>({ type: Number, onInsert: () => Date.now() });
 expectType<FieldOptionsFor<Json<{ theme?: string }> | null>>({ type: 'jsonb', defaultValue: '{}' });
+expectType<FieldOptionsFor<Json<string[]> | null>>({ type: 'jsonb', defaultValue: [] });
+// @ts-expect-error nor to a callback
+expectType<FieldOptionsFor<Json<string[]> | null>>({ type: 'jsonb', defaultValue: () => [] });
 // @ts-expect-error a number column is not stamped with a string
 expectType<FieldOptionsFor<number>>({ type: Number, onInsert: () => 'nope' });
 // @ts-expect-error nor does it default to one

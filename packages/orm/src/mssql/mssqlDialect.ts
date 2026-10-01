@@ -144,7 +144,7 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   override readonly maxInsertRows = 1000;
 
-  /** `OUTPUT` has no trailing form: it sits between the column list and `VALUES`. */
+  /** `OUTPUT` has no trailing form: it sits between the target and its rows. */
   override readonly returningPosition = 'after-target';
 
   /** `OUTPUT` reads the written row off the `INSERTED` pseudo-table. */

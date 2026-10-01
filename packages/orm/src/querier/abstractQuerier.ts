@@ -461,30 +461,18 @@ export abstract class AbstractQuerier implements Querier {
   findManyStream<E extends object>(...args: EntityArgs<E, Query<E>>): AsyncIterable<E> {
     const [entity, q, opts] = entityArgs(args);
     this.validateReadQuery(entity, q);
-    const rows = this.internalFindManyStream(entity, q, opts);
-    return this.holdWhileReading(
-      this.listensForLoad(entity, q.$populate) ? this.loadedEach(entity, rows, q.$populate) : rows,
-    );
-  }
-
-  /** `afterLoad` on each row before the loop sees it, as `findMany` runs it on each row it read. */
-  private async *loadedEach<E extends object>(
-    entity: Type<E>,
-    rows: AsyncIterable<E>,
-    populate: QueryPopulate<E> | undefined,
-  ): AsyncGenerator<E> {
-    for await (const row of rows) {
-      await this.emitLoaded(entity, [row], populate);
-      yield row;
-    }
+    const loaded = this.listensForLoad(entity, q.$populate)
+      ? (row: E) => this.emitLoaded(entity, [row], q.$populate)
+      : undefined;
+    return this.holdWhileReading(this.internalFindManyStream(entity, q, opts), loaded);
   }
 
   /**
-   * `rows`, holding the querier from the first row asked for until the loop ends. Most drivers queue a
-   * statement behind an open read, which a loop awaiting it never finishes, so `serialize` refuses one
-   * meanwhile, on every engine alike, and `release` closes the stream first.
+   * `rows`, each through `loaded` (guarded, so an unhooked row costs no turn) before the loop sees it, holding the
+   * querier from the first row asked for until the loop ends. Most drivers queue a statement behind an open read,
+   * which a loop awaiting it never finishes, so `serialize` refuses one meanwhile, and `release` closes the stream.
    */
-  private holdWhileReading<T>(rows: AsyncIterable<T>): AsyncGenerator<T> {
+  private holdWhileReading<T>(rows: AsyncIterable<T>, loaded?: (row: T) => Promise<void>): AsyncGenerator<T> {
     const read = async function* (querier: AbstractQuerier): AsyncGenerator<T> {
       if (querier.#stream) {
         throw new UqlUsageError(STREAM_HOLDS_QUERIER);
@@ -492,7 +480,12 @@ export abstract class AbstractQuerier implements Querier {
       querier.#stream = stream;
       try {
         await querier.taskQueue;
-        yield* rows;
+        for await (const row of rows) {
+          if (loaded) {
+            await loaded(row);
+          }
+          yield row;
+        }
       } finally {
         querier.#stream = undefined;
       }
@@ -726,10 +719,9 @@ export abstract class AbstractQuerier implements Querier {
     if (!ids.length) {
       return 0;
     }
-    let changes = 0;
-    for (const batch of chunk(ids, this.dialect.keyListCapacity(meta.ids.length))) {
-      changes += await this.updateColumns(entity, { $where: whereIds(meta, batch) }, row, opts, batch.length);
-    }
+    const changes = await this.writeBatches(ids, meta.ids.length, (batch) =>
+      this.updateColumns(entity, { $where: whereIds(meta, batch) }, row, opts, batch.length),
+    );
     for (const relKey of relKeys) {
       await this.saveRelation(
         entity,
@@ -789,6 +781,31 @@ export abstract class AbstractQuerier implements Querier {
   protected settlesWrite<E extends object>(entity: Type<E>, q: QuerySearch<E>): boolean {
     const { dialect } = this;
     return isPagedQuery(q) || (!dialect.features.correlatedWrites && dialect.constrainsRelations(entity, q.$where));
+  }
+
+  /**
+   * `write` over `rows` in lists of as many as one statement names by `keyCount` keys, summing what each changed:
+   * in one transaction where there are several, so a write split to fit the engine still lands whole.
+   */
+  protected async writeBatches<T>(
+    rows: readonly T[],
+    keyCount: number,
+    write: (batch: T[]) => Promise<number>,
+  ): Promise<number> {
+    const batches = chunk(rows, this.dialect.keyListCapacity(keyCount));
+    const each = async () => {
+      let changes = 0;
+      for (const batch of batches) {
+        changes += await write(batch);
+      }
+      return changes;
+    };
+    return batches.length > 1 ? this.atomically(each) : each();
+  }
+
+  /** Runs a write split into several statements as one, in a transaction that joins an open one. */
+  protected atomically<T>(write: () => Promise<T>): Promise<T> {
+    return this.transaction(write);
   }
 
   /** The ids `q` matches, in its own order and page. */
@@ -919,7 +936,7 @@ export abstract class AbstractQuerier implements Querier {
       return { changes, created, ids };
     };
     // One row writes as an insert or an update of it does, with no transaction of its own.
-    return rows.length === 1 ? write() : this.transaction(write);
+    return rows.length === 1 ? write() : this.atomically(write);
   }
 
   protected abstract internalUpsertOne<E extends object>(
@@ -962,14 +979,13 @@ export abstract class AbstractQuerier implements Querier {
       return 0;
     }
     await this.emitHook(entity, 'beforeDelete', doomed);
-    let changes = 0;
-    for (const batch of chunk(ids, this.dialect.keyListCapacity(meta.ids.length))) {
+    const changes = await this.writeBatches(ids, meta.ids.length, async (batch) => {
       // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
       if (cascades) {
         await this.deleteRelations(entity, batch, opts);
       }
-      changes += await this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
-    }
+      return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
+    });
     await this.emitHook(entity, 'afterDelete', doomed);
     return changes;
   }
@@ -1046,7 +1062,7 @@ export abstract class AbstractQuerier implements Querier {
 
     // Only a batch carrying both kinds is more than one statement; `transaction` is re-entrant, so
     // this is free inside a caller's own.
-    await (toInsert.length && toUpsert.length ? this.transaction(write) : write());
+    await (toInsert.length && toUpsert.length ? this.atomically(write) : write());
 
     return ids;
   }
@@ -1097,9 +1113,9 @@ export abstract class AbstractQuerier implements Querier {
     const holder = relOpts.through ? relOpts.through() : relEntity;
     const parentColumn = soleParentColumn(relOpts);
     if (isUpdate) {
-      for (const batch of chunk(writes, this.dialect.keyListCapacity(1))) {
-        await this.deleteMany(holder, { $where: { [parentColumn]: batch.map(({ id }) => id) } });
-      }
+      await this.writeBatches(writes, 1, (batch) =>
+        this.deleteMany(holder, { $where: { [parentColumn]: batch.map(({ id }) => id) } }),
+      );
     }
     // Each parent gets its own copies, so a row listed for two parents is written twice.
     const children = writes.flatMap(({ id, value }) => [value ?? []].flat().map((row: object) => ({ id, row })));
@@ -1236,7 +1252,9 @@ export abstract class AbstractQuerier implements Querier {
     const meta = getMeta(entity);
     const [idKey] = meta.ids;
     const keys = getKeys(conflictPaths);
-    const distinct = [...new Map(rows.map((row) => [rowKey(row, keys), row])).values()];
+    // A null key never conflicts, so no row is read back for it, whether one key names the row or several.
+    const named = rows.filter((row) => keys.every((key) => row[key] != null));
+    const distinct = [...new Map(named.map((row) => [rowKey(row, keys), row])).values()];
     const found: E[][] = [];
     for (const batch of chunk(distinct, this.dialect.keyListCapacity(keys.length))) {
       const q: Query<E> = { $select: keySet([idKey, ...keys]), $where: whereKeysIn(keys, batch) };

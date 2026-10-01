@@ -42,4 +42,9 @@ export class D1Querier extends AbstractSqliteQuerier {
   protected override async internalBegin(): Promise<void> {
     throw new UqlUsageError('Cloudflare D1 has no transactions: write the changes as one statement, or idempotently');
   }
+
+  /** A write split to fit D1's 100 binds lands statement by statement, there being no transaction to hold it. */
+  protected override atomically<T>(write: () => Promise<T>): Promise<T> {
+    return write();
+  }
 }

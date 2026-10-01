@@ -147,7 +147,7 @@ import {
   VECTOR_QUERY_KEY_SET,
   whereOperators,
 } from './operators.js';
-import { bindAll, SqlQueryContext } from './queryContext.js';
+import { SqlQueryContext } from './queryContext.js';
 import {
   groupPathField,
   NO_JOINS,
@@ -1849,8 +1849,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   protected readonly emptyRowValues: string = 'DEFAULT VALUES';
 
   /**
-   * `INSERT INTO ... VALUES (...)` and nothing more. The upsert builders extend this rather than
-   * {@link insert}: their own clause has to come before the `RETURNING`, not after it.
+   * `INSERT INTO ... VALUES (...)`, or the engine's spelling of a row naming no column, and nothing more. The upsert
+   * builders extend this rather than {@link insert}: their own clause has to come before the `RETURNING`.
    */
   protected appendInsertValues<E>(
     ctx: QueryContext,
@@ -2168,19 +2168,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     this.appendInsertValues(ctx, entity, payload);
     ctx.append(`${this.onConflict(meta, conflictPaths, assignments)}${returning ? ` RETURNING ${returning}` : ''}`);
     if (updateCtx !== ctx) {
-      bindAll(ctx, updateCtx.values);
+      ctx.pushValue(...updateCtx.values);
     }
   }
 
-  /** What an upsert's assignments bind once per statement, beside its rows. */
+  /** What an upsert's assignments bind once per statement beside its rows, which all assign as `row` does. */
   upsertAssignmentBinds<E>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: E[],
+    row: E,
     update?: UpdatePayload<E>,
   ): number {
     const ctx = this.createContext();
-    this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, payload, update);
+    this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, row, update);
     return ctx.values.length;
   }
 

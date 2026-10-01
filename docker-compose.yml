@@ -93,8 +93,8 @@ services:
     command: start-single-node --insecure --cache=256MiB --max-sql-memory=512MiB --store=type=mem,size=1GiB
     # Its settings live in that in-memory store, so a restart loses them, and the image reruns its init
     # scripts only on an empty data directory, which its own logs keep filled: applied in the check, healthy
-    # implies configured. Left unset, every dropped table's cleanup job waits hours, thousands pile up, and
-    # the cluster burns every core the VM has.
+    # implies configured. Unset, every dropped table's cleanup job waits hours and thousands pile up. A failure
+    # inside `start_period` never counts, so few retries suffice at 60s apart.
     volumes:
       - ./docker/init-cockroach.sql:/init-cockroach.sql:ro
     ports:
@@ -104,7 +104,7 @@ services:
       interval: 60s
       start_interval: 2s
       timeout: 5s
-      retries: 30
+      retries: 3
       start_period: 60s
 
   # The one image here with no arm64 build, so it runs under emulation on Apple Silicon. 2025 needs
@@ -143,7 +143,7 @@ services:
       interval: 60s
       start_interval: 5s
       timeout: 10s
-      retries: 30
+      retries: 3
       start_period: 120s
 
   # Atlas Local: a one-node replica set, which transactions need, with the Atlas Search that

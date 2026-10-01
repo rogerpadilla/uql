@@ -86,6 +86,11 @@ describe('chunk', () => {
     expect(chunk([1, 2, 3], Infinity)).toEqual([[1, 2, 3]]);
   });
 
+  it('should refuse a size below one, which would never end', () => {
+    expect(() => chunk([1], 0)).toThrow(RangeError);
+    expect(() => chunk([1], Number.NaN)).toThrow(RangeError);
+  });
+
   it('should answer no lists for none', () => {
     expect(chunk([], 2)).toEqual([]);
   });

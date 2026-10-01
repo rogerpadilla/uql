@@ -1,12 +1,5 @@
 import type { QueryContext, SqlQueryDialect } from '../type/index.js';
 
-/** Binds a statement's values into `ctx` one call each: spread as arguments, tens of thousands overflow the stack. */
-export function bindAll(ctx: QueryContext, values: readonly unknown[]): void {
-  for (const value of values) {
-    ctx.pushValue(value);
-  }
-}
-
 /** A SQL statement being built: its text, and the values it binds, placeholders numbered by the dialect. */
 export class SqlQueryContext implements QueryContext {
   private readonly sqlChunks: string[] = [];

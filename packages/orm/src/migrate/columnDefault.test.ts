@@ -24,9 +24,10 @@ class DefaultNote {
   @Field({ type: String, defaultValue: 'CURRENT_TIMESTAMP' }) spelled?: string | null;
   @Field({ type: Date, defaultValue: currentTimestamp }) createdAt?: Date | null;
   @Field({ type: String, defaultValue: raw`coalesce(NULL, 'a')` }) derived?: string | null;
-  /** JSON as the field holds it, and as text in another order and spacing than Postgres keeps it. */
   @Field({ type: 'jsonb', defaultValue: [] }) tags?: Json<string[]> | null;
+  /** Keys in another order, and spacing, than Postgres keeps them. */
   @Field({ type: 'jsonb', defaultValue: { b: 1, a: [1, 2] } }) settings?: Json<{ a: number[]; b: number }> | null;
+  /** The same, as the text the column stores. */
   @Field({ type: 'jsonb', defaultValue: '{"b":1,"a":2}' }) written?: Json<{ a: number; b: number }> | null;
 }
 

@@ -2,6 +2,14 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.95.1] - 2026-10-01
+
+- **Fixed:** a write split to fit the engine lands whole, in one transaction; on D1, which has none, a split or guarded upsert and a mixed `saveMany` run statement by statement where they failed.
+- **Fixed:** `insertMany` mixing rows that name fields with rows that name none no longer fails past D1's 100 rows or SQL Server's 1000.
+- **Fixed:** on MariaDB, leaving a `findManyStream` loop early no longer hangs the connection.
+- **Fixed:** an upsert no longer takes a row whose conflict key holds a null for an existing one, since null never conflicts.
+- A JSON column's `defaultValue` type-checks as a document, a list or its text, refusing a callback or a class instance. `uql-orm/util` no longer exports `unflatObjects`, nor `uql-orm/dialect` `bindAll`.
+
 ## [0.95.0] - 2026-10-01
 
 - **Breaking:** an upsert takes its update as the fourth argument, `upsertOne(Entity, { term: true }, row, { uses: { $inc: 1 } })`, where it took `{ update }`; `{}` still leaves a conflicting row as it is. `npx uql-codemod` rewrites it.

@@ -49,8 +49,8 @@ export function schemaDefault(value: unknown, compile: (sql: QueryRaw) => string
 }
 
 /**
- * A default as text for an exact comparison: numbers as their digits, and objects (SQL included) and text
- * holding a JSON document as JSON with its keys in order, since a `jsonb` column reprints what it stores.
+ * A default as text to compare: numbers as their digits, other text as written, and objects (SQL included) and text
+ * holding a JSON object or list as JSON with its keys in order, equal as documents, since `jsonb` reprints them.
  */
 export function writtenDefault(value: unknown): string {
   const document = typeof value === 'string' ? jsonDocument(value) : value;

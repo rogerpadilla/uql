@@ -130,7 +130,7 @@ await pool.transaction(async (querier) => {
 
 Inside the callback, call `querier`, never `pool`: a `pool` call runs on another connection, outside the transaction. A querier from `pool.getQuerier()` is yours to release: bind it with `await using`.
 
-A `findManyStream` holds its querier until the loop ends, which refuses any other statement meanwhile: inside the loop, run them on another connection, or after the loop on SQLite and PGlite, whose pool has one. A statement binding more values than the engine takes (100 on D1, 2098 on SQL Server) is refused too: split a long `$in`.
+A `findManyStream` holds its querier until the loop ends, which refuses any other statement meanwhile: inside the loop, run them on another connection; inside a transaction, or on SQLite and PGlite (one shared connection), run them after the loop. That includes an `@AfterLoad` querying through its `querier` on a streamed row. A statement binding more values than the engine takes (100 on D1, 2098 on SQL Server) is refused too: split a long `$in`.
 
 ## Migrations
 

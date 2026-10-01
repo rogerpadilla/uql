@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { withContext } from '../context/context.js';
 import { SqliteDialect } from '../sqlite/index.js';
+import { Coupon, TenantNote } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 import { D1Querier, type D1Result } from './d1Querier.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
@@ -37,6 +39,54 @@ describe('D1Querier', () => {
     await d1.all('SELECT ?', [9007199254740993n]);
 
     expect(mockStmt.bind).toHaveBeenCalledWith('9007199254740993');
+  });
+
+  /** No transaction to hold a write split to fit 100 binds, so it lands statement by statement instead of refusing. */
+  it('should write a split insert statement by statement, with no BEGIN', async () => {
+    const d1 = new D1Querier(mockDb, new D1SqliteDialect());
+    mockStmt.all.mockResolvedValue(result([{ id: 1 }], { changes: 1 }));
+
+    await d1.insertMany(
+      Coupon,
+      Array.from({ length: 60 }, (_, index) => ({ code: `c${index}`, label: 'x' })),
+    );
+
+    const statements = mockDb.prepare.mock.calls.map(([sql]) => String(sql).split(' ')[0]);
+    expect(statements).toEqual(['INSERT', 'INSERT']);
+  });
+
+  it('should write a split upsert statement by statement, with no BEGIN', async () => {
+    const d1 = new D1Querier(mockDb, new D1SqliteDialect());
+    mockStmt.all.mockResolvedValue(result([{ id: 1 }], { changes: 1 }));
+
+    await d1.upsertMany(
+      Coupon,
+      { code: true },
+      Array.from({ length: 60 }, (_, index) => ({ code: `c${index}`, label: 'x' })),
+    );
+
+    // Each statement reports fewer ids than it wrote, so each is read back by its conflict column.
+    expect(mockDb.prepare.mock.calls.map(([sql]) => String(sql).split(' ')[0])).toEqual([
+      'INSERT',
+      'SELECT',
+      'INSERT',
+      'SELECT',
+    ]);
+  });
+
+  /** A guarded upsert reads its rows back first, then writes them: two statements, held by no transaction. */
+  it('should upsert guarded rows with no BEGIN', async () => {
+    const d1 = new D1Querier(mockDb, new D1SqliteDialect());
+    mockStmt.all.mockResolvedValue(result([], { changes: 1 }));
+
+    await withContext({ tenantId: 't' }, () =>
+      d1.upsertMany(TenantNote, { id: true }, [
+        { id: 'a', title: 'a' },
+        { id: 'b', title: 'b' },
+      ]),
+    );
+
+    expect(mockDb.prepare.mock.calls.map(([sql]) => String(sql).split(' ')[0])).toEqual(['SELECT', 'INSERT']);
   });
 
   it('should read rows, binding the values', async () => {

@@ -117,10 +117,10 @@ async function measure(declarations: string, blocks: number): Promise<string> {
   }
 }
 
-/** A published version's declarations, unpacked from its own tarball into `dir`. */
+/** A published version's declarations, unpacked from the tarball `npm pack` names on its last line, a tag resolved. */
 async function published(version: string, dir: string): Promise<string> {
-  await $`npm pack uql-orm@${version} --pack-destination ${dir} --silent`.quiet();
-  await $`tar -xzf ${resolve(dir, `uql-orm-${version}.tgz`)} -C ${dir}`;
+  const tarball = (await $`npm pack uql-orm@${version} --pack-destination ${dir}`.text()).trim().split('\n').at(-1);
+  await $`tar -xzf ${resolve(dir, tarball ?? '')} -C ${dir}`;
   return resolve(dir, 'package/dist/index.d.ts');
 }
 

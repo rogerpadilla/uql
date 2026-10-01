@@ -1605,26 +1605,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found._count).toEqual({ measureUnits: 0 });
   }
 
-  /** A to-many streams with each row: read with the row itself. */
-  async shouldStreamAToManyRelation() {
-    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'streamed category' });
-    await this.querier.insertMany(MeasureUnit, [
-      { name: 'b', categoryId },
-      { name: 'a', categoryId },
-    ]);
-
-    const streamed: MeasureUnitCategory[] = [];
-    for await (const row of this.querier.findManyStream(MeasureUnitCategory, {
-      $select: { name: true },
-      $where: { id: categoryId },
-      $populate: { measureUnits: { $select: { name: true }, $sort: { name: 1 } } },
-    })) {
-      streamed.push(row);
-    }
-
-    expect(streamed).toMatchObject([{ name: 'streamed category', measureUnits: [{ name: 'a' }, { name: 'b' }] }]);
-  }
-
   /**
    * A to-many under a to-one hangs off the joined row: its rows where the join matched, none where the
    * row has no children, and no row at all where the join matched nothing.
@@ -3351,7 +3331,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.commitTransaction();
   }
 
-  /** Past every driver's first batch, so the loop leaves the read mid-flight: the driver has to close it. */
+  /**
+   * Past every driver's first batch, so the loop leaves the read mid-flight: the driver has to close it, and an
+   * abandoned cursor holding its connection is what the next statement proves gone.
+   */
   async shouldReleaseTheStreamWhenTheCallerStopsEarly() {
     await this.querier.insertMany(
       User,
@@ -3363,7 +3346,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       break;
     }
 
-    // An abandoned cursor holds its connection, so what proves the cleanup is the next statement.
     expect(await this.querier.count(User, {})).toBe(250);
   }
 

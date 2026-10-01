@@ -479,8 +479,8 @@ export type OnFieldCallback<V = TsTypeOf<FieldType>> = V | QueryRaw | (() => V |
 type DdlDefault<V, T = NonNullable<V>> =
   IsJsonColumn<T> extends true ? JsonDdlDefault : [TsTypeOf<FieldType>] extends [T] ? JsonDdlDefault | T : T;
 
-/** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list included. */
-type JsonDdlDefault = Scalar | object;
+/** What a JSON column, and the field-less `FieldOptions`, may default to: a document, a list included, or its text. */
+type JsonDdlDefault = Scalar | Record<string, unknown> | readonly unknown[];
 
 /**
  * The TypeScript type a declared `type` implies, the inverse of {@link TypeFor}: a decorator checks the

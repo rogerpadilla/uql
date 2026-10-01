@@ -12,6 +12,9 @@ export function clone<T>(value: T): T {
 
 /** `items` in consecutive lists of at most `size`, in order: one list where `size` is unbounded. */
 export function chunk<T>(items: readonly T[], size: number): T[][] {
+  if (!(size >= 1)) {
+    throw new RangeError(`a chunk holds at least one item, not ${size}`);
+  }
   const chunks: T[][] = [];
   for (let start = 0; start < items.length; start += size) {
     chunks.push(items.slice(start, start + size));

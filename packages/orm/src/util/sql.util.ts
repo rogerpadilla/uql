@@ -7,13 +7,6 @@ import { fnv1a } from './string.util.js';
 /** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
 const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
 
-/** Every row nested as {@link unflatObject} nests one, by the columns the first row names. */
-export function unflatObjects<T extends object>(objects: RawRow[]): T[] {
-  const [first] = objects;
-  const attrsPaths = first ? obtainAttrsPaths(first) : {};
-  return objects.map((row) => unflatObject<T>(row, attrsPaths));
-}
-
 /** A row with its dotted columns nested, by paths read once off its statement's first row: the row itself where none is. */
 export function unflatObject<T extends object>(row: RawRow, attrsPaths: Record<string, string[]>): T {
   if (!hasKeys(attrsPaths)) {

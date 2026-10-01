@@ -26,9 +26,20 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
     return this.buildUpdateResult({ rows, changes, upsertStatus: res.affectedRows });
   }
 
+  /**
+   * Closed through the driver's own `close`, which `Readable` does not type: a loop leaving early only destroys
+   * the stream, which leaves the socket paused mid-result and the connection hung for its next statement.
+   */
   override async *internalStream(query: string, values?: unknown[]) {
-    for await (const row of this.getConn().queryStream(query, toBindValues(values))) {
-      yield decodeBigInts(row);
+    const stream = this.getConn().queryStream(query, toBindValues(values));
+    try {
+      for await (const row of stream) {
+        yield decodeBigInts(row);
+      }
+    } finally {
+      if ('close' in stream && typeof stream.close === 'function') {
+        stream.close();
+      }
     }
   }
 

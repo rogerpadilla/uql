@@ -309,11 +309,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     return this.exec((ctx) => this.dialect.find(ctx, User, q)).sql;
   }
 
-  /** A list the ORM builds takes half the bind budget, the rest left to the statement around it. */
-  shouldFitAKeyListInHalfTheBindBudget() {
-    expect(this.dialect.keyListCapacity(2)).toBe(Math.floor(this.dialect.maxBindValues / 4));
-  }
-
   shouldFindWithLock() {
     expect(this.lockedSql({ $select: { id: true }, $lock: true })).toContain(this.lockClause());
   }

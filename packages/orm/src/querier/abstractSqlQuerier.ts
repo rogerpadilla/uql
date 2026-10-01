@@ -77,9 +77,9 @@ function groupByInsertShape<E extends object>(meta: EntityMeta<E>, payload: Enti
 }
 
 /**
- * A group's row indexes split into statements of at most `maxRows` rows within the bind budget, payload order
- * kept, a row with no column to write in one of its own. `DEFAULT` cells bind no parameter, so fields-per-record
- * is a safe upper bound. Every multi-row write splits on this: D1 allows 100 binds, which a couple of dozen reach.
+ * A group's row indexes split into statements of at most `maxRows` rows within the bind budget, payload order kept,
+ * and a statement whose rows name no column into one per row, as `DEFAULT VALUES` writes. `DEFAULT` cells bind no
+ * parameter, so fields-per-record is a safe upper bound. D1 allows 100 binds, which a couple of dozen rows reach.
  */
 function chunkWithinLimits<E extends object>(
   meta: EntityMeta<E>,
@@ -88,14 +88,13 @@ function chunkWithinLimits<E extends object>(
   maxBindValues: number,
   maxRows = Infinity,
 ): number[][] {
-  const fieldsPerRecord = getInsertFieldKeys(
-    meta,
-    group.map((index) => payload[index]),
-  ).length;
-  return chunk(
-    group,
-    fieldsPerRecord ? Math.max(1, Math.min(maxRows, Math.floor(maxBindValues / fieldsPerRecord))) : 1,
-  );
+  const width = (indexes: number[]) =>
+    getInsertFieldKeys(
+      meta,
+      indexes.map((index) => payload[index]),
+    ).length;
+  const size = Math.max(1, Math.min(maxRows, Math.floor(maxBindValues / (width(group) || 1))));
+  return chunk(group, size).flatMap((indexes) => (width(indexes) ? [indexes] : chunk(indexes, 1)));
 }
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
@@ -415,27 +414,30 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     const idField = sole ? meta.fields[idKey] : undefined;
     const generatedKey = !!idField && isAutoIncrement(idField, true);
 
-    for (const group of partitionBySuppliedId(rows, idKey)) {
-      // Header ids are only sound where every row of this statement left its key to the database, so
-      // the batch is split on that alone, and a supplied id cannot void the others.
+    // Per group, not per batch: the two carry different columns - one names the key, one does not - so a budget
+    // taken over their union would under-fill the statement that is missing one. Header ids are only sound where
+    // every row of a statement left its key to the database, so a supplied id cannot void the others.
+    const statements = partitionBySuppliedId(rows, idKey).flatMap((group) => {
       const idsReliable =
         sole &&
         (this.dialect.insertIdSource === 'returning' ||
           (generatedKey && group.every((index) => rows[index][idKey] === undefined)));
-      // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
-      // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
-      if (idsReliable && group.length > 1 && this.dialect.insertIdSource === 'firstId') {
-        this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
-      }
-      // Per group, not per batch: the two carry different columns - one names the key, one does not -
-      // so a budget taken over their union would under-fill the statement that is missing one.
-      for (const indexes of chunkWithinLimits(
-        meta,
-        rows,
-        group,
-        this.dialect.maxBindValues,
-        this.dialect.maxInsertRows,
-      )) {
+      const { maxBindValues, maxInsertRows } = this.dialect;
+      return chunkWithinLimits(meta, rows, group, maxBindValues, maxInsertRows).map((indexes) => ({
+        indexes,
+        idsReliable,
+      }));
+    });
+    // Inferring multiple ids from the single header id (MySQL) assumes a known stride; a clustered
+    // server may set `auto_increment_increment` > 1, so probe it (once, cached) before inferring.
+    if (
+      this.dialect.insertIdSource === 'firstId' &&
+      statements.some(({ indexes, idsReliable }) => idsReliable && indexes.length > 1)
+    ) {
+      this.#insertIdIncrement ??= await this.loadInsertIdIncrement();
+    }
+    const insert = async () => {
+      for (const { indexes, idsReliable } of statements) {
         const statementRows = indexes.map((index) => rows[index]);
         const { ids = [] } = await this.exec((ctx) => this.dialect.insert(ctx, entity, statementRows));
         if (idsReliable) {
@@ -444,7 +446,8 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
           }
         }
       }
-    }
+    };
+    await (statements.length > 1 ? this.atomically(insert) : insert());
   }
 
   override async internalUpdateMany<E extends object>(
@@ -477,20 +480,18 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     payload = clone(payload);
     const meta = getMeta(entity);
-    // One statement per shape, each split again to stay inside the bind budget, less what its assignments bind
-    // once. Grouping first is what makes that one figure: every row of a group carries the same columns, so
-    // they assign the same. No row cap: SQL Server upserts through a MERGE, whose source takes any number.
+    // One statement per shape, each split again to fit the bind budget, less what its assignments bind once.
+    // Grouping first is what makes that one figure: every row of a group carries the same columns. No row cap:
+    // the one engine with one, SQL Server, upserts through a MERGE, whose source takes any number.
     const statements = groupByInsertShape(meta, payload).flatMap((group) => {
-      const rows = group.map((index) => payload[index]);
-      const assigned = this.dialect.upsertAssignmentBinds(entity, conflictPaths, rows, update);
+      const assigned = this.dialect.upsertAssignmentBinds(entity, conflictPaths, payload[group[0]], update);
       return chunkWithinLimits(meta, payload, group, this.dialect.maxBindValues - assigned);
     });
     if (statements.length === 1) {
       return this.runUpsert(entity, conflictPaths, payload, update);
     }
-    // An upsert's assignment list is the statement's, so rows of different shapes go in statements
-    // of their own, together in a transaction (`transaction` is re-entrant).
-    return this.transaction(async () => {
+    // An upsert's assignment list is the statement's, so rows of different shapes go in statements of their own.
+    return this.atomically(async () => {
       let changes = 0;
       // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
       // than it wrote places none.

@@ -1,5 +1,5 @@
 import { expect } from 'vitest';
-import { MeasureUnit, MeasureUnitCategory } from '../test/index.js';
+import { Coupon, MeasureUnit, MeasureUnitCategory } from '../test/index.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -49,6 +49,21 @@ export abstract class MySqlLikeQuerierIt extends VectorQuerierIt {
     } finally {
       await this.querier.run('SET SESSION group_concat_max_len = DEFAULT');
     }
+  }
+
+  /** Rows still on the wire when the loop leaves: the driver drains them, or the connection hangs on the next one. */
+  async shouldRunAStatementAfterLeavingALongStream() {
+    const label = 'x'.repeat(200);
+    await this.querier.insertMany(
+      Coupon,
+      Array.from({ length: 2000 }, (_, index) => ({ code: `c${index}`, label })),
+    );
+
+    for await (const _row of this.querier.findManyStream(Coupon, {})) {
+      break;
+    }
+
+    expect(await this.querier.count(Coupon, {})).toBe(2000);
   }
 
   /** A session in UTC, as a `DATETIME` is bound and read, so `NOW()` stamps the same instant a bound date names. */
