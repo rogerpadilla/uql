@@ -4,7 +4,7 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.93.1] - 2026-10-01
 
-- **Fixed:** the pool passes every option to its querier, `upsertOne`/`upsertMany`'s `{ update }` included, which it dropped.
+- **Fixed:** the pool passes every option to its querier, `upsertOne`/`upsertMany`'s `{ update }` included (which it dropped before).
 - **Fixed:** on MongoDB, `raw` in an update is refused rather than written.
 - On SQL, `$inc` and `$mul` step by a ref or `raw` of the field's type: `{ total: { $inc: newRow.amount } }`.
 - A generated migration alters a table's columns in one statement, so Postgres and MySQL rewrite the table once.
