@@ -935,7 +935,6 @@ export abstract class AbstractQuerier implements Querier {
       // A found row's key is adopted by the caller; an inserted one carries the key its insert wrote.
       return { changes, created, ids };
     };
-    // One row writes as an insert or an update of it does, with no transaction of its own.
     return rows.length === 1 ? write() : this.atomically(write);
   }
 
@@ -1060,8 +1059,6 @@ export abstract class AbstractQuerier implements Querier {
       }
     };
 
-    // Only a batch carrying both kinds is more than one statement; `transaction` is re-entrant, so
-    // this is free inside a caller's own.
     await (toInsert.length && toUpsert.length ? this.atomically(write) : write());
 
     return ids;
