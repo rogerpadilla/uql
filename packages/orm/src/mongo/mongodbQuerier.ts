@@ -3,6 +3,7 @@ import type {
   ClientSession,
   Document,
   FindCursor,
+  ModifyResult,
   MongoClient,
   OptionalUnlessRequiredId,
   UpdateFilter,
@@ -29,6 +30,7 @@ import type {
   TransactionOptions,
   Type,
   UpdatePayload,
+  UpsertOptions,
 } from '../type/index.js';
 import {
   clone,
@@ -352,12 +354,52 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     );
   }
 
+  /**
+   * An upsert whose conflicting document takes `update`, which no single call pairs with inserting the payload:
+   * `$setOnInsert` and `$inc` on one field conflict. So the row inserts if absent, and a document it found,
+   * a concurrent one included, then takes `update`.
+   */
+  private async upsertWithUpdate<E extends Document>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    row: E,
+    update: UpdatePayload<E>,
+  ) {
+    const persistable = this.dialect.getPersistable(getMeta(entity), clone(row), 'onInsert');
+    const res = await this.execute((session) =>
+      this.collection(entity).findOneAndUpdate(
+        this.buildConflictFilter(entity, conflictPaths, row),
+        { $setOnInsert: persistable },
+        { upsert: true, returnDocument: 'after', includeResultMetadata: true, session },
+      ),
+    );
+    const { id, created } = this.upserted(res);
+    // An empty `update` leaves a found document as it is, as `DO NOTHING` does.
+    const updates = !created && hasKeys(update);
+    if (updates) {
+      await this.internalUpdateMany(entity, { $where: whereEach(getKeys(conflictPaths), (key) => row[key]) }, update);
+    }
+    return { id, created, changes: created || updates ? 1 : 0 };
+  }
+
+  /** The id and whether it was created, read off the document a `findOneAndUpdate` upsert wrote. */
+  private upserted<E extends Document>(res: ModifyResult<E>): { id: PrimaryKey | undefined; created: boolean } {
+    const id = this.dialect.fromWireId(res.value?._id) as PrimaryKey | undefined;
+    // `updatedExisting` is false when a new document was inserted (upserted).
+    return { id, created: res.lastErrorObject?.['updatedExisting'] === false };
+  }
+
   protected override async internalUpsertOne<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>,
+    payload: E,
+    { update }: UpsertOptions<E>,
   ) {
     refuseTriggers(entity);
+    if (update) {
+      const { id, created, changes } = await this.upsertWithUpdate(entity, conflictPaths, payload, update);
+      return { ids: [id], changes, created };
+    }
     return this.timed('upsertOne', undefined, async () => {
       payload = clone(payload);
 
@@ -376,10 +418,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       );
 
       // Read off the document as written, which carries its `_id` on either branch.
-      const id = this.dialect.fromWireId(res?.value?._id) as PrimaryKey | undefined;
-      // `updatedExisting` is false when a new document was inserted (upserted).
-      const created = res?.lastErrorObject?.['updatedExisting'] === false;
-
+      const { id, created } = this.upserted(res);
       return { ids: [id], changes: id === undefined ? 0 : 1, created };
     });
   }
@@ -387,9 +426,20 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   protected override async internalUpsertMany<E extends Document>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>[],
+    payload: E[],
+    { update }: UpsertOptions<E>,
   ) {
     refuseTriggers(entity);
+    if (update) {
+      const ids: (PrimaryKey | undefined)[] = [];
+      let changes = 0;
+      for (const row of payload) {
+        const written = await this.upsertWithUpdate(entity, conflictPaths, row, update);
+        ids.push(written.id);
+        changes += written.changes;
+      }
+      return { ids, changes };
+    }
     return this.timed('upsertMany', undefined, async () => {
       if (!payload?.length) {
         return { changes: 0 };

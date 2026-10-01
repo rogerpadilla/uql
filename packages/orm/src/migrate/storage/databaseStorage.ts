@@ -1,6 +1,6 @@
 import type { MigrationStorage, QuerierPool, SqlQuerier } from '../../type/index.js';
+import { currentTimestamp } from '../../util/raw.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
-import { expr } from '../builder/expressions.js';
 import { TableBuilder } from '../builder/tableBuilder.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
@@ -50,7 +50,7 @@ export class DatabaseMigrationStorage implements MigrationStorage {
   private async createTableIfNotExists(querier: SqlQuerier): Promise<void> {
     const table = new TableBuilder(this.tableName);
     table.string('name', { length: 255, primaryKey: true });
-    table.timestamptz('executed_at', { defaultValue: expr.now() });
+    table.timestamptz('executed_at', { defaultValue: currentTimestamp });
     const generator = new SqlSchemaGenerator(querier.dialect);
     for (const sql of generator.generateCreateTableFromDefinition(table.build(), { ifNotExists: true })) {
       await querier.run(sql);

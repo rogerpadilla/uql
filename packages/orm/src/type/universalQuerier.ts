@@ -11,6 +11,7 @@ import type {
   QueryProjected,
   QuerySearch,
   QueryUpsertOneResult,
+  UpsertOptions,
   QueryUpsertManyResult,
 } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
@@ -177,6 +178,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
+    opts?: UpsertOptions<E>,
   ): Promise<QueryUpsertOneResult<E>>;
 
   /** Insert or update records by their conflict paths; resolves to their ids in payload order. */
@@ -184,6 +186,7 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
+    opts?: UpsertOptions<E>,
   ): Promise<QueryUpsertManyResult<E>>;
 
   /**

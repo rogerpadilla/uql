@@ -15,6 +15,7 @@ import {
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
+  type SqlValueName,
   type TriggerRowName,
   TriggerWriteRaw,
   type Type,
@@ -63,11 +64,43 @@ export function constantSql(value: QueryRaw): string | undefined {
   return value[RAW_TEXT];
 }
 
+/** A value the database computes, in each engine's SQL; one an engine has no function for throws. */
+function sqlValue(name: SqlValueName): QueryRaw {
+  return raw(({ dialect }) => {
+    const sql = dialect.sqlValues[name];
+    if (sql === undefined) {
+      throw new UqlUsageError(`${dialect.dialectName} has no ${name}; write it as raw SQL this engine accepts`);
+    }
+    return sql;
+  });
+}
+
 /**
- * The database's current time in UTC to the millisecond, in each engine's SQL, so uql reads the timestamp
- * back exactly. Use it for a stamp, an `onUpdate`, a `$where` or a `defaultValue`.
+ * The database's clock in UTC to the millisecond, the form uql reads a timestamp back in exactly. Use it for
+ * a `defaultValue`, a stamp, an `onUpdate` or a `$where`, in entities and migrations alike.
  */
-export const currentTimestamp: QueryRaw = raw(({ dialect }) => dialect.currentTimestamp);
+export const currentTimestamp: QueryRaw = sqlValue('currentTimestamp');
+
+/** Today on the database's clock; on SQLite, the text a bound `Date` at midnight is. */
+export const currentDate: QueryRaw = sqlValue('currentDate');
+
+/** The time of day on the database's clock. */
+export const currentTime: QueryRaw = sqlValue('currentTime');
+
+/** A UUID the database generates: a version 4, or a version 1 on MySQL and MariaDB. SQLite has none. */
+export const uuid: QueryRaw = sqlValue('uuid');
+
+/** A time-ordered version 7 UUID, which indexes better as a key. Postgres 18+ and MariaDB 11.7+ only. */
+export const uuidv7: QueryRaw = sqlValue('uuidv7');
+
+/** Each value above by its name, the name a migration or `generate:from-db` writes it under. */
+export const SQL_VALUES: Readonly<Record<SqlValueName, QueryRaw>> = {
+  currentTimestamp,
+  currentDate,
+  currentTime,
+  uuid,
+  uuidv7,
+};
 
 /**
  * The fields of `entity` as {@link ColumnRef}s, each rendering inside `raw` as its column: named the way

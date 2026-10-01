@@ -2,9 +2,9 @@ import { expect } from 'vitest';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createSpec } from '../../test/index.js';
 import { decodeDate } from '../../util/date.js';
+import { currentDate } from '../../util/raw.js';
 import { SqliteSchemaIntrospector } from '../introspection/sqliteIntrospector.js';
 import { AbstractMigrationBuilderIt, BUILDER_TABLES } from './abstractMigrationBuilder-test.js';
-import { expr } from './expressions.js';
 
 /**
  * SQLite extends the base rather than {@link AlterCapableMigrationBuilderIt}: it can neither rewrite
@@ -26,7 +26,7 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
     await this.withBuilder((builder) =>
       builder.createTable(table, (t) => {
         t.id();
-        t.date('day', { defaultValue: expr.currentDate() });
+        t.date('day', { defaultValue: currentDate });
       }),
     );
     const querier = await this.pool.getQuerier();

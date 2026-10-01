@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.93.0] - 2026-10-01
+
+- **Breaking:** the migration builder's `expr` is gone: defaults take what entities do, from `uql-orm` (`expr.now()` is `currentTimestamp`, `expr.raw` is `raw`); `expr.onUpdateNow()` has no replacement. `npx uql-codemod` rewrites the rest.
+- `currentDate`, `currentTime`, `uuid` and `uuidv7`, beside `currentTimestamp`: SQL the database computes.
+- `upsertOne` and `upsertMany` take `{ update }` for a conflicting row: `{ uses: { $inc: 1 } }` counts, `{}` leaves it as it is.
+- Triggers take `upsertInto` and `refuse(message)`, and `deferred: true` on Postgres.
+
 ## [0.92.0] - 2026-09-30
 
 - **Breaking:** timestamps store milliseconds on every engine; `sync` migrates existing columns, and `precision: 6` keeps one as is.

@@ -2384,6 +2384,36 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
+  /** The row inserts as written; on a conflict, only `update` applies, so a counter can count. */
+  async shouldUpsertWithAnUpdateOfItsOwn() {
+    const id = '507f1f77bcf86cd799439012';
+    const row = { id, name: 'VAT', percentage: 10 };
+    const update = { percentage: { $inc: 5 } } as const;
+    await this.querier.upsertOne(Tax, { id: true }, row, { update });
+    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
+      name: 'VAT',
+      percentage: 10,
+    });
+    await this.querier.upsertOne(Tax, { id: true }, { ...row, name: 'renamed' }, { update });
+    await this.querier.upsertMany(Tax, { id: true }, [row], { update });
+    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
+      name: 'VAT',
+      percentage: 20,
+    });
+  }
+
+  /** An empty `update` leaves a conflicting row as it is, `onUpdate` fills included: insert only if absent. */
+  async shouldUpsertWithAnEmptyUpdateLeavingTheRowAsItIs() {
+    const id = '507f1f77bcf86cd799439013';
+    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT' }, { update: {} });
+    const ignored = await this.querier.upsertOne(Tax, { id: true }, { id, name: 'renamed' }, { update: {} });
+    const batch = await this.querier.upsertMany(Tax, { id: true }, [{ id, name: 'renamed' }], { update: {} });
+    expect([ignored.id, ignored.changes, batch.ids, batch.changes]).toEqual([id, 0, [id], 0]);
+    const stored = await this.querier.findOneById(Tax, id, { $select: { name: true, updatedAt: true } });
+    assertDefined(stored);
+    expect([stored.name, stored.updatedAt == null]).toEqual(['VAT', true]);
+  }
+
   async shouldUpsertManyEmpty() {
     const result = await this.querier.upsertMany(TaxCategory, { pk: true }, []);
     expect(result.changes).toBe(0);
@@ -2553,6 +2583,32 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
     );
     expect(row).toMatchObject({ tenantId: 'a', title: 'final' });
+  }
+
+  /** A guarded upsert reads its row through the filter first, then gives it `update`, as the statement would. */
+  async shouldUpsertAGuardedRowWithAnUpdateOfItsOwn() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    assertDefined(id);
+
+    await asTenant('a', () =>
+      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { update: { title: 'update' } }),
+    );
+
+    const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
+    expect(row).toMatchObject({ title: 'update' });
+  }
+
+  async shouldUpsertAGuardedRowWithAnEmptyUpdateLeavingItAsItIs() {
+    const id = await asTenant('a', () => this.querier.insertOne(TenantNote, { title: 'draft' }));
+    assertDefined(id);
+
+    const result = await asTenant('a', () =>
+      this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, { update: {} }),
+    );
+
+    expect(result).toMatchObject({ id, changes: 0 });
+    const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
+    expect(row).toMatchObject({ title: 'draft' });
   }
 
   async shouldRollBackAGuardedUpsertBatchReachingAnotherTenantsRow() {

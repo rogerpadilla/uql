@@ -1,4 +1,10 @@
-import { type CarriedFields, type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
+import {
+  ANSI_SQL_VALUES,
+  type CarriedFields,
+  fromRows,
+  type RelationRows,
+  relationTermKey,
+} from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSlotArgs } from '../dialect/jsonSql.js';
@@ -17,7 +23,10 @@ import type {
   QueryOptions,
   QueryPager,
   SqlDialectFeatures,
+  SqlValues,
+  TriggerRows,
   Type,
+  UpsertOptions,
   VectorDistance,
   VectorMetric,
 } from '../type/index.js';
@@ -63,6 +72,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
     layout: 'tableFirst',
     scope: 'schema',
     before: false,
+    deferrable: false,
   },
 };
 
@@ -113,8 +123,21 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  /** UTC, since `CURRENT_TIMESTAMP` is local time in the server's zone. */
-  override readonly currentTimestamp = 'SYSUTCDATETIME()';
+  /**
+   * The clock in UTC, since `CURRENT_TIMESTAMP` is local time in the server's zone. No v7: `NEWSEQUENTIALID()` is
+   * an ordered v4 with no readable timestamp, so it is refused rather than served as one.
+   */
+  override readonly sqlValues: SqlValues = {
+    ...ANSI_SQL_VALUES,
+    currentTimestamp: 'SYSUTCDATETIME()',
+    uuid: 'NEWID()',
+  };
+
+  /** Only where the statement touched a row the trigger selects, since it fires once per statement, even for none. */
+  protected override refusal(message: string, rows?: TriggerRows): string {
+    const touched = rows ? `IF EXISTS (SELECT 1${fromRows(rows)}) ` : '';
+    return `${touched}THROW 50000, ${message}, 1;`;
+  }
 
   /** [The hard server limit](https://github.com/yiisoft/yii2/issues/10371), not a driver preference. */
   override readonly maxBindValues = 2100;
@@ -211,8 +234,14 @@ export class MsSqlDialect extends MergeSqlDialect {
     return expression ? this.mergeReturning(expression) : '';
   }
 
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
-    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload));
+  override upsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    opts?: UpsertOptions<E>,
+  ): void {
+    this.writeRows(ctx, getMeta(entity), payload, () => super.upsert(ctx, entity, conflictPaths, payload, opts));
   }
 
   /**

@@ -1,5 +1,5 @@
 import type { IndexType } from '../schema/types.js';
-import type { SqlDialectName } from '../type/index.js';
+import type { SqlDialectName, SqlValues } from '../type/index.js';
 import {
   type DriverCapabilities,
   type EntityMeta,
@@ -17,7 +17,7 @@ import { bytesToHex } from '../util/bytes.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
 import { escapePgSqlLiteral, escapeSingleQuotes, PG_UTC } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
-import { AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
+import { ANSI_SQL_VALUES, AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
 import { type JsonAccessMode, type JsonSlot, jsonSetTarget } from './jsonSql.js';
@@ -70,8 +70,11 @@ export const PG_FEATURES: SqlDialectFeatures = {
     layout: 'timingFirst',
     scope: 'table',
     before: true,
+    deferrable: true,
   },
 };
+
+export const PG_SQL_VALUES: SqlValues = { ...ANSI_SQL_VALUES, uuid: 'gen_random_uuid()' };
 
 /** What Postgres and CockroachDB share: JSONB, full-text search, pgvector's operators, and the upsert. */
 export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
@@ -89,6 +92,13 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   }
 
   override readonly features: SqlDialectFeatures = PG_FEATURES;
+
+  override readonly sqlValues: SqlValues = PG_SQL_VALUES;
+
+  /** `USING MESSAGE`, so the text is taken as it is rather than as a format reading each `%`. */
+  protected override refusal(message: string): string {
+    return `RAISE EXCEPTION USING MESSAGE = ${message};`;
+  }
 
   override readonly escapeIdChar = '"';
   // Shared default for both dialects. CockroachDB docs flag sequential PKs as a hotspotting risk

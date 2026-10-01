@@ -1,7 +1,7 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import type { ColumnSchema } from '../../type/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
-import { formatDefaultValue } from '../builder/expressions.js';
+import { formatDefaultValue } from './defaultSql.js';
 
 /**
  * A column's type with the size it was read back with, unless its spelling already carries one:

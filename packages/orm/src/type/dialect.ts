@@ -1,10 +1,26 @@
 import type { EntityMeta, EntityPredicate, UpdatePayload } from './entity.js';
-import type { Query, QueryConflictPaths, QueryPage, QueryRenderOptions, QuerySearch, RelationQuery } from './query.js';
+import type {
+  Query,
+  QueryConflictPaths,
+  QueryPage,
+  QueryRenderOptions,
+  QuerySearch,
+  RelationQuery,
+  UpsertOptions,
+} from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateOp, QueryGroupMap } from './queryAggregate.js';
 import type { QueryRawRenderOptions } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
 import type { Type } from './utility.js';
 import type { QueryVectorQuery } from './vector.js';
+
+/** The values the database computes that uql exports by name: `currentTimestamp`, `uuid`, ... */
+export const SQL_VALUE_NAMES = ['currentTimestamp', 'currentDate', 'currentTime', 'uuid', 'uuidv7'] as const;
+
+export type SqlValueName = (typeof SQL_VALUE_NAMES)[number];
+
+/** An engine's SQL for each {@link SqlValueName}, `undefined` where it has none. */
+export type SqlValues = Readonly<Record<SqlValueName, string | undefined>>;
 
 /**
  * comparison options.
@@ -245,6 +261,8 @@ export interface TriggerFeatures {
    * so a `before*` event is refused there rather than silently made to mean something else.
    */
   readonly before: boolean;
+  /** Whether it can be deferred to commit, as a Postgres constraint trigger is; nowhere else can. */
+  readonly deferrable: boolean;
 }
 
 /**
@@ -258,18 +276,26 @@ export type DdlRenderOptions = Pick<QueryComparisonOptions, 'escapedPrefix' | 'o
   Pick<QueryRawRenderOptions, 'rows'>;
 
 /**
- * A write a trigger's body runs, as `insertInto`, `updateTable` and `deleteFrom` state it. Held untyped
- * here, past those helpers' typing, since the dialect renders it by the entity's metadata alone.
+ * A write a trigger's body runs, as `insertInto`, `upsertInto`, `updateTable`, `deleteFrom` and `refuse` state
+ * it. Held untyped here, past those helpers' typing, since the dialect renders it by the entity's metadata alone.
  */
-export type TriggerWrite = { readonly entity: Type<object> } & (
-  | { readonly kind: 'insert'; readonly row: Readonly<Record<string, unknown>> }
+export type TriggerWrite =
+  | { readonly kind: 'insert'; readonly entity: Type<object>; readonly row: Readonly<Record<string, unknown>> }
+  | {
+      readonly kind: 'upsert';
+      readonly entity: Type<object>;
+      readonly conflictPaths: Readonly<Record<string, unknown>>;
+      readonly row: Readonly<Record<string, unknown>>;
+      readonly update?: Readonly<Record<string, unknown>>;
+    }
   | {
       readonly kind: 'update';
+      readonly entity: Type<object>;
       readonly set: Readonly<Record<string, unknown>>;
       readonly where: EntityPredicate<object>;
     }
-  | { readonly kind: 'delete'; readonly where: EntityPredicate<object> }
-);
+  | { readonly kind: 'delete'; readonly entity: Type<object>; readonly where: EntityPredicate<object> }
+  | { readonly kind: 'refuse'; readonly message: string };
 
 /**
  * What a SQL statement is rendered through, as a `raw` callback and a query context see it:
@@ -296,10 +322,11 @@ export interface SqlQueryDialect {
   readonly features: SqlDialectFeatures;
 
   /**
-   * SQL for the database's current time the way uql stores a timestamp: UTC, to the millisecond, in the same
-   * form as a bound `Date`. A bare `CURRENT_TIMESTAMP` falls short of this on SQLite, MySQL and SQL Server.
+   * Each {@link SqlValueName}'s SQL on this engine, `undefined` where it has none. `currentTimestamp` is UTC to
+   * the millisecond in the form of a bound `Date`, which a bare `CURRENT_TIMESTAMP` is not on SQLite, MySQL
+   * or SQL Server.
    */
-  readonly currentTimestamp: string;
+  readonly sqlValues: SqlValues;
 
   /** A read; with `totalAlias`, every row also carries the unpaged match count under that alias. */
   find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, opts?: QueryRenderOptions, totalAlias?: string): void;
@@ -319,8 +346,14 @@ export interface SqlQueryDialect {
     opts?: QueryRenderOptions,
   ): void;
 
-  /** An upsert of one record or many by their conflict paths. */
-  upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void;
+  /** An upsert of one record or many by their conflict paths, taking the options `upsertMany` takes. */
+  upsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    opts?: UpsertOptions<E>,
+  ): void;
 
   /** A write in a trigger's body; `rows` are what a set-based engine's body reads, narrowed to the ones it fires for. */
   triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void;

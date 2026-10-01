@@ -1314,6 +1314,64 @@ export default defineBuilderMigration({
     expect(text).toContain("m.createIndex('notes', ['slug'], { where: raw`\"deleted_at\" IS NULL` });");
   });
 
+  it("rewrites the migration builder's expr defaults as the values entities use, dropping the import", () => {
+    const { text, unresolved } = codemodFile(`import { raw } from 'uql-orm';
+import { defineBuilderMigration, expr } from 'uql-orm/migrate';
+
+export default defineBuilderMigration({
+  async up(m) {
+    await m.createTable('notes', (t) => {
+      t.timestamp('at', { defaultValue: expr.now() });
+      t.uuid('id', { defaultValue: expr.uuid() });
+      t.uuid('ordered', { defaultValue: expr.uuidv7() });
+      t.date('day', { defaultValue: expr.currentDate() });
+      t.time('clock', { defaultValue: expr.currentTime() });
+      t.bigint('seq', { defaultValue: expr.raw("nextval('s')") });
+    });
+  },
+});
+`);
+
+    expect(text).toContain("import { currentTimestamp, uuid, uuidv7, currentDate, currentTime, raw } from 'uql-orm';");
+    expect(text).toContain("import { defineBuilderMigration } from 'uql-orm/migrate';");
+    expect(text).toContain("t.timestamp('at', { defaultValue: currentTimestamp });");
+    expect(text).toContain("t.uuid('id', { defaultValue: uuid });");
+    expect(text).toContain("t.uuid('ordered', { defaultValue: uuidv7 });");
+    expect(text).toContain("t.date('day', { defaultValue: currentDate });");
+    expect(text).toContain("t.time('clock', { defaultValue: currentTime });");
+    expect(text).toContain("t.bigint('seq', { defaultValue: raw`nextval('s')` });");
+    expect(unresolved).toEqual([]);
+  });
+
+  it('leaves an expr of the file its own alone, in a file importing uql-orm', () => {
+    const body = `import { raw } from 'uql-orm';
+
+const expr = { now: () => raw\`now()\` };
+export const at = expr.now();
+`;
+
+    expect(codemodFile(body).text).toBe(body);
+  });
+
+  it('reports an expr default it has no rewrite for, and keeps the import', () => {
+    const { text, unresolved } = codemodFile(`import { raw } from 'uql-orm';
+import { defineBuilderMigration, expr } from 'uql-orm/migrate';
+
+export default defineBuilderMigration({
+  async up(m) {
+    await m.createTable('notes', (t) => {
+      t.timestamp('touched', { defaultValue: expr.onUpdateNow() });
+    });
+  },
+});
+`);
+
+    expect(text).toContain("import { defineBuilderMigration, expr } from 'uql-orm/migrate';");
+    expect(unresolved).toEqual([
+      '/entities.ts:7: expr.onUpdateNow() is gone: declare the column with m.raw(...), or use a stamp on the entity',
+    ]);
+  });
+
   it('leaves a method of the same name alone in a file that does not import uql-orm', () => {
     const body = `declare const t: { index(columns: unknown[], options?: unknown): void };
 declare function raw(strings: TemplateStringsArray): unknown;

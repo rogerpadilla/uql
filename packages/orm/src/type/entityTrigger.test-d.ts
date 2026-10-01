@@ -1,6 +1,6 @@
 import { Entity, Field, Id, ManyToOne } from '../entity/index.js';
 import { raw } from '../util/raw.js';
-import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
+import { deleteFrom, insertInto, refuse, updateTable } from '../util/triggerWrite.js';
 import type { RefMap, TriggerOptions } from './index.js';
 
 @Entity()
@@ -163,3 +163,9 @@ const logOld = (_newRow: unknown, oldRow: RefMap<Post>) => raw`PERFORM log(${old
 
 // @ts-expect-error nor a text search, which reads an index no trigger body has
 () => deleteFrom(PostAudit, { $where: { $text: { $value: 'x' } } });
+
+/** Deferred to commit, a trigger checks the transaction's every write, which only an after event has made. */
+() => ({ on: 'afterInsert', deferred: true, run: () => refuse('unbalanced') }) satisfies TriggerOptions<Post>;
+
+// @ts-expect-error a before event cannot wait for the commit: the write it shapes has not happened
+() => ({ on: 'beforeInsert', deferred: true, run: () => refuse('unbalanced') }) satisfies TriggerOptions<Post>;

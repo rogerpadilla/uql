@@ -1,7 +1,7 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
-import { expr } from '../builder/expressions.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
@@ -186,7 +186,9 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     const sql = introduced ? undefined : this.sqlText(defaultValue, extra);
     if (sql !== undefined) {
       // Any precision here repeats the column's own, which the column type already states.
-      return /^CURRENT_TIMESTAMP(?:\(\d?\))?$/i.test(sql) ? expr.now() : this.sqlDefault(sql);
+      return /^CURRENT_TIMESTAMP(?:\(\d?\))?$/i.test(sql)
+        ? new SqlExpression('currentTimestamp')
+        : this.sqlDefault(sql);
     }
     const literal = introduced ? unescapeMysqlString(introduced[1]) : defaultValue;
     const quoted = /^'(.*)'$/s.exec(literal);

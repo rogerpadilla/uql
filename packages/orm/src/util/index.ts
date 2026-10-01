@@ -8,7 +8,7 @@ export * from './ddlExpression.util.js';
 export * from './logger.js';
 export * from './object.util.js';
 export * from './raw.js';
-export { deleteFrom, insertInto, updateTable } from './triggerWrite.js';
+export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './triggerWrite.js';
 export * from './rowKey.util.js';
 export * from './relationQuery.util.js';
 export * from './sql.util.js';

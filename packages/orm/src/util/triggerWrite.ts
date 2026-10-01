@@ -1,10 +1,12 @@
 import {
   type EntityPredicate,
+  type QueryConflictPaths,
   type QueryRaw,
   type TriggerWrite,
   TriggerWriteRaw,
   type Type,
   type UpdatePayload,
+  type UpsertOptions,
   type WritableKey,
   type WriteRow,
 } from '../type/index.js';
@@ -16,6 +18,19 @@ import {
  */
 export function insertInto<E extends object>(entity: Type<E>, row: WriteRow<E>): QueryRaw {
   return written({ kind: 'insert', entity, row });
+}
+
+/**
+ * A row inserted by a trigger's body, or what its conflict paths find taking `update` instead, as `upsertOne`
+ * does: `upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, { update: { count: { $inc: 1 } } })`.
+ */
+export function upsertInto<E extends object>(
+  entity: Type<E>,
+  conflictPaths: QueryConflictPaths<E>,
+  row: WriteRow<E>,
+  { update }: UpsertOptions<E, UpdatePayload<E, QueryRaw, WritableKey<E>, never>> = {},
+): QueryRaw {
+  return written({ kind: 'upsert', entity, conflictPaths, row, update });
 }
 
 /** The rows `q.$where` names updated by a trigger's body: `updateTable(Post, { $where: { id: newRow.postId } }, set)`. */
@@ -30,6 +45,14 @@ export function updateTable<E extends object>(
 /** The rows `q.$where` names deleted by a trigger's body, outright: a soft delete is an `updateTable`. */
 export function deleteFrom<E extends object>(entity: Type<E>, q: { readonly $where: EntityPredicate<E> }): QueryRaw {
   return written({ kind: 'delete', entity, where: q.$where });
+}
+
+/**
+ * Fails the write that fired the trigger, with `message` as the error: a table kept append-only refuses its
+ * updates and deletes, and a `where` narrows it to the rows a rule forbids.
+ */
+export function refuse(message: string): QueryRaw {
+  return written({ kind: 'refuse', message });
 }
 
 /** A write in a trigger's body, as every helper here and a stamp render one. */

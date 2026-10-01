@@ -11,11 +11,14 @@ import type {
   RowLockFeatures,
   SqlDialectFeatures,
   SqlDialectName,
+  SqlValues,
   Type,
+  UpsertOptions,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
 import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
 import {
+  ANSI_SQL_VALUES,
   AbstractSqlDialect,
   type CarriedFields,
   type DerivedRelation,
@@ -66,11 +69,19 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
     layout: 'timingFirst',
     scope: 'schema',
     before: true,
+    deferrable: false,
   },
 };
 
 /** The one `JSON_TABLE` column an exploded array reads each element through, as a JSON document. */
 const ELEM_COLUMN = 'v';
+
+/** `(3)` keeps milliseconds, where a bare `CURRENT_TIMESTAMP` has whole seconds; `UUID()` is a version 1. */
+export const MYSQL_SQL_VALUES: SqlValues = {
+  ...ANSI_SQL_VALUES,
+  currentTimestamp: 'CURRENT_TIMESTAMP(3)',
+  uuid: 'UUID()',
+};
 
 /** What MySQL and MariaDB share, their JSON functions above all: `JSON_LENGTH`, `JSON_CONTAINS`, `JSON_TABLE`, `JSON_SET`. */
 export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
@@ -114,39 +125,56 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly booleanLiteral = 'integer';
 
-  /** `(3)` keeps milliseconds; a bare `CURRENT_TIMESTAMP` has whole seconds only. */
-  override readonly currentTimestamp = 'CURRENT_TIMESTAMP(3)';
+  override readonly sqlValues: SqlValues = MYSQL_SQL_VALUES;
 
   // No `RETURNING` support, so multi-row insert IDs are inferred from the header - see the
   // `innodb_autoinc_lock_mode` caveat on `buildUpdateResult` in `util/sql.util.ts`.
   override readonly insertIdSource: InsertIdSource = 'firstId';
 
-  /**
-   * `INSERT ... ON DUPLICATE KEY UPDATE`, or `INSERT IGNORE` where there is nothing to assign. The
-   * assignments bind after the insert, where a `?` reads them.
-   */
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
+  /** `INSERT ... ON DUPLICATE KEY UPDATE`, the assignments bound after the insert, where a `?` reads them. */
+  override upsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    { update }: UpsertOptions<E> = {},
+  ): void {
     const meta = getMeta(entity);
-    const alias = this.upsertNewRowAlias && this.escapeId(this.upsertNewRowAlias, true);
     const updateCtx = this.createContext();
-    const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, (name) =>
-      alias ? `${alias}.${name}` : `VALUE(${name})`,
-    );
-
-    const idReturning = this.insertedIdReturning(meta);
-    const returning = idReturning && ` ${idReturning}`;
-
-    if (update) {
-      this.appendInsertValues(ctx, entity, payload);
-      ctx.append(`${alias ? ` AS ${alias}` : ''} ON DUPLICATE KEY UPDATE ${update}${returning}`);
-      ctx.pushValue(...updateCtx.values);
-      return;
-    }
+    const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
     const insertCtx = this.createContext();
     this.appendInsertValues(insertCtx, entity, payload);
-    ctx.append(insertCtx.sql.replace(/^INSERT/, 'INSERT IGNORE'));
-    ctx.append(returning);
-    ctx.pushValue(...insertCtx.values);
+    const idReturning = this.insertedIdReturning(meta);
+    ctx.append(`${this.onDuplicateKey(insertCtx.sql, assignments)}${idReturning && ` ${idReturning}`}`);
+    ctx.pushValue(...insertCtx.values, ...updateCtx.values);
+  }
+
+  protected override appendTriggerUpsert<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    _conflictPaths: QueryConflictPaths<E>,
+    entries: readonly [string, unknown][],
+    assignments: string,
+  ): void {
+    const insert = this.buildFragment(ctx, (fragmentCtx) => this.appendTriggerInsert(fragmentCtx, meta, entries));
+    ctx.append(`${this.onDuplicateKey(insert, assignments)};`);
+  }
+
+  /**
+   * `insert` on a duplicate key: `ON DUPLICATE KEY UPDATE` with the new row named, or `INSERT IGNORE` where there
+   * is nothing to assign. MySQL matches on any unique key, not just the conflict paths, which it cannot name.
+   */
+  private onDuplicateKey(insert: string, assignments: string): string {
+    if (!assignments) {
+      return insert.replace(/^INSERT/, 'INSERT IGNORE');
+    }
+    const alias = this.upsertNewRowAlias && ` AS ${this.escapeId(this.upsertNewRowAlias, true)}`;
+    return `${insert}${alias ?? ''} ON DUPLICATE KEY UPDATE ${assignments}`;
+  }
+
+  /** The new row through the alias it is given, or `VALUE(col)` where the dialect has no such syntax. */
+  protected override upsertIncoming(column: string): string {
+    return this.upsertNewRowAlias ? `${this.escapeId(this.upsertNewRowAlias, true)}.${column}` : `VALUE(${column})`;
   }
 
   /**

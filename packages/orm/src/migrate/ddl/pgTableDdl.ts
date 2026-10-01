@@ -1,5 +1,5 @@
 import type { ColumnSchema } from '../../type/index.js';
-import { sameDefault } from '../builder/expressions.js';
+import { sameDefault } from './defaultSql.js';
 import { TableDdl } from './tableDdl.js';
 
 /** Table DDL for the Postgres family, which alters each part of a column in a separate clause. */

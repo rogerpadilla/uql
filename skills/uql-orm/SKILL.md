@@ -78,7 +78,7 @@ export class Post {
 - A column is nullable unless it says `nullable: false`, and its property must admit `null` to match: `title?: string | null`. A property typed without `| null` on a nullable column is a compile error.
 - Declare a `nullable: false` column `!` (`email!: string`): reads have it and inserts must name it, except a single-column key and a `version`, which uql fills. Declare `?` whatever an insert may leave out: a nullable, `onInsert`, `defaultValue`, `eager: false` or `computed` field, and relations.
 - An engine's own column type is a `raw` constant, ``columnType: raw`tsvector` ``, rendered verbatim and carrying its own `length`/`precision`: never a bare string.
-- `defaultValue` is a value of the field's type, or SQL the database evaluates per row: `currentTimestamp` or ``raw`gen_random_uuid()` ``. A string is always text, `'CURRENT_TIMESTAMP'` included.
+- `defaultValue` is a value of the field's type, or SQL the database evaluates per row: one of `currentTimestamp`, `currentDate`, `currentTime`, `uuid` (not SQLite), `uuidv7` (Postgres 18+, MariaDB 11.7+), or ``raw`...` ``. A string is always text, `'CURRENT_TIMESTAMP'` included. The migration builder takes the same.
 - `currentTimestamp` is the database clock, UTC to the millisecond on every engine, where a raw `CURRENT_TIMESTAMP` is not on SQLite, MySQL or SQL Server. Use it for a default, a stamp, `onUpdate` or `$where`.
 - Members are named by callbacks, never by strings: `mappedBy: (post) => post.author`, `references: (post) => post.authorId`.
 - `@ManyToMany({ entity: () => Tag, through: () => PostTag })` names its junction entity.
@@ -87,7 +87,7 @@ export class Post {
   an update must carry the version it read (a compile error otherwise), and one against a row someone else moved on throws `UqlOptimisticLockError` (kind `optimisticLock`, HTTP 409). Its updates name one row by its id; save and upsert are refused.
 - `@Field({ computed })` is a value the database produces, on a `readonly` property: SQL over the row, ``(u) => raw`${u.first} || ' ' || ${u.last}` ``, or a relation aggregate, `(order) => order.items.count()`.
   `stored: true` makes the SQL a generated column; `stored: ['insert', 'update']` makes it a stamp, which a trigger writes on those events whoever writes the row (`computed: currentTimestamp`), where `onUpdate` covers only uql's own writes.
-- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires. `run(newRow, oldRow)` returns the body, written with `insertInto`, `updateTable` and `deleteFrom`, which are typed by the entity written and render on every engine; anything else is `raw` SQL over the rows, per engine where they differ. A trigger's writes skip uql's fills and entity filters, soft delete included. MongoDB has none. Details, SQL Server's per-statement shape included: https://uql-orm.dev/entities/triggers.md
+- `@Trigger({ on: 'afterUpdate', of: (post) => [post.status], where: { $old: { status: 'draft' } }, run })` is a trigger the database fires. `run(newRow, oldRow)` returns the body, written with `insertInto`, `upsertInto` (as `upsertOne` takes it), `updateTable`, `deleteFrom` and `refuse(message)` (fails the write), which are typed by the entity written and render on every engine; `deferred: true` fires an after trigger at commit, on Postgres only; anything else is `raw` SQL over the rows, per engine where they differ. A trigger's writes skip uql's fills and entity filters, soft delete included. MongoDB has none. Details, SQL Server's per-statement shape included: https://uql-orm.dev/entities/triggers.md
 - `defineEntity` defines the same entity without decorators: https://uql-orm.dev/entities/imperative.md
 
 ## Queries
@@ -131,6 +131,7 @@ const users = await pool.findMany(User, {
 - Methods: `findMany`, `findOne`, `findOneById`, `findManyAndCount`, `findManyPage`, `findManyStream`, `count`, `exists`,
   `aggregate`, `insertOne`, `insertMany`, `updateOneById`, `updateMany`, `saveOne`, `saveMany`, `upsertOne`,
   `upsertMany`, `deleteOneById`, `deleteMany`. Each takes the entity class first.
+- `upsertOne(Entity, { email: true }, row, { update })`: a conflicting row takes `update`, an update's payload with its operators, instead of `row`; a new one inserts `row`. `{ update: {} }` leaves a conflicting row as it is: insert if absent.
 - `updateMany` and `deleteMany` naming no rows - no `$where` holding a value (an `undefined` or an empty group holds none), no `$limit` - throw; `{ unfiltered: true }` means the whole table.
 - An update takes `{ stock: { $inc: -1 } }` to add, or `$mul` to multiply, in the statement, a NULL counting as 0,
   so a guard in `$where` (`stock: { $gte: 1 }`) makes a decrement race-safe. JSON fields take `$set`, `$unset`,

@@ -11,7 +11,6 @@ import { provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
 import { currentTimestamp, raw } from '../util/raw.js';
-import { expr } from './builder/expressions.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
@@ -59,7 +58,7 @@ describe.each(DEFAULT_POOLS)('a column default on %s', (_name, connect) => {
     const defaultOf = (name: string) => schema?.columns.find((column) => column.name === name)?.defaultValue;
 
     expect(defaultOf('spelled')).toBe('CURRENT_TIMESTAMP');
-    expect(defaultOf('createdAt')).toEqual(expr.now());
+    expect(defaultOf('createdAt')).toEqual(new SqlExpression('currentTimestamp'));
     expect(defaultOf('derived')).toBeInstanceOf(SqlExpression);
     // Unsafe, which is what plans an alter: a safe plan holds every one, a changed default included.
     expect(await new Migrator(pool, { entities: [DefaultNote] }).planSync({ safe: false })).toEqual([]);

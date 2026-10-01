@@ -53,10 +53,12 @@ import {
   type RelationQuery,
   type SqlDialectName,
   type SqlQueryDialect,
+  type SqlValues,
   type TriggerRows,
   type TriggerWrite,
   type Type,
   type UpdatePayload,
+  type UpsertOptions,
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
 import { isInlinedExpression } from '../util/field.util.js';
@@ -341,6 +343,20 @@ type RelationSubqueryProjection = { readonly op: 'exists'; readonly field?: neve
 /** One relation subquery as its caller states it: what to select, and which of the rows to read. */
 type RelationSubqueryRead = RelationSubqueryProjection & Pick<AggregateCall, 'where'>;
 
+/** ` FROM <rows> WHERE <narrowing>`: what a set-based trigger's body reads, as {@link TriggerRows} states it. */
+export function fromRows(rows: TriggerRows): string {
+  return ` FROM ${rows.from}${rows.where ? ` WHERE ${rows.where}` : ''}`;
+}
+
+/** The ANSI spellings, which an engine overrides where it differs. No ANSI function makes a UUID. */
+export const ANSI_SQL_VALUES: SqlValues = {
+  currentTimestamp: 'CURRENT_TIMESTAMP',
+  currentDate: 'CURRENT_DATE',
+  currentTime: 'CURRENT_TIME',
+  uuid: undefined,
+  uuidv7: undefined,
+};
+
 export abstract class AbstractSqlDialect extends VectorSqlDialect implements SqlQueryDialect {
   abstract override readonly dialectName: SqlDialectName;
 
@@ -374,7 +390,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   readonly booleanLiteral: 'native' | 'integer' = 'native';
 
-  readonly currentTimestamp: string = 'CURRENT_TIMESTAMP';
+  readonly sqlValues: SqlValues = ANSI_SQL_VALUES;
 
   /**
    * Maximum number of bind parameters the driver accepts in a single statement.
@@ -1905,29 +1921,58 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     opts?: QueryRenderOptions,
   ): void {
     const meta = getMeta(entity);
-    const [filledPayload] = fillOnFields(meta, payload as E, 'onUpdate');
-    const keys = filterFieldKeys(meta, filledPayload, 'onUpdate');
-
     ctx.append(`UPDATE ${this.escapedTableName(meta)} SET `);
-    for (let i = 0; i < keys.length; i++) {
-      if (i > 0) {
-        ctx.append(', ');
-      }
-      this.appendAssignment(ctx, meta, keys[i], filledPayload[keys[i]]);
-    }
+    this.appendAssignments(ctx, meta, this.updateEntries(meta, payload));
     this.search(ctx, entity, q, opts);
   }
 
-  /** `col = value`, a JSON operator or a `$inc`/`$mul` spelled as the engine's. */
-  private appendAssignment<E>(ctx: QueryContext, meta: EntityMeta<E>, key: string, value: unknown): void {
+  /** What an update assigns: the payload's fields, `onUpdate` fills included. */
+  private updateEntries<E>(meta: EntityMeta<E>, payload: UpdatePayload<E>): [string, unknown][] {
+    const [filled] = fillOnFields(meta, payload, 'onUpdate');
+    return filterFieldKeys(meta, filled, 'onUpdate').map((key) => [key, filled[key]]);
+  }
+
+  /**
+   * A `SET` list, each assignment reading its column as `qualifier` names it, which an upsert sets: `MERGE`'s
+   * source and MySQL's new row share the table's column names.
+   */
+  private appendAssignments<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    entries: readonly [string, unknown][],
+    qualifier = '',
+  ): void {
+    entries.forEach(([key, value], i) => {
+      if (i > 0) {
+        ctx.append(', ');
+      }
+      this.appendAssignment(ctx, meta, key, value, qualifier);
+    });
+  }
+
+  /**
+   * `col = value`, a JSON operator or a `$inc`/`$mul` spelled as the engine's. What reads the table, the operators
+   * and the refs in SQL alike, reads it through `qualifier`.
+   */
+  private appendAssignment<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    key: string,
+    value: unknown,
+    qualifier = '',
+  ): void {
     const field = meta.fields[key];
     const escapedCol = this.escapedColumnName(meta, key);
+    const current = `${qualifier}${escapedCol}`;
     if (isJsonUpdateOp(value)) {
-      this.formatJsonUpdate(ctx, escapedCol, value, field);
+      this.formatJsonUpdate(ctx, escapedCol, value, field, current);
     } else if (isFieldUpdateOp(value)) {
       const [op, operand] = fieldUpdateOf(key, value);
-      ctx.append(`${escapedCol} = COALESCE(${escapedCol}, 0) ${SQL_ARITHMETIC[op]} `);
+      ctx.append(`${escapedCol} = COALESCE(${current}, 0) ${SQL_ARITHMETIC[op]} `);
       ctx.addValue(operand);
+    } else if (qualifier && value instanceof QueryRaw) {
+      ctx.append(`${escapedCol} = `);
+      this.getRawValue(ctx, { value, escapedPrefix: qualifier });
     } else {
       ctx.append(`${escapedCol} = `);
       this.formatPersistableValue(ctx, field, value);
@@ -1940,9 +1985,13 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * trigger has none of. `rows` are what a set-based engine's body reads, narrowed to the ones it fires for.
    */
   triggerWrite(ctx: QueryContext, write: TriggerWrite, rows?: TriggerRows): void {
+    if (write.kind === 'refuse') {
+      ctx.append(this.refusal(this.escape(write.message), rows));
+      return;
+    }
     const meta = getMeta(write.entity);
     const table = this.escapedTableName(meta);
-    if (write.kind === 'insert') {
+    if (write.kind === 'insert' || write.kind === 'upsert') {
       const unfilled = definedEntries(meta.fields).find(
         ([key, field]) =>
           field.onInsert !== undefined && field.defaultValue === undefined && write.row[key] === undefined,
@@ -1954,18 +2003,26 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         );
       }
       const entries = this.writtenEntries(meta, write.row);
-      const columns = entries.map(([key]) => this.escapedColumnName(meta, key)).join(', ');
-      const [open, close] = rows
-        ? ['SELECT ', ` FROM ${rows.from}${rows.where ? ` WHERE ${rows.where}` : ''};`]
-        : ['VALUES (', ');'];
-      ctx.append(`INSERT INTO ${table} (${columns}) ${open}`);
-      entries.forEach(([key, value], i) => {
-        if (i > 0) {
-          ctx.append(', ');
-        }
-        this.formatPersistableValue(ctx, meta.fields[key], value);
-      });
-      ctx.append(close);
+      if (write.kind === 'insert') {
+        this.appendTriggerInsert(ctx, meta, entries, rows);
+        ctx.append(';');
+        return;
+      }
+      const { conflictPaths, update } = write;
+      // What a conflicting row takes, none filled in JavaScript: the incoming row less the conflict paths, or `update`.
+      const assigned =
+        update === undefined
+          ? entries
+              .filter(([key]) => !conflictPaths[key])
+              .map(([key]): [string, unknown] => [key, this.incoming(meta, key)])
+          : hasKeys(update)
+            ? this.writtenEntries(meta, update)
+            : [];
+      this.refuseAccumulating(meta, assigned, rows);
+      const assignments = this.buildFragment(ctx, (fragmentCtx) =>
+        this.appendAssignments(fragmentCtx, meta, assigned, `${table}.`),
+      );
+      this.appendTriggerUpsert(ctx, meta, conflictPaths, entries, assignments, rows);
       return;
     }
     assertWhere(meta, write.where);
@@ -1976,20 +2033,9 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     if (write.kind === 'update') {
       const entries = this.writtenEntries(meta, write.set);
-      const accumulating = rows && entries.find(([, value]) => accumulates(value));
-      if (accumulating) {
-        throw new UqlUsageError(
-          `'${meta.name}.${accumulating[0]}' cannot accumulate per row in a trigger fired once per statement, ` +
-            'which applies $inc, $mul and $push once',
-        );
-      }
+      this.refuseAccumulating(meta, entries, rows);
       ctx.append(`UPDATE ${table} SET `);
-      entries.forEach(([key, value], i) => {
-        if (i > 0) {
-          ctx.append(', ');
-        }
-        this.appendAssignment(ctx, meta, key, value);
-      });
+      this.appendAssignments(ctx, meta, entries);
     } else {
       ctx.append(`DELETE FROM ${table}`);
     }
@@ -2001,6 +2047,71 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // Qualified by the table: on a set-based engine `inserted` holds the same column names.
     this.renderWhere(ctx, write.entity, where, { escapedPrefix: `${table}.` });
     ctx.append(';');
+  }
+
+  /** `$inc`, `$mul` and `$push` refused where the body reads a set, which applies each once for the statement. */
+  private refuseAccumulating<E>(meta: EntityMeta<E>, entries: readonly [string, unknown][], rows?: TriggerRows): void {
+    const accumulating = rows && entries.find(([, value]) => accumulates(value));
+    if (accumulating) {
+      throw new UqlUsageError(
+        `'${meta.name}.${accumulating[0]}' cannot accumulate per row in a trigger fired once per statement, ` +
+          'which applies $inc, $mul and $push once',
+      );
+    }
+  }
+
+  /** A trigger's insert, unterminated: its values, or a `SELECT` of them off the set a set-based engine hands it. */
+  protected appendTriggerInsert<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    entries: readonly [string, unknown][],
+    rows?: TriggerRows,
+  ): void {
+    const columns = entries.map(([key]) => this.escapedColumnName(meta, key)).join(', ');
+    ctx.append(`INSERT INTO ${this.escapedTableName(meta)} (${columns}) ${rows ? 'SELECT ' : 'VALUES ('}`);
+    this.appendTriggerValues(ctx, meta, entries);
+    ctx.append(rows ? fromRows(rows) : ')');
+  }
+
+  /** The values a trigger writes, a literal or SQL each, the rows' refs most often. */
+  protected appendTriggerValues<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    entries: readonly [string, unknown][],
+  ): void {
+    entries.forEach(([key, value], i) => {
+      if (i > 0) {
+        ctx.append(', ');
+      }
+      this.formatPersistableValue(ctx, meta.fields[key], value);
+    });
+  }
+
+  /** A trigger's upsert: its insert, then what a conflicting row takes, `assignments`, or nothing where empty. */
+  protected appendTriggerUpsert<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    entries: readonly [string, unknown][],
+    assignments: string,
+    rows?: TriggerRows,
+  ): void {
+    this.appendTriggerInsert(ctx, meta, entries, rows);
+    ctx.append(`${this.onConflict(meta, conflictPaths, assignments)};`);
+  }
+
+  /** ` ON CONFLICT (keys) DO UPDATE SET ...`, or `DO NOTHING` with nothing to assign. */
+  private onConflict<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>, assignments: string): string {
+    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
+    return ` ON CONFLICT (${keys}) ${assignments ? `DO UPDATE SET ${assignments}` : 'DO NOTHING'}`;
+  }
+
+  /**
+   * The statement failing a trigger's write with `message`, a quoted literal: SQL/PSM's `SIGNAL`, which the
+   * MySQL family speaks. `rows` are what a set-based engine's body reads, where it fails only if there are any.
+   */
+  protected refusal(message: string, _rows?: TriggerRows): string {
+    return `SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = ${message};`;
   }
 
   /** The values a write names, refusing one the entity has no column for. */
@@ -2025,54 +2136,60 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    /** One more `RETURNING` item, as a bare expression: this joins the list and adds the keyword. */
-    extraReturning = '',
+    { update }: UpsertOptions<E> = {},
   ): void {
     const meta = getMeta(entity);
     const updateCtx = this.upsertUpdateBindsInPlace ? ctx : this.createContext();
-    const update = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, this.upsertExcluded);
-    const keys = this.getUpsertConflictPathsStr(meta, conflictPaths);
-    const onConflict = update ? `DO UPDATE SET ${update}` : 'DO NOTHING';
+    const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
     // Composed rather than concatenated: a composite key contributes no id item, and a dialect's own
     // item (Postgres's created flag) must then come right after the keyword, with no comma before it.
-    const returning = [this.returningIdExpression(meta), extraReturning].filter(Boolean).join(', ');
+    const returning = [this.returningIdExpression(meta), this.upsertCreatedReturning].filter(Boolean).join(', ');
     this.appendInsertValues(ctx, entity, payload);
-    ctx.append(` ON CONFLICT (${keys}) ${onConflict}${returning ? ` RETURNING ${returning}` : ''}`);
+    ctx.append(`${this.onConflict(meta, conflictPaths, assignments)}${returning ? ` RETURNING ${returning}` : ''}`);
     if (updateCtx !== ctx) {
       ctx.pushValue(...updateCtx.values);
     }
   }
 
+  /** One more `RETURNING` item saying whether the row was created, where the engine can tell; else empty. */
+  protected readonly upsertCreatedReturning: string = '';
+
   /** Whether the upsert's assignments bind straight into the statement, as numbered `$n` placeholders can. */
   protected readonly upsertUpdateBindsInPlace: boolean = false;
 
-  /** How an `ON CONFLICT` assignment reads the row that was being inserted. */
-  protected readonly upsertExcluded = (columnName: string): string => `EXCLUDED.${columnName}`;
+  /** How an upsert's assignment reads `column` of the row that was being inserted. */
+  protected upsertIncoming(column: string): string {
+    return `EXCLUDED.${column}`;
+  }
 
+  /** `key`'s column of the row being inserted, as SQL an assignment takes. */
+  private incoming<E>(meta: EntityMeta<E>, key: string): QueryRaw {
+    const column = this.escapedColumnName(meta, key);
+    return raw(() => this.upsertIncoming(column));
+  }
+
+  /**
+   * What a conflicting row takes: `update` where given, else the incoming row less the conflict paths, and what
+   * `onUpdate` fills. An empty `update` leaves the row as it is, its fills included: nothing to assign.
+   */
   protected getUpsertUpdateAssignments<E>(
     ctx: QueryContext,
     meta: EntityMeta<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E | E[],
-    callback: (columnName: string) => string,
+    update?: UpdatePayload<E>,
   ): string {
     const sample = Array.isArray(payload) ? payload[0] : payload;
-    const cloned = { ...sample };
-    const [filledPayload] = fillOnFields(meta, cloned, 'onUpdate');
-    const fields = filterFieldKeys(meta, filledPayload, 'onUpdate');
-    return fields
-      .filter((col) => !conflictPaths[col])
-      .map((col) => {
-        const column = this.escapedColumnName(meta, col);
-        if (Object.hasOwn(sample as object, col)) {
-          return `${column} = ${callback(column)}`;
-        }
-        const text = this.buildFragment(ctx, (fragmentCtx) =>
-          this.formatPersistableValue(fragmentCtx, meta.fields[col], filledPayload[col]),
-        );
-        return `${column} = ${text}`;
-      })
-      .join(', ');
+    const [filled] = fillOnFields(meta, { ...sample }, 'onUpdate');
+    const entries: [string, unknown][] = update
+      ? hasKeys(update)
+        ? this.updateEntries(meta, update)
+        : []
+      : filterFieldKeys(meta, filled, 'onUpdate')
+          .filter((key) => !conflictPaths[key])
+          .map((key) => [key, Object.hasOwn(sample as object, key) ? this.incoming(meta, key) : filled[key]]);
+    const qualifier = `${this.escapedTableName(meta)}.`;
+    return this.buildFragment(ctx, (fragmentCtx) => this.appendAssignments(fragmentCtx, meta, entries, qualifier));
   }
 
   protected getUpsertConflictPathsStr<E>(meta: EntityMeta<E>, conflictPaths: QueryConflictPaths<E>): string {
@@ -2266,11 +2383,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `"col" = <expr>` for a JSON update, each operator wrapping the last: `$pull`, `$set`, `$push`, `$unset`.
    * `$pull` reads the column and every later one its expression once, so no value binds twice.
    */
-  protected formatJsonUpdate(ctx: QueryContext, escapedCol: string, value: JsonUpdateOp, field?: FieldOptions): void {
+  protected formatJsonUpdate(
+    ctx: QueryContext,
+    escapedCol: string,
+    value: JsonUpdateOp,
+    field?: FieldOptions,
+    current = escapedCol,
+  ): void {
     const { $pull, $set, $push, $unset } = value;
-    let expr = escapedCol;
+    let expr = current;
     if (hasKeys($pull)) {
-      expr = this.jsonPull(ctx, expr, escapedCol, $pull);
+      expr = this.jsonPull(ctx, expr, current, $pull);
     }
     if (hasKeys($set)) {
       expr = this.jsonSet(ctx, expr, $set, field);

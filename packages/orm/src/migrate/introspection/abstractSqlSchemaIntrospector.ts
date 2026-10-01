@@ -17,7 +17,7 @@ import type {
 import { isSqlQuerier } from '../../type/index.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { UqlUsageError } from '../../util/uqlError.js';
-import { expr, sameDefault } from '../builder/expressions.js';
+import { knownDefault } from '../ddl/defaultSql.js';
 import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
 
 /**
@@ -294,12 +294,11 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected abstract parseDefaultValue(defaultValue: string | null): unknown;
 
   /**
-   * A SQL default, wrapped in parentheses. The current timestamp uql declares reads back as `expr.now()`, so
-   * it compares equal on every engine and `generate:from-db` writes it as `currentTimestamp`.
+   * A SQL default, wrapped in parentheses, or the value uql exports that it spells (`currentTimestamp`), so it
+   * compares equal on every engine and `generate:from-db` writes it by name.
    */
   protected sqlDefault(sql: string): SqlExpression {
-    const expression = SqlExpression.parenthesized(sql);
-    return sameDefault(expr.now(), expression, this.dialect) ? expr.now() : expression;
+    return knownDefault(SqlExpression.parenthesized(sql), this.dialect);
   }
 }
 

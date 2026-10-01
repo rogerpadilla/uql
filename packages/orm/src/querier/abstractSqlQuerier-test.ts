@@ -10,6 +10,7 @@ import {
   ItemAdjustment,
   LedgerAccount,
   type SpecRequirements,
+  Tax,
   TaxCategory,
   TypedGroup,
   TypedRow,
@@ -57,6 +58,17 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
+  /** SQL in an upsert's `update` reads the row already there: an engine also has the incoming one in scope. */
+  async shouldUpsertWithSqlOverTheRowAlreadyThere() {
+    const id = '507f1f77bcf86cd799439014';
+    const update = { percentage: raw`${refs(Tax).percentage} * 2` };
+    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, { update });
+    await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT', percentage: 5 }, { update });
+    expect(await this.querier.findOneById(Tax, id, { $select: { percentage: true } })).toMatchObject({
+      percentage: 10,
+    });
+  }
+
   async shouldRejectLockOutsideTransaction() {
     await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow('requires an open transaction');
   }

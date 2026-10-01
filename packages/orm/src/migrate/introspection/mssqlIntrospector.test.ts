@@ -1,8 +1,8 @@
 import { expect } from 'vitest';
 import { MsSqlQuerierPool } from '../../mssql/mssqlQuerierPool.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ForeignKeyAction } from '../../schema/types.js';
 import { createSpec, mssqlConnection } from '../../test/index.js';
-import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { MsSqlSchemaIntrospector } from './mssqlIntrospector.js';
 
@@ -78,10 +78,10 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
       negative: -3,
       fraction: -1.5,
       blank: null,
-      stamped: expr.raw('(getdate())'),
-      summed: expr.raw('((1)+(2))'),
+      stamped: new SqlExpression('raw', '(getdate())'),
+      summed: new SqlExpression('raw', '((1)+(2))'),
       bare: undefined,
-      clock: expr.now(),
+      clock: new SqlExpression('currentTimestamp'),
     });
   }
 

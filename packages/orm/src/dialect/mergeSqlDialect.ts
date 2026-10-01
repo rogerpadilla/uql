@@ -1,7 +1,16 @@
 import { getMeta } from '../entity/index.js';
-import type { EntityMeta, Key, QueryConflictPaths, QueryContext, QueryPager, Type } from '../type/index.js';
+import type {
+  EntityMeta,
+  Key,
+  QueryConflictPaths,
+  QueryContext,
+  QueryPager,
+  TriggerRows,
+  Type,
+  UpsertOptions,
+} from '../type/index.js';
 import { assertNonNegativeInteger, getKeys } from '../util/index.js';
-import { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { AbstractSqlDialect, fromRows } from './abstractSqlDialect.js';
 import { UPSERT_SOURCE_ALIAS } from './aliases.js';
 
 /** What SQL Server and Oracle share: paging and upsert spelled as the standard does. */
@@ -29,32 +38,67 @@ export abstract class MergeSqlDialect extends AbstractSqlDialect {
    * assignments bind their values before the rows, though they follow them in the SQL; this works only because
    * SQL Server numbers each placeholder (`@p1`).
    */
-  override upsert<E>(ctx: QueryContext, entity: Type<E>, conflictPaths: QueryConflictPaths<E>, payload: E | E[]): void {
+  override upsert<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: E | E[],
+    { update }: UpsertOptions<E> = {},
+  ): void {
     const meta = getMeta(entity);
-    const table = this.escapedTableName(meta);
-    const source = this.escapeId(UPSERT_SOURCE_ALIAS, true);
     // Before the row source, which is what fills the payload's `onInsert` fields: a column that
     // exists only there - the generated key, `createdAt` - must not join the update set, or a row
     // that already existed has both rewritten.
-    const update = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, (col) => `${source}.${col}`);
+    const assignments = this.getUpsertUpdateAssignments(ctx, meta, conflictPaths, payload, update);
     const shape = this.insertShape(entity, payload);
-    const columns = shape.columns.join(', ');
-
-    ctx.append(`MERGE INTO ${table}${this.mergeTargetHint} USING (VALUES `);
+    ctx.append(`MERGE INTO ${this.escapedTableName(meta)}${this.mergeTargetHint} USING (VALUES `);
     this.appendValueRows(ctx, shape);
-    ctx.append(`) AS ${source} (${columns}) ON ${this.mergeOn(meta, conflictPaths, table, source)}`);
-    if (update) {
-      ctx.append(` WHEN MATCHED THEN UPDATE SET ${update}`);
-    }
-    ctx.append(
-      ` WHEN NOT MATCHED THEN INSERT (${columns}) VALUES (${shape.columns.map((col) => `${source}.${col}`).join(', ')})`,
-    );
-
+    ctx.append(`)${this.mergeMatch(meta, conflictPaths, shape.columns, assignments)}`);
     const returning = this.returningIdExpression(meta);
     if (returning) {
       ctx.append(` ${this.mergeReturning(returning)}`);
     }
     ctx.append(this.statementTerminator);
+  }
+
+  /** A trigger's upsert as a `MERGE` of the rows it was handed, `SELECT`ed off them as its source. */
+  protected override appendTriggerUpsert<E>(
+    ctx: QueryContext,
+    meta: EntityMeta<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    entries: readonly [string, unknown][],
+    assignments: string,
+    rows?: TriggerRows,
+  ): void {
+    ctx.append(`MERGE INTO ${this.escapedTableName(meta)}${this.mergeTargetHint} USING (SELECT `);
+    this.appendTriggerValues(ctx, meta, entries);
+    const columns = entries.map(([key]) => this.escapedColumnName(meta, key));
+    ctx.append(`${rows ? fromRows(rows) : ''})${this.mergeMatch(meta, conflictPaths, columns, assignments)};`);
+  }
+
+  /**
+   * The rest of a `MERGE` once its source is written: the source named, matched on the conflict keys, updated
+   * by `assignments` where it matched, if any, and inserted where it did not.
+   */
+  private mergeMatch<E>(
+    meta: EntityMeta<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    columns: readonly string[],
+    assignments: string,
+  ): string {
+    const table = this.escapedTableName(meta);
+    const source = this.escapeId(UPSERT_SOURCE_ALIAS, true);
+    const matched = assignments ? ` WHEN MATCHED THEN UPDATE SET ${assignments}` : '';
+    const values = columns.map((col) => `${source}.${col}`).join(', ');
+    return (
+      ` AS ${source} (${columns.join(', ')}) ON ${this.mergeOn(meta, conflictPaths, table, source)}${matched}` +
+      ` WHEN NOT MATCHED THEN INSERT (${columns.join(', ')}) VALUES (${values})`
+    );
+  }
+
+  /** The source row through the alias `MERGE` gives it. */
+  protected override upsertIncoming(column: string): string {
+    return `${this.escapeId(UPSERT_SOURCE_ALIAS, true)}.${column}`;
   }
 
   /** `<target>.<col> = <source>.<col>` for every conflict key, which is what makes a row "the same". */

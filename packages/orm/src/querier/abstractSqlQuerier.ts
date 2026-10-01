@@ -25,6 +25,7 @@ import type {
   TransactionOptions,
   Type,
   UpdatePayload,
+  UpsertOptions,
 } from '../type/index.js';
 import {
   buildUpdateResult,
@@ -455,15 +456,17 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   protected override async internalUpsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>,
+    payload: E,
+    opts: UpsertOptions<E>,
   ) {
-    return this.internalUpsertMany(entity, conflictPaths, [payload]);
+    return this.internalUpsertMany(entity, conflictPaths, [payload], opts);
   }
 
   protected override async internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>[],
+    payload: E[],
+    opts: UpsertOptions<E>,
   ): Promise<QueryUpdateResult> {
     if (!payload?.length) {
       return { changes: 0 };
@@ -477,7 +480,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       chunkByBindBudget(meta, payload, group, this.dialect.maxBindValues),
     );
     if (statements.length === 1) {
-      return this.runUpsert(entity, conflictPaths, payload);
+      return this.runUpsert(entity, conflictPaths, payload, opts);
     }
     // An upsert's assignment list is the statement's, so rows of different shapes go in statements
     // of their own, together in a transaction (`transaction` is re-entrant).
@@ -491,6 +494,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
           entity,
           conflictPaths,
           indexes.map((index) => payload[index]),
+          opts,
         );
         changes += written;
         if (reported?.length === indexes.length) {
@@ -507,12 +511,13 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   private async runUpsert<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>[],
+    payload: E[],
+    opts: UpsertOptions<E>,
   ): Promise<QueryUpdateResult> {
     const meta = getMeta(entity);
     // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
     const unnamed = meta.ids.length === 1 && payload.some((row) => !namesKey(meta, row));
-    const result = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload));
+    const result = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload, opts));
     const ordered =
       payload.length === 1 ||
       (this.dialect.insertIdSource === 'returning' && this.dialect.features.orderedUpsertReturning);

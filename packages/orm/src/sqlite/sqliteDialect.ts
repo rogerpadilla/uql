@@ -1,4 +1,5 @@
 import {
+  ANSI_SQL_VALUES,
   AbstractSqlDialect,
   type CarriedFields,
   type DerivedRelation,
@@ -24,6 +25,7 @@ import {
   type QueryTextSearchOptions,
   type QueryWhere,
   type SqlDialectFeatures,
+  type SqlValues,
   type VectorDistance,
   type VectorMetric,
 } from '../type/index.js';
@@ -73,6 +75,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
     layout: 'timingFirst',
     scope: 'schema',
     before: true,
+    deferrable: false,
   },
 };
 
@@ -92,10 +95,18 @@ export class SqliteDialect extends AbstractSqlDialect {
   override readonly booleanLiteral = 'integer';
 
   /**
-   * Writes the same text as a bound `Date`. `CURRENT_TIMESTAMP` writes whole seconds with no fraction, so the
-   * two would not compare correctly. The parentheses also let SQLite take it as a column default.
+   * The clock and today in the same text as a bound `Date`, where `CURRENT_TIMESTAMP` writes whole seconds and
+   * `CURRENT_DATE` no time, so neither would compare correctly. The parentheses let SQLite take each as a default.
    */
-  override readonly currentTimestamp = "(strftime('%Y-%m-%d %H:%M:%f', 'now'))";
+  override readonly sqlValues: SqlValues = {
+    ...ANSI_SQL_VALUES,
+    currentTimestamp: "(strftime('%Y-%m-%d %H:%M:%f', 'now'))",
+    currentDate: "(strftime('%Y-%m-%d 00:00:00.000', 'now'))",
+  };
+
+  protected override refusal(message: string): string {
+    return `SELECT RAISE(ABORT, ${message});`;
+  }
 
   /** SQLite's own cap on a function call before 3.48, which libSQL and `bun:sqlite`'s build still have. */
   override readonly maxFunctionArgs: number = 127;

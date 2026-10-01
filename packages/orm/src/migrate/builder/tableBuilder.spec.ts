@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { raw } from '../../util/index.js';
+import { currentTimestamp, uuid, raw } from '../../util/index.js';
+import { formatDefaultValue } from '../ddl/defaultSql.js';
 import { renderIndexDefinition } from '../generator/definitionToNode.js';
 import { TableBuilder } from './tableBuilder.js';
 
@@ -198,6 +199,18 @@ describe('TableBuilder', () => {
 
       expect(def.columns[0].type.category).toBe('vector');
       expect(def.columns[0].type.length).toBe(1536);
+    });
+  });
+
+  describe('SQL defaults', () => {
+    it('should take the values and raw SQL an entity takes, as an option and through defaultValue()', () => {
+      const table = new TableBuilder('events');
+      table.timestamp('at', { defaultValue: currentTimestamp });
+      table.uuid('key').defaultValue(uuid);
+      table.bigint('seq', { defaultValue: raw`nextval('s')` });
+
+      const sql = table.build().columns.map((column) => formatDefaultValue(column.defaultValue, new PostgresDialect()));
+      expect(sql).toEqual(['CURRENT_TIMESTAMP', 'gen_random_uuid()', "(nextval('s'))"]);
     });
   });
 

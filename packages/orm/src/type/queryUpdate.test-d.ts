@@ -74,6 +74,15 @@ export async function arithmeticSafety() {
   await querier.updateOneById(Counter, 1, { total: { $inc: 1 } });
   // @ts-expect-error an upsert writes whole rows, with no update operator
   await querier.upsertOne(Counter, { id: true }, { id: 1, label: 'x', total: 1n, hits: { $inc: 1 } });
+
+  // A conflicting row takes `update`, an update's payload, operators included.
+  const row = { id: 1, label: 'x', total: 1n };
+  await querier.upsertOne(Counter, { id: true }, row, { update: { hits: { $inc: 1 } } });
+  await querier.upsertMany(Counter, { id: true }, [row], { update: { total: { $inc: 1n } } });
+  // @ts-expect-error `update` is checked as an update is: 'hit' is not a field of Counter
+  await querier.upsertOne(Counter, { id: true }, row, { update: { hit: { $inc: 1 } } });
+  // @ts-expect-error and only a numeric field increments there too
+  await querier.upsertOne(Counter, { id: true }, row, { update: { label: { $inc: 1 } } });
 }
 
 export async function conflictPathSafety() {

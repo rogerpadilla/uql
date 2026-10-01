@@ -1,9 +1,8 @@
 import { canonicalToColumnType, isVectorCategory } from '../../schema/canonicalType.js';
-import { SqlExpression } from '../../schema/sqlExpression.js';
+import { SqlExpression, type SqlExpressionKind } from '../../schema/sqlExpression.js';
 import type { ColumnNode, EnumValues } from '../../schema/types.js';
 import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
-import { UqlUsageError } from '../../util/uqlError.js';
 import { quoted, rawTag } from './sourceLiteral.js';
 
 /** What a column's decorator is written against beyond the column itself. */
@@ -95,20 +94,9 @@ function defaultValueSource(value: unknown): string {
 }
 
 /**
- * A SQL default as an entity declares it, with the name to import for it: `currentTimestamp` for the
- * current timestamp, and `raw` for any other SQL, as introspection reads it back.
+ * A SQL default as an entity declares it, with the name to import for it: the value uql exports by its own
+ * name (`currentTimestamp`), and `raw` for any other SQL, as introspection reads it back.
  */
-function sqlDefaultSource(value: SqlExpression): {
-  readonly name: 'currentTimestamp' | 'raw';
-  readonly source: string;
-} {
-  if (value.kind === 'now') {
-    return { name: 'currentTimestamp', source: 'currentTimestamp' };
-  }
-  if (value.sql === undefined) {
-    throw new UqlUsageError(
-      `an entity declares a SQL default as raw or currentTimestamp, and '${value.kind}' is neither`,
-    );
-  }
-  return { name: 'raw', source: rawTag(value.sql) };
+function sqlDefaultSource({ kind, sql }: SqlExpression): { readonly name: SqlExpressionKind; readonly source: string } {
+  return sql === undefined ? { name: kind, source: kind } : { name: 'raw', source: rawTag(sql) };
 }

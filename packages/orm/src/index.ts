@@ -7,6 +7,6 @@ export * from './type/index.js';
 export { withDeleted } from './util/filters.util.js';
 export type { HookContext } from './util/hook.util.js';
 export { DefaultLogger } from './util/logger.js';
-export { currentTimestamp, raw, refs } from './util/raw.js';
-export { deleteFrom, insertInto, updateTable } from './util/triggerWrite.js';
+export { currentDate, currentTime, currentTimestamp, raw, refs, uuid, uuidv7 } from './util/raw.js';
+export { deleteFrom, insertInto, refuse, updateTable, upsertInto } from './util/triggerWrite.js';
 export * from './util/uqlError.js';

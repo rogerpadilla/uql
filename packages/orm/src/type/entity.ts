@@ -997,6 +997,11 @@ type TriggerRun<E, Ev extends TriggerEvent> =
  */
 export type TriggerOptions<E = unknown> = {
   [Ev in TriggerEvent]: {
+    /**
+     * The write that fires the trigger and on which side of it, `beforeUpdate` or `afterDelete`. The rows
+     * the body has follow from it: the incoming one on an insert, the outgoing one on a delete, both on an
+     * update.
+     */
     readonly on: Ev;
     /**
      * What to call this trigger within the entity, for a clearer identifier than its event and position.
@@ -1016,6 +1021,16 @@ export type TriggerOptions<E = unknown> = {
      * rendered on every engine from the one declaration, or SQL off them for what no predicate states.
      */
     readonly where?: TriggerPredicate<E, Ev> | TriggerBody<E, Ev>;
+    /**
+     * Fire at commit rather than after each statement, so a check over many rows (a ledger's entries
+     * summing to zero) sees the transaction's every write. Postgres only, and only after the write.
+     */
+    readonly deferred?: Ev extends `after${string}` ? boolean : never;
+    /**
+     * The body, as SQL off the rows, `(newRow, oldRow) => raw`...``: the incoming row first and the
+     * outgoing one second, the one `on` lacks typed `never`. One for every engine, or a map naming one
+     * per engine where their SQL differs.
+     */
     readonly run: TriggerRun<E, Ev>;
   };
 }[TriggerEvent];

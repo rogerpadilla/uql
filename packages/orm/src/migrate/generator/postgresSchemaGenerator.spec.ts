@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { sqlTypeOf } from '../../test/index.js';
-import { expr } from '../builder/expressions.js';
+import { currentTimestamp } from '../../util/raw.js';
 import { tableDdlFor } from '../ddl/index.js';
 import { reverseDiff } from '../schemaChange.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
@@ -50,7 +50,7 @@ describe('PostgresSchemaGenerator Specifics', () => {
       name: 'createdAt',
       type: 'TIMESTAMP',
       nullable: true,
-      defaultValue: expr.now(),
+      defaultValue: currentTimestamp,
       isPrimaryKey: false,
       isAutoIncrement: false,
       isUnique: false,
@@ -58,7 +58,7 @@ describe('PostgresSchemaGenerator Specifics', () => {
     const diff = {
       tableName: 'users',
       type: 'alter' as const,
-      columns: [{ from, to: { ...from, type: 'TIMESTAMPTZ', defaultValue: expr.now() } }],
+      columns: [{ from, to: { ...from, type: 'TIMESTAMPTZ', defaultValue: currentTimestamp } }],
     };
 
     expect(generator.generateAlterTable(diff)).toEqual([

@@ -627,7 +627,7 @@ describe('EntityCodeGenerator', () => {
         mockTableNode('stamped', [
           { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
           { name: 'spelled', type: { category: 'string' }, defaultValue: 'CURRENT_TIMESTAMP' },
-          { name: 'created', type: { category: 'timestamp' }, defaultValue: new SqlExpression('now') },
+          { name: 'created', type: { category: 'timestamp' }, defaultValue: new SqlExpression('currentTimestamp') },
           { name: 'derived', type: { category: 'string' }, defaultValue: SqlExpression.parenthesized("lower('A')") },
         ]),
       );

@@ -1,8 +1,11 @@
+import { QueryRaw, SQL_VALUE_NAMES, type SqlValueName } from '../type/index.js';
+import { SQL_VALUES } from '../util/raw.js';
+
 /**
- * The kind of a {@link SqlExpression}. Kinds are symbolic: `formatDefaultValue` renders each in the
- * dialect's spelling at DDL time, while `raw` carries its own SQL.
+ * The kind of a {@link SqlExpression}: a value uql exports by name, which `formatDefaultValue` spells for the
+ * engine at DDL time, or `raw`, carrying its own SQL.
  */
-export type SqlExpressionKind = 'now' | 'currentDate' | 'currentTime' | 'uuid' | 'uuidv7' | 'onUpdateNow' | 'raw';
+export type SqlExpressionKind = SqlValueName | 'raw';
 
 /**
  * A column default that is SQL rather than a literal, whether an entity or a migration declares it or
@@ -28,6 +31,20 @@ export class SqlExpression {
   toString(): string {
     return this.sql ?? this.kind;
   }
+}
+
+const NAME_OF: ReadonlyMap<unknown, SqlValueName> = new Map(SQL_VALUE_NAMES.map((name) => [SQL_VALUES[name], name]));
+
+/**
+ * A default in schema form: a value uql exports (`currentTimestamp`) becomes its kind, so each engine spells it
+ * for the column it fills; other `raw` becomes the SQL `compile` renders, parenthesized; a literal is kept.
+ */
+export function schemaDefault(value: unknown, compile: (sql: QueryRaw) => string): unknown {
+  const name = NAME_OF.get(value);
+  if (name) {
+    return new SqlExpression(name);
+  }
+  return value instanceof QueryRaw ? SqlExpression.parenthesized(compile(value)) : value;
 }
 
 /** A default as text for an exact comparison: objects (SQL included) as JSON, numbers as their digits. */

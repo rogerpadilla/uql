@@ -13,9 +13,9 @@ import { Entity, Field, getMeta, Id, removeEntity, Trigger } from '../entity/ind
 import { assertDefined } from '../test/index.js';
 import { provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools } from '../test/sqlPools.js';
-import type { SqlQuerierPool } from '../type/index.js';
-import { raw } from '../util/raw.js';
-import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
+import type { SqlQuerierPool, Type } from '../type/index.js';
+import { raw, refs } from '../util/raw.js';
+import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
 
@@ -311,9 +311,208 @@ describe.each(TRIGGER_POOLS)('triggers writing a table of their own on %s', (_en
   });
 });
 
+/**
+ * A pool with `entities` synced for the suite, their tables dropped before it and after. They are listed the
+ * tables a trigger writes first, and dropped in reverse: CockroachDB keeps a table a trigger's function uses.
+ */
+function syncedPool(connect: () => SqlQuerierPool, entities: Type<object>[]): () => SqlQuerierPool {
+  let pool: SqlQuerierPool;
+  const tables = entities.map((entity) => entity.name).toReversed();
+  beforeAll(async () => {
+    pool = connect();
+    await dropTables(pool, ...tables);
+    await new Migrator(pool, { entities }).sync({ logging: false });
+  }, provisioningTimeout);
+  afterAll(async () => {
+    await dropTables(pool, ...tables);
+    await pool.end();
+  }, provisioningTimeout);
+  return () => pool;
+}
+
+@Trigger({ on: 'afterDelete', name: 'kept', run: () => refuse("ledger rows are kept: it's final") })
+@Trigger({ on: 'afterUpdate', name: 'frozen', where: { $old: { frozen: true } }, run: () => refuse('frozen') })
+@Entity({ name: 'TgLedger' })
+class TgLedger {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Boolean }) frozen?: boolean | null;
+  @Field({ type: Number }) amount?: number | null;
+}
+
+describe.each(TRIGGER_POOLS)('a refusal on %s', (_engine, connect) => {
+  const pool = syncedPool(connect, [TgLedger]);
+
+  it('should fail the write with its message, and leave the row as it was', async () => {
+    const id = await pool().insertOne(TgLedger, { amount: 1 });
+    await expect(pool().deleteMany(TgLedger, { $where: { id } })).rejects.toThrow("ledger rows are kept: it's final");
+    expect(await pool().count(TgLedger, { $where: { id } })).toBe(1);
+  });
+
+  it('should refuse only the rows its where selects', async () => {
+    const [open, frozen] = await pool().insertMany(TgLedger, [
+      { frozen: false, amount: 1 },
+      { frozen: true, amount: 1 },
+    ]);
+    await pool().updateOneById(TgLedger, open, { amount: 2 });
+    await expect(pool().updateOneById(TgLedger, frozen, { amount: 2 })).rejects.toThrow('frozen');
+    expect(await pool().findOneById(TgLedger, frozen, { $select: { amount: true } })).toEqual({ amount: 1 });
+  });
+});
+
+@Trigger({
+  on: 'afterInsert',
+  deferred: true,
+  where: { $new: { amount: { $ne: 0 } } },
+  run: () => refuse('unbalanced'),
+})
+@Entity({ name: 'TgEntry' })
+class TgEntry {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number }) amount?: number | null;
+}
+
+describe.each(sqlPools('test_trigger', 'cockroachdb', 'mysql', 'mariadb', 'sqlite', 'mssql'))(
+  'a deferred trigger on %s',
+  (_engine, connect) => {
+    const pool = syncedPool(connect, [TgEntry]);
+
+    it('should let the statement through and fail the commit', async () => {
+      let inserted = false;
+      await expect(
+        pool().transaction(async (querier) => {
+          await querier.insertOne(TgEntry, { amount: 5 });
+          inserted = true;
+        }),
+      ).rejects.toThrow('unbalanced');
+      expect(inserted).toBe(true);
+      expect(await pool().count(TgEntry, {})).toBe(0);
+    });
+
+    it('should commit what it lets through', async () => {
+      await pool().transaction((querier) => querier.insertOne(TgEntry, { amount: 0 }));
+      expect(await pool().count(TgEntry, {})).toBe(1);
+    });
+  },
+);
+
+@Trigger(
+  {
+    on: 'afterInsert',
+    name: 'last',
+    run: (newRow) => upsertInto(TgLast, { sku: true }, { sku: newRow.sku, qty: newRow.qty }),
+  },
+  {
+    on: 'afterInsert',
+    name: 'first',
+    run: (newRow) => upsertInto(TgFirst, { sku: true }, { sku: newRow.sku, qty: newRow.qty }, { update: {} }),
+  },
+)
+@Entity({ name: 'TgSale' })
+class TgSale {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) sku?: string | null;
+  @Field({ type: Number }) qty?: number | null;
+}
+
+@Entity({ name: 'TgLast' })
+class TgLast {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
+  @Field({ type: Number }) qty?: number | null;
+}
+
+@Entity({ name: 'TgFirst' })
+class TgFirst {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
+  @Field({ type: Number }) qty?: number | null;
+}
+
+describe.each(TRIGGER_POOLS)('an upsert in a trigger on %s', (_engine, connect) => {
+  const pool = syncedPool(connect, [TgLast, TgFirst, TgSale]);
+  const qtyOf = async (entity: typeof TgLast | typeof TgFirst, sku: string) =>
+    (await pool().findMany(entity, { $select: { qty: true }, $where: { sku } })).map((row) => row.qty);
+
+  it('should insert a row, and on its conflict paths take the incoming one', async () => {
+    await pool().insertOne(TgSale, { sku: 'a', qty: 1 });
+    await pool().insertOne(TgSale, { sku: 'a', qty: 5 });
+    expect(await qtyOf(TgLast, 'a')).toEqual([5]);
+  });
+
+  it('should leave a conflicting row as it is on an empty update', async () => {
+    await pool().insertOne(TgSale, { sku: 'b', qty: 1 });
+    await pool().insertOne(TgSale, { sku: 'b', qty: 5 });
+    expect(await qtyOf(TgFirst, 'b')).toEqual([1]);
+  });
+});
+
+@Trigger(
+  {
+    on: 'afterInsert',
+    name: 'count',
+    run: (newRow) =>
+      upsertInto(TgCount, { sku: true }, { sku: newRow.sku, hits: 1 }, { update: { hits: { $inc: 1 } } }),
+  },
+  {
+    on: 'afterInsert',
+    name: 'total',
+    run: (newRow) =>
+      upsertInto(
+        TgTotal,
+        { sku: true },
+        { sku: newRow.sku, total: newRow.qty },
+        { update: { total: raw`${refs(TgTotal).total} + ${newRow.qty}` } },
+      ),
+  },
+)
+@Entity({ name: 'TgOrder' })
+class TgOrder {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) sku?: string | null;
+  @Field({ type: Number }) qty?: number | null;
+}
+
+@Entity({ name: 'TgCount' })
+class TgCount {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
+  @Field({ type: Number }) hits?: number | null;
+}
+
+@Entity({ name: 'TgTotal' })
+class TgTotal {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, length: 20, unique: true }) sku?: string | null;
+  @Field({ type: Number }) total?: number | null;
+}
+
+// SQL Server applies one update per target row for its statement, so a counter is refused there.
+describe.each(sqlPools('test_trigger', 'mssql'))('a counting upsert in a trigger on %s', (_engine, connect) => {
+  const pool = syncedPool(connect, [TgCount, TgTotal, TgOrder]);
+
+  it('should count each row inserted, by $inc and by SQL over the row already there', async () => {
+    await pool().insertMany(TgOrder, [
+      { sku: 'c', qty: 2 },
+      { sku: 'c', qty: 3 },
+    ]);
+    await pool().insertOne(TgOrder, { sku: 'c', qty: 4 });
+    const hits = await pool().findMany(TgCount, { $select: { hits: true }, $where: { sku: 'c' } });
+    const totals = await pool().findMany(TgTotal, { $select: { total: true }, $where: { sku: 'c' } });
+    expect([hits, totals]).toEqual([[{ hits: 3 }], [{ total: 9 }]]);
+  });
+});
+
 afterAll(() => {
   removeEntity(TgPost);
   removeEntity(TgAudit);
   removeEntity(TgLogged);
   removeEntity(TgLog);
+  removeEntity(TgLedger);
+  removeEntity(TgEntry);
+  removeEntity(TgSale);
+  removeEntity(TgLast);
+  removeEntity(TgFirst);
+  removeEntity(TgOrder);
+  removeEntity(TgCount);
+  removeEntity(TgTotal);
 });

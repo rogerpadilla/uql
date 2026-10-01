@@ -1,8 +1,8 @@
 import { expect } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import { createSpec, postgresConnection } from '../../test/index.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
-import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
 
@@ -165,7 +165,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
 
     const createdAtCol = this.getColumn(schema, 'created_at');
     expect(createdAtCol.type.toUpperCase()).toContain('TIMESTAMP');
-    expect(createdAtCol.defaultValue).toEqual(expr.now());
+    expect(createdAtCol.defaultValue).toEqual(new SqlExpression('currentTimestamp'));
   }
 
   async shouldIntrospectVarcharLength() {
@@ -193,9 +193,9 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
       fraction: -12.5,
       truthy: true,
       blank: null,
-      stamped: expr.raw('(now())'),
+      stamped: new SqlExpression('raw', '(now())'),
       empty: '{}',
-      counter: expr.raw("(nextval('probe_defaults_counter_seq'))"),
+      counter: new SqlExpression('raw', "(nextval('probe_defaults_counter_seq'))"),
     });
     expect(this.getColumn(schema, 'counter').isAutoIncrement).toBe(true);
   }

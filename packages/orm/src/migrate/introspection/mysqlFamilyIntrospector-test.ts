@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { SchemaIntrospector, SqlQuerier } from '../../type/index.js';
-import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 
 /**
@@ -86,7 +86,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
 
     const createdAtCol = this.getColumn(schema, 'created_at');
     expect(createdAtCol.type.toUpperCase()).toBe('DATETIME(3)');
-    expect(createdAtCol.defaultValue).toEqual(expr.now());
+    expect(createdAtCol.defaultValue).toEqual(new SqlExpression('currentTimestamp'));
   }
 
   /**
@@ -112,7 +112,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
       lined: 'a\nb',
       fraction: -12.5,
       negative: -3,
-      stamped: expr.now(),
+      stamped: new SqlExpression('currentTimestamp'),
       note: "o'k",
       bare: undefined,
       spelled: 'CURRENT_TIMESTAMP',

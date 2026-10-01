@@ -40,9 +40,9 @@ import type {
 import { qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-import { formatDefaultValue, sameDefault } from './builder/expressions.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, TableDefinition } from './builder/types.js';
+import { formatDefaultValue, sameDefault } from './ddl/defaultSql.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
 import { sizedType } from './ddl/tableDdl.js';
 import { rebuildTable } from './ddl/tableRebuild.js';

@@ -42,6 +42,7 @@ import type {
   Type,
   UpdatePayload,
   UpdateWrite,
+  UpsertOptions,
   WrittenId,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
@@ -55,6 +56,7 @@ import {
   filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
+  hasKeys,
   getRelationRequestSummary,
   guardWrite,
   idOnlyQuery,
@@ -183,6 +185,15 @@ function assertLockableUpdate<E extends object>(meta: EntityMeta<E>, q: QuerySea
  */
 function writtenIds<E>(meta: EntityMeta<E>, rows: EntityData<E>[]): (WrittenId<E> | undefined)[] {
   return rows.map((row) => (namesKey(meta, row) ? idOf(meta, row) : undefined));
+}
+
+/** What `ON CONFLICT` assigns a row it finds by default: the payload, less the columns it matched on. */
+function conflictAssignments<E>(row: EntityData<E>, conflictPaths: QueryConflictPaths<E>): EntityData<E> {
+  const assigned = { ...row };
+  for (const key of getKeys(conflictPaths)) {
+    delete assigned[key];
+  }
+  return assigned;
 }
 
 /**
@@ -772,13 +783,14 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
+    opts: UpsertOptions<E> = {},
   ): Promise<QueryUpsertOneResult<E>> {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsertOne'");
     return this.hooked(entity, 'Upsert', [payload], async (rows) => {
       const { ids, changes, created } = securityConditions(meta).length
-        ? await this.guardedUpsert(entity, conflictPaths, rows)
-        : await this.internalUpsertOne(entity, conflictPaths, rows[0]);
+        ? await this.guardedUpsert(entity, conflictPaths, rows, opts)
+        : await this.internalUpsertOne(entity, conflictPaths, rows[0], opts);
       adoptReportedIds(meta, rows, ids);
       const [id] = writtenIds(meta, rows);
       return { id, changes, created };
@@ -789,13 +801,14 @@ export abstract class AbstractQuerier implements Querier {
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
+    opts: UpsertOptions<E> = {},
   ): Promise<QueryUpsertManyResult<E>> {
     const meta = getMeta(entity);
     assertUnversioned(meta, "'upsertMany'");
     return this.hooked(entity, 'Upsert', payload, async (rows) => {
       const { ids, changes } = securityConditions(meta).length
-        ? await this.guardedUpsert(entity, conflictPaths, rows)
-        : await this.internalUpsertMany(entity, conflictPaths, rows);
+        ? await this.guardedUpsert(entity, conflictPaths, rows, opts)
+        : await this.internalUpsertMany(entity, conflictPaths, rows, opts);
       adoptReportedIds(meta, rows, ids);
       return { ids: writtenIds(meta, rows), changes };
     });
@@ -809,7 +822,8 @@ export abstract class AbstractQuerier implements Querier {
   private async guardedUpsert<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    rows: EntityData<E>[],
+    rows: E[],
+    { update }: UpsertOptions<E>,
   ): Promise<QueryUpdateResult> {
     guardWrite(getMeta(entity), rows, 'insert');
     if (!rows.length) {
@@ -820,16 +834,12 @@ export abstract class AbstractQuerier implements Querier {
       const ids = await this.idsByConflict(entity, conflictPaths, rows);
       let changes = 0;
       for (const [index, row] of rows.entries()) {
-        if (ids[index] !== undefined) {
-          // What `ON CONFLICT` would assign: the row, less the columns it matched on.
-          const payload = { ...row };
-          for (const key of keys) {
-            delete payload[key];
-          }
+        // An empty `update` leaves a found row as it is, as `DO NOTHING` does.
+        if (ids[index] !== undefined && (update === undefined || hasKeys(update))) {
           changes += await this.updateColumns(
             entity,
             { $where: whereEach(keys, (key) => row[key]) },
-            payload,
+            update ?? conflictAssignments(row, conflictPaths),
             undefined,
             0,
           );
@@ -851,13 +861,15 @@ export abstract class AbstractQuerier implements Querier {
   protected abstract internalUpsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>,
+    payload: E,
+    opts: UpsertOptions<E>,
   ): Promise<QueryUpdateResult>;
 
   protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
-    payload: EntityData<E>[],
+    payload: E[],
+    opts: UpsertOptions<E>,
   ): Promise<QueryUpdateResult>;
 
   async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions) {

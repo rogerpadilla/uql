@@ -7,9 +7,9 @@
 import { type CanonicalType, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
 import { DATE_PRECISION } from '../../util/date.js';
+import { currentTimestamp } from '../../util/raw.js';
 import { columnForeignKey, columnIndex, indexDefinition } from '../generator/definitionToNode.js';
 import { ColumnBuilder } from './columnBuilder.js';
-import { expr } from './expressions.js';
 import type {
   BaseColumnOptions,
   DecimalColumnOptions,
@@ -192,7 +192,7 @@ export class TableBuilder implements ITableBuilder {
   }
 
   private timestampNow(name: string): IColumnBuilder {
-    return this.timestamptz(name, { defaultValue: expr.now() });
+    return this.timestamptz(name, { defaultValue: currentTimestamp });
   }
 
   timestamps(): void {

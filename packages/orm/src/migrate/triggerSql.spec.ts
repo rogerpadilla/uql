@@ -10,8 +10,8 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { idKey } from '../type/index.js';
 import type { EntityTriggerMeta, Json } from '../type/index.js';
-import { raw } from '../util/raw.js';
-import { deleteFrom, insertInto, updateTable } from '../util/triggerWrite.js';
+import { raw, refs } from '../util/raw.js';
+import { deleteFrom, insertInto, refuse, updateTable, upsertInto } from '../util/triggerWrite.js';
 import { dropTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
 
 @Entity()
@@ -38,7 +38,17 @@ const render = (dialect: AbstractSqlDialect, trigger: EntityTriggerMeta<Post>, i
 const nameOf = (dialect: AbstractSqlDialect, trigger: EntityTriggerMeta<Post>, i = 0) =>
   renderTrigger(dialect, getMeta(Post), trigger, i).name;
 
-afterAll(() => removeEntity(Post));
+@Entity()
+class Tally {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: Number, unique: true }) postId?: number | null;
+  @Field({ type: Number }) count?: number | null;
+}
+
+afterAll(() => {
+  removeEntity(Post);
+  removeEntity(Tally);
+});
 
 describe('renderTrigger', () => {
   it('should name it after the table, the event and its position, marked as uql owns it', () => {
@@ -785,5 +795,117 @@ describe('a write in the body, to another table', () => {
       // @ts-expect-error: the types refuse it first, and plain JavaScript reaches the dialect past them
       render(new PostgresDialect(), { on: 'afterInsert', run: () => insertInto(WriteAudit, { nope: 1 }) }),
     ).toThrow(`'WriteAudit' has no field 'nope' for a trigger to write`);
+  });
+});
+
+describe('a refusal, which fails the write that fired it', () => {
+  const guard: EntityTriggerMeta<Post> = { on: 'beforeDelete', run: () => refuse("posts are kept: 50% won't go") };
+  const afterGuard: EntityTriggerMeta<Post> = { ...guard, on: 'afterDelete' };
+
+  it('should raise as each engine raises, the message a literal and never a format', () => {
+    expect(render(new PostgresDialect(), guard).join('\n')).toContain(
+      "RAISE EXCEPTION USING MESSAGE = 'posts are kept: 50% won''t go';",
+    );
+    expect(render(new MySqlDialect(), guard).join('\n')).toContain(
+      "SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'posts are kept: 50% won\\'t go';",
+    );
+    expect(render(new SqliteDialect(), guard).join('\n')).toContain(
+      "SELECT RAISE(ABORT, 'posts are kept: 50% won''t go');",
+    );
+  });
+
+  /** SQL Server fires once per statement, even one touching no rows, so it refuses only where some were. */
+  it('should refuse on SQL Server only where the statement touched a row the trigger selects', () => {
+    expect(render(new MsSqlDialect(), afterGuard).join('\n')).toContain(
+      "IF EXISTS (SELECT 1 FROM deleted) THROW 50000, N'posts are kept: 50% won''t go', 1;",
+    );
+  });
+});
+
+describe('a deferred trigger, which fires at commit', () => {
+  const balance: EntityTriggerMeta<Post> = {
+    on: 'afterInsert',
+    deferred: true,
+    run: { postgres: () => raw`PERFORM 1;` },
+  };
+
+  it('should be a constraint trigger deferred to commit on Postgres', () => {
+    const sql = render(new PostgresDialect(), balance).join('\n');
+    expect(sql).toMatch(
+      /CREATE CONSTRAINT TRIGGER "[^"]+"\nAFTER INSERT ON "Post"\nDEFERRABLE INITIALLY DEFERRED\nFOR EACH ROW/,
+    );
+  });
+
+  it('should refuse it where the engine cannot defer a trigger', () => {
+    const portable = { ...balance, run: () => raw`SELECT 1;` };
+    expect(() => render(new MySqlDialect(), portable)).toThrow(
+      'mysql cannot defer a trigger to commit, which Post asks for; only Postgres can',
+    );
+    expect(() => render(new CockroachDialect(), portable)).toThrow('cockroachdb cannot defer a trigger to commit');
+  });
+});
+
+describe('an upsert in the body, to another table', () => {
+  const tally = (update?: Parameters<typeof upsertInto<Tally>>[3]): EntityTriggerMeta<Post> => ({
+    on: 'afterInsert',
+    run: (newRow) => upsertInto(Tally, { postId: true }, { postId: newRow.id, count: 1 }, update),
+  });
+  const counted = tally({ update: { count: { $inc: 1 } } });
+
+  it('should take the incoming row on a conflict, less the conflict paths, as each engine reads it', () => {
+    expect(render(new PostgresDialect(), tally()).join('\n')).toContain(
+      'INSERT INTO "Tally" ("postId", "count") VALUES (NEW."id", 1) ON CONFLICT ("postId") DO UPDATE SET "count" = EXCLUDED."count";',
+    );
+    expect(render(new MySqlDialect(), tally()).join('\n')).toContain(
+      'INSERT INTO `Tally` (`postId`, `count`) VALUES (NEW.`id`, 1) AS `_uql_new` ON DUPLICATE KEY UPDATE `count` = `_uql_new`.`count`;',
+    );
+    expect(render(new MariaDialect(), tally()).join('\n')).toContain(
+      'INSERT INTO `Tally` (`postId`, `count`) VALUES (NEW.`id`, 1) ON DUPLICATE KEY UPDATE `count` = VALUE(`count`);',
+    );
+    expect(render(new SqliteDialect(), tally()).join('\n')).toContain(
+      'INSERT INTO `Tally` (`postId`, `count`) VALUES (NEW.`id`, 1) ON CONFLICT (`postId`) DO UPDATE SET `count` = EXCLUDED.`count`;',
+    );
+  });
+
+  it('should take its update instead, reading the row already there', () => {
+    expect(render(new PostgresDialect(), counted).join('\n')).toContain(
+      'ON CONFLICT ("postId") DO UPDATE SET "count" = COALESCE("Tally"."count", 0) + 1;',
+    );
+    expect(render(new MySqlDialect(), counted).join('\n')).toContain(
+      'ON DUPLICATE KEY UPDATE `count` = COALESCE(`Tally`.`count`, 0) + 1;',
+    );
+  });
+
+  /** The engine has the incoming row in scope beside the one there, so a ref to the table is qualified by it. */
+  it('should read the row already there through SQL in its update', () => {
+    const summed = tally({ update: { count: raw`${refs(Tally).count} + 1` } });
+    expect(render(new PostgresDialect(), summed).join('\n')).toContain('DO UPDATE SET "count" = "Tally"."count" + 1;');
+    expect(render(new MySqlDialect(), summed).join('\n')).toContain(
+      'ON DUPLICATE KEY UPDATE `count` = `Tally`.`count` + 1;',
+    );
+  });
+
+  it('should leave a conflicting row as it is on an empty update', () => {
+    expect(render(new PostgresDialect(), tally({ update: {} })).join('\n')).toContain(
+      'VALUES (NEW."id", 1) ON CONFLICT ("postId") DO NOTHING;',
+    );
+    expect(render(new MySqlDialect(), tally({ update: {} })).join('\n')).toContain(
+      'INSERT IGNORE INTO `Tally` (`postId`, `count`) VALUES (NEW.`id`, 1);',
+    );
+  });
+
+  /** SQL Server fires once per statement, so it merges the set it was handed. */
+  it('should merge the rows it was handed on SQL Server', () => {
+    expect(render(new MsSqlDialect(), tally()).join('\n')).toContain(
+      'MERGE INTO "Tally" WITH (HOLDLOCK) USING (SELECT inserted."id", 1 FROM inserted) AS "_uql_src" ("postId", "count") ' +
+        'ON "Tally"."postId" = "_uql_src"."postId" WHEN MATCHED THEN UPDATE SET "count" = "_uql_src"."count" ' +
+        'WHEN NOT MATCHED THEN INSERT ("postId", "count") VALUES ("_uql_src"."postId", "_uql_src"."count");',
+    );
+  });
+
+  it('should refuse a counter on SQL Server, which applies it once for the statement', () => {
+    expect(() => render(new MsSqlDialect(), counted)).toThrow(
+      "'Tally.count' cannot accumulate per row in a trigger fired once per statement",
+    );
   });
 });

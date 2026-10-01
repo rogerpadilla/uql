@@ -257,8 +257,8 @@ type Context = {
   readonly notes: string[];
   /** Names written that the file has to import from `uql-orm`, each with what it was written for. */
   readonly imports: Map<string, string>;
-  /** `Relation<T>` references seen, and how many were unwrapped, which decides whether its import goes. */
-  readonly relationAlias: { seen: number; unwrapped: number };
+  /** Uses rewritten of each name whose import goes once every use was: `Relation<T>` unwrapped, `expr` defaults. */
+  readonly rewritten: { Relation: number; expr: number };
   readonly describe: (node: ts.Node) => string;
 };
 
@@ -594,6 +594,41 @@ const BUILDER_INDEX_METHODS: ReadonlyMap<string, number> = new Map([
   ['createIndex', 2],
 ]);
 
+/** The migration builder's `expr` helpers whose value an entity imports under the same name. */
+const EXPR_VALUES: ReadonlySet<string> = new Set(['currentDate', 'currentTime', 'uuid', 'uuidv7']);
+
+/**
+ * Rewrites the migration builder's `expr.<helper>()` default as the value or `raw` an entity declares, or reports
+ * one with no rewrite. Called only where the file imports `expr` from uql, so a variable of its own is left alone.
+ */
+function rewriteExprCall(call: ts.CallExpression, ctx: Context): void {
+  const callee = call.expression;
+  if (
+    !ts.isPropertyAccessExpression(callee) ||
+    !ts.isIdentifier(callee.expression) ||
+    callee.expression.text !== 'expr'
+  ) {
+    return;
+  }
+  const helper = callee.name.text;
+  // The one renamed: an entity's clock is `currentTimestamp`.
+  const value = helper === 'now' ? 'currentTimestamp' : EXPR_VALUES.has(helper) ? helper : undefined;
+  const [sql] = call.arguments;
+  if (value) {
+    ctx.edits.push(replaced(call, value));
+    ctx.imports.set(value, `the expr.${helper}()`);
+  } else if (helper === 'raw' && sql && ts.isStringLiteralLike(sql)) {
+    ctx.edits.push(replaced(call, rawTag(sql.text)));
+    ctx.imports.set('raw', 'the raw`...`');
+  } else {
+    ctx.unresolved.push(
+      `${ctx.describe(call)}: expr.${helper}() is gone: declare the column with m.raw(...), or use a stamp on the entity`,
+    );
+    return;
+  }
+  ctx.rewritten.expr += 1;
+}
+
 /** Rewrites the `where` of the migration builder's `t.index()`, `t.unique()`, `t.addIndex()` and `m.createIndex()`. */
 function rewriteBuilderCall(call: ts.CallExpression, ctx: Context): void {
   const at = ts.isPropertyAccessExpression(call.expression)
@@ -718,14 +753,7 @@ function unwrapRelationAlias(node: ts.PropertyDeclaration, ctx: Context): void {
     declared.typeArguments?.length === 1
   ) {
     ctx.edits.push(replaced(declared, declared.typeArguments[0].getText()));
-    ctx.relationAlias.unwrapped += 1;
-  }
-}
-
-/** Counts `Relation<T>` wherever it appears, including the places this codemod does not rewrite. */
-function countRelationAlias(node: ts.Node, ctx: Context): void {
-  if (ts.isTypeReferenceNode(node) && ts.isIdentifier(node.typeName) && node.typeName.text === 'Relation') {
-    ctx.relationAlias.seen += 1;
+    ctx.rewritten.Relation += 1;
   }
 }
 
@@ -738,19 +766,27 @@ function removeStatement(node: ts.Node): Edit {
 }
 
 /**
- * Names `uql-orm` no longer exports and that the codemod does remove: only `Relation`, and only once
- * every usage was unwrapped. A removed *decorator* keeps its import on purpose (see
+ * Names `uql-orm` no longer exports and that the codemod does remove: `Relation` once every usage was
+ * unwrapped, and `expr` once every default was rewritten. A removed *decorator* keeps its import on purpose (see
  * {@link REMOVED_DECORATORS}).
  */
 function deadImportNames(source: ts.SourceFile, ctx: Context): ReadonlySet<string> {
-  const { seen, unwrapped } = ctx.relationAlias;
-  if (seen > unwrapped) {
+  const imported = uqlImports(source, true);
+  // Every use of the name the file imports, the places no rewrite reaches included.
+  const uses = (name: keyof Context['rewritten']) => {
+    const element = imported.find((specifier) => importedName(specifier) === name);
+    return element ? usesOf(source, element.name, ctx.checker).length : 0;
+  };
+  const { rewritten } = ctx;
+  const relations = uses('Relation');
+  if (relations > rewritten.Relation) {
     ctx.unresolved.push(
-      `${source.fileName}: ${seen - unwrapped} 'Relation<T>' reference(s) are somewhere this codemod does ` +
-        'not rewrite; unwrap them and drop the import by hand',
+      `${source.fileName}: ${relations - rewritten.Relation} 'Relation<T>' reference(s) are somewhere this codemod ` +
+        'does not rewrite; unwrap them and drop the import by hand',
     );
   }
-  return new Set(seen > 0 && seen === unwrapped ? ['Relation'] : []);
+  const names = ['Relation', 'expr'] as const;
+  return new Set(names.filter((name) => rewritten[name] > 0 && rewritten[name] === uses(name)));
 }
 
 /**
@@ -1272,7 +1308,7 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     unresolved: [],
     notes: [],
     imports: new Map(),
-    relationAlias: { seen: 0, unwrapped: 0 },
+    rewritten: { Relation: 0, expr: 0 },
     describe: (node) => `${source.fileName}:${lineOf(node) + 1}`,
   };
   const lineOf = (node: ts.Node) => source.getLineAndCharacterOfPosition(node.getStart()).line;
@@ -1280,10 +1316,10 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
   const rewritesRaw = uqlImports(source).some((element) => importedName(element) === 'raw');
   // The builder's methods are known by name alone, so they are read only in a file that imports uql-orm.
   const importsUql = uqlImportDeclarations(source, true).length > 0;
+  const importsExpr = uqlImports(source, true).some((element) => importedName(element) === 'expr');
 
   const visit = (node: ts.Node): void => {
     reportRemovedDecorators(node, ctx);
-    countRelationAlias(node, ctx);
     if (rewritesRaw) {
       rewriteRawCall(node, ctx, source);
     }
@@ -1298,6 +1334,9 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
       rewriteDefineCall(node, ctx);
       if (importsUql) {
         rewriteBuilderCall(node, ctx);
+      }
+      if (importsExpr) {
+        rewriteExprCall(node, ctx);
       }
     }
     if (ts.isPropertyAssignment(node)) {

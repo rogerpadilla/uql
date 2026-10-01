@@ -10,7 +10,7 @@ import type {
   SqlQuerier,
   TableSchema,
 } from '../../type/index.js';
-import { expr } from '../builder/expressions.js';
+import { currentTimestamp } from '../../util/raw.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
 
 /** Test table names shared across every dialect's introspection suite. */
@@ -77,7 +77,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
       t.string('status', { length: 50 }).defaultValue('active');
       t.boolean('is_enabled').defaultValue(true);
       t.integer('score').defaultValue(0);
-      t.timestamp('created_at').defaultValue(expr.now());
+      t.timestamp('created_at').defaultValue(currentTimestamp);
       t.decimal('amount', { precision: 10, scale: 2 }).nullable();
     });
 

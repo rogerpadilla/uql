@@ -82,6 +82,11 @@ function triggerStatements<E>(
   const features = dialect.features.triggers;
   const [timing, operation] = EVENT_PARTS[trigger.on];
   const before = timing === 'BEFORE';
+  if (trigger.deferred && !features.deferrable) {
+    throw new UqlUsageError(
+      `${dialect.dialectName} cannot defer a trigger to commit, which ${meta.entity.name} asks for; only Postgres can`,
+    );
+  }
   const { fires } = features;
   const perStatement = fires === 'eachStatement';
   const names = rowNames(dialect);
@@ -113,10 +118,14 @@ function triggerStatements<E>(
   const each = perStatement ? '' : '\nFOR EACH ROW';
   const whenClause = filter && byWhen ? `\nWHEN (${filter})` : '';
   const event = `${timing} ${operation}${of}`;
+  // Deferred, it is a constraint trigger, which is what Postgres lets wait for the commit.
+  const [kind, deferral] = trigger.deferred
+    ? ['CONSTRAINT TRIGGER', '\nDEFERRABLE INITIALLY DEFERRED']
+    : ['TRIGGER', ''];
   const header =
     features.layout === 'tableFirst'
-      ? `CREATE TRIGGER ${id}\nON ${table} ${event}${each}${whenClause}\nAS`
-      : `CREATE TRIGGER ${id}\n${event} ON ${table}${each}${whenClause}`;
+      ? `CREATE ${kind} ${id}\nON ${table} ${event}${each}${whenClause}\nAS`
+      : `CREATE ${kind} ${id}\n${event} ON ${table}${deferral}${each}${whenClause}`;
 
   if (features.body !== 'function') {
     return [`${header}\nBEGIN\n${opened}\nEND`];

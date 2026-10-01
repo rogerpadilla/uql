@@ -1,12 +1,18 @@
 import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
 import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
-import { MYSQL_FEATURES, MYSQL_ROW_LOCKS, MysqlLikeSqlDialect } from '../dialect/mysqlLikeSqlDialect.js';
+import {
+  MYSQL_FEATURES,
+  MYSQL_ROW_LOCKS,
+  MYSQL_SQL_VALUES,
+  MysqlLikeSqlDialect,
+} from '../dialect/mysqlLikeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
 import type {
   FieldOptions,
   Query,
   QueryContext,
   SqlDialectFeatures,
+  SqlValues,
   Type,
   VectorDistance,
   VectorMetric,
@@ -32,6 +38,9 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     indexIfNotExists: true,
     rowLocks: { ...MYSQL_ROW_LOCKS, of: false },
   };
+
+  /** `UUID_v7()` is MariaDB 11.7+; an older server refuses it itself. */
+  override readonly sqlValues: SqlValues = { ...MYSQL_SQL_VALUES, uuidv7: 'UUID_v7()' };
 
   /**
    * A derived table here reads no column of the statement around it, so the aggregate reads the

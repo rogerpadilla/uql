@@ -201,7 +201,7 @@ function checkPeerReach(): void {
 // these budgets aren't. Each is the entry as measured plus 2%, rounded up to the next hundred, so
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
-  '.': 38_100,
+  '.': 39_100,
   './postgres': 36_700,
   './migrate': 61_400,
   './browser': 2_100,

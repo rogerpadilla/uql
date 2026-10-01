@@ -1,9 +1,9 @@
 import { expect, vi } from 'vitest';
+import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createMockQuerier, createMockQuerierPool, createSpec } from '../../test/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
-import { expr } from '../builder/expressions.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
@@ -89,7 +89,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     const createdAtCol = this.getColumn(schema, 'created_at');
     expect(createdAtCol.type).toBe('TEXT');
-    expect(createdAtCol.defaultValue).toEqual(expr.now());
+    expect(createdAtCol.defaultValue).toEqual(new SqlExpression('currentTimestamp'));
   }
 
   /**
@@ -111,17 +111,17 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
       blank: null,
-      today: expr.raw('(CURRENT_DATE)'),
+      today: new SqlExpression('raw', '(CURRENT_DATE)'),
       word: 'x',
       quoted: "it's",
       negative: -3,
       fraction: 1.5,
       truthy: 1,
       falsy: 0,
-      computed: expr.raw("(lower('Y'))"),
+      computed: new SqlExpression('raw', "(lower('Y'))"),
       bare: undefined,
-      clock: expr.raw('(CURRENT_TIMESTAMP)'),
-      dated: expr.raw("(strftime('%Y-%m-%d 00:00:00.000', 'now'))"),
+      clock: new SqlExpression('raw', '(CURRENT_TIMESTAMP)'),
+      dated: new SqlExpression('currentDate'),
       spelled: 'CURRENT_TIMESTAMP',
     });
   }

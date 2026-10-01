@@ -8,17 +8,15 @@ import type {
   Type,
 } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
-import { QueryRaw } from '../type/queryRaw.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { declaresNotNull, isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
-import { currentTimestamp } from '../util/raw.js';
 import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
-import { SqlExpression } from './sqlExpression.js';
+import { schemaDefault } from './sqlExpression.js';
 import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
 
 /**
@@ -137,7 +135,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
       name: columnName,
       type,
       nullable: !declaresNotNull(field) && !notNull.has(key),
-      defaultValue: columnDefault(ctx, meta, field.defaultValue),
+      defaultValue: schemaDefault(field.defaultValue, (sql) => ctx.compileDdl(sql, meta.entity)),
       isPrimaryKey,
       isAutoIncrement: isAutoIncrement(field, isSoleKey),
       isUnique: field.unique ?? false,
@@ -155,19 +153,6 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   table.primaryKey = keyOfColumns(columns.values());
 
   ctx.ast.addTable(table);
-}
-
-/**
- * A field's default in schema form: SQL becomes an {@link SqlExpression}, and `currentTimestamp` stays
- * symbolic (`now`) so each engine spells it for the column it fills.
- */
-function columnDefault(ctx: BuildContext, meta: EntityMeta<object>, value: unknown): unknown {
-  if (!(value instanceof QueryRaw)) {
-    return value;
-  }
-  return value === currentTimestamp
-    ? new SqlExpression('now')
-    : SqlExpression.parenthesized(ctx.compileDdl(value, meta.entity));
 }
 
 /** The node an entity maps to, found under the key {@link SchemaAST} stores it by. */
