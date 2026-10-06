@@ -248,6 +248,11 @@ class Shelf {
 
   @OneToMany({ entity: () => ShelvedBook, mappedBy: (shelvedBook) => shelvedBook.shelf, cascade: 'delete' })
   books?: ShelvedBook[];
+
+  @AfterLoad()
+  recordLoad(this: Shelf) {
+    log.push(`afterLoad:shelf ${this.id}`);
+  }
 }
 
 @Entity()
@@ -471,6 +476,20 @@ describe('lifecycle hooks', () => {
       expect(log).toEqual(['afterLoad:Ann', 'afterLoad:Ann', 'afterLoad:a', 'afterLoad:b']);
     });
 
+    it('should run it on a row whose joined relation matched none', async () => {
+      await querier.insertOne(Tome, { title: 'orphan' });
+      log = [];
+
+      const [orphan] = await querier.findMany(Tome, {
+        $select: { title: true },
+        $where: { title: 'orphan' },
+        $populate: { author: { $select: { name: true } } },
+      });
+
+      expect(orphan).not.toHaveProperty('author');
+      expect(log).toEqual(['afterLoad:orphan']);
+    });
+
     it('should run it on populated rows through a stream too', async () => {
       await Array.fromAsync(
         querier.findManyStream(Author, {
@@ -490,6 +509,19 @@ describe('lifecycle hooks', () => {
 
       expect(log).toEqual(['afterLoad:a', 'afterLoad:b', 'afterLoad:Ann']);
     });
+  });
+
+  it('should run @AfterLoad on a row whose populated relation has no hook of its own', async () => {
+    await querier.insertOne(Shelf, { id: 1 });
+    await querier.insertOne(ShelvedBook, { shelfId: 1, title: 'kept' });
+
+    const shelves = await querier.findMany(Shelf, {
+      $select: { id: true },
+      $populate: { books: { $select: { title: true } } },
+    });
+
+    expect(shelves).toEqual([{ id: 1, books: [{ title: 'kept' }] }]);
+    expect(log).toEqual(['afterLoad:shelf 1']);
   });
 
   it('should not run @AfterLoad for the rows an update cascades from', async () => {

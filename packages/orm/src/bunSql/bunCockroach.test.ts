@@ -14,7 +14,7 @@ class BunCockroachIt extends PgLikeQuerierIt {
 
 class BunCockroachPoolIt extends AbstractSqlQuerierPoolIt<BunSqlQuerier> {
   constructor() {
-    super(new BunSqlQuerierPool({ url }));
+    super(() => new BunSqlQuerierPool({ url }));
   }
 }
 

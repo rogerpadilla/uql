@@ -4,13 +4,13 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { Drift, DriftReport } from '../schema/index.js';
 import type { Config, MigratorOptions } from '../type/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
 import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { entityTypesSource } from './codegen/entityTypes.js';
 import { detectDrift } from './drift/driftDetector.js';
 import { Migrator } from './migrator.js';
-import { buildEntityAST } from './schemaGenerator.js';
 import { DEFAULT_MIGRATIONS_TABLE } from './storage/databaseStorage.js';
 
 export async function main(args = process.argv.slice(2)) {
@@ -291,13 +291,19 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
     console.log('\nChecking for schema drift...');
 
     const generator = await migrator.getSchemaGenerator();
-    const expectedAST = generator.buildAST?.(config.entities) ?? buildEntityAST(generator, config.entities);
+    // MongoDB's generator builds no AST: a collection has only its indexes to compare, which a dry run lists.
+    if (!generator.buildAST) {
+      throw new UqlUsageError(
+        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
+      );
+    }
+    const expectedAST = generator.buildAST(config.entities);
 
     // Build actual schema from database
     const actualAST = await migrator.schemaIntrospector.introspect();
 
-    // Detect drift. The dialect renders canonical types as SQL - without it every type formats as
-    // `unknown` and type drift compares equal, silently reporting a mismatched column as in sync.
+    // The dialect renders canonical types as SQL: without it no type drift is reported, silently
+    // passing a mismatched column as in sync.
     const report = detectDrift(expectedAST, actualAST, {
       dialect: config.pool?.dialect,
       defaultsEqual: generator.defaultsEqual,

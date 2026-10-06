@@ -25,7 +25,8 @@ it('should name a constraint over no parts after its table alone', () => {
 });
 
 /** A string key has no successor to infer, so only a single-row write can be named by it. */
-it('should infer no ids from a string key reported for several rows', () => {
+it('should name by a string key the one row it is reported for, never several', () => {
+  expect(buildUpdateResult({ id: 'abc', changes: 1, insertIdSource: 'firstId' }).ids).toEqual(['abc']);
   expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
 });
 

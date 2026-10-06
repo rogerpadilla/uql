@@ -133,12 +133,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   /**
    * The `auto_increment_increment` stride used to infer the ids of a multi-row insert from the
    * single id the driver reports (MySQL, which has no `RETURNING`). It is 1 on a standalone server
-   * but can be higher on a cluster (e.g. Galera). Only called for `firstId` dialects.
+   * but can be higher on a cluster (e.g. Galera), and `buildUpdateResult` takes any other as 1.
+   * Only called for `firstId` dialects.
    */
   protected async loadInsertIdIncrement(): Promise<number> {
-    const rows = await this.all<{ v: number | string }>('SELECT @@auto_increment_increment AS v');
-    const value = Number(rows[0]?.v);
-    return Number.isInteger(value) && value > 0 ? value : 1;
+    const [row] = await this.all<{ v: number | string }>('SELECT @@auto_increment_increment AS v');
+    return Number(row.v);
   }
 
   /**
@@ -350,33 +350,32 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     // relation that only the populated ones need.
     for (const key in meta.relations) {
       const value = row[key];
-      if (!value) continue;
       const rel = meta.relations[key];
-      if (!rel) continue;
+      if (!value || !rel) continue;
       const relEntity = rel.entity();
-      if (typeof value === 'string' || Array.isArray(value)) {
-        // A to-many's rows, as flat as a statement's own.
-        const rows: RawRow[] = typeof value === 'string' ? JSON.parse(value) : value;
-        row[key] = rows.map(this.rowReader(relEntity));
-      } else if (isRecord(value)) {
+      if (isRecord(value)) {
         const relMeta = getMeta(relEntity);
         if (value[relMeta.ids[0]] == null) {
           delete row[key];
         } else {
           this.hydrateFields(relMeta, this.dialect.hydratableFields(relEntity), value);
         }
+      } else {
+        // A to-many's rows, as flat as a statement's own.
+        const rows: RawRow[] = Array.isArray(value) ? value : JSON.parse(String(value));
+        row[key] = rows.map(this.rowReader(relEntity));
       }
     }
   }
 
   /**
    * Runs a statement whose one row carries a {@link AGGREGATE_VALUE_ALIAS} column. `Number` because `COUNT(*)` is BIGINT and
-   * a caller supplying their own `types` replaces the decoding the pools do at the wire; `?? 0` because
-   * a catalog that does not know the table answers with no row, which is nothing counted.
+   * a caller supplying their own `types` replaces the decoding the pools do at the wire, and reads a `NULL`
+   * as 0; no row is 0 too, since a catalog that does not know the table answers with none.
    */
   private async runCount(build: QueryBuildFn): Promise<number> {
     const [row] = await this.query<Record<typeof AGGREGATE_VALUE_ALIAS, number | null>>(build);
-    return Number(row?.[AGGREGATE_VALUE_ALIAS] ?? 0);
+    return row ? Number(row[AGGREGATE_VALUE_ALIAS]) : 0;
   }
 
   protected override async internalCount<E extends object>(entity: Type<E>, q: QueryPage<E>, opts?: QueryOptions) {

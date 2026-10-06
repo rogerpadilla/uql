@@ -9,7 +9,7 @@ import { LibsqlDialect } from './libsqlDialect.js';
  * Pool for libSQL. One client serves every querier, since Hrana keeps no per-connection state: a
  * transaction takes its own session handle. The pool builds that client from `@libsql/client`'s
  * `Config`, or shares one the caller built (`@libsql/client/web`, `@libsql/client-wasm`), which stays
- * theirs to close.
+ * theirs to close and must read integers as `bigint` (`intMode: 'bigint'`), or one past 2^53 throws.
  */
 export class LibsqlQuerierPool extends AbstractSharedHandleQuerierPool<HranaClient, HranaQuerier, LibsqlDialect> {
   constructor(

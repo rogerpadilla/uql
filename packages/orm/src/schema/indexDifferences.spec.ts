@@ -18,6 +18,9 @@ describe('describeIndexDifferences', () => {
     expect(
       describeIndexDifferences(index({}), index({ unique: true, type: 'hash' }), new Set(['accessMethod'])),
     ).toEqual([expect.stringMatching(/^unique: true .* false$/), expect.stringMatching(/^type: hash .* btree$/)]);
+    expect(describeIndexDifferences(index({ type: 'hash' }), index({}), new Set(['accessMethod']))).toEqual([
+      expect.stringMatching(/^type: btree .* hash$/),
+    ]);
   });
 
   /**
@@ -78,6 +81,18 @@ describe('indexChanges', () => {
       changes: [{ from: emailIndex('idx_users_email') }],
       kept: [],
     });
+  });
+
+  /** Its expression cannot be compared, so the name uql derives for it is how it is known as uql's. */
+  it('should drop an expression index uql named, which nothing declares anymore', () => {
+    const lowered = {
+      name: 'users__expr0_idx',
+      table,
+      entries: [{ column: 'lower(email)', expression: true }],
+      unique: false,
+    };
+
+    expect(indexChanges('users', [], [lowered], new Set())).toEqual({ changes: [{ from: lowered }], kept: [] });
   });
 
   it('should keep an index uql did not name, which may have been made outside it', () => {

@@ -5,7 +5,6 @@ import {
   INDEX_FEATURE_LABELS,
   type IndexColumnSchema,
   type IndexFeature,
-  type IndexJsonArray,
   type IndexJsonPath,
   type IndexSchema,
 } from '../../type/index.js';
@@ -143,23 +142,12 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     if (entry.jsonPath) {
       return `(${this.jsonPathIndexExpr(column, entry.jsonPath)})`;
     }
-    if (entry.jsonArray) {
-      return `(${this.jsonArrayIndexExpr(column, entry.jsonArray)})`;
-    }
     return entry.length === undefined ? column : `${column}(${entry.length})`;
   }
 
   /** The path read the way a query comparing it reads it, which is how the planner matches the two. */
   protected jsonPathIndexExpr(escapedColumn: string, json: IndexJsonPath): string {
     return this.dialect.jsonPathExpr(escapedColumn, json.path, jsonTypeMode(json.type));
-  }
-
-  /**
-   * One key per *element* of the JSON array, which is MySQL's multi-valued index and nothing else's -
-   * every other dialect refuses `jsonArray` in {@link assertIndexFeatures} and never reaches this.
-   */
-  protected jsonArrayIndexExpr(_escapedColumn: string, _json: IndexJsonArray): string {
-    throw new UqlUsageError(`${this.dialect.dialectName} has no multi-valued index`);
   }
 
   /** Postgres-wire dialects put a vector or user-declared operator class here. */

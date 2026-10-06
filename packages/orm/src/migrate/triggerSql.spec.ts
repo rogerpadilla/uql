@@ -144,6 +144,11 @@ describe('the body, where the engine keeps it', () => {
     expect(statements.join('\n')).toContain(`EXECUTE FUNCTION "${name}"()`);
   });
 
+  it('should quote the function with a dollar tag its body does not hold, so nothing in it ends the function', () => {
+    const sql = render(new PostgresDialect(), { ...stamp, run: { postgres: () => raw`RAISE NOTICE '$uql$';` } });
+    expect(sql.join('\n')).toContain("RETURNS trigger AS $uql1$\nBEGIN\nRAISE NOTICE '$uql$';");
+  });
+
   it('should inline it everywhere else', () => {
     const create = render(new MySqlDialect(), {
       ...stamp,
@@ -301,6 +306,14 @@ describe('the guard, however the engine states one', () => {
     }).join('\n');
     expect(sql).not.toContain('WHEN (');
     expect(sql).toContain('IF NOT (OLD.`body` <=> NEW.`body`) THEN');
+  });
+
+  it("should take MySQL's body on MariaDB, which runs MySQL's SQL", () => {
+    const sql = render(new MariaDialect(), {
+      ...stamp,
+      run: { mysql: (newRow) => raw`SET @x = ${newRow.body};` },
+    }).join('\n');
+    expect(sql).toContain('SET @x = NEW.`body`;');
   });
 
   it('should emulate it on MariaDB as on MySQL, one family one rule', () => {

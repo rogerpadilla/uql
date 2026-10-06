@@ -26,7 +26,7 @@ services:
       - ./docker/init-mysql.sql:/docker-entrypoint-initdb.d/init-mysql.sql
 
   mariadb:
-    image: mariadb:12.3
+    image: mariadb:13.0
     restart: always
     environment:
       MYSQL_ROOT_PASSWORD: 'root'
@@ -35,7 +35,7 @@ services:
       MYSQL_DATABASE: 'test'
     ports:
       - 3326:3306
-    container_name: uql-mariadb-12
+    container_name: uql-mariadb-13
     healthcheck:
       test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
       interval: 5s
@@ -82,6 +82,29 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+
+  # libSQL's server, what a Turso Cloud database runs unless created as `tursodb`. One per suite reaching
+  # it over HTTP, `@libsql/client` and `@tursodatabase/serverless`, since both create the same tables. The
+  # image has no HTTP client, so the check opens the port.
+  libsql:
+    image: ghcr.io/tursodatabase/libsql-server:v0.24.33
+    restart: always
+    container_name: uql-libsql
+    ports:
+      - 8090:8080
+    healthcheck: &libsql-healthcheck
+      test: ['CMD', 'bash', '-c', 'exec 3<>/dev/tcp/127.0.0.1/8080']
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  turso:
+    image: ghcr.io/tursodatabase/libsql-server:v0.24.33
+    restart: always
+    container_name: uql-turso
+    ports:
+      - 8091:8080
+    healthcheck: *libsql-healthcheck
 
   cockroachdb:
     image: cockroachdb/cockroach:latest-v26.3

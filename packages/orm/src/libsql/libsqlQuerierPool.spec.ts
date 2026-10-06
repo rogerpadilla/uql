@@ -1,58 +1,21 @@
 import { createClient } from '@libsql/client';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { type HranaClient, HranaQuerier } from '../sqlite/hranaQuerier.js';
+import { describe, expect, it } from 'vitest';
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
-vi.mock('@libsql/client', () => ({
-  createClient: vi.fn(() => ({
-    close: vi.fn(),
-  })),
-}));
-
-/** A client the caller built, as `@libsql/client/web` or `@libsql/client-wasm` does. */
-function buildClient() {
-  return {
-    execute: vi.fn(),
-    transaction: vi.fn(),
-    close: vi.fn(),
-  } satisfies HranaClient;
-}
+/** A server nothing listens on: an HTTP client opens no connection until a statement is sent. */
+const unreachable = 'http://127.0.0.1:1';
 
 describe('LibsqlQuerierPool', () => {
-  beforeEach(() => {
-    vi.mocked(createClient).mockClear();
-  });
-
-  it('should build no client until a querier is acquired', async () => {
-    const config = { url: ':memory:' };
-    const pool = new LibsqlQuerierPool(config);
-    expect(createClient).not.toHaveBeenCalled();
-
+  it('should read an integer past 2^53 exactly even when the config asks for numbers', async () => {
+    const pool = new LibsqlQuerierPool({ url: ':memory:', intMode: 'number' });
     const querier = await pool.getQuerier();
 
-    expect(querier).toBeInstanceOf(HranaQuerier);
-    expect(createClient).toHaveBeenCalledWith({ ...config, intMode: 'bigint' });
-  });
-
-  it('should read integers as bigints even when the config asks for numbers', async () => {
-    const pool = new LibsqlQuerierPool({ url: ':memory:', intMode: 'number' });
-
-    await pool.getQuerier();
-
-    expect(createClient).toHaveBeenCalledWith({ url: ':memory:', intMode: 'bigint' });
-  });
-
-  it('should open one client when acquisitions race', async () => {
-    const pool = new LibsqlQuerierPool({ url: ':memory:' });
-
-    const [first, second] = await Promise.all([pool.getQuerier(), pool.getQuerier()]);
-
-    expect(createClient).toHaveBeenCalledTimes(1);
-    expect(first.client).toBe(second.client);
+    expect(await querier.all('SELECT 9007199254740993 AS big')).toEqual([{ big: '9007199254740993' }]);
+    await pool.end();
   });
 
   it('should share a client it was given with every querier, and leave it open on end', async () => {
-    const client = buildClient();
+    const client = createClient({ url: ':memory:' });
     const pool = new LibsqlQuerierPool(client);
 
     const querier = await pool.getQuerier();
@@ -61,29 +24,29 @@ describe('LibsqlQuerierPool', () => {
 
     expect(querier.client).toBe(client);
     expect(migration.client).toBe(client);
-    expect(createClient).not.toHaveBeenCalled();
-    expect(client.close).not.toHaveBeenCalled();
+    expect(client.closed).toBe(false);
+    client.close();
   });
 
   it('should migrate through the shared client when the database is no embedded replica', async () => {
-    const pool = new LibsqlQuerierPool({ url: 'libsql://only.test', syncUrl: 'libsql://remote.test' });
+    const pool = new LibsqlQuerierPool({ url: unreachable, syncUrl: unreachable });
 
     const querier = await pool.getQuerier();
     const migration = await pool.getMigrationQuerier();
 
     expect(migration.client).toBe(querier.client);
-    expect(createClient).toHaveBeenCalledTimes(1);
+    await pool.end();
   });
 
   it('should migrate an embedded replica on its sync url, closing that client with its querier', async () => {
-    const pool = new LibsqlQuerierPool({ url: 'file:./local.db', syncUrl: 'libsql://remote.test', authToken: 't' });
+    // The replica's own file is never opened: only the migration querier is taken.
+    const pool = new LibsqlQuerierPool({ url: 'file:replica.db', syncUrl: unreachable });
 
     const migration = await pool.getMigrationQuerier();
-
-    expect(migration).toBeInstanceOf(HranaQuerier);
-    expect(createClient).toHaveBeenCalledWith({ url: 'libsql://remote.test', authToken: 't', intMode: 'bigint' });
+    await expect(migration.all('SELECT 1')).rejects.toThrow('fetch failed');
     await migration.release();
-    expect(migration.client.close).toHaveBeenCalled();
+
+    await expect(migration.client.execute({ sql: 'SELECT 1' })).rejects.toThrow('Client is closed');
   });
 
   it('should close the client on end', async () => {
@@ -92,12 +55,11 @@ describe('LibsqlQuerierPool', () => {
 
     await pool.end();
 
-    expect(querier.client.close).toHaveBeenCalled();
+    await expect(querier.all('SELECT 1')).rejects.toThrow('CLIENT_CLOSED');
   });
 
   it('should close nothing on end when no querier was acquired', async () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:' });
     await expect(pool.end()).resolves.toBeUndefined();
-    expect(createClient).not.toHaveBeenCalled();
   });
 });

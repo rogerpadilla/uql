@@ -64,6 +64,35 @@ describe('rebuildTable on SQLite', () => {
     expect(await pool.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
   });
 
+  it('should rebuild on a connection with foreign keys off, and leave them off', async () => {
+    await pool.run('PRAGMA foreign_keys = OFF');
+
+    await migrate(STATEMENTS);
+
+    expect(await rows('parent')).toEqual([{ id: 1, code: 12 }]);
+    expect(await pool.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 0 }]);
+  });
+
+  it('should rebuild a table sharing no column with the old one empty, copying nothing', async () => {
+    await pool.run('CREATE TABLE `solo` (`code` TEXT)');
+    await pool.run("INSERT INTO `solo` VALUES ('a')");
+
+    await migrate(
+      rebuildTable(
+        new SqliteDialect(),
+        'solo',
+        {
+          from: { statements: [], columns: ['code'] },
+          to: { statements: ['CREATE TABLE `solo` (`key` INTEGER PRIMARY KEY);'], columns: ['key'] },
+        },
+        { renames: [], fills: new Map() },
+      ),
+    );
+
+    expect(await rows('solo')).toEqual([]);
+    expect(await pool.all("SELECT name FROM pragma_table_info('solo')")).toEqual([{ name: 'key' }]);
+  });
+
   it('should roll back a migration that leaves a row referencing a missing one', async () => {
     await expect(migrate(['DELETE FROM `parent`;'])).rejects.toThrow(
       'The migration leaves 1 row(s) referencing a missing one, the first in "child" pointing at "parent".',

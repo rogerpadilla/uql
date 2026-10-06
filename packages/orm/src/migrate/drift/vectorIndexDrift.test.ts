@@ -10,7 +10,7 @@ import { MariadbQuerierPool } from '../../maria/mariadbQuerierPool.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { driftOf } from '../../test/drift.js';
 import { cockroachConnection, mariadbConnection, postgresConnection, provisioningTimeout } from '../../test/index.js';
-import type { SyncOptions, Type, VectorDistance } from '../../type/index.js';
+import type { SqlQuerierPool, SyncOptions, Type, VectorDistance } from '../../type/index.js';
 import { Migrator } from '../migrator.js';
 
 const TABLE = 'drift_vector_index';
@@ -26,11 +26,9 @@ function vectorTable(type: 'hnsw' | 'vector', distance: VectorDistance): Type<ob
   return VectorRow;
 }
 
-type MigratorPool = ConstructorParameters<typeof Migrator>[0];
-
 const libsqlFile = join(tmpdir(), `uql-libsql-drift-vector-${uuidv7()}.db`);
 
-const engines: [string, 'hnsw' | 'vector', () => MigratorPool][] = [
+const engines: [string, 'hnsw' | 'vector', () => SqlQuerierPool][] = [
   ['PostgreSQL', 'hnsw', () => new PgQuerierPool(postgresConnection('test_pg'))],
   ['CockroachDB', 'vector', () => new CrdbQuerierPool(cockroachConnection())],
   ['MariaDB', 'vector', () => new MariadbQuerierPool(mariadbConnection())],

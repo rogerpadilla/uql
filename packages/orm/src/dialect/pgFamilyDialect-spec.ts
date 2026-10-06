@@ -58,6 +58,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
     expect(this.dialect.keyListCapacity(1)).toBe(Infinity);
   }
 
+  /** A composite key binds a value per column of each row, so its list splits within the bind budget. */
+  shouldSplitACompositeKeyListWithinTheBindBudget() {
+    const rows = this.dialect.keyListCapacity(2);
+    expect(rows).toBeGreaterThan(1);
+    expect(rows * 2).toBeLessThanOrEqual(this.dialect.maxBindValues);
+  }
+
+  /** The document itself at the empty path: as JSON the column, as text its root read out. */
+  shouldReadTheRootOfAJsonDocument() {
+    expect(this.dialect.jsonPathExpr('"doc"', '', 'json')).toBe('"doc"');
+    expect(this.dialect.jsonPathExpr('"doc"', '', 'text')).toBe(`("doc" #>> '{}')`);
+  }
+
   override shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('"');
   }

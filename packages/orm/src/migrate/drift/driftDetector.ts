@@ -11,7 +11,6 @@ import type { SchemaAST } from '../../schema/schemaAST.js';
 import { defaultsEqualAsWritten, diffSchemas, referentialActions } from '../../schema/schemaASTDiffer.js';
 import { SqlExpression, writtenDefault } from '../../schema/sqlExpression.js';
 import type {
-  CanonicalType,
   ColumnDiff,
   ColumnFacet,
   Drift,
@@ -190,8 +189,8 @@ function addAlterColumnDrifts(
   const { changed } = colDiff;
   // Type drift needs a dialect to render both types.
   if (opts.checkTypes && opts.dialect && changed.includes('type')) {
-    const expectedType = formatType(colDiff.to.type, opts.dialect);
-    const actualType = formatType(colDiff.from.type, opts.dialect);
+    const expectedType = canonicalToSql(colDiff.to.type, opts.dialect);
+    const actualType = canonicalToSql(colDiff.from.type, opts.dialect);
     drifts.push({
       type: 'type_mismatch',
       severity: colDiff.isBreaking ? 'critical' : 'warning',
@@ -349,12 +348,4 @@ function createSummary(drifts: Drift[]): { critical: number; warning: number; in
     warning: drifts.filter((d) => d.severity === 'warning').length,
     info: drifts.filter((d) => d.severity === 'info').length,
   };
-}
-
-/**
- * Format type for display.
- */
-function formatType(type: CanonicalType, dialect: AbstractDialect | undefined): string {
-  if (!dialect) return 'unknown';
-  return canonicalToSql(type, dialect);
 }

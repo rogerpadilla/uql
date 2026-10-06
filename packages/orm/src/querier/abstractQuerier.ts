@@ -1292,11 +1292,7 @@ export abstract class AbstractQuerier implements Querier {
     if (!this.hasHook(entity, event)) return;
 
     for (const listener of this.extra?.listeners ?? []) {
-      const fn = listener[event];
-      if (fn) {
-        const result = fn({ entity, querier: this, payloads, event });
-        if (result instanceof Promise) await result;
-      }
+      await listener[event]?.({ entity, querier: this, payloads, event });
     }
 
     await runHooks(entity, event, payloads, { querier: this });

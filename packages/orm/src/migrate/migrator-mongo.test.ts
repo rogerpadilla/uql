@@ -1,8 +1,8 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { Entity, Field, Id, Index, Trigger } from '../entity/index.js';
 import { runMongoCommand, serializeMongoCommand } from '../mongo/mongoCommand.js';
 import type { MongoQuerier } from '../mongo/mongoQuerier.js';
 import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
@@ -10,9 +10,11 @@ import { MongodbQuerierPool } from '../mongo/mongodbQuerierPool.js';
 import { mongoUri, provisioningTimeout } from '../test/index.js';
 import { loadTsDefaultExport } from '../test/loadTsDefaultExport.js';
 import type { MigrationDefinition } from '../type/index.js';
+import { raw } from '../util/index.js';
+import { runDriftCheck } from './cli.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
 import { migrationBuilderFor } from './migrationTarget.js';
-import { defineBuilderMigration, defineMigration, Migrator } from './migrator.js';
+import { defineBuilderMigration, Migrator } from './migrator.js';
 
 describe('Migrator on MongoDB (integration)', () => {
   const pool = new MongodbQuerierPool(mongoUri('uql_migrate'));
@@ -21,39 +23,38 @@ describe('Migrator on MongoDB (integration)', () => {
 
   afterAll(() => pool.end());
 
+  const noSql = 'mongodb has no SQL to render a check, a computed column or an index expression into';
+
   /** A collection's index names, in the order MongoDB lists them. */
   const indexNames = (collection: string) =>
     pool.withQuerier(async ({ db }) => (await db.collection(collection).indexes()).map((it) => it.name));
 
   it('should apply a data migration, record it, and revert it', async () => {
-    const migrator = new Migrator(pool);
+    const migrationsPath = await migrationsDir();
+    const name = '20260912000000_activate_people';
+    await writeFile(
+      join(migrationsPath, `${name}.mjs`),
+      `export default {
+        up: (querier) => querier.db.collection('person').updateMany({}, { $set: { active: true } }),
+        down: (querier) => querier.db.collection('person').updateMany({}, { $unset: { active: '' } }),
+      };`,
+    );
+    const migrator = new Migrator(pool, { migrationsPath });
     await pool.withQuerier((querier) =>
       querier.db.collection('person').insertMany([{ name: 'Ada' }, { name: 'Alan' }]),
     );
-    const migration = {
-      name: '20260912000000_activate_people',
-      ...defineMigration<MongoQuerier>({
-        async up(querier) {
-          await querier.db.collection('person').updateMany({}, { $set: { active: true } });
-        },
-        async down(querier) {
-          await querier.db.collection('person').updateMany({}, { $unset: { active: '' } });
-        },
-      }),
-    };
-    vi.spyOn(migrator, 'getMigrations').mockResolvedValue([migration]);
     const active = () =>
       pool.withQuerier((querier) => querier.db.collection('person').countDocuments({ active: true }));
 
-    expect(await migrator.status()).toEqual({ pending: [migration.name], executed: [] });
+    expect(await migrator.status()).toEqual({ pending: [name], executed: [] });
 
-    expect(await migrator.up()).toMatchObject([{ name: migration.name, success: true }]);
+    expect(await migrator.up()).toMatchObject([{ name, success: true }]);
     expect(await active()).toBe(2);
-    expect(await migrator.status()).toEqual({ pending: [], executed: [migration.name] });
+    expect(await migrator.status()).toEqual({ pending: [], executed: [name] });
 
-    expect(await migrator.down()).toMatchObject([{ name: migration.name, success: true }]);
+    expect(await migrator.down()).toMatchObject([{ name, success: true }]);
     expect(await active()).toBe(0);
-    expect(await migrator.status()).toEqual({ pending: [migration.name], executed: [] });
+    expect(await migrator.status()).toEqual({ pending: [name], executed: [] });
   });
 
   it('should run a generated migration module: collection and index up, collection down', async () => {
@@ -112,13 +113,43 @@ describe('Migrator on MongoDB (integration)', () => {
     });
   });
 
-  it('should refuse a column change, which a collection has no column to take', async () => {
+  it('should refuse a column, or SQL in an index, which a collection has nowhere to hold', async () => {
     await pool.withQuerier(async (querier) => {
       const builder = await migrationBuilderFor(querier);
       await expect(builder.addColumn('article', (c) => c.string('nickname'))).rejects.toThrow(
         'mongodb does not support addColumn in a migration',
       );
+      await expect(builder.createTable('profile', (table) => table.string('nickname'))).rejects.toThrow(
+        'mongodb does not support columns in a migration (collection "profile")',
+      );
+      await expect(builder.createIndex('article', [raw`lower(title)`])).rejects.toThrow(noSql);
+      await expect(builder.createIndex('article', ['title'], { where: raw`title IS NOT NULL` })).rejects.toThrow(noSql);
     });
+  });
+
+  it('should refuse to sync an entity indexing a SQL expression', async () => {
+    @Index((row) => [raw`lower(${row.title})`])
+    @Entity()
+    class ExpressionMongoIndex {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String }) title?: string | null;
+    }
+    const migrator = new Migrator(pool, { entities: [ExpressionMongoIndex] });
+
+    await expect(migrator.planSync()).rejects.toThrow(noSql);
+  });
+
+  it('should plan nothing for the trigger an entity declares, which MongoDB has none to run', async () => {
+    @Trigger({ on: 'afterInsert', run: (row) => raw`PERFORM ${row.id};` })
+    @Entity()
+    class TriggeredMongoNote {
+      @Id({ type: String }) id?: string;
+      @Field({ type: String }) body?: string | null;
+    }
+    await pool.withQuerier(({ db }) => db.createCollection('TriggeredMongoNote'));
+    const migrator = new Migrator(pool, { entities: [TriggeredMongoNote] });
+
+    expect(await migrator.planSync({ safe: false })).toEqual([]);
   });
 
   it('should create the partial index an entity declares, unique only among the documents its filter covers', async () => {
@@ -237,6 +268,19 @@ describe('Migrator on MongoDB (integration)', () => {
     );
     expect(source).toContain('    await querier.db.collection("DraftMongoUser").drop();');
     expect(source).not.toContain('querier.run(');
+  });
+
+  /** A collection has no columns to compare, so the check would call every entity drifted. */
+  it('should refuse a drift check, pointing at the dry run that lists the index changes', async () => {
+    @Entity()
+    class DriftMongoNote {
+      @Id({ type: String }) id?: string;
+    }
+    const migrator = new Migrator(pool, { entities: [DriftMongoNote] });
+
+    await expect(runDriftCheck(migrator, { pool, entities: [DriftMongoNote] })).rejects.toThrow(
+      'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
+    );
   });
 });
 

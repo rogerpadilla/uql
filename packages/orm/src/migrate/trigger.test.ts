@@ -45,7 +45,14 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
   const entities = [TgAudit, TgPost];
 
   const sync = (options = {}) => new Migrator(pool, { entities }).sync({ logging: false, ...options });
-  const plan = () => new Migrator(pool, { entities }).planSync();
+  const plan = () => new Migrator(pool, { entities }).planSync({ safe: false });
+
+  /** A migrator writing its migrations to a directory of its own, removed when the test finishes. */
+  const migratorWithFiles = async () => {
+    const migrationsPath = await mkdtemp(join(tmpdir(), 'uql-trigger-'));
+    onTestFinished(() => rm(migrationsPath, { recursive: true, force: true }));
+    return new Migrator(pool, { entities, migrationsPath });
+  };
   const audit = [expect.stringMatching(/^_uql_TgPost__audit_[0-9a-f]{6}$/)];
 
   /** What uql has installed on the post table, read through the introspector every engine implements. */
@@ -143,9 +150,7 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
 
   // A generated migration's `down` puts back what stood there, as the engine reprints it.
   it('should roll an edited trigger forward and back through a generated migration', async () => {
-    const dir = await mkdtemp(join(tmpdir(), 'uql-trigger-'));
-    onTestFinished(() => rm(dir, { recursive: true, force: true }));
-    const migrator = new Migrator(pool, { entities, migrationsPath: dir });
+    const migrator = await migratorWithFiles();
     const meta = getMeta(TgPost);
     const declared = meta.triggers;
     assertDefined(declared);
@@ -173,7 +178,11 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     const meta = getMeta(TgPost);
     const title = meta.fields.title;
     assertDefined(title);
-    meta.fields.title = { ...title, length: 300 };
+    onTestFinished(() => {
+      meta.fields.title = title;
+    });
+    // Nullability too, so SQLite, which has no length to retype, rebuilds the table around the trigger.
+    meta.fields.title = { ...title, length: 300, nullable: false };
     await sync({ safe: false });
     expect(await installed()).toEqual(audit);
     const id = await pool.insertOne(TgPost, { title: 'Retyped', views: 0 });
@@ -181,6 +190,30 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     expect(await audited(id)).toBe(1);
     meta.fields.title = title;
     await sync({ safe: false });
+  });
+
+  // A generated migration's `down` takes the triggers off around the reverse retype too, then puts back what stood.
+  it('should retype a watched column through a generated migration, and back', async () => {
+    const migrator = await migratorWithFiles();
+    const meta = getMeta(TgPost);
+    const title = meta.fields.title;
+    assertDefined(title);
+    onTestFinished(() => {
+      meta.fields.title = title;
+    });
+    const before = await installed();
+
+    meta.fields.title = { ...title, length: 300, nullable: false };
+    await migrator.generateFromEntities('retype_title');
+    expect(await migrator.up()).toMatchObject([{ success: true }]);
+    meta.fields.title = title;
+    expect(await migrator.down()).toMatchObject([{ success: true }]);
+
+    expect(await installed()).toEqual(before);
+    expect(await plan()).toEqual([]);
+    const id = await pool.insertOne(TgPost, { title: 'Reverted', views: 0 });
+    await pool.updateOneById(TgPost, id, { title: 'Reverted again' });
+    expect(await audited(id)).toBe(1);
   });
 
   // The narrowed sync takes the same path as the whole one, or a trigger would install on one and not the other.

@@ -8,6 +8,7 @@ import {
   InventoryAdjustment,
   Item,
   ItemAdjustment,
+  ItemTag,
   MeasureUnit,
   MeasureUnitCategory,
   Profile,
@@ -51,8 +52,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const querier = await this.pool.getQuerier();
     try {
       this.querier = querier;
-      await this.dropTables();
-      await this.createTables();
+      await this.recreateTables();
     } finally {
       await querier.release();
     }
@@ -550,6 +550,22 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         $exclude: { createdAt: true },
       }),
     ).rejects.toThrow('Cannot combine $select and $exclude');
+  }
+
+  /** A `$select` naming fields only to drop them subtracts as `$exclude` does, so the two combine. */
+  async shouldCombineASubtractiveSelectWithExclude() {
+    await this.querier.insertOne(User, { name: 'Ann', email: 'ann@subtractive.com' });
+
+    const [user] = await this.querier.findMany(User, {
+      $select: { name: false },
+      $exclude: { email: true },
+      $where: { email: 'ann@subtractive.com' },
+    });
+
+    assertDefined(user);
+    expect(user).not.toHaveProperty('name');
+    expect(user).not.toHaveProperty('email');
+    expect(user).toHaveProperty('id');
   }
 
   async shouldUpdateOneAndCascadeOneToMany() {
@@ -1738,6 +1754,34 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(found._count.measureUnits).toBe(3);
   }
 
+  /** A computed field of a populated to-many is read inside the parent's statement, as its own read reads it. */
+  async shouldReadAComputedFieldOfAPopulatedToMany() {
+    const id = await this.querier.insertOne(Item, {
+      name: 'tagged item',
+      createdAt: 1,
+      tags: [
+        { name: 'own tag', createdAt: 1 },
+        { name: 'shared tag', createdAt: 1 },
+      ],
+    });
+    const otherId = await this.querier.insertOne(Item, { name: 'other item', createdAt: 1 });
+    const shared = await this.querier.findOne(Tag, { $select: { id: true }, $where: { name: 'shared tag' } });
+    assertDefined(shared);
+    await this.querier.insertOne(ItemTag, { itemId: otherId, tagId: shared.id });
+
+    const found = await this.querier.findOneById(Item, id, {
+      $select: { name: true },
+      $populate: { tags: { $select: { name: true, itemsCount: true }, $sort: { name: 1 } } },
+    });
+
+    expect(found).toMatchObject({
+      tags: [
+        { name: 'own tag', itemsCount: 1 },
+        { name: 'shared tag', itemsCount: 2 },
+      ],
+    });
+  }
+
   /** The inverse side of a many-to-many counts the same junction rows, from the other end. */
   async shouldCountAnInverseManyToManyRelation() {
     await this.querier.insertOne(Item, {
@@ -2158,6 +2202,18 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(byBoolean.map(({ name }) => name)).toEqual(['JSON Mixed Text']);
   }
 
+  /** A JSON null is an element like any other: `$all` finds the array holding one, and no other. */
+  async shouldFindAJsonArrayHoldingNull() {
+    await this.querier.insertMany(Company, [
+      { name: 'JSON Holds Null', kind: { meta: { list: [null, 1] } } },
+      { name: 'JSON Holds None', kind: { meta: { list: [1] } } },
+    ]);
+
+    const found = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $all: [null] } } });
+
+    expect(found.map(({ name }) => name)).toEqual(['JSON Holds Null']);
+  }
+
   /**
    * `$elemMatch` over object elements, as containment and with per-field operators, each field compared
    * as its own type.
@@ -2444,6 +2500,29 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const row = await this.querier.findOneById(InventoryAdjustment, found, { $select: { description: true } });
     assertDefined(row);
     expect(row.description).toBe('there');
+  }
+
+  /** A found row takes the relations its `update` names even when the payload names none. */
+  async shouldUpsertWithAnUpdateCascadingWhatThePayloadDoesNot() {
+    const id = '507f1f77bcf86cd799439044';
+    await this.querier.insertOne(InventoryAdjustment, { id, itemAdjustments: [{ buyPrice: 1 }] });
+
+    await this.querier.upsertOne(InventoryAdjustment, { id: true }, { id }, { itemAdjustments: [{ buyPrice: 2 }] });
+
+    expect(await this.adjustmentPrices(id)).toEqual([2]);
+  }
+
+  /** A key two rows share names neither of them, so the upsert inserts rather than guess which to update. */
+  async shouldUpsertAsNewWhenItsKeyMatchesTwoRows() {
+    await this.querier.insertMany(InventoryAdjustment, [{ description: 'twin' }, { description: 'twin' }]);
+
+    await this.querier.upsertOne(
+      InventoryAdjustment,
+      { description: true },
+      { description: 'twin', itemAdjustments: [{ buyPrice: 3 }] },
+    );
+
+    expect(await this.querier.count(InventoryAdjustment, { $where: { description: 'twin' } })).toBe(3);
   }
 
   /** A save naming its key upserts, so it writes the row's relations as an insert would. */
@@ -2857,10 +2936,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   async shouldUpdateMany() {
     await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
 
-    await expect(this.querier.updateMany(User, { $where: { companyId: '1' } }, { companyId: null })).resolves.toBe(0);
-    await expect(this.querier.updateMany(User, { $where: { companyId: null } }, { companyId: '1' })).resolves.toBe(3);
-    await expect(this.querier.updateMany(User, { $where: { companyId: '1' } }, { companyId: null })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { $where: { companyId } }, { companyId: null })).resolves.toBe(0);
+    await expect(this.querier.updateMany(User, { $where: { companyId: null } }, { companyId })).resolves.toBe(3);
+    await expect(this.querier.updateMany(User, { $where: { companyId } }, { companyId: null })).resolves.toBe(3);
   }
 
   async shouldThrowIfUnknownComparisonOperator() {
@@ -3074,9 +3154,12 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldDeleteMany() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
-    await expect(this.querier.deleteMany(User, { $where: { companyId: '1' } })).resolves.toBe(0);
+    const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
+    await this.querier.insertMany(User, [{ name: 'a', companyId }, { name: 'b' }, { name: 'c' }, { name: 'd' }]);
+
+    await expect(this.querier.deleteMany(User, { $where: { companyId } })).resolves.toBe(1);
     await expect(this.querier.deleteMany(User, { $where: { companyId: null } })).resolves.toBe(3);
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
   }
 
   /**
@@ -3208,16 +3291,17 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /** The filter bounds the deduplicated total as well, and a page never shrinks it. */
   async shouldFindManyAndCountDistinctRowsOfAPage() {
+    const [companyId, otherId] = await this.querier.insertMany(Company, [{ name: 'Acme' }, { name: 'Other' }]);
     await this.querier.insertMany(User, [
-      { name: 'a', email: 'dp1@test.com', companyId: '1' },
-      { name: 'a', email: 'dp2@test.com', companyId: '1' },
-      { name: 'b', email: 'dp3@test.com', companyId: '1' },
-      { name: 'c', email: 'dp4@test.com', companyId: '2' },
+      { name: 'a', email: 'dp1@test.com', companyId },
+      { name: 'a', email: 'dp2@test.com', companyId },
+      { name: 'b', email: 'dp3@test.com', companyId },
+      { name: 'c', email: 'dp4@test.com', companyId: otherId },
     ]);
 
     const [rows, total] = await this.querier.findManyAndCount(User, {
       $select: { name: true },
-      $where: { companyId: '1' },
+      $where: { companyId },
       $distinct: true,
       $limit: 1,
     });
@@ -3235,14 +3319,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /** The filter still bounds the total when a page is taken out of it. */
   async shouldFindManyAndCountAFilteredPage() {
+    const [companyId, otherId] = await this.querier.insertMany(Company, [{ name: 'Acme' }, { name: 'Other' }]);
     await this.querier.insertMany(User, [
-      { name: 'Alice', email: 'alice@test.com', companyId: '1' },
-      { name: 'Bob', email: 'bob@test.com', companyId: '1' },
-      { name: 'Charlie', email: 'charlie@test.com', companyId: '2' },
+      { name: 'Alice', email: 'alice@test.com', companyId },
+      { name: 'Bob', email: 'bob@test.com', companyId },
+      { name: 'Charlie', email: 'charlie@test.com', companyId: otherId },
     ]);
 
     const [page, total] = await this.querier.findManyAndCount(User, {
-      $where: { companyId: '1' },
+      $where: { companyId },
       $sort: { name: 1 },
       $limit: 1,
     });
@@ -3496,9 +3581,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     );
   }
 
-  abstract createTables(): Promise<void>;
-
-  abstract dropTables(): Promise<void>;
+  /** Every fixture table, empty, whatever an earlier run left behind. */
+  abstract recreateTables(): Promise<void>;
 
   /**
    * Against real data: a category whose only matching unit is trashed must not match, and the count

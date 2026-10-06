@@ -1,4 +1,4 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { Entity, Field, Id, Index, removeEntity } from '../entity/index.js';
 import { assertDefined } from '../test/index.js';
@@ -7,6 +7,7 @@ import type { SchemaIntrospector, SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { introspectorFor } from './introspection/registry.js';
 import { Migrator } from './migrator.js';
+import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 export interface DatabaseConfig {
   name: string;
@@ -177,7 +178,12 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const before = await introspector.getTableSchema(tableName);
       expect(before?.primaryKey?.columns).toEqual(['userId']);
 
-      await new Migrator(pool, { entities: [AutoSyncKeyTest] }).sync({ safe: false });
+      // Rewriting a key rebuilds an index over every row, so safe mode holds it back.
+      const migrator = new Migrator(pool, { entities: [AutoSyncKeyTest] });
+      await migrator.sync();
+      expect((await introspector.getTableSchema(tableName))?.primaryKey?.columns).toEqual(['userId']);
+
+      await migrator.sync({ safe: false });
 
       const after = await introspector.getTableSchema(tableName);
       expect(after?.primaryKey?.columns).toEqual(['userId', 'groupId']);
@@ -464,6 +470,42 @@ export function describeMigratorSync(db: DatabaseConfig) {
       expect(relations[0].onDelete).toBe('CASCADE');
     });
 
+    /** A forced sync drops what the last one created, so a cycle of foreign keys has to come down too. */
+    it('should force a sync over a cycle of foreign keys it created', async () => {
+      @Entity()
+      class FkCycleCompany {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkCycleEmployee }) ownerId?: number | null;
+      }
+      @Entity()
+      class FkCycleEmployee {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkCycleCompany }) companyId?: number | null;
+      }
+      const entities = [FkCycleCompany, FkCycleEmployee];
+      const tables = ['FkCycleCompany', 'FkCycleEmployee'];
+      // The cycle defeats the per-table teardown, so it comes down as a forced sync takes it down.
+      onTestFinished(async () => {
+        const existing = await introspector.introspect(tables);
+        for (const sql of new SqlSchemaGenerator(pool.dialect).generateDropSchema(entities, {
+          ifExists: true,
+          existing,
+        })) {
+          await pool.run(sql);
+        }
+      });
+      const migrator = new Migrator(pool, { entities });
+
+      await migrator.sync({ force: true });
+      const companyId = await pool.insertOne(FkCycleCompany, {});
+      await pool.insertOne(FkCycleEmployee, { companyId });
+      await migrator.sync({ force: true });
+
+      expect(await pool.all(`SELECT * FROM ${escapeId('FkCycleEmployee')}`)).toEqual([]);
+      const relations = (await introspectTable('FkCycleEmployee', tables)).outgoingRelations;
+      expect(relations.map((relation) => relation.to.table.name)).toEqual(['FkCycleCompany']);
+    });
+
     /**
      * The case the feature exists for, and the one no unit test can prove: changing `onDelete` on a
      * relation whose constraint is already there. It is a drop and an add, so it needs `safe: false`.
@@ -484,7 +526,12 @@ export function describeMigratorSync(db: DatabaseConfig) {
       const before = await introspector.introspect(fkTables);
       expect(before.getTable('FkAlterEmployee')?.outgoingRelations[0].onDelete).toBe('CASCADE');
 
-      await new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] }).sync({ logging: true, safe: false });
+      // A drop and an add: safe mode holds both, or the add would collide with the constraint still there.
+      const migrator = new Migrator(pool, { entities: [FkAlterCompany, FkAlterEmployee] });
+      await migrator.sync();
+      expect((await introspectTable('FkAlterEmployee', fkTables)).outgoingRelations[0].onDelete).toBe('CASCADE');
+
+      await migrator.sync({ logging: true, safe: false });
 
       const relations = (await introspectTable('FkAlterEmployee', fkTables)).outgoingRelations;
       expect(relations).toHaveLength(1);

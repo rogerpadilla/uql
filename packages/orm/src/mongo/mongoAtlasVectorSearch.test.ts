@@ -1,4 +1,4 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mongoUri, provisioningTimeout } from '../test/index.js';
@@ -27,12 +27,7 @@ describe('MongoDB Atlas vector search', () => {
   const migrator = () => new Migrator(pool, { entities: [Chunk] });
 
   beforeAll(async () => {
-    await pool.withQuerier((querier) =>
-      querier.db
-        .collection(COLLECTION)
-        .drop()
-        .catch(() => undefined),
-    );
+    await pool.withQuerier((querier) => querier.db.dropDatabase());
     await migrator().sync({ logging: false });
     await pool.withQuerier(async (querier) => {
       await querier.insertMany(
@@ -53,19 +48,10 @@ describe('MongoDB Atlas vector search', () => {
           limit: 36,
         },
       };
-      for (let tries = 0; ; tries++) {
-        const indexed = await collection
-          .aggregate([search])
-          .toArray()
-          .catch(() => []);
-        if (indexed.length === 36) {
-          break;
-        }
-        if (tries > 120) {
-          throw new Error('the vector search index never indexed every document');
-        }
-        await new Promise((resolve) => setTimeout(resolve, 500));
-      }
+      await vi.waitFor(async () => expect(await collection.aggregate([search]).toArray()).toHaveLength(36), {
+        timeout: provisioningTimeout,
+        interval: 500,
+      });
     });
   }, provisioningTimeout * 2);
 

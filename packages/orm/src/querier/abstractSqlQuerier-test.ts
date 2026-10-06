@@ -3,8 +3,10 @@ import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import {
   clearTables,
   Coupon,
-  createTables,
-  dropTables,
+  Profile,
+  recreateTables,
+  Shelf,
+  ShelfBook,
   InventoryAdjustment,
   Invoice,
   InvoiceLine,
@@ -17,9 +19,10 @@ import {
   TaxCategory,
   TypedGroup,
   TypedRow,
+  User,
   violateConstraints,
 } from '../test/index.js';
-import type { QuerierPool } from '../type/index.js';
+import type { QuerierPool, Type } from '../type/index.js';
 import { currentTimestamp, raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
@@ -65,6 +68,24 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     return {
       shouldWriteRowsPastEveryLimit: provisioningTimeout,
     };
+  }
+
+  /** A cascade deletes the children first, which the foreign key they hold refuses any other way round. */
+  async shouldCascadeDeleteChildrenBeforeParent() {
+    const id = await this.querier.insertOne(User, { createdAt: 1, profile: { createdAt: 1 } });
+
+    expect(await this.querier.deleteOneById(User, id)).toBe(1);
+    expect(await this.querier.findMany(Profile, { $where: { creatorId: id } })).toEqual([]);
+    expect(await this.querier.findMany(User, { $where: { id } })).toEqual([]);
+  }
+
+  /** `onDelete: 'CASCADE'` hands the cascade to the database: deleting the parent takes its children along. */
+  async shouldLetTheDatabaseCascadeWhenOnDeleteIsDeclared() {
+    const shelfId = await this.querier.insertOne(Shelf, { label: 'fiction' });
+    await this.querier.insertMany(ShelfBook, [{ shelfId }, { shelfId }]);
+
+    expect(await this.querier.deleteOneById(Shelf, shelfId)).toBe(1);
+    expect(await this.querier.count(ShelfBook, { $where: { shelfId } })).toBe(0);
   }
 
   /** SQL in an upsert's `update` reads the row already there: an engine also has the incoming one in scope. */
@@ -383,6 +404,20 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(row?.rows).toBe(2);
   }
 
+  /**
+   * The table's row count as the engine's statistics hold it once gathered, without reading a row. An
+   * engine keeping none refuses, rather than run the scan an estimate exists to avoid.
+   */
+  async shouldEstimateACountFromStatistics() {
+    await this.querier.insertMany(User, [
+      { name: 'a', email: 'a@estimate.com' },
+      { name: 'b', email: 'b@estimate.com' },
+      { name: 'c', email: 'c@estimate.com' },
+    ]);
+
+    await this.expectEstimatedCount(User, 3);
+  }
+
   /** Each engine's own constraint errors, which the unit table can only imitate: MSSQL's two 547s among them. */
   async shouldNameConstraintViolations() {
     const { foreignKey, notNull, check } = await violateConstraints(this.querier);
@@ -454,16 +489,19 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect(adjustment).not.toHaveProperty('item');
   }
 
+  /** What an engine keeping no statistics answers; one that keeps them gathers them, then reads them back. */
+  protected async expectEstimatedCount(entity: Type<object>, _rows: number): Promise<void> {
+    await expect(this.querier.estimatedCount(entity)).rejects.toThrow(
+      `${this.querier.dialect.dialectName} does not support estimatedCount`,
+    );
+  }
+
   protected wideIntegerSql(): string {
     return 'SELECT 9007199254740993 AS big';
   }
 
-  override createTables() {
-    return createTables(this.querier);
-  }
-
-  override dropTables() {
-    return dropTables(this.querier);
+  override recreateTables() {
+    return recreateTables(this.pool);
   }
 
   override clearTables() {
@@ -631,6 +669,19 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
     expect(found.itemAdjustments?.[0]).not.toHaveProperty('number');
+  }
+
+  /** Past every engine's expression depth as one flat chain (the Rust Turso engine allows 100, SQLite 1000). */
+  async shouldMatchAnOrOfManyAlternatives() {
+    await this.querier.insertMany(User, [{ name: 'kept' }, { name: 'other' }]);
+    const $or = Array.from({ length: 1200 }, (_, at) => ({ name: `absent ${at}` }));
+
+    const found = await this.querier.findMany(User, {
+      $select: { name: true },
+      $where: { $or: [...$or, { name: 'kept' }] },
+    });
+
+    expect(found.map(({ name }) => name)).toEqual(['kept']);
   }
 
   /** A key left to the database is assigned by it: the shape only a SQL engine can offer. */

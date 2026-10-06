@@ -309,7 +309,25 @@ function accumulates(value: unknown): boolean {
 
 /** Conditions joined by `AND`, parenthesized where there is more than one. */
 function conjunction(parts: readonly string[]): string {
-  return parts.length > 1 ? `(${parts.join(' AND ')})` : parts.join('');
+  return parts.length > 1 ? `(${chain(parts, 'AND')})` : parts.join('');
+}
+
+/** The most operands one level of a chain holds. */
+const CHAIN_WIDTH = 16;
+
+/**
+ * `parts` joined by `op`, a longer list nested in parenthesized groups so its depth grows with the log of
+ * its length: a flat chain is as deep as it is long, which the Rust Turso engine refuses past 100 and SQLite past 1000.
+ */
+function chain(parts: readonly string[], op: 'AND' | 'OR'): string {
+  if (parts.length <= CHAIN_WIDTH) {
+    return parts.join(` ${op} `);
+  }
+  const size = Math.ceil(parts.length / CHAIN_WIDTH);
+  const groups = Array.from({ length: Math.ceil(parts.length / size) }, (_, at) =>
+    parts.slice(at * size, (at + 1) * size),
+  );
+  return groups.map((group) => `(${chain(group, op)})`).join(` ${op} `);
 }
 
 /**
@@ -993,7 +1011,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
 
-    const body = parts.join(join === '$or' ? ' OR ' : ' AND ');
+    const body = chain(parts, join === '$or' ? 'OR' : 'AND');
     const parenthesize = parts.length > 1 && (opts.operand || negate);
     ctx.append((negate ? 'NOT ' : '') + (parenthesize ? `(${body})` : body));
   }
@@ -1271,7 +1289,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** The JSON array at `slot` contains at least one of `values`, each as `$all` reads it. */
   protected jsonAny(ctx: QueryContext, slot: JsonSlot, values: readonly unknown[]): string {
-    return `(${values.map((value) => this.jsonAll(ctx, slot, [value])).join(' OR ')})`;
+    const anyOf = values.map((value) => this.jsonAll(ctx, slot, [value]));
+    return `(${chain(anyOf, 'OR')})`;
   }
 
   /** How many elements the JSON array at `slot` has, which `$size` compares. */
@@ -1804,10 +1823,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * `opts` with the alias the read's table claims: its own name, which needs no alias written, unless
    * another table of the statement took it first.
    */
-  private readOptions<E>(ctx: QueryContext, meta: EntityMeta<E>, opts: ReadOptions = {}): ReadOptions {
-    if (opts.alias !== undefined) {
-      return opts;
-    }
+  private readOptions<E>(ctx: QueryContext, meta: EntityMeta<E>, opts: QueryRenderOptions = {}): ReadOptions {
     const name = this.resolveTableAlias(meta);
     const alias = ctx.claimAlias(name);
     return alias === name ? opts : { ...opts, alias };
@@ -2669,7 +2685,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(entity);
     const rel = relationOf(meta, aggregate.relation as RelationKey<E>);
     const parent = prefix || this.resolveTableAlias(meta);
-    if (aggregate.page?.$limit === undefined && aggregate.page?.$skip === undefined) {
+    if (!aggregate.page || (aggregate.page.$limit === undefined && aggregate.page.$skip === undefined)) {
       this.appendRelationSubquery(ctx, meta, aggregate.relation, rel, { prefix: parent }, aggregate);
       return;
     }
@@ -2691,7 +2707,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     ctx: QueryContext,
     meta: EntityMeta<E>,
     rel: RelationMeta,
-    aggregate: RelationAggregateSpec,
+    aggregate: RelationAggregateSpec & { readonly search?: never },
     parent: string,
   ): void {
     const entity = rel.entity();
@@ -2699,12 +2715,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const correlation = raw(({ ctx: pageCtx }) => this.appendCorrelation(pageCtx, meta, rel, parent, alias));
     const { where: $where, page } = aggregate;
     // `1` where nothing is aggregated: a tally counts the rows the page holds, whatever they carry.
-    const { field, search } = aggregate;
-    const read = !field
-      ? raw`1`
-      : search
-        ? raw(({ ctx: readCtx }) => this.appendVectorDistance(readCtx, getMeta(entity), field, search, alias))
-        : refs(entity)[field as FieldKey<object>];
+    const { field } = aggregate;
+    const read = field ? refs(entity)[field as FieldKey<object>] : raw`1`;
     const query = {
       ...page,
       $select: [read.as(AGGREGATE_VALUE_ALIAS)],

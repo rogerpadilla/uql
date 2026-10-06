@@ -1,400 +1,360 @@
-import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { dirname, join } from 'node:path';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
-import { SchemaAST } from '../schema/schemaAST.js';
-import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
-import type { Config } from '../type/index.js';
-import * as cliConfig from './cli-config.js';
-import * as cli from './cli.js';
-import { type Migrator, Migrator as MockedMigrator } from './migrator.js';
+import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
+import { main } from './cli.js';
 
-@Entity()
-class TestEntity {
-  @Id({ type: Number }) id?: number;
+const SRC = fileURLToPath(new URL('../', import.meta.url));
+
+/**
+ * The config a project's `uql.config.ts` holds: a SQLite file, and the `settings` given, by default its
+ * migrations directory and one entity, `CliNote`, registered at runtime since the file runs without a
+ * decorator transform.
+ */
+function configSource(
+  dir: string,
+  settings = `migrationsPath: ${JSON.stringify(join(dir, 'migrations'))}, entities: [CliNote],`,
+): string {
+  return `
+import { defineEntity } from ${JSON.stringify(join(SRC, 'entity/index.ts'))};
+import { NodeSqliteQuerierPool } from ${JSON.stringify(join(SRC, 'sqlite/nodeSqliteQuerierPool.ts'))};
+
+class CliNote {}
+defineEntity(CliNote, { fields: { id: { type: Number, isId: true }, body: { type: String } } });
+
+export default {
+  pool: new NodeSqliteQuerierPool(${JSON.stringify(join(dir, 'app.db'))}),
+  ${settings}
+};
+`;
 }
-
-/** Present in the database but absent from the configured entities. */
-@Entity()
-class ExtraTableEntity {
-  @Id({ type: Number }) id?: number;
-}
-
-/** Same table as {@link DriftedEntity}, with the column type the entities expect. */
-@Entity({ name: 'DriftTable' })
-class ExpectedEntity {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 50 }) label?: string | null;
-}
-
-/** Same table as {@link ExpectedEntity}, as the database actually has it. */
-@Entity({ name: 'DriftTable' })
-class DriftedEntity {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: Number, columnType: 'int' }) label?: number | null;
-}
-
-const current = vi.hoisted((): { migrator?: Migrator } => ({}));
-
-vi.mock('./migrator.js', async (importOriginal) => ({
-  ...(await importOriginal<typeof import('./migrator.js')>()),
-  Migrator: vi.fn(function () {
-    return current.migrator;
-  }),
-}));
-
-vi.mock('./cli-config.js', () => ({ loadConfig: vi.fn() }));
-
-const { Migrator: RealMigrator } = await vi.importActual<typeof import('./migrator.js')>('./migrator.js');
 
 describe('CLI', () => {
-  let pool: Config['pool'];
-  let migrator: Migrator;
+  const cwd = process.cwd();
+  let dir: string;
+  let runs = 0;
 
-  /** A real migrator, whose every step that would touch a database answers what a test sets. */
+  /**
+   * Writes a config file of its own per run, returning its path: an import is cached by its path, and the
+   * CLI ends the pool the config made once the command is done.
+   */
+  const writeConfig = (source = configSource(dir), file = `uql.config.${++runs}.ts`) => {
+    const config = join(dir, file);
+    writeFileSync(config, source);
+    return config;
+  };
+
+  /** Runs the CLI on this test's project. */
+  const cli = (...args: string[]) => main(['--config', writeConfig(), ...args]);
+
+  /** Runs `sql` on the project's database, outside the CLI. */
+  const query = async <T>(sql: string): Promise<T[]> => {
+    const pool = new NodeSqliteQuerierPool(join(dir, 'app.db'));
+    try {
+      return await pool.all<T>(sql);
+    } finally {
+      await pool.end();
+    }
+  };
+
+  const tables = async () =>
+    (
+      await query<{ name: string }>(
+        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+      )
+    ).map((row) => row.name);
+
+  const columns = async (table: string) =>
+    (await query<{ name: string }>(`SELECT name FROM pragma_table_info('${table}')`)).map((row) => row.name);
+
+  const migrationFiles = () => readdirSync(join(dir, 'migrations'));
+
+  /** A migration file creating `table` on up and dropping it on down. */
+  const writeMigration = (name: string, table: string) => {
+    mkdirSync(join(dir, 'migrations'), { recursive: true });
+    writeFileSync(
+      join(dir, 'migrations', `${name}.mjs`),
+      `export default {
+        up: (querier) => querier.run('CREATE TABLE ${table} (id INTEGER PRIMARY KEY)'),
+        down: (querier) => querier.run('DROP TABLE ${table}'),
+      };`,
+    );
+  };
+
   beforeEach(() => {
-    vi.clearAllMocks();
-    pool = createMockQuerierPool(new SqliteDialect(), async () => createMockQuerier());
-    vi.spyOn(pool, 'end');
-    migrator = new RealMigrator(pool, { entities: [TestEntity] });
-    current.migrator = migrator;
-    vi.spyOn(migrator, 'up').mockResolvedValue([]);
-    vi.spyOn(migrator, 'down').mockResolvedValue([]);
-    vi.spyOn(migrator, 'status').mockResolvedValue({ executed: [], pending: [] });
-    vi.spyOn(migrator, 'pending').mockResolvedValue([]);
-    vi.spyOn(migrator, 'generate').mockResolvedValue('file.ts');
-    vi.spyOn(migrator, 'generateFromEntities').mockResolvedValue('file.ts');
-    vi.spyOn(migrator, 'sync').mockResolvedValue(undefined);
-    vi.spyOn(migrator, 'planSync').mockResolvedValue([]);
-    vi.spyOn(migrator.schemaIntrospector, 'introspect').mockResolvedValue(new SchemaAST());
-    vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool });
+    dir = mkdtempSync(join(tmpdir(), 'uql-cli-'));
     vi.spyOn(console, 'log').mockImplementation(() => {});
+    vi.spyOn(console, 'info').mockImplementation(() => {});
     vi.spyOn(console, 'error').mockImplementation(() => {});
+    // Spied, not run: a real exit would end the test worker.
     vi.spyOn(process, 'exit').mockImplementation(vi.fn<typeof process.exit>());
   });
 
-  it('should run up', async () => {
-    await cli.main(['up']);
-    expect(cliConfig.loadConfig).toHaveBeenCalledWith(undefined);
-    expect(migrator.up).toHaveBeenCalled();
-    expect(console.error).not.toHaveBeenCalled();
-    expect(pool.end).toHaveBeenCalled();
+  afterEach(() => {
+    vi.restoreAllMocks();
+    process.chdir(cwd);
+    rmSync(dir, { recursive: true, force: true });
   });
 
-  it('should run up with a custom config', async () => {
-    await cli.main(['--config', 'custom.config.ts', 'up']);
-    expect(cliConfig.loadConfig).toHaveBeenCalledWith('custom.config.ts');
-    expect(migrator.up).toHaveBeenCalled();
-  });
-
-  it('should run up with a custom config given by the short flag', async () => {
-    await cli.main(['-c', 'custom.config.ts', 'up']);
-    expect(cliConfig.loadConfig).toHaveBeenCalledWith('custom.config.ts');
-    expect(migrator.up).toHaveBeenCalled();
-  });
-
-  it('should run down', async () => {
-    await cli.main(['down']);
-    expect(migrator.down).toHaveBeenCalledWith({ step: 1 });
-  });
-
-  it('should run status', async () => {
-    await cli.main(['status']);
-    expect(migrator.status).toHaveBeenCalled();
-  });
-
-  it('should run generate', async () => {
-    await cli.main(['generate', 'test_migration']);
-    expect(migrator.generate).toHaveBeenCalledWith('test_migration');
-  });
-
-  it('should run generate:entities', async () => {
-    await cli.main(['generate:entities', 'initial']);
-    expect(migrator.generateFromEntities).toHaveBeenCalledWith('initial');
-  });
-
-  it('should apply the entity schema on sync', async () => {
-    await cli.main(['sync']);
-    expect(migrator.sync).toHaveBeenCalledWith({ force: false, safe: true, drop: false, logging: true });
-  });
-
-  it('should write a declaration file for the registered entities on types', async () => {
-    const output = join(tmpdir(), `uql-types-${Date.now()}`, 'entities.d.ts');
-    await cli.main(['types', '--output', output]);
-
-    expect(readFileSync(output, 'utf-8')).toContain('export interface TestEntity {');
-    rmSync(dirname(output), { recursive: true, force: true });
-  });
-
-  it('should log to stderr on a --dry-run, leaving stdout to the SQL', async () => {
-    await cli.main(['sync', '--dry-run']);
-    expect(MockedMigrator).toHaveBeenCalledWith(pool, expect.objectContaining({ logger: console.error }));
-  });
-
-  it('should log to stdout on any other command', async () => {
-    await cli.main(['sync']);
-    expect(MockedMigrator).toHaveBeenCalledWith(pool, expect.objectContaining({ logger: console.log }));
-  });
-
-  it('should force a sync with --force', async () => {
-    await cli.main(['sync', '--force']);
-    expect(migrator.sync).toHaveBeenCalledWith({ force: true, safe: true, drop: false, logging: true });
-  });
-
-  it('should print help', async () => {
-    await cli.main(['--help']);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-  });
-
-  it('should refuse an unknown command', async () => {
-    await cli.main(['unknown']);
-    expect(console.error).toHaveBeenCalledWith(expect.stringContaining('Unknown command: unknown'));
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should report what up ran, or that nothing was pending, and exit on a failure', async () => {
-    vi.mocked(migrator.up).mockResolvedValue([{ name: 'm1', direction: 'up', duration: 1, success: true }]);
-    await cli.runUp(migrator, []);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Migrations complete: 1 successful, 0 failed'));
-
-    vi.mocked(migrator.up).mockResolvedValue([]);
-    await cli.runUp(migrator, []);
-    expect(console.log).toHaveBeenCalledWith('No pending migrations.');
-
-    vi.mocked(migrator.up).mockResolvedValue([{ name: 'm1', direction: 'up', duration: 1, success: false }]);
-    await cli.runUp(migrator, ['--to', 'm1', '--step', '1']);
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should report what down rolled back, or that nothing was there, and exit on a failure', async () => {
-    vi.mocked(migrator.down).mockResolvedValue([{ name: 'm1', direction: 'down', duration: 1, success: true }]);
-    await cli.runDown(migrator, []);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Rollback complete: 1 successful, 0 failed'));
-
-    vi.mocked(migrator.down).mockResolvedValue([]);
-    await cli.runDown(migrator, []);
-    expect(console.log).toHaveBeenCalledWith('No migrations to rollback.');
-
-    vi.mocked(migrator.down).mockResolvedValue([{ name: 'm1', direction: 'down', duration: 1, success: false }]);
-    await cli.runDown(migrator, ['--to', 'm1', '--step', '1', '--all']);
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should list executed and pending migrations', async () => {
-    vi.mocked(migrator.status).mockResolvedValue({ executed: ['m1'], pending: ['m2'] });
-    await cli.runStatus(migrator);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('✓ m1'));
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('○ m2'));
-
-    vi.mocked(migrator.status).mockResolvedValue({ executed: [], pending: [] });
-    await cli.runStatus(migrator);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('(none)'));
-  });
-
-  it('should list pending migrations', async () => {
-    vi.mocked(migrator.pending).mockResolvedValue([{ name: 'm1', up: async () => {}, down: async () => {} }]);
-    await cli.runPending(migrator);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('○ m1'));
-
-    vi.mocked(migrator.pending).mockResolvedValue([]);
-    await cli.runPending(migrator);
-    expect(console.log).toHaveBeenCalledWith('No pending migrations.');
-  });
-
-  it('should name a generated migration from its words', async () => {
-    await cli.runGenerate(migrator, ['add', 'user']);
-    expect(migrator.generate).toHaveBeenCalledWith('add_user');
-  });
-
-  it('should generate a migration from the entities', async () => {
-    await cli.runGenerateFromEntities(migrator, ['init']);
-    expect(migrator.generateFromEntities).toHaveBeenCalledWith('init');
-  });
-
-  it('should pass sync its flags', async () => {
-    await cli.runSync(migrator, ['--force'], {});
-    expect(migrator.sync).toHaveBeenCalledWith({ force: true, safe: true, drop: false, logging: true });
-  });
-
-  it('should throw where the config has no pool', async () => {
-    // @ts-expect-error: a config file is plain JavaScript
-    vi.mocked(cliConfig.loadConfig).mockResolvedValue({ pool: undefined });
-    await cli.main(['up']);
-    expect(console.error).toHaveBeenCalledWith('Error:', 'Config.pool is required and must be an object');
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should report a failing migration and exit', async () => {
-    vi.mocked(migrator.up).mockRejectedValueOnce(new Error('Migration failed'));
-    await cli.main(['up']);
-    expect(console.error).toHaveBeenCalledWith('Error:', 'Migration failed');
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should run generate-entities, the hyphenated alias', async () => {
-    await cli.main(['generate-entities', 'schema']);
-    expect(migrator.generateFromEntities).toHaveBeenCalledWith('schema');
-  });
-
-  it('should run create, the alias for generate', async () => {
-    await cli.main(['create', 'add_table']);
-    expect(migrator.generate).toHaveBeenCalledWith('add_table');
-  });
-
-  it('should run pending', async () => {
-    await cli.main(['pending']);
-    expect(migrator.pending).toHaveBeenCalled();
-  });
-
-  it('should print help for -h', async () => {
-    await cli.main(['-h']);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-  });
-
-  it('should print help given no command', async () => {
-    await cli.main([]);
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
-  });
-
-  it('should allow destructive changes on sync --unsafe', async () => {
-    await cli.runSync(migrator, ['--unsafe'], { entities: [TestEntity] });
-    expect(migrator.sync).toHaveBeenCalledWith({ force: false, safe: false, drop: true, logging: true });
-  });
-
-  it('should sync from the database to the entities on --pull', async () => {
-    await cli.runSync(migrator, ['--pull'], { entities: [TestEntity] });
-    expect(console.log).toHaveBeenCalled();
-  });
-
-  it('should print the statements a --dry-run would run, and run nothing', async () => {
-    vi.mocked(migrator.planSync).mockResolvedValue(['ALTER TABLE "users" ADD COLUMN "age" INTEGER;']);
-
-    await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
-
-    expect(console.log).toHaveBeenCalledWith('ALTER TABLE "users" ADD COLUMN "age" INTEGER;');
-    expect(migrator.sync).not.toHaveBeenCalled();
-  });
-
-  it('should say so on stderr where a --dry-run has nothing to do, keeping stdout a SQL file', async () => {
-    await cli.runSync(migrator, ['--dry-run'], { entities: [TestEntity] });
-
-    expect(console.error).toHaveBeenCalledWith('Schema is already in sync.');
-    expect(console.log).not.toHaveBeenCalled();
-  });
-
-  it('should exit a drift check with no entities', async () => {
-    await cli.runDriftCheck(migrator, { entities: [] });
-    expect(console.error).toHaveBeenCalledWith('No entities configured. Add entities to your uql config.');
-    expect(process.exit).toHaveBeenCalledWith(1);
-  });
-
-  it('should report in_sync where the schemas match', async () => {
-    vi.mocked(migrator.schemaIntrospector.introspect).mockResolvedValue(buildSchemaAST([TestEntity]));
-
-    await cli.runDriftCheck(migrator, { entities: [TestEntity] });
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Schema is in sync'));
-  });
-
-  it("should run drift:check with the config's entities", async () => {
-    vi.mocked(cliConfig.loadConfig).mockResolvedValue({
-      pool,
-      entities: [TestEntity],
+  describe('help and config', () => {
+    it.each([[['--help']], [['-h']], [[]]])('should print help for %j', async (args) => {
+      await main(args);
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Usage:'));
     });
 
-    await cli.main(['drift:check']);
+    it('should refuse an unknown command', async () => {
+      await cli('unknown');
+      expect(console.error).toHaveBeenCalledWith('Unknown command: unknown');
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
 
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Checking for schema drift'));
+    it('should read the config -c names', async () => {
+      await main(['-c', writeConfig(), 'sync']);
+      expect(await tables()).toEqual(['CliNote']);
+    });
+
+    it('should find uql.config.ts in the working directory, and default to ./migrations there', async () => {
+      writeConfig(configSource(dir, 'entities: [CliNote],'), 'uql.config.ts');
+      process.chdir(dir);
+      await main(['generate', 'seed']);
+      expect(migrationFiles()).toEqual([expect.stringMatching(/^\d{14}_seed\.ts$/)]);
+    });
+
+    it('should report a config with no pool, and exit', async () => {
+      await main(['--config', writeConfig('export default {};'), 'up']);
+      expect(console.error).toHaveBeenCalledWith('Error:', 'Config.pool is required and must be an object');
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
   });
 
-  /** A drift report drives the exit code, so each severity has to reach the right branch. */
-  it('should report a table the entities do not declare as a warning', async () => {
-    vi.mocked(migrator.schemaIntrospector.introspect).mockResolvedValue(buildSchemaAST([TestEntity, ExtraTableEntity]));
+  describe('sync', () => {
+    it('should create the tables the entities declare', async () => {
+      await cli('sync');
+      expect(await tables()).toEqual(['CliNote']);
+      expect(console.log).toHaveBeenCalledWith('\nSchema sync completed.');
+    });
 
-    await cli.runDriftCheck(migrator, { entities: [TestEntity] });
+    it('should print only the statements on stdout on a --dry-run, and run none', async () => {
+      await cli('sync', '--dry-run');
+      expect(vi.mocked(console.log).mock.calls).toEqual([[expect.stringMatching(/^CREATE TABLE `CliNote`/)]]);
+      expect(await tables()).toEqual([]);
+    });
 
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Status: DRIFTED'));
-    expect(console.log).toHaveBeenCalledWith('WARNINGS:');
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Create entity or drop table'));
-    expect(process.exit).not.toHaveBeenCalled();
+    /** Stdout is SQL to append to a migration file, so what the migrator notes on the way goes to stderr. */
+    it('should send what a --dry-run notes to stderr, leaving stdout empty where there is no SQL', async () => {
+      await query('CREATE TABLE CliNote (id INTEGER PRIMARY KEY, body TEXT, legacy TEXT)');
+
+      await cli('sync', '--dry-run');
+
+      expect(console.log).not.toHaveBeenCalled();
+      expect(console.error).toHaveBeenCalledWith(
+        expect.stringContaining("Skipped 1 column changes in table 'CliNote': legacy"),
+      );
+      expect(console.error).toHaveBeenCalledWith('Schema is already in sync.');
+    });
+
+    it('should drop a column the entities no longer declare only with --unsafe', async () => {
+      await query('CREATE TABLE CliNote (id INTEGER PRIMARY KEY, body TEXT, legacy TEXT)');
+
+      await cli('sync');
+      expect(await columns('CliNote')).toEqual(['id', 'body', 'legacy']);
+
+      await cli('sync', '--unsafe');
+      expect(await columns('CliNote')).toEqual(['id', 'body']);
+    });
+
+    it('should drop and recreate every table with --force, warning first', async () => {
+      await cli('sync');
+      await query("INSERT INTO CliNote (id, body) VALUES (1, 'kept?')");
+
+      await cli('sync', '--force');
+
+      expect(console.log).toHaveBeenCalledWith('\n⚠️  WARNING: This will drop and recreate all tables!');
+      expect(await query('SELECT * FROM CliNote')).toEqual([]);
+    });
   });
 
-  /** Type drift is only visible once the report can render each canonical type as this dialect's SQL. */
-  it('should print the expected and actual type of a mismatched column', async () => {
-    vi.mocked(migrator.schemaIntrospector.introspect).mockResolvedValue(buildSchemaAST([DriftedEntity]));
+  describe('migrations', () => {
+    it('should write an empty migration named from its words, or migration, under generate and create', async () => {
+      await cli('generate', 'add', 'user');
+      await cli('create');
+      expect(
+        migrationFiles()
+          .map((file) => file.replace(/^\d+_/, ''))
+          .toSorted(),
+      ).toEqual(['add_user.ts', 'migration.ts']);
+    });
 
-    await cli.runDriftCheck(migrator, { pool, entities: [ExpectedEntity] });
+    it('should write the migration the entities need, named schema by default, under both spellings', async () => {
+      await cli('generate:entities', 'init');
+      await cli('generate-entities');
+      const [file] = migrationFiles().filter((it) => it.endsWith('_init.ts'));
 
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Expected: TEXT, Actual: INTEGER'));
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Data truncation risk'));
-    expect(process.exit).toHaveBeenCalledWith(1);
+      expect(readFileSync(join(dir, 'migrations', file), 'utf-8')).toContain('CREATE TABLE `CliNote`');
+      expect(migrationFiles().filter((it) => it.endsWith('_schema.ts'))).toHaveLength(1);
+    });
+
+    it('should list pending migrations, then run them up by step and report what ran', async () => {
+      writeMigration('m1', 'first');
+      writeMigration('m2', 'second');
+
+      await cli('pending');
+      expect(console.log).toHaveBeenCalledWith('  ○ m1');
+      expect(console.log).toHaveBeenCalledWith('  ○ m2');
+
+      await cli('up', '--step', '1');
+      expect(await tables()).toEqual(['first', 'uql_migrations']);
+
+      await cli('status');
+      expect(console.log).toHaveBeenCalledWith('  ✓ m1');
+
+      await cli('up', '--verbose');
+      expect(await tables()).toEqual(['first', 'second', 'uql_migrations']);
+      expect(console.log).toHaveBeenCalledWith('\nMigrations complete: 1 successful, 0 failed');
+
+      await cli('up');
+      expect(console.log).toHaveBeenCalledWith('No pending migrations.');
+    });
+
+    it('should report none pending, and none executed', async () => {
+      await cli('pending');
+      await cli('status');
+      expect(console.log).toHaveBeenCalledWith('No pending migrations.');
+      expect(console.log).toHaveBeenCalledWith('  (none)');
+    });
+
+    it('should run up to a named migration, and roll back the last one, to one, or all', async () => {
+      writeMigration('m1', 'first');
+      writeMigration('m2', 'second');
+      writeMigration('m3', 'third');
+
+      await cli('up', '--to', 'm2');
+      expect(await tables()).toEqual(['first', 'second', 'uql_migrations']);
+
+      await cli('up');
+      await cli('down');
+      expect(await tables()).toEqual(['first', 'second', 'uql_migrations']);
+      expect(console.log).toHaveBeenCalledWith('\nRollback complete: 1 successful, 0 failed');
+
+      await cli('down', '--to', 'm2');
+      expect(await tables()).toEqual(['first', 'uql_migrations']);
+
+      await cli('up');
+      await cli('down', '--step', '2');
+      expect(await tables()).toEqual(['first', 'uql_migrations']);
+
+      await cli('down', '--all', '--verbose');
+      expect(await tables()).toEqual(['uql_migrations']);
+
+      await cli('down');
+      expect(console.log).toHaveBeenCalledWith('No migrations to rollback.');
+    });
+
+    it('should exit on a migration that fails, either way', async () => {
+      writeMigration('m1', 'first');
+      await query('CREATE TABLE first (id INTEGER PRIMARY KEY)');
+
+      await cli('up');
+      expect(console.log).toHaveBeenCalledWith('\nMigrations complete: 0 successful, 1 failed');
+      expect(process.exit).toHaveBeenCalledWith(1);
+
+      await query('DROP TABLE first');
+      await cli('up');
+      await query('DROP TABLE first');
+      vi.mocked(process.exit).mockClear();
+      await cli('down');
+      expect(console.log).toHaveBeenCalledWith('\nRollback complete: 0 successful, 1 failed');
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    it('should report a command that throws, and exit', async () => {
+      await cli('up', '--to', 'missing');
+      expect(console.error).toHaveBeenCalledWith('Error:', "Migration 'missing' not found");
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
   });
 
-  it('should pull entities from the database on generate:from-db and its hyphenated alias', async () => {
-    const output = mkdtempSync(join(tmpdir(), 'uql-entities-'));
-    try {
-      await cli.main(['generate:from-db', '--output', output]);
-      await cli.main(['generate-from-db', '--output', output]);
-      expect(migrator.schemaIntrospector.introspect).toHaveBeenCalledTimes(2);
-    } finally {
-      rmSync(output, { recursive: true, force: true });
-    }
+  describe('types', () => {
+    it('should write a declaration file for the configured entities', async () => {
+      const output = join(dir, 'types', 'entities.d.ts');
+      await cli('types', '--output', output);
+      expect(readFileSync(output, 'utf-8')).toContain('export interface CliNote {');
+    });
+
+    it('should write ./uql-entities.d.ts given no --output', async () => {
+      process.chdir(dir);
+      await cli('types');
+      expect(readFileSync(join(dir, 'uql-entities.d.ts'), 'utf-8')).toContain('export interface CliNote {');
+    });
   });
 
-  it('should run drift-check, the hyphenated alias', async () => {
-    await cli.main(['drift-check']);
-    expect(console.error).toHaveBeenCalledWith('No entities configured. Add entities to your uql config.');
+  describe('generate:from-db', () => {
+    it.each([['generate:from-db'], ['generate-from-db'], ['sync', '--pull']])(
+      'should write the entities %j reads',
+      async (...command) => {
+        await query('CREATE TABLE shops (id INTEGER PRIMARY KEY)');
+        await cli(...command, '-o', join(dir, 'entities'));
+        expect(readdirSync(join(dir, 'entities'))).toEqual(['Shop.ts']);
+      },
+    );
+
+    it('should write one entity file per table to ./src/entities given no --output', async () => {
+      await query('CREATE TABLE shops (id INTEGER PRIMARY KEY)');
+      process.chdir(dir);
+      await cli('generate:from-db');
+      expect(readFileSync(join(dir, 'src/entities/Shop.ts'), 'utf-8')).toContain("@Entity({ name: 'shops' })");
+      expect(console.log).toHaveBeenCalledWith('Found 1 table(s): shops');
+    });
   });
 
-  it('should ignore an unknown flag, and a --step with no value, on up', async () => {
-    await cli.runUp(migrator, ['--verbose', '--step']);
-    expect(migrator.up).toHaveBeenCalledWith({});
-  });
+  describe('drift:check', () => {
+    it('should report in sync the schema a sync made, under both spellings', async () => {
+      await cli('sync');
+      await cli('drift:check');
+      await cli('drift-check');
+      expect(vi.mocked(console.log).mock.calls.filter(([line]) => line === '✓ Schema is in sync.')).toHaveLength(2);
+    });
 
-  it('should ignore an unknown flag on down', async () => {
-    await cli.runDown(migrator, ['--verbose']);
-    expect(migrator.down).toHaveBeenCalledWith({ step: 1 });
-  });
+    it('should report a table no entity declares as a warning, and not exit', async () => {
+      await cli('sync');
+      await query('CREATE TABLE stray (id INTEGER PRIMARY KEY)');
 
-  it('should name a migration given no name', async () => {
-    await cli.runGenerate(migrator, []);
-    await cli.runGenerateFromEntities(migrator, []);
-    expect(migrator.generate).toHaveBeenCalledWith('migration');
-    expect(migrator.generateFromEntities).toHaveBeenCalledWith('schema');
-  });
+      await cli('drift:check');
 
-  it('should write ./uql-entities.d.ts given no --output', () => {
-    const cwd = process.cwd();
-    const dir = mkdtempSync(join(tmpdir(), 'uql-types-'));
-    process.chdir(dir);
-    try {
-      cli.runTypes(migrator, []);
-      expect(readFileSync(join(dir, 'uql-entities.d.ts'), 'utf-8')).toContain('export interface TestEntity {');
-    } finally {
-      process.chdir(cwd);
-      rmSync(dir, { recursive: true, force: true });
-    }
-  });
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Status: DRIFTED'));
+      expect(console.log).toHaveBeenCalledWith('WARNINGS:');
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Create entity or drop table'));
+      expect(process.exit).not.toHaveBeenCalled();
+    });
 
-  /** An informational drift names no fix, so the INFO group prints none. */
-  it('should print an index the entities do not declare as info, with no suggestion', async () => {
-    @Entity({ name: 'IndexedTable' })
-    class Indexed {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String, index: true }) code?: string | null;
-    }
-    @Entity({ name: 'IndexedTable' })
-    class Unindexed {
-      @Id({ type: Number }) id?: number;
-      @Field({ type: String }) code?: string | null;
-    }
-    vi.mocked(migrator.schemaIntrospector.introspect).mockResolvedValue(buildSchemaAST([Indexed]));
+    /** Type drift shows only once the report renders each canonical type as this dialect's SQL. */
+    it('should print the expected and actual type of a mismatched column, and exit', async () => {
+      await query('CREATE TABLE CliNote (id INTEGER PRIMARY KEY, body INTEGER)');
 
-    await cli.runDriftCheck(migrator, { entities: [Unindexed] });
+      await cli('drift:check');
 
-    expect(console.log).toHaveBeenCalledWith('INFO:');
-    expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('Declare it'));
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Expected: TEXT, Actual: INTEGER'));
+      expect(console.log).toHaveBeenCalledWith(expect.stringContaining('Data truncation risk'));
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
+
+    /** An informational drift names no fix, so the INFO group prints none. */
+    it('should print an index the entities do not declare as info, with no suggestion', async () => {
+      await cli('sync');
+      await query('CREATE INDEX stray_body_idx ON CliNote (body)');
+
+      await cli('drift:check');
+
+      expect(console.log).toHaveBeenCalledWith('INFO:');
+      expect(console.log).not.toHaveBeenCalledWith(expect.stringContaining('->'));
+    });
+
+    it('should exit given no entities', async () => {
+      await main(['--config', writeConfig(configSource(dir, 'entities: [],')), 'drift:check']);
+      expect(console.error).toHaveBeenCalledWith('No entities configured. Add entities to your uql config.');
+      expect(process.exit).toHaveBeenCalledWith(1);
+    });
   });
 });

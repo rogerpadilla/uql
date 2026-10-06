@@ -2,12 +2,6 @@ import type { ExtraOptions, RawRow } from '../type/index.js';
 import { AbstractSqliteQuerier, type SqliteBindValue } from './abstractSqliteQuerier.js';
 import type { SqliteDialect } from './sqliteDialect.js';
 
-/**
- * Structural subset of the Hrana client API, the wire protocol shared by `@libsql/client` and
- * `@tursodatabase/serverless/compat`. Declared here rather than imported so a querier works with
- * any client of this shape (including `@libsql/client/web` and `@libsql/client-wasm`) without
- * depending on vendor types.
- */
 export type HranaInValue = SqliteBindValue | ArrayBuffer | Date;
 
 export type HranaResultSet = {
@@ -24,6 +18,11 @@ export type HranaTransaction = HranaExecutor & {
   rollback(): Promise<void>;
 };
 
+/**
+ * The part of a Hrana client the querier uses: `@libsql/client` in any of its builds (`/web`,
+ * `@libsql/client-wasm`). Declared here rather than imported, so a client the caller built fits
+ * without the vendor's types.
+ */
 export type HranaClient = HranaExecutor & {
   transaction(mode?: 'write' | 'read' | 'deferred'): Promise<HranaTransaction>;
   close(): void;

@@ -2,6 +2,19 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.96.0] - 2026-10-06
+
+- **Breaking:** removed `MigrationStorage.ensureStorage`, the `Migrator.logger` setter and `CreateSchemaOptions.foreignKeys`; SQLite introspection leaves foreign keys unnamed.
+- **Breaking:** `drift:check` on MongoDB refuses instead of always reporting drift; `sync --dry-run` lists the index changes.
+- **Breaking:** needs `@tursodatabase/database` 0.8.2+ and `@tursodatabase/serverless` 1.4.1+.
+- A foreign key covered only by a partial, fulltext, vector or prefix index gets its own index on the next sync.
+- **Fixed:** a forced `sync` over a cycle of foreign keys works on MySQL, MariaDB and SQL Server.
+- **Fixed:** a long `$or` or `$and` stays within the expression depth of Turso and SQLite.
+- **Fixed:** a Postgres or Neon connection the server drops no longer crashes the process.
+- **Fixed:** SQL Server's `end()` closes a pool mid-connect, and refuses work after it.
+- **Fixed:** a migration file's `transaction: false` is honoured.
+- **Fixed:** populating a sorted to-many works on a libSQL server.
+
 ## [0.95.1] - 2026-10-01
 
 - **Fixed:** a write split to fit the engine runs in one transaction; on D1, statement by statement.

@@ -1,10 +1,10 @@
 import { expect, vi } from 'vitest';
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import {
   anyUuid,
   Company,
   clearTables,
-  createTables,
-  dropTables,
+  recreateTables,
   InventoryAdjustment,
   Item,
   MeasureUnit,
@@ -29,12 +29,10 @@ function mockAllResolvedValueOnce(all: AbstractSqlQuerier['all'], value: unknown
 export abstract class AbstractSqlQuerierSpec implements Spec {
   querier!: AbstractSqlQuerier;
 
-  constructor(readonly pool: QuerierPool<AbstractSqlQuerier>) {}
+  constructor(readonly pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>) {}
 
-  async beforeAll() {
-    this.querier = await this.pool.getQuerier();
-    await dropTables(this.querier);
-    await createTables(this.querier);
+  beforeAll() {
+    return recreateTables(this.pool);
   }
 
   async beforeEach() {
@@ -584,6 +582,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldInsertOne() {
+    await this.pool.insertOne(Company, { id: '123' });
     await this.querier.insertOne(User, { companyId: '123', createdAt: 1 });
     expect(this.querier.run).toHaveBeenNthCalledWith(
       1,
@@ -832,6 +831,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
    * a `DELETE` and an `INSERT` of its own is what made this two statements per matched row.
    */
   async shouldUpdateManyAndCascadeOneToManyInOneStatementEach() {
+    await this.pool.insertOne(Company, { id: '1' });
     await this.querier.insertMany(InventoryAdjustment, [
       { companyId: '1', createdAt: 1 },
       { companyId: '1', createdAt: 1 },
@@ -890,6 +890,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateManyAndCascadeOneToManyNull() {
+    await this.pool.insertOne(Company, { id: '1' });
     const id = await this.querier.insertOne(InventoryAdjustment, { companyId: '1', createdAt: 1 });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -1011,6 +1012,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldUpdateAndCascadeManyToManyLinks() {
+    await this.pool.insertMany(Tag, [{ id: '22' }, { id: '33' }]);
     const id = await this.querier.insertOne(Item, { createdAt: 1 });
 
     expect(this.querier.run).toHaveBeenNthCalledWith(
@@ -1481,6 +1483,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   async shouldAggregateWithGroupAndHaving() {
+    await this.pool.insertMany(Company, [{ id: '1' }, { id: '2' }]);
     await this.querier.insertMany(User, [
       { companyId: '1', createdAt: 1 },
       { companyId: '1', createdAt: 2 },

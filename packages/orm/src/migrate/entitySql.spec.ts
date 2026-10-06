@@ -170,6 +170,11 @@ describe('a SQL Server filtered index', () => {
     );
   });
 
+  it('should pass over an $and left undefined, as the query does', () => {
+    const where: EntityWhere<TicketShape> = { status: 'open', $and: undefined };
+    expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "status" = N'open';`);
+  });
+
   it('should leave a raw predicate to the server', () => {
     const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.closedAt} IS NOT NULL`;
     expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "closedAt" IS NOT NULL;`);

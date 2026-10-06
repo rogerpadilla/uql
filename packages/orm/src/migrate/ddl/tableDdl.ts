@@ -63,9 +63,12 @@ export class TableDdl {
     );
   }
 
-  /** The `ALTER TABLE` clauses that change a column, as {@link alterColumn} takes it. */
-  protected alterClauses(_column: ColumnSchema, definition: string, _from?: ColumnSchema): string[] {
-    return [`ALTER COLUMN ${definition}`];
+  /**
+   * The `ALTER TABLE` clauses that change a column, as {@link alterColumn} takes it. None in the portable
+   * form: SQLite changes a column only by rebuilding its table, which a diff states as `rebuild`.
+   */
+  protected alterClauses(column: ColumnSchema, _definition: string, _from?: ColumnSchema): string[] {
+    throw rebuildRefusal(this.dialect, `Altering the column "${column.name}"`);
   }
 
   /** One `ALTER TABLE` making every clause, and none for no clause. */
@@ -121,4 +124,12 @@ export class TableDdl {
 /** `DROP INDEX <index> ON <table>`, for engines that scope index names per table: MySQL and SQL Server. */
 export function dropIndexOnTable(dialect: AbstractSqlDialect, table: string, index: string): string {
   return `DROP INDEX ${dialect.escapeId(index)} ON ${dialect.escapeId(table)};`;
+}
+
+/** What an engine that changes a table only by rebuilding it says to `what`, done in place. */
+export function rebuildRefusal(dialect: AbstractSqlDialect, what: string): UqlUsageError {
+  return new UqlUsageError(
+    `${dialect.dialectName}: ${what} rebuilds the table, which a migration generated from the entities does ` +
+      '(`uql-migrate generate:entities`) and a hand-written one cannot.',
+  );
 }

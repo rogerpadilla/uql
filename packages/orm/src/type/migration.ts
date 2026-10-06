@@ -61,11 +61,6 @@ export interface MigrationStorage {
    * Remove a migration from the executed list, on the querier that reverted it
    */
   unlogWithQuerier(querier: Querier, migrationName: string): Promise<void>;
-
-  /**
-   * Ensure the storage is initialized (e.g., create migrations table)
-   */
-  ensureStorage(): Promise<void>;
 }
 
 /**
@@ -292,16 +287,13 @@ export interface CreateSchemaOptions {
    * already exists. Constraints still resolve against the full entity graph.
    */
   readonly only?: readonly string[];
-  /**
-   * Emit the tables without their foreign keys. Only the integration fixtures want this, and only until
-   * their data stops relying on dangling references; a migration always wants the constraints.
-   */
-  readonly foreignKeys?: boolean;
 }
 
 export interface DropSchemaOptions {
   readonly ifExists?: boolean;
   readonly cascade?: boolean;
+  /** The schema as it stands, whose foreign keys are dropped before any table, since a cycle of them has no drop order. */
+  readonly existing?: SchemaAST;
 }
 
 /** The triggers uql installed on one table, by name, each with the statements that recreate it as it stands. */

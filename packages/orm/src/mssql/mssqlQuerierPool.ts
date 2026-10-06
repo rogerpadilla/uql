@@ -3,12 +3,14 @@ import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
 import { attachPoolErrorHandler } from '../util/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
 import { MsSqlDialect } from './mssqlDialect.js';
 import { MsSqlQuerier } from './mssqlQuerier.js';
 
 export class MsSqlQuerierPool extends AbstractSqlQuerierPool<MsSqlQuerier, MsSqlDialect> {
   readonly pool: ConnectionPool;
-  #connected?: Promise<ConnectionPool>;
+  /** The whole pool's one connect, shared by every querier; `ended` once closed, since `mssql` would reconnect it. */
+  #connection?: Promise<ConnectionPool> | 'ended';
 
   constructor(opts: MsSqlConfig, extra?: ExtraOptions) {
     super(new MsSqlDialect(dialectOptionsFrom(extra)), extra);
@@ -16,25 +18,34 @@ export class MsSqlQuerierPool extends AbstractSqlQuerierPool<MsSqlQuerier, MsSql
     attachPoolErrorHandler(this.pool, 'Idle SQL Server pool connection encountered an error', extra?.logger);
   }
 
-  /**
-   * `mssql` connects the pool as a whole rather than per checkout, so the promise is shared. A
-   * failed one is dropped rather than kept: memoized, a single transient failure would be handed to
-   * every later caller for the life of the pool.
-   */
   async getQuerier() {
     return new MsSqlQuerier(() => this.#connect(), this.dialect, this.extra);
   }
 
+  /** A failed connect is forgotten rather than handed to every later caller, unless `end` came first. */
   #connect(): Promise<ConnectionPool> {
-    this.#connected ??= this.pool.connect().catch((err: unknown) => {
-      this.#connected = undefined;
+    const current = this.#connection;
+    if (current) {
+      if (current === 'ended') {
+        return Promise.reject(new UqlUsageError('Cannot use a pool after calling end on it'));
+      }
+      return current;
+    }
+    const connecting = this.pool.connect().catch((err: unknown) => {
+      if (this.#connection === connecting) {
+        this.#connection = undefined;
+      }
       throw err;
     });
-    return this.#connected;
+    this.#connection = connecting;
+    return connecting;
   }
 
+  /** `mssql` refuses to close a pool mid-connect, so the connect under way settles first. */
   async end() {
-    this.#connected = undefined;
+    const connecting = this.#connection;
+    this.#connection = 'ended';
+    await Promise.allSettled([connecting]);
     await this.pool.close();
   }
 }

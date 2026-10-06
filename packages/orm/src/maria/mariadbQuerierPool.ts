@@ -21,7 +21,7 @@ export class MariadbQuerierPool extends AbstractSqlQuerierPool<MariadbQuerier, M
     // `mariadb` fires 'error' at runtime without declaring it, hence the cast; this makes it visible.
     attachPoolErrorHandler(
       this.pool as unknown as ErrorEmittingPool,
-      'Idle MariaDB pool connection encountered an error',
+      'MariaDB pool connection encountered an error',
       extra?.logger,
     );
   }

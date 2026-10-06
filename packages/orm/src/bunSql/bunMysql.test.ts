@@ -20,7 +20,7 @@ class BunMysqlIt extends MySqlLikeQuerierIt {
 
 class BunMysqlPoolIt extends AbstractSqlQuerierPoolIt<BunSqlQuerier> {
   constructor() {
-    super(new BunSqlQuerierPool(config));
+    super(() => new BunSqlQuerierPool(config));
   }
 }
 

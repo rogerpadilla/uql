@@ -5,7 +5,7 @@ import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
 export class PgliteQuerierPoolIt extends AbstractSqlQuerierPoolIt<PgliteQuerier> {
   constructor() {
-    super(new PgliteQuerierPool('memory://'));
+    super(() => new PgliteQuerierPool('memory://'));
   }
 }
 

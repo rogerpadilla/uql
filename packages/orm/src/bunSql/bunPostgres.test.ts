@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { AbstractSqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { PostgresQuerierIt } from '../querier/postgresQuerier-test.js';
-import { User, createSpec, createTables, dropTables } from '../test/index.js';
+import { User, createSpec, recreateTables } from '../test/index.js';
 import type { BunSqlQuerier } from './bunSqlQuerier.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
@@ -15,7 +15,7 @@ class BunPostgresIt extends PostgresQuerierIt {
 
 class BunPostgresPoolIt extends AbstractSqlQuerierPoolIt<BunSqlQuerier> {
   constructor() {
-    super(new BunSqlQuerierPool({ url }));
+    super(() => new BunSqlQuerierPool({ url }));
   }
 }
 
@@ -26,8 +26,8 @@ createSpec(new BunPostgresPoolIt());
 describe('server-side cursor', () => {
   it('should page the rows through a cursor and leave none behind', async () => {
     const pool = new BunSqlQuerierPool({ url });
+    await recreateTables(pool);
     const querier = await pool.getQuerier();
-    await createTables(querier);
     await querier.insertMany(User, [
       { name: 'Alice', email: 'alice@cursor.com' },
       { name: 'Bob', email: 'bob@cursor.com' },
@@ -41,8 +41,22 @@ describe('server-side cursor', () => {
     expect(openWhileStreaming).toEqual([1, 1]);
     expect(await countCursors(querier)).toBe(0);
 
-    await dropTables(querier);
     await querier.release();
+    await pool.end();
+  });
+});
+
+/** `pool.pool` answers as a `pg` pool does, for libraries like connect-pg-simple. */
+describe('pg-compatible pool', () => {
+  it('should answer the rows and their count, a wide integer exactly', async () => {
+    const pool = new BunSqlQuerierPool({ url });
+
+    expect(await pool.pool.query('SELECT $1::int8 AS big', ['9007199254740993'])).toEqual({
+      rows: [{ big: '9007199254740993' }],
+      rowCount: 1,
+    });
+    expect(await pool.pool.query('SELECT 1 WHERE false')).toEqual({ rows: [], rowCount: 0 });
+
     await pool.end();
   });
 });

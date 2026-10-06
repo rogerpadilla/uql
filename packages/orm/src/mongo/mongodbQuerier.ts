@@ -410,7 +410,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
       // Read off the document as written, which carries its `_id` on either branch.
       const { id, created } = this.upserted(res);
-      return { ids: [id], changes: id === undefined ? 0 : 1, created };
+      return { ids: [id], changes: 1, created };
     });
   }
 

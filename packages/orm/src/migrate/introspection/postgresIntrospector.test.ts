@@ -84,6 +84,22 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     expect(index.type).toBe('btree');
   }
 
+  /** A renamed column is read under its new name wherever the table names it, but an expression is SQL kept as written. */
+  async shouldReadAnIndexOverARenamedColumnUnderItsNewNameAndLeaveAnExpressionAsIs() {
+    const ast = await this.introspector.introspect(
+      [INTROSPECT_TABLES.A],
+      new Map([[INTROSPECT_TABLES.A, [{ from: 'status', to: 'state' }]]]),
+    );
+    const columnsOf = (name: string) =>
+      ast
+        .getTable(INTROSPECT_TABLES.A)
+        ?.indexes.find((index) => index.name === name)
+        ?.entries.map((entry) => entry.column);
+
+    expect(columnsOf('a_live_status_idx')).toEqual(['state']);
+    expect(columnsOf('a_lower_name_idx')).toEqual(['lower(name)']);
+  }
+
   async shouldIntrospectPartialIndexPredicate() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
@@ -124,6 +140,28 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
         entries: [{ column: 'tags', order: 'asc', nulls: 'last' }],
       },
     ]);
+  }
+
+  /**
+   * ivfflat's default class, which the catalogue names as none, is L2; a class naming a metric uql has no
+   * distance for, Hamming here, is kept as written rather than read as one.
+   */
+  async shouldReadAVectorIndexDistanceOffItsOperatorClass() {
+    await this.pool.withQuerier((querier) => querier.run('CREATE EXTENSION IF NOT EXISTS vector'));
+    const schema = await this.probe('probe_vector_kinds', async (querier, table) => {
+      await querier.run(`CREATE TABLE ${table} (v VECTOR(3), b BIT(3))`);
+      await querier.run(`CREATE INDEX probe_v_idx ON ${table} USING ivfflat (v)`);
+      await querier.run(`CREATE INDEX probe_b_idx ON ${table} USING hnsw (b bit_hamming_ops)`);
+    });
+
+    const hamming = this.getIndex(schema, 'probe_b_idx');
+    expect(hamming.distance).toBe(undefined);
+    expect(hamming.entries).toEqual([{ column: 'b', order: 'asc', nulls: 'last', opsClass: 'bit_hamming_ops' }]);
+    expect(this.getIndex(schema, 'probe_v_idx')).toMatchObject({
+      type: 'ivfflat',
+      distance: 'l2',
+      entries: [{ column: 'v', order: 'asc', nulls: 'last' }],
+    });
   }
 
   async shouldIntrospectArrayColumn() {

@@ -17,7 +17,15 @@ import {
   User,
   UserWithNonUpdatableId,
 } from '../../test/index.js';
-import { type EntityMeta, type IdKey, RAW_VALUE, RelationAggregate, idKey, type Type } from '../../type/index.js';
+import {
+  type EntityMeta,
+  type IdKey,
+  RAW_VALUE,
+  RelationAggregate,
+  idKey,
+  type Type,
+  versionKey,
+} from '../../type/index.js';
 import { getKeys, raw } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany } from '../index.js';
@@ -30,6 +38,7 @@ import {
   defineId,
   defineRelation,
   fieldOf,
+  foreignKeysOf,
   getEntities,
   getMeta,
   idOf,
@@ -931,6 +940,31 @@ it('should say which column to declare for a junction referencing no side', () =
   );
 });
 
+it('should say to pair a column per key for a junction referencing no side of a composite key', () => {
+  @Entity()
+  class Size {
+    @Id({ type: Number }) id?: number;
+  }
+
+  @Entity()
+  class Fit {
+    @Id({ type: Number }) id?: number;
+    @Field({ type: Number, references: () => Size }) sizeId?: number | null;
+  }
+
+  @Entity()
+  class Garment {
+    [idKey]?: 'brand' | 'code';
+    @Id({ type: String }) brand?: string;
+    @Id({ type: String }) code?: string;
+    @ManyToMany({ entity: () => Size, through: () => Fit }) sizes?: Size[];
+  }
+
+  expect(() => getMeta(Garment)).toThrow(
+    `'Garment.sizes' joins through 'Fit', which has no column referencing 'Garment.brand': declare a column per key, paired in a '@ManyToOne' to 'Garment'.`,
+  );
+});
+
 it('should refuse a junction where two columns reference the same key', () => {
   @Entity()
   class Person {
@@ -1020,6 +1054,19 @@ it('should refuse a second softDelete field', () => {
     }
     return SomeEntity;
   }).toThrow(`'SomeEntity' must have at most one field with 'softDelete'`);
+});
+
+it('should refuse a second version field', () => {
+  expect(() => {
+    @Entity()
+    class Ledger {
+      [versionKey]?: 'version' | 'revision';
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number, version: true }) version?: number;
+      @Field({ type: Number, version: true }) revision?: number;
+    }
+    return Ledger;
+  }).toThrow(`'Ledger' must have at most one field with 'version'`);
 });
 
 it('should join a to-one on the foreign key its references name, whatever either is called', () => {
@@ -1434,6 +1481,28 @@ function getError(run: () => unknown): string {
   }
   throw new Error('expected a registration error');
 }
+
+/** Read before its target is defined, a column constrains nothing yet; the schema build reads it again later. */
+it('should hold a plain foreign key once its target registers a key', () => {
+  class Shelf {
+    id?: number;
+  }
+  class Book {
+    id?: number;
+    shelfId?: number | null;
+  }
+  defineEntity(Book, {
+    fields: { id: { type: Number, isId: true }, shelfId: { type: Number, references: () => Shelf } },
+  });
+
+  expect(foreignKeysOf(getMeta(Book))).toEqual([]);
+
+  defineEntity(Shelf, { fields: { id: { type: Number, isId: true } } });
+
+  expect(foreignKeysOf(getMeta(Book))).toEqual([
+    { entity: expect.any(Function), cardinality: 'm1', references: [{ local: 'shelfId', foreign: 'id' }] },
+  ]);
+});
 
 /** One column cannot reference a two-column key; the relation decorators make one column per key. */
 it('should refuse a plain foreign key pointing at a composite key', () => {

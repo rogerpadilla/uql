@@ -1,6 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, StoredDefinition } from '../../type/index.js';
-import { derivedForeignKeyName } from '../../util/sql.util.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
 /**
@@ -152,7 +151,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async mapForeignKeysResult(
     _read: TableRowReader,
-    tableName: string,
+    _tableName: string,
     results: SqliteForeignKeyRow[],
   ): Promise<ForeignKeySchema[]> {
     // Group by id to handle composite foreign keys
@@ -167,10 +166,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     return Array.from(grouped.entries()).map(([, rows]) => {
       const first = rows[0];
       const columns = rows.map((r) => r.from);
+      // Unnamed: `PRAGMA foreign_key_list` reports none, so the AST derives one from the columns, as the entity side does.
       return {
-        // `PRAGMA foreign_key_list` reports no name, so one is derived the same way the entity side
-        // derives it. Seeded from the columns, not the PRAGMA's row id, which nothing else knows.
-        name: derivedForeignKeyName(tableName, columns),
         columns,
         references: { table: first.table, columns: rows.map((r) => r.to) },
         onDelete: this.normalizeReferentialAction(first.on_delete),
@@ -349,8 +346,8 @@ function scan(sql: string, visit: (char: string, index: number, depth: number) =
 
 /** The name a column definition opens with, however it was quoted. */
 function leadingIdentifier(entry: string): string {
-  const [token = ''] = /^\s*(?:"[^"]*"|`[^`]*`|\[[^\]]*\]|[^\s(]+)/.exec(entry) ?? [];
-  return token.trim().replace(/^["`[]|["`\]]$/g, '');
+  const token = entry.trimStart().replace(/^("[^"]*"|`[^`]*`|\[[^\]]*\]|[^\s(]*)[\s\S]*$/, '$1');
+  return token.replace(/^["`[]|["`\]]$/g, '');
 }
 
 type SqliteCountRow = {

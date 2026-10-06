@@ -184,6 +184,13 @@ describe('HttpQuerier', () => {
       expect(http.get).not.toHaveBeenCalled();
     });
 
+    /** A QUERY request carries its query as the body, so a read naming none sends an empty one. */
+    it('should send an empty query body for a read that names none', async () => {
+      const rfcQuerier = new HttpQuerier('/api', { readMethod: 'QUERY' });
+      await rfcQuerier.count(User);
+      expect(http.query).toHaveBeenCalledWith('/api/user/count', {}, undefined);
+    });
+
     it('should keep the canonical method of a write and of a read by id', async () => {
       const rfcQuerier = new HttpQuerier('/api', { readMethod: 'QUERY' });
       await rfcQuerier.findOneById(User, '1');

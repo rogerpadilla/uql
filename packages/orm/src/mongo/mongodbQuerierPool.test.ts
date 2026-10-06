@@ -5,4 +5,4 @@ import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
 class MongodbQuerierPoolIt extends AbstractQuerierPoolIt<MongodbQuerier> {}
 
-createSpec(new MongodbQuerierPoolIt(new MongodbQuerierPool(mongoUri('uql_pool'))));
+createSpec(new MongodbQuerierPoolIt(() => new MongodbQuerierPool(mongoUri('uql_pool'))));

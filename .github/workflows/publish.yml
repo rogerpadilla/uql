@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 15
     name: Publish ${{ github.ref_name }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           node-version: lts/*

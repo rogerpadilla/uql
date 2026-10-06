@@ -10,7 +10,6 @@ import type {
   ColumnRenames,
   EntityMeta,
   InstalledTriggers,
-  LoggingOptions,
   Migration,
   MigrationDefinition,
   MigrationResult,
@@ -27,7 +26,7 @@ import type {
   Type,
 } from '../type/index.js';
 import { hasTriggers } from '../util/field.util.js';
-import { LoggerWrapper } from '../util/index.js';
+import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
 import type { IMigrationBuilder } from './builder/types.js';
@@ -35,6 +34,7 @@ import { buildMigrationModule, type MigrationModuleOptions } from './codegen/mig
 import { introspectorFor } from './introspection/registry.js';
 import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
 import { dropped, lacksValue, newlyRequired, nonEmpty, reverseDiff, sides, withoutRebuild } from './schemaChange.js';
+import { constraintNameOf } from './schemaGenerator.js';
 
 /** An entity with triggers, beside the ones uql has installed on its table right now. */
 type TriggerState = { readonly entity: Type<object>; readonly installed: InstalledTriggers };
@@ -46,13 +46,7 @@ export class Migrator {
   public readonly storage: MigrationStorage;
   public readonly migrationsPath: string;
 
-  private _logger: LoggerWrapper;
-  public get logger(): LoggerWrapper {
-    return this._logger;
-  }
-  public set logger(value: LoggingOptions) {
-    this._logger = new LoggerWrapper(value);
-  }
+  public readonly logger: LoggerWrapper;
   private readonly _entities?: Type<object>[];
 
   public get entities(): Type<object>[] {
@@ -70,7 +64,7 @@ export class Migrator {
     this.target = migrationTargetFor(pool, options.defaultForeignKeyAction);
     this.storage = options.storage ?? this.target.storage(options.tableName);
     this.migrationsPath = options.migrationsPath ?? './migrations';
-    this._logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
+    this.logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
     this.schemaIntrospector = introspectorFor(pool);
     this.schemaGenerator = options.schemaGenerator;
@@ -492,9 +486,10 @@ export class Migrator {
   }
 
   /** Every table dropped and recreated, the whole entity set at once, so foreign keys resolve and drop in graph order. */
-  private forceStatements(generator: SchemaGenerator): string[] {
+  private async forceStatements(generator: SchemaGenerator): Promise<string[]> {
+    const existing = await this.introspectEntities(this.entities);
     return [
-      ...generator.generateDropSchema(this.entities, { ifExists: true, cascade: true }),
+      ...generator.generateDropSchema(this.entities, { ifExists: true, cascade: true, existing }),
       ...generator.generateCreateSchema(this.entities),
     ];
   }
@@ -630,10 +625,8 @@ export class Migrator {
       primaryKey: safe ? undefined : diff.primaryKey,
       columns: options.drop ? columns : nonEmpty((columns ?? []).filter((change) => change.to !== undefined)),
       indexes: additive('index', diff.indexes, (index) => index.name),
-      foreignKeys: additive(
-        'foreign key',
-        diff.foreignKeys,
-        (foreignKey) => foreignKey.name ?? foreignKey.columns.join(', '),
+      foreignKeys: additive('foreign key', diff.foreignKeys, (foreignKey) =>
+        constraintNameOf(diff.tableName, foreignKey),
       ),
     };
     if (!diff.rebuild || !held) {
@@ -699,6 +692,7 @@ export class Migrator {
           name: this.getMigrationName(fileName),
           up: migration.up.bind(migration),
           down: migration.down.bind(migration),
+          transaction: migration.transaction,
         };
       }
 
@@ -714,13 +708,7 @@ export class Migrator {
    * Check if an object is a valid migration
    */
   public isMigration(obj: unknown): obj is MigrationDefinition<Querier> {
-    return (
-      typeof obj === 'object' &&
-      obj !== undefined &&
-      obj !== null &&
-      typeof (obj as MigrationDefinition).up === 'function' &&
-      typeof (obj as MigrationDefinition).down === 'function'
-    );
+    return isRecord(obj) && typeof obj['up'] === 'function' && typeof obj['down'] === 'function';
   }
 
   /**
@@ -792,9 +780,8 @@ export function defineBuilderMigration<Q extends Querier = SqlQuerier>(
 
 /** The entities `meta` points at, through a relation or a foreign key field. */
 function referencedEntities(meta: EntityMeta<object>): Type<object>[] {
-  const fields = Object.values(meta.fields).flatMap((field) => field?.references?.() ?? []);
-  const relations = Object.values(meta.relations).flatMap((relation) => relation?.entity?.() ?? []);
-  return [...fields, ...relations];
+  const fields = definedEntries(meta.fields).flatMap(([, field]) => field.references?.() ?? []);
+  return [...fields, ...definedEntries(meta.relations).map(([, relation]) => relation.entity())];
 }
 
 /** A diff's column renames, through the builder operation every SQL generator already renders. */

@@ -94,6 +94,15 @@ describe('TursoSessionQuerier', () => {
     await expect(querier.internalStream('SELECT * FROM `t`').next()).rejects.toThrow('no such table: t');
   });
 
+  /** The driver types an entry's error as optional, so one arriving without it still fails the stream. */
+  it('should throw for an error entry that carries no detail', async () => {
+    const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });
+    session.executeRaw.mockResolvedValue({ entries: cursor([{ type: 'error' }]) });
+    const querier = new TursoSessionQuerier(session, new TursoDialect());
+
+    await expect(querier.internalStream('SELECT * FROM `t`').next()).rejects.toThrow('SQL execution failed');
+  });
+
   /** Each request carries the previous response's baton, so the three statements share one server stream. */
   it('should run a transaction as statements on its own session', async () => {
     const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });

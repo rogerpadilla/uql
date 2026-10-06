@@ -46,7 +46,7 @@ const urgentAssigneeOptions = {
 
 const statusCreatedAtOptions = { name: 'MongoTicket__status_createdAt_idx', unique: true };
 
-type TicketShape = { id?: string; status?: string | null; createdAt?: Date | null };
+type TicketShape = { id?: string; status?: string | null; createdAt?: Date | null; views?: bigint | null };
 
 const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
   @Index((ticket) => [ticket.status], { name: 'ticket_idx', where })
@@ -55,6 +55,7 @@ const ticketIndexedWhere = (where: EntityWhere<TicketShape>): Type<object> => {
     @Id({ type: String }) id?: string;
     @Field({ type: String }) status?: string | null;
     @Field({ type: Date }) createdAt?: Date | null;
+    @Field({ type: BigInt }) views?: bigint | null;
   }
   return Ticket;
 };
@@ -324,6 +325,7 @@ describe('MongoSchemaGenerator', () => {
     ['$isNull', { createdAt: { $isNull: true } }],
     ['null', { createdAt: null }],
     ['a Date', { createdAt: { $gt: new Date(0) } }],
+    ['a bigint', { views: { $gt: 1n } }],
     ['an ObjectId', { id: '507f1f77bcf86cd799439011' }],
   ];
 

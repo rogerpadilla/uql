@@ -9,6 +9,7 @@ import {
   fillOnFields,
   filterFieldKeys,
   findVectorIndex,
+  fulltextWeights,
   getFieldCallbackValue,
   getSoftDeleteValue,
   guardWrite,
@@ -388,6 +389,17 @@ describe('textSearchFields', () => {
     expect(textSearchFields(getMeta(Article), { $fields: {}, $value: 'x' })).toEqual(['title', 'body']);
   });
 
+  it('should search only the plain columns of the fulltext index it reads', () => {
+    @Entity()
+    @Index((doc) => [raw`lower(${doc.title})`, doc.body], { type: 'fulltext' })
+    class Lowered {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) title?: string | null;
+      @Field({ type: String }) body?: string | null;
+    }
+    expect(textSearchFields(getMeta(Lowered), { $value: 'x' })).toEqual(['body']);
+  });
+
   it('should refuse to guess where the entity declares no fulltext index, or more than one', () => {
     expect(() => textSearchFields(getMeta(Plain), { $value: 'x' })).toThrow(
       "$text on 'Plain' names no $fields, and 'Plain' declares no fulltext index to search. Name them with $fields.",
@@ -414,6 +426,31 @@ it('should skip falsy and non-object entries in a group map', () => {
   const entries = parseGroupMap(malformedGroupMapFixture());
   // Only `true` is a valid group key; false/0/'' are ignored
   expect(entries).toEqual([{ kind: 'key', alias: 'd', path: ['d'] }]);
+});
+
+describe('fulltextWeights', () => {
+  const fulltext = (...weights: (number | undefined)[]) => ({
+    type: 'fulltext' as const,
+    entries: weights.map((weight) => ({ weight })),
+  });
+
+  it('should weigh nothing where no column states a weight', () => {
+    expect(fulltextWeights(fulltext(undefined, undefined))).toBeUndefined();
+  });
+
+  it('should weigh nothing where every column weighs the same', () => {
+    expect(fulltextWeights(fulltext(2, 2))).toBeUndefined();
+  });
+
+  it('should weigh a column stating none as 1 beside one that does', () => {
+    expect(fulltextWeights(fulltext(3, undefined))).toEqual([3, 1]);
+  });
+
+  it('should refuse a weight on an index of no stated type, which is a btree', () => {
+    expect(() => fulltextWeights({ entries: [{ weight: 2 }] })).toThrow(
+      'a column weight ranks a fulltext index, and this one is btree',
+    );
+  });
 });
 
 describe('findVectorIndex', () => {

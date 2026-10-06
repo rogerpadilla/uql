@@ -5,7 +5,7 @@ import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
 
 export class Sqlite3QuerierPoolIt extends AbstractSqlQuerierPoolIt<SqliteQuerier> {
   constructor() {
-    super(new Sqlite3QuerierPool(':memory:'));
+    super(() => new Sqlite3QuerierPool(':memory:'));
   }
 }
 

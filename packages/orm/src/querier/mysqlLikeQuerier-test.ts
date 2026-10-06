@@ -1,5 +1,7 @@
 import { expect } from 'vitest';
+import { getMeta } from '../entity/index.js';
 import { Coupon, MeasureUnit, MeasureUnitCategory } from '../test/index.js';
+import type { Type } from '../type/index.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
@@ -14,6 +16,11 @@ export abstract class MySqlLikeQuerierIt extends VectorQuerierIt {
 
   protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
     expect(created).toBe(false);
+  }
+
+  protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
+    await this.querier.run(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`);
+    expect(await this.querier.estimatedCount(entity)).toBe(rows);
   }
 
   /**

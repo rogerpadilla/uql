@@ -854,6 +854,17 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
     ).toThrow('rebuilds the table');
   });
 
+  it('should reject altering a column in place where the dialect rebuilds the table instead', () => {
+    const column = namedColumn('label');
+    expect(() =>
+      new SqlSchemaGenerator(new SqliteDialect()).generateAlterTable({
+        type: 'alter',
+        tableName: 'memberships',
+        columns: [{ from: column, to: { ...column, nullable: false } }],
+      }),
+    ).toThrow('sqlite: Altering the column "label" rebuilds the table');
+  });
+
   it('should rename a table with ALTER TABLE, which MySQL takes too', () => {
     expect(generator.generateRenameTableSql('old', 'new')).toBe('ALTER TABLE "old" RENAME TO "new";');
     expect(new SqlSchemaGenerator(new MySqlDialect()).generateRenameTableSql('old', 'new')).toBe(
@@ -891,14 +902,6 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       expect(sql.filter((s) => s.startsWith('CREATE TABLE'))).toHaveLength(1);
       expect(sql.some((s) => s.includes('ALTER TABLE "blog_posts"') && s.includes('"TestUser"'))).toBe(true);
     });
-
-    it('should emit no foreign keys at all when asked for none', () => {
-      const generator = new SqlSchemaGenerator(new PostgresDialect());
-      const sql = generator.generateCreateSchema([TestUser, TestPost], { foreignKeys: false });
-
-      expect(sql.filter((s) => s.startsWith('CREATE TABLE'))).toHaveLength(2);
-      expect(sql.some((s) => s.includes('FOREIGN KEY') || s.includes('ADD CONSTRAINT'))).toBe(false);
-    });
   });
 
   describe('generateDropSchema', () => {
@@ -909,6 +912,29 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
       // Declaration order puts `TestUser` first, so a reverse-of-declaration drop would emit it last and
       // be rejected: `blog_posts` still references it.
       expect(sql).toEqual(['DROP TABLE "blog_posts";', 'DROP TABLE "TestUser";']);
+    });
+
+    /** A cycle has no drop order, so the foreign keys the database holds come off first, another schema's included. */
+    it('should drop the existing foreign keys first where no CASCADE takes them', () => {
+      const posts = mockTableNode('blog_posts', [{ name: 'authorId' }]);
+      posts.externalForeignKeys.push({
+        name: 'blog_posts_editor_fk',
+        columns: ['editorId'],
+        references: { table: 'crm.editor', columns: ['id'] },
+      });
+      const existing = new SchemaAST();
+      existing.addTable(posts);
+      const options = { ifExists: true, cascade: true, existing };
+
+      expect(new SqlSchemaGenerator(new MySqlDialect()).generateDropSchema([TestUser, TestPost], options)).toEqual([
+        'ALTER TABLE `blog_posts` DROP FOREIGN KEY `blog_posts_editor_fk`;',
+        'DROP TABLE IF EXISTS `blog_posts`;',
+        'DROP TABLE IF EXISTS `TestUser`;',
+      ]);
+      expect(new SqlSchemaGenerator(new PostgresDialect()).generateDropSchema([TestUser, TestPost], options)).toEqual([
+        'DROP TABLE IF EXISTS "blog_posts" CASCADE;',
+        'DROP TABLE IF EXISTS "TestUser" CASCADE;',
+      ]);
     });
 
     it('should add CASCADE only where the dialect has it, since a cycle has no valid order', () => {

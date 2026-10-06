@@ -289,7 +289,7 @@ export class SqliteDialect extends AbstractSqlDialect {
     return `JSON_GROUP_ARRAY(JSON(${elem}))`;
   }
 
-  /** `[#]` appends, creating the array where it is absent: `JSON_SET`, since Turso's `JSON_INSERT` will not touch an existing array. */
+  /** `[#]` appends, creating the array where it is absent. */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
     return jsonSetCall((value) => this.jsonScalarParam(ctx, value), expr, push, this.maxFunctionArgs, '[#]');
   }

@@ -6,9 +6,9 @@ import { UqlUsageError } from '../util/uqlError.js';
 import { isMongoQuerier, type MongoQuerier } from './mongoQuerier.js';
 import { textConfigOf } from './textLanguage.js';
 
-/** The parts of a Mongo index description this introspector reads. */
+/** The parts of a `listIndexes` entry this introspector reads: the server names every index. */
 type MongoIndex = {
-  readonly name?: string;
+  readonly name: string;
   readonly key: Record<string, unknown>;
   readonly unique?: boolean;
   /** A text index's fields and their weights, alphabetically: its key is `_fts`/`_ftsx` instead. */
@@ -62,10 +62,9 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         return undefined;
       }
 
-      // Annotated rather than inferred: the driver's `indexes()` is overloaded and resolves to `any` on
-      // some versions, which silently made every field below unchecked.
+      // Annotated: the driver types a `listIndexes` entry as `any`, and its `indexes()` leaves `name` optional.
       const collection = db.collection(tableName);
-      const indexes: readonly MongoIndex[] = await collection.indexes();
+      const indexes: readonly MongoIndex[] = await collection.listIndexes().toArray();
       const searchIndexes = await listSearchIndexes(collection);
 
       return {
@@ -73,7 +72,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
         columns: [],
         indexes: [
           ...indexes.map(({ name, key, unique, weights, default_language }) => ({
-            name: name ?? Object.keys(key).join('_'),
+            name,
             unique: !!unique,
             ...(weights
               ? {

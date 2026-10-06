@@ -446,13 +446,13 @@ export type RelationAggregateProjection =
 
 /**
  * A relation aggregate as a `computed` field holds it: an {@link AggregateCall} over the rows of the
- * relation it names, capped where it declared a page.
+ * relation it names, capped where it declared a page. A distance is a `$sort`'s, which pages nothing.
  */
 export type RelationAggregateSpec = RelationAggregateProjection &
-  Pick<AggregateCall, 'where'> & {
-    readonly relation: string;
-    readonly page?: RelationAggregatePage;
-  };
+  Pick<AggregateCall, 'where'> & { readonly relation: string } & (
+    | { readonly page?: never }
+    | { readonly page: RelationAggregatePage; readonly search?: never }
+  );
 
 /** The page of a relation's rows an aggregate reads, and the order picking them. */
 export type RelationAggregatePage = Pick<RelationQuery, '$sort' | '$limit' | '$skip'>;

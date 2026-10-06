@@ -28,12 +28,21 @@ class Ticket {
   subject?: string | null;
 }
 
+/** Two vectors, of which `$vectorSearch` can rank by only one. */
+@Entity()
+class TwoVectorDoc {
+  @Id({ type: String }) id?: string;
+  @Field({ type: 'vector', dimensions: 2 }) title?: number[] | null;
+  @Field({ type: 'vector', dimensions: 2 }) body?: number[] | null;
+}
+
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   constructor() {
     super(new MongodbQuerierPool(mongoUri('uql_querier')));
   }
 
-  override async createTables() {
+  override async recreateTables() {
+    await this.querier.conn.db().dropDatabase();
     const entities = getEntities();
     await Promise.all(
       entities.map((entity) => {
@@ -42,10 +51,6 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
         return this.querier.conn.db().createCollection(name);
       }),
     );
-  }
-
-  override async dropTables() {
-    await this.querier.conn.db().dropDatabase();
   }
 
   /**
@@ -238,6 +243,24 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     expect(await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'upserted' } })).toEqual({
       id,
     });
+  }
+
+  /** A payload of the key alone updates nothing it finds, and inserts the key where it finds none. */
+  async shouldUpsertADocumentByItsKeyAlone() {
+    const id = '65f0c0ffee0000000000beef';
+
+    const inserted = await this.querier.upsertOne(Ticket, { id: true }, { id });
+    const found = await this.querier.upsertOne(Ticket, { id: true }, { id });
+
+    expect([inserted.id, inserted.created, found.id, found.created]).toEqual([id, true, id, false]);
+    expect(await this.querier.findMany(Ticket, {})).toEqual([{ id }]);
+  }
+
+  /** The first vector a `$sort` names is lifted into `$vectorSearch`; a second has nothing left to rank it. */
+  async shouldRefuseASecondVectorToRankBy() {
+    await expect(
+      this.querier.findMany(TwoVectorDoc, { $sort: { title: { $vector: [1, 0] }, body: { $vector: [0, 1] } } }),
+    ).rejects.toThrow("cannot $sort by a second vector 'body' on MongoDB: $vectorSearch ranks by one");
   }
 
   /** `bulkWrite` names only the documents it inserted, so the one it updated is read back by `subject`. */

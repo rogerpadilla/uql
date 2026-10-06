@@ -573,3 +573,16 @@ export class JsonRecord {
   @Id({ type: Number }) id?: number;
   @Field({ type: 'json' }) entries?: Json<unknown[]> | null;
 }
+
+/** A relation the database cascades on its own, through the `ON DELETE CASCADE` its constraint declares. */
+@Entity()
+export class Shelf {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) label?: string | null;
+}
+
+@Entity()
+export class ShelfBook {
+  @Id({ type: Number }) id?: number;
+  @Field({ references: () => Shelf, onDelete: 'CASCADE' }) shelfId?: number | null;
+}

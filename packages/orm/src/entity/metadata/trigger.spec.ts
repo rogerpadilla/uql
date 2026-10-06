@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 import type { TriggerOptions } from '../../type/index.js';
 import { raw } from '../../util/raw.js';
 import { Entity, Field, Id, removeEntity } from '../index.js';
-import { defineTrigger, getMeta } from './definition.js';
+import { defineEntity, defineTrigger, getMeta } from './definition.js';
 
 const body = () => raw`PERFORM 1;`;
 
@@ -29,6 +29,19 @@ describe('defineTrigger', () => {
     const entity = entityWith({ on: 'afterInsert', run: body }, { on: 'beforeUpdate', run: body });
     expect(getMeta(entity).triggers?.map((it) => it.on)).toEqual(['afterInsert', 'beforeUpdate']);
     removeEntity(entity);
+  });
+
+  it('should register the triggers defineEntity lists, as defineTrigger does', () => {
+    class Note {
+      id?: number;
+      body?: string | null;
+    }
+    defineEntity(Note, {
+      fields: { id: { type: Number, isId: true }, body: { type: String } },
+      triggers: [{ on: 'beforeUpdate', of: (note) => [note.body], run: body }],
+    });
+    expect(getMeta(Note).triggers).toEqual([{ on: 'beforeUpdate', of: ['body'], run: body }]);
+    removeEntity(Note);
   });
 
   it('should resolve the watched columns to their keys', () => {

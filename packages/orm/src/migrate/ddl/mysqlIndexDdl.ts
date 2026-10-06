@@ -1,6 +1,6 @@
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
 import type { IndexType } from '../../schema/types.js';
-import type { IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
+import type { IndexColumnSchema, IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
 import { indexDistance, isVectorIndexType, unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
@@ -62,13 +62,18 @@ export class MySqlIndexDdl extends MysqlLikeIndexDdl {
   }
 
   /**
-   * `CAST(col AS CHAR(64) ARRAY)`, over the column itself where the array is the whole document -
-   * which is what `$all` reads, and what its `JSON_CONTAINS(col, ?)` is matched against. A `path`
-   * indexes the array at that path instead, as `'tags.ids': { $all: [...] }` reads it.
+   * A JSON array entry is MySQL's multi-valued index, one key per element: `CAST(col AS CHAR(64) ARRAY)`,
+   * over the column itself where the array is the whole document, which is what `$all`'s
+   * `JSON_CONTAINS(col, ?)` is matched against. A `path` indexes the array at that path instead.
    */
-  protected override jsonArrayIndexExpr(escapedColumn: string, json: IndexJsonArray): string {
-    const source = json.path ? this.dialect.jsonPathExpr(escapedColumn, json.path, 'json') : escapedColumn;
-    return `CAST(${source} AS ${arrayCastType(json)} ARRAY)`;
+  protected override indexColumnTarget(entry: IndexColumnSchema): string {
+    const json = entry.jsonArray;
+    if (!json) {
+      return super.indexColumnTarget(entry);
+    }
+    const column = this.dialect.escapeId(entry.column);
+    const source = json.path ? this.dialect.jsonPathExpr(column, json.path, 'json') : column;
+    return `(CAST(${source} AS ${arrayCastType(json)} ARRAY))`;
   }
 
   /**

@@ -39,12 +39,11 @@ import type {
 } from '../type/index.js';
 import { qualifyName } from '../util/index.js';
 import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
-import { UqlUsageError } from '../util/uqlError.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { formatDefaultValue, sameDefault } from './ddl/defaultSql.js';
 import { type IndexDdl, indexDdlFor, type TableDdl, tableDdlFor } from './ddl/index.js';
-import { sizedType } from './ddl/tableDdl.js';
+import { rebuildRefusal, sizedType } from './ddl/tableDdl.js';
 import { rebuildTable } from './ddl/tableRebuild.js';
 import {
   columnForeignKey,
@@ -147,10 +146,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    */
   generateCreateSchema(entities: readonly Type<object>[], options: CreateSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'create', options.only);
-    const withForeignKeys = options.foreignKeys ?? true;
     // Inline only where a constraint cannot be added afterwards, which is what makes the cyclic case
     // work everywhere else.
-    const inline = withForeignKeys && this.features.rebuildsTables;
+    const inline = this.features.rebuildsTables;
 
     // Namespaces first: a qualified `CREATE TABLE` fails against a schema nobody created, and the
     // schema is the one part of the layout a migration cannot infer from the table it is making.
@@ -162,7 +160,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ),
     );
 
-    if (withForeignKeys && !inline) {
+    if (!inline) {
       for (const table of tables) {
         statements.push(
           ...this.addForeignKeyStatements(
@@ -243,9 +241,19 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 
   generateDropSchema(entities: readonly Type<object>[], options: DropSchemaOptions = {}): string[] {
-    return this.orderedTables(entities, 'drop').map((table) =>
-      this.generateDropTable(qualifyName(table.name, table.schema), options),
-    );
+    const tables = this.orderedTables(entities, 'drop').map((table) => qualifyName(table.name, table.schema));
+    // A `CASCADE` drop takes the foreign keys with it, and SQLite drops with its constraints off.
+    const cascades = options.cascade && this.features.dropTableCascade;
+    const existing = cascades || this.features.rebuildsTables ? [] : (options.existing?.getTables() ?? []);
+    const foreignKeyDrops = existing.flatMap((table) => {
+      const tableName = qualifyName(table.name, table.schema);
+      const names = [
+        ...table.outgoingRelations.map((relation) => relation.name),
+        ...table.externalForeignKeys.map((foreignKey) => constraintNameOf(tableName, foreignKey)),
+      ];
+      return names.map((name) => this.generateDropForeignKeySql(tableName, name));
+    });
+    return [...foreignKeyDrops, ...tables.map((tableName) => this.generateDropTable(tableName, options))];
   }
 
   /**
@@ -795,10 +803,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    */
   private assertAlterable(what: string): void {
     if (this.features.rebuildsTables) {
-      throw new UqlUsageError(
-        `${this.dialect}: ${what} rebuilds the table, which a migration generated from the entities does ` +
-          '(`uql-migrate generate:entities`) and a hand-written one cannot.',
-      );
+      throw rebuildRefusal(this.dialect, what);
     }
   }
 }
@@ -807,7 +812,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
  * What a constraint is called: its own name, or one derived from its columns where nothing named it.
  * Shared by the add and the drop so a `DROP CONSTRAINT` names exactly what an `ADD CONSTRAINT` made.
  */
-function constraintNameOf(tableName: string, foreignKey: ForeignKeySchema): string {
+export function constraintNameOf(tableName: string, foreignKey: ForeignKeySchema): string {
   return foreignKey.name ?? derivedForeignKeyName(tableName, foreignKey.columns);
 }
 

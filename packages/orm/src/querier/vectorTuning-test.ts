@@ -55,6 +55,22 @@ export function describeVectorTuning(name: string, createPool: () => SqlQuerierP
       expect(rows.map((row) => row.name)).toEqual(['north', 'northeast', 'east']);
     });
 
+    /** A stream is read through a cursor of its own, which has to be tuned just as a read is. */
+    it('should stream a tuned vector search inside a transaction', async () => {
+      const rows = await pool.transaction((querier) =>
+        Array.fromAsync(
+          querier.findManyStream(TunedItem, {
+            $select: { name: true },
+            $sort: { vec: { $vector: [0, 1, 0] } },
+            $limit: 3,
+            $candidates: 100,
+          }),
+        ),
+      );
+
+      expect(rows.map((row) => row.name)).toEqual(['north', 'northeast', 'east']);
+    });
+
     /** On Postgres the predicate adds `hnsw.iterative_scan`, so this is the statement pair, not just the one. */
     it('should run a tuned vector search that also filters by distance', async () => {
       const rows = await pool.transaction((querier) =>

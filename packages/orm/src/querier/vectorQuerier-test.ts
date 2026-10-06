@@ -141,6 +141,27 @@ export abstract class VectorQuerierIt extends AbstractSqlQuerierIt {
     expect(results[1].score).toBeCloseTo(1 - Math.SQRT1_2, 5);
   }
 
+  /** A to-many's vectors cross the parent's statement as the engine reads one back, every digit kept. */
+  async shouldReadTheVectorsOfAPopulatedToMany() {
+    const vectorDocId = await this.querier.insertOne(VectorDoc, { name: 'doc' });
+    await this.querier.insertMany(VectorChunk, [
+      { name: 'east', vec: [1, 0, 0], vectorDocId },
+      { name: 'precise', vec: [0.1234567, 3.1415927, -0.5], vectorDocId },
+    ]);
+
+    const doc = await this.querier.findOneById(VectorDoc, vectorDocId, {
+      $select: { name: true },
+      $populate: { chunks: { $select: { name: true, vec: true }, $sort: { name: 1 } } },
+    });
+
+    expect(doc).toMatchObject({
+      chunks: [
+        { name: 'east', vec: [1, 0, 0] },
+        { name: 'precise', vec: [0.1234567, 3.1415927, -0.5] },
+      ],
+    });
+  }
+
   /** A joined table with a vector of the same name, which only the alias tells apart. */
   async shouldRankBesideAJoinedVector() {
     const vectorDocId = await this.querier.insertOne(VectorDoc, { name: 'doc', vec: [0, 1, 0] });

@@ -12,6 +12,13 @@ describe('ColumnBuilder', () => {
       expect(def.nullable).toBe(false); // Default is non-null (safer)
     });
 
+    it('should make the type unsigned as its options say', () => {
+      expect(new ColumnBuilder('n', { category: 'integer' }, { unsigned: true }).build().type).toEqual({
+        category: 'integer',
+        unsigned: true,
+      });
+    });
+
     it('should support references option in constructor', () => {
       const col = new ColumnBuilder(
         'userId',

@@ -32,7 +32,7 @@ export class PgliteQuerier extends AbstractSqlQuerier {
     const res = await this.db.query<RawRow>(query, values);
     // `affectedRows`, not `rowCount`: PGlite derives the former from the command tag of a write only,
     // where the latter also counts a `SELECT`'s rows and is absent altogether from a DDL tag.
-    return this.buildUpdateResult({ rows: res.rows, changes: res.affectedRows ?? 0 });
+    return this.buildUpdateResult({ rows: res.rows, changes: res.affectedRows });
   }
 
   /** The handle belongs to the pool, which hands out one querier per unit of work over it. */

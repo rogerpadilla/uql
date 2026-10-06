@@ -1,81 +1,16 @@
+import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getEntities } from '../entity/index.js';
-import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
+import { Migrator } from '../migrate/migrator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import type { QuerierPool } from '../type/index.js';
 
 /**
- * The same generator migrations use, so the integration suites run against the columns a real migration
- * would create rather than a hand-rolled approximation of them (which mapped a vector column to
- * `vector(3)` everywhere, a type no SQLite-family engine has).
+ * Every fixture table dropped and created again as a user's forced sync does it, foreign keys included,
+ * so a suite runs on the schema a migration really produces and a bug in that routine fails it.
  */
-function generatorFor(querier: AbstractSqlQuerier) {
-  return new SqlSchemaGenerator(querier.dialect);
-}
-
-/**
- * Runs `fn` with referential integrity relaxed.
- *
- * The mock graph is cyclic, as most real ones are: `User` points at `Company` and `Company` points back
- * at `User` through the inherited `creator`. No drop order satisfies both directions, so the
- * only way through is to stop the constraints being checked for the duration.
- *
- * Each engine relaxes it differently, and Postgres-wire cannot at all (its constraints are not
- * `DEFERRABLE`), which is why the callers there pass `CASCADE` on the statement itself instead. SQLite
- * takes `defer_foreign_keys` rather than `foreign_keys`, because the latter is a no-op inside a
- * transaction; the deferred flag resets itself at commit.
- */
-async function withRelaxedForeignKeys(querier: AbstractSqlQuerier, fn: () => Promise<void>) {
-  switch (querier.dialect.dialectName) {
-    case 'mysql':
-    case 'mariadb':
-      await querier.run('SET FOREIGN_KEY_CHECKS = 0');
-      try {
-        await fn();
-      } finally {
-        await querier.run('SET FOREIGN_KEY_CHECKS = 1');
-      }
-      return;
-    case 'sqlite':
-      await querier.run('PRAGMA defer_foreign_keys = ON');
-      await fn();
-      return;
-    default:
-      await fn();
-  }
-}
-
-/**
- * The same statements a migration would run: `generateCreateSchema` spans the whole entity graph, so
- * cross-entity foreign keys resolve and land as `ALTER TABLE ... ADD CONSTRAINT` after every table
- * exists (inline on SQLite, which cannot alter one in but resolves targets lazily). Sharing that
- * routine is the point: a fixture that builds its schema some other way cannot catch a bug in the one
- * users actually get, which is exactly how a cascade running in the wrong order stayed invisible.
- */
-export async function createTables(querier: AbstractSqlQuerier) {
-  const generator = generatorFor(querier);
-  await querier.transaction(async () => {
-    // `foreignKeys: false` for now: several shared suites assert that deleting a parent with live
-    // children succeeds, and insert rows whose `companyId`/`creatorId` point at nothing, both of which
-    // only hold on an unconstrained schema. Turning the constraints on is a semantic change to what
-    // those tests claim, not a data tidy-up, so it is tracked separately. The DDL is otherwise exactly
-    // what a migration produces.
-    for (const sql of generator.generateCreateSchema(getEntities(), { ifNotExists: true, foreignKeys: false })) {
-      await querier.run(sql);
-    }
-  });
-}
-
-export async function dropTables(querier: AbstractSqlQuerier) {
-  // The same routine a forced sync runs: dependents first, and `cascade` gated on
-  // `features.dropTableCascade`, so it is the Postgres-wire answer to the cycle and a no-op elsewhere.
-  const statements = generatorFor(querier).generateDropSchema(getEntities(), { ifExists: true, cascade: true });
-  await querier.transaction(async () => {
-    await withRelaxedForeignKeys(querier, async () => {
-      for (const sql of statements) {
-        await querier.run(sql);
-      }
-    });
-  });
+export function recreateTables(pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>): Promise<void> {
+  return new Migrator(pool, { entities: getEntities() }).sync({ force: true });
 }
 
 /**
@@ -85,9 +20,8 @@ export async function dropTables(querier: AbstractSqlQuerier) {
  * share no matcher for "this promise rejected". A connection that enforces gives
  * `{ dangling: 'rejected', orphans: [] }`.
  *
- * Deliberately not built on the shared fixtures, which create their tables without constraints. That is
- * precisely what let `bun:sqlite` and Turso ship with enforcement off without a single test noticing,
- * and the drivers disagree: `better-sqlite3`, `node:sqlite` and libSQL default to on, those two to off.
+ * A pair of its own, so it runs on a bare connection: the drivers disagree on enforcement, `better-sqlite3`,
+ * `node:sqlite` and libSQL defaulting to on, `bun:sqlite` and Turso to off.
  */
 export async function probeForeignKeys(querier: AbstractSqlQuerier) {
   await querier.run('CREATE TABLE fkParent (id INTEGER PRIMARY KEY)');
@@ -110,8 +44,8 @@ export async function probeForeignKeys(querier: AbstractSqlQuerier) {
 }
 
 /**
- * Breaks a foreign key, a NOT NULL and a CHECK on a constrained pair of its own, since the shared
- * fixtures carry no constraints, and hands back each rejection (`undefined` where one was accepted).
+ * Breaks a foreign key, a NOT NULL and a CHECK on a constrained pair of its own, and hands back each
+ * rejection (`undefined` where one was accepted).
  */
 export async function violateConstraints(querier: AbstractSqlQuerier) {
   const dropPair = async () => {
@@ -141,25 +75,24 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
   }
 }
 
+/**
+ * Empties every fixture table, dependents first. The graph is cyclic (`User` and `Company` point at each
+ * other), so the foreign keys that point back up that order, which no delete order satisfies, are cleared first.
+ */
 export async function clearTables(querier: AbstractSqlQuerier) {
-  const ast = buildSchemaAST(getEntities(), { namingStrategy: querier.dialect.namingStrategy });
-  const tables = ast.getDropOrder().map((table) => querier.dialect.escapeId(table.name));
+  const { dialect } = querier;
+  const tables = buildSchemaAST(getEntities(), { namingStrategy: dialect.namingStrategy }).getDropOrder();
+  const unlinks = tables.flatMap((table, at) => {
+    const backward = table.outgoingRelations.filter((relation) => tables.indexOf(relation.to.table) <= at);
+    const columns = backward.flatMap((relation) => relation.from.columns).filter((column) => column.nullable);
+    const assignments = columns.map((column) => `${dialect.escapeId(column.name)} = NULL`);
+    return assignments.length ? [`UPDATE ${dialect.escapeId(table.name)} SET ${assignments.join(', ')}`] : [];
+  });
+  const deletes = tables.map((table) => `DELETE FROM ${dialect.escapeId(table.name)}`);
 
   await querier.transaction(async () => {
-    if (querier.dialect.dialectName === 'postgres') {
-      // One statement for every table: `TRUNCATE` takes a list and resolves the cycle itself, which
-      // per-table `DELETE` cannot, and it is markedly faster than 20 sequential deletes.
-      await querier.run(`TRUNCATE ${tables.join(', ')} RESTART IDENTITY CASCADE`);
-      return;
-    }
-
-    for (const table of tables) {
-      await querier.run(`DELETE FROM ${table}`);
-    }
-    // `INTEGER PRIMARY KEY AUTOINCREMENT` keeps its high-water mark in `sqlite_sequence` across a
-    // DELETE, so without this the ids a suite sees depend on which tests ran before it.
-    if (querier.dialect.dialectName === 'sqlite') {
-      await querier.run('DELETE FROM sqlite_sequence');
+    for (const sql of [...unlinks, ...deletes]) {
+      await querier.run(sql);
     }
   });
 }

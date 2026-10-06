@@ -1,6 +1,6 @@
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
-import { Entity, Field, Filter, getMeta, Id, ManyToMany, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, OneToMany } from '../entity/index.js';
 import { parseQueryParams } from '../http/query.js';
 import {
   anyUuid,
@@ -19,6 +19,7 @@ import {
   TaxCategory,
   User,
 } from '../test/index.js';
+import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
 import type { Query, QueryContext, QueryLockWait, QueryWhere, Type, UpdatePayload } from '../type/index.js';
 import { raw, refs } from '../util/index.js';
 import { UqlSecurityError } from '../util/uqlError.js';
@@ -57,88 +58,6 @@ class InlineRow {
   rank?: number | null;
 }
 
-declare module '../type/index.js' {
-  interface UqlContext {
-    secureTenantId?: number;
-  }
-}
-
-/** The joined (m1) side of a `security: true` filter - the regression case for the JOIN/populate gap. */
-@Filter('tenant', {
-  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-  security: true,
-})
-@Entity()
-class SecureRelated {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ type: Number })
-  tenantId?: number | null;
-  @Field({ type: String })
-  name?: string | null;
-}
-
-@Entity()
-class SecureParent {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureRelated })
-  relatedId?: number | null;
-  @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
-  related?: SecureRelated;
-}
-
-/** The relation-subquery target: a `security: true` filter and a soft-delete field must both scope it. */
-@Filter('tenant', {
-  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-  security: true,
-})
-@Entity()
-class SecureChild {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ type: Number })
-  tenantId?: number | null;
-  @Field({ references: () => SecureCollection })
-  collectionId?: number | null;
-  @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number | null;
-  @ManyToOne({ entity: () => SecureCollection, references: (secureChild) => secureChild.collectionId })
-  collection?: SecureCollection;
-}
-
-/** No filters of its own, so a count over the junction to it stays junction-only. */
-@Entity()
-class PlainChild {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureCollection })
-  collectionId?: number | null;
-  @ManyToOne({ entity: () => SecureCollection, references: (plainChild) => plainChild.collectionId })
-  collection?: SecureCollection;
-}
-
-/** A many-to-many's junction: each side joins by the one column referencing it. */
-@Entity()
-class SecureCollectionChild {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureCollection })
-  secureCollectionId?: number | null;
-  @Field({ references: () => SecureChild })
-  secureChildId?: number | null;
-}
-
-@Entity()
-class SecureCollectionPlain {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureCollection })
-  secureCollectionId?: number | null;
-  @Field({ references: () => PlainChild })
-  plainChildId?: number | null;
-}
-
 /** Renamed PK/FK columns: a subquery must correlate on the columns, not the field keys. */
 @Entity()
 class RenamedParent {
@@ -154,46 +73,6 @@ class RenamedChild {
   id?: number;
   @Field({ name: 'parent_fk', references: () => RenamedParent })
   parentId?: number | null;
-}
-
-/** Junction whose FK columns are renamed, so the mm form has to resolve them too. */
-@Entity()
-class SecureCollectionRenamed {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ name: 'renamed_collection', references: () => SecureCollection })
-  secureCollectionId?: number | null;
-  @Field({ name: 'renamed_child', references: () => SecureChild })
-  secureChildId?: number | null;
-}
-
-/** A soft-deletable junction: an unlinked row must not count as a link. */
-@Entity()
-class SecureCollectionLink {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureCollection })
-  secureCollectionId?: number | null;
-  @Field({ references: () => PlainChild })
-  plainChildId?: number | null;
-  @Field({ type: Number, softDelete: () => Date.now() })
-  deletedAt?: number | null;
-}
-
-@Entity()
-class SecureCollection {
-  @Id({ type: Number })
-  id?: number;
-  @OneToMany({ entity: () => SecureChild, mappedBy: (secureChild) => secureChild.collectionId })
-  children?: SecureChild[];
-  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionChild })
-  taggedChildren?: SecureChild[];
-  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionPlain })
-  plainChildren?: PlainChild[];
-  @ManyToMany({ entity: () => PlainChild, through: () => SecureCollectionLink })
-  linkedChildren?: PlainChild[];
-  @ManyToMany({ entity: () => SecureChild, through: () => SecureCollectionRenamed })
-  renamedChildren?: SecureChild[];
 }
 
 export type JsonUpdateCaseName =
@@ -393,6 +272,20 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
+  /** A long chain nests at most 16 operands a level, so its depth grows with the log of its length. */
+  shouldNestALongOrInGroups() {
+    const $or = Array.from({ length: 20 }, (_, at) => ({ name: `n${at}` }));
+    const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: { $or } }));
+    const name = this.dialect.escapeId('name');
+    const pairs = Array.from(
+      { length: 10 },
+      (_, at) => `(${name} = ${this.ph(2 * at + 1)} OR ${name} = ${this.ph(2 * at + 2)})`,
+    );
+    expect(sql).toBe(
+      `SELECT ${this.dialect.escapeId('id')} FROM ${this.dialect.escapeId('User')} WHERE ${pairs.join(' OR ')}`,
+    );
+  }
+
   shouldBeValidEscapeCharacter() {
     expect(this.dialect.escapeIdChar).toBe('`');
   }
@@ -571,7 +464,8 @@ export abstract class AbstractSqlDialectSpec implements Spec {
   shouldRefuseTwoUpdateOperatorsOnOneField() {
     expect(() =>
       this.exec((ctx) =>
-        this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: 1, $mul: 2 } as never }),
+        // @ts-expect-error: a field takes one update operator
+        this.dialect.update(ctx, Item, { $where: { id: '1' } }, { salePrice: { $inc: 1, $mul: 2 } }),
       ),
     ).toThrow("'salePrice' takes one of $inc and $mul");
   }
@@ -1310,6 +1204,44 @@ export abstract class AbstractSqlDialectSpec implements Spec {
         }),
       ),
     ).toThrow('path name.first does not exist in User');
+  }
+
+  /** A relevance ranks the rows the search reads, which are the queried entity's, never a joined one's. */
+  shouldRejectSortBy$textOnARelation() {
+    expect(() =>
+      this.exec((ctx) =>
+        this.dialect.find(ctx, User, {
+          $select: { id: true },
+          $populate: { company: true },
+          // @ts-expect-error: a relation sorts by its own fields, and `$text` is none
+          $sort: { company: { $text: 'desc' } },
+        }),
+      ),
+    ).toThrow("$sort by $text is only supported on the queried entity, not on relation 'company'");
+  }
+
+  /** A subquery reading the statement's own table takes an alias of its own, so the two stay apart. */
+  shouldAliasARawSubqueryReadingItsStatementTable() {
+    const q = (id: string) => this.dialect.escapeId(id);
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, User, {
+        $select: { id: true },
+        $where: {
+          $exists: raw(({ ctx, dialect, escapedPrefix }) =>
+            dialect.find(
+              ctx,
+              User,
+              { $select: { id: true }, $where: { creatorId: raw((o) => o.ctx.append(`${escapedPrefix}${q('id')}`)) } },
+              { autoPrefix: true },
+            ),
+          ),
+        },
+      }),
+    );
+    expect(sql).toBe(
+      `SELECT ${q('id')} FROM ${q('User')} WHERE EXISTS (SELECT ${q('User_2')}.${q('id')} FROM ${q('User')} ${q('User_2')}` +
+        ` WHERE ${q('User_2')}.${q('creatorId')} = ${q('User')}.${q('id')})`,
+    );
   }
 
   shouldRejectDottedPathOnUnknownRoot() {

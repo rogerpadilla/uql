@@ -72,6 +72,16 @@ class Project {
     computed: (project) => project.tasks.sum((task) => task.hours, { $sort: { hours: -1 }, $limit: 5, $skip: 1 }),
   })
   readonly topHours?: number;
+
+  /** A page ordered through a to-one of the target, which joins it inside the page. */
+  @Field({
+    computed: (project) => project.tasks.sum((task) => task.hours, { $sort: { project: { owner: 1 } }, $limit: 3 }),
+  })
+  readonly firstOwnedHours?: number;
+
+  /** Past the first rows, uncapped: skipping is a page as much as capping is. */
+  @Field({ computed: (project) => project.tasks.count({ $skip: 2 }) })
+  readonly laterCount?: number;
 }
 
 describe('relation aggregate', () => {
@@ -124,6 +134,18 @@ describe('relation aggregate', () => {
   it('should total the page a capped sum reads, carrying its column out under one alias', () => {
     expect(sqlOf({ $select: { topHours: true } })).toBe(
       'SELECT (SELECT COALESCE(SUM("_uql_page"."_uql_value"), 0) FROM (SELECT "tasks"."hours" "_uql_value" FROM "Task" "tasks" WHERE "tasks"."projectId" = "Project"."id" ORDER BY "tasks"."hours" DESC LIMIT 5 OFFSET 1) "_uql_page") "topHours" FROM "Project"',
+    );
+  });
+
+  it('should count the rows past those it skips, over the page it reads', () => {
+    expect(sqlOf({ $select: { laterCount: true } })).toBe(
+      'SELECT (SELECT COUNT(*) FROM (SELECT 1 "_uql_value" FROM "Task" "tasks" WHERE "tasks"."projectId" = "Project"."id" OFFSET 2) "_uql_page") "laterCount" FROM "Project"',
+    );
+  });
+
+  it('should join inside the page what its sort reads through a to-one', () => {
+    expect(sqlOf({ $select: { firstOwnedHours: true } })).toBe(
+      'SELECT (SELECT COALESCE(SUM("_uql_page"."_uql_value"), 0) FROM (SELECT "tasks"."hours" "_uql_value" FROM "Task" "tasks" LEFT JOIN "Project" "project_2" ON "project_2"."id" = "tasks"."projectId" WHERE "tasks"."projectId" = "Project"."id" ORDER BY "project_2"."owner" LIMIT 3) "_uql_page") "firstOwnedHours" FROM "Project"',
     );
   });
 

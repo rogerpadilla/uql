@@ -1,12 +1,14 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';
 import type { ExtraOptions } from '../type/index.js';
-import { attachPoolErrorHandler, type ErrorEmittingPool } from '../util/index.js';
+import { attachPoolErrorHandler } from '../util/index.js';
 import { type PgAnyClient, PgQuerier } from './pgQuerier.js';
 
-export interface PgAnyPool<C extends PgAnyClient> extends ErrorEmittingPool {
+export interface PgAnyPool<C extends PgAnyClient> {
   connect: () => Promise<C>;
   end: () => Promise<void>;
+  on(event: 'error', listener: (err: Error) => void): unknown;
+  on(event: 'connect', listener: (client: C) => void): unknown;
 }
 
 /** A Postgres-wire pool of {@link PgQuerier}s, attaching the error handler that keeps a dropped connection from crashing the process. */
@@ -21,6 +23,9 @@ export abstract class AbstractPgQuerierPool<
   ) {
     super(dialect, extra);
     attachPoolErrorHandler(pool, 'Idle Postgres pool client encountered an error', extra?.logger);
+    // A client the server drops while a querier holds it emits `error` with no statement to report it to,
+    // which unheard ends the process. The next statement on it fails instead, and the pool evicts it.
+    pool.on('connect', (client) => client.on('error', () => {}));
   }
 
   async getQuerier() {

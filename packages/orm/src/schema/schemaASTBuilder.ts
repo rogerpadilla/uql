@@ -11,10 +11,11 @@ import type { NamingStrategy } from '../type/namingStrategy.js';
 import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { declaresNotNull, isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
-import { definedEntries } from '../util/object.util.js';
-import { derivedForeignKeyName, derivedIndexName, qualifyName } from '../util/sql.util.js';
+import { definedEntries, entityName } from '../util/object.util.js';
+import { derivedForeignKeyName, derivedIndexName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { resolveColumnCanonicalType } from './canonicalType.js';
+import { lookupColumns } from './indexColumns.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
 import { schemaDefault } from './sqlExpression.js';
 import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
@@ -49,6 +50,8 @@ export interface BuildSchemaASTOptions {
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
 type BuildContext = {
   readonly ast: SchemaAST;
+  /** The table each entity of the build made, which a relation to one outside it has none of. */
+  readonly tables: Map<EntityMeta<object>, TableNode>;
   readonly resolveTableName: (meta: EntityMeta<object>) => string;
   readonly resolveSchema: (meta: EntityMeta<object>) => string | undefined;
   readonly resolveColumnName: (key: string, field: FieldOptions) => string;
@@ -70,9 +73,8 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
   const compileDdl = options.compileDdl ?? refuseDdl;
   const ctx: BuildContext = {
     ast: new SchemaAST(),
-    resolveTableName:
-      options.resolveTableName ??
-      ((m) => namingStrategy?.tableName(m.name ?? m.entity.name) ?? m.name ?? m.entity.name),
+    tables: new Map(),
+    resolveTableName: options.resolveTableName ?? ((m) => namingStrategy?.tableName(entityName(m)) ?? entityName(m)),
     resolveSchema: options.resolveSchema ?? ((m) => m.schema),
     resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
@@ -82,9 +84,13 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     vectorIndexRequiresNotNull: options.vectorIndexRequiresNotNull ?? false,
   };
 
-  for (const pass of [addTableFromEntity, addRelationshipsFromEntity, addIndexesFromEntity]) {
-    for (const entity of entities) {
-      pass(ctx, getMeta(entity));
+  for (const entity of entities) {
+    const meta = getMeta(entity);
+    ctx.tables.set(meta, addTableFromEntity(ctx, meta));
+  }
+  for (const pass of [addRelationshipsFromEntity, addIndexesFromEntity]) {
+    for (const [meta, table] of ctx.tables) {
+      pass(ctx, meta, table);
     }
   }
 
@@ -110,7 +116,7 @@ function vectorIndexedEntries(meta: EntityMeta<object>): Set<EntityIndexColumn['
 /**
  * Add a table from entity metadata.
  */
-function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
+function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableNode {
   const tableName = ctx.resolveTableName(meta);
 
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
@@ -153,24 +159,17 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
   table.primaryKey = keyOfColumns(columns.values());
 
   ctx.ast.addTable(table);
-}
-
-/** The node an entity maps to, found under the key {@link SchemaAST} stores it by. */
-function tableOf(ctx: BuildContext, meta: EntityMeta<object>): TableNode | undefined {
-  return ctx.ast.getTable(qualifyName(ctx.resolveTableName(meta), ctx.resolveSchema(meta)));
+  return table;
 }
 
 /**
  * Add a relationship for each foreign key the entity holds, whether a relation declares it or a bare
  * `@Field({ references })` does.
  */
-function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
-  const table = tableOf(ctx, meta);
-  if (!table) return;
-
+function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>, table: TableNode): void {
   for (const foreignKey of foreignKeysOf(meta)) {
     const relatedMeta = getMeta(foreignKey.entity());
-    const relatedTable = tableOf(ctx, relatedMeta);
+    const relatedTable = ctx.tables.get(relatedMeta);
     if (!relatedTable) continue;
 
     // Every pair, not just the first: a composite key is one constraint over all its columns, and
@@ -213,10 +212,7 @@ function addRelationshipsFromEntity(ctx: BuildContext, meta: EntityMeta<object>)
  * Add indexes from field options (`@Field({ index })`), from `@Index`, and for every foreign
  * key none of those already serves.
  */
-function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<object>): void {
-  const table = tableOf(ctx, meta);
-  if (!table) return;
-
+function addIndexesFromEntity(ctx: BuildContext, meta: EntityMeta<object>, table: TableNode): void {
   for (const idxMeta of declaredIndexes(meta)) {
     addCompositeIndex(ctx, table, meta, idxMeta);
   }
@@ -247,19 +243,10 @@ function addForeignKeyIndexes(ctx: BuildContext, meta: EntityMeta<object>, table
   }
 }
 
-/** Whether the key or an index already leads with `columns`, which is all a lookup needs. */
+/** Whether the key or an index the engine can look rows up by already leads with `columns`. */
 function isIndexedBy(table: TableNode, columns: readonly string[]): boolean {
-  const leads = (indexed: readonly (string | undefined)[]) => columns.every((column, at) => indexed[at] === column);
-  return (
-    leads(table.primaryKey?.columns ?? []) ||
-    table.indexes.some((index) =>
-      leads(
-        index.entries.map((entry) =>
-          entry.expression || entry.jsonPath || entry.jsonArray ? undefined : entry.column,
-        ),
-      ),
-    )
-  );
+  const leads = (indexed: readonly string[]) => columns.every((column, at) => indexed[at] === column);
+  return leads(table.primaryKey?.columns ?? []) || table.indexes.some((index) => leads(lookupColumns(index)));
 }
 
 /** An `include` column is named like any other, so a naming strategy has to reach it too. */

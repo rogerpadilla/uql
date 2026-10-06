@@ -104,6 +104,17 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
     expect(values).toEqual(['User']);
   }
 
+  /** An entity's own schema, bound, where it names one. */
+  shouldEstimateTheCountOfATableInItsOwnSchema() {
+    @Entity({ schema: 'sales' })
+    class Order {
+      @Id({ type: Number }) id?: number;
+    }
+    const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, Order));
+    expect(sql).toContain(` AND s.name = ${this.ph(2)}`);
+    expect(values).toEqual(['Order', 'sales']);
+  }
+
   /** The hint precedes the page rather than following it, so the base ordering assertion inverts. */
   override shouldPlaceLockAfterLimitAndOffset() {
     const { sql } = this.exec((ctx) =>
@@ -405,6 +416,27 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
   /** The schema statement is a catalogue check, since there is no `CREATE SCHEMA IF NOT EXISTS`. */
   shouldCreateASchemaOnlyWhenAbsent() {
     expect(this.dialect.createSchemaSql('crm')).toBe(`IF SCHEMA_ID(N'crm') IS NULL EXEC(N'CREATE SCHEMA "crm"')`);
+  }
+
+  /** Given no trigger rows to read, a refusal and an upsert stand alone rather than guard on or read from them. */
+  shouldWriteATriggerBodyWithNoRowsToRead() {
+    const refusal = this.dialect.createContext();
+    this.dialect.triggerWrite(refusal, { kind: 'refuse', message: 'closed' });
+    expect(refusal.sql).toBe("THROW 50000, N'closed', 1;");
+
+    const upsert = this.dialect.createContext();
+    this.dialect.triggerWrite(upsert, {
+      kind: 'upsert',
+      entity: Enrolment,
+      conflictPaths: { studentId: true, courseId: true },
+      row: { studentId: 1, courseId: 2, grade: 'A' },
+    });
+    expect(upsert.sql).toBe(
+      'MERGE INTO "Enrolment" WITH (HOLDLOCK) USING (SELECT @p1, @p2, @p3) AS "_uql_src" ("studentId", "courseId", "grade")' +
+        ' ON "Enrolment"."studentId" = "_uql_src"."studentId" AND "Enrolment"."courseId" = "_uql_src"."courseId"' +
+        ' WHEN MATCHED THEN UPDATE SET "grade" = "_uql_src"."grade"' +
+        ' WHEN NOT MATCHED THEN INSERT ("studentId", "courseId", "grade") VALUES ("_uql_src"."studentId", "_uql_src"."courseId", "_uql_src"."grade");',
+    );
   }
 
   /** `OUTPUT` names one id column, so a composite key merges with nothing to report. */

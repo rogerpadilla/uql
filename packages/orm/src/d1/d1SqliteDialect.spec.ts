@@ -1,9 +1,10 @@
 import BetterSqlite3 from 'better-sqlite3';
 import { describe, expect, it } from 'vitest';
-import { Entity, Field, Id } from '../entity/index.js';
+import { Entity, Field, getEntities, Id } from '../entity/index.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { SqliteQuerier } from '../sqlite/sqliteQuerier.js';
-import { createTables, Item, ItemTag, Tag, Tax, VectorItem } from '../test/index.js';
+import { Item, ItemTag, Tag, Tax, VectorDoc, VectorItem } from '../test/index.js';
 import type { Json } from '../type/index.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
 
@@ -72,7 +73,9 @@ describe('D1SqliteDialect', () => {
   /** The split calls read and write what one call would, on a real SQLite. */
   it('should read and update through the split calls', async () => {
     const db = new BetterSqlite3(':memory:');
-    await createTables(new SqliteQuerier(db, new SqliteDialect()));
+    for (const sql of new SqlSchemaGenerator(new SqliteDialect()).generateCreateSchema(getEntities())) {
+      db.exec(sql);
+    }
     const d1 = new SqliteQuerier(db, dialect);
     const taxId = await d1.insertOne(Tax, { name: 'VAT', percentage: 16 });
     const itemId = await d1.insertOne(Item, { name: 'pen', taxId });
@@ -100,5 +103,15 @@ describe('D1 vectors', () => {
 
   it('should read a vector back from its text', () => {
     expect(dialect.hydratableFields(VectorItem)).toContainEqual(['vec', 'vector']);
+  });
+
+  /** Its text crosses JSON as it is, rather than as hex bytes. */
+  it('should read a populated vector as its text', () => {
+    const ctx = dialect.createContext();
+    dialect.find(ctx, VectorDoc, { $select: { id: true }, $populate: { chunks: { $select: { vec: true } } } });
+    expect(ctx.sql).toBe(
+      "SELECT `VectorDoc`.`id`, (SELECT json_group_array(json_object('vec', `chunks`.`vec`)) FROM (SELECT `chunks`.`vec`" +
+        ' FROM `VectorChunk` `chunks` WHERE `chunks`.`vectorDocId` = `VectorDoc`.`id`) `chunks`) `chunks` FROM `VectorDoc`',
+    );
   });
 });

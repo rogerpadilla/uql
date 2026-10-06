@@ -489,6 +489,55 @@ describe('SchemaASTBuilder', () => {
       ]);
     });
 
+    /** An expression is not its column, so an index over one serves no lookup by the key. */
+    it('should index a foreign key an expression index only reads', () => {
+      @Entity()
+      @Index((fkExpression) => [raw`ABS(${fkExpression.fkBlogId})`])
+      class FkExpression {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+      }
+
+      const ast = buildSchemaAST([FkBlog, FkExpression], {
+        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
+      });
+
+      expect(indexedColumns(ast, 'FkExpression')).toEqual([['ABS("fkBlogId")'], ['fkBlogId']]);
+    });
+
+    /** An index the engine cannot look every row up by: some rows (partial), no equality (fulltext), part of the value (prefix). */
+    it('should index a foreign key an index leads with but cannot look it up by', () => {
+      @Entity()
+      @Index((fkPartial) => [fkPartial.fkBlogId], { where: { live: true } })
+      class FkPartial {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: Boolean }) live?: boolean | null;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+      }
+
+      @Entity()
+      @Index((fkFulltext) => [fkFulltext.fkBlogId], { type: 'fulltext' })
+      class FkFulltext {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+      }
+
+      @Entity()
+      @Index((fkPrefix) => [{ column: fkPrefix.fkBlogId, length: 4 }])
+      class FkPrefix {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => FkBlog }) fkBlogId?: number | null;
+      }
+
+      const ast = buildSchemaAST([FkBlog, FkPartial, FkFulltext, FkPrefix], {
+        compileDdl: (sql, entity) => new PostgresDialect().compileDdl(sql, entity),
+      });
+
+      expect(indexedColumns(ast, 'FkPartial')).toEqual([['fkBlogId'], ['fkBlogId']]);
+      expect(indexedColumns(ast, 'FkFulltext')).toEqual([['fkBlogId'], ['fkBlogId']]);
+      expect(indexedColumns(ast, 'FkPrefix')).toEqual([['fkBlogId'], ['fkBlogId']]);
+    });
+
     it('should leave a foreign key unindexed when its field opts out', () => {
       @Entity()
       class FkUnindexed {
@@ -530,19 +579,20 @@ describe('SchemaASTBuilder', () => {
       expect(ast.getTable('RenamedColumn')?.indexes).toEqual([]);
     });
 
-    /** A resolver answering differently on each call looks the relation's table up under another name. */
-    it('should skip a relation whose table it cannot find', () => {
+    it('should skip a relation to an entity outside the set it builds', () => {
       @Entity()
-      class Unstable {
+      class OutsideParent {
         @Id({ type: Number }) id?: number;
-        @Field({ references: () => Unstable }) selfId?: number | null;
-        @ManyToOne({ entity: () => Unstable, references: (unstable) => unstable.selfId }) self?: Unstable;
+      }
+      @Entity()
+      class InsideChild {
+        @Id({ type: Number }) id?: number;
+        @Field({ references: () => OutsideParent }) parentId?: number | null;
       }
 
-      let callCount = 0;
-      const ast = buildSchemaAST([Unstable], { resolveTableName: () => `T${++callCount}` });
+      const ast = buildSchemaAST([InsideChild]);
 
-      expect(ast.tables.size).toBe(1);
+      expect([...ast.tables.keys()]).toEqual(['InsideChild']);
       expect(ast.relationships).toEqual([]);
     });
 

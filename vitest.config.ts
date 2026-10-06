@@ -52,9 +52,8 @@ export default defineConfig({
     testTimeout: 10_000,
     hookTimeout: 10_000,
     include: ['packages/**/*.spec.ts', 'packages/**/*.test.ts'],
-    // `*.bun.test.ts` files assert Bun-only driver behavior and import `bun:test`; see `test:bun`.
-    exclude: ['packages/orm/src/bunSql/**/*.test.ts', 'packages/**/*.bun.test.ts'],
-    setupFiles: ['./vitest.setup.ts'],
+    // `bun:sql` and `*.bun.test.ts` run only under Bun, which measures them; see `test:bun`.
+    exclude: ['packages/orm/src/bunSql/**', 'packages/**/*.bun.test.ts'],
     server: {
       // `loadTsDefaultExport` writes generated migrations to a temp dir to prove they run on a real
       // runtime. Externalizing them keeps this run's esbuild transform out of the way, so Node's own
@@ -67,7 +66,7 @@ export default defineConfig({
       reportsDirectory: 'coverage',
       include: ['packages/*/src/**/*.ts'],
       exclude: [
-        'packages/*/src/bunSql/**/*.test.ts',
+        'packages/orm/src/bunSql/**',
         'packages/*/src/**/*.spec.ts',
         'packages/*/src/**/*-spec.ts',
         'packages/*/src/**/*.test.ts',
@@ -75,6 +74,7 @@ export default defineConfig({
         'packages/*/src/**/*.test-d.ts',
         'packages/*/src/test/**/*.ts',
         'packages/*/src/**/index.ts',
+        'packages/orm/src/turso/local.ts',
         // Argv shims over an exported `run()`, which its own spec covers.
         'packages/*/src/bin.ts',
         'packages/*/src/**/*.d.ts',
@@ -83,10 +83,10 @@ export default defineConfig({
         'packages/*/src/**/types.ts', // Pure type definition files
       ],
       thresholds: {
-        statements: 99,
-        branches: 98,
-        functions: 99,
-        lines: 99,
+        statements: 99.9,
+        branches: 99.8,
+        functions: 99.9,
+        lines: 99.9,
       },
     },
     css: false,

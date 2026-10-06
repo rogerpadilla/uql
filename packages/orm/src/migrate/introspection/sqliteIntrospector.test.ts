@@ -157,10 +157,33 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     ]);
   }
 
+  /** SQLite reports no foreign key's name, so the table leaves it out and the AST derives it from the columns. */
   async shouldDeriveAForeignKeyNameFromItsColumns() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
+    const ast = await this.introspector.introspect([INTROSPECT_TABLES.A, INTROSPECT_TABLES.B]);
 
-    expect(this.getForeignKey(schema, 'a_id').name).toBe(`${INTROSPECT_TABLES.B}__a_id_fk`);
+    expect(this.getForeignKey(schema, 'a_id').name).toBe(undefined);
+    expect(ast.getTable(INTROSPECT_TABLES.B)?.outgoingRelations.map((relation) => relation.name)).toEqual([
+      `${INTROSPECT_TABLES.B}__a_id_fk`,
+    ]);
+  }
+
+  /** A trigger written by hand is left alone: only the ones under uql's own prefix are reported, to reconcile. */
+  async shouldReportOnlyTheTriggersUqlInstalled() {
+    const table = 'probe_triggers';
+    const body = `AFTER UPDATE ON ${table} BEGIN SELECT 1; END`;
+    const run = (sql: string) => this.pool.withQuerier((querier) => querier.run(sql));
+    await run(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY, n INTEGER)`);
+    try {
+      await run(`CREATE TRIGGER hand_made ${body}`);
+      await run(`CREATE TRIGGER _uql_probe_triggers__mine ${body}`);
+
+      expect([...(await this.introspector.ownedTriggers(table)).entries()]).toEqual([
+        ['_uql_probe_triggers__mine', [`CREATE TRIGGER _uql_probe_triggers__mine ${body}`]],
+      ]);
+    } finally {
+      await run(`DROP TABLE ${table}`);
+    }
   }
 
   async shouldReadATableWhoseNameNeedsEscaping() {

@@ -27,7 +27,7 @@ jobs:
     timeout-minutes: 10
     name: Lint & Typecheck
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
       - name: Lint
         run: bun run lint
@@ -39,7 +39,7 @@ jobs:
     timeout-minutes: 10
     name: Package & Size
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       # `build` shells out to node-shebang bins (tsc, rimraf), so don't inherit the image's node.
       - uses: ./.github/actions/setup
         with:
@@ -66,7 +66,7 @@ jobs:
         example: [node, nextjs, bun, cloudflare-d1]
     name: Example (${{ matrix.example }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           node-version: lts/*
@@ -102,7 +102,7 @@ jobs:
             node: latest
     name: Test (${{ matrix.suite }}, node ${{ matrix.node }})
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@v7
       - uses: ./.github/actions/setup
         with:
           node-version: ${{ matrix.node }}
@@ -126,9 +126,24 @@ jobs:
         with:
           name: compose-logs-${{ strategy.job-index }}
           path: compose.log
+      # Bun-only code (`bun:sql`, `bun:sqlite`) runs only in the bun leg, so each suite reports what it ran
+      # and Coveralls merges the two into one figure.
       - name: Submit coverage
-        if: matrix.suite == 'vitest' && matrix.node == 'lts/*'
+        if: matrix.node == 'lts/*'
         uses: coverallsapp/github-action@v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
-          file: ./coverage/lcov.info
+          file: ${{ matrix.suite == 'bun' && './coverage/bun/lcov.info' || './coverage/lcov.info' }}
+          flag-name: ${{ matrix.suite }}
+          parallel: true
+
+  coverage:
+    needs: tests
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    name: Coverage
+    steps:
+      - uses: coverallsapp/github-action@v2
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          parallel-finished: true

@@ -87,8 +87,8 @@ export class Post {
 ## Queries
 
 ```ts
-import { pool } from './uql.config.js';
 import { User } from './entities.js';
+import { pool } from './uql.config.js';
 
 const users = await pool.findMany(User, {
   $select: { id: true, email: true },

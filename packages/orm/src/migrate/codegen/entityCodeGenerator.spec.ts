@@ -370,6 +370,32 @@ describe('EntityCodeGenerator', () => {
       );
     });
 
+    it('should pair the columns of a foreign key pointing at a table with no primary key', () => {
+      const ast = new SchemaAST();
+      const users = mockTableNode('users', [{ name: 'code', type: { category: 'integer' }, isUnique: true }]);
+      const posts = mockTableNode('posts', [
+        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+        { name: 'author_code', type: { category: 'integer' } },
+      ]);
+      ast.addTable(users);
+      ast.addTable(posts);
+
+      ast.addRelationship({
+        name: 'posts_users_fk',
+        type: 'ManyToOne',
+        from: { table: posts, columns: columnsOf(posts, 'author_code') },
+        to: { table: users, columns: columnsOf(users, 'code') },
+        onDelete: 'NO ACTION',
+        onUpdate: 'NO ACTION',
+      });
+
+      const result = new EntityCodeGenerator(ast).generateForTable('posts');
+
+      assertDefined(result);
+
+      expect(result.code).toContain('references: (post, user) => [{ local: post.authorCode, foreign: user.code }]');
+    });
+
     it('should pair a self-referencing foreign key over two parameters, since one name cannot be both sides', () => {
       const ast = new SchemaAST();
       const employees = mockTableNode('employees', [
@@ -799,6 +825,23 @@ describe('EntityCodeGenerator', () => {
       assertDefined(result);
 
       expect(result.code).toContain("enum: ['open', 'closed']");
+    });
+
+    it('should carry numeric enum members as number literals, in the options and the type', () => {
+      const ast = new SchemaAST();
+      ast.addTable(
+        mockTableNode('tickets', [
+          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
+          { name: 'priority', type: { category: 'integer' }, enum: [1, 2] },
+        ]),
+      );
+
+      const result = new EntityCodeGenerator(ast).generateForTable('tickets');
+
+      assertDefined(result);
+
+      expect(result.code).toContain('enum: [1, 2] as const');
+      expect(result.code).toContain('priority?: 1 | 2 | null;');
     });
 
     it('should carry a generated column as a stored computed field, and import raw for it', () => {

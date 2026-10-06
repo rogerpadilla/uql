@@ -11,7 +11,7 @@ type MsSqlResult = {
 
 /** The part of the `Readable` a request streams into that a querier drives. */
 type MsSqlRowStream = AsyncIterable<RawRow> & {
-  destroy(error: Error): unknown;
+  destroy(error: unknown): unknown;
   on(event: 'error', listener: (error: Error) => void): unknown;
 };
 
@@ -84,7 +84,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
     const request = this.#request(values);
     const rows = request.toReadableStream();
     const completed = request.query(query).catch((err: unknown) => {
-      rows.destroy(err instanceof Error ? err : new Error(String(err)));
+      rows.destroy(err);
     });
     try {
       yield* rows;
@@ -120,13 +120,11 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
     await transaction?.rollback();
   }
 
-  /** The pool owns the socket; releasing a querier only drops this one's claim on it. */
-  protected override async releaseConn(_conn: MsSqlConnection, _discard: boolean) {
-    const transaction = this.#transaction;
-    this.#transaction = undefined;
-    // A querier handed back mid-transaction would otherwise leave it open on a pooled connection.
-    await transaction?.rollback().catch(() => undefined);
-  }
+  /**
+   * The pool owns the socket, so there is nothing to hand back: `release` has already rolled back a
+   * transaction left open, and commit and rollback both drop the `Transaction` they end.
+   */
+  protected override async releaseConn() {}
 }
 
 /** The driver's constant for each level UQL names; total, so a new level is a compile error here. */

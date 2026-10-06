@@ -102,6 +102,21 @@ describe('createRequestHandler', () => {
     expect(handle(req({ method: 'GET', entityPath: 'billing-company', subPath: 'one' }))).toBeDefined();
   });
 
+  it('should name a colliding table by itself when it has no schema', () => {
+    class Order {
+      id?: number;
+    }
+    defineEntity(Order, { fields: { id: { isId: true, type: Number } } });
+    const Archived = class Order {
+      id?: number;
+    };
+    defineEntity(Archived, { name: 'order_archive', fields: { id: { isId: true, type: Number } } });
+
+    expect(() => createRequestHandler({ pool, include: [Order, Archived] })).toThrow(
+      '/order <- Order (Order), Order (order_archive)',
+    );
+  });
+
   it('should return undefined for unknown entity or route', () => {
     const handle = createRequestHandler({ pool, include: [User] });
     expect(handle(req({ method: 'GET', entityPath: 'unknown-entity' }))).toBeUndefined();

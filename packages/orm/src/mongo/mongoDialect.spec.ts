@@ -2,7 +2,7 @@ import { ObjectId } from 'mongodb';
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
 import { AGGREGATE_VALUE_ALIAS, REL_NESTED_KEY, REL_TEMP_PREFIX, TEXT_SCORE_ALIAS } from '../dialect/aliases.js';
-import { Entity, Field, Filter, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
+import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import {
   Company,
@@ -20,32 +20,12 @@ import {
   VectorChunk,
   VectorDoc,
 } from '../test/index.js';
+import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
 import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
 import { raw } from '../util/index.js';
 import { UqlSecurityError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
-
-declare module '../type/index.js' {
-  interface UqlContext {
-    secureTenantId?: number;
-  }
-}
-
-/** The joined (m1) side of a `security: true` filter - the regression case for the $lookup/populate gap. */
-@Filter('tenant', {
-  where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
-  security: true,
-})
-@Entity()
-class SecureRelated {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ type: Number })
-  tenantId?: number | null;
-  @Field({ type: String })
-  name?: string | null;
-}
 
 /** A string key and a string reference: the shape the two wire seams convert. */
 @Entity()
@@ -56,16 +36,6 @@ class Doc {
   parentId?: string | null;
   @Field({ type: String })
   title?: string | null;
-}
-
-@Entity()
-class SecureParent {
-  @Id({ type: Number })
-  id?: number;
-  @Field({ references: () => SecureRelated })
-  relatedId?: number | null;
-  @ManyToOne({ entity: () => SecureRelated, references: (secureParent) => secureParent.relatedId })
-  related?: SecureRelated;
 }
 
 /**
@@ -414,6 +384,18 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.select(SqlComputedDoc, { doubled: true })).toThrow(message);
     expect(() => this.dialect.where(SqlComputedDoc, { doubled: { $gt: 1 } })).toThrow(message);
     expect(() => this.dialect.aggregationPipeline(SqlComputedDoc, { $sort: { doubled: -1 } })).toThrow(message);
+  }
+
+  /** A projection by exclusion skips a SQL-computed field it leaves in, rather than refusing a field nobody named. */
+  shouldSkipASqlComputedFieldAnExclusionLeavesIn() {
+    expect(this.dialect.select(SqlComputedDoc, undefined, { price: true })).toEqual({ _id: 1 });
+  }
+
+  /** A `$distinct` over no projected column has nothing to group by, so it collapses nothing. */
+  shouldCollapseNothingWhereADistinctProjectsNoColumn() {
+    expect(
+      this.dialect.aggregationPipeline(SqlComputedDoc, { $distinct: true, $exclude: { id: true, price: true } }),
+    ).toEqual([{ $project: { _id: 0 } }]);
   }
 
   shouldThrowOnRawInWhere() {
@@ -1137,11 +1119,13 @@ class MongoDialectSpec implements Spec {
     const isNull = (ref: string) => ({ $eq: [{ $ifNull: [ref, null] }, null] });
     const present = (ref: string) => ({ $not: [isNull(ref)] });
 
+    expect(counting({ code: { $eq: 'a' } })).toEqual(counted({ $eq: ['$code', 'a'] }));
     expect(counting({ code: { $ne: 'a' } })).toEqual(counted({ $not: [{ $eq: ['$code', 'a'] }] }));
     expect(counting({ code: { $ne: null } })).toEqual(counted({ $not: [isNull('$code')] }));
     expect(counting({ salePrice: { $gte: 1, $lt: 9 } })).toEqual(
       counted({ $and: [{ $gte: ['$salePrice', 1] }, { $and: [present('$salePrice'), { $lt: ['$salePrice', 9] }] }] }),
     );
+    expect(counting({ salePrice: { $gt: 1 } })).toEqual(counted({ $gt: ['$salePrice', 1] }));
     expect(counting({ salePrice: { $between: [1, 9] } })).toEqual(
       counted({ $and: [{ $gte: ['$salePrice', 1] }, { $lte: ['$salePrice', 9] }] }),
     );
@@ -1485,6 +1469,29 @@ class MongoDialectSpec implements Spec {
         $sort: { item: { tags: { $count: -1 } } },
       }),
     ).toThrow("$sort by 'item.tags.$count' is only supported on the queried entity");
+  }
+
+  /** A text score belongs to the queried entity's own match, so a relation has none to order by. */
+  shouldRejectATextSortUnderARelation() {
+    expect(() =>
+      this.dialect.aggregationPipeline(Item, {
+        $populate: { tax: true },
+        // @ts-expect-error: a relation sorts by its own fields, and `$text` is none
+        $sort: { tax: { $text: 'desc' } },
+      }),
+    ).toThrow("$sort by $text is only supported on the queried entity, not on relation 'tax'");
+  }
+
+  /** A soft-deleted link is no link: the junction's own filter runs before its target is read. */
+  shouldFollowOnlyTheLiveLinksOfASoftDeletableJunction() {
+    const [lookup] = this.dialect.matchStages(SecureCollection, { linkedChildren: { id: 1 } });
+
+    expect(lookup.$lookup).toMatchObject({
+      from: 'SecureCollectionLink',
+      localField: '_id',
+      foreignField: 'secureCollectionId',
+    });
+    expect(lookup.$lookup?.pipeline?.[0]).toEqual({ $match: { deletedAt: null } });
   }
 
   /** A key MongoDB itself names `_id` stays `_id`: there is no second name to move it to. */
@@ -2079,6 +2086,8 @@ class MongoDialectSpec implements Spec {
       _id: { $not: { $gt: new ObjectId(hex) } },
     });
     expect(this.dialect.where(Doc, { title: { $gt: hex } })).toEqual({ title: { $gt: hex } });
+    // A pattern compares no value, so it is left as the text it is.
+    expect(this.dialect.where(Doc, { parentId: { $startsWith: '507f' } })).toEqual({ parentId: { $regex: '^507f' } });
   }
 
   /**

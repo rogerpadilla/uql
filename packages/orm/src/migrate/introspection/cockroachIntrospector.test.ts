@@ -19,7 +19,7 @@ describe('column introspection (CockroachDB)', () => {
       await querier.run(`DROP TABLE IF EXISTS "${TABLE}"`);
       await querier.run(
         `CREATE TABLE "${TABLE}" (id INT PRIMARY KEY, qty INT,
-           doubled INT AS (qty * 2) STORED, tripled INT AS (qty * 3) VIRTUAL)`,
+           doubled INT AS (qty * 2) STORED, tripled INT AS (qty * 3) VIRTUAL, label STRING DEFAULT 'it''s')`,
       );
     });
   }, provisioningTimeout);
@@ -46,6 +46,11 @@ describe('column introspection (CockroachDB)', () => {
 
   it('should leave a plain column ungenerated', async () => {
     expect((await column('qty')).generatedAs).toBe(undefined);
+  });
+
+  /** CockroachDB reprints a string holding a quote in escape syntax, `e'it\'s'`. */
+  it('should read a string default holding a quote back as written', async () => {
+    expect((await column('label')).defaultValue).toBe("it's");
   });
 });
 

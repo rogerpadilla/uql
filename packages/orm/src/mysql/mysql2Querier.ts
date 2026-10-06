@@ -1,15 +1,19 @@
-import type { Connection } from 'mysql2';
-import type { FieldPacket, PoolConnection, ResultSetHeader } from 'mysql2/promise';
+import type { PoolConnection } from 'mysql2';
+import type { ResultSetHeader } from 'mysql2/promise';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 
+/**
+ * Holds the driver's own connection rather than its promise wrapper, whose types name the connection
+ * inside it a promise one too: streaming is the own connection's alone.
+ */
 export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   override async internalAll<T>(query: string, values?: unknown[]) {
-    const [res] = await this.getConn().query(query, values);
+    const [res] = await this.getConn().promise().query(query, values);
     return res as T[];
   }
 
   override async internalRun(query: string, values?: unknown[]) {
-    const [res] = (await this.getConn().query(query, values)) as [ResultSetHeader, FieldPacket[]];
+    const [res] = await this.getConn().promise().query<ResultSetHeader>(query, values);
     return this.buildUpdateResult({
       changes: res.affectedRows,
       id: res.insertId,
@@ -18,8 +22,7 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
   }
 
   override async *internalStream(query: string, values?: unknown[]) {
-    const rawConn = this.getConn().connection as unknown as Connection;
-    yield* rawConn.query(query, values).stream();
+    yield* this.getConn().query(query, values).stream();
   }
 
   protected override async releaseConn(conn: PoolConnection, discard: boolean) {
@@ -29,6 +32,6 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
       conn.destroy();
       return;
     }
-    await conn.release();
+    conn.release();
   }
 }

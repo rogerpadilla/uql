@@ -6,3 +6,17 @@ lockfile = true
 # Tests only: a hook still capped at bun's 5s default with this set to 10s, which is why `test:bun`
 # repeats it as `--timeout`. Setup and teardown take `provisioningTimeout` from `test/spec.util.ts`.
 timeout = 10000
+# The lcov goes up to Coveralls beside vitest's, since the Bun-only code runs nowhere else.
+coverage = true
+coverageReporter = ["text", "lcov"]
+coverageDir = "coverage/bun"
+coverageSkipTestFiles = true
+# vitest's coverage excludes, so the two legs Coveralls merges measure the same source.
+coveragePathIgnorePatterns = [
+  "packages/*/src/test/**",
+  "packages/*/src/**/*-test.ts",
+  "packages/*/src/**/*-spec.ts",
+  "packages/*/src/**/index.ts",
+  "packages/*/src/**/types.ts",
+  "packages/*/src/type/**",
+]

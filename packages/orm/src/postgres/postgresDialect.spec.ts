@@ -234,6 +234,45 @@ class PostgresDialectSpec extends PgFamilySpec {
     expect(values).toEqual([100, 1000]);
   }
 
+  /** A JSON path of a joined relation reads its column under the relation's alias. */
+  shouldReadAJsonPathOfARelation() {
+    const query = { $select: { id: true }, $populate: { company: { $select: { id: true } } } } as const;
+    const where = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { ...query, $where: { company: { 'kind.private': 1 } } }),
+    );
+    const sort = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { ...query, $sort: { company: { 'kind.private': 1 } } }),
+    );
+
+    const read =
+      'SELECT "User"."id", "company"."id" "company.id" FROM "User" LEFT JOIN "Company" "company" ON "company"."id" = "User"."companyId"';
+    expect(where.sql).toBe(
+      `${read} WHERE EXISTS (SELECT 1 FROM "Company" "company_2" WHERE "company_2"."id" = "User"."companyId" AND ` +
+        `CASE WHEN JSONB_TYPEOF(("company_2"."kind"->'private')) = 'number' THEN (("company_2"."kind"->>'private'))::numeric END = ($1)::numeric)`,
+    );
+    expect(sort.sql).toBe(`${read} ORDER BY ("company"."kind"->'private')`);
+  }
+
+  /** A to-many's rows ordered by what they project, carried out under its own name rather than a second time. */
+  shouldOrderAPopulatedToManyByTheRankItProjects() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $populate: {
+          tags: {
+            $select: { name: true },
+            $where: { $text: { $fields: { name: true }, $value: 'lamp' } },
+            $sort: { $text: { $order: 'desc', $project: 'rank' } },
+            $limit: 2,
+          },
+        },
+      }),
+    );
+
+    expect(sql).toContain(`JSON_AGG("_uql_row" ORDER BY "tags"."rank" DESC)`);
+    expect(sql).toContain(`WEBSEARCH_TO_TSQUERY($1)) "rank" FROM "Tag" "tags"`);
+  }
+
   /** A to-one is joined, so its filter joins with it, binding before the parent's own. */
   shouldFilterAPopulatedManyToOneInItsJoin() {
     const { sql, values } = this.exec((ctx) =>

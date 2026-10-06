@@ -37,6 +37,13 @@ describe('decodeWireTypes', () => {
     expect(decodeWireTypes([{ id: '1' }], undefined)).toEqual([{ id: '1' }]);
   });
 
+  /** The driver's types also allow a type object rather than its factory, which names no type to decode by. */
+  it('should leave a column whose type is no factory alone', () => {
+    const rows = [{ id: '9' }];
+
+    expect(decodeWireTypes(rows, { id: { type: { name: 'BigInt' } } })).toBe(rows);
+  });
+
   /** A NULL stays NULL: only a string is a candidate, since that is how the driver spells the type. */
   it('should leave a null and an already-numeric value as they are', () => {
     const columns = columnsOf({ id: 'BigInt' });

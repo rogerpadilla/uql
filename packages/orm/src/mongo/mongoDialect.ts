@@ -122,12 +122,10 @@ export type MongoSortPlan = {
   readonly fields: string[];
 };
 
-const EMPTY_SORT_PLAN: MongoSortPlan = { sort: {}, stages: [], fields: [] };
-
 /** What a read pipeline contributes to {@link MongoDialect.readStages} beyond the query itself. */
 type MongoReadStages = {
   /** Ordering, which runs after the lookups when it reads one of their fields. */
-  readonly sort?: MongoSortPlan;
+  readonly sort: MongoSortPlan;
   readonly pager?: MongoAggregationPipelineEntry<Document>[];
   /** A score the read answers as a field, a vector search's or a text search's; a temporary one leaves again. */
   readonly score?: {
@@ -1016,14 +1014,14 @@ export class MongoDialect extends AbstractDialect {
   public readStages<E extends Document>(
     entity: Type<E>,
     q: Query<E>,
-    extra: MongoReadStages = {},
+    extra: MongoReadStages,
   ): MongoAggregationPipelineEntry<Document>[] {
     const meta = getMeta(entity);
     const joins = resolveQueryJoins(meta, q);
     // The value an ordering by a relation's aggregate reads, and the field it parks it on: both belong
     // with the lookups, since the `$sort` right after them is what they exist for.
     const aggregated = this.sortAggregateStages(entity, q.$sort);
-    const ordering = extra.sort ?? EMPTY_SORT_PLAN;
+    const ordering = extra.sort;
     const lookups = [...this.lookupStages(meta, joins), ...aggregated.stages];
     // Each to-many and each `$count`, which neither drop nor reorder a row, so they read the page alone.
     const related = this.relationReadStages(entity, q);

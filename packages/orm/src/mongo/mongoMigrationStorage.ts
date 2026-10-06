@@ -6,7 +6,8 @@ import { type MongoQuerier, withMongoQuerierForMigrations } from './mongoQuerier
 type MigrationDocument = { _id: string; executed_at: Date };
 
 /**
- * Stores migration state in a MongoDB collection, named as the SQL table would be.
+ * Stores migration state in a MongoDB collection, named as the SQL table would be, which MongoDB creates
+ * on its first insert.
  */
 export class MongoMigrationStorage implements MigrationStorage {
   private readonly collectionName: string;
@@ -19,9 +20,6 @@ export class MongoMigrationStorage implements MigrationStorage {
   ) {
     this.collectionName = options.tableName ?? DEFAULT_MIGRATIONS_TABLE;
   }
-
-  /** Nothing to prepare: MongoDB creates the collection on its first insert. */
-  async ensureStorage(): Promise<void> {}
 
   executed(): Promise<string[]> {
     return withMongoQuerierForMigrations(this.pool, 'MongoMigrationStorage', async (querier) => {

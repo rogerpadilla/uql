@@ -1,7 +1,7 @@
 import { getMeta } from '../../entity/index.js';
 import { canonicalToTypeScript, resolveColumnCanonicalType } from '../../schema/canonicalType.js';
 import type { EntityMeta, FieldMeta, RelationMeta, Type } from '../../type/index.js';
-import { declaresNotNull, isToManyRelation, upperFirst } from '../../util/index.js';
+import { declaresNotNull, definedEntries, isToManyRelation, upperFirst } from '../../util/index.js';
 import { isIdentifierName } from './sourceLiteral.js';
 
 /**
@@ -17,10 +17,8 @@ export function entityTypesSource(entities: readonly Type<object>[]): string {
 
   const interfaces = metas.map((meta) => {
     const members = [
-      ...Object.entries<FieldMeta | undefined>(meta.fields).map(([key, field]) => fieldMember(key, field)),
-      ...Object.entries<RelationMeta | undefined>(meta.relations).map(
-        ([key, rel]) => `  ${propertyName(key)}?: ${relationType(rel, names)};`,
-      ),
+      ...definedEntries(meta.fields).map(([key, field]) => fieldMember(key, field)),
+      ...definedEntries(meta.relations).map(([key, rel]) => `  ${propertyName(key)}?: ${relationType(rel, names)};`),
     ];
     return `export interface ${names.get(meta.entity)} {\n${members.join('\n')}\n}`;
   });
@@ -64,13 +62,11 @@ function propertyName(key: string): string {
  * A field as an entity class declares it: required where every read has it and an insert names it, a
  * key included, which an insert leaves out anyway; optional where a default fills it or a read skips it
  * (`eager: false`); `| null` where the column holds NULL; `readonly` where the database computes it.
+ * Typed as the DDL resolves it, so a foreign key reads as the key it points at.
  */
-function fieldMember(key: string, field: FieldMeta | undefined): string {
-  const type = fieldType(field);
+function fieldMember(key: string, field: FieldMeta): string {
+  const type = canonicalToTypeScript(resolveColumnCanonicalType(field));
   const name = propertyName(key);
-  if (!field) {
-    return `  ${name}?: ${type};`;
-  }
   const written = field.computed === undefined ? '' : 'readonly ';
   if (!declaresNotNull(field)) {
     return `  ${written}${name}?: ${type} | null;`;
@@ -81,19 +77,11 @@ function fieldMember(key: string, field: FieldMeta | undefined): string {
 }
 
 /**
- * The property type a column reads back as, resolved the way the DDL resolves it - so a foreign key
- * reports the type of the key it points at rather than the fallback its own options carry.
- */
-function fieldType(field: FieldMeta | undefined): string {
-  return field ? canonicalToTypeScript(resolveColumnCanonicalType(field)) : 'unknown';
-}
-
-/**
  * A relation is the related interface, a list where the cardinality says so - and `unknown` where the
  * target is outside the set, since naming an interface the file does not declare would not compile.
  */
-function relationType(relation: RelationMeta | undefined, names: ReadonlyMap<Type<object>, string>): string {
-  const target = relation && names.get(relation.entity());
+function relationType(relation: RelationMeta, names: ReadonlyMap<Type<object>, string>): string {
+  const target = names.get(relation.entity());
   if (!target) {
     return 'unknown';
   }

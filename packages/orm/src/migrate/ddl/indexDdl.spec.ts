@@ -303,6 +303,12 @@ describe('index features', () => {
     expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'float' } }] })).toThrow(
       'mysql has no array cast for float elements',
     );
+    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: Boolean } }] })).toThrow(
+      'mysql has no array cast for Boolean elements',
+    );
+    expect(() => render('mysql', { entries: [{ column: 'tags', jsonArray: { type: 'blob' } }] })).toThrow(
+      'a multi-valued index over binary elements needs a length',
+    );
   });
 
   it.each(['postgres', 'cockroachdb', 'mariadb', 'sqlite'] as const)(

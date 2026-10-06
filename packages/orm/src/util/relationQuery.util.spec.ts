@@ -5,6 +5,7 @@ import type { QueryPopulate } from '../type/index.js';
 import { raw } from './raw.js';
 import {
   childrenOf,
+  countedRelations,
   getRelationRequestSummary,
   type JoinedRelationRejectedKey,
   parseRelationAtKey,
@@ -22,6 +23,12 @@ it('should pass over a relation populated false and a key that is no relation', 
     joinableKeys: [],
     toManyKeys: [],
   });
+});
+
+/** Client JSON again: a `$count` arrives from `/http` as a populate does. */
+it('should count no relation counted false, nor a key that is no relation', () => {
+  // @ts-expect-error: no such relation
+  expect(countedRelations(getMeta(User), { users: false, nope: true })).toEqual([]);
 });
 
 it('should summarize the relations a populate requests', () => {

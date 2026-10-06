@@ -1,12 +1,17 @@
 import { expect } from 'vitest';
 import type { AbstractDialect } from '../dialect/index.js';
 import { AbstractQuerier } from '../querier/index.js';
-import type { Spec } from '../test/index.js';
+import { type Spec, User } from '../test/index.js';
 import type { Querier } from '../type/index.js';
 import type { AbstractQuerierPool } from './abstractQuerierPool.js';
 
 export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
-  constructor(protected pool: AbstractQuerierPool<Q, AbstractDialect>) {}
+  protected pool: AbstractQuerierPool<Q, AbstractDialect>;
+
+  /** Takes the pool's factory, so a case can end a pool of its own. */
+  constructor(protected readonly createPool: () => AbstractQuerierPool<Q, AbstractDialect>) {
+    this.pool = createPool();
+  }
 
   async afterAll() {
     await this.pool.end();
@@ -69,5 +74,20 @@ export abstract class AbstractQuerierPoolIt<Q extends Querier> implements Spec {
       });
     });
     expect(result).toBe(42);
+  }
+
+  /** An ended pool closed what it held, so a querier taken before the end has nothing left to run on. */
+  async shouldRefuseAStatementAfterEnd() {
+    const pool = this.createPool();
+    const querier = await pool.getQuerier();
+
+    await pool.end();
+
+    await expect(this.statementOn(querier)).rejects.toThrow();
+  }
+
+  /** A statement any working pool runs: a count, which on MongoDB needs no collection to exist. */
+  protected statementOn(querier: Q): Promise<unknown> {
+    return querier.count(User, {});
   }
 }

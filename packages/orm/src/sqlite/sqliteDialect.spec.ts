@@ -229,6 +229,31 @@ class SqliteDialectSpec extends AbstractSqlDialectSpec {
     expect(res.values).toEqual(['{"name"} : ("something")', 'other unwanted', '1']);
   }
 
+  /** No word to require, so the empty phrase, which matches no row, rather than FTS5 syntax with nothing in it. */
+  shouldFind$textOfNoWords() {
+    const { values } = this.exec((ctx) =>
+      this.dialect.find(ctx, Item, {
+        $select: { id: true },
+        $where: { $text: { $fields: { name: true }, $value: '  ' } },
+      }),
+    );
+    expect(values).toEqual(['{"name"} : ("")']);
+  }
+
+  /** A scalar element compared as text reads its typed `value`, never the JSON form of it. */
+  shouldFind$elemMatchOfAScalarAsText() {
+    const { sql, values } = this.exec((ctx) =>
+      this.dialect.find(ctx, JsonRecord, {
+        $select: { id: true },
+        $where: { entries: { $elemMatch: { $startsWith: 'a' } } },
+      }),
+    );
+    expect(sql).toBe(
+      "SELECT `id` FROM `JsonRecord` WHERE EXISTS (SELECT 1 FROM JSON_EACH(CASE WHEN JSON_TYPE(`entries`) = 'array' THEN `entries` END) _uql_elem WHERE _uql_elem.value LIKE ? ESCAPE '\\')",
+    );
+    expect(values).toEqual(['a%']);
+  }
+
   shouldHandleBoolean() {
     const { values } = this.exec((ctx) =>
       this.dialect.insert(ctx, Item, {

@@ -104,6 +104,34 @@ describe('buildIndexDecoratorSource', () => {
     expect(buildIndexDecoratorSource(index, asIs, 't')).toContain("type: 'hnsw', distance: 'cosine'");
   });
 
+  it("should keep a vector index's build parameters", () => {
+    const hnsw = indexNode([{ column: 'embedding' }], { type: 'hnsw', distance: 'l2', m: 16, efConstruction: 64 });
+    const ivfflat = indexNode([{ column: 'embedding' }], { type: 'ivfflat', distance: 'l2', lists: 100 });
+
+    expect(buildIndexDecoratorSource(hnsw, asIs, 't')).toBe(
+      "@Index((t) => [t.embedding], { name: 'idx', type: 'hnsw', distance: 'l2', m: 16, efConstruction: 64 })",
+    );
+    expect(buildIndexDecoratorSource(ivfflat, asIs, 't')).toBe(
+      "@Index((t) => [t.embedding], { name: 'idx', type: 'ivfflat', distance: 'l2', lists: 100 })",
+    );
+  });
+
+  it("should keep a unique index's uniqueness and each entry's operator class and prefix length", () => {
+    const index = indexNode(
+      [
+        { column: 'code', opsClass: 'text_pattern_ops' },
+        { column: 'slug', length: 10 },
+      ],
+      {
+        unique: true,
+      },
+    );
+
+    expect(buildIndexDecoratorSource(index, asIs, 't')).toBe(
+      "@Index((t) => [{ column: t.code, opsClass: 'text_pattern_ops' }, { column: t.slug, length: 10 }], { name: 'idx', unique: true })",
+    );
+  });
+
   // `@Index` requires a distance beside a vector type, so a type with no recoverable metric would
   // generate an entity that does not compile.
   it('should leave off a vector type whose metric it cannot recover', () => {

@@ -12,8 +12,13 @@ export abstract class AbstractSqlQuerierPoolIt<Q extends SqlQuerier> extends Abs
   declare protected pool: AbstractSqlQuerierPool<Q, AbstractSqlDialect>;
 
   // Narrows the accepted pool type to SQL pools, keeping the `declare` retype of `this.pool` sound
-  constructor(pool: AbstractSqlQuerierPool<Q, AbstractSqlDialect>) {
-    super(pool);
+  constructor(createPool: () => AbstractSqlQuerierPool<Q, AbstractSqlDialect>) {
+    super(createPool);
+  }
+
+  /** One that needs no table, so only an ended pool refuses it. */
+  protected override statementOn(querier: Q): Promise<unknown> {
+    return querier.all('SELECT 1');
   }
 
   async shouldRunRawSqlOnThePool() {

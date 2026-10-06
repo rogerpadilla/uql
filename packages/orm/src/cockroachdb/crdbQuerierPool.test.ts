@@ -5,7 +5,7 @@ import { CrdbQuerierPool } from './crdbQuerierPool.js';
 
 export class CockroachQuerierPoolIt extends AbstractSqlQuerierPoolIt<PgQuerier> {
   constructor() {
-    super(new CrdbQuerierPool(cockroachConnection()));
+    super(() => new CrdbQuerierPool(cockroachConnection()));
   }
 }
 

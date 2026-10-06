@@ -985,10 +985,7 @@ function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context)
  * The same null rule where `defineEntity` names the field: the property is on the class the call takes,
  * so the declaration is found there rather than under a decorator.
  */
-function admitNullOnDefined(field: NamedProperty, owner: Owner, ctx: Context): void {
-  if (!ts.isPropertyAssignment(field)) {
-    return;
-  }
+function admitNullOnDefined(field: ts.PropertyAssignment, owner: Owner, ctx: Context): void {
   const key = propertyKey(field.name);
   const declaration = key
     ? instanceTypeOf(owner.entity, ctx.checker)
@@ -1090,7 +1087,7 @@ function renameExports(
 function renamedTo(element: ts.ImportSpecifier, entry: string) {
   const name = importedName(element);
   const rename = RENAMED_EXPORTS.get(name);
-  return rename?.to === name && (rename.from ?? entry) === entry ? undefined : rename;
+  return rename?.to === name && rename.from === entry ? undefined : rename;
 }
 
 /** Every identifier in the file bound to the same symbol as `name`, besides `name` itself. */

@@ -14,7 +14,7 @@ class BunMariadbIt extends MariadbLikeQuerierIt {
 
 class BunMariadbPoolIt extends AbstractSqlQuerierPoolIt<BunSqlQuerier> {
   constructor() {
-    super(new BunSqlQuerierPool({ url }));
+    super(() => new BunSqlQuerierPool({ url }));
   }
 }
 

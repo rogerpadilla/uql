@@ -4,6 +4,7 @@ import type { RawRow } from '../type/index.js';
 export interface PgAnyClient {
   query(text: string, values?: unknown[]): Promise<{ rows: RawRow[]; rowCount: number | null }>;
   query(stream: object): AsyncIterable<RawRow>;
+  on(event: 'error', listener: (err: Error) => void): unknown;
   /** Any truthy argument makes `pg-pool` evict the client instead of returning it to the idle list. */
   release(discard?: boolean): void | Promise<void>;
 }

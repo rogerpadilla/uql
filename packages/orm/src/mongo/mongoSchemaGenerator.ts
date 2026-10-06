@@ -42,6 +42,9 @@ const ATLAS_SIMILARITY: Partial<Record<VectorDistance, string>> = {
   inner: 'dotProduct',
 };
 
+/** MongoDB runs no trigger within a write, and a write to an entity declaring one is refused, so there is none to reconcile. */
+const noTriggers = (): string[] => [];
+
 export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerator {
   /** Takes no default foreign key action, since a document store has no foreign keys. */
   constructor(namingStrategy?: NamingStrategy) {
@@ -151,18 +154,9 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     ];
   }
 
-  /** MongoDB runs no trigger within a write, and a write to an entity declaring one is refused, so there is none to reconcile. */
-  generateTriggers(): string[] {
-    return [];
-  }
-
-  generateTriggersDown(): string[] {
-    return [];
-  }
-
-  generateTriggerDrops(): string[] {
-    return [];
-  }
+  readonly generateTriggers = noTriggers;
+  readonly generateTriggersDown = noTriggers;
+  readonly generateTriggerDrops = noTriggers;
 
   private dropIndexCommand(tableName: string, index: IndexSchema): string {
     return index.type === 'vectorSearch'

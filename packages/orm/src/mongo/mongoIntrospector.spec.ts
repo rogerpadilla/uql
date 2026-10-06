@@ -11,8 +11,9 @@ function introspectorFailingSearchIndexes(error: Error): MongoSchemaIntrospector
   vi.spyOn(MongoClient.prototype, 'connect').mockImplementation(function (this: MongoClient) {
     return Promise.resolve(this);
   });
-  vi.spyOn(AbstractCursor.prototype, 'toArray').mockResolvedValue([{ name: 'items' }]);
-  vi.spyOn(Collection.prototype, 'indexes').mockResolvedValue([]);
+  vi.spyOn(AbstractCursor.prototype, 'toArray')
+    .mockResolvedValueOnce([{ name: 'items' }])
+    .mockResolvedValueOnce([]);
   vi.spyOn(Collection.prototype, 'aggregate').mockImplementation(() => {
     throw error;
   });

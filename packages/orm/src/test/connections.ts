@@ -36,5 +36,9 @@ export const mssqlConnection = (database = 'test') => ({
   options: { trustServerCertificate: true, encrypt: false },
 });
 
+/** The libSQL servers, one per suite reaching them, as Turso Cloud and a self-hosted sqld are reached. */
+export const libsqlServerUrl = 'http://127.0.0.1:8090';
+export const tursoServerUrl = 'http://127.0.0.1:8091';
+
 /** `directConnection`, since the one-node replica set names a host only the container resolves. */
 export const mongoUri = (database: string) => `mongodb://127.0.0.1:27027/${database}?directConnection=true`;
