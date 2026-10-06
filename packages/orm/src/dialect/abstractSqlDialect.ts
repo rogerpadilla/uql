@@ -316,18 +316,15 @@ function conjunction(parts: readonly string[]): string {
 const CHAIN_WIDTH = 16;
 
 /**
- * `parts` joined by `op`, a longer list nested in parenthesized groups so its depth grows with the log of
- * its length: a flat chain is as deep as it is long, which the Rust Turso engine refuses past 100 and SQLite past 1000.
+ * `parts` joined by `op`, a list past 16 split in parenthesized halves so its depth grows with the log of its
+ * length: a flat chain is as deep as it is long, which the Rust Turso engine refuses past 100 and SQLite past 1000.
  */
 function chain(parts: readonly string[], op: 'AND' | 'OR'): string {
   if (parts.length <= CHAIN_WIDTH) {
     return parts.join(` ${op} `);
   }
-  const size = Math.ceil(parts.length / CHAIN_WIDTH);
-  const groups = Array.from({ length: Math.ceil(parts.length / size) }, (_, at) =>
-    parts.slice(at * size, (at + 1) * size),
-  );
-  return groups.map((group) => `(${chain(group, op)})`).join(` ${op} `);
+  const half = Math.ceil(parts.length / 2);
+  return `(${chain(parts.slice(0, half), op)}) ${op} (${chain(parts.slice(half), op)})`;
 }
 
 /**

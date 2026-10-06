@@ -272,17 +272,15 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     );
   }
 
-  /** A long chain nests at most 16 operands a level, so its depth grows with the log of its length. */
-  shouldNestALongOrInGroups() {
+  /** A chain past 16 operands splits in halves, so its depth grows with the log of its length. */
+  shouldNestALongOrInHalves() {
     const $or = Array.from({ length: 20 }, (_, at) => ({ name: `n${at}` }));
     const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $select: { id: true }, $where: { $or } }));
     const name = this.dialect.escapeId('name');
-    const pairs = Array.from(
-      { length: 10 },
-      (_, at) => `(${name} = ${this.ph(2 * at + 1)} OR ${name} = ${this.ph(2 * at + 2)})`,
-    );
+    const half = (from: number) =>
+      Array.from({ length: 10 }, (_, at) => `${name} = ${this.ph(from + at)}`).join(' OR ');
     expect(sql).toBe(
-      `SELECT ${this.dialect.escapeId('id')} FROM ${this.dialect.escapeId('User')} WHERE ${pairs.join(' OR ')}`,
+      `SELECT ${this.dialect.escapeId('id')} FROM ${this.dialect.escapeId('User')} WHERE (${half(1)}) OR (${half(11)})`,
     );
   }
 
