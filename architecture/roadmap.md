@@ -12,7 +12,7 @@ What is next, in build order: groundwork first, so the features on top stay smal
 await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 ```
 
-**R5: `dialect.compile(query)`.** The SQL and its values without running them, so several statements can be gathered first. _Unlocks batching._
+**R5: an operation as a plan.** Its statements and how their results read, built without running, and one `runStatements` per querier: a request on D1, Turso Cloud and libSQL, a transaction elsewhere. Makes a split write on D1 atomic. _Unlocks batching._ [The design](batching.md).
 
 **R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). _Unlocks views, triggers._
 
@@ -35,7 +35,7 @@ A view is a read-only entity whose definition is its migration, and its field ty
 
 **Stored triggers.** Authored triggers and `stored: ['update']` stamps shipped, on every SQL engine, needing neither R7 nor R7b: a trigger is recreated rather than diffed, and the engine keeps the render a rollback puts back. What is left is the maintained aggregate (`computed: (u) => u.resources.count(), stored: true`), held back until an unstored one profiles too slow. MongoDB runs no trigger within a write and refuses them. [The design](triggers.md).
 
-**Batching** (R5). One round trip on D1, libSQL/Turso and Neon HTTP, a transaction elsewhere. The shape is undecided. Only reads, `count`, `exists` and a relation-free insert are reliably one statement each, so an entity-level `batch` would promise what the call site cannot show, while a statement-level one over `compile()` loses the typing.
+**Batching** (R5). `pool.batch((q) => [q.findMany(...), q.count(...)])`, a typed tuple back, one request where the engine allows it and a transaction elsewhere. [The design](batching.md).
 
 **Read-only queriers** (R2). `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
 
