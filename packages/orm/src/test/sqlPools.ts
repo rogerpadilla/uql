@@ -19,18 +19,18 @@ export type SqlPool = readonly [SqlDialectName | 'pglite', () => SqlQuerierPool]
 
 /**
  * Every SQL engine but those in `except`, as a pool each; one list, since a suite spelling its own drops an
- * engine unnoticed (SQL Server's stamps broke for exactly that long). SQL Server runs on `mssqlDatabase`,
- * one per file changing the schema, since two such files on one database deadlock (`docker/init-mssql.sql`).
+ * engine unnoticed (SQL Server's stamps broke for exactly that long). Each server runs it on `database`, the
+ * file's own (AGENTS.md), so the schema it changes is one no other file reads.
  */
-export function sqlPools(mssqlDatabase: string, ...except: readonly (SqlDialectName | 'pglite')[]): readonly SqlPool[] {
+export function sqlPools(database: string, ...except: readonly (SqlDialectName | 'pglite')[]): readonly SqlPool[] {
   const pools: readonly SqlPool[] = [
     ['pglite', () => new PgliteQuerierPool('memory://')],
-    ['postgres', () => new PgQuerierPool(postgresConnection())],
-    ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection())],
-    ['mysql', () => new MySql2QuerierPool(mysqlConnection())],
-    ['mariadb', () => new MariadbQuerierPool(mariadbConnection())],
+    ['postgres', () => new PgQuerierPool(postgresConnection(database))],
+    ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection(database))],
+    ['mysql', () => new MySql2QuerierPool(mysqlConnection(database))],
+    ['mariadb', () => new MariadbQuerierPool(mariadbConnection(database))],
     ['sqlite', () => new NodeSqliteQuerierPool(':memory:')],
-    ['mssql', () => new MsSqlQuerierPool(mssqlConnection(mssqlDatabase))],
+    ['mssql', () => new MsSqlQuerierPool(mssqlConnection(database))],
   ];
   return pools.filter(([name]) => !except.includes(name));
 }

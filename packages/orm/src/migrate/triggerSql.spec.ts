@@ -121,17 +121,17 @@ describe('renderTrigger', () => {
 describe('dropTrigger', () => {
   // Only the Postgres family scopes a trigger name to its table; elsewhere `DROP TRIGGER x ON t` is a syntax error.
   it('should name the table only where the engine scopes the name to one', () => {
-    expect(dropTrigger(new PostgresDialect(), getMeta(Post), '_uql_Post__x')[0]).toContain('ON "Post"');
-    expect(dropTrigger(new MySqlDialect(), getMeta(Post), '_uql_Post__x')[0]).not.toContain(' ON ');
+    expect(dropTrigger(new PostgresDialect(), 'Post', undefined, '_uql_Post__x')[0]).toContain('ON "Post"');
+    expect(dropTrigger(new MySqlDialect(), 'Post', undefined, '_uql_Post__x')[0]).not.toContain(' ON ');
   });
 
   // Dropping a trigger leaves the function it called, which would pile up with every edited body.
   it('should drop the function holding the body where the engine keeps one', () => {
-    expect(dropTrigger(new PostgresDialect(), getMeta(Post), '_uql_Post__x')).toEqual([
+    expect(dropTrigger(new PostgresDialect(), 'Post', undefined, '_uql_Post__x')).toEqual([
       'DROP TRIGGER IF EXISTS "_uql_Post__x" ON "Post"',
       'DROP FUNCTION IF EXISTS "_uql_Post__x"()',
     ]);
-    expect(dropTrigger(new MySqlDialect(), getMeta(Post), '_uql_Post__x')).toEqual([
+    expect(dropTrigger(new MySqlDialect(), 'Post', undefined, '_uql_Post__x')).toEqual([
       'DROP TRIGGER IF EXISTS `_uql_Post__x`',
     ]);
   });
@@ -586,7 +586,7 @@ describe('the rows it reads', () => {
     const { name, statements } = renderTrigger(new PostgresDialect(), meta, plain, 0);
     expect(statements.join('\n')).toContain(`CREATE OR REPLACE FUNCTION "sales"."${name}"()`);
     expect(statements.join('\n')).toContain(`CREATE TRIGGER "${name}"\n`);
-    expect(dropTrigger(new PostgresDialect(), meta, name)).toEqual([
+    expect(dropTrigger(new PostgresDialect(), 'sales.Note', 'sales', name)).toEqual([
       `DROP TRIGGER IF EXISTS "${name}" ON "sales"."Note"`,
       `DROP FUNCTION IF EXISTS "sales"."${name}"()`,
     ]);
@@ -602,7 +602,7 @@ describe('the rows it reads', () => {
     const meta = getMeta(Note);
     const mysql = renderTrigger(new MySqlDialect(), meta, { on: 'afterInsert', run: () => raw`SET @x = 1;` }, 0);
     expect(mysql.statements.join('\n')).toContain(`CREATE TRIGGER \`sales\`.\`${mysql.name}\``);
-    expect(dropTrigger(new MySqlDialect(), meta, mysql.name)).toEqual([
+    expect(dropTrigger(new MySqlDialect(), 'sales.Note', 'sales', mysql.name)).toEqual([
       `DROP TRIGGER IF EXISTS \`sales\`.\`${mysql.name}\``,
     ]);
     const mssql = renderTrigger(new MsSqlDialect(), meta, { on: 'afterInsert', run: () => raw`SELECT 1;` }, 0);

@@ -38,6 +38,32 @@ describe('DriftDetector', () => {
       expect(drifts[0].details).toContain('Default mismatch');
     });
 
+    /** A check is compared by the name uql installs it under, whose hash moves with its SQL. */
+    it('should report a check missing or left behind', () => {
+      const expected = new SchemaAST();
+      const actual = new SchemaAST();
+      const declared = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
+      declared.checks.push(
+        { name: '_uql_users__status_aaaaaa', expression: "status IN ('a', 'b')" },
+        { name: '_uql_users__ck_bbbbbb', expression: 'id > 0' },
+      );
+      const installed = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
+      installed.checks.push(
+        { name: '_uql_users__status_cccccc', expression: "status IN ('a')" },
+        { name: '_uql_users__cap_dddddd', expression: 'id < 9' },
+        { name: 'hand_ck', expression: 'id <> 5' },
+      );
+      expected.addTable(declared);
+      actual.addTable(installed);
+
+      expect(detectDrift(expected, actual).drifts.map(({ severity, details }) => ({ severity, details }))).toEqual([
+        { severity: 'critical', details: 'Check "_uql_users__status_aaaaaa" expected but not found in database' },
+        { severity: 'critical', details: 'Check "_uql_users__ck_bbbbbb" expected but not found in database' },
+        { severity: 'warning', details: 'Check "_uql_users__status_cccccc" exists in database but not in entity' },
+        { severity: 'warning', details: 'Check "_uql_users__cap_dddddd" exists in database but not in entity' },
+      ]);
+    });
+
     /** A `jsonb` column reprints its document, keys reordered and spaced: the same document is no drift. */
     it('should report a JSON default only where the document differs, and show it as JSON', () => {
       const expected = new SchemaAST();

@@ -203,7 +203,7 @@ function checkPeerReach(): void {
 const BUDGETS: Record<string, number> = {
   '.': 39_900,
   './postgres': 37_700,
-  './migrate': 61_400,
+  './migrate': 63_300,
   './browser': 2_100,
 };
 

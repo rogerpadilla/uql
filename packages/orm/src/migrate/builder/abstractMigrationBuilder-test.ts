@@ -329,6 +329,22 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
 
     expect(await this.introspector.tableExists(BUILDER_TABLES.MAIN)).toBe(false);
   }
+
+  /** Only the database can say the `CHECK` reached the column and is enforced, inline where the table is rebuilt to alter. */
+  async shouldAddAColumnCarryingItsEnum() {
+    await this.withBuilder(async (builder) => {
+      await this.givenUnrelatedPair(builder);
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) =>
+        c.string('state', { length: 10 }).nullable().enum(['on', 'off']),
+      );
+    });
+
+    // Unquoted: these names need no quoting on any engine here, and `raw` is the suite's own seam.
+    await this.withBuilder(async (builder) => {
+      await builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('on')`);
+      await expect(builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('bogus')`)).rejects.toThrow();
+    });
+  }
 }
 
 /**
@@ -390,22 +406,6 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
 
     const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
     expect(schema.indexes?.some((index) => index.entries.some((entry) => entry.column === 'slug'))).toBe(true);
-  }
-
-  /** Only the database can say the `CHECK` reached the column and is enforced. */
-  async shouldAddAColumnCarryingItsEnum() {
-    await this.withBuilder(async (builder) => {
-      await this.givenUnrelatedPair(builder);
-      await builder.addColumn(BUILDER_TABLES.CHILD, (c) =>
-        c.string('state', { length: 10 }).nullable().enum(['on', 'off']),
-      );
-    });
-
-    // Unquoted: these names need no quoting on any engine here, and `raw` is the suite's own seam.
-    await this.withBuilder(async (builder) => {
-      await builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('on')`);
-      await expect(builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('bogus')`)).rejects.toThrow();
-    });
   }
 
   /** The engine fills it, so only the engine can say the clause is right and a write to it is refused. */

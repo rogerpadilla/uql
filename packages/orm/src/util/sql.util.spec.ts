@@ -3,7 +3,6 @@ import type { Item } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
-  derivedCheckName,
   derivedConstraintName,
   derivedForeignKeyName,
   derivedIndexName,
@@ -21,7 +20,7 @@ const unflatRows = <T extends object>(rows: RawRow[]): T[] => {
 };
 
 it('should name a constraint over no parts after its table alone', () => {
-  expect(derivedConstraintName('users', [], 'ck')).toBe('users_ck');
+  expect(derivedConstraintName('users', [], 'pk')).toBe('users_pk');
 });
 
 /** A string key has no successor to infer, so only a single-row write can be named by it. */
@@ -221,7 +220,6 @@ describe('derived constraint names', () => {
     expect(derivedIndexName('sales.Order', ['total'])).toBe('Order__total_idx');
     expect(derivedForeignKeyName('Order', ['customerId'])).toBe('Order__customerId_fk');
     expect(derivedPrimaryKeyName('Enrolment', ['studentId', 'courseId'])).toBe('Enrolment__studentId_courseId_pk');
-    expect(derivedCheckName('Order', 1)).toBe('Order__1_ck');
   });
 
   /**

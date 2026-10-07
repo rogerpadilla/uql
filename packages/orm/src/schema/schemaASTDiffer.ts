@@ -1,5 +1,5 @@
 import type { ColumnRenames, Rename } from '../type/migration.js';
-import { qualifyName } from '../util/sql.util.js';
+import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { areTypesEqual, isBreakingTypeChange } from './canonicalType.js';
 import { type IndexChange, indexChanges } from './indexDifferences.js';
 import { matchByKey, pairUnique } from './matchByKey.js';
@@ -16,6 +16,7 @@ import type {
   RelationshipDiff,
   RelationshipNode,
   SchemaDiffResult,
+  TableChange,
   TableDiff,
   TableNode,
 } from './types.js';
@@ -67,6 +68,8 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
     tables: [...created.map((to) => ({ to })), ...dropped.map((from) => ({ from }))],
     columns: altered.flatMap((tableDiff) => tableDiff.columns),
     indexes: altered.flatMap((tableDiff) => tableDiff.indexes),
+    checks: altered.flatMap((tableDiff) => tableDiff.checks),
+    triggers: altered.flatMap((tableDiff) => tableDiff.triggers),
     primaryKeys: altered.flatMap((tableDiff) => tableDiff.primaryKey ?? []),
     // Relationships span tables, so they are compared over the whole schema rather than per table.
     relationships: opts.compareRelationships ? diffRelationshipNodes(source.relationships, target.relationships) : [],
@@ -78,8 +81,26 @@ export function diffTable(source: TableNode, target: TableNode, options: DiffOpt
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const columns = diffTableColumns(source, target, opts);
   const indexes = opts.compareIndexes ? diffTableIndexes(source, target) : [];
+  const checks = diffOwned(source.name, source.checks, target.checks);
+  const triggers = diffOwned(source.name, source.triggers, target.triggers);
   const primaryKey = diffPrimaryKey(source, target);
-  return columns.length || indexes.length || primaryKey ? { columns, indexes, primaryKey } : undefined;
+  return columns.length || indexes.length || checks.length || triggers.length || primaryKey
+    ? { columns, indexes, checks, triggers, primaryKey }
+    : undefined;
+}
+
+/**
+ * What one side declares and the other has not installed, by name, for an object named after a hash of its
+ * SQL. Only uql's own are ever dropped: the rest are a second writer's.
+ */
+function diffOwned<T extends { readonly name: string }>(
+  table: string,
+  declared: readonly T[],
+  installed: readonly T[],
+): TableChange<T>[] {
+  const owned = installed.filter((it) => isOwnedName(it.name));
+  const { created, dropped } = matchByKey(declared, owned, (it) => it.name);
+  return [...created.map((to) => ({ table, to })), ...dropped.map((from) => ({ table, from }))];
 }
 
 /** The two keys where they hold different columns, compared in order and never by the name the engine gave them. */
@@ -151,8 +172,9 @@ export function columnRenames(desired: SchemaAST, actual: SchemaAST, options: Di
 export function tableRenameCandidates(desired: SchemaAST, actual: SchemaAST, options: DiffOptions = {}): Rename[] {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const { created, dropped } = matchTables(desired, actual, opts);
+  // Columns and key alone: a check or trigger is named for its table, so a renamed one differs by them.
   const same = (to: TableNode, from: TableNode) =>
-    to.schema === from.schema && !diffTable(to, from, { ...opts, compareIndexes: false });
+    to.schema === from.schema && !diffTableColumns(to, from, opts).length && !diffPrimaryKey(to, from);
   return pairUnique(created, dropped, same).matched.map(([to, from]) => ({ from: from.name, to: to.name }));
 }
 
@@ -219,8 +241,7 @@ function diffColumn(
   }
 
   // Not compared, since no statement this generator emits could settle a difference: `isAutoIncrement`,
-  // `enum` (a check the database reprints), `generatedAs`, and `comment`. Nor `isUnique`: a unique
-  // column is a unique index, compared with the indexes.
+  // `generatedAs`, and `comment`. Nor `isUnique`: a unique column is a unique index, compared with the indexes.
 
   // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {

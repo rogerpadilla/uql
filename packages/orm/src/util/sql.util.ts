@@ -71,11 +71,7 @@ const NAME_HASH_LENGTH = 6;
  * its own. It leaves out the table's schema, since it is a single identifier. The AST, the DDL and a `DROP`
  * all use this one rule.
  */
-export function derivedConstraintName(
-  table: string,
-  parts: readonly (string | number)[],
-  kind: ConstraintKind,
-): string {
+export function derivedConstraintName(table: string, parts: readonly string[], kind: ConstraintKind): string {
   const { name } = splitQualifiedName(table);
   const body = parts.length ? `${name}${TABLE_SEPARATOR}${parts.join('_')}` : name;
   return clampIdentifier(`${body}_${kind}`);
@@ -85,15 +81,15 @@ export function derivedConstraintName(
 const TABLE_SEPARATOR = '__';
 
 /** The kinds of derived name, which is also what `indexNameStem` strips to compare them. */
-export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'ck' | 'uk';
+export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'uk';
 
 /** What every name uql installs begins with, so the two ends asking about one cannot spell it apart. */
 const OWNED_START = `${OWNED_PREFIX}_`;
 
 /**
  * Whether uql installed the object called `name`. Ownership is the prefix and nothing else, since no
- * engine records who created one - so this is the only thing standing between a hand-written trigger and
- * a `DROP`, and it is asked on both sides: when reading the catalogue, and again before emitting.
+ * engine records who created one - so this is the only thing standing between a hand-written trigger or
+ * check and a `DROP`, and it is asked on both sides: when reading the catalogue, and again before emitting.
  */
 export function isOwnedName(name: string): boolean {
   return name.startsWith(OWNED_START);
@@ -140,11 +136,6 @@ export function derivedIndexName(table: string, columns: readonly string[], uniq
  */
 export function derivedPrimaryKeyName(table: string, columns: readonly string[]): string {
   return derivedConstraintName(table, columns, 'pk');
-}
-
-/** The constraint name a check gets when nothing named it: `Order__1_ck`, by declaration order. */
-export function derivedCheckName(table: string, position: number): string {
-  return derivedConstraintName(table, [position], 'ck');
 }
 
 /** The constraint name a foreign key gets when nothing named it: `Order__customerId_fk`. */

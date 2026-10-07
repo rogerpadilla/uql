@@ -653,45 +653,13 @@ export function describeMigratorSync(db: DatabaseConfig) {
       await expect(
         pool.run(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('nope')`),
       ).rejects.toThrow();
-      // A check is never diffed, so it must not read as a difference either.
+      // The check reads back under the name it was installed with.
       expect(await migrator.planSync()).toEqual([]);
     });
 
     /**
-     * The limitation the enum-as-check decision carries, pinned so it cannot change unnoticed: a check
-     * is never diffed, so adding a value emits nothing and the column goes on rejecting it. The
-     * property type admits the value by then, which is what makes it silent. See architecture/roadmap.md.
-     */
-    it('should emit nothing when an enum gains a value, which the column keeps rejecting', async () => {
-      @Entity({ name: 'SyncEnumWidened' })
-      class Narrow {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
-        status?: 'draft' | 'paid' | null;
-      }
-
-      await givenNoTable('SyncEnumWidened');
-      await new Migrator(pool, { entities: [Narrow] }).sync({ logging: true });
-      removeEntity(Narrow);
-
-      @Entity({ name: 'SyncEnumWidened' })
-      class Wide {
-        @Id({ type: Number }) id?: number;
-        @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid', 'void'] as const })
-        status?: 'draft' | 'paid' | 'void' | null;
-      }
-      const migrator = new Migrator(pool, { entities: [Wide] });
-
-      expect(await migrator.planSync({ safe: false })).toEqual([]);
-      await expect(
-        pool.run(`INSERT INTO ${escapeId('SyncEnumWidened')} (${escapeId('status')}) VALUES ('void')`),
-      ).rejects.toThrow();
-      removeEntity(Wide);
-    });
-
-    /**
-     * A table-level check is created with its table and never diffed. Both halves need the database:
-     * that the expression is legal SQL for this engine, and that re-syncing reports nothing.
+     * A table-level check is created with its table. Both halves need the database: that the expression
+     * is legal SQL for this engine, and that it reads back under the name it was installed with.
      */
     it('should enforce a table check and report no difference for it', async () => {
       // Unquoted, so every engine reads two identifiers: `"spent"` is a string literal on MySQL and

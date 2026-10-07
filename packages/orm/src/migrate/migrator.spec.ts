@@ -241,6 +241,20 @@ describe('Migrator', () => {
       expect(logger).toHaveBeenCalledWith('No schema changes detected.');
     });
 
+    /** Listed referencing first, so a rollback dropping in reverse of that order would drop the referenced table first. */
+    it('should drop the tables it created dependents first', async () => {
+      const source = await readFile(
+        await migratorOf({ entities: [MigBook, MigAuthor] }).generateFromEntities('create_books'),
+        'utf-8',
+      );
+
+      const down = source.split('async down')[1];
+      expect([...down.matchAll(/DROP TABLE IF EXISTS `(\w+)`/g)].map(([, table]) => table)).toEqual([
+        'MigBook',
+        'MigAuthor',
+      ]);
+    });
+
     /** The down is each diff reversed, the latest first, each in the one order its generator writes. */
     it('should roll back the latest diff first, each as its reverse', async () => {
       @Entity({ name: 'First' })

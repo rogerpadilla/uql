@@ -121,8 +121,8 @@ const tsvectorOf = (newRow: RefMap<Post>) => raw`${newRow.searchVector} := to_ts
 
 - **UQL diffs only what it owns**, named `_uql`, so a hand-written trigger is never offered for dropping. It warns about one on a table it keeps an aggregate from: a second writer.
 - **It compares names.** The name ends in a hash of the trigger's rendered SQL, django-pgtrigger's idea moved from a Postgres-only `COMMENT` into the one place every engine keeps: a trigger is in place exactly when its name is installed, so an unchanged one emits nothing and a drift check stays empty, and an edited one is a new name, created while the old drops as undeclared. Nothing is ever created where it exists, so no engine needs `CREATE OR REPLACE TRIGGER`. A generated migration's `down` drops what it created and restores what it dropped, read off the catalogue when the migration is written.
-- **Dropping one drops its function** on the Postgres family, which a `DROP TRIGGER` leaves behind.
-- **A retyped or dropped column takes the table's triggers off around the alter.** Postgres refuses to change a column a trigger's `UPDATE OF` or `WHEN` names, and the hash cannot see a type change, so every trigger on a table whose columns change is dropped before the alters and the declared ones created after.
+- **Dropping one drops its function** on the Postgres family, which a `DROP TRIGGER` leaves behind, and so does dropping its table.
+- **A retyped or dropped column takes the table's triggers off around the alter.** Postgres refuses to change a column a trigger's `UPDATE OF` or `WHEN` names, and the hash cannot see a type change, so every trigger on a table whose columns change is dropped before the alters and the declared ones created after: the diff carries a kept trigger as both sides, and the alter cycles it only then.
 - **`sync` creates them too**, so test databases match production. PGlite runs PL/pgSQL, so in-process tests exercise real ones.
 - **Storing is two steps:** the column and triggers commit together, then a backfill outside the migration's transaction (`transaction: false`) locks each parent `FOR UPDATE` and recounts it, which is exact under READ COMMITTED. Unstoring drops both.
 - **`aggregate:check`** compares each stored value with its recount, and `--repair` fixes it: the answer to what no row trigger sees, such as `TRUNCATE` or `session_replication_role = replica`.
@@ -132,7 +132,7 @@ const tsvectorOf = (newRow: RefMap<Post>) => raw`${newRow.searchVector} := to_ts
 This design was written expecting to need [R7 and R7b](roadmap.md) - a flattened `SchemaDiffResult`, and a record of what uql rendered so a changed body could be told from an unchanged one. It needed neither, and
 the `uql_schema_objects` table it proposed was designed and dropped three times before the reason was clear enough to write down:
 
-- **A trigger is never diffed.** Its name carries a hash of its SQL, so comparing installed names against declared ones is the whole comparison, and there is no fingerprint to store.
+- **A trigger is compared by name alone.** Its name carries a hash of its SQL, so comparing installed names against declared ones is the whole comparison, and there is no fingerprint to store. It is read and diffed with its table, as a check is.
 - **Ownership is the name.** Everything uql installs is `_uql`-prefixed and carries its table, so the catalogue says which triggers are uql's without any record of its own.
 - **The engine already keeps the render.** `pg_get_triggerdef`, `sqlite_master.sql`, `information_schema.TRIGGERS` and `sys.sql_modules` each hand back what is installed, which is what a rollback puts back. The engine's reprint is useless for _detecting_ a change and exactly right for _restoring_ one, and that distinction is what made a side table look necessary for so long.
 

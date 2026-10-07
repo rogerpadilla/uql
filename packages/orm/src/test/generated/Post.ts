@@ -15,8 +15,8 @@ export class Post {
   @Field({ type: 'varchar', length: 255, nullable: false })
   title!: string;
 
-  @Field({ type: 'varchar', length: 10, nullable: false, enum: ['draft', 'live'] as const, defaultValue: 'draft' })
-  state?: 'draft' | 'live';
+  @Field({ type: 'varchar', length: 10, nullable: false, defaultValue: 'draft' })
+  state?: string;
 
   @Field({ type: 'int', nullable: false, defaultValue: 0 })
   views?: number;

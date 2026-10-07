@@ -18,6 +18,7 @@ import type {
   DriftStatus,
   RelationshipNode,
   SchemaDiffResult,
+  TableChange,
 } from '../../schema/types.js';
 import type { PrimaryKeySchema } from '../../type/migration.js';
 import type { Except } from '../../type/utility.js';
@@ -92,6 +93,8 @@ export function detectDrift(
     ...detectColumnDrifts(diff, opts),
     ...detectIndexDrifts(diff),
     ...detectPrimaryKeyDrifts(diff),
+    ...detectOwnedDrifts('Check', diff.checks),
+    ...detectOwnedDrifts('Trigger', diff.triggers),
     ...detectRelationshipDrifts(diff),
   ];
 
@@ -116,6 +119,24 @@ function detectPrimaryKeyDrifts(diff: SchemaDiffResult): Drift[] {
     table: pkDiff.table,
     details: `Primary key of "${pkDiff.table}" is (${keyColumns(pkDiff.from)}) in the database but (${keyColumns(pkDiff.to)}) in the entity`,
     suggestion: 'Generate a migration to change the primary key',
+  }));
+}
+
+/**
+ * A check or trigger the database lacks, critical since rows are written otherwise than the entity says, or
+ * one uql installed that nothing declares.
+ */
+function detectOwnedDrifts(
+  kind: 'Check' | 'Trigger',
+  changes: readonly TableChange<{ readonly name: string }>[],
+): Drift[] {
+  return changes.map(({ table, from, to }): Drift => ({
+    type: 'constraint_mismatch',
+    table,
+    suggestion: 'Generate a migration to match the entity',
+    ...(to
+      ? { severity: 'critical', details: `${kind} "${to.name}" expected but not found in database` }
+      : { severity: 'warning', details: `${kind} "${from?.name}" exists in database but not in entity` }),
   }));
 }
 

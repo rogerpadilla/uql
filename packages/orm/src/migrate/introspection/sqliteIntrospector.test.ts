@@ -178,8 +178,8 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
       await run(`CREATE TRIGGER hand_made ${body}`);
       await run(`CREATE TRIGGER _uql_probe_triggers__mine ${body}`);
 
-      expect([...(await this.introspector.ownedTriggers(table)).entries()]).toEqual([
-        ['_uql_probe_triggers__mine', [`CREATE TRIGGER _uql_probe_triggers__mine ${body}`]],
+      expect((await this.introspector.getTableSchema(table))?.triggers).toEqual([
+        { name: '_uql_probe_triggers__mine', statements: [`CREATE TRIGGER _uql_probe_triggers__mine ${body}`] },
       ]);
     } finally {
       await run(`DROP TABLE ${table}`);

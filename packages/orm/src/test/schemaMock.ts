@@ -83,7 +83,6 @@ export function mockGeneratedSchema(): SchemaAST {
       name: 'state',
       type: { category: 'string', length: 10 },
       nullable: false,
-      enum: ['draft', 'live'],
       defaultValue: 'draft',
     },
     { name: 'views', type: { category: 'integer' }, nullable: false, defaultValue: 0 },

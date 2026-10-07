@@ -16,8 +16,10 @@ services:
     healthcheck:
       # Over the socket, the temporary server the entrypoint runs while initializing answers too (it
       # listens on `port: 0`), so the container reported healthy with nothing on 3306 yet, `--wait`
-      # returned, and docker-proxy closed each connection as mysql2's "Connection lost".
-      test: ['CMD-SHELL', 'mysql -h 127.0.0.1 --protocol=TCP -u test -ptest -e "SELECT 1" test']
+      # returned, and docker-proxy closed each connection as mysql2's "Connection lost". It runs the init
+      # script, as every engine's check here does: the image runs it only on an empty data directory.
+      test:
+        ['CMD-SHELL', 'mysql -h 127.0.0.1 --protocol=TCP -u root -proot < /docker-entrypoint-initdb.d/init-mysql.sql']
       interval: 5s
       timeout: 5s
       retries: 20
@@ -37,7 +39,11 @@ services:
       - 3326:3306
     container_name: uql-mariadb-13
     healthcheck:
-      test: ['CMD', 'healthcheck.sh', '--connect', '--innodb_initialized']
+      test:
+        [
+          'CMD-SHELL',
+          'healthcheck.sh --connect --innodb_initialized && mariadb -u root -proot < /docker-entrypoint-initdb.d/init-maria.sql',
+        ]
       interval: 5s
       timeout: 5s
       retries: 10
@@ -56,8 +62,12 @@ services:
     container_name: uql-postgres-18
     healthcheck:
       # `-h`, so this waits for the real server rather than the socket-only one the entrypoint runs
-      # while initializing, as the mysql check above explains.
-      test: ['CMD-SHELL', 'pg_isready -h 127.0.0.1 -U test -d test']
+      # while initializing, and runs the init script, as the mysql check above explains.
+      test:
+        [
+          'CMD-SHELL',
+          'PGPASSWORD=test psql -h 127.0.0.1 -U test -d test -q -v ON_ERROR_STOP=1 -f /docker-entrypoint-initdb.d/init-pg.sql',
+        ]
       interval: 5s
       timeout: 5s
       retries: 20

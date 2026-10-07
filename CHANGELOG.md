@@ -2,6 +2,13 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.97.0] - 2026-10-07
+
+- **Breaking:** checks and enums are diffed: each is installed as `_uql_<table>__<name>_<hash>`, so editing one, or an enum's values, replaces it in the next migration or `sync`. Checks installed before keep enforcing and are warned about: drop them by hand.
+- `drift:check` reports a missing or stale check or trigger.
+- A generated migration's `down` drops the tables it created dependents first, and a forced `sync` drops their trigger functions on Postgres.
+- Rebuilding a SQLite table keeps the named checks uql did not install.
+
 ## [0.96.1] - 2026-10-06
 
 - A long `$or` or `$and` nests shallower, in halves.

@@ -8,7 +8,7 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
-import type { IndexNode, TableNode } from '../schema/types.js';
+import type { IndexNode, TableNode, TriggerSchema } from '../schema/types.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { assertDefined, mockSqlTableNode, mockTableNode, sqlTypeOf } from '../test/index.js';
 import type { ColumnSchema, SchemaDiff } from '../type/index.js';
@@ -363,6 +363,35 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
       'DROP INDEX IF EXISTS "lookup";',
       'CREATE INDEX IF NOT EXISTS "lookup" ON "users" ("name");',
+    ]);
+  });
+
+  /** A rename runs before the adds both ways, so what the way down puts back names the column under its old name. */
+  it('should restore a key, index and foreign key over a renamed column under its old name', () => {
+    const diff: SchemaDiff = {
+      tableName: 'users',
+      type: 'alter',
+      renamedColumns: [{ from: 'name', to: 'handle' }],
+      primaryKey: {
+        from: { columns: ['id', 'handle'], name: 'users_pkey' },
+        to: { columns: ['handle', 'id'], name: 'users__handle_id_pk' },
+      },
+      indexes: [
+        { from: { name: 'users__name_idx', entries: [{ column: 'handle' }], unique: false } },
+        { to: { name: 'users__handle_idx', entries: [{ column: 'handle' }], unique: true } },
+      ],
+      foreignKeys: [
+        { from: { name: 'users__name_fk', columns: ['handle'], references: { table: 'people', columns: ['name'] } } },
+      ],
+    };
+
+    expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
+      'ALTER TABLE "users" DROP CONSTRAINT "users__handle_id_pk";',
+      'DROP INDEX IF EXISTS "users__handle_idx";',
+      'ALTER TABLE "users" RENAME COLUMN "handle" TO "name";',
+      'CREATE INDEX IF NOT EXISTS "users__name_idx" ON "users" ("name");',
+      'ALTER TABLE "users" ADD CONSTRAINT "users_pkey" PRIMARY KEY ("id", "name");',
+      'ALTER TABLE "users" ADD CONSTRAINT "users__name_fk" FOREIGN KEY ("name") REFERENCES "people" ("name") ON DELETE NO ACTION ON UPDATE NO ACTION;',
     ]);
   });
 
@@ -966,13 +995,6 @@ class DefaultsEntity {
 }
 
 @Entity()
-class EnumAltered {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: String, columnType: 'varchar', length: 20, enum: ['draft', 'paid'] as const })
-  status?: 'draft' | 'paid' | null;
-}
-
-@Entity()
 class ComputedEntity {
   @Id({ type: Number }) id?: number;
   @Field({ type: Number, computed: raw`1 + 1` }) total?: number | null;
@@ -1101,23 +1123,6 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     expect(alterations(diff?.columns)).toHaveLength(2);
     expect(alterations(diff?.columns).map((c) => c.to.name)).toContain('name');
     expect(alterations(diff?.columns).map((c) => c.to.name)).toContain('email');
-  });
-
-  /**
-   * An altered column carries no values to restate: MySQL answers a restated `CHECK` by adding a
-   * second constraint rather than replacing the first. They reach the database with the column, which
-   * is also why changing an enum is a hand-written migration.
-   */
-  it('should leave an enum off a column it alters', () => {
-    const currentSchema = mockSqlTableNode('EnumAltered', [
-      { name: 'id', sql: 'INTEGER', isPrimaryKey: true, isAutoIncrement: true },
-      { name: 'status', sql: 'VARCHAR', length: 10 },
-    ]);
-
-    const diff = generator.diffSchema(EnumAltered, currentSchema, generator.buildAST([EnumAltered]));
-
-    expect(alterations(diff?.columns)[0].to.name).toBe('status');
-    expect(alterations(diff?.columns)[0].to.enum).toBeUndefined();
   });
 
   it('should detect columns to drop', () => {
@@ -1399,7 +1404,7 @@ describe('SqlSchemaGenerator creating a table only where it is missing', () => {
   });
 });
 
-describe('generateTriggers', () => {
+describe('triggers', () => {
   @Trigger({ on: 'afterInsert', name: 'audit', run: { postgres: () => raw`PERFORM 1;` } })
   @Entity({ name: 'GenPost' })
   class GenPost {
@@ -1411,45 +1416,79 @@ describe('generateTriggers', () => {
 
   afterAll(() => removeEntity(GenPost));
 
-  const audit = () => generator.generateTriggers(GenPost).join('\n');
-  const auditName = () => /CREATE TRIGGER "([^"]+)"/.exec(audit())?.[1] ?? '';
+  // A table's drop takes its triggers along, but not the function the Postgres family keeps each body in.
+  it('should drop the function of each trigger after its table', () => {
+    const [audit] = generator.buildAST([GenPost]).getTable('GenPost')?.triggers ?? [];
+    assertDefined(audit);
+    expect(generator.generateDropSchema([GenPost], { ifExists: true })).toEqual([
+      'DROP TABLE IF EXISTS "GenPost";',
+      `DROP FUNCTION IF EXISTS "${audit.name}"();`,
+    ]);
+  });
 
-  it('should install what the entity declares', () => {
-    expect(auditName()).toMatch(/^_uql_GenPost__audit_[0-9a-f]{6}$/);
+  /** The table as declared, with `installed` standing for what the catalogue reports. */
+  const installedAs = (...installed: TriggerSchema[]) => {
+    const table = generator.buildAST([GenPost]).getTable('GenPost');
+    assertDefined(table);
+    const declared = [...table.triggers];
+    table.triggers.splice(0, table.triggers.length, ...installed);
+    return { table, declared };
+  };
+  const alter = (table: TableNode) => {
+    const diff = generator.diffSchema(GenPost, table);
+    assertDefined(diff);
+    return diff;
+  };
+
+  it('should install what the entity declares with its table', () => {
+    expect(generator.generateCreateSchema([GenPost]).join('\n')).toMatch(
+      /CREATE TRIGGER "_uql_GenPost__audit_[0-9a-f]{6}"/,
+    );
   });
 
   // What a drift check reads: once installed as declared, there is nothing left to run.
-  it('should emit nothing where what is installed is what the entity declares', () => {
-    const installed = new Map([[auditName(), ['CREATE TRIGGER ...']]]);
-    expect(generator.generateTriggers(GenPost, installed)).toEqual([]);
-    expect(generator.generateTriggersDown(GenPost, installed)).toEqual([]);
+  it('should report no change where what is installed is what the entity declares', () => {
+    const { table, declared } = installedAs();
+    table.triggers.push(...declared);
+    expect(generator.diffSchema(GenPost, table)).toBeUndefined();
   });
 
   // The `_uql` prefix is what says it is ours to drop; anything else on the table is left alone.
   it('should drop an installed trigger the entity no longer declares, with its function', () => {
-    const installed = new Map([
-      ['_uql_GenPost__gone_000000', []],
-      ['handwritten', []],
-    ]);
-    const sql = generator.generateTriggers(GenPost, installed).join('\n');
+    const { table } = installedAs(
+      { name: '_uql_GenPost__gone_000000', statements: [] },
+      { name: 'handwritten', statements: [] },
+    );
+    const sql = generator.generateAlterTable(alter(table)).join('\n');
     expect(sql).toContain('DROP TRIGGER IF EXISTS "_uql_GenPost__gone_000000" ON "GenPost";');
     expect(sql).toContain('DROP FUNCTION IF EXISTS "_uql_GenPost__gone_000000"();');
     expect(sql).not.toContain('handwritten');
   });
 
-  // Exactly the inverse: what the reconcile created goes, and what it dropped comes back as it stood.
+  // Exactly the inverse: what the change created goes, and what it dropped comes back as it stood.
   it('should roll back by dropping what it created and restoring what it dropped', () => {
-    const installed = new Map([['_uql_GenPost__gone_000000', ['CREATE TRIGGER gone']]]);
-    expect(generator.generateTriggersDown(GenPost, installed)).toEqual([
-      `DROP TRIGGER IF EXISTS "${auditName()}" ON "GenPost";`,
-      `DROP FUNCTION IF EXISTS "${auditName()}"();`,
+    const { table, declared } = installedAs({ name: '_uql_GenPost__gone_000000', statements: ['CREATE TRIGGER gone'] });
+    const [audit] = declared;
+    assertDefined(audit);
+    expect(generator.generateAlterTable(reverseDiff(alter(table)))).toEqual([
+      `DROP TRIGGER IF EXISTS "${audit.name}" ON "GenPost";`,
+      `DROP FUNCTION IF EXISTS "${audit.name}"();`,
       'CREATE TRIGGER gone;',
     ]);
   });
 
-  it('should emit nothing for an entity declaring none', () => {
-    expect(generator.generateTriggers(TestUser)).toEqual([]);
-    expect(generator.generateTriggersDown(TestUser)).toEqual([]);
+  // Postgres refuses to alter a column a trigger names, so a kept trigger comes off and goes back on.
+  it('should take a kept trigger off around a column it changes', () => {
+    const { table, declared } = installedAs();
+    table.triggers.push(...declared);
+    const title = table.columns.get('title');
+    assertDefined(title);
+    table.columns.set('title', { ...title, nullable: false });
+    const [audit] = declared;
+    assertDefined(audit);
+    const sql = generator.generateAlterTable(alter(table));
+    expect(sql[0]).toBe(`DROP TRIGGER IF EXISTS "${audit.name}" ON "GenPost";`);
+    expect(sql.at(-1)).toMatch(/^CREATE TRIGGER/);
   });
 });
 

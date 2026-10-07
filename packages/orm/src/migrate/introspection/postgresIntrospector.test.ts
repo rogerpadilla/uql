@@ -274,13 +274,13 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
    * A table another connection dropped is read out of the snapshot that still lists it, never raised:
    * `introspect()` scans a database other things are changing. A repeatable read transaction is that
    * race made deterministic - `information_schema` still answers from its snapshot while name
-   * resolution answers from the live catalogue.
+   * resolution answers from the live catalogue, so a check it can no longer reprint is left out.
    */
   async shouldReadATableDroppedAfterTheSnapshotThatLeftIt() {
     const reader = await this.pool.getQuerier();
     const writer = await this.pool.getQuerier();
     try {
-      await writer.run('CREATE TABLE probe_vanishing (id INTEGER PRIMARY KEY, note TEXT)');
+      await writer.run("CREATE TABLE probe_vanishing (id INTEGER PRIMARY KEY, note TEXT CHECK (note <> ''))");
       await reader.beginTransaction({ isolationLevel: 'repeatable read' });
       await reader.all('SELECT 1');
       await writer.run('DROP TABLE probe_vanishing');
@@ -288,6 +288,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
       const schema = await new PinnedIntrospector(this.pool, reader).getTableSchema('probe_vanishing');
 
       expect(schema?.columns.map((column) => column.name)).toEqual(['id', 'note']);
+      expect(schema?.checks).toEqual([]);
     } finally {
       await reader.rollbackTransaction();
       await writer.run('DROP TABLE IF EXISTS probe_vanishing');

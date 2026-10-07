@@ -9,7 +9,15 @@ import { SqlExpression } from './sqlExpression.js';
 import type { ColumnNode, IndexNode, RelationshipNode } from './types.js';
 
 /** What two schemas alike differ by. */
-const NO_DIFFERENCES = { tables: [], columns: [], indexes: [], primaryKeys: [], relationships: [] };
+const NO_DIFFERENCES = {
+  tables: [],
+  columns: [],
+  indexes: [],
+  checks: [],
+  triggers: [],
+  primaryKeys: [],
+  relationships: [],
+};
 
 /** Which change a diff is, named as a migration makes it. */
 const kindOf = (change: { readonly from?: unknown; readonly to?: unknown }) =>
@@ -943,6 +951,22 @@ describe('SchemaASTDiffer', () => {
       const current = new SchemaAST();
       desired.addTable(mockTableNode('posts', [...columns]));
       current.addTable(mockTableNode('articles', [...columns]));
+
+      expect(tableRenameCandidates(desired, current)).toEqual([{ from: 'articles', to: 'posts' }]);
+    });
+
+    /** A check or trigger uql installs is named for its table, so a renamed table differs by them alone. */
+    it('should name a table whose checks and triggers differ only by the table they are named for', () => {
+      const desired = new SchemaAST();
+      const current = new SchemaAST();
+      const posts = mockTableNode('posts', [...columns]);
+      posts.checks.push({ name: '_uql_posts__ck_aaaaaa', expression: 'id > 0' });
+      posts.triggers.push({ name: '_uql_posts__audit_bbbbbb', statements: [] });
+      const articles = mockTableNode('articles', [...columns]);
+      articles.checks.push({ name: '_uql_articles__ck_cccccc', expression: 'id > 0' });
+      articles.triggers.push({ name: '_uql_articles__audit_dddddd', statements: [] });
+      desired.addTable(posts);
+      current.addTable(articles);
 
       expect(tableRenameCandidates(desired, current)).toEqual([{ from: 'articles', to: 'posts' }]);
     });

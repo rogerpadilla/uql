@@ -2,14 +2,15 @@ import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta } from '../entity/index.js';
 import { canonicalToSql, engineType, isVectorCategory } from '../schema/canonicalType.js';
 import { indexChanges } from '../schema/indexDifferences.js';
+import { matchByKey } from '../schema/matchByKey.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import { type BuildSchemaASTOptions, buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { type DiffOptions, diffRelationshipNodes, diffTable } from '../schema/schemaASTDiffer.js';
 import {
   type CanonicalType,
   type ColumnNode,
+  type CheckSchema,
   DEFAULT_FOREIGN_KEY_ACTION,
-  type EnumValues,
   type ForeignKeyAction,
   type IndexNode,
   type RelationshipNode,
@@ -23,7 +24,6 @@ import type {
   DialectFeatures,
   DropSchemaOptions,
   EntityMeta,
-  InstalledTriggers,
   EntityWhereMeta,
   FieldOptions,
   ForeignKeySchema,
@@ -37,8 +37,9 @@ import type {
   SchemaGenerator,
   Type,
 } from '../type/index.js';
+import { enumCheck } from '../util/ddlExpression.util.js';
 import { qualifyName } from '../util/index.js';
-import { derivedCheckName, derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName } from '../util/sql.util.js';
+import { derivedForeignKeyName, derivedPrimaryKeyName, isOwnedName, splitQualifiedName } from '../util/sql.util.js';
 import { splitSqlStatements } from './builder/splitSqlStatements.js';
 import type { AnyMigrationOperation, FullColumnDefinition, TableDefinition } from './builder/types.js';
 import { formatDefaultValue, sameDefault } from './ddl/defaultSql.js';
@@ -55,7 +56,7 @@ import {
 import { indexNodeToSchema } from './generator/indexNodeToSchema.js';
 import { assertIndexPredicate } from './indexPredicate.js';
 import { added, alterations, dropped, needsRebuild, newlyRequired, nonEmpty, sides } from './schemaChange.js';
-import { dropTrigger, type RenderedTrigger, renderTrigger, stampTriggers } from './triggerSql.js';
+import { dropTrigger, dropTriggerBody, renderTrigger, stampTriggers } from './triggerSql.js';
 
 /**
  * Unified SQL schema generator.
@@ -135,6 +136,10 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   buildAST(entities: readonly Type<object>[]): SchemaAST {
     return buildEntityAST(this, entities, {
       defaultForeignKeyAction: this.defaultForeignKeyAction,
+      renderTriggers: (meta) =>
+        [...(meta.triggers ?? []), ...stampTriggers(this.dialect, meta)].map((trigger, i) =>
+          renderTrigger(this.dialect, meta, trigger, i),
+        ),
       textScoreIndexes: this.dialect.features.textScoreIndexes,
       vectorIndexRequiresNotNull: this.features.vectorIndexRequiresNotNull,
     });
@@ -172,62 +177,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     }
 
     // Triggers last: each needs its own table, and a body may read any other the same schema just made.
-    const made = new Set(tables.map((table) => qualifyName(table.name, table.schema)));
-    statements.push(
-      ...entities
-        .filter((entity) => made.has(this.resolveTableName(getMeta(entity))))
-        .flatMap((entity) => this.generateTriggers(entity)),
-    );
+    statements.push(...terminated(tables.flatMap((table) => table.triggers.flatMap((trigger) => trigger.statements))));
 
     return statements;
-  }
-
-  /**
-   * The installed triggers on `entity`'s table it does not declare, and the declared ones not installed,
-   * compared by name alone: a name carries a hash of the trigger's SQL, so an edited one is a new name.
-   * Every trigger counts - the ones it authored, and one per event each stamp names.
-   */
-  private triggerChanges(entity: Type<object>, installed: InstalledTriggers) {
-    const meta = getMeta(entity);
-    const triggers = [...(meta.triggers ?? []), ...stampTriggers(this.dialect, meta)];
-    const rendered = triggers.map((trigger, i) => renderTrigger(this.dialect, meta, trigger, i));
-    const declared = new Set(rendered.map((trigger) => trigger.name));
-    return {
-      stale: [...installed]
-        .filter(([name]) => isOwnedName(name) && !declared.has(name))
-        .map(([name, statements]): RenderedTrigger => ({ name, statements })),
-      missing: rendered.filter((trigger) => !installed.has(trigger.name)),
-    };
-  }
-
-  generateTriggers(entity: Type<object>, installed: InstalledTriggers = new Map()): string[] {
-    const { stale, missing } = this.triggerChanges(entity, installed);
-    return this.swapTriggers(entity, stale, missing);
-  }
-
-  generateTriggersDown(entity: Type<object>, installed: InstalledTriggers = new Map()): string[] {
-    const { stale, missing } = this.triggerChanges(entity, installed);
-    return this.swapTriggers(entity, missing, stale);
-  }
-
-  /** `dropped` taken off `entity`'s table and `created` put on, which is a reconcile read either way. */
-  private swapTriggers(
-    entity: Type<object>,
-    dropped: readonly RenderedTrigger[],
-    created: readonly RenderedTrigger[],
-  ): string[] {
-    return [
-      ...this.generateTriggerDrops(
-        entity,
-        dropped.map((trigger) => trigger.name),
-      ),
-      ...created.flatMap((trigger) => trigger.statements.map((sql) => `${sql};`)),
-    ];
-  }
-
-  generateTriggerDrops(entity: Type<object>, names: readonly string[]): string[] {
-    const meta = getMeta(entity);
-    return names.filter(isOwnedName).flatMap((name) => dropTrigger(this.dialect, meta, name).map((sql) => `${sql};`));
   }
 
   /**
@@ -240,8 +192,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     return [...new Set(named)].map((schema) => this.dialect.createSchemaSql(schema));
   }
 
+  /**
+   * The inverse of {@link generateCreateSchema}: a table's drop takes its triggers along, so only what they
+   * leave behind follows it.
+   */
   generateDropSchema(entities: readonly Type<object>[], options: DropSchemaOptions = {}): string[] {
-    const tables = this.orderedTables(entities, 'drop').map((table) => qualifyName(table.name, table.schema));
+    const tables = this.orderedTables(entities, 'drop');
     // A `CASCADE` drop takes the foreign keys with it, and SQLite drops with its constraints off.
     const cascades = options.cascade && this.features.dropTableCascade;
     const existing = cascades || this.features.rebuildsTables ? [] : (options.existing?.getTables() ?? []);
@@ -253,7 +209,13 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ];
       return names.map((name) => this.generateDropForeignKeySql(tableName, name));
     });
-    return [...foreignKeyDrops, ...tables.map((tableName) => this.generateDropTable(tableName, options))];
+    return [
+      ...foreignKeyDrops,
+      ...tables.flatMap((table) => [
+        this.generateDropTable(qualifyName(table.name, table.schema), options),
+        ...terminated(table.triggers.flatMap((trigger) => dropTriggerBody(this.dialect, table.schema, trigger.name))),
+      ]),
+    ];
   }
 
   /**
@@ -285,21 +247,35 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * The statements taking a table through `diff`, in the one order both directions need: whatever holds
    * something down goes before it and comes back after it. A foreign key holds its columns and the key it
    * points at, so it goes first and comes back last; the key holds its columns; and some engines drop an
-   * index along with its column, which would leave nothing to name. An alter is its drop, then its add.
+   * index along with its column, which would leave nothing to name. A check holds the columns it names, which
+   * MySQL refuses to rename or drop under one. An alter is its drop, then its add.
    */
   generateAlterTable(diff: SchemaDiff): string[] {
     const { tableName, schema, primaryKey, columns, rebuild } = diff;
     const fills = this.defaultFills(columns);
+    const moved = Boolean(rebuild || diff.renamedColumns?.length || sides(columns, 'from').length);
+    const triggers = (diff.triggers ?? []).filter(({ from, to }) => moved || !from || !to);
+    const triggerDrops = terminated(
+      sides(triggers, 'from').flatMap((trigger) => dropTrigger(this.dialect, tableName, schema, trigger.name)),
+    );
+    const triggerCreates = terminated(sides(triggers, 'to').flatMap((trigger) => trigger.statements));
     if (rebuild) {
-      return rebuildTable(this.dialect, tableName, rebuild, { renames: diff.renamedColumns ?? [], fills });
+      return [
+        ...triggerDrops,
+        ...rebuildTable(this.dialect, tableName, rebuild, { renames: diff.renamedColumns ?? [], fills }),
+        ...triggerCreates,
+      ];
     }
     const target = this.escapeId(tableName);
     return [
+      ...triggerDrops,
       ...sides(diff.foreignKeys, 'from').map((foreignKey) =>
         this.generateDropForeignKeySql(tableName, constraintNameOf(tableName, foreignKey)),
       ),
       ...(primaryKey?.from ? [this.generateDropPrimaryKeySql(tableName, primaryKey.from.name)] : []),
       ...sides(diff.indexes, 'from').map((index) => this.generateDropIndex(tableName, index.name, schema)),
+      ...sides(diff.checks, 'from').map((check) => this.dropCheckSql(tableName, check)),
+      ...(diff.renamedColumns ?? []).map(({ from, to }) => this.generateRenameColumnSql(tableName, from, to)),
       ...added(columns).flatMap((column) => this.addColumnStatements(tableName, column, schema)),
       ...[...fills].map(([column, value]) => {
         const name = this.escapeId(column);
@@ -312,7 +288,22 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...this.addIndexStatements(tableName, sides(diff.indexes, 'to')),
       ...(primaryKey?.to ? [this.generateAddPrimaryKeySql(tableName, primaryKey.to.columns, primaryKey.to.name)] : []),
       ...this.addForeignKeyStatements(tableName, sides(diff.foreignKeys, 'to')),
+      ...sides(diff.checks, 'to').map((check) => this.addCheckSql(tableName, check)),
+      ...triggerCreates,
     ];
+  }
+
+  /** `CONSTRAINT <name> CHECK (...)`, in a `CREATE TABLE`, after `ADD`, or inline where a column brings it. */
+  private checkConstraint(check: CheckSchema): string {
+    return `CONSTRAINT ${this.escapeId(check.name)} CHECK (${check.expression})`;
+  }
+
+  private addCheckSql(tableName: string, check: CheckSchema): string {
+    return `ALTER TABLE ${this.escapeId(tableName)} ADD ${this.checkConstraint(check)};`;
+  }
+
+  private dropCheckSql(tableName: string, check: CheckSchema): string {
+    return `ALTER TABLE ${this.escapeId(tableName)} DROP CONSTRAINT ${this.escapeId(check.name)};`;
   }
 
   /**
@@ -340,11 +331,24 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     ]);
   }
 
-  /** A column added to a table that exists, and its comment where the engine keeps one apart. */
-  private addColumnStatements(tableName: string, column: ColumnSchema, schema?: string): string[] {
+  /**
+   * A column added to a table that exists, and its comment where the engine keeps one apart. `checks` go
+   * inline, which is the one way to constrain a table that is rebuilt to alter.
+   */
+  private addColumnStatements(
+    tableName: string,
+    column: ColumnSchema,
+    schema?: string,
+    checks: readonly CheckSchema[] = [],
+  ): string[] {
     this.assertColumnAddable(tableName, column);
+    const inline = checks.map((check) => ` ${this.checkConstraint(check)}`).join('');
     return [
-      ...this.tableDdl.addColumnStatements(tableName, column, (it) => this.generateColumnDefinitionFromSchema(it)),
+      ...this.tableDdl.addColumnStatements(
+        tableName,
+        column,
+        (it) => this.generateColumnDefinitionFromSchema(it) + inline,
+      ),
       ...this.generateColumnCommentStatement(tableName, column, schema),
     ];
   }
@@ -363,7 +367,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /**
    * A column definition from a {@link ColumnSchema}, whose type is already the engine's spelling. Apart from
-   * {@link generateColumnFromNode}, which alone knows an `enum`; both render through {@link renderColumn}.
+   * {@link generateColumnFromNode}, which sizes a canonical type; both render through {@link renderColumn}.
    */
   public generateColumnDefinitionFromSchema(column: ColumnSchema): string {
     return this.renderColumn({ ...column, type: sizedType(column) });
@@ -373,7 +377,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    * The one place a column definition is spelled, so the `ColumnSchema` and `ColumnNode` paths cannot
    * drift. A key column states `NOT NULL` rather than leave it to the key: SQLite lets a key column hold
    * NULL otherwise, and SQL Server adds no key over a nullable column. Never `UNIQUE`: a unique column is
-   * a unique index, which the table creates beside it. An enum's `CHECK` comes last, the only place MariaDB takes it.
+   * a unique index, which the table creates beside it. Nor an enum's `CHECK`, which is the table's, named.
    */
   private renderColumn(column: {
     name: string;
@@ -382,7 +386,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     isPrimaryKey: boolean;
     isUnique: boolean;
     defaultValue?: unknown;
-    enum?: EnumValues;
     comment?: string;
     generatedAs?: string;
   }): string {
@@ -398,11 +401,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     if (column.comment) {
       def += this.generateColumnComment(column.comment);
     }
-    if (column.enum?.length) {
-      const values = column.enum.map((value) => this.dialect.escape(value)).join(', ');
-      def += ` CHECK (${this.escapeId(column.name)} IN (${values}))`;
-    }
-
     return def;
   }
 
@@ -465,10 +463,6 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const tableDiff = diffTable(desired, currentTable, { ...this.diffOptions(), compareIndexes: false });
     const indexes = indexChanges(currentTable.name, desired.indexes, currentTable.indexes, currentTable.indexFacets);
 
-    // An alter's `to` without its values: an alter restates the whole column, and MySQL answers a
-    // restated `CHECK` by adding a *second* constraint rather than replacing the first, so the column
-    // would accumulate one per alter. An enum's values reach the database with the column and are never
-    // restated - which is also why changing them is a hand-written migration. See architecture/roadmap.md.
     const columns = (tableDiff?.columns ?? []).map((it): ColumnChange => {
       if (it.from === undefined) {
         return { to: this.columnNodeToSchema(it.to) };
@@ -476,11 +470,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       if (it.to === undefined) {
         return { from: this.columnNodeToSchema(it.from), isBreaking: true };
       }
-      return {
-        from: this.columnNodeToSchema(it.from),
-        to: { ...this.columnNodeToSchema(it.to), enum: undefined },
-        isBreaking: it.isBreaking,
-      };
+      return { from: this.columnNodeToSchema(it.from), to: this.columnNodeToSchema(it.to), isBreaking: it.isBreaking };
     });
 
     const keyDiff = tableDiff?.primaryKey;
@@ -507,9 +497,18 @@ export class SqlSchemaGenerator implements SchemaGenerator {
         })),
       ),
       foreignKeys: nonEmpty(foreignKeys),
+      checks: nonEmpty(tableDiff?.checks ?? []),
+      // A kept trigger as both sides, which the alter cycles only where a column moves under it.
+      triggers: nonEmpty([
+        ...(tableDiff?.triggers ?? []),
+        ...matchByKey(desired.triggers, currentTable.triggers, (it) => it.name).matched.map(([to, from]) => ({
+          from,
+          to,
+        })),
+      ]),
       renamedColumns: nonEmpty(renamedColumns ?? []),
     };
-    if (!(alter.primaryKey || alter.columns || alter.indexes || alter.foreignKeys || alter.renamedColumns)) {
+    if (!(tableDiff || alter.indexes || alter.foreignKeys || alter.renamedColumns)) {
       return undefined;
     }
     return this.features.rebuildsTables && needsRebuild(alter)
@@ -519,8 +518,8 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /**
    * Both ends of rebuilding `actual` as `desired`. The new table is the entity's, keeping what it cannot
-   * know of: the indexes and triggers uql did not make, and foreign keys to tables no entity names. The
-   * old one is the engine's own statements, so a rollback restores it exactly, checks included.
+   * know of: the indexes, checks and triggers uql did not make, and foreign keys to tables no entity names.
+   * The old one is the engine's own statements, so a rollback restores it exactly.
    */
   private rebuildOf(
     desired: TableNode,
@@ -531,22 +530,28 @@ export class SqlSchemaGenerator implements SchemaGenerator {
     const definition = actual.definition ?? [];
     const read = new Set(actual.indexes.map((index) => index.name));
     const own = (entry: StoredDefinition) => entry.kind === 'trigger' && isOwnedName(entry.name);
-    const verbatim = (entries: readonly StoredDefinition[]) => entries.map((entry) => `${entry.sql};`);
     const stored = (table: TableNode) =>
       [...table.columns.values()].filter((column) => !column.generatedAs).map((column) => column.name);
     return {
       from: {
-        statements: verbatim(definition.filter((entry) => !own(entry))),
+        statements: terminated(definition.filter((entry) => !own(entry)).map((entry) => entry.sql)),
         columns: stored(actual).map((name) => renames.find((rename) => rename.to === name)?.from ?? name),
       },
       to: {
         statements: [
-          ...this.generateCreateTableFromNode({ ...desired, externalForeignKeys: actual.externalForeignKeys }),
+          ...this.generateCreateTableFromNode({
+            ...desired,
+            checks: [...desired.checks, ...actual.checks.filter((check) => !isOwnedName(check.name))],
+            externalForeignKeys: actual.externalForeignKeys,
+          }),
           ...kept.map((index) => this.generateCreateIndexFromNode(index)),
-          ...verbatim(
-            definition.filter(
-              (entry) => (entry.kind === 'index' && !read.has(entry.name)) || (entry.kind === 'trigger' && !own(entry)),
-            ),
+          ...terminated(
+            definition
+              .filter(
+                (entry) =>
+                  (entry.kind === 'index' && !read.has(entry.name)) || (entry.kind === 'trigger' && !own(entry)),
+              )
+              .map((entry) => entry.sql),
           ),
         ],
         columns: stored(desired),
@@ -599,10 +604,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       constraints.push(`CONSTRAINT ${this.escapeId(name)} PRIMARY KEY (${columns})`);
     }
 
-    table.checks.forEach((check, i) => {
-      const name = check.name ?? derivedCheckName(table.name, i + 1);
-      constraints.push(`CONSTRAINT ${this.escapeId(name)} CHECK (${check.expression})`);
-    });
+    constraints.push(...table.checks.map((check) => this.checkConstraint(check)));
 
     for (const rel of table.outgoingRelations) {
       const refTable = this.dialect.escapeQualifiedId(rel.to.table.name, rel.to.table.schema);
@@ -715,7 +717,13 @@ export class SqlSchemaGenerator implements SchemaGenerator {
 
   /** `ADD COLUMN`, plus the foreign key and index the column declares, as `CREATE TABLE` lifts them. */
   generateAddColumnSql(tableName: string, column: FullColumnDefinition): string[] {
-    const statements = this.addColumnStatements(tableName, this.definitionColumn(column));
+    const checks = enumCheck(splitQualifiedName(tableName).name, column, (sql) => this.dialect.compileDdl(sql));
+    const statements = this.features.rebuildsTables
+      ? this.addColumnStatements(tableName, this.definitionColumn(column), undefined, checks)
+      : [
+          ...this.addColumnStatements(tableName, this.definitionColumn(column)),
+          ...checks.map((check) => this.addCheckSql(tableName, check)),
+        ];
 
     const foreignKey = columnForeignKey(column);
     if (foreignKey) {
@@ -808,6 +816,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
   }
 }
 
+/** Statements as a migration runs them, each ended. */
+function terminated(statements: readonly string[]): string[] {
+  return statements.map((sql) => `${sql};`);
+}
+
 /**
  * What a constraint is called: its own name, or one derived from its columns where nothing named it.
  * Shared by the add and the drop so a `DROP CONSTRAINT` names exactly what an `ADD CONSTRAINT` made.
@@ -847,7 +860,7 @@ export function buildEntityAST(
   entities: readonly Type<object>[],
   options: Pick<
     BuildSchemaASTOptions,
-    'defaultForeignKeyAction' | 'textScoreIndexes' | 'vectorIndexRequiresNotNull'
+    'defaultForeignKeyAction' | 'textScoreIndexes' | 'vectorIndexRequiresNotNull' | 'renderTriggers'
   > = {},
 ): SchemaAST {
   return buildSchemaAST(entities, {

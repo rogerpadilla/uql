@@ -811,39 +811,6 @@ describe('EntityCodeGenerator', () => {
    * `OPTION_SOURCE`'s `satisfies` is what forces the answer; these are the answers it forces.
    */
   describe('round trip', () => {
-    it('should carry the values an enum column accepts', () => {
-      const ast = new SchemaAST();
-      ast.addTable(
-        mockTableNode('tickets', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-          { name: 'state', type: { category: 'string', length: 20 }, enum: ['open', 'closed'] },
-        ]),
-      );
-
-      const result = new EntityCodeGenerator(ast).generateForTable('tickets');
-
-      assertDefined(result);
-
-      expect(result.code).toContain("enum: ['open', 'closed']");
-    });
-
-    it('should carry numeric enum members as number literals, in the options and the type', () => {
-      const ast = new SchemaAST();
-      ast.addTable(
-        mockTableNode('tickets', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-          { name: 'priority', type: { category: 'integer' }, enum: [1, 2] },
-        ]),
-      );
-
-      const result = new EntityCodeGenerator(ast).generateForTable('tickets');
-
-      assertDefined(result);
-
-      expect(result.code).toContain('enum: [1, 2] as const');
-      expect(result.code).toContain('priority?: 1 | 2 | null;');
-    });
-
     it('should carry a generated column as a stored computed field, and import raw for it', () => {
       const ast = new SchemaAST();
       ast.addTable(

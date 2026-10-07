@@ -2,10 +2,13 @@ import { describe, expect, it } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { MariaDialect } from '../maria/mariaDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { assertDefined } from '../test/index.js';
 import type { Type } from '../type/index.js';
 import { raw } from '../util/index.js';
+import { reverseDiff } from './schemaChange.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 @Entity({
@@ -31,17 +34,35 @@ class NoChecks {
 const ddl = (dialect: AbstractSqlDialect, entity: Type<object>) =>
   new SqlSchemaGenerator(dialect).generateCreateSchema([entity]).join('\n');
 
+/** The name of every object uql installs that the DDL declares. */
+const ownedNames = (sql: string) => sql.match(/_uql_\w+/g);
+
 describe('check constraints', () => {
-  it('should emit an authored name verbatim', () => {
-    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "wallet_non_negative_ck" CHECK ("balance" >= 0)');
+  it('should install an authored check under its name as a label, hashed by its SQL', () => {
+    expect(ddl(new PostgresDialect(), Wallet)).toMatch(
+      /CONSTRAINT "_uql_Wallet__wallet_non_negative_ck_[0-9a-f]{6}" CHECK \("balance" >= 0\)/,
+    );
   });
 
-  it('should name an unnamed check from the table and its position', () => {
-    expect(ddl(new PostgresDialect(), Wallet)).toContain('CONSTRAINT "Wallet__2_ck" CHECK ("spent" <= "balance")');
+  it('should label an unnamed check `ck`, so reordering the checks renames none', () => {
+    expect(ddl(new PostgresDialect(), Wallet)).toMatch(
+      /CONSTRAINT "_uql_Wallet__ck_[0-9a-f]{6}" CHECK \("spent" <= "balance"\)/,
+    );
   });
 
-  it('should derive that name from the table the entity was renamed to, not from the class', () => {
-    expect(ddl(new PostgresDialect(), RenamedWallet)).toContain('CONSTRAINT "purse__1_ck"');
+  it('should name an edited check apart from the one it replaces', () => {
+    @Entity({ name: 'purse', checks: [{ where: raw`"balance" >= 1` }] })
+    class EditedWallet {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: Number }) balance?: number | null;
+    }
+    expect(ownedNames(ddl(new PostgresDialect(), EditedWallet))).not.toEqual(
+      ownedNames(ddl(new PostgresDialect(), RenamedWallet)),
+    );
+  });
+
+  it('should name a check after the table the entity was renamed to, not after the class', () => {
+    expect(ddl(new PostgresDialect(), RenamedWallet)).toMatch(/CONSTRAINT "_uql_purse__ck_[0-9a-f]{6}"/);
   });
 
   it('should emit none for an entity that declares none', () => {
@@ -49,8 +70,10 @@ describe('check constraints', () => {
   });
 
   it('should emit the constraint on MariaDB and SQLite, quoting the name for each', () => {
-    expect(ddl(new MariaDialect(), Wallet)).toContain('CONSTRAINT `wallet_non_negative_ck` CHECK ("balance" >= 0)');
-    expect(ddl(new SqliteDialect(), Wallet)).toContain('CONSTRAINT `Wallet__2_ck` CHECK ("spent" <= "balance")');
+    expect(ddl(new MariaDialect(), Wallet)).toMatch(
+      /CONSTRAINT ._uql_Wallet__wallet_non_negative_ck_[0-9a-f]{6}. CHECK/,
+    );
+    expect(ddl(new SqliteDialect(), Wallet)).toMatch(/CONSTRAINT ._uql_Wallet__ck_[0-9a-f]{6}. CHECK/);
   });
 });
 
@@ -123,40 +146,16 @@ describe('enum fields', () => {
     expect(sql).toContain('UNIQUE');
   });
 
-  /**
-   * A column added to an existing table carries its check, as a created one does. An alter of an existing
-   * column leaves it out: MySQL adds a second check rather than replacing the first.
-   */
-  it('should constrain an enum column it adds to an existing table', () => {
-    const [sql] = new SqlSchemaGenerator(new PostgresDialect()).generateAlterTable({
-      type: 'alter',
-      tableName: 'Invoice',
-      columns: [
-        {
-          to: {
-            name: 'status',
-            type: 'VARCHAR(20)',
-            nullable: true,
-            isPrimaryKey: false,
-            isAutoIncrement: false,
-            isUnique: false,
-            enum: ['draft', 'paid'],
-          },
-        },
-      ],
-    });
-
-    expect(sql).toContain(`CHECK ("status" IN ('draft', 'paid'))`);
-  });
-
-  it('should constrain the column to its values', () => {
-    expect(ddl(new PostgresDialect(), Invoice)).toContain(
-      `"status" TEXT CHECK ("status" IN ('draft', 'paid', 'void'))`,
+  it('should constrain the column to its values, as a check of the table labelled by the column', () => {
+    const sql = ddl(new PostgresDialect(), Invoice);
+    expect(sql).toMatch(
+      /CONSTRAINT "_uql_Invoice__status_[0-9a-f]{6}" CHECK \("status" IN \('draft', 'paid', 'void'\)\)/,
     );
+    expect(sql).toContain('"status" TEXT,');
   });
 
   it('should leave a field that declares none unconstrained', () => {
-    expect(ddl(new PostgresDialect(), Invoice)).toMatch(/"note" TEXT(?! CHECK)/);
+    expect(ddl(new PostgresDialect(), Invoice)).not.toContain('_uql_Invoice__note');
   });
 
   it('should leave numeric values unquoted, so the comparison is against the column type', () => {
@@ -176,30 +175,82 @@ describe('enum fields', () => {
     expect(ddl(new MariaDialect(), Invoice)).toContain(`CHECK (\`status\` IN ('draft', 'paid', 'void'))`);
     expect(ddl(new SqliteDialect(), Invoice)).toContain(`CHECK (\`status\` IN ('draft', 'paid', 'void'))`);
   });
+});
 
-  /** MariaDB takes nothing after a column's `CHECK`, so the enum's comes after its `DEFAULT`. */
-  it('should put the CHECK after the default, the one order MariaDB takes', () => {
-    const [sql] = new SqlSchemaGenerator(new MariaDialect()).generateAlterTable({
-      type: 'alter',
-      tableName: 'Invoice',
-      columns: [
-        {
-          to: {
-            name: 'status',
-            type: 'VARCHAR(20)',
-            nullable: true,
-            isPrimaryKey: false,
-            isAutoIncrement: false,
-            isUnique: false,
-            defaultValue: 'draft',
-            enum: ['draft', 'paid'],
-          },
-        },
-      ],
-    });
+@Entity({ name: 'Bill' })
+class NarrowBill {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, enum: ['draft', 'paid'] as const }) status?: 'draft' | 'paid' | null;
+}
 
-    expect(sql).toBe(
-      "ALTER TABLE `Invoice` ADD COLUMN `status` VARCHAR(20) DEFAULT 'draft' CHECK (`status` IN ('draft', 'paid'));",
+@Entity({ name: 'Bill' })
+class WideBill {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String, enum: ['draft', 'paid', 'void'] as const }) status?: 'draft' | 'paid' | 'void' | null;
+}
+
+@Entity({ name: 'Bill' })
+class PlainBill {
+  @Id({ type: Number }) id?: number;
+}
+
+/** `entity`'s table as the database would report it, checks included, had `installed` built it. */
+const diffOver = (dialect: AbstractSqlDialect, entity: Type<object>, installed: Type<object>) => {
+  const generator = new SqlSchemaGenerator(dialect);
+  const table = generator.buildAST([installed]).getTable('Bill');
+  table?.checks.push({ name: 'Bill_status_check', expression: `"status" <> ''` });
+  return { generator, diff: generator.diffSchema(entity, table) };
+};
+
+describe('check changes', () => {
+  it('should replace a check whose values changed, and leave one uql did not install', () => {
+    const { generator, diff } = diffOver(new PostgresDialect(), WideBill, NarrowBill);
+    assertDefined(diff);
+    const sql = generator.generateAlterTable(diff);
+
+    expect(sql).toEqual([
+      expect.stringMatching(/^ALTER TABLE "Bill" DROP CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}";$/),
+      expect.stringMatching(
+        /^ALTER TABLE "Bill" ADD CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}" CHECK \("status" IN \('draft', 'paid', 'void'\)\);$/,
+      ),
+    ]);
+  });
+
+  it('should put the replaced check back on the way down', () => {
+    const { generator, diff } = diffOver(new PostgresDialect(), WideBill, NarrowBill);
+    assertDefined(diff);
+
+    expect(generator.generateAlterTable(reverseDiff(diff)).at(-1)).toMatch(
+      /ADD CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}" CHECK \("status" IN \('draft', 'paid'\)\);$/,
     );
+  });
+
+  it('should report no change for a check already installed', () => {
+    expect(diffOver(new PostgresDialect(), WideBill, WideBill).diff).toBeUndefined();
+  });
+
+  it('should add the check of an enum column it adds, after the column', () => {
+    const { generator, diff } = diffOver(new PostgresDialect(), WideBill, PlainBill);
+    assertDefined(diff);
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "Bill" ADD COLUMN "status" TEXT;',
+      expect.stringMatching(/^ALTER TABLE "Bill" ADD CONSTRAINT "_uql_Bill__status_[0-9a-f]{6}" CHECK/),
+    ]);
+  });
+
+  it('should drop the check of a column before the column, which MySQL refuses to drop under one', () => {
+    const { generator, diff } = diffOver(new MySqlDialect(), PlainBill, WideBill);
+    assertDefined(diff);
+
+    expect(generator.generateAlterTable(diff)).toEqual([
+      expect.stringMatching(/^ALTER TABLE .Bill. DROP CONSTRAINT ._uql_Bill__status_[0-9a-f]{6}.;$/),
+      'ALTER TABLE `Bill` DROP COLUMN `status`;',
+    ]);
+  });
+
+  it('should rebuild the table where the engine alters no constraint', () => {
+    const { diff } = diffOver(new SqliteDialect(), WideBill, NarrowBill);
+    expect(diff?.rebuild).toBeDefined();
   });
 });

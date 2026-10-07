@@ -20,11 +20,17 @@ function rebuiltUserTable() {
     { name: 'age', sql: 'TEXT' },
   ]);
   table.indexes.push({ name: 'hand_made_name', table, entries: [{ column: 'name' }], unique: false });
+  table.checks.push(
+    { name: 'hand_named', expression: "`name` <> ''" },
+    { name: '_uql_RebuiltUser__ck_000000', expression: '`id` > 0' },
+  );
   table.definition = [
     {
       kind: 'table',
       name: 'RebuiltUser',
-      sql: "CREATE TABLE `RebuiltUser` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `name` TEXT, `years` TEXT CHECK (`years` <> ''))",
+      sql:
+        "CREATE TABLE `RebuiltUser` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `name` TEXT, `years` TEXT CHECK (`years` <> ''), " +
+        "CONSTRAINT `hand_named` CHECK (`name` <> ''), CONSTRAINT `_uql_RebuiltUser__ck_000000` CHECK (`id` > 0))",
     },
     { kind: 'index', name: 'hand_made_name', sql: 'CREATE INDEX hand_made_name ON RebuiltUser (name)' },
     { kind: 'index', name: 'by_lower_name', sql: 'CREATE INDEX by_lower_name ON RebuiltUser (lower(name))' },
@@ -73,9 +79,9 @@ describe('SqliteSchemaGenerator Specifics', () => {
   });
 
   /**
-   * The copy carries the rename and fills the nulls the column now refuses with its default. An index uql
-   * did not make comes back, as SQLite keeps it where uql cannot read it; uql's own trigger is left to the
-   * trigger reconcile.
+   * The copy carries the rename and fills the nulls the column now refuses with its default. An index or
+   * named check uql did not make comes back; uql's own check is the entity's to declare, and its trigger is
+   * left to the diff's trigger changes.
    */
   it('should rebuild a table to retype a column, carrying its rename and filling its nulls', () => {
     const diff = generator.diffSchema(RebuiltUser, rebuiltUserTable(), undefined, [{ from: 'years', to: 'age' }]);
@@ -83,7 +89,7 @@ describe('SqliteSchemaGenerator Specifics', () => {
 
     expect(generator.generateAlterTable(diff)).toEqual([
       ...GUARD,
-      'CREATE TABLE `_uql_new_RebuiltUser` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,\n  `name` TEXT,\n  `age` INTEGER NOT NULL DEFAULT 0\n);',
+      "CREATE TABLE `_uql_new_RebuiltUser` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,\n  `name` TEXT,\n  `age` INTEGER NOT NULL DEFAULT 0,\n  CONSTRAINT `hand_named` CHECK (`name` <> '')\n);",
       'INSERT INTO `_uql_new_RebuiltUser` (`id`, `name`, `age`) SELECT `id`, `name`, coalesce(`years`, 0) FROM `RebuiltUser`;',
       'DROP TABLE `RebuiltUser`;',
       'ALTER TABLE `_uql_new_RebuiltUser` RENAME TO `RebuiltUser`;',
@@ -92,14 +98,15 @@ describe('SqliteSchemaGenerator Specifics', () => {
     ]);
   });
 
-  /** The rollback is the table as SQLite kept it, `CHECK` included, which introspection never reads. */
+  /** The rollback is the table as SQLite kept it, an unnamed `CHECK` included, which introspection never reads. */
   it('should roll a rebuild back to the table exactly as it was', () => {
     const diff = generator.diffSchema(RebuiltUser, rebuiltUserTable(), undefined, [{ from: 'years', to: 'age' }]);
     assertDefined(diff);
 
     expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
       ...GUARD,
-      "CREATE TABLE `_uql_new_RebuiltUser` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `name` TEXT, `years` TEXT CHECK (`years` <> ''));",
+      "CREATE TABLE `_uql_new_RebuiltUser` (`id` INTEGER PRIMARY KEY AUTOINCREMENT, `name` TEXT, `years` TEXT CHECK (`years` <> ''), " +
+        "CONSTRAINT `hand_named` CHECK (`name` <> ''), CONSTRAINT `_uql_RebuiltUser__ck_000000` CHECK (`id` > 0));",
       'INSERT INTO `_uql_new_RebuiltUser` (`id`, `name`, `years`) SELECT `id`, `name`, `age` FROM `RebuiltUser`;',
       'DROP TABLE `RebuiltUser`;',
       'ALTER TABLE `_uql_new_RebuiltUser` RENAME TO `RebuiltUser`;',

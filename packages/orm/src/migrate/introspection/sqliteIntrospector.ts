@@ -1,4 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
+import type { CheckSchema } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema, StoredDefinition } from '../../type/index.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
 
@@ -174,6 +175,12 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         onUpdate: this.normalizeReferentialAction(first.on_update),
       };
     });
+  }
+
+  /** The named checks in the table's `CREATE TABLE`, the only place SQLite keeps one. */
+  protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
+    const [table] = await this.getDefinition(read, tableName);
+    return table ? namedChecks(table.sql) : [];
   }
 
   /** Every statement `sqlite_master` keeps for the table, its `CREATE TABLE` first. An automatic index has none. */
@@ -382,3 +389,14 @@ type SqliteForeignKeyRow = {
   on_delete: string;
   match: string;
 };
+
+/** Where a named check starts, its name quoted any way SQLite takes, up to its opening parenthesis. */
+const NAMED_CHECK = /CONSTRAINT\s+("[^"]*"|`[^`]*`|\[[^\]]*\]|\w+)\s+CHECK\s*\(/gi;
+
+/** Each `CONSTRAINT <name> CHECK (...)` in a `CREATE TABLE`, the only place SQLite keeps one. */
+export function namedChecks(ddl: string): CheckSchema[] {
+  return [...ddl.matchAll(NAMED_CHECK)].map((match) => ({
+    name: leadingIdentifier(match[1]),
+    expression: parenthesized(ddl.slice(match.index + match[0].length - 1)),
+  }));
+}

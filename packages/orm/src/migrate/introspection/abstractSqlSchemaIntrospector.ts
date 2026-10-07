@@ -1,9 +1,9 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
+import type { CheckSchema, TriggerSchema } from '../../schema/types.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
   ColumnSchema,
-  InstalledTriggers,
   ForeignKeySchema,
   IndexSchema,
   PrimaryKeySchema,
@@ -74,11 +74,13 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         return undefined;
       }
 
-      const [columns, indexes, foreignKeys, primaryKey, definition] = await Promise.all([
+      const [columns, indexes, foreignKeys, primaryKey, checks, triggers, definition] = await Promise.all([
         this.getColumns(read, tableName),
         this.getIndexes(read, tableName),
         this.getForeignKeys(read, tableName),
         this.getPrimaryKey(read, tableName),
+        this.getChecks(read, tableName),
+        this.getTriggers(read, tableName),
         this.getDefinition(read, tableName),
       ]);
 
@@ -88,6 +90,8 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         primaryKey,
         indexes,
         foreignKeys,
+        checks,
+        triggers,
         definition,
       };
     });
@@ -106,18 +110,16 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   }
 
   /**
-   * Every trigger uql installed in this schema, by table and then by name, with the statements recreating
-   * it: the whole schema in one read, since a table whose entity stopped declaring one still has one to
-   * drop. Ownership is matched here rather than with `LIKE`, whose `_` wildcard would take in a hand-written one.
+   * The triggers uql installed on the table, each with the statements recreating it as the engine keeps it.
+   * Ownership is matched here rather than with `LIKE`, whose `_` wildcard would take in a hand-written one.
    */
-  async ownedTriggers(table: string): Promise<InstalledTriggers> {
-    const rows = await this.withSqlQuerier((querier) => querier.all<RawRow>(this.triggersQuery(), [table]));
-    return new Map(
-      rows.flatMap((row) => {
-        const name = String(row['name']);
-        const statements = [row['requires'], row['definition']].filter(Boolean).map((sql) => String(sql));
-        return isOwnedName(name) ? [[name, statements] as const] : [];
-      }),
+  protected async getTriggers(read: TableRowReader, tableName: string): Promise<TriggerSchema[]> {
+    const rows = await read<{ name: string; definition: string | null; requires?: string | null }>(
+      this.triggersQuery(),
+      [tableName],
+    );
+    return rows.flatMap(({ name, requires, definition }) =>
+      isOwnedName(name) ? [{ name, statements: [requires, definition].filter((sql) => typeof sql === 'string') }] : [],
     );
   }
 
@@ -231,6 +233,9 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
 
   /** SQL query to get primary key columns. Parameter: tableName (for PRAGMA-style). */
   protected abstract getPrimaryKeyQuery(tableName: string): string;
+
+  /** Every check on the table, each `expression` as the engine reprints it, which is what a rollback restores. */
+  protected abstract getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]>;
 
   /**
    * SQL listing the triggers on the table named by its single parameter: each one's `name`, its `definition`

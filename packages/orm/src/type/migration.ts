@@ -2,7 +2,14 @@ import type { AnyMigrationOperation } from '../migrate/builder/types.js';
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { DiffOptions } from '../schema/schemaASTDiffer.js';
-import type { ColumnNode, ForeignKeyAction, IndexType, TableNode } from '../schema/types.js';
+import type {
+  CheckSchema,
+  ColumnNode,
+  ForeignKeyAction,
+  IndexType,
+  TableNode,
+  TriggerSchema,
+} from '../schema/types.js';
 import type {
   EntityMeta,
   EntityWhereMeta,
@@ -147,6 +154,9 @@ export interface TableSchema {
   readonly primaryKey?: PrimaryKeySchema;
   readonly indexes?: IndexSchema[];
   readonly foreignKeys?: ForeignKeySchema[];
+  readonly checks?: CheckSchema[];
+  /** The triggers uql installed, each with the statements the engine would recreate it from. */
+  readonly triggers?: TriggerSchema[];
   /** The statements the engine keeps for the table, where it keeps them: SQLite's `sqlite_master`. */
   readonly definition?: readonly StoredDefinition[];
 }
@@ -257,6 +267,12 @@ export interface SchemaDiff {
   readonly columns?: readonly ColumnChange[];
   readonly indexes?: readonly Change<IndexSchema>[];
   readonly foreignKeys?: readonly Change<ForeignKeySchema>[];
+  readonly checks?: readonly Change<CheckSchema>[];
+  /**
+   * The triggers installed or declared, a kept one as both sides under one name: Postgres refuses to alter
+   * a column a trigger names, so a table whose columns change takes every trigger off and puts it back.
+   */
+  readonly triggers?: readonly Change<TriggerSchema>[];
   /** Columns renamed in place, `from` the database's name `to` the entity's, which the other changes already use. */
   readonly renamedColumns?: readonly Rename[];
   /**
@@ -296,9 +312,6 @@ export interface DropSchemaOptions {
   readonly existing?: SchemaAST;
 }
 
-/** The triggers uql installed on one table, by name, each with the statements that recreate it as it stands. */
-export type InstalledTriggers = ReadonlyMap<string, readonly string[]>;
-
 /**
  * Interface for generating DDL statements from entity metadata
  */
@@ -318,18 +331,6 @@ export interface SchemaGenerator {
 
   /** Generate DROP TABLE statement. */
   generateDropTable(tableName: string, options?: DropSchemaOptions): string;
-
-  /**
-   * What takes the triggers on `entity`'s table from `installed` - each by name, with the statements that
-   * recreate it - to what it declares: nothing where the two agree, which is always on MongoDB.
-   */
-  generateTriggers(entity: Type<object>, installed?: InstalledTriggers): string[];
-
-  /** The inverse of {@link generateTriggers} from the same `installed`: its triggers dropped, and the ones it dropped restored. */
-  generateTriggersDown(entity: Type<object>, installed?: InstalledTriggers): string[];
-
-  /** A `DROP` for each trigger uql owns among `names` on `entity`'s table, whatever the entity declares. */
-  generateTriggerDrops(entity: Type<object>, names: readonly string[]): string[];
 
   /** The statements taking a table through `diff`; its rollback is the diff reversed, see `reverseDiff`. */
   generateAlterTable(diff: SchemaDiff): string[];
@@ -405,14 +406,6 @@ export interface SchemaGenerator {
  * Interface for introspecting the current database schema
  */
 export interface SchemaIntrospector {
-  /**
-   * Every trigger uql installed on `table`, by name, each with the statements that recreate it as it
-   * stands. The names say which to drop once an entity no longer declares them; the statements are what
-   * a rollback puts back, read off the engine rather than recorded anywhere by uql. One table's alone,
-   * so reading it never meets a trigger another writer is dropping from some other table.
-   */
-  ownedTriggers(table: string): Promise<InstalledTriggers>;
-
   /**
    * What this introspector can read back about an index, and so all that diffing may compare.
    * Comparing a feature it cannot read reports the same drift forever: the entity side declares it,

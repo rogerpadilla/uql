@@ -143,7 +143,7 @@ A `findManyStream` holds its querier until the loop ends, which refuses any othe
 - `drift:check` fails when the database no longer matches.
 - `sync --dry-run` prints only SQL on stdout, to append to a migration file another tool applies: on Cloudflare D1, wrangler's (https://uql-orm.dev/cloudflare-d1.md).
 
-Triggers are part of the diff: uql owns the `_uql_`-prefixed ones and never touches another.
+Checks, an enum's included, and triggers are part of the diff: uql owns the `_uql_`-prefixed ones and never touches another.
 
 ## Where to read more
 

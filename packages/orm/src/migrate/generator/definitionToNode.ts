@@ -3,7 +3,7 @@ import type { TableNode } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QueryRaw } from '../../type/queryRaw.js';
-import { indexNameParts, normalizeIndexColumn, renderIndexColumn } from '../../util/ddlExpression.util.js';
+import { enumCheck, indexNameParts, normalizeIndexColumn, renderIndexColumn } from '../../util/ddlExpression.util.js';
 import { derivedIndexName, splitQualifiedName } from '../../util/sql.util.js';
 import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
@@ -25,6 +25,7 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryR
   for (const colDef of def.columns) {
     columns.set(colDef.name, { ...bareColumn(colDef), table, referencedBy: [] });
   }
+  table.checks.push(...def.columns.flatMap((column) => enumCheck(name, column, render)));
   // A declared key keeps only the columns the table has, in its own order.
   table.primaryKey = def.primaryKey
     ? { columns: def.primaryKey.filter((name) => columns.has(name)) }
@@ -37,10 +38,11 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryR
   return table;
 }
 
-/** A builder's column without its `index` and `foreignKey`, which are lifted onto the table. */
+/** A builder's column without its `index`, `foreignKey` and `enum`, which are lifted onto the table. */
 export function bareColumn({
   index: _index,
   foreignKey: _foreignKey,
+  enum: _enum,
   ...column
 }: FullColumnDefinition): ColumnDefinition {
   return column;

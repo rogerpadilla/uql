@@ -17,6 +17,7 @@ export function createTableNode(
     columns: new Map(),
     indexes: [],
     checks: [],
+    triggers: [],
     externalForeignKeys: [],
     incomingRelations: [],
     outgoingRelations: [],

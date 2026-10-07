@@ -57,7 +57,8 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
 
   /** What uql has installed on the post table, read through the introspector every engine implements. */
   const installed = async () => {
-    return [...(await introspectorFor(pool).ownedTriggers('TgPost')).keys()];
+    const table = (await introspectorFor(pool).introspect(['TgPost'])).getTable('TgPost');
+    return (table?.triggers ?? []).map((trigger) => trigger.name);
   };
 
   const audited = (postId: TgAudit['postId']) => pool.count(TgAudit, { $where: { postId } });
@@ -228,6 +229,24 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     await sync({ entity: TgPost });
     expect(await installed()).toEqual(audit);
   });
+
+  // A table's drop leaves the function the Postgres family keeps each body in, so `down` drops it after the table.
+  it(
+    'should create a table with its triggers through a generated migration, and drop both on the way down',
+    async () => {
+      await dropTables(pool, 'TgPost');
+      const migrator = await migratorWithFiles();
+
+      await migrator.generateFromEntities('create_post');
+      expect(await migrator.up()).toMatchObject([{ success: true }]);
+      expect(await installed()).toEqual(audit);
+      expect(await migrator.down()).toMatchObject([{ success: true }]);
+
+      expect(await introspectorFor(pool).tableExists('TgPost')).toBe(false);
+      await sync();
+    },
+    provisioningTimeout,
+  );
 });
 
 // Writing a second table with its own generated key, whose counter runs ahead of the first's: every

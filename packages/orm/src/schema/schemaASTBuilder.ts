@@ -8,7 +8,13 @@ import type {
   Type,
 } from '../type/index.js';
 import type { NamingStrategy } from '../type/namingStrategy.js';
-import { declaredIndexes, declaredIndexName, renderIndexColumn } from '../util/ddlExpression.util.js';
+import {
+  declaredIndexes,
+  declaredIndexName,
+  enumCheck,
+  ownedCheck,
+  renderIndexColumn,
+} from '../util/ddlExpression.util.js';
 import { fulltextWeights, textWeightSteps } from '../util/dialect.util.js';
 import { declaresNotNull, isAutoIncrement, isInlinedExpression, isSoleIdField } from '../util/field.util.js';
 import { definedEntries, entityName } from '../util/object.util.js';
@@ -18,7 +24,13 @@ import { resolveColumnCanonicalType } from './canonicalType.js';
 import { lookupColumns } from './indexColumns.js';
 import { createTableNode, keyOfColumns, SchemaAST } from './schemaAST.js';
 import { schemaDefault } from './sqlExpression.js';
-import { type ColumnNode, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction, type TableNode } from './types.js';
+import {
+  type ColumnNode,
+  DEFAULT_FOREIGN_KEY_ACTION,
+  type ForeignKeyAction,
+  type TableNode,
+  type TriggerSchema,
+} from './types.js';
 
 /**
  * Options for building SchemaAST from entities.
@@ -45,6 +57,8 @@ export interface BuildSchemaASTOptions {
   textScoreIndexes?: boolean;
   /** Whether a column a vector index covers is `NOT NULL` whatever the entity declares, as MariaDB demands. */
   vectorIndexRequiresNotNull?: boolean;
+  /** The triggers an entity's table carries, as its dialect renders them; none where no dialect renders any. */
+  renderTriggers?: (meta: EntityMeta<object>) => TriggerSchema[];
 }
 
 /** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
@@ -60,6 +74,7 @@ type BuildContext = {
   readonly compileIndexPredicate: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
   readonly textScoreIndexes: boolean;
   readonly vectorIndexRequiresNotNull: boolean;
+  readonly renderTriggers: (meta: EntityMeta<object>) => TriggerSchema[];
 };
 
 /**
@@ -82,6 +97,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
     compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
     textScoreIndexes: options.textScoreIndexes ?? false,
     vectorIndexRequiresNotNull: options.vectorIndexRequiresNotNull ?? false,
+    renderTriggers: options.renderTriggers ?? (() => []),
   };
 
   for (const entity of entities) {
@@ -122,7 +138,7 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
   const table = createTableNode(tableName, ctx.resolveSchema(meta));
   const { columns } = table;
   table.checks.push(
-    ...(meta.checks ?? []).map(({ name, where }) => ({ name, expression: ctx.compileDdl(where, meta.entity) })),
+    ...(meta.checks ?? []).map(({ name, where }) => ownedCheck(tableName, name, ctx.compileDdl(where, meta.entity))),
   );
 
   const notNull = ctx.vectorIndexRequiresNotNull ? vectorIndexedEntries(meta) : new Set<string>();
@@ -148,15 +164,18 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
       // A stamp is filled by a trigger, so it is a column like any other; only `stored: true` generates.
       generatedAs: field.stored === true && field.computed ? ctx.compileDdl(field.computed, meta.entity) : undefined,
       comment: field.comment,
-      enum: field.enum,
       table,
       referencedBy: [],
       references: undefined,
     };
 
     columns.set(columnName, column);
+    table.checks.push(
+      ...enumCheck(tableName, { name: columnName, enum: field.enum }, (sql) => ctx.compileDdl(sql, meta.entity)),
+    );
   }
   table.primaryKey = keyOfColumns(columns.values());
+  table.triggers.push(...ctx.renderTriggers(meta));
 
   ctx.ast.addTable(table);
   return table;

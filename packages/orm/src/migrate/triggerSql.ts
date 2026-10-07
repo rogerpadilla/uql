@@ -1,4 +1,5 @@
 import type { AbstractSqlDialect } from '../dialect/index.js';
+import type { TriggerSchema } from '../schema/types.js';
 import type {
   EntityMeta,
   EntityTriggerMeta,
@@ -20,9 +21,6 @@ import { ownedName } from '../util/sql.util.js';
 import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
-/** A trigger as uql installs it: the identifier, and the statements creating it under that identifier. */
-export type RenderedTrigger = { readonly name: string; readonly statements: readonly string[] };
-
 /**
  * One trigger for `dialect`, named for its table and label and ending in a hash of its own SQL. That hash
  * is the whole of change detection: a trigger is in place exactly when its name is installed, and an
@@ -33,7 +31,7 @@ export function renderTrigger<E>(
   meta: EntityMeta<E>,
   trigger: EntityTriggerMeta<E>,
   position: number,
-): RenderedTrigger {
+): TriggerSchema {
   const table = dialect.resolveTableAlias(meta);
   const label = trigger.name ?? `${trigger.on}_${position}`;
   const draft = triggerStatements(dialect, meta, trigger, label);
@@ -43,15 +41,23 @@ export function renderTrigger<E>(
 
 /**
  * What removes one trigger: the trigger, named with its table only where the engine scopes the name to
- * one, and on the Postgres family the function holding its body, which dropping a trigger leaves behind.
+ * one, then {@link dropTriggerBody}.
  */
-export function dropTrigger<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>, name: string): string[] {
-  const { scope, body } = dialect.features.triggers;
-  const table = dialect.escapedTableName(meta);
-  return [
-    `DROP TRIGGER IF EXISTS ${triggerId(dialect, meta, name)}${scope === 'table' ? ` ON ${table}` : ''}`,
-    ...(body === 'function' ? [`DROP FUNCTION IF EXISTS ${schemaObjectId(dialect, meta, name)}()`] : []),
-  ];
+export function dropTrigger(
+  dialect: AbstractSqlDialect,
+  table: string,
+  schema: string | undefined,
+  name: string,
+): string[] {
+  const on = dialect.features.triggers.scope === 'table' ? ` ON ${dialect.escapeId(table)}` : '';
+  return [`DROP TRIGGER IF EXISTS ${triggerId(dialect, schema, name)}${on}`, ...dropTriggerBody(dialect, schema, name)];
+}
+
+/** What dropping a trigger or its table leaves behind: on the Postgres family, the function holding its body. */
+export function dropTriggerBody(dialect: AbstractSqlDialect, schema: string | undefined, name: string): string[] {
+  return dialect.features.triggers.body === 'function'
+    ? [`DROP FUNCTION IF EXISTS ${dialect.escapeQualifiedId(name, schema)}()`]
+    : [];
 }
 
 /**
@@ -59,13 +65,8 @@ export function dropTrigger<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>,
  * since Postgres refuses a schema there, and in the table's schema where the engine keeps names per
  * schema, or MySQL would look for it in the connection's database and SQL Server in its default schema.
  */
-function triggerId<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>, name: string): string {
-  return dialect.features.triggers.scope === 'table' ? dialect.escapeId(name) : schemaObjectId(dialect, meta, name);
-}
-
-/** A name in the schema of `meta`'s table, where uql keeps whatever it installs beside it. */
-function schemaObjectId<E>(dialect: AbstractSqlDialect, meta: EntityMeta<E>, name: string): string {
-  return dialect.escapeQualifiedId(name, dialect.resolveSchema(meta));
+function triggerId(dialect: AbstractSqlDialect, schema: string | undefined, name: string): string {
+  return dialect.features.triggers.scope === 'table' ? dialect.escapeId(name) : dialect.escapeQualifiedId(name, schema);
 }
 
 /**
@@ -108,7 +109,7 @@ function triggerStatements<E>(
   const guarded = filter && fires === 'eachRowIf' ? `IF ${filter} THEN\n${sql}\nEND IF;` : sql;
   const opened = features.preamble ? `${features.preamble}\n${guarded}` : guarded;
 
-  const id = triggerId(dialect, meta, name);
+  const id = triggerId(dialect, dialect.resolveSchema(meta), name);
   const table = dialect.escapedTableName(meta);
   const byWhen = fires === 'eachRowWhen';
   const of =
@@ -133,7 +134,7 @@ function triggerStatements<E>(
   // A `BEFORE` trigger returning NULL discards the write, so it hands back the row it leaves behind;
   // after the write the value is ignored.
   const returned = before ? (operation === 'DELETE' ? names.$old : names.$new) : 'NULL';
-  const fn = schemaObjectId(dialect, meta, name);
+  const fn = dialect.escapeQualifiedId(name, dialect.resolveSchema(meta));
   return [plpgsqlFunction(fn, `BEGIN\n${opened}\nRETURN ${returned};\nEND`), `${header}\nEXECUTE FUNCTION ${fn}()`];
 }
 

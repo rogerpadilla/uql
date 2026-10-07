@@ -1,3 +1,4 @@
+import type { CheckSchema } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import {
   AbstractSqlSchemaIntrospector,
@@ -24,6 +25,17 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       WHERE t.parent_id <> 0 AND OBJECT_SCHEMA_NAME(t.parent_id) = ${this.schemaExpr}
         AND OBJECT_NAME(t.parent_id) = ${this.dialect.placeholder(1)}
     `;
+  }
+
+  protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
+    return read<{ name: string; expression: string }>(
+      /*sql*/ `
+      SELECT k.name AS name, k.definition AS expression
+      FROM sys.check_constraints k
+      WHERE OBJECT_SCHEMA_NAME(k.parent_object_id) = ${this.schemaExpr} AND OBJECT_NAME(k.parent_object_id) = @p1
+    `,
+      [tableName],
+    );
   }
 
   protected getTableNamesQuery(): string {

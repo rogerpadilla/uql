@@ -1,6 +1,6 @@
 import { canonicalToColumnType, isVectorCategory } from '../../schema/canonicalType.js';
 import { SqlExpression, type SqlExpressionKind } from '../../schema/sqlExpression.js';
-import type { ColumnNode, EnumValues } from '../../schema/types.js';
+import type { ColumnNode } from '../../schema/types.js';
 import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
 import { quoted, rawTag } from './sourceLiteral.js';
@@ -35,7 +35,6 @@ const OPTION_SOURCE = {
   // A column is nullable unless it says otherwise, and a key is NOT NULL without saying so.
   nullable: (col) => (col.nullable || col.isPrimaryKey ? [] : ['nullable: false']),
   isUnique: (col) => (col.isUnique ? ['unique: true'] : []),
-  enum: (col) => (col.enum ? [`enum: [${enumMembersSource(col.enum).join(', ')}] as const`] : []),
   defaultValue: (col) =>
     col.defaultValue === undefined ? [] : [`defaultValue: ${defaultValueSource(col.defaultValue)}`],
   generatedAs: (col) => (col.generatedAs ? [`computed: ${rawTag(col.generatedAs)}`, 'stored: true'] : []),
@@ -72,11 +71,6 @@ export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, i
   ];
 
   return `{ ${options.join(', ')} }`;
-}
-
-/** An enum's members as source literals, which are also the property's type as a union. */
-export function enumMembersSource(members: EnumValues): string[] {
-  return members.map((it) => (typeof it === 'number' ? String(it) : quoted(it)));
 }
 
 /** The uql imports the field's decorator needs besides `Field`, as {@link indexNeedsRaw} tells for an index. */

@@ -1,3 +1,4 @@
+import type { CheckSchema, EnumValues } from '../schema/types.js';
 import {
   ColumnRef,
   type EntityIndexColumn,
@@ -8,7 +9,8 @@ import {
   QueryRaw,
 } from '../type/index.js';
 import { definedEntries } from './object.util.js';
-import { derivedIndexName } from './sql.util.js';
+import { raw } from './raw.js';
+import { derivedIndexName, ownedName } from './sql.util.js';
 
 /**
  * Reduces an authored index entry to the form metadata keeps, so a column, an expression and an options
@@ -57,4 +59,32 @@ export function declaredIndexName(
   entries: readonly EntityIndexColumn[],
 ): string {
   return name ?? derivedIndexName(table, indexNameParts(entries));
+}
+
+/**
+ * A check as uql installs it: named for its table and `label`, the author's name or `ck`, then a hash
+ * of `expression`, so an edited check is a new name and reordering the checks renames none.
+ */
+export function ownedCheck(table: string, label: string | undefined, expression: string): CheckSchema {
+  return { name: ownedName(table, label ?? 'ck', expression), expression };
+}
+
+/** The check a column's `enum` is, `column IN (...)`, each value the dialect's own literal; none without one. */
+export function enumCheck(
+  table: string,
+  { name, enum: values }: { readonly name: string; readonly enum?: EnumValues },
+  render: (sql: QueryRaw) => string,
+): CheckSchema[] {
+  if (!values) {
+    return [];
+  }
+  const sql = raw(({ ctx, dialect }) => {
+    ctx.append(`${dialect.escapeId(name)} IN (`);
+    values.forEach((value, i) => {
+      ctx.append(i ? ', ' : '');
+      ctx.addValue(value);
+    });
+    ctx.append(')');
+  });
+  return [ownedCheck(table, name, render(sql))];
 }

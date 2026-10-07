@@ -10,6 +10,7 @@ import {
 } from '../../schema/types.js';
 import type { ColumnRenames, TableSchema } from '../../type/migration.js';
 import { derivedForeignKeyName, qualifyName } from '../../util/sql.util.js';
+import { renameIndexEntries } from '../schemaChange.js';
 
 /**
  * Base class for SQL introspectors with shared AST building logic.
@@ -56,10 +57,7 @@ export abstract class BaseSqlIntrospector {
       ...table,
       columns: table.columns.map((column) => ({ ...column, name: own(column.name) })),
       primaryKey: table.primaryKey && { ...table.primaryKey, columns: table.primaryKey.columns.map(own) },
-      indexes: table.indexes?.map((index) => ({
-        ...index,
-        entries: index.entries.map((entry) => (entry.expression ? entry : { ...entry, column: own(entry.column) })),
-      })),
+      indexes: table.indexes?.map((index) => ({ ...index, entries: renameIndexEntries(index.entries, own) })),
       foreignKeys: table.foreignKeys?.map((foreignKey) => ({
         ...foreignKey,
         columns: foreignKey.columns.map(own),
@@ -119,6 +117,8 @@ export abstract class BaseSqlIntrospector {
     // key from `(b, a)`, and a flag says only that a column is *in* the key. Falls back to the flags
     // for an introspector that reports no key of its own.
     table.primaryKey = schema.primaryKey ?? keyOfColumns(schema.columns);
+    table.checks.push(...(schema.checks ?? []));
+    table.triggers.push(...(schema.triggers ?? []));
     table.definition = schema.definition;
 
     return table;

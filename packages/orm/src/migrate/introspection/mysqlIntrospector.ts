@@ -1,5 +1,6 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
+import type { CheckSchema } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
@@ -24,6 +25,24 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       FROM information_schema.TRIGGERS
       WHERE TRIGGER_SCHEMA = ${this.schemaExpr} AND EVENT_OBJECT_TABLE = ${this.dialect.placeholder(1)}
     `;
+  }
+
+  /**
+   * `CHECK_CONSTRAINTS` names no table on MySQL, where a check's name is unique in its schema, so the
+   * table comes from `TABLE_CONSTRAINTS`. It reports the clause escaped as a literal's body (`\'a\'`).
+   */
+  protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
+    const rows = await read<{ name: string; expression: string }>(
+      /*sql*/ `
+      SELECT k.CONSTRAINT_NAME AS name, c.CHECK_CLAUSE AS expression
+      FROM information_schema.TABLE_CONSTRAINTS k
+      JOIN information_schema.CHECK_CONSTRAINTS c
+        ON c.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME = k.CONSTRAINT_NAME
+      WHERE k.CONSTRAINT_TYPE = 'CHECK' AND k.TABLE_SCHEMA = ${this.schemaExpr} AND k.TABLE_NAME = ?
+    `,
+      [tableName],
+    );
+    return rows.map(({ name, expression }) => ({ name, expression: unescapeMysqlString(expression) }));
   }
 
   protected getTableNamesQuery(): string {
@@ -233,6 +252,22 @@ type MysqlColumnRow = {
  * JSON, got LONGTEXT", flagged as data loss) on a table uql created itself.
  */
 export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
+  /**
+   * A check's name is unique only in its table on MariaDB, whose `CHECK_CONSTRAINTS` names the table. A
+   * JSON column's `json_valid()` is its type, read by {@link mapColumnsResult}, so it is left out.
+   */
+  protected override async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
+    return read<{ name: string; expression: string }>(
+      /*sql*/ `
+      SELECT CONSTRAINT_NAME AS name, CHECK_CLAUSE AS expression
+      FROM information_schema.CHECK_CONSTRAINTS
+      WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ?
+        AND CHECK_CLAUSE <> CONCAT('json_valid(\`', CONSTRAINT_NAME, '\`)')
+    `,
+      [tableName],
+    );
+  }
+
   /** MariaDB prints a literal quoted, as SQL reads it (`'it''s'`), so an unquoted default is SQL. */
   protected override sqlText(defaultValue: string): string | undefined {
     return defaultValue.startsWith("'") ? undefined : defaultValue;

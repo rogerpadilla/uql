@@ -71,11 +71,22 @@ export type ForeignKeyAction = (typeof FOREIGN_KEY_ACTIONS)[number];
  */
 export type EnumValues = readonly (string | number)[];
 
-/** A `CHECK` as the schema holds it, compared by presence only: the database reprints its expression. */
+/**
+ * A `CHECK`, compared by name alone: one uql installs is named by `ownedCheck`, whose hash of the
+ * expression makes an edited one a new name. The expression is the engine's reprint when read back.
+ */
 export interface CheckSchema {
-  /** Absent when nothing named it, which the generator fills in with `derivedCheckName`. */
-  readonly name?: string;
+  readonly name: string;
   readonly expression: string;
+}
+
+/**
+ * A trigger, compared by name alone as a check is: its name ends in a hash of its SQL. The statements create
+ * it; read back, they are the engine's own, which is what a rollback restores.
+ */
+export interface TriggerSchema {
+  readonly name: string;
+  readonly statements: readonly string[];
 }
 
 /**
@@ -125,8 +136,6 @@ export interface ColumnNode {
   readonly isAutoIncrement: boolean;
   /** Whether this column has a unique constraint */
   readonly isUnique: boolean;
-  /** The values the column accepts. See {@link EnumValues}. */
-  readonly enum?: EnumValues;
   /** The SQL an engine-generated column is computed from, as `GENERATED ALWAYS AS (...) STORED`. */
   readonly generatedAs?: string;
   /** Column comment/description */
@@ -170,6 +179,8 @@ export interface TableNode {
   readonly indexFacets: ReadonlySet<IndexFacet>;
   /** `CHECK` constraints on this table. */
   readonly checks: CheckSchema[];
+  /** The triggers uql installs on this table. */
+  readonly triggers: TriggerSchema[];
   /** Optional table comment */
   readonly comment?: string;
   /** The statements the engine keeps for the table, where it keeps them; none on a table built from entities. */
@@ -258,12 +269,18 @@ export type RelationshipDiff = NodeChange<RelationshipNode> & { readonly name: s
  * `(a, b)` differs from `(b, a)`, while `Member_pkey` and `Member__userId_pk` over the same columns are equal.
  * `from` keeps the name the database reported, the only name a `DROP` can use.
  */
-export type PrimaryKeyDiff = Change<PrimaryKeySchema> & { readonly table: string };
+export type PrimaryKeyDiff = TableChange<PrimaryKeySchema>;
+
+/** One object of a table changed, named by the table. */
+export type TableChange<T> = Change<T> & { readonly table: string };
 
 /** The differences within a table that exists on both sides. */
 export interface TableDiff {
   readonly columns: ColumnDiff[];
   readonly indexes: IndexDiff[];
+  /** A check or trigger only one side has. Never both: a changed one is a new name, one dropped and one added. */
+  readonly checks: TableChange<CheckSchema>[];
+  readonly triggers: TableChange<TriggerSchema>[];
   /** Set only when the two primary keys have different columns. */
   readonly primaryKey?: PrimaryKeyDiff;
 }
@@ -274,6 +291,8 @@ export interface SchemaDiffResult {
   readonly tables: NodeChange<TableNode>[];
   readonly columns: ColumnDiff[];
   readonly indexes: IndexDiff[];
+  readonly checks: TableChange<CheckSchema>[];
+  readonly triggers: TableChange<TriggerSchema>[];
   readonly primaryKeys: PrimaryKeyDiff[];
   readonly relationships: RelationshipDiff[];
 }

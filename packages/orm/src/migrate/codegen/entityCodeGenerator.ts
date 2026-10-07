@@ -9,7 +9,7 @@ import {
   type TableNode,
 } from '../../schema/types.js';
 import { camelCase, lowerFirst, pascalCase, singularize, upperFirst } from '../../util/string.util.js';
-import { buildFieldOptionsSource, enumMembersSource, fieldImports } from './fieldOptionsSource.js';
+import { buildFieldOptionsSource, fieldImports } from './fieldOptionsSource.js';
 import { buildIndexDecoratorSource, indexNeedsRaw, isPlainFieldIndex } from './indexDecoratorSource.js';
 import { memberSource, quoted } from './sourceLiteral.js';
 
@@ -448,11 +448,7 @@ export class EntityCodeGenerator {
  * `!`, which an insert leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
  */
 function propertySource(col: ColumnNode, propertyName: string): string {
-  const type = col.enum
-    ? enumMembersSource(col.enum).join(' | ')
-    : col.type.category === 'json'
-      ? 'Json<unknown>'
-      : canonicalToTypeScript(col.type);
+  const type = col.type.category === 'json' ? 'Json<unknown>' : canonicalToTypeScript(col.type);
   const written = col.generatedAs === undefined ? '' : 'readonly ';
   if (col.nullable && !col.isPrimaryKey) {
     return `${written}${propertyName}?: ${type} | null`;

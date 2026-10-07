@@ -1,4 +1,7 @@
-/** The databases `docker-compose.yml` serves. Functions, so no two pools share one options object. */
+/**
+ * The databases `docker-compose.yml` serves. Functions, so no two pools share one options object; each
+ * takes the database, the shared one unless a file changing the schema names its own (AGENTS.md).
+ */
 export const postgresConnection = (database = 'test') => ({
   host: '0.0.0.0',
   port: 5442,
@@ -7,26 +10,30 @@ export const postgresConnection = (database = 'test') => ({
   database,
 });
 
-export const cockroachConnection = () => ({ host: '0.0.0.0', port: 26257, user: 'root', database: 'defaultdb' });
+export const cockroachConnection = (database = 'defaultdb') => ({
+  host: '0.0.0.0',
+  port: 26257,
+  user: 'root',
+  database,
+});
 
-export const mysqlConnection = () => ({
+export const mysqlConnection = (database = 'test') => ({
   host: '0.0.0.0',
   port: 3316,
   user: 'test',
   password: 'test',
-  database: 'test',
+  database,
 });
 
-export const mariadbConnection = () => ({
+export const mariadbConnection = (database = 'test') => ({
   host: '0.0.0.0',
   port: 3326,
   user: 'test',
   password: 'test',
-  database: 'test',
+  database,
   connectionLimit: 5,
 });
 
-/** One database per file that changes the schema, see `docker/init-mssql.sql`. */
 export const mssqlConnection = (database = 'test') => ({
   server: 'localhost',
   port: 1434,

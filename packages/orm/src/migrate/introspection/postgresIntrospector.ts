@@ -1,5 +1,5 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
-import { type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
+import { type CheckSchema, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
 import type { ColumnSchema, ForeignKeySchema, IndexColumnSchema, IndexSchema, RawRow } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
 import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
@@ -31,6 +31,21 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN pg_namespace n ON n.oid = c.relnamespace
       WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr} AND c.relname = ${this.dialect.placeholder(1)}
     `;
+  }
+
+  /** `pg_get_expr` answers NULL for a table dropped mid-read, where `pg_get_constraintdef` raises. */
+  protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
+    const rows = await read<{ name: string; expression: string | null }>(
+      /*sql*/ `
+      SELECT con.conname AS name, pg_get_expr(con.conbin, con.conrelid) AS expression
+      FROM pg_constraint con
+      JOIN pg_class t ON t.oid = con.conrelid
+      JOIN pg_namespace n ON n.oid = t.relnamespace
+      WHERE con.contype = 'c' AND t.relname = $1 AND n.nspname = ${this.schemaExpr}
+    `,
+      [tableName],
+    );
+    return rows.flatMap(({ name, expression }) => (expression === null ? [] : [{ name, expression }]));
   }
 
   protected getTableNamesQuery(): string {

@@ -95,6 +95,8 @@ export type ForeignKeyDefinition = Except<ForeignKeySchema, 'columns'>;
  * Full column definition including foreign key.
  */
 export interface FullColumnDefinition extends ColumnDefinition {
+  /** The values the column accepts, lifted onto the table as its check. */
+  enum?: EnumValues;
   /** Foreign key reference (if any) */
   foreignKey?: ForeignKeyDefinition;
   /** Index name (if indexed) */

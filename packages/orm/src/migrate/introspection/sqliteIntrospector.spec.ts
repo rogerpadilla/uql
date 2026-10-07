@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { generatedExpression } from './sqliteIntrospector.js';
+import { generatedExpression, namedChecks } from './sqliteIntrospector.js';
 
 /**
  * SQLite reports no generated column's expression, so it is read out of the `CREATE TABLE` it kept
@@ -34,5 +34,23 @@ describe('generatedExpression', () => {
 
   it('should report nothing for a column the statement does not declare', () => {
     expect(generatedExpression(ddl, 'missing')).toBe(undefined);
+  });
+});
+
+/** SQLite keeps a check only in the `CREATE TABLE`, where uql names each, inline on a column it added or not. */
+describe('namedChecks', () => {
+  it('should read each named check, its expression to the parenthesis closing it', () => {
+    const ddl =
+      'CREATE TABLE `t` (\n' +
+      "  `s` TEXT CONSTRAINT `_uql_t__s_1a2b3c` CHECK (`s` IN ('a)', 'b')),\n" +
+      '  `n` INTEGER,\n' +
+      '  CHECK (n > 0),\n' +
+      '  CONSTRAINT "_uql_t__ck_4d5e6f" CHECK ((n * 2) < 10)\n' +
+      ')';
+
+    expect(namedChecks(ddl)).toEqual([
+      { name: '_uql_t__s_1a2b3c', expression: "`s` IN ('a)', 'b')" },
+      { name: '_uql_t__ck_4d5e6f', expression: '(n * 2) < 10' },
+    ]);
   });
 });

@@ -1,7 +1,7 @@
 import type { IndexFacet } from '../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
-import type { InstalledTriggers, QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
+import type { QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { isMongoQuerier, type MongoQuerier } from './mongoQuerier.js';
 import { textConfigOf } from './textLanguage.js';
@@ -36,11 +36,6 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textIndex']);
 
   constructor(private readonly pool: QuerierPool) {}
-
-  /** MongoDB runs no trigger within a write, so uql installs none. */
-  async ownedTriggers(): Promise<InstalledTriggers> {
-    return new Map();
-  }
 
   async introspect(tables?: readonly string[]): Promise<SchemaAST> {
     const tableNames = tables ?? (await this.getTableNames());

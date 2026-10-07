@@ -30,7 +30,7 @@ Repo-specific rules, read directly by Claude Code, Cursor and other agents. Gene
 - A shared suite covering backends that behave differently keeps its body linear: the expectation goes in an overridable method (`expectedMixedBatchIds(...)`) or a per-family subclass (`MySqlLikeQuerierIt`).
 - Shared suites run under vitest and `bun:test`, so use matchers both have. For "null or undefined" write `expect(x == null).toBe(true)`: SQL hydrates a missing column to `null`, MongoDB to `undefined`.
 - An integration suite acquires a querier per test and `end()`s its pool in `afterAll`: a pinned querier can hold a connection the server closed.
-- A test file running DDL on SQL Server gets a database of its own, declared in `docker/init-mssql.sql`: two files changing one schema deadlock.
+- A suite running DDL on every engine takes `sqlPools(database)`, a database of its own on each server, declared in each `docker/init-*.sql`: files changing one database collide. SQL Server deadlocks (so its single-engine DDL suites get one too), Postgres fails a scan reprinting a trigger another drops, and CockroachDB keeps functions in the schema descriptor every transaction reads.
 - `planSync()` is safe and holds every alter, so assert "no drift" with `planSync({ safe: false })`.
 
 ## Elsewhere
