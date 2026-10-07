@@ -86,7 +86,7 @@ describe('Migrator', () => {
       await writeThree();
       const migrator = migratorOf();
 
-      expect((await migrator.pending()).map((it) => it.name)).toEqual(['m1', 'm2', 'm3']);
+      expect(await migrator.pending()).toEqual(['m1', 'm2', 'm3']);
       expect((await migrator.up()).map((it) => it.name)).toEqual(['m1', 'm2', 'm3']);
       expect(await tables()).toEqual(['m1', 'm2', 'm3', 'uql_migrations']);
       expect(await migrator.status()).toEqual({ pending: [], executed: ['m1', 'm2', 'm3'] });
@@ -165,46 +165,74 @@ describe('Migrator', () => {
   });
 
   describe('migration files', () => {
-    it('should list the migration files, sorted, leaving out declarations and other files', async () => {
+    it('should list the migrations by file name, sorted, leaving out declarations and other files, importing none', async () => {
       for (const file of ['b.ts', 'a.ts', 'c.txt', 'd.d.ts', 'e.mjs', 'f.js']) {
-        await writeFile(join(dir, file), '');
+        await writeFile(join(dir, file), 'export default {');
       }
-      expect(await migratorOf().getMigrationFiles()).toEqual(['a.ts', 'b.ts', 'e.mjs', 'f.js']);
+      expect(await migratorOf().pending()).toEqual(['a', 'b', 'e', 'f']);
     });
 
     it('should list none where the directory is missing', async () => {
-      expect(await migratorOf({ migrationsPath: join(dir, 'missing') }).getMigrationFiles()).toEqual([]);
+      expect(await migratorOf({ migrationsPath: join(dir, 'missing') }).pending()).toEqual([]);
     });
 
     it('should rethrow an error reading the directory other than its absence', async () => {
       const file = join(dir, 'file');
       await writeFile(file, '');
-      await expect(migratorOf({ migrationsPath: file }).getMigrationFiles()).rejects.toThrow('ENOTDIR');
+      await expect(migratorOf({ migrationsPath: file }).pending()).rejects.toThrow('ENOTDIR');
     });
 
-    it('should read a default export or a module export, and warn of a module that is no migration', async () => {
-      await writeFile(join(dir, 'm1.mjs'), 'export default { up: () => {}, down: () => {} };');
-      await writeFile(join(dir, 'm2.mjs'), 'export const up = () => {}; export const down = () => {};');
-      await writeFile(join(dir, 'm3.mjs'), 'export const up = () => {};');
+    it('should refuse two files of one name', async () => {
+      await writeFile(join(dir, 'm1.mjs'), '');
+      await writeFile(join(dir, 'm1.ts'), '');
+      await expect(migratorOf().pending()).rejects.toThrow("Migrations m1.mjs and m1.ts share the name 'm1'");
+    });
+
+    it('should run a default export or a module export', async () => {
+      await writeFile(join(dir, 'm1.mjs'), 'export default { up: async () => {}, down: async () => {} };');
+      await writeFile(join(dir, 'm2.mjs'), 'export const up = async () => {}; export const down = async () => {};');
+
+      expect(await migratorOf().up()).toMatchObject([
+        { name: 'm1', success: true },
+        { name: 'm2', success: true },
+      ]);
+    });
+
+    it('should run nothing where a migration to run fails to load', async () => {
+      await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)']);
+      await writeFile(join(dir, 'm2.mjs'), 'export default {');
+      await writeMigration('m3', ['CREATE TABLE m3 (id INTEGER)']);
       const migrator = migratorOf();
 
-      expect((await migrator.getMigrations()).map((it) => it.name)).toEqual(['m1', 'm2']);
-      expect(logger).toHaveBeenCalledWith(expect.stringContaining('m3.mjs is not a valid migration'));
+      await expect(migrator.up()).rejects.toThrow('Migration m2.mjs failed to load');
+      expect(await migrator.executed()).toEqual([]);
+      expect(await tables()).toEqual(['uql_migrations']);
     });
 
-    it('should read a module that fails to load as none, logging why', async () => {
+    it('should run nothing where a migration to run exports none', async () => {
+      await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)']);
+      await writeFile(join(dir, 'm2.mjs'), 'export const up = async () => {};');
+      const migrator = migratorOf();
+
+      await expect(migrator.up()).rejects.toThrow('Migration m2.mjs exports no migration');
+      expect(await migrator.executed()).toEqual([]);
+    });
+
+    it('should not load a migration already run', async () => {
+      const migrator = migratorOf();
+      await migrator.runMigration({ name: 'm1', up: async () => {}, down: async () => {} }, 'up');
       await writeFile(join(dir, 'm1.mjs'), 'export default {');
+      await writeMigration('m2', ['CREATE TABLE m2 (id INTEGER)']);
 
-      expect(await migratorOf().getMigrations()).toEqual([]);
-      expect(logger).toHaveBeenCalledWith(expect.stringContaining('Error loading migration m1.mjs'), expect.anything());
+      expect(await migrator.up()).toMatchObject([{ name: 'm2', success: true }]);
     });
 
-    it('should tell a migration from other objects', () => {
+    it('should refuse to roll back a migration recorded as run whose file is gone', async () => {
       const migrator = migratorOf();
-      expect(migrator.isMigration({ up: () => {}, down: () => {} })).toBe(true);
-      expect(migrator.isMigration({ up: () => {} })).toBe(false);
-      expect(migrator.isMigration({})).toBe(false);
-      expect(migrator.isMigration(null)).toBe(false);
+      await migrator.runMigration({ name: 'm1', up: async () => {}, down: async () => {} }, 'up');
+
+      await expect(migrator.down()).rejects.toThrow(`Migration 'm1' is recorded as run but has no file in ${dir}`);
+      expect(await migrator.executed()).toEqual(['m1']);
     });
 
     it('should return a migration definition as given', () => {

@@ -73,7 +73,7 @@ export async function main(args = process.argv.slice(2)) {
         break;
       }
       case 'pending': {
-        const pending = (await migrator.pending()).map((migration) => migration.name);
+        const pending = await migrator.pending();
         print(...(pending.length ? ['Pending migrations:', ...listed(pending, '○')] : ['No pending migrations.']));
         break;
       }

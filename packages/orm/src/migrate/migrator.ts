@@ -72,36 +72,18 @@ export class Migrator {
   }
 
   /**
-   * Get all discovered migrations from the migrations directory
+   * The migration files by name, the names the storage records as run, and those on disk it does not, all in
+   * name order. Read from names alone: a file is imported only when it is about to run.
    */
-  async getMigrations(): Promise<Migration<Querier>[]> {
-    const files = await this.getMigrationFiles();
-    const migrations: Migration<Querier>[] = [];
-
-    for (const file of files) {
-      const migration = await this.loadMigration(file);
-      if (migration) {
-        migrations.push(migration);
-      }
-    }
-
-    // Sort by name (which typically includes timestamp)
-    return migrations.sort((a, b) => a.name.localeCompare(b.name));
-  }
-
-  /** The migrations on disk the storage records as run (`applied`) or not (`pending`), and every name it records. */
   private async journal() {
-    const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
+    const [files, recorded] = await Promise.all([this.migrationFiles(), this.storage.executed()]);
+    const executed = recorded.toSorted();
     const ran = new Set(executed);
-    return {
-      executed,
-      applied: migrations.filter((migration) => ran.has(migration.name)),
-      pending: migrations.filter((migration) => !ran.has(migration.name)),
-    };
+    return { files, executed, pending: [...files.keys()].sort().filter((name) => !ran.has(name)) };
   }
 
-  /** The migrations not yet run. */
-  async pending(): Promise<Migration<Querier>[]> {
+  /** The names of the migrations not yet run, in the order `up` runs them. */
+  async pending(): Promise<string[]> {
     return (await this.journal()).pending;
   }
 
@@ -116,26 +98,32 @@ export class Migrator {
    * Run all pending migrations
    */
   async up(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    return this.runInOrder(await this.pending(), 'up', options);
+    const { files, pending } = await this.journal();
+    return this.runInOrder(files, pending, 'up', options);
   }
 
   /**
    * Rollback migrations
    */
   async down(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    return this.runInOrder((await this.journal()).applied.reverse(), 'down', options);
+    const { files, executed } = await this.journal();
+    return this.runInOrder(files, executed.reverse(), 'down', options);
   }
 
-  /** Runs the list narrowed by `to`/`step`, stopping at the first failure: `up` over the pending, `down` over the executed reversed. */
+  /**
+   * Runs the names narrowed by `to`/`step`, stopping at the first failure: `up` over the pending, `down` over
+   * the executed reversed. Every one is loaded before any runs, so a file that cannot be leaves the database as it was.
+   */
   private async runInOrder(
-    migrations: Migration<Querier>[],
+    files: ReadonlyMap<string, string>,
+    names: readonly string[],
     direction: 'up' | 'down',
     options: { to?: string; step?: number },
   ): Promise<MigrationResult[]> {
-    let selected = migrations;
+    let selected = names;
 
     if (options.to) {
-      const toIndex = selected.findIndex((m) => m.name === options.to);
+      const toIndex = selected.indexOf(options.to);
       if (toIndex === -1) {
         throw new UqlUsageError(`Migration '${options.to}' not found`);
       }
@@ -146,8 +134,9 @@ export class Migrator {
       selected = selected.slice(0, options.step);
     }
 
+    const migrations = await Promise.all(selected.map((name) => this.loadMigration(name, files.get(name))));
     const results: MigrationResult[] = [];
-    for (const migration of selected) {
+    for (const migration of migrations) {
       const result = await this.runMigration(migration, direction);
       results.push(result);
       if (!result.success) {
@@ -577,61 +566,57 @@ export class Migrator {
    */
   async status(): Promise<{ pending: string[]; executed: string[] }> {
     const { pending, executed } = await this.journal();
-    return { pending: pending.map((migration) => migration.name), executed };
+    return { pending, executed };
   }
 
-  /**
-   * Get migration files from the migrations directory
-   */
-  public async getMigrationFiles(): Promise<string[]> {
+  /** The migration files in the migrations directory, by the name each runs as; none where it is missing. */
+  private async migrationFiles(): Promise<Map<string, string>> {
+    let entries: string[];
     try {
-      const files = await readdir(this.migrationsPath);
-      return files
-        .filter((f) => /\.(ts|js|mjs)$/.test(f))
-        .filter((f) => !f.endsWith('.d.ts'))
-        .sort();
+      entries = await readdir(this.migrationsPath);
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        return [];
+        return new Map();
       }
       throw error;
     }
-  }
-
-  /**
-   * Load a migration from a file
-   */
-  public async loadMigration(fileName: string): Promise<Migration<Querier> | undefined> {
-    const filePath = join(this.migrationsPath, fileName);
-    const fileUrl = pathToFileURL(filePath).href;
-
-    try {
-      const module = await import(fileUrl);
-      const migration = module.default ?? module;
-
-      if (this.isMigration(migration)) {
-        return {
-          name: basename(fileName, extname(fileName)),
-          up: migration.up.bind(migration),
-          down: migration.down.bind(migration),
-          transaction: migration.transaction,
-        };
+    const files = new Map<string, string>();
+    for (const file of entries.filter((entry) => /\.(ts|js|mjs)$/.test(entry) && !entry.endsWith('.d.ts'))) {
+      const name = basename(file, extname(file));
+      const other = files.get(name);
+      if (other) {
+        throw new UqlUsageError(`Migrations ${other} and ${file} share the name '${name}'`);
       }
-
-      this.logger.logWarn(`Warning: ${fileName} is not a valid migration`);
-      return undefined;
-    } catch (error) {
-      this.logger.logError(`Error loading migration ${fileName}: ${(error as Error).message}`, error);
-      return undefined;
+      files.set(name, file);
     }
+    return files;
   }
 
-  /**
-   * Check if an object is a valid migration
-   */
-  public isMigration(obj: unknown): obj is MigrationDefinition<Querier> {
-    return isRecord(obj) && typeof obj['up'] === 'function' && typeof obj['down'] === 'function';
+  /** The migration `name`, from its `file`: a missing file, one that fails to import, or one exporting no migration throws. */
+  private async loadMigration(name: string, file: string | undefined): Promise<Migration<Querier>> {
+    if (!file) {
+      throw new UqlUsageError(`Migration '${name}' is recorded as run but has no file in ${this.migrationsPath}`);
+    }
+    const module = await import(pathToFileURL(join(this.migrationsPath, file)).href).catch((error: Error) => {
+      throw new UqlUsageError(`Migration ${file} failed to load: ${error.message}`, { cause: error });
+    });
+    const migration = module.default ?? module;
+    if (!isMigrationDefinition(migration)) {
+      throw new UqlUsageError(
+        `Migration ${file} exports no migration: \`up\` and \`down\` functions, as its default export or its own`,
+      );
+    }
+    return {
+      name,
+      up: migration.up.bind(migration),
+      down: migration.down.bind(migration),
+      transaction: migration.transaction,
+    };
   }
+}
+
+function isMigrationDefinition(value: unknown): value is MigrationDefinition<Querier> {
+  return isRecord(value) && typeof value['up'] === 'function' && typeof value['down'] === 'function';
 }
 
 /** The local time a migration file is named by, `YYYYMMDDHHmmss`, so names sort in the order they were made. */

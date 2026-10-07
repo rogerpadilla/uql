@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.99.0] - 2026-10-07
+
+- **Breaking:** a migration file that fails to load, or exports no migration, stops `up` and `down` before anything runs, instead of being logged and skipped. Only the files about to run are imported. `down` refuses a migration recorded as run whose file is gone, and two files sharing a name are refused.
+- **Breaking:** `Migrator.pending()` returns names; `getMigrations`, `getMigrationFiles`, `loadMigration` and `isMigration` are removed.
+
 ## [0.98.0] - 2026-10-07
 
 - **Breaking:** `$regex` is case-sensitive on MySQL and MariaDB, as on every other engine.
