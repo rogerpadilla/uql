@@ -1,23 +1,11 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { SchemaAST } from '../../schema/schemaAST.js';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
+import { createMockQuerier, createMockQuerierPool } from '../../test/index.js';
 import type { ColumnSchema, ForeignKeySchema, TableSchema } from '../../type/migration.js';
-import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
-
-/** Builds the AST straight from canned table schemas, with no driver in the way. */
-class StubIntrospector extends BaseSqlIntrospector {
-  constructor(private readonly schemas: TableSchema[]) {
-    super(new SqliteDialect({}));
-  }
-
-  override async getTableNames(): Promise<string[]> {
-    return this.schemas.map((s) => s.name);
-  }
-
-  override async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
-    return this.schemas.find((s) => s.name === tableName);
-  }
-}
+import { UqlUsageError } from '../../util/uqlError.js';
+import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
+import { tableSchemasToAST } from './tableSchemaAST.js';
 
 function column(overrides: Partial<ColumnSchema> & { name: string }): ColumnSchema {
   return {
@@ -52,13 +40,14 @@ function postsWith(fk: Partial<ForeignKeySchema> = {}, authorId = column({ name:
   } satisfies TableSchema;
 }
 
-function introspect(schemas: TableSchema[]): Promise<SchemaAST> {
-  return new StubIntrospector(schemas).introspect();
+/** The AST straight from canned table schemas, with no driver in the way. */
+function astOf(schemas: TableSchema[]): SchemaAST {
+  return tableSchemasToAST(schemas, { dialectName: 'sqlite', indexFacets: new Set() });
 }
 
-describe('BaseSqlIntrospector relationships', () => {
-  it('should read a foreign key as a ManyToOne relationship wired to both tables', async () => {
-    const ast = await introspect([users, postsWith({ onDelete: 'CASCADE', onUpdate: 'RESTRICT' })]);
+describe('tableSchemasToAST relationships', () => {
+  it('should read a foreign key as a ManyToOne relationship wired to both tables', () => {
+    const ast = astOf([users, postsWith({ onDelete: 'CASCADE', onUpdate: 'RESTRICT' })]);
 
     const [rel] = ast.relationships;
     expect(rel.name).toBe('posts_authorId_fk');
@@ -74,48 +63,48 @@ describe('BaseSqlIntrospector relationships', () => {
   });
 
   /** A unique foreign key column can only point at one row on each side. */
-  it('should read a unique foreign key column as a OneToOne relationship', async () => {
-    const ast = await introspect([users, postsWith({}, column({ name: 'authorId', isUnique: true }))]);
+  it('should read a unique foreign key column as a OneToOne relationship', () => {
+    const ast = astOf([users, postsWith({}, column({ name: 'authorId', isUnique: true }))]);
 
     expect(ast.relationships[0].type).toBe('OneToOne');
   });
 
   /** Engines report no action as an absent value; the AST needs it spelled out to diff against entities. */
-  it('should default missing referential actions to NO ACTION', async () => {
-    const ast = await introspect([users, postsWith()]);
+  it('should default missing referential actions to NO ACTION', () => {
+    const ast = astOf([users, postsWith()]);
 
     expect(ast.relationships[0].onDelete).toBe('NO ACTION');
     expect(ast.relationships[0].onUpdate).toBe('NO ACTION');
   });
 
   /** Introspecting a subset of the database (or a cross-schema reference) leaves dangling targets. */
-  it('should skip a foreign key whose referenced table was not introspected', async () => {
-    const ast = await introspect([postsWith()]);
+  it('should skip a foreign key whose referenced table was not introspected', () => {
+    const ast = astOf([postsWith()]);
 
     expect(ast.relationships).toHaveLength(0);
     expect(ast.getTable('posts')?.outgoingRelations).toHaveLength(0);
   });
 
-  it('should skip a foreign key naming a column that does not exist', async () => {
-    const ast = await introspect([users, postsWith({ columns: ['ghostId'] })]);
+  it('should skip a foreign key naming a column that does not exist', () => {
+    const ast = astOf([users, postsWith({ columns: ['ghostId'] })]);
 
     expect(ast.relationships).toHaveLength(0);
   });
 
-  it('should skip a foreign key naming a referenced column that does not exist', async () => {
-    const ast = await introspect([users, postsWith({ references: { table: 'users', columns: ['ghost'] } })]);
+  it('should skip a foreign key naming a referenced column that does not exist', () => {
+    const ast = astOf([users, postsWith({ references: { table: 'users', columns: ['ghost'] } })]);
 
     expect(ast.relationships).toHaveLength(0);
   });
 
-  it('should leave tables without foreign keys unrelated', async () => {
-    const ast = await introspect([users]);
+  it('should leave tables without foreign keys unrelated', () => {
+    const ast = astOf([users]);
 
     expect(ast.relationships).toHaveLength(0);
   });
 });
 
-describe('BaseSqlIntrospector primary keys', () => {
+describe('tableSchemasToAST primary keys', () => {
   const composite: TableSchema = {
     name: 'enrolments',
     // Declared in the reverse of the key's order, so reading the key off the columns cannot pass.
@@ -132,28 +121,21 @@ describe('BaseSqlIntrospector primary keys', () => {
    * composite is addressed. Rebuilding it from the per-column flags took whatever order the columns
    * happened to arrive in.
    */
-  it('should keep the key in the order the database reported, not the column order', async () => {
-    const ast = await introspect([composite]);
+  it('should keep the key in the order the database reported, not the column order', () => {
+    const ast = astOf([composite]);
 
     expect(ast.getTable('enrolments')?.primaryKey?.columns).toEqual(['studentId', 'courseId']);
   });
 
   /** Only the name the engine gave the constraint can drop it; a derived one names nothing. */
-  it('should carry the constraint name the database reported', async () => {
-    const ast = await introspect([composite]);
+  it('should carry the constraint name the database reported', () => {
+    const ast = astOf([composite]);
 
     expect(ast.getTable('enrolments')?.primaryKey?.name).toBe('enrolments_pkey');
   });
-
-  /** SQLite reports no key of its own, so the per-column flags are all there is to read. */
-  it('should fall back to the flagged columns where no key is reported', async () => {
-    const ast = await introspect([{ ...composite, primaryKey: undefined }]);
-
-    expect(ast.getTable('enrolments')?.primaryKey).toEqual({ columns: ['courseId', 'studentId'] });
-  });
 });
 
-describe('BaseSqlIntrospector indexes', () => {
+describe('tableSchemasToAST indexes', () => {
   const indexed: TableSchema = {
     name: 'users',
     columns: [column({ name: 'id', isPrimaryKey: true }), column({ name: 'email', type: 'VARCHAR', length: 255 })],
@@ -163,24 +145,24 @@ describe('BaseSqlIntrospector indexes', () => {
     ],
   };
 
-  it('should read indexes over known columns and attach them to their table', async () => {
-    const ast = await introspect([indexed]);
+  it('should read indexes over known columns and attach them to their table', () => {
+    const ast = astOf([indexed]);
 
     expect(ast.getTable('users')?.indexes).toMatchObject([
       { name: 'users__email_uk', unique: true, entries: [{ column: 'email' }] },
     ]);
   });
 
-  it('should skip an index over a column that does not exist', async () => {
-    const ast = await introspect([indexed]);
+  it('should skip an index over a column that does not exist', () => {
+    const ast = astOf([indexed]);
 
     expect(ast.getTable('users')?.indexes.map((index) => index.name)).toEqual(['users__email_uk']);
   });
 });
 
-describe('BaseSqlIntrospector columns', () => {
-  it('should keep the reported precision over the one parsed from the type', async () => {
-    const ast = await introspect([
+describe('tableSchemasToAST columns', () => {
+  it('should keep the reported precision over the one parsed from the type', () => {
+    const ast = astOf([
       {
         name: 'orders',
         columns: [column({ name: 'total', type: 'NUMERIC(10, 2)', precision: 12, scale: 4 })],
@@ -194,8 +176,8 @@ describe('BaseSqlIntrospector columns', () => {
     });
   });
 
-  it('should fall back to the parameters carried by the type itself', async () => {
-    const ast = await introspect([
+  it('should fall back to the parameters carried by the type itself', () => {
+    const ast = astOf([
       {
         name: 'orders',
         columns: [column({ name: 'code', type: 'VARCHAR(30)' })],
@@ -204,13 +186,37 @@ describe('BaseSqlIntrospector columns', () => {
 
     expect(ast.getTable('orders')?.columns.get('code')?.type).toMatchObject({ category: 'string', length: 30 });
   });
+});
 
+describe('AbstractSqlSchemaIntrospector', () => {
   it('should skip a table the driver cannot describe', async () => {
-    const introspector = new StubIntrospector([users]);
+    const introspector = new SqliteSchemaIntrospector(createMockQuerierPool(new SqliteDialect({}), vi.fn()));
+    const schemas = new Map([['users', users]]);
     introspector.getTableNames = async () => ['users', 'vanished'];
+    introspector.getTableSchema = async (name) => schemas.get(name);
 
     const ast = await introspector.introspect();
 
-    expect(ast.getTables().map((t) => t.name)).toEqual(['users']);
+    expect(ast.getTables().map((table) => table.name)).toEqual(['users']);
+  });
+
+  it('should refuse a pool whose querier is not SQL', async () => {
+    const pool = createMockQuerierPool(new SqliteDialect({}), async () => createMockQuerier());
+
+    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(
+      'SqliteSchemaIntrospector requires a SQL-based querier',
+    );
+    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(UqlUsageError);
+  });
+
+  it('should read on the querier migrations run on', async () => {
+    const dialect = new SqliteDialect({});
+    const migration = createMockQuerier({ all: vi.fn(async () => [{ table_name: 'users' }]), run: vi.fn(), dialect });
+    const getQuerier = vi.fn();
+    const pool = createMockQuerierPool(dialect, getQuerier, { getMigrationQuerier: async () => migration });
+
+    expect(await new SqliteSchemaIntrospector(pool).getTableNames()).toEqual(['users']);
+    expect(getQuerier).not.toHaveBeenCalled();
+    expect(migration.release).toHaveBeenCalledTimes(1);
   });
 });

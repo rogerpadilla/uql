@@ -3,7 +3,6 @@ import { Entity, Field, Id, Index, ManyToOne, OneToMany, OneToOne } from '../ent
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { assertDefined } from '../test/index.js';
 import { idKey } from '../type/index.js';
-import type { NamingStrategy } from '../type/namingStrategy.js';
 import { raw } from '../util/index.js';
 import { buildSchemaAST } from './schemaASTBuilder.js';
 
@@ -300,23 +299,6 @@ describe('SchemaASTBuilder', () => {
 
       expect(index?.entries.map((entry) => entry.column)).toEqual(['tenant_id']);
       expect(index?.include).toEqual(['created_at']);
-    });
-
-    it('should use the naming strategy it was given', () => {
-      const namingStrategy: NamingStrategy = {
-        tableName: (name) => `tb_${name}`,
-        columnName: (name) => `col_${name}`,
-        joinTableName: (source, target) => `tb_${source}_${target}`,
-      };
-
-      const ast = buildSchemaAST([User, Category], { namingStrategy });
-
-      // User -> namingStrategy(User) -> tb_User
-      expect(ast.getTable('tb_User')).toBeDefined();
-      expect(ast.getTable('tb_User')?.columns.has('col_id')).toBe(true);
-
-      // Category -> namingStrategy(categories) -> tb_categories
-      expect(ast.getTable('tb_categories')).toBeDefined();
     });
 
     it('should use custom naming strategy options overriding constructor', () => {

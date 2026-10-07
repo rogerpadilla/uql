@@ -11,7 +11,6 @@ import { raw } from '../util/raw.js';
 import {
   engineType,
   areTypesEqual,
-  canonicalColumnType,
   canonicalToColumnType,
   canonicalToSql,
   canonicalToTypeScript,
@@ -504,15 +503,15 @@ describe('timestamp precision', () => {
       areTypesEqual(engineType(dialect)(date), engineType(dialect)(stored));
     expect(same(pg, sqlToCanonical('timestamp(3) with time zone'))).toBe(true);
     expect(same(pg, sqlToCanonical('timestamp with time zone'))).toBe(false);
-    expect(same(pg, canonicalColumnType('timestamp with time zone', { precision: 6 }))).toBe(false);
+    expect(same(pg, sqlToCanonical('timestamp with time zone', { precision: 6 }))).toBe(false);
     expect(same(mysql, sqlToCanonical('DATETIME(3)'))).toBe(true);
-    expect(same(mysql, canonicalColumnType('DATETIME', { precision: 0 }))).toBe(false);
+    expect(same(mysql, sqlToCanonical('DATETIME', { precision: 0 }))).toBe(false);
   });
 
   /** A `raw` type is the SQL itself, so it keeps the engine's own digits and compares as the column reports them. */
   it("should leave a raw timestamp type the engine's own precision", () => {
     const declared = fieldOptionsToCanonical({ type: Date, columnType: raw`TIMESTAMP` });
-    const stored = canonicalColumnType('timestamp without time zone', { precision: 6 });
+    const stored = sqlToCanonical('timestamp without time zone', { precision: 6 });
 
     expect(canonicalToSql(declared, pg)).toBe('TIMESTAMP');
     expect(areTypesEqual(engineType(pg)(declared), engineType(pg)(stored))).toBe(true);

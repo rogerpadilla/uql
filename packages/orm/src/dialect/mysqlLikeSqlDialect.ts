@@ -44,7 +44,6 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   schemas: true,
   dropTableCascade: false,
   rebuildsTables: false,
-  commentSyntax: 'inline',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
   vectorBytes: false,
@@ -113,6 +112,11 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
   }
 
   protected override readonly unboundedLimit = String(MAX_LIMIT);
+
+  /** Case-sensitive, as on every other engine, where the column's collation would fold it. */
+  protected override regexCondition(operand: string, placeholder: string): string {
+    return `${operand} REGEXP CONCAT('(?-i)', ${placeholder})`;
+  }
 
   /** A signed key, so a foreign key taking its type from it matches, as MySQL refuses an `UNSIGNED` mismatch. */
   override readonly autoIncrementSuffix = 'AUTO_INCREMENT';

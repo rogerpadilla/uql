@@ -4,9 +4,6 @@ import type { PrimaryKey } from '../type/utility.js';
 import { hasKeys, isRecord } from './object.util.js';
 import { fnv1a } from './string.util.js';
 
-/** Pre-computed regex for each SQL identifier escape character to avoid per-call allocation. */
-const escapeIdRegexCache = { '`': /`/g, '"': /"/g } as const satisfies Record<string, RegExp>;
-
 /** A row with its dotted columns nested, by paths read once off its statement's first row: the row itself where none is. */
 export function unflatObject<T extends object>(row: RawRow, attrsPaths: Record<string, string[]>): T {
   if (!hasKeys(attrsPaths)) {
@@ -71,7 +68,7 @@ const NAME_HASH_LENGTH = 6;
  * its own. It leaves out the table's schema, since it is a single identifier. The AST, the DDL and a `DROP`
  * all use this one rule.
  */
-export function derivedConstraintName(table: string, parts: readonly string[], kind: ConstraintKind): string {
+function derivedConstraintName(table: string, parts: readonly string[], kind: ConstraintKind): string {
   const { name } = splitQualifiedName(table);
   const body = parts.length ? `${name}${TABLE_SEPARATOR}${parts.join('_')}` : name;
   return clampIdentifier(`${body}_${kind}`);
@@ -80,8 +77,8 @@ export function derivedConstraintName(table: string, parts: readonly string[], k
 /** Between table and columns, doubled: index names share one namespace per database, where `a` + `b_c` and `a_b` + `c` would collide. */
 const TABLE_SEPARATOR = '__';
 
-/** The kinds of derived name, which is also what `indexNameStem` strips to compare them. */
-export type ConstraintKind = 'pk' | 'fk' | 'idx' | 'uk';
+/** The kinds of derived name, its last part. */
+type ConstraintKind = 'pk' | 'fk' | 'idx' | 'uk';
 
 /** What every name uql installs begins with, so the two ends asking about one cannot spell it apart. */
 const OWNED_START = `${OWNED_PREFIX}_`;
@@ -153,21 +150,14 @@ export function escapeSqlId(
   if (!val) {
     return '';
   }
-
-  if (!forbidQualified && val.includes('.')) {
-    const result = val
-      .split('.')
-      .map((it) => escapeSqlId(it, escapeIdChar, true))
-      .join('.');
-    return addDot ? result + '.' : result;
-  }
-
   const escaped =
-    escapeIdChar + val.replace(escapeIdRegexCache[escapeIdChar], escapeIdChar + escapeIdChar) + escapeIdChar;
-
-  const suffix = addDot ? '.' : '';
-
-  return escaped + suffix;
+    !forbidQualified && val.includes('.')
+      ? val
+          .split('.')
+          .map((part) => escapeSqlId(part, escapeIdChar, true))
+          .join('.')
+      : `${escapeIdChar}${val.replaceAll(escapeIdChar, escapeIdChar + escapeIdChar)}${escapeIdChar}`;
+  return addDot ? `${escaped}.` : escaped;
 }
 
 /**

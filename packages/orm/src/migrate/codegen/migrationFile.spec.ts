@@ -1,5 +1,9 @@
 import vm from 'node:vm';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, onTestFinished } from 'vitest';
+import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
+import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
+import { loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
+import type { MigrationDefinition, SqlQuerierPool } from '../../type/index.js';
 import { buildMigrationModule, emitMongoCommandCalls, emitSqlRunCall, emitSqlRunCalls } from './migrationFile.js';
 
 function assertEmittedRunCallParses(sql: string): void {
@@ -99,4 +103,49 @@ describe('emitSqlRunCall', () => {
     expect(emitSqlRunCall(sql)).toBe(`    await querier.run("SELECT '\\\\\\\\' AS x, \\"'\\" AS y;");`);
     assertEmittedRunCallParses(sql);
   });
+});
+
+describe('a generated SQL migration module', () => {
+  /**
+   * A generated migration loads through a plain `import()`, so it has to run on plain `node`, which
+   * strips types and compiles nothing. Relies on `server.deps.external` in `vitest.config.ts` keeping
+   * esbuild off the temp file. Vitest-only: bun compiles an enum happily.
+   */
+  it('should reject syntax plain node cannot strip, so generated migrations stay loadable', async () => {
+    await expect(loadTsDefaultExport('enum E { A }\nexport default { e: E.A };')).rejects.toThrow();
+  });
+
+  it.each<[string, () => SqlQuerierPool]>([
+    ['SQLite', () => new Sqlite3QuerierPool(':memory:')],
+    ['libSQL', () => new LibsqlQuerierPool({ url: ':memory:' })],
+  ])(
+    'should load on plain node and run on %s, its backticks intact and each statement a run() of its own',
+    async (_name, connect) => {
+      const pool = connect();
+      onTestFinished(() => pool.end());
+      const migration = await loadTsDefaultExport<MigrationDefinition>(
+        buildMigrationModule({
+          migrationName: 'article',
+          createdAt: new Date('2026-04-04T00:00:00.000Z'),
+          upInner: emitSqlRunCalls([
+            'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);',
+            'CREATE INDEX `Article_title_idx` ON `Article` (`title`);',
+          ]),
+          downInner: emitSqlRunCalls(['DROP INDEX IF EXISTS `Article_title_idx`;', 'DROP TABLE IF EXISTS `Article`;']),
+        }),
+      );
+
+      await pool.withQuerier(async (querier) => {
+        const articles = () =>
+          querier.all("SELECT type, name FROM sqlite_master WHERE name LIKE 'Article%' ORDER BY name");
+        await migration.up(querier);
+        expect(await articles()).toEqual([
+          { type: 'table', name: 'Article' },
+          { type: 'index', name: 'Article_title_idx' },
+        ]);
+        await migration.down(querier);
+        expect(await articles()).toEqual([]);
+      });
+    },
+  );
 });

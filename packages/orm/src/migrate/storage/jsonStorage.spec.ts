@@ -16,23 +16,14 @@ describe('JsonMigrationStorage', () => {
     } catch {}
   });
 
-  /** Only a missing file is created; any other read failure is the caller's to see. */
+  /** Only a missing file reads as none run; any other read failure is the caller's to see. */
   it('should rethrow a read failure other than a missing file', async () => {
     const directory = new JsonMigrationStorage(process.cwd());
-    await expect(directory.ensureStorage()).rejects.toMatchObject({ code: 'EISDIR' });
+    await expect(directory.executed()).rejects.toMatchObject({ code: 'EISDIR' });
   });
 
-  it('should create the file where it does not exist', async () => {
-    // File shouldn't exist initially
-    await expect(fs.access(filePath)).rejects.toThrow();
-
-    await storage.ensureStorage();
-
-    // File should exist now
-    await expect(fs.access(filePath)).resolves.toBeUndefined();
-
-    const content = await fs.readFile(filePath, 'utf-8');
-    expect(content).toBe('[]');
+  it('should read a missing file as no migration run', async () => {
+    await expect(storage.executed()).resolves.toEqual([]);
   });
 
   it('should return the executed migrations', async () => {

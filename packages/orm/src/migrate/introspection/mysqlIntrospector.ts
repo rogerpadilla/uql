@@ -1,11 +1,12 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { CheckSchema } from '../../schema/types.js';
-import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
+  type ReadColumn,
   type TableRowReader,
 } from './abstractSqlSchemaIntrospector.js';
 
@@ -57,19 +58,14 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected tableExistsQuery(): string {
     return /*sql*/ `
-      SELECT COUNT(*) as count
-      FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = ?
+      SELECT 1 FROM information_schema.TABLES
+      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
     `;
   }
 
-  protected parseTableExistsResult([row]: { count: number | bigint }[]): boolean {
-    return Number(row.count) > 0;
-  }
-
-  protected getColumnsQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
+    const rows = await read<MysqlColumnRow>(
+      /*sql*/ `
       SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
@@ -80,7 +76,6 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         NUMERIC_PRECISION as numeric_precision,
         NUMERIC_SCALE as numeric_scale,
         DATETIME_PRECISION as datetime_precision,
-        COLUMN_KEY as column_key,
         EXTRA as extra,
         CASE WHEN EXTRA LIKE '%STORED GENERATED%' THEN GENERATION_EXPRESSION END as generated_as,
         COLUMN_COMMENT as column_comment
@@ -88,11 +83,28 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
       ORDER BY ORDINAL_POSITION
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => ({
+      name: row.column_name,
+      type: row.column_type.toUpperCase(),
+      nullable: row.is_nullable === 'YES',
+      defaultValue: this.parseDefaultValue(row.column_default, row.extra),
+      isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
+      // A `VECTOR`'s is its bytes, four a dimension, which `column_type` already states as dimensions.
+      length: /^vector/i.test(row.column_type) ? undefined : this.toNumber(row.character_maximum_length),
+      // A timestamp's fractional digits, stated even when 0, which uql's own unstated `DATETIME(3)` is not.
+      precision: this.toNumber(TIMESTAMP_TYPES.has(row.data_type) ? row.datetime_precision : row.numeric_precision),
+      scale: this.toNumber(row.numeric_scale),
+      comment: row.column_comment || undefined,
+      generatedAs: row.generated_as ?? undefined,
+    }));
   }
 
-  protected getIndexesQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const rows = await read<MysqlIndexRow>(
+      /*sql*/ `
       SELECT
         INDEX_NAME as index_name,
         GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
@@ -104,11 +116,23 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND INDEX_NAME != 'PRIMARY'
       GROUP BY INDEX_NAME, NON_UNIQUE
       ORDER BY INDEX_NAME
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => ({
+      name: row.index_name,
+      ...(row.method === 'VECTOR' && { type: 'vector' as const }),
+      // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
+      // place in the list, and it is reported as the expression it is, which is what stops diffing
+      // from comparing an entry list the server cannot state against the entity's own.
+      entries: row.columns.split(',').map((column) => (column ? { column } : { column, expression: true })),
+      unique: Boolean(row.is_unique),
+    }));
   }
 
-  protected getForeignKeysQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
+    const rows = await read<JoinedForeignKeyRow>(
+      /*sql*/ `
       SELECT
         kcu.CONSTRAINT_NAME as constraint_name,
         GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION) as columns,
@@ -125,65 +149,26 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
       GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
       ORDER BY kcu.CONSTRAINT_NAME
-    `;
+    `,
+      [tableName],
+    );
+    return this.joinedForeignKeys(rows);
   }
 
-  protected getPrimaryKeyQuery(_tableName: string): string {
-    return /*sql*/ `
+  /** Unnamed: MySQL calls every key `PRIMARY`, and drops one by no name. */
+  protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
+    return this.readPrimaryKey(
+      read,
+      /*sql*/ `
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
         AND TABLE_NAME = ?
         AND CONSTRAINT_NAME = 'PRIMARY'
       ORDER BY ORDINAL_POSITION
-    `;
-  }
-
-  protected async mapColumnsResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: MysqlColumnRow[],
-  ): Promise<ColumnSchema[]> {
-    return results.map((row) => ({
-      name: row.column_name,
-      type: row.column_type.toUpperCase(),
-      nullable: row.is_nullable === 'YES',
-      defaultValue: this.parseDefaultValue(row.column_default, row.extra),
-      isPrimaryKey: row.column_key === 'PRI',
-      isAutoIncrement: row.extra.toLowerCase().includes('auto_increment'),
-      isUnique: row.column_key === 'UNI',
-      // A `VECTOR`'s is its bytes, four a dimension, which `column_type` already states as dimensions.
-      length: /^vector/i.test(row.column_type) ? undefined : this.toNumber(row.character_maximum_length),
-      // A timestamp's fractional digits, stated even when 0, which uql's own unstated `DATETIME(3)` is not.
-      precision: this.toNumber(TIMESTAMP_TYPES.has(row.data_type) ? row.datetime_precision : row.numeric_precision),
-      scale: this.toNumber(row.numeric_scale),
-      comment: row.column_comment || undefined,
-      generatedAs: row.generated_as ?? undefined,
-    }));
-  }
-
-  protected async mapIndexesResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: MysqlIndexRow[],
-  ): Promise<IndexSchema[]> {
-    return results.map((row) => ({
-      name: row.index_name,
-      ...(row.method === 'VECTOR' && { type: 'vector' as const }),
-      // A functional or multi-valued key part has no `COLUMN_NAME` - the `COALESCE` above keeps its
-      // place in the list, and it is reported as the expression it is, which is what stops diffing
-      // from comparing an entry list the server cannot state against the entity's own.
-      entries: row.columns.split(',').map((column) => (column ? { column } : { column, expression: true })),
-      unique: Boolean(row.is_unique),
-    }));
-  }
-
-  protected async mapForeignKeysResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: JoinedForeignKeyRow[],
-  ): Promise<ForeignKeySchema[]> {
-    return this.joinedForeignKeys(results);
+    `,
+      tableName,
+    );
   }
 
   /**
@@ -233,7 +218,6 @@ type MysqlColumnRow = {
   column_type: string;
   is_nullable: string;
   column_default: string | null;
-  column_key: string;
   extra: string;
   character_maximum_length: number | bigint | null;
   numeric_precision: number | bigint | null;
@@ -254,7 +238,7 @@ type MysqlColumnRow = {
 export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   /**
    * A check's name is unique only in its table on MariaDB, whose `CHECK_CONSTRAINTS` names the table. A
-   * JSON column's `json_valid()` is its type, read by {@link mapColumnsResult}, so it is left out.
+   * JSON column's `json_valid()` is its type, read by {@link getColumns}, so it is left out.
    */
   protected override async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     return read<{ name: string; expression: string }>(
@@ -274,18 +258,14 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   }
 
   /** Whether an index is MariaDB's vector index, and the distance it was built for. */
-  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['vector', 'distance']);
+  protected override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(['vector', 'distance']);
 
   /**
    * A vector index's distance is kept only in the table's own definition, ``VECTOR KEY `ix` (`vec`)
    * `DISTANCE`='cosine'``, and left out there for MariaDB's default, euclidean.
    */
-  protected override async mapIndexesResult(
-    read: TableRowReader,
-    tableName: string,
-    results: MysqlIndexRow[],
-  ): Promise<IndexSchema[]> {
-    const indexes = await super.mapIndexesResult(read, tableName, results);
+  protected override async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const indexes = await super.getIndexes(read, tableName);
     if (!indexes.some((index) => index.type === 'vector')) {
       return indexes;
     }
@@ -304,12 +284,8 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
     });
   }
 
-  protected override async mapColumnsResult(
-    read: TableRowReader,
-    tableName: string,
-    results: MysqlColumnRow[],
-  ): Promise<ColumnSchema[]> {
-    const columns = await super.mapColumnsResult(read, tableName, results);
+  protected override async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
+    const columns = await super.getColumns(read, tableName);
     const checks = await read<{ column_name: string }>(
       /*sql*/ `
       SELECT CONSTRAINT_NAME as column_name

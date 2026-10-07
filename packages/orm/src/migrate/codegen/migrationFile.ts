@@ -1,9 +1,5 @@
 import { mongoCommandSource } from '../../mongo/mongoCommand.js';
 
-/**
- * Source code generation for default-export migrations (`uql-migrate`), on a `SqlQuerier` or a `MongoQuerier`.
- */
-
 /** The querier a migration module is written against. */
 export type MigrationQuerierType = 'SqlQuerier' | 'MongoQuerier';
 
@@ -28,7 +24,7 @@ export function emitSqlRunCall(sql: string): string {
   return /*ts*/ `    await querier.run(${JSON.stringify(sql)});`;
 }
 
-/** Indented `up`/`down` body: one `await querier.run(...)` per SQL string (entity-generated migrations, #87). */
+/** Indented `up`/`down` body: one `await querier.run(...)` per SQL string. */
 export function emitSqlRunCalls(statements: string[]): string {
   return statements.map(emitSqlRunCall).join('\n');
 }
@@ -37,18 +33,6 @@ export function emitSqlRunCalls(statements: string[]): string {
 export function emitMongoCommandCalls(statements: string[]): string {
   return statements.map((statement) => /*ts*/ `    await ${mongoCommandSource(statement, 'querier.db')};`).join('\n');
 }
-
-/** Body for `up` in a manual (empty) migration scaffold. */
-export const EMPTY_MANUAL_MIGRATION_UP_INNER = `    // Add your migration logic here.
-    // Use one await querier.run("...") per SQL statement when possible (same style as generate:entities).
-    // Example (Postgres):
-    // await querier.run("CREATE TABLE \\"users\\" (\\"id\\" SERIAL PRIMARY KEY);");
-`;
-
-/** Body for `down` in a manual (empty) migration scaffold. */
-export const EMPTY_MANUAL_MIGRATION_DOWN_INNER = `    // Add your rollback logic here.
-    // await querier.run("DROP TABLE IF EXISTS \\"users\\";");
-`;
 
 /** How a migration on one querier is scaffolded empty, and how a generated statement is spelled in it. */
 export type MigrationSource = {
@@ -64,8 +48,14 @@ export const migrationSource = {
   SqlQuerier: {
     querier: 'SqlQuerier',
     module: 'uql-orm/migrate',
-    emptyUp: EMPTY_MANUAL_MIGRATION_UP_INNER,
-    emptyDown: EMPTY_MANUAL_MIGRATION_DOWN_INNER,
+    emptyUp: `    // Add your migration logic here.
+    // Use one await querier.run("...") per SQL statement when possible (same style as generate:entities).
+    // Example (Postgres):
+    // await querier.run("CREATE TABLE \\"users\\" (\\"id\\" SERIAL PRIMARY KEY);");
+`,
+    emptyDown: `    // Add your rollback logic here.
+    // await querier.run("DROP TABLE IF EXISTS \\"users\\";");
+`,
     emit: emitSqlRunCalls,
   },
   MongoQuerier: {

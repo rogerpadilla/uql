@@ -1,29 +1,34 @@
-import { expect } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
+import { Entity, Id, removeEntity } from '../entity/index.js';
+import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import { PgLikeQuerierIt } from './pgLikeQuerier-test.js';
 
 /**
- * Shared expectations for PostgreSQL proper, whichever driver reaches it (node-`pg`, Bun SQL, PGlite);
- * {@link PgLikeQuerierIt} holds what CockroachDB shares. A driver suite adds its pool and nothing else,
- * since two drivers disagreeing here is a bug in one of them.
+ * PostgreSQL proper, whichever driver reaches it (node-`pg`, Neon, PGlite, Bun SQL): two drivers disagreeing
+ * here is a bug in one of them, so a driver suite adds its pool and nothing else.
  */
-export abstract class PostgresQuerierIt extends PgLikeQuerierIt {
+export class PostgresQuerierIt extends PgLikeQuerierIt {
   /** pgvector's extension exists before the fixture DDL declares a vector column. */
-  override async beforeAll() {
-    const querier = await this.pool.getQuerier();
-    try {
-      await querier.run('CREATE EXTENSION IF NOT EXISTS vector');
-    } finally {
-      await querier.release();
+  override async recreateTables(querier: AbstractSqlQuerier) {
+    await querier.run('CREATE EXTENSION IF NOT EXISTS vector');
+    await super.recreateTables(querier);
+  }
+
+  /** A catalog that does not know the table answers no row, which is nothing counted. */
+  async shouldEstimateNoRowsForATableThatDoesNotExist() {
+    @Entity({ name: 'uql_never_created' })
+    class NeverCreated {
+      @Id({ type: Number }) id?: number;
     }
-    await super.beforeAll();
+    onTestFinished(() => {
+      removeEntity(NeverCreated);
+    });
+
+    expect(await this.querier.estimatedCount(NeverCreated)).toBe(0);
   }
 
-  /** Postgres's `xmax` system column exposes the `created` flag on upsert. */
-  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBe(true);
-  }
-
-  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBe(false);
+  /** The `xmax` system column tells an upsert's insert from its update. */
+  protected override upsertReport(inserted: number, updated: number) {
+    return { ...super.upsertReport(inserted, updated), created: updated === 0 };
   }
 }

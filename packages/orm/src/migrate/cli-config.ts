@@ -43,40 +43,24 @@ async function importConfig(path: string): Promise<unknown> {
   return mod.default ?? mod;
 }
 
+/** Where the CLI looks for its config, in order, when it is given no path. */
+const CONFIG_FILES = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
+
+/** The config at `customPath`, or the first of {@link CONFIG_FILES} in the working directory; the CLI validates it. */
 export async function loadConfig(customPath?: string): Promise<Config> {
-  if (customPath) {
-    const fullPath = resolve(process.cwd(), customPath);
-    const exists = await stat(fullPath)
-      .then(() => true)
-      .catch(() => false);
-
-    if (!exists) {
-      throw new UqlUsageError(`Could not find uql configuration file at ${customPath}`);
-    }
-
-    try {
-      const config = await importConfig(fullPath);
-      return config as Config;
-    } catch (error) {
-      throw new UqlUsageError(`Could not load configuration file at ${customPath}: ${(error as Error).message}`);
+  for (const candidate of customPath ? [customPath] : CONFIG_FILES) {
+    const fullPath = resolve(process.cwd(), candidate);
+    const found = await stat(fullPath).then(
+      () => true,
+      () => false,
+    );
+    if (found) {
+      return (await importConfig(fullPath)) as Config;
     }
   }
-
-  const configPaths = ['uql.config.ts', 'uql.config.js', 'uql.config.mjs', '.uqlrc.ts', '.uqlrc.js'];
-
-  for (const configPath of configPaths) {
-    const fullPath = resolve(process.cwd(), configPath);
-    const exists = await stat(fullPath)
-      .then(() => true)
-      .catch(() => false);
-
-    if (exists) {
-      const config = await importConfig(fullPath);
-      return config as Config;
-    }
-  }
-
   throw new UqlUsageError(
-    'Could not find uql configuration file. Create a uql.config.ts or uql.config.js file in your project root.',
+    customPath
+      ? `Could not find uql configuration file at ${customPath}`
+      : 'Could not find uql configuration file. Create a uql.config.ts or uql.config.js file in your project root.',
   );
 }

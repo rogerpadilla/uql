@@ -7,7 +7,6 @@ import type {
   FieldOptions,
   Type,
 } from '../type/index.js';
-import type { NamingStrategy } from '../type/namingStrategy.js';
 import {
   declaredIndexes,
   declaredIndexName,
@@ -42,16 +41,14 @@ export interface BuildSchemaASTOptions {
   resolveSchema?: (meta: EntityMeta<object>) => string | undefined;
   /** Custom column name resolver */
   resolveColumnName?: (key: string, field: FieldOptions) => string;
-  /** Naming strategy to use */
-  namingStrategy?: NamingStrategy;
   /** Default action for foreign key ON DELETE and ON UPDATE clauses */
   defaultForeignKeyAction?: ForeignKeyAction;
   /**
    * The text of SQL an entity declares - a check, a stored computed column, an index expression or
-   * predicate - which only a dialect can render. `buildEntityAST` supplies it from the generator.
+   * predicate - which only a dialect can render. `SqlSchemaGenerator.buildAST` supplies it.
    */
   compileDdl?: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
-  /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. `buildEntityAST` supplies it. */
+  /** A partial index's predicate as the engine writes it, `compileDdl` where none is given. */
   compileIndexPredicate?: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
   /** Whether a weighted fulltext index declares one of its own for each heavier column, as MySQL scores through one. */
   textScoreIndexes?: boolean;
@@ -61,20 +58,11 @@ export interface BuildSchemaASTOptions {
   renderTriggers?: (meta: EntityMeta<object>) => TriggerSchema[];
 }
 
-/** Everything the passes below share, resolved once so no step has to fall back to a default twice. */
-type BuildContext = {
+/** Every option resolved once, so no step has to fall back to a default twice, and what the passes below share. */
+type BuildContext = Readonly<Required<BuildSchemaASTOptions>> & {
   readonly ast: SchemaAST;
   /** The table each entity of the build made, which a relation to one outside it has none of. */
   readonly tables: Map<EntityMeta<object>, TableNode>;
-  readonly resolveTableName: (meta: EntityMeta<object>) => string;
-  readonly resolveSchema: (meta: EntityMeta<object>) => string | undefined;
-  readonly resolveColumnName: (key: string, field: FieldOptions) => string;
-  readonly defaultForeignKeyAction: ForeignKeyAction;
-  readonly compileDdl: (sql: EntityWhereMeta<object>, entity: Type<object>) => string;
-  readonly compileIndexPredicate: (where: EntityWhereMeta<object>, entity: Type<object>, indexName: string) => string;
-  readonly textScoreIndexes: boolean;
-  readonly vectorIndexRequiresNotNull: boolean;
-  readonly renderTriggers: (meta: EntityMeta<object>) => TriggerSchema[];
 };
 
 /**
@@ -84,14 +72,13 @@ type BuildContext = {
  * resolves against a table another entity declares, and an index against the columns of its own.
  */
 export function buildSchemaAST(entities: readonly Type<object>[], options: BuildSchemaASTOptions = {}): SchemaAST {
-  const { namingStrategy } = options;
   const compileDdl = options.compileDdl ?? refuseDdl;
   const ctx: BuildContext = {
     ast: new SchemaAST(),
     tables: new Map(),
-    resolveTableName: options.resolveTableName ?? ((m) => namingStrategy?.tableName(entityName(m)) ?? entityName(m)),
+    resolveTableName: options.resolveTableName ?? entityName,
     resolveSchema: options.resolveSchema ?? ((m) => m.schema),
-    resolveColumnName: options.resolveColumnName ?? ((k, f) => namingStrategy?.columnName(f.name ?? k) ?? f.name ?? k),
+    resolveColumnName: options.resolveColumnName ?? ((key, field) => field.name ?? key),
     defaultForeignKeyAction: options.defaultForeignKeyAction ?? DEFAULT_FOREIGN_KEY_ACTION,
     compileDdl,
     compileIndexPredicate: options.compileIndexPredicate ?? compileDdl,
@@ -116,7 +103,7 @@ export function buildSchemaAST(entities: readonly Type<object>[], options: Build
 /** The `compileDdl` of a build given no dialect, which has nothing to render an entity's SQL with. */
 function refuseDdl(): string {
   throw new UqlUsageError(
-    'building the schema of an entity that declares SQL (a check, a stored computed column, an index expression or predicate) needs a dialect to render it: pass `compileDdl`, as `buildEntityAST` does',
+    'building the schema of an entity that declares SQL (a check, a stored computed column, an index expression or predicate) needs a dialect to render it: pass `compileDdl`, as `SqlSchemaGenerator.buildAST` does',
   );
 }
 
@@ -165,8 +152,6 @@ function addTableFromEntity(ctx: BuildContext, meta: EntityMeta<object>): TableN
       generatedAs: field.stored === true && field.computed ? ctx.compileDdl(field.computed, meta.entity) : undefined,
       comment: field.comment,
       table,
-      referencedBy: [],
-      references: undefined,
     };
 
     columns.set(columnName, column);
@@ -268,10 +253,10 @@ function isIndexedBy(table: TableNode, columns: readonly string[]): boolean {
   return leads(table.primaryKey?.columns ?? []) || table.indexes.some((index) => leads(lookupColumns(index)));
 }
 
-/** An `include` column is named like any other, so a naming strategy has to reach it too. */
-function resolveIncludeColumn(ctx: BuildContext, meta: EntityMeta<object>, column: string): string {
-  const field = meta.fields[column as keyof typeof meta.fields];
-  return field ? ctx.resolveColumnName(column, field) : column;
+/** The column the member `key` of `meta` maps to, or `undefined` where the entity has no such member. */
+function fieldColumn(ctx: BuildContext, meta: EntityMeta<object>, key: string): string | undefined {
+  const field = meta.fields[key];
+  return field && ctx.resolveColumnName(key, field);
 }
 
 /**
@@ -286,11 +271,10 @@ function addCompositeIndex(
   { columns, include, where, ...options }: EntityIndexMeta,
 ): void {
   // An entry survives if it is an expression (nothing to resolve) or names a column that exists;
-  // an index left with none is dropped, the same as one naming only unknown columns always was.
+  // an index left with none is dropped, as one naming only unknown columns is.
   const resolved = columns.flatMap((entry) => {
     if (typeof entry.column !== 'string') return [entry];
-    const field = meta.fields[entry.column as keyof typeof meta.fields];
-    const column = field && ctx.resolveColumnName(entry.column, field);
+    const column = fieldColumn(ctx, meta, entry.column);
     return column && table.columns.has(column) ? [{ ...entry, column }] : [];
   });
   if (!resolved.length) return;
@@ -301,7 +285,8 @@ function addCompositeIndex(
     name,
     table,
     entries: resolved.map((entry) => renderIndexColumn(entry, (sql) => ctx.compileDdl(sql, meta.entity))),
-    include: include?.map((column) => resolveIncludeColumn(ctx, meta, column)),
+    // An `include` column is named like any other, so a custom naming has to reach it too.
+    include: include?.map((column) => fieldColumn(ctx, meta, column) ?? column),
     unique: options.unique ?? false,
     where: where && ctx.compileIndexPredicate(where, meta.entity, name),
   });

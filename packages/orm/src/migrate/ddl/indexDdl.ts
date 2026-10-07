@@ -1,6 +1,6 @@
 import type { AbstractSqlDialect } from '../../dialect/abstractSqlDialect.js';
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
-import { INDEX_TYPES, type IndexType } from '../../schema/types.js';
+import type { IndexType } from '../../schema/types.js';
 import {
   INDEX_FEATURE_LABELS,
   type IndexColumnSchema,
@@ -8,8 +8,10 @@ import {
   type IndexJsonPath,
   type IndexSchema,
 } from '../../type/index.js';
+import { indexDistance, unsupportedVectorMetric } from '../../type/vector.js';
 import { fulltextConfig, getKeys } from '../../util/index.js';
 import { UqlUsageError } from '../../util/uqlError.js';
+import { INDEX_CAPABILITIES, type IndexCapabilities } from './indexCapabilities.js';
 
 /**
  * What in an index asks for each feature. A `Record` over the feature union rather than a list, so a
@@ -60,12 +62,18 @@ export function assertIndexFeatures(
  * `CREATE INDEX` in its portable form, which the SQLite family takes as is; the engines with more override
  * the fragments. The migrator's own, so no runtime entry carries it.
  */
-export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
-  constructor(protected readonly dialect: D) {}
+export class IndexDdl {
+  /** What this engine's `CREATE INDEX` can say. */
+  protected readonly capabilities: IndexCapabilities;
+
+  constructor(protected readonly dialect: AbstractSqlDialect) {
+    this.capabilities = INDEX_CAPABILITIES[dialect.dialectName];
+  }
 
   getCreateIndexStatement(tableName: string, index: IndexSchema, opts: { ifNotExists?: boolean } = {}): string {
-    assertIndexType(index, this.indexTypes, this.dialect.dialectName, this.indexTypeHints);
-    assertIndexFeatures(index, this.indexFeatures, this.dialect.dialectName);
+    const { types, features, hints } = this.capabilities;
+    assertIndexType(index, types, this.dialect.dialectName, hints);
+    assertIndexFeatures(index, features, this.dialect.dialectName);
     const unique = index.unique ? 'UNIQUE ' : '';
     const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
     const columns = this.indexTarget(index);
@@ -81,37 +89,14 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
     return [];
   }
 
-  /**
-   * Index features this dialect can express. Everything here is supported by at least one engine and
-   * refused by at least one other, so an index asking for a missing one is rejected rather than
-   * emitted: each of them is a hard error at the server, not a slower plan.
-   */
-  protected readonly indexFeatures: ReadonlySet<IndexFeature> = new Set<IndexFeature>([
-    'expression',
-    'partial',
-    'jsonPath',
-  ]);
-
-  /**
-   * Index types this dialect's `CREATE INDEX` takes. SQLite's grammar has no `USING` clause, so every
-   * type builds the plain index it has there, which is what lets an entity written for Postgres
-   * migrate unchanged. An engine that would reject a type narrows this, and the type is refused.
-   */
-  protected readonly indexTypes: ReadonlySet<IndexType> = new Set(INDEX_TYPES);
-
-  /** What to declare instead of a type this dialect lacks, appended to its refusal. */
-  protected readonly indexTypeHints: ReadonlyMap<IndexType, string> = new Map();
-
-  /**
-   * Index types this dialect spells as a keyword of their own (`FULLTEXT INDEX`, `VECTOR INDEX`)
-   * rather than as an access method after the table. One table drives both, so a type that is a
-   * keyword here can never also leak out as a ` USING` clause the engine has no word for.
-   */
-  protected readonly indexTypeKeywords: ReadonlyMap<IndexType, string> = new Map();
-
   /** The keyword an index type replaces `INDEX` with, or `INDEX` for the types that do not. */
   protected indexKeyword(index: IndexSchema): string {
-    return (index.type && this.indexTypeKeywords.get(index.type)) || 'INDEX';
+    return (index.type && this.capabilities.keywords.get(index.type)) || 'INDEX';
+  }
+
+  /** ` USING <type>`, or nothing for no type or one spelled as its own keyword. */
+  protected usingType(index: IndexSchema): string {
+    return index.type && !this.capabilities.keywords.has(index.type) ? ` USING ${index.type}` : '';
   }
 
   /** What the index is over, between the parentheses: a fulltext one's columns as a search matches them, else its entries. */
@@ -164,6 +149,16 @@ export class IndexDdl<D extends AbstractSqlDialect = AbstractSqlDialect> {
   /** ` INCLUDE (...)`: non-key columns stored for index-only scans. Postgres-wire only. */
   protected indexInclude(_index: IndexSchema): string {
     return '';
+  }
+
+  /** The metric this engine's vector index names for the index's distance, refusing a distance it has none for. */
+  protected indexMetric(index: IndexSchema): string {
+    const distance = indexDistance(index);
+    const metric = this.dialect.vectorMetrics.get(distance)?.index;
+    if (!metric) {
+      throw unsupportedVectorMetric(this.dialect.dialectName, distance, index.name);
+    }
+    return metric;
   }
 
   /** ` USING <method>`, which SQLite's grammar has no place for at all. */

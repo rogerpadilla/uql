@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { createOrder, dropOrder } from './dependencyGraph.js';
+import { createOrder } from './dependencyGraph.js';
 
 /** A graph as an adjacency map, which is all the walk reads. Every node it names is a key. */
 const graph = (edges: Record<string, readonly string[]>) => ({
@@ -26,11 +26,6 @@ describe('dependencyGraph', () => {
   it('should reach a dependency that is not itself in the node list', () => {
     const { dependenciesOf } = graph({ post: ['user'], user: [] });
     expect(createOrder(['post'], dependenciesOf)).toEqual(['user', 'post']);
-  });
-
-  it('should drop dependents before what they depend on', () => {
-    const { nodes, dependenciesOf } = graph({ comment: ['post'], post: ['user'], user: [] });
-    expect(dropOrder(nodes, dependenciesOf)).toEqual(['comment', 'post', 'user']);
   });
 
   it('should order a cycle rather than refusing it, since a cyclic FK is legal', () => {

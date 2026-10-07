@@ -4,7 +4,7 @@
  * Fluent API for defining tables in migrations.
  */
 
-import { type CanonicalType, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../../schema/types.js';
+import type { CanonicalType, ForeignKeyAction } from '../../schema/types.js';
 import type { ForeignKeySchema, IndexColumnInput, IndexOptions } from '../../type/index.js';
 import { DATE_PRECISION } from '../../util/date.js';
 import { currentTimestamp } from '../../util/raw.js';
@@ -33,8 +33,8 @@ function namedOptions(options?: string | IndexOptions): IndexOptions {
 class TableForeignKeyBuilder implements ITableForeignKeyBuilder {
   private _referencedTable?: string;
   private _referencedColumns: string[] = [];
-  private _onDelete: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION;
-  private _onUpdate: ForeignKeyAction = DEFAULT_FOREIGN_KEY_ACTION;
+  private _onDelete?: ForeignKeyAction;
+  private _onUpdate?: ForeignKeyAction;
   private _name?: string;
 
   constructor(private readonly _columns: string[]) {}

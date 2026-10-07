@@ -1,24 +1,11 @@
 import { jsonTypeMode } from '../../dialect/jsonSql.js';
-import type { IndexType } from '../../schema/types.js';
-import type { IndexColumnSchema, IndexFeature, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
-import { indexDistance, isVectorIndexType, unsupportedVectorMetric, VECTOR_INDEX_TYPES } from '../../type/vector.js';
+import type { IndexColumnSchema, IndexJsonArray, IndexJsonPath, IndexSchema } from '../../type/index.js';
+import { isVectorIndexType } from '../../type/vector.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
 
-/**
- * A full-text index is its own keyword here (`CREATE FULLTEXT INDEX ... (cols)`); `USING fulltext` is
- * a syntax error, so it is the keyword that changes rather than the access method.
- */
-const MYSQL_LIKE_INDEX_KEYWORDS: ReadonlyMap<IndexType, string> = new Map([['fulltext', 'FULLTEXT INDEX']]);
-
 /** `CREATE INDEX ... (cols) USING btree`, plus the types this family spells as a keyword instead. */
 export class MysqlLikeIndexDdl extends IndexDdl {
-  protected override readonly indexFeatures = new Set<IndexFeature>(['expression', 'prefixLength']);
-
-  protected override readonly indexTypes: ReadonlySet<IndexType> = new Set<IndexType>(['btree', 'hash', 'fulltext']);
-
-  protected override readonly indexTypeKeywords: ReadonlyMap<IndexType, string> = MYSQL_LIKE_INDEX_KEYWORDS;
-
   /**
    * InnoDB fills a fulltext index added beside another on a loaded table only once the table is optimized:
    * until then MariaDB scores it 0 and MySQL can fail a `MATCH` over it (MySQL 26.7, MariaDB 12.3).
@@ -29,18 +16,11 @@ export class MysqlLikeIndexDdl extends IndexDdl {
 
   /** ` USING btree|hash` trails the columns: between the table and them, it is a syntax error here. */
   protected override indexTuning(index: IndexSchema): string {
-    return index.type && !this.indexTypeKeywords.has(index.type) ? ` USING ${index.type}` : '';
+    return this.usingType(index);
   }
 }
 
 export class MySqlIndexDdl extends MysqlLikeIndexDdl {
-  protected override readonly indexFeatures = new Set<IndexFeature>([
-    'expression',
-    'prefixLength',
-    'jsonPath',
-    'jsonArray',
-  ]);
-
   /**
    * A number as the query reads it. A string as `CHAR(n)` in the collation `->>` returns, which the
    * planner strips back to the bare `->>` a query compares; any other collation leaves it unused. A
@@ -75,54 +55,17 @@ export class MySqlIndexDdl extends MysqlLikeIndexDdl {
     const source = json.path ? this.dialect.jsonPathExpr(column, json.path, 'json') : column;
     return `(CAST(${source} AS ${arrayCastType(json)} ARRAY))`;
   }
-
-  /**
-   * MySQL 26.7 has `VECTOR` columns and `STRING_TO_VECTOR`, but no distance function outside
-   * HeatWave, hence no vector index to build: `USING hnsw` is a syntax error, `VECTOR INDEX` MariaDB's.
-   */
-  protected override readonly indexTypeHints = new Map<IndexType, string>(
-    VECTOR_INDEX_TYPES.map((type) => [type, '. Vector search on MySQL needs HeatWave']),
-  );
 }
 
 export class MariaIndexDdl extends MysqlLikeIndexDdl {
-  /**
-   * MariaDB has no functional indexes: `CREATE INDEX ... ((lower(col)))` is a syntax error even on
-   * 12.3, where the documented workaround is a generated column. So it keeps the prefix lengths the
-   * family shares and drops expressions - and with them both JSON index forms, which are expressions.
-   */
-  protected override readonly indexFeatures = new Set<IndexFeature>(['prefixLength']);
-
-  /** The family's, plus a vector index of its own: `CREATE VECTOR INDEX ... ON t (col)`, 11.7+. */
-  protected override readonly indexTypeKeywords: ReadonlyMap<IndexType, string> = new Map([
-    ...MYSQL_LIKE_INDEX_KEYWORDS,
-    ['vector', 'VECTOR INDEX'],
-  ]);
-
-  protected override readonly indexTypes = new Set<IndexType>(['btree', 'hash', 'fulltext', 'vector']);
-
-  /** pgvector's names are not access methods it has; `vector` is its own keyword above. */
-  protected override readonly indexTypeHints = new Map<IndexType, string>([
-    ['hnsw', "; declare type: 'vector' instead"],
-    ['ivfflat', "; declare type: 'vector' instead"],
-  ]);
-
   /**
    * `M=n DISTANCE=metric`, trailing its `CREATE VECTOR INDEX`. The metric names are MariaDB's own
    * (`euclidean`, not `l2`), stated even for the default distance, cosine, since MariaDB's own is
    * euclidean; and an unsupported one throws rather than silently building on euclidean.
    */
   protected override indexTuning(index: IndexSchema): string {
-    let tuning = super.indexTuning(index) + (index.m === undefined ? '' : ` M=${index.m}`);
-    if (isVectorIndexType(index.type)) {
-      const distance = indexDistance(index);
-      const metric = this.dialect.vectorMetrics.get(distance)?.index;
-      if (!metric) {
-        throw unsupportedVectorMetric(this.dialect.dialectName, distance, index.name);
-      }
-      tuning += ` DISTANCE=${metric}`;
-    }
-    return tuning;
+    const tuning = super.indexTuning(index) + (index.m === undefined ? '' : ` M=${index.m}`);
+    return isVectorIndexType(index.type) ? `${tuning} DISTANCE=${this.indexMetric(index)}` : tuning;
   }
 }
 

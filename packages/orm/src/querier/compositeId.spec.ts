@@ -398,8 +398,8 @@ describe('changing the primary key of an existing table', () => {
 
     expect(generator.generateAlterTable(reverseDiff(diff))).toEqual([
       'ALTER TABLE "Member" DROP CONSTRAINT "Member__userId_groupId_pk";',
-      'ALTER TABLE "Member" DROP COLUMN "groupId";',
       'ALTER TABLE "Member" ADD CONSTRAINT "Member_pkey" PRIMARY KEY ("userId");',
+      'ALTER TABLE "Member" DROP COLUMN "groupId";',
     ]);
   });
 

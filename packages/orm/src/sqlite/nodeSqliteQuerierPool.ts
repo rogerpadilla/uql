@@ -5,7 +5,7 @@ import {
   adaptSqlite,
   type LocalSqliteDatabase,
   type LocalSqlitePoolOptions,
-  loadExtensions,
+  extendSqlite,
 } from './localSqliteQuerierPool.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -43,7 +43,7 @@ export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<LocalS
       // `node:sqlite` refuses `loadExtension` unless the database was opened with this on.
       ...(extensions?.length ? { allowExtension: true } : undefined),
     });
-    return loadExtensions(
+    return extendSqlite(
       adaptSqlite(nodeDb, (stmt) => stmt.columns().length > 0),
       extensions,
     );

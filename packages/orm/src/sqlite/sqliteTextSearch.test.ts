@@ -15,21 +15,17 @@ class FtsDoc {
 describe('SQLite text search', () => {
   const pool = new Sqlite3QuerierPool(':memory:');
   const search = ($value: string) =>
-    pool.withQuerier((querier) =>
-      querier.findMany(FtsDoc, {
-        $select: { title: true },
-        $where: { $text: { $fields: { title: true, bodyText: true }, $value } },
-        $sort: { $text: { $project: 'score' } },
-      }),
-    ) as Promise<WithProjection<FtsDoc, 'score'>[]>;
+    pool.findMany(FtsDoc, {
+      $select: { title: true },
+      $where: { $text: { $fields: { title: true, bodyText: true }, $value } },
+      $sort: { $text: { $project: 'score' } },
+    }) as Promise<WithProjection<FtsDoc, 'score'>[]>;
 
   beforeAll(async () => {
-    await pool.withQuerier(async (querier) => {
-      await querier.run('CREATE VIRTUAL TABLE fts_doc USING fts5(title, bodyText)');
-      await querier.run(
-        "INSERT INTO fts_doc (title, bodyText) VALUES ('red chair', 'a lamp'), ('heron', 'watches an otter'), ('otter', 'an otter otter family')",
-      );
-    });
+    await pool.run('CREATE VIRTUAL TABLE fts_doc USING fts5(title, bodyText)');
+    await pool.run(
+      "INSERT INTO fts_doc (title, bodyText) VALUES ('red chair', 'a lamp'), ('heron', 'watches an otter'), ('otter', 'an otter otter family')",
+    );
   });
 
   afterAll(() => pool.end());

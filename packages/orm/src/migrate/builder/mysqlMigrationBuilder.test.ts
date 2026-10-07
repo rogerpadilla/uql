@@ -1,13 +1,7 @@
 import { MySql2QuerierPool } from '../../mysql/mysql2QuerierPool.js';
 import { createSpec, mysqlConnection } from '../../test/index.js';
-import { MysqlSchemaIntrospector } from '../introspection/mysqlIntrospector.js';
 import { AlterCapableMigrationBuilderIt } from './abstractMigrationBuilder-test.js';
 
-class MysqlMigrationBuilderIt extends AlterCapableMigrationBuilderIt {
-  constructor() {
-    const pool = new MySql2QuerierPool(mysqlConnection());
-    super(pool, new MysqlSchemaIntrospector(pool));
-  }
-}
+class MysqlMigrationBuilderIt extends AlterCapableMigrationBuilderIt {}
 
-createSpec(new MysqlMigrationBuilderIt());
+createSpec(new MysqlMigrationBuilderIt(new MySql2QuerierPool(mysqlConnection('test_builder'))));

@@ -2,6 +2,15 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.98.0] - 2026-10-07
+
+- **Breaking:** `$regex` is case-sensitive on MySQL and MariaDB, as on every other engine.
+- **Breaking:** migration builder: `MigrationBuilder` takes the function each operation is handed (replacing `OperationRecorder`), and its operations are one `AnyMigrationOperation`, `alterColumn` naming its column in `changes`.
+- `$regex` runs on SQLite through `better-sqlite3` and `node:sqlite`.
+- **Fixed:** `generate:from-db` and `drift:check` read SQLite and SQL Server partial indexes, and no longer report an integer's precision, a keyless MySQL table's key, CockroachDB's hidden `rowid`, a view, a composite foreign key paired otherwise, or a SQLite expression index as drift.
+- **Fixed:** changing a table's key works on CockroachDB, `down` included; a column comment or index drop reaches a named schema; introspection on a libSQL embedded replica reads the remote.
+- **Fixed:** `addForeignKey` in a builder migration takes a `name`, and the CLI prints a generated migration's path once.
+
 ## [0.97.0] - 2026-10-07
 
 - **Breaking:** checks and enums are diffed: each is installed as `_uql_<table>__<name>_<hash>`, so editing one, or an enum's values, replaces it in the next migration or `sync`. Checks installed before keep enforcing and are warned about: drop them by hand.

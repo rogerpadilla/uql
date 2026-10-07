@@ -14,14 +14,10 @@ export function recreateTables(pool: QuerierPool<AbstractSqlQuerier, AbstractSql
 }
 
 /**
- * Creates a parent/child pair on `querier` and reports what the connection did with the constraint.
- *
- * Returned as data rather than asserted here so one probe serves both runtimes: vitest and `bun:test`
- * share no matcher for "this promise rejected". A connection that enforces gives
- * `{ dangling: 'rejected', orphans: [] }`.
- *
- * A pair of its own, so it runs on a bare connection: the drivers disagree on enforcement, `better-sqlite3`,
- * `node:sqlite` and libSQL defaulting to on, `bun:sqlite` and Turso to off.
+ * Creates a parent/child pair of its own on `querier`, so it runs on a bare connection, and reports what the
+ * connection did with the foreign key and its `ON DELETE CASCADE`: `{ dangling: 'rejected', orphans: [] }`
+ * where it enforces. The drivers disagree, `better-sqlite3`, `node:sqlite` and libSQL defaulting to on,
+ * `bun:sqlite` and Turso to off.
  */
 export async function probeForeignKeys(querier: AbstractSqlQuerier) {
   await querier.run('CREATE TABLE fkParent (id INTEGER PRIMARY KEY)');
@@ -36,7 +32,6 @@ export async function probeForeignKeys(querier: AbstractSqlQuerier) {
     () => 'rejected' as const,
   );
 
-  // The declared `ON DELETE CASCADE` is the other half: an unenforced connection leaves the child behind.
   await querier.run('DELETE FROM fkParent WHERE id = 1');
   const orphans = await querier.all<{ id: number }>('SELECT id FROM fkChild');
 
@@ -81,7 +76,10 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
  */
 export async function clearTables(querier: AbstractSqlQuerier) {
   const { dialect } = querier;
-  const tables = buildSchemaAST(getEntities(), { namingStrategy: dialect.namingStrategy }).getDropOrder();
+  const tables = buildSchemaAST(getEntities(), {
+    resolveTableName: (meta) => dialect.resolveTableAlias(meta),
+    resolveColumnName: (key, field) => dialect.resolveColumnName(key, field),
+  }).getDropOrder();
   const unlinks = tables.flatMap((table, at) => {
     const backward = table.outgoingRelations.filter((relation) => tables.indexOf(relation.to.table) <= at);
     const columns = backward.flatMap((relation) => relation.from.columns).filter((column) => column.nullable);

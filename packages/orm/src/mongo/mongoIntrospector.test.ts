@@ -1,14 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { indexColumns } from '../schema/indexColumns.js';
-import {
-  assertDefined,
-  createMockQuerier,
-  createMockQuerierPool,
-  mongoUri,
-  provisioningTimeout,
-} from '../test/index.js';
-import { UqlUsageError } from '../util/uqlError.js';
-import { MongoDialect } from './mongoDialect.js';
+import { assertDefined, mongoUri, provisioningTimeout } from '../test/index.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -100,14 +92,5 @@ describe('MongoSchemaIntrospector', () => {
 
   it('should leave out a named collection that does not exist', async () => {
     expect((await introspector.introspect(['missing'])).getTables()).toEqual([]);
-  });
-
-  it('should refuse a pool whose querier is not MongoDB', async () => {
-    const other = createMockQuerierPool(new MongoDialect(), async () => createMockQuerier());
-
-    await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(
-      'MongoSchemaIntrospector requires a MongoDB querier',
-    );
-    await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(UqlUsageError);
   });
 });

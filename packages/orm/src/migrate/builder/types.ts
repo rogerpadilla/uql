@@ -82,7 +82,7 @@ export interface VectorColumnOptions extends BaseColumnOptions {
 }
 
 /** A column as the builder describes one: a {@link ColumnNode} without its graph links. */
-export type ColumnDefinition = Except<ColumnNode, 'table' | 'referencedBy' | 'references'>;
+export type ColumnDefinition = Except<ColumnNode, 'table'>;
 
 /**
  * The foreign key a single column declares: {@link ForeignKeySchema} without the local columns, which
@@ -130,134 +130,26 @@ export interface TableDefinition {
   comment?: string;
 }
 
-/**
- * Create table operation.
- */
-export interface CreateTableOperation {
-  type: 'createTable';
-  table: TableDefinition;
-  ifNotExists?: boolean;
-}
-
-/**
- * Drop table operation.
- */
-export interface DropTableOperation {
-  type: 'dropTable';
-  tableName: string;
-  ifExists?: boolean;
-  cascade?: boolean;
-}
-
-/**
- * Rename table operation.
- */
-export interface RenameTableOperation {
-  type: 'renameTable';
-  oldName: string;
-  newName: string;
-}
-
-/**
- * Add column operation.
- */
-export interface AddColumnOperation {
-  type: 'addColumn';
-  tableName: string;
-  column: FullColumnDefinition;
-}
-
-/**
- * Drop column operation.
- */
-export interface DropColumnOperation {
-  type: 'dropColumn';
-  tableName: string;
-  columnName: string;
-}
-
-/**
- * Alter column operation.
- */
-export interface AlterColumnOperation {
-  type: 'alterColumn';
-  tableName: string;
-  columnName: string;
-  changes: FullColumnDefinition;
-}
-
-/**
- * Rename column operation.
- */
-export interface RenameColumnOperation {
-  type: 'renameColumn';
-  tableName: string;
-  oldName: string;
-  newName: string;
-}
-
-/**
- * Create index operation.
- */
-export interface CreateIndexOperation {
-  type: 'createIndex';
-  tableName: string;
-  index: IndexDefinition;
-  ifNotExists?: boolean;
-}
-
-/**
- * Drop index operation.
- */
-export interface DropIndexOperation {
-  type: 'dropIndex';
-  tableName: string;
-  indexName: string;
-  ifExists?: boolean;
-}
-
-/**
- * Add foreign key operation.
- */
-export interface AddForeignKeyOperation {
-  type: 'addForeignKey';
-  tableName: string;
-  foreignKey: ForeignKeySchema;
-}
-
-/**
- * Drop foreign key operation.
- */
-export interface DropForeignKeyOperation {
-  type: 'dropForeignKey';
-  tableName: string;
-  constraintName: string;
-}
-
-/**
- * Raw SQL operation (escape hatch).
- */
-export interface RawSqlOperation {
-  type: 'raw';
-  sql: string;
-}
-
-/**
- * Union of all operation types.
- */
+/** One change the migration builder declares, which a generator turns into statements. */
 export type AnyMigrationOperation =
-  | CreateTableOperation
-  | DropTableOperation
-  | RenameTableOperation
-  | AddColumnOperation
-  | DropColumnOperation
-  | AlterColumnOperation
-  | RenameColumnOperation
-  | CreateIndexOperation
-  | DropIndexOperation
-  | AddForeignKeyOperation
-  | DropForeignKeyOperation
-  | RawSqlOperation;
+  | { readonly type: 'createTable'; readonly table: TableDefinition }
+  | { readonly type: 'dropTable'; readonly tableName: string; readonly ifExists?: boolean; readonly cascade?: boolean }
+  | { readonly type: 'renameTable'; readonly oldName: string; readonly newName: string }
+  | { readonly type: 'addColumn'; readonly tableName: string; readonly column: FullColumnDefinition }
+  | { readonly type: 'dropColumn'; readonly tableName: string; readonly columnName: string }
+  | { readonly type: 'alterColumn'; readonly tableName: string; readonly changes: FullColumnDefinition }
+  | { readonly type: 'renameColumn'; readonly tableName: string; readonly oldName: string; readonly newName: string }
+  | { readonly type: 'createIndex'; readonly tableName: string; readonly index: IndexDefinition }
+  | { readonly type: 'dropIndex'; readonly tableName: string; readonly indexName: string }
+  | { readonly type: 'addForeignKey'; readonly tableName: string; readonly foreignKey: ForeignKeySchema }
+  | { readonly type: 'dropForeignKey'; readonly tableName: string; readonly constraintName: string }
+  | { readonly type: 'raw'; readonly sql: string };
+
+/** The table and columns a foreign key points at. */
+export type ForeignKeyTarget = ForeignKeySchema['references'];
+
+/** A foreign key's constraint name and actions, each the engine's default where unstated. */
+export type ForeignKeyOptions = Pick<ForeignKeySchema, 'name' | 'onDelete' | 'onUpdate'>;
 
 /**
  * Interface for column builder (fluent API).
@@ -303,7 +195,6 @@ export interface IForeignKeyBuilder extends IColumnBuilder {
 
 /** Every column type the builder can declare, name first, handed to `addColumn`/`alterColumn` callbacks too. */
 export interface IColumnFactory {
-  // === Numeric Types ===
   /** Add an auto-incrementing primary key */
   id(name?: string, options?: BaseColumnOptions): IColumnBuilder;
   /** Add an integer column */
@@ -319,7 +210,6 @@ export interface IColumnFactory {
   /** Add a decimal column */
   decimal(name: string, options?: DecimalColumnOptions): IColumnBuilder;
 
-  // === String Types ===
   /** Add a varchar column */
   string(name: string, options?: StringColumnOptions): IColumnBuilder;
   /** Add a char column */
@@ -327,11 +217,9 @@ export interface IColumnFactory {
   /** Add a text column */
   text(name: string, options?: BaseColumnOptions): IColumnBuilder;
 
-  // === Boolean ===
   /** Add a boolean column */
   boolean(name: string, options?: BaseColumnOptions): IColumnBuilder;
 
-  // === Date/Time Types ===
   /** Add a date column */
   date(name: string, options?: BaseColumnOptions): IColumnBuilder;
   /** Add a time column */
@@ -341,13 +229,11 @@ export interface IColumnFactory {
   /** Add a timestamptz column */
   timestamptz(name: string, options?: BaseColumnOptions): IColumnBuilder;
 
-  // === JSON Types ===
   /** Add a JSON column */
   json(name: string, options?: BaseColumnOptions): IColumnBuilder;
   /** Add a JSONB column (Postgres) */
   jsonb(name: string, options?: BaseColumnOptions): IColumnBuilder;
 
-  // === Other Types ===
   /** Add a UUID column */
   uuid(name: string, options?: BaseColumnOptions): IColumnBuilder;
   /** Add a blob/bytea column */
@@ -360,7 +246,6 @@ export interface IColumnFactory {
  * Interface for table builder (fluent API).
  */
 export interface ITableBuilder extends IColumnFactory {
-  // === Convenience Methods ===
   /** Add createdAt timestamp column */
   createdAt(): IColumnBuilder;
   /** Add updatedAt timestamp column */
@@ -368,7 +253,6 @@ export interface ITableBuilder extends IColumnFactory {
   /** Add both createdAt and updatedAt columns */
   timestamps(): void;
 
-  // === Indexes & Constraints ===
   /** Add composite primary key */
   primaryKey(columns: string[]): this;
   /** Add a composite unique index; takes the same options as `@Index`, or just its name. */
@@ -378,7 +262,6 @@ export interface ITableBuilder extends IColumnFactory {
   /** Add table-level foreign key */
   foreignKey(columns: string[]): ITableForeignKeyBuilder;
 
-  // === Utilities ===
   /** Add a comment to the table */
   comment(text: string): this;
   /** Get the built table definition */
@@ -416,11 +299,7 @@ export interface IAlterTableBuilder {
   /** Drop an index from the table */
   dropIndex(name: string): this;
   /** Add a foreign key to the table */
-  addForeignKey(
-    columns: string[],
-    target: { table: string; columns: string[] },
-    options?: { name?: string; onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction },
-  ): this;
+  addForeignKey(columns: string[], target: ForeignKeyTarget, options?: ForeignKeyOptions): this;
   /** Drop a foreign key from the table */
   dropForeignKey(name: string): this;
 }
@@ -453,8 +332,8 @@ export interface IMigrationBuilder {
   addForeignKey(
     tableName: string,
     columns: string[],
-    target: { table: string; columns: string[] },
-    options?: { onDelete?: ForeignKeyAction; onUpdate?: ForeignKeyAction },
+    target: ForeignKeyTarget,
+    options?: ForeignKeyOptions,
   ): Promise<void>;
   /** Drop a foreign key */
   dropForeignKey(tableName: string, constraintName: string): Promise<void>;

@@ -11,22 +11,7 @@ export async function acquireQuerierForMigrations(pool: QuerierPool): Promise<Qu
   return (await pool.getMigrationQuerier?.()) ?? (await pool.getQuerier());
 }
 
-/**
- * Runs `task` on a migration querier and releases it, whatever happens.
- *
- * `pool.withQuerier` cannot serve here because migrations may run on a different connection than app
- * traffic, but the ownership rule is the same one: whoever acquires, releases.
- */
-export async function withQuerierForMigrations<T>(pool: QuerierPool, task: (querier: Querier) => Promise<T>) {
-  const querier = await acquireQuerierForMigrations(pool);
-  try {
-    return await task(querier);
-  } finally {
-    await querier.release();
-  }
-}
-
-/** Same, for the paths that only work against SQL. `requiredBy` names the caller in the error. */
+/** Runs `task` on a migration querier over SQL, and releases it. `requiredBy` names the caller in the error. */
 export function withSqlQuerierForMigrations<T>(
   pool: QuerierPool,
   requiredBy: string,
@@ -35,17 +20,23 @@ export function withSqlQuerierForMigrations<T>(
   return withQuerierOfKind(pool, isSqlQuerier, `${requiredBy} requires a SQL-based querier`, task);
 }
 
-/** Runs `task` on a migration querier `isKind` accepts, refusing any other with `error`. */
-export function withQuerierOfKind<Q extends Querier, T>(
+/**
+ * Runs `task` on a migration querier `isKind` accepts, refusing any other with `error`, and releases it whatever
+ * happens. Not `pool.withQuerier`: migrations may run on another connection than app traffic.
+ */
+export async function withQuerierOfKind<Q extends Querier, T>(
   pool: QuerierPool,
   isKind: (querier: Querier) => querier is Q,
   error: string,
   task: (querier: Q) => Promise<T>,
 ): Promise<T> {
-  return withQuerierForMigrations(pool, (querier) => {
+  const querier = await acquireQuerierForMigrations(pool);
+  try {
     if (!isKind(querier)) {
       throw new UqlUsageError(error);
     }
-    return task(querier);
-  });
+    return await task(querier);
+  } finally {
+    await querier.release();
+  }
 }

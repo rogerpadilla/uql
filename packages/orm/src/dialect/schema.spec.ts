@@ -196,13 +196,37 @@ describe('schema', () => {
   // A Postgres index lives in its table's schema and is dropped as `schema.index`. Bare, it resolved
   // through `search_path`, so it either found nothing or dropped a same-named index in `public`.
   it('should drop an index inside the schema of the table it is on', () => {
-    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('crm.Customer', 'Customer__name_idx', 'crm');
-    expect(sql).toBe('DROP INDEX IF EXISTS "crm"."Customer__name_idx";');
+    const generator = new SqlSchemaGenerator(dialect);
+    expect(
+      generator.generateOperation({ type: 'dropIndex', tableName: 'crm.Customer', indexName: 'Customer__name_idx' }),
+    ).toEqual(['DROP INDEX IF EXISTS "crm"."Customer__name_idx";']);
+  });
+
+  it('should comment a column added to a table that lives in a schema', () => {
+    const note = {
+      name: 'note',
+      type: 'TEXT',
+      nullable: true,
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+    const sql = new SqlSchemaGenerator(dialect).generateAlterTable({
+      tableName: 'crm.Customer',
+      type: 'alter',
+      columns: [{ to: { ...note, comment: 'why' } }],
+    });
+    expect(sql).toEqual([
+      'ALTER TABLE "crm"."Customer" ADD COLUMN "note" TEXT;',
+      'COMMENT ON COLUMN "crm"."Customer"."note" IS \'why\';',
+    ]);
   });
 
   it('should leave an index unqualified when its table is', () => {
-    const sql = new SqlSchemaGenerator(dialect).generateDropIndex('Plain', 'Plain_total_idx');
-    expect(sql).toBe('DROP INDEX IF EXISTS "Plain_total_idx";');
+    const generator = new SqlSchemaGenerator(dialect);
+    expect(
+      generator.generateOperation({ type: 'dropIndex', tableName: 'Plain', indexName: 'Plain_total_idx' }),
+    ).toEqual(['DROP INDEX IF EXISTS "Plain_total_idx";']);
   });
 
   it('should reject a dotted name, naming the option that replaces it', () => {

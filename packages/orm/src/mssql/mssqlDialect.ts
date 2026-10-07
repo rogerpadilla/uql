@@ -45,7 +45,6 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   dropTableCascade: false,
   rebuildsTables: false,
   // Extended properties are out-of-band metadata with their own procedures, not comments.
-  commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
   vectorBytes: false,

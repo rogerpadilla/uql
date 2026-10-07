@@ -1,11 +1,17 @@
-import { CrdbQuerierPool } from '../cockroachdb/index.js';
-import { MariadbQuerierPool } from '../maria/index.js';
-import { MsSqlQuerierPool } from '../mssql/index.js';
-import { MySql2QuerierPool } from '../mysql/index.js';
+import { afterAll, beforeAll } from 'vitest';
+import { CockroachDialect, CrdbQuerierPool } from '../cockroachdb/index.js';
+import type { AbstractSqlDialect } from '../dialect/index.js';
+import { MariadbQuerierPool, MariaDialect } from '../maria/index.js';
+import { Migrator } from '../migrate/migrator.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
+import { MsSqlDialect, MsSqlQuerierPool } from '../mssql/index.js';
+import { MySql2QuerierPool, MySqlDialect } from '../mysql/index.js';
+import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { PgliteQuerierPool } from '../pglite/pgliteQuerierPool.js';
-import { PgQuerierPool } from '../postgres/index.js';
+import { PgQuerierPool, PostgresDialect } from '../postgres/index.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
-import type { SqlDialectName, SqlQuerierPool } from '../type/index.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import type { SqlDialectName, SqlQuerierPool, Type } from '../type/index.js';
 import {
   cockroachConnection,
   mariadbConnection,
@@ -13,24 +19,28 @@ import {
   mysqlConnection,
   postgresConnection,
 } from './connections.js';
+import { provisioningTimeout } from './spec.util.js';
 
-/** A suite entry: what to call the engine, and how to open a pool on it. */
-export type SqlPool = readonly [SqlDialectName | 'pglite', () => SqlQuerierPool];
+/**
+ * A suite entry: what to call the engine, how to open a pool on it, and its dialect, which states what the
+ * engine can do without opening anything (a MariaDB pool connects as it is made).
+ */
+export type SqlPool = readonly [SqlDialectName | 'pglite', () => SqlQuerierPool, AbstractSqlDialect];
 
 /**
  * Every SQL engine but those in `except`, as a pool each; one list, since a suite spelling its own drops an
- * engine unnoticed (SQL Server's stamps broke for exactly that long). Each server runs it on `database`, the
- * file's own (AGENTS.md), so the schema it changes is one no other file reads.
+ * engine unnoticed. Each server runs it on `database`, the file's own (AGENTS.md), so the schema it changes
+ * is one no other file reads.
  */
 export function sqlPools(database: string, ...except: readonly (SqlDialectName | 'pglite')[]): readonly SqlPool[] {
   const pools: readonly SqlPool[] = [
-    ['pglite', () => new PgliteQuerierPool('memory://')],
-    ['postgres', () => new PgQuerierPool(postgresConnection(database))],
-    ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection(database))],
-    ['mysql', () => new MySql2QuerierPool(mysqlConnection(database))],
-    ['mariadb', () => new MariadbQuerierPool(mariadbConnection(database))],
-    ['sqlite', () => new NodeSqliteQuerierPool(':memory:')],
-    ['mssql', () => new MsSqlQuerierPool(mssqlConnection(database))],
+    ['pglite', () => new PgliteQuerierPool('memory://'), new PgliteDialect()],
+    ['postgres', () => new PgQuerierPool(postgresConnection(database)), new PostgresDialect()],
+    ['cockroachdb', () => new CrdbQuerierPool(cockroachConnection(database)), new CockroachDialect()],
+    ['mysql', () => new MySql2QuerierPool(mysqlConnection(database)), new MySqlDialect()],
+    ['mariadb', () => new MariadbQuerierPool(mariadbConnection(database)), new MariaDialect()],
+    ['sqlite', () => new NodeSqliteQuerierPool(':memory:'), new SqliteDialect()],
+    ['mssql', () => new MsSqlQuerierPool(mssqlConnection(database)), new MsSqlDialect()],
   ];
   return pools.filter(([name]) => !except.includes(name));
 }
@@ -40,4 +50,29 @@ export async function dropTables(pool: SqlQuerierPool, ...tables: readonly strin
   for (const table of tables) {
     await pool.run(`DROP TABLE IF EXISTS ${pool.dialect.escapeId(table)}`);
   }
+}
+
+/**
+ * A pool with `entities` synced for the suite, dropped before it and after with their trigger functions and
+ * the record of any migration a test ran. List the tables a trigger writes first: they drop in reverse, and
+ * CockroachDB keeps a table a trigger's function uses.
+ */
+export function syncedPool(connect: () => SqlQuerierPool, entities: Type<object>[]): () => SqlQuerierPool {
+  let pool: SqlQuerierPool;
+  const dropAll = async () => {
+    for (const statement of new SqlSchemaGenerator(pool.dialect).generateDropSchema(entities, { ifExists: true })) {
+      await pool.run(statement);
+    }
+    await dropTables(pool, 'uql_migrations');
+  };
+  beforeAll(async () => {
+    pool = connect();
+    await dropAll();
+    await new Migrator(pool, { entities }).sync();
+  }, provisioningTimeout);
+  afterAll(async () => {
+    await dropAll();
+    await pool.end();
+  }, provisioningTimeout);
+  return () => pool;
 }

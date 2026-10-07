@@ -4,7 +4,7 @@ import { SchemaAST } from '../../schema/schemaAST.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { RelationshipNode } from '../../schema/types.js';
 import { assertDefined, columnsOf, mockGeneratedSchema, mockTableNode } from '../../test/index.js';
-import { createEntityCodeGenerator, EntityCodeGenerator } from './entityCodeGenerator.js';
+import { EntityCodeGenerator } from './entityCodeGenerator.js';
 
 describe('EntityCodeGenerator', () => {
   /**
@@ -704,14 +704,6 @@ describe('EntityCodeGenerator', () => {
 
       expect(result.code).toContain('@OneToOne');
       expect(result.code).toContain('@ManyToMany');
-    });
-  });
-
-  describe('createEntityCodeGenerator', () => {
-    it('should create an instance via factory', () => {
-      const ast = new SchemaAST();
-      const generator = createEntityCodeGenerator(ast);
-      expect(generator).toBeInstanceOf(EntityCodeGenerator);
     });
   });
 

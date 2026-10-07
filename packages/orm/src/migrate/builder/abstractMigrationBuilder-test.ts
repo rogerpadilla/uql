@@ -1,14 +1,14 @@
 import { expect } from 'vitest';
 import { sqlToCanonical } from '../../schema/canonicalType.js';
+import type { TypeCategory } from '../../schema/types.js';
 import { assertDefined, type Spec } from '../../test/index.js';
-import type { QuerierPool, SchemaIntrospector, SqlQuerier, TableSchema } from '../../type/index.js';
+import { dropTables } from '../../test/sqlPools.js';
+import type { SchemaIntrospector, SqlQuerierPool, TableSchema } from '../../type/index.js';
+import { introspectorFor } from '../introspection/registry.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
 import type { MigrationBuilder } from './migrationBuilder.js';
 
-/**
- * Tables this suite owns. Distinct from every other suite's, because vitest runs test files in
- * parallel against the one Docker database per engine.
- */
+/** The tables this suite makes, each after the one it references. */
 export const BUILDER_TABLES = {
   MAIN: 'test_builder_main',
   RENAMED: 'test_builder_renamed',
@@ -17,37 +17,33 @@ export const BUILDER_TABLES = {
   TYPES: 'test_builder_types',
 } as const;
 
+const DROP_ORDER = Object.values(BUILDER_TABLES).toReversed();
+
 /**
  * Shared integration suite for {@link MigrationBuilder}: whether an engine accepts what a builder emits,
  * which its unit specs, asserting SQL text, cannot tell. The operations an engine may refuse are in
  * {@link AlterCapableMigrationBuilderIt} or the dialect's own runner.
  */
 export abstract class AbstractMigrationBuilderIt implements Spec {
-  private readonly claimed = new Set<string>();
+  protected readonly introspector: SchemaIntrospector;
 
-  constructor(
-    protected readonly pool: QuerierPool<SqlQuerier>,
-    protected readonly introspector: SchemaIntrospector,
-  ) {}
+  constructor(protected readonly pool: SqlQuerierPool) {
+    this.introspector = introspectorFor(pool);
+  }
 
-  // Teardown here rather than trailing each test: a failed expectation would otherwise leak its table
-  // into the shared database, where the next run's introspection finds it.
-  async afterEach() {
-    await this.withBuilder(async (builder) => {
-      for (const table of this.dropOrder()) {
-        await builder.dropTable(table, { ifExists: true, cascade: true });
-      }
-    });
-    this.claimed.clear();
+  /** Every test starts from an empty database, whatever the one before it, or a killed run, left. */
+  async beforeEach() {
+    await dropTables(this.pool, ...DROP_ORDER);
   }
 
   async afterAll() {
+    await dropTables(this.pool, ...DROP_ORDER);
     await this.pool.end();
   }
 
-  /** Claimed tables, dependents first, so a foreign key cannot block the drop. */
-  private dropOrder() {
-    return [...this.claimed].reverse();
+  /** What a `timestamp` column reads back as. SQLite has no date/time type, and stores one as `TEXT`. */
+  protected expectedTimestampCategory(): TypeCategory {
+    return 'timestamp';
   }
 
   /** Runs `fn` with a builder on its own connection, per this repo's per-test acquisition rule. */
@@ -60,15 +56,9 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     }
   }
 
-  /** Registers `name` for teardown. Every table a test creates goes through here. */
-  protected claim(name: string): string {
-    this.claimed.add(name);
-    return name;
-  }
-
   /** A table with an id and a `name` text column, the starting point most tests alter from. */
   protected async givenMainTable(builder: MigrationBuilder) {
-    await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+    await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
       t.id();
       t.text('name').nullable();
     });
@@ -76,7 +66,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
 
   /** An `integer` column for the two `alterColumn` forms to work on, or refuse. */
   protected async givenIntegerPayload(builder: MigrationBuilder) {
-    await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+    await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
       t.id();
       t.integer('payload').nullable();
     });
@@ -89,10 +79,10 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
    * and `id()` is a big integer on every engine here.
    */
   protected async givenUnrelatedPair(builder: MigrationBuilder) {
-    await builder.createTable(this.claim(BUILDER_TABLES.PARENT), (t) => {
+    await builder.createTable(BUILDER_TABLES.PARENT, (t) => {
       t.id();
     });
-    await builder.createTable(this.claim(BUILDER_TABLES.CHILD), (t) => {
+    await builder.createTable(BUILDER_TABLES.CHILD, (t) => {
       t.id();
       t.bigint('parentId').nullable();
     });
@@ -102,6 +92,12 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     const schema = await this.introspector.getTableSchema(tableName);
     assertDefined(schema, `Table ${tableName} not found`);
     return schema;
+  }
+
+  protected async getColumn(tableName: string, columnName: string) {
+    const column = (await this.getTableSchema(tableName)).columns.find((it) => it.name === columnName);
+    assertDefined(column, `Column ${columnName} not found in ${tableName}`);
+    return column;
   }
 
   protected async getColumnNames(tableName: string) {
@@ -120,7 +116,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
    */
   async shouldCreateATableWithEveryColumnType() {
     await this.withBuilder(async (builder) => {
-      await builder.createTable(this.claim(BUILDER_TABLES.TYPES), (t) => {
+      await builder.createTable(BUILDER_TABLES.TYPES, (t) => {
         t.id();
         t.smallint('smallintCol').nullable();
         t.integer('integerCol').nullable();
@@ -166,10 +162,6 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     ]);
   }
 
-  /**
-   * The regression test for `alterTable`: it recorded each nested change and fired it unawaited, so
-   * it resolved with every statement still in flight and the table unchanged at this assertion.
-   */
   async shouldApplyEveryNestedAlterTableChangeBeforeResolving() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
@@ -183,11 +175,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     expect(await this.getColumnNames(BUILDER_TABLES.MAIN)).toEqual(['id', 'score']);
   }
 
-  /**
-   * The other half of the same bug: an unawaited statement fails as an unhandled rejection, which
-   * leaves `alterTable` resolving and the caller believing a migration it never ran.
-   */
-  async shouldRejectWhenANestedAlterTableChangeFails() {
+  async shouldPropagateANestedAlterTableFailure() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
 
@@ -220,6 +208,8 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
     });
 
     expect(await this.getColumnNames(BUILDER_TABLES.MAIN)).toEqual(['createdAt', 'id', 'name']);
+    const { type } = await this.getColumn(BUILDER_TABLES.MAIN, 'createdAt');
+    expect(sqlToCanonical(type).category).toBe(this.expectedTimestampCategory());
   }
 
   async shouldDropAColumn() {
@@ -243,7 +233,6 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
   async shouldRenameATable() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
-      this.claim(BUILDER_TABLES.RENAMED);
       await builder.renameTable(BUILDER_TABLES.MAIN, BUILDER_TABLES.RENAMED);
     });
 
@@ -286,7 +275,7 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
 
   async shouldCreateATableDeclaringItsOwnIndexes() {
     await this.withBuilder(async (builder) => {
-      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+      await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
         t.string('email', { length: 100 }).nullable();
         t.string('region', { length: 20 }).nullable();
@@ -295,28 +284,18 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       });
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.MAIN);
-    const unique = schema.indexes?.find((index) => index.name === 'builder_email_uk');
-    // Sorted: which indexes exist is the claim, and engines report them in their own order.
-    expect((await this.getIndexNames(BUILDER_TABLES.MAIN)).toSorted()).toEqual(
-      ['builder_region_idx', 'builder_email_uk'].toSorted(),
-    );
-    expect(unique?.unique).toBe(true);
+    const { indexes } = await this.getTableSchema(BUILDER_TABLES.MAIN);
+    expect(await this.getIndexNames(BUILDER_TABLES.MAIN)).toEqual(['builder_email_uk', 'builder_region_idx']);
+    expect(indexes?.filter((index) => index.unique).map((index) => index.name)).toEqual(['builder_email_uk']);
   }
 
   async shouldRunRawSql() {
     await this.withBuilder(async (builder) => {
       await this.givenMainTable(builder);
       await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (name) VALUES ('raw')`);
-
-      const querier = await this.pool.getQuerier();
-      try {
-        const rows = await querier.all<{ name: string }>(`SELECT name FROM ${BUILDER_TABLES.MAIN}`);
-        expect(rows.map((row) => row.name)).toEqual(['raw']);
-      } finally {
-        await querier.release();
-      }
     });
+
+    expect(await this.pool.all(`SELECT name FROM ${BUILDER_TABLES.MAIN}`)).toEqual([{ name: 'raw' }]);
   }
 
   async shouldDropATable() {
@@ -345,6 +324,50 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
       await expect(builder.raw(`INSERT INTO ${BUILDER_TABLES.CHILD} (state) VALUES ('bogus')`)).rejects.toThrow();
     });
   }
+
+  async shouldAddAColumnCarryingItsIndex() {
+    await this.withBuilder(async (builder) => {
+      await this.givenUnrelatedPair(builder);
+      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('slug', { length: 80 }).nullable().index());
+    });
+
+    expect(await this.getIndexNames(BUILDER_TABLES.CHILD)).toEqual(['test_builder_child__slug_idx']);
+  }
+
+  /** The engine fills it, so only the engine can say the clause is right and a write to it is refused. */
+  async shouldCreateATableWithAComputedColumn() {
+    await this.withBuilder(async (builder) => {
+      await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
+        t.id();
+        t.integer('qty').nullable();
+        t.integer('price').nullable();
+        t.integer('total').nullable().computed('qty * price');
+      });
+      await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (qty, price) VALUES (3, 7)`);
+    });
+
+    const [row] = await this.pool.all<{ total: number }>(`SELECT total FROM ${BUILDER_TABLES.MAIN}`);
+    expect(Number(row.total)).toBe(21);
+  }
+
+  /** Declared at the table, in its `CREATE TABLE`: the one form every engine takes, SQLite included. */
+  async shouldCreateATableWithAnInlineForeignKey() {
+    await this.withBuilder(async (builder) => {
+      await builder.createTable(BUILDER_TABLES.PARENT, (t) => {
+        t.id();
+      });
+      await builder.createTable(BUILDER_TABLES.CHILD, (t) => {
+        t.id();
+        t.bigint('parentId').nullable();
+        t.foreignKey(['parentId']).references(BUILDER_TABLES.PARENT, ['id']).onDelete('CASCADE');
+      });
+    });
+
+    const { foreignKeys } = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(foreignKeys).toMatchObject([
+      { columns: ['parentId'], references: { table: BUILDER_TABLES.PARENT, columns: ['id'] }, onDelete: 'CASCADE' },
+    ]);
+  }
 }
 
 /**
@@ -352,20 +375,14 @@ export abstract class AbstractMigrationBuilderIt implements Spec {
  * SQLite, whose runner asserts the refusal instead.
  */
 export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBuilderIt {
-  protected async getColumnCategory(tableName: string, columnName: string) {
-    const schema = await this.getTableSchema(tableName);
-    const column = schema.columns.find((candidate) => candidate.name === columnName);
-    expect(column, `Column ${columnName} not found in ${tableName}`).toBeDefined();
-    return sqlToCanonical((column as { type: string }).type).category;
-  }
-
   async shouldAlterAColumnType() {
     await this.withBuilder(async (builder) => {
       await this.givenIntegerPayload(builder);
       await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.text('payload', { nullable: true }));
     });
 
-    expect(await this.getColumnCategory(BUILDER_TABLES.MAIN, 'payload')).toBe('string');
+    const { type } = await this.getColumn(BUILDER_TABLES.MAIN, 'payload');
+    expect(sqlToCanonical(type).category).toBe('string');
   }
 
   async shouldAlterAColumnThroughAlterTable() {
@@ -376,14 +393,11 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
       });
     });
 
-    expect(await this.getColumnCategory(BUILDER_TABLES.MAIN, 'payload')).toBe('string');
+    const { type } = await this.getColumn(BUILDER_TABLES.MAIN, 'payload');
+    expect(sqlToCanonical(type).category).toBe('string');
   }
 
-  /**
-   * The three a column declares for itself. `createTable` lifts them onto the table it is building;
-   * `addColumn` had no such lift and emitted the column alone, dropping the constraint and the index
-   * without a word, while the builder could not express an enum at all.
-   */
+  /** What a column declares for itself goes with it, as at `createTable`. */
   async shouldAddAColumnCarryingItsForeignKey() {
     await this.withBuilder(async (builder) => {
       await this.givenUnrelatedPair(builder);
@@ -392,38 +406,10 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
       );
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
-    const fk = schema.foreignKeys?.find((key) => key.columns.includes('ownerId'));
-    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
-    expect(fk?.references.columns).toEqual(['id']);
-  }
-
-  async shouldAddAColumnCarryingItsIndex() {
-    await this.withBuilder(async (builder) => {
-      await this.givenUnrelatedPair(builder);
-      await builder.addColumn(BUILDER_TABLES.CHILD, (c) => c.string('slug', { length: 80 }).nullable().index());
-    });
-
-    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
-    expect(schema.indexes?.some((index) => index.entries.some((entry) => entry.column === 'slug'))).toBe(true);
-  }
-
-  /** The engine fills it, so only the engine can say the clause is right and a write to it is refused. */
-  async shouldCreateATableWithAComputedColumn() {
-    await this.withBuilder(async (builder) => {
-      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
-        t.id();
-        t.integer('qty').nullable();
-        t.integer('price').nullable();
-        t.integer('total').nullable().computed('qty * price');
-      });
-      await builder.raw(`INSERT INTO ${BUILDER_TABLES.MAIN} (qty, price) VALUES (3, 7)`);
-    });
-
-    const [row] = await this.pool.withQuerier((querier) =>
-      querier.all<{ total: number }>(`SELECT total FROM ${BUILDER_TABLES.MAIN}`),
-    );
-    expect(Number(row.total)).toBe(21);
+    const { foreignKeys } = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(foreignKeys).toMatchObject([
+      { columns: ['ownerId'], references: { table: BUILDER_TABLES.PARENT, columns: ['id'] } },
+    ]);
   }
 
   async shouldAddAForeignKey() {
@@ -438,10 +424,10 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
       );
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
-    const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
-    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
-    expect(fk?.references.columns).toEqual(['id']);
+    const { foreignKeys } = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(foreignKeys).toMatchObject([
+      { columns: ['parentId'], references: { table: BUILDER_TABLES.PARENT, columns: ['id'] }, onDelete: 'CASCADE' },
+    ]);
   }
 
   async shouldDropAForeignKey() {
@@ -457,8 +443,8 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
       await builder.dropForeignKey(BUILDER_TABLES.CHILD, 'builder_child_parent_fk');
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
-    expect(schema.foreignKeys ?? []).toEqual([]);
+    const { foreignKeys } = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(foreignKeys).toEqual([]);
   }
 
   async shouldAddAForeignKeyThroughAlterTable() {
@@ -470,18 +456,19 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
       });
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.CHILD);
-    const fk = schema.foreignKeys?.find((key) => key.columns.includes('parentId'));
-    expect(fk?.references.table).toBe(BUILDER_TABLES.PARENT);
+    const { foreignKeys } = await this.getTableSchema(BUILDER_TABLES.CHILD);
+    expect(foreignKeys).toMatchObject([
+      { columns: ['parentId'], references: { table: BUILDER_TABLES.PARENT, columns: ['id'] }, onDelete: 'CASCADE' },
+    ]);
   }
 
   /**
-   * What a column declares for itself - a default, an enum's `CHECK`, `UNIQUE` - goes with it. SQL
-   * Server keeps each as a constraint under a name of its own, and refuses the drop while one stands.
+   * A default, an enum's `CHECK` and a `UNIQUE` go with the column declaring them. SQL Server keeps
+   * each as a constraint under a name of its own, and refuses the drop while one stands.
    */
   async shouldDropAColumnCarryingItsConstraints() {
     await this.withBuilder(async (builder) => {
-      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+      await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
         t.string('state', { length: 10 }).defaultValue('on').enum(['on', 'off']).unique();
       });
@@ -494,16 +481,15 @@ export abstract class AlterCapableMigrationBuilderIt extends AbstractMigrationBu
   /** A retype under a default, which SQL Server refuses until the default is out of the way. */
   async shouldAlterAColumnTypeUnderItsDefault() {
     await this.withBuilder(async (builder) => {
-      await builder.createTable(this.claim(BUILDER_TABLES.MAIN), (t) => {
+      await builder.createTable(BUILDER_TABLES.MAIN, (t) => {
         t.id();
         t.integer('payload').defaultValue(1);
       });
       await builder.alterColumn(BUILDER_TABLES.MAIN, (c) => c.bigint('payload').defaultValue(2));
     });
 
-    const schema = await this.getTableSchema(BUILDER_TABLES.MAIN);
-    const payload = schema.columns.find((column) => column.name === 'payload');
-    expect(payload?.type.toUpperCase()).toContain('BIGINT');
-    expect(payload?.defaultValue).toBe(2);
+    const { type, defaultValue } = await this.getColumn(BUILDER_TABLES.MAIN, 'payload');
+    expect(sqlToCanonical(type)).toMatchObject({ category: 'integer', size: 'big' });
+    expect(defaultValue).toBe(2);
   }
 }

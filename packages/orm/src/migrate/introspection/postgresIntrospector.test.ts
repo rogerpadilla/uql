@@ -1,10 +1,11 @@
-import { expect } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import { createSpec, postgresConnection } from '../../test/index.js';
 import type { QuerierPool, SqlQuerier } from '../../type/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { PostgresSchemaIntrospector } from './postgresIntrospector.js';
+import { introspectorFor } from './registry.js';
 
 /** An introspector reading on one given connection, so a test can drive what its snapshot sees. */
 class PinnedIntrospector extends PostgresSchemaIntrospector {
@@ -21,11 +22,6 @@ class PinnedIntrospector extends PostgresSchemaIntrospector {
 }
 
 class PostgresIntrospectorIt extends AbstractIntrospectorIt {
-  constructor() {
-    const pool = new PgQuerierPool(postgresConnection());
-    super(pool, new PostgresSchemaIntrospector(pool));
-  }
-
   override async addDialectSpecificColumnsA(querier: SqlQuerier): Promise<void> {
     await querier.run(`ALTER TABLE ${INTROSPECT_TABLES.A} ADD COLUMN tags TEXT[]`);
     // Raw DDL rather than the builder, so what is asserted is what Postgres stored and not what UQL
@@ -51,7 +47,13 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   async shouldReportTheIndexBehindAUniqueConstraint() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-    expect(schema.indexes?.map((index) => index.name)).toContain(`${INTROSPECT_TABLES.A}_slug_key`);
+    expect(schema.indexes?.map((index) => index.name)).toEqual([
+      'a_live_status_idx',
+      'a_long_expression_idx',
+      'a_lower_name_idx',
+      'a_score_covering_idx',
+      `${INTROSPECT_TABLES.A}_slug_key`,
+    ]);
   }
 
   /** No column can carry a unique constraint over two, so its index is the only place it shows. */
@@ -100,14 +102,6 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
     expect(columnsOf('a_lower_name_idx')).toEqual(['lower(name)']);
   }
 
-  async shouldIntrospectPartialIndexPredicate() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const index = this.getIndex(schema, 'a_live_status_idx');
-    expect(index.where).toBe('is_enabled');
-    expect(index.entries.map((entry) => entry.column)).toEqual(['status']);
-  }
-
   async shouldIntrospectCoveringIndexAndStoredOrder() {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
 
@@ -147,7 +141,7 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
    * distance for, Hamming here, is kept as written rather than read as one.
    */
   async shouldReadAVectorIndexDistanceOffItsOperatorClass() {
-    await this.pool.withQuerier((querier) => querier.run('CREATE EXTENSION IF NOT EXISTS vector'));
+    await this.pool.run('CREATE EXTENSION IF NOT EXISTS vector');
     const schema = await this.probe('probe_vector_kinds', async (querier, table) => {
       await querier.run(`CREATE TABLE ${table} (v VECTOR(3), b BIT(3))`);
       await querier.run(`CREATE INDEX probe_v_idx ON ${table} USING ivfflat (v)`);
@@ -171,46 +165,18 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   }
 
   async shouldReadAnEnumColumnByItsTypeName() {
-    await this.pool.withQuerier((querier) => querier.run(`CREATE TYPE probe_mood AS ENUM ('calm', 'busy')`));
-    try {
-      const schema = await this.probe('probe_enum', (querier, table) =>
-        querier.run(`CREATE TABLE ${table} (mood probe_mood)`),
-      );
+    const dropType = async () => {
+      await this.pool.run('DROP TYPE IF EXISTS probe_mood CASCADE');
+    };
+    await dropType();
+    onTestFinished(dropType);
+    await this.pool.run(`CREATE TYPE probe_mood AS ENUM ('calm', 'busy')`);
 
-      expect(this.getColumn(schema, 'mood').type).toBe('PROBE_MOOD');
-    } finally {
-      await this.pool.withQuerier((querier) => querier.run('DROP TYPE probe_mood'));
-    }
-  }
+    const schema = await this.probe('probe_enum', (querier, table) =>
+      querier.run(`CREATE TABLE ${table} (mood probe_mood)`),
+    );
 
-  async shouldIntrospectIdentityColumn() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const idCol = this.getColumn(schema, 'id');
-    expect(idCol.isAutoIncrement).toBe(true);
-  }
-
-  async shouldIntrospectBooleanColumn() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const isEnabledCol = this.getColumn(schema, 'is_enabled');
-    expect(isEnabledCol.type.toUpperCase()).toBe('BOOLEAN');
-    expect(isEnabledCol.defaultValue).toBe(true);
-  }
-
-  async shouldIntrospectTimestampDefault() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const createdAtCol = this.getColumn(schema, 'created_at');
-    expect(createdAtCol.type.toUpperCase()).toContain('TIMESTAMP');
-    expect(createdAtCol.defaultValue).toEqual(new SqlExpression('currentTimestamp'));
-  }
-
-  async shouldIntrospectVarcharLength() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const statusCol = this.getColumn(schema, 'status');
-    expect(statusCol.length).toBe(50);
+    expect(this.getColumn(schema, 'mood').type).toBe('PROBE_MOOD');
   }
 
   /** A `SERIAL` numbers itself through `nextval`, the way an identity column does without one. */
@@ -241,45 +207,55 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   /** A table of the same name in the default schema is neither read nor in the way. */
   async shouldReadOnlyTheSchemaItWasGiven() {
     const table = `uql_probe.${INTROSPECT_TABLES.A}`;
-    const querier = await this.pool.getQuerier();
-    try {
-      await querier.run('CREATE SCHEMA uql_probe');
-      await querier.run(
-        `CREATE TABLE ${table} (id INTEGER CONSTRAINT probe_pk PRIMARY KEY, code INTEGER UNIQUE, note TEXT)`,
-      );
-      await querier.run(`CREATE INDEX probe_note_idx ON ${table} (note)`);
-      await querier.run(`COMMENT ON COLUMN ${table}.note IS 'probed'`);
+    const dropSchema = async () => {
+      await this.pool.run('DROP SCHEMA IF EXISTS uql_probe CASCADE');
+    };
+    await dropSchema();
+    onTestFinished(dropSchema);
+    await this.pool.run('CREATE SCHEMA uql_probe');
+    await this.pool.run(
+      `CREATE TABLE ${table} (id INTEGER CONSTRAINT probe_pk PRIMARY KEY, code INTEGER UNIQUE, note TEXT)`,
+    );
+    await this.pool.run(`CREATE INDEX probe_note_idx ON ${table} (note)`);
+    await this.pool.run(`COMMENT ON COLUMN ${table}.note IS 'probed'`);
 
-      const named = await new PostgresSchemaIntrospector(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
-      const own = await this.getTableSchema(INTROSPECT_TABLES.A);
+    const named = await introspectorFor(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
+    const own = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-      expect(named).toMatchObject({
-        primaryKey: { columns: ['id'], name: 'probe_pk' },
-        indexes: [{ name: 'probe_note_idx' }, { name: `${INTROSPECT_TABLES.A}_code_key` }],
-        foreignKeys: [],
-      });
-      expect(named?.columns.map(({ name, isUnique, comment }) => ({ name, isUnique, comment }))).toEqual([
-        { name: 'id', isUnique: false, comment: undefined },
-        { name: 'code', isUnique: true, comment: undefined },
-        { name: 'note', isUnique: false, comment: 'probed' },
-      ]);
-      expect(own.columns.map((column) => column.name)).toContain('status');
-    } finally {
-      await querier.run('DROP SCHEMA uql_probe CASCADE');
-      await querier.release();
-    }
+    expect(named).toMatchObject({
+      primaryKey: { columns: ['id'], name: 'probe_pk' },
+      indexes: [{ name: 'probe_note_idx' }, { name: `${INTROSPECT_TABLES.A}_code_key` }],
+      foreignKeys: [],
+    });
+    expect(named?.columns.map(({ name, isUnique, comment }) => ({ name, isUnique, comment }))).toEqual([
+      { name: 'id', isUnique: false, comment: undefined },
+      { name: 'code', isUnique: true, comment: undefined },
+      { name: 'note', isUnique: false, comment: 'probed' },
+    ]);
+    expect(own.columns.map((column) => column.name)).toEqual([
+      'id',
+      'name',
+      'status',
+      'is_enabled',
+      'score',
+      'created_at',
+      'amount',
+      'tags',
+      'slug',
+    ]);
   }
 
   /**
    * A table another connection dropped is read out of the snapshot that still lists it, never raised:
    * `introspect()` scans a database other things are changing. A repeatable read transaction is that
-   * race made deterministic - `information_schema` still answers from its snapshot while name
+   * race made deterministic: `information_schema` still answers from its snapshot while name
    * resolution answers from the live catalogue, so a check it can no longer reprint is left out.
    */
   async shouldReadATableDroppedAfterTheSnapshotThatLeftIt() {
     const reader = await this.pool.getQuerier();
     const writer = await this.pool.getQuerier();
     try {
+      await writer.run('DROP TABLE IF EXISTS probe_vanishing');
       await writer.run("CREATE TABLE probe_vanishing (id INTEGER PRIMARY KEY, note TEXT CHECK (note <> ''))");
       await reader.beginTransaction({ isolationLevel: 'repeatable read' });
       await reader.all('SELECT 1');
@@ -298,8 +274,8 @@ class PostgresIntrospectorIt extends AbstractIntrospectorIt {
   }
 
   async shouldEscapeTheSchemaItWasGiven() {
-    await expect(new PostgresSchemaIntrospector(this.pool, "uql'probe").getTableNames()).resolves.toEqual([]);
+    await expect(introspectorFor(this.pool, "uql'probe").getTableNames()).resolves.toEqual([]);
   }
 }
 
-createSpec(new PostgresIntrospectorIt());
+createSpec(new PostgresIntrospectorIt(new PgQuerierPool(postgresConnection('test_introspector'))));

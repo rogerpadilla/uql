@@ -15,73 +15,25 @@ export function assertDefined<T>(value: T | undefined, message?: string): assert
   expect(value, message).toBeDefined();
 }
 
-export function createSpec<T extends Spec>(spec: T) {
-  const proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  let describeFn: typeof describe | typeof describe.only | typeof describe.skip;
-  const specName = proto.constructor.name;
-
-  if (specName.startsWith('fff')) {
-    describeFn = describe.only;
-  } else if (specName.startsWith('xxx')) {
-    describeFn = describe.skip;
-  } else {
-    describeFn = describe;
-  }
-
-  describeFn(specName, () => createTestCases(spec));
-}
-
-function createTestCases(spec: Spec) {
-  let proto: FunctionConstructor = Object.getPrototypeOf(spec);
-  const requirements: Readonly<Record<string, boolean | undefined>> = spec.requirements?.() ?? {};
-  const timeouts: Readonly<Record<string, number | undefined>> = spec.timeouts?.() ?? {};
-
-  const processedMethodsMap: { [k: string]: true } = {};
-
-  while (proto.constructor !== Object) {
-    for (const key of Object.getOwnPropertyNames(proto)) {
-      const isProcessed = processedMethodsMap[key];
-      processedMethodsMap[key] = true;
-      const method = spec[key];
-      if (isProcessed || key === 'constructor' || typeof method !== 'function') {
-        continue;
-      }
-      const callback = (method as SpecHook).bind(spec);
-      const hookFn = hooks[key as keyof typeof hooks];
-      if (hookFn) {
-        hookFn(callback);
-      } else if (key.startsWith('should')) {
-        (requirements[key] === false ? it.skip : it)(key, callback, timeouts[key]);
-      } else if (key.startsWith('fffShould')) {
-        it.only(key, callback);
-      } else if (key.startsWith('xxxShould')) {
-        it.skip(key, callback);
-      }
-    }
-    proto = Object.getPrototypeOf(proto);
-  }
-}
-
 /**
  * Budget for a suite's setup and teardown, which drop and create every fixture table over the wire, and for
  * a case writing as many rows: a contended CI database can take seconds to serve that, so holding it to a
- * test's budget turns a slow database into a red build. Exported for hooks written by hand; both runners
- * honour it as a hook's second argument.
+ * test's budget turns a slow database into a red build. Both runners take it as a hook's second argument.
  */
 export const provisioningTimeout = 60_000;
 
-/** Per-test hooks are left on the runner's default, so a genuinely hung connection still fails fast. */
-const hooks = {
-  beforeAll: (fn: SpecHook) => beforeAll(fn, provisioningTimeout),
-  afterAll: (fn: SpecHook) => afterAll(fn, provisioningTimeout),
-  beforeEach,
-  afterEach,
-} as const;
+type SpecHook = () => unknown;
 
-type SpecHook = () => void | Promise<void>;
+/** Per-test hooks keep the runner's default, so a genuinely hung connection still fails fast. */
+const hooks = new Map<string, (hook: SpecHook) => void>([
+  ['beforeAll', (hook) => beforeAll(hook, provisioningTimeout)],
+  ['afterAll', (hook) => afterAll(hook, provisioningTimeout)],
+  ['beforeEach', beforeEach],
+  ['afterEach', afterEach],
+]);
 
 /** A suite's test cases by name. */
-export type SpecCase<T> = Extract<keyof T, `should${string}`>;
+type SpecCase<T> = Extract<keyof T, `should${string}`>;
 
 /**
  * Which cases a suite's engine can run, `false` reporting one as skipped: a case never branches on the
@@ -92,9 +44,42 @@ export type SpecRequirements<T> = { readonly [K in SpecCase<T>]?: boolean };
 /** The cases given {@link provisioningTimeout} or a budget of their own, the rest keeping the runner's default. */
 export type SpecTimeouts<T> = { readonly [K in SpecCase<T>]?: number };
 
-export type Spec = Partial<typeof hooks> & {
-  readonly requirements?: () => Readonly<Record<string, boolean | undefined>>;
-  readonly timeouts?: () => Readonly<Record<string, number | undefined>>;
-  // oxlint-disable-next-line typescript/no-explicit-any -- `any` is required - `unknown` makes index signature incompatible with concrete spec classes
-  readonly [k: string]: SpecHook | any;
+/** A suite as a class: its hooks, its `should...` cases, and which of them the engine runs. */
+export type Spec = {
+  beforeAll?(): unknown;
+  afterAll?(): unknown;
+  beforeEach?(): unknown;
+  afterEach?(): unknown;
+  requirements?(): Readonly<Record<string, boolean | undefined>>;
+  timeouts?(): Readonly<Record<string, number | undefined>>;
 };
+
+/** Registers `spec`'s hooks and cases under its class name, a method shadowing the one it overrides. */
+export function createSpec(spec: Spec): void {
+  describe(spec.constructor.name, () => {
+    const requirements = spec.requirements?.() ?? {};
+    const timeouts = spec.timeouts?.() ?? {};
+    for (const [key, run] of methodsOf(spec)) {
+      const hook = hooks.get(key);
+      if (hook) {
+        hook(run);
+      } else if (key.startsWith('should')) {
+        (requirements[key] === false ? it.skip : it)(key, run, timeouts[key]);
+      }
+    }
+  });
+}
+
+/** Each method `spec` answers to, bound to it, the nearest definition of a name winning. */
+function methodsOf(spec: object): Map<string, SpecHook> {
+  const methods = new Map<string, SpecHook>();
+  for (let proto = Object.getPrototypeOf(spec); proto !== Object.prototype; proto = Object.getPrototypeOf(proto)) {
+    for (const key of Object.getOwnPropertyNames(proto)) {
+      const method: unknown = Object.getOwnPropertyDescriptor(proto, key)?.value;
+      if (key !== 'constructor' && typeof method === 'function' && !methods.has(key)) {
+        methods.set(key, () => method.call(spec));
+      }
+    }
+  }
+  return methods;
+}

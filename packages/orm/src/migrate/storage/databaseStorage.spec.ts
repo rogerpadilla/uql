@@ -26,22 +26,21 @@ describe('DatabaseMigrationStorage', () => {
   });
 
   it('should create the storage table', async () => {
-    await storage.ensureStorage();
+    await storage.executed();
 
     expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS "uql_migrations"'));
     expect(querier.release).toHaveBeenCalled();
   });
 
   it('should create the storage table once', async () => {
-    await storage.ensureStorage();
-    expect(pool.getQuerier).toHaveBeenCalledTimes(1);
-    await storage.ensureStorage();
-    expect(pool.getQuerier).toHaveBeenCalledTimes(1);
+    await storage.executed();
+    await storage.executed();
+    expect(querier.run).toHaveBeenCalledTimes(1);
   });
 
   it('should refuse to create storage on a querier that is not SQL', async () => {
     getQuerier.mockResolvedValue(createMockQuerier());
-    await expect(storage.ensureStorage()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
+    await expect(storage.executed()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
   });
 
   it('should return executed migration names', async () => {
@@ -54,7 +53,7 @@ describe('DatabaseMigrationStorage', () => {
   });
 
   it('should refuse to read executed migrations on a querier that is not SQL', async () => {
-    await storage.ensureStorage();
+    await storage.executed();
 
     getQuerier.mockResolvedValue(createMockQuerier());
     await expect(storage.executed()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');

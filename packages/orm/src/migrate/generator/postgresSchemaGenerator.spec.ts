@@ -25,7 +25,9 @@ describe('PostgresSchemaGenerator Specifics', () => {
   });
 
   it('should generate DROP INDEX statement', () => {
-    expect(generator.generateDropIndex('users', 'test_idx')).toBe('DROP INDEX IF EXISTS "test_idx";');
+    expect(generator.generateOperation({ type: 'dropIndex', tableName: 'users', indexName: 'test_idx' })).toEqual([
+      'DROP INDEX IF EXISTS "test_idx";',
+    ]);
   });
 
   it('should generate ALTER COLUMN statements', () => {
@@ -38,7 +40,7 @@ describe('PostgresSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    expect(tableDdl.alterColumn('users', col, 'INTEGER')).toEqual([
+    expect(tableDdl.alterColumns('users', [{ to: col }])).toEqual([
       'ALTER TABLE "users" ALTER COLUMN "age" TYPE INTEGER USING "age"::INTEGER, ALTER COLUMN "age" SET NOT NULL, ' +
         'ALTER COLUMN "age" SET DEFAULT 18;',
     ]);
@@ -116,9 +118,5 @@ describe('PostgresSchemaGenerator Specifics', () => {
       'ALTER TABLE "users" ALTER COLUMN "rank" TYPE INTEGER USING "rank"::INTEGER;',
       'ALTER TABLE "users" ALTER COLUMN "rank" SET NOT NULL;',
     ]);
-  });
-
-  it('should return empty string for generateColumnComment', () => {
-    expect(generator.generateColumnComment('comment')).toBe('');
   });
 });

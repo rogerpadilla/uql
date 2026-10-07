@@ -4,14 +4,6 @@ import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { TableBuilder } from '../builder/tableBuilder.js';
 import { SqlSchemaGenerator } from '../schemaGenerator.js';
 
-/**
- * Migration metadata stored in the database
- */
-interface MigrationRecord {
-  name: string;
-  executed_at: Date | number;
-}
-
 /** Where executed migrations are recorded when the config does not name a table. */
 export const DEFAULT_MIGRATIONS_TABLE = 'uql_migrations';
 
@@ -32,7 +24,8 @@ export class DatabaseMigrationStorage implements MigrationStorage {
     this.tableName = options.tableName ?? DEFAULT_MIGRATIONS_TABLE;
   }
 
-  async ensureStorage(): Promise<void> {
+  /** Creates the table on first use, once. */
+  private async ensureStorage(): Promise<void> {
     if (this.storageInitialized) {
       return;
     }
@@ -63,8 +56,8 @@ export class DatabaseMigrationStorage implements MigrationStorage {
     return withSqlQuerierForMigrations(this.pool, 'DatabaseMigrationStorage', async (querier) => {
       const { dialect } = querier;
       const sql = /*sql*/ `SELECT ${dialect.escapeId('name')} FROM ${dialect.escapeId(this.tableName)} ORDER BY ${dialect.escapeId('name')} ASC`;
-      const results = await querier.all<MigrationRecord>(sql);
-      return results.map((r) => r.name);
+      const rows = await querier.all<{ name: string }>(sql);
+      return rows.map((row) => row.name);
     });
   }
 

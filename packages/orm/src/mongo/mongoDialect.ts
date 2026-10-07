@@ -160,7 +160,6 @@ export const mongoDialectFeatures: DialectFeatures = {
   schemas: false, // the connection picks the database, and a collection name takes no dot
   dropTableCascade: false,
   rebuildsTables: false,
-  commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: false,
   vectorBytes: false,

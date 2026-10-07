@@ -1,22 +1,9 @@
-import { AbstractSqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
-import { MariadbLikeQuerierIt } from '../querier/mysqlLikeQuerier-test.js';
+import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
+import { MySqlLikeQuerierIt } from '../querier/mysqlLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
-import type { BunSqlQuerier } from './bunSqlQuerier.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
 const url = 'mariadb://test:test@0.0.0.0:3326/test_bun_maria';
 
-class BunMariadbIt extends MariadbLikeQuerierIt {
-  constructor() {
-    super(new BunSqlQuerierPool({ url }));
-  }
-}
-
-class BunMariadbPoolIt extends AbstractSqlQuerierPoolIt<BunSqlQuerier> {
-  constructor() {
-    super(() => new BunSqlQuerierPool({ url }));
-  }
-}
-
-createSpec(new BunMariadbIt());
-createSpec(new BunMariadbPoolIt());
+createSpec(new MySqlLikeQuerierIt(new BunSqlQuerierPool({ url })));
+createSpec(new SqlQuerierPoolIt(() => new BunSqlQuerierPool({ url })));

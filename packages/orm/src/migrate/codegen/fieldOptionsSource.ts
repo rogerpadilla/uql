@@ -5,21 +5,14 @@ import { DATE_PRECISION } from '../../util/date.js';
 import { isAutoIncrement } from '../../util/field.util.js';
 import { quoted, rawTag } from './sourceLiteral.js';
 
-/** What a column's decorator is written against beyond the column itself. */
-interface FieldSourceContext {
-  /** The property the column maps to, which decides whether a `name` is needed. */
-  readonly propertyName: string;
-  /** The single-column index the field can carry itself, where there is one. */
-  readonly indexName?: string;
-}
-
-type OptionSource = (col: ColumnNode, context: FieldSourceContext) => readonly string[];
+/** What a field of the column contributes, given the property it maps to, which decides whether a `name` is needed. */
+type OptionSource = (col: ColumnNode, propertyName: string) => readonly string[];
 
 /** What each field of a {@link ColumnNode} contributes to `@Field({ ... })`, in emit order; `satisfies` makes a new field answer. */
 const OPTION_SOURCE = {
   // Without this the entity maps to a column named after the property, which for anything the
   // transformer rewrote - every `user_id` - is a column the database does not have.
-  name: (col, { propertyName }) => (propertyName === col.name ? [] : [`name: ${quoted(col.name)}`]),
+  name: (col, propertyName) => (propertyName === col.name ? [] : [`name: ${quoted(col.name)}`]),
   // The column type as `type`, which the decorator checks the property against and the schema reads
   // exactly as it reads `columnType`.
   type: (col) => {
@@ -50,10 +43,8 @@ const OPTION_SOURCE = {
     ) === col.isAutoIncrement
       ? []
       : [`autoIncrement: ${col.isAutoIncrement}`],
-  // Graph links. A foreign key becomes a relation decorator, emitted beside the field rather than in it.
+  // The graph link: a foreign key becomes a relation decorator, emitted beside the field rather than in it.
   table: null,
-  references: null,
-  referencedBy: null,
 } as const satisfies Record<keyof ColumnNode, OptionSource | null>;
 
 /** Whether to write `type`'s precision: not for a timestamp at a `Date`'s milliseconds, its default. */
@@ -63,9 +54,8 @@ function writesPrecision(type: ColumnNode['type']): boolean {
 
 /** A column's `@Id({ ... })` or `@Field({ ... })` options as source. */
 export function buildFieldOptionsSource(col: ColumnNode, propertyName: string, indexName?: string): string {
-  const context = { propertyName, indexName };
   const options = [
-    ...Object.values(OPTION_SOURCE).flatMap((source) => source?.(col, context) ?? []),
+    ...Object.values(OPTION_SOURCE).flatMap((source) => source?.(col, propertyName) ?? []),
     // Not a column field: the index is a table-level object the field only borrows.
     ...(indexName ? [`index: ${quoted(indexName)}`] : []),
   ];

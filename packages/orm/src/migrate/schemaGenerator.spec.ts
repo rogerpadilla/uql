@@ -5,7 +5,6 @@ import { Entity, Field, getMeta, Id, Index, ManyToOne, removeEntity, Trigger } f
 import { MariaDialect } from '../maria/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
-import { SnakeCaseNamingStrategy } from '../namingStrategy/snakeCaseNamingStrategy.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SchemaAST } from '../schema/schemaAST.js';
 import type { IndexNode, TableNode, TriggerSchema } from '../schema/types.js';
@@ -14,8 +13,9 @@ import { assertDefined, mockSqlTableNode, mockTableNode, sqlTypeOf } from '../te
 import type { ColumnSchema, SchemaDiff } from '../type/index.js';
 import { raw } from '../util/index.js';
 import type { FullColumnDefinition, TableDefinition } from './builder/types.js';
+import { tableDdlFor } from './ddl/index.js';
 import { added, alterations, dropped, reverseDiff } from './schemaChange.js';
-import { buildEntityAST, SqlSchemaGenerator } from './schemaGenerator.js';
+import { SqlSchemaGenerator } from './schemaGenerator.js';
 
 // Test entities
 @Entity()
@@ -92,9 +92,9 @@ describe('SqlSchemaGenerator (Postgres)', () => {
   });
 
   it('should generate DROP TABLE statement', () => {
-    const sql = generator.generateDropTable('TestUser', { ifExists: true });
-
-    expect(sql).toBe('DROP TABLE IF EXISTS "TestUser";');
+    expect(generator.generateOperation({ type: 'dropTable', tableName: 'TestUser', ifExists: true })).toEqual([
+      'DROP TABLE IF EXISTS "TestUser";',
+    ]);
   });
   /** An `embeddings` table of an id and an embedding, with the vector indexes given. */
   function buildVectorTableNode(indexes: Partial<IndexNode>[]): TableNode {
@@ -389,8 +389,8 @@ describe('SqlSchemaGenerator (Postgres)', () => {
       'ALTER TABLE "users" DROP CONSTRAINT "users__handle_id_pk";',
       'DROP INDEX IF EXISTS "users__handle_idx";',
       'ALTER TABLE "users" RENAME COLUMN "handle" TO "name";',
-      'CREATE INDEX IF NOT EXISTS "users__name_idx" ON "users" ("name");',
       'ALTER TABLE "users" ADD CONSTRAINT "users_pkey" PRIMARY KEY ("id", "name");',
+      'CREATE INDEX IF NOT EXISTS "users__name_idx" ON "users" ("name");',
       'ALTER TABLE "users" ADD CONSTRAINT "users__name_fk" FOREIGN KEY ("name") REFERENCES "people" ("name") ON DELETE NO ACTION ON UPDATE NO ACTION;',
     ]);
   });
@@ -441,8 +441,9 @@ describe('SqlSchemaGenerator (MySQL)', () => {
   });
 
   it('should generate DROP INDEX with ON table', () => {
-    const sql = generator.generateDropIndex('users', 'email_idx');
-    expect(sql).toBe('DROP INDEX `email_idx` ON `users`;');
+    expect(generator.generateOperation({ type: 'dropIndex', tableName: 'users', indexName: 'email_idx' })).toEqual([
+      'DROP INDEX `email_idx` ON `users`;',
+    ]);
   });
 });
 
@@ -508,7 +509,7 @@ describe('SqlSchemaGenerator Integration', () => {
       entries: [{ column: 'name' }],
       unique: true,
     };
-    const sql = generator.generateCreateIndexFromNode(index);
+    const sql = generator.generateCreateTableFromNode({ ...table, indexes: [index] }).at(-1);
     expect(sql).toBe('CREATE UNIQUE INDEX "name_idx" ON "users" ("name");');
   });
 
@@ -522,19 +523,12 @@ describe('SqlSchemaGenerator Integration', () => {
       unique: true,
       where: '"deletedAt" IS NULL',
     };
-    const sql = generator.generateCreateIndexFromNode(index);
+    const sql = generator.generateCreateTableFromNode({ ...table, indexes: [index] }).at(-1);
     expect(sql).toBe('CREATE UNIQUE INDEX "live_email_idx" ON "users" ("email") WHERE "deletedAt" IS NULL;');
   });
 
-  it('should generate DROP TABLE from TableNode', () => {
-    const table = mockTableNode('users', []);
-    const sql = generator.generateDropTable(table.name, { ifExists: true });
-    expect(sql).toBe('DROP TABLE IF EXISTS "users";');
-  });
-
   it('should generate DROP TABLE without IF EXISTS by default', () => {
-    const table = mockTableNode('users', []);
-    expect(generator.generateDropTable(table.name)).toBe('DROP TABLE "users";');
+    expect(generator.generateOperation({ type: 'dropTable', tableName: 'users' })).toEqual(['DROP TABLE "users";']);
   });
 });
 
@@ -565,30 +559,6 @@ describe('SqlSchemaGenerator column definitions from ColumnSchema', () => {
       ],
     })[0];
   }
-
-  it('should append precision and scale to a bare type', () => {
-    expect(addColumn({ name: 'amount', type: 'NUMERIC', precision: 12, scale: 4 })).toBe(
-      'ALTER TABLE "users" ADD COLUMN "amount" NUMERIC(12, 4);',
-    );
-  });
-
-  it('should append precision alone when there is no scale', () => {
-    expect(addColumn({ name: 'amount', type: 'NUMERIC', precision: 12 })).toBe(
-      'ALTER TABLE "users" ADD COLUMN "amount" NUMERIC(12);',
-    );
-  });
-
-  it('should append length when there is no precision', () => {
-    expect(addColumn({ name: 'name', type: 'VARCHAR', length: 100 })).toBe(
-      'ALTER TABLE "users" ADD COLUMN "name" VARCHAR(100);',
-    );
-  });
-
-  it('should keep a type that already carries its own parameters', () => {
-    expect(addColumn({ name: 'name', type: 'VARCHAR(50)', length: 100, precision: 12, scale: 4 })).toBe(
-      'ALTER TABLE "users" ADD COLUMN "name" VARCHAR(50);',
-    );
-  });
 
   it('should emit NOT NULL for a non-nullable column', () => {
     expect(addColumn({ nullable: false })).toBe('ALTER TABLE "users" ADD COLUMN "col" INTEGER NOT NULL;');
@@ -858,27 +828,35 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
   });
 
   it('should generate ADD CONSTRAINT for a foreign key added to an existing table', () => {
-    const sql = generator.generateAddForeignKeySql('memberships', {
-      columns: ['groupId'],
-      references: { table: 'groups', columns: ['id'] },
-      onDelete: 'SET NULL',
-      onUpdate: 'CASCADE',
+    const sql = generator.generateOperation({
+      type: 'addForeignKey',
+      tableName: 'memberships',
+      foreignKey: {
+        columns: ['groupId'],
+        references: { table: 'groups', columns: ['id'] },
+        onDelete: 'SET NULL',
+        onUpdate: 'CASCADE',
+      },
     });
-    expect(sql).toBe(
+    expect(sql).toEqual([
       'ALTER TABLE "memberships" ADD CONSTRAINT "memberships__groupId_fk" ' +
         'FOREIGN KEY ("groupId") REFERENCES "groups" ("id") ON DELETE SET NULL ON UPDATE CASCADE;',
-    );
+    ]);
   });
 
   /** SQLite cannot add a constraint to an existing table, so this has to fail rather than emit invalid DDL. */
   it('should reject adding a foreign key where the dialect cannot alter constraints', () => {
     const sqliteGenerator = new SqlSchemaGenerator(new SqliteDialect());
     expect(() =>
-      sqliteGenerator.generateAddForeignKeySql('memberships', {
-        columns: ['groupId'],
-        references: { table: 'groups', columns: ['id'] },
-        onDelete: 'NO ACTION',
-        onUpdate: 'NO ACTION',
+      sqliteGenerator.generateOperation({
+        type: 'addForeignKey',
+        tableName: 'memberships',
+        foreignKey: {
+          columns: ['groupId'],
+          references: { table: 'groups', columns: ['id'] },
+          onDelete: 'NO ACTION',
+          onUpdate: 'NO ACTION',
+        },
       }),
     ).toThrow('rebuilds the table');
   });
@@ -895,10 +873,11 @@ describe('SqlSchemaGenerator table definitions from the migration builder', () =
   });
 
   it('should rename a table with ALTER TABLE, which MySQL takes too', () => {
-    expect(generator.generateRenameTableSql('old', 'new')).toBe('ALTER TABLE "old" RENAME TO "new";');
-    expect(new SqlSchemaGenerator(new MySqlDialect()).generateRenameTableSql('old', 'new')).toBe(
+    const rename = { type: 'renameTable', oldName: 'old', newName: 'new' } as const;
+    expect(generator.generateOperation(rename)).toEqual(['ALTER TABLE "old" RENAME TO "new";']);
+    expect(new SqlSchemaGenerator(new MySqlDialect()).generateOperation(rename)).toEqual([
       'ALTER TABLE `old` RENAME TO `new`;',
-    );
+    ]);
   });
   describe('generateCreateSchema', () => {
     it('should emit cross-entity foreign keys, which the per-entity path dropped', () => {
@@ -1004,14 +983,10 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
   const generator = new SqlSchemaGenerator(new PostgresDialect());
 
   it('should refuse to drop a key whose constraint introspection did not name', () => {
-    expect(() => generator.generateDropPrimaryKeySql('users')).toThrow(
+    const diff: SchemaDiff = { tableName: 'users', type: 'alter', primaryKey: { from: { columns: ['id'] } } };
+    expect(() => generator.generateAlterTable(diff)).toThrow(
       'Cannot drop the primary key of "users": postgres names the constraint',
     );
-  });
-
-  it('should expose the naming strategy of its dialect', () => {
-    const namingStrategy = new SnakeCaseNamingStrategy();
-    expect(new SqlSchemaGenerator(new PostgresDialect({ namingStrategy })).namingStrategy).toBe(namingStrategy);
   });
 
   it('should type a foreign key as the key it points at', () => {
@@ -1088,8 +1063,48 @@ describe('SqlSchemaGenerator diffs (Postgres)', () => {
     ]);
   });
 
+  /** A `schema_locked` table, CockroachDB's default, drops its key only beside the key replacing it. */
+  it('should replace a key in one statement on CockroachDB', () => {
+    const diff: SchemaDiff = {
+      tableName: 'users',
+      type: 'alter',
+      primaryKey: {
+        from: { columns: ['id'], name: 'users_pkey' },
+        to: { columns: ['id', 'org'], name: 'users__id_org_pk' },
+      },
+    };
+    expect(new SqlSchemaGenerator(new CockroachDialect()).generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" DROP CONSTRAINT "users_pkey", ADD CONSTRAINT "users__id_org_pk" PRIMARY KEY ("id", "org");',
+    ]);
+  });
+
+  /** Before the column it no longer holds is dropped, which CockroachDB refuses while the key holds it. */
+  it('should replace a key before dropping a column it held', () => {
+    const org = {
+      name: 'org',
+      type: 'BIGINT',
+      nullable: false,
+      isPrimaryKey: true,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+    const diff: SchemaDiff = {
+      tableName: 'users',
+      type: 'alter',
+      columns: [{ from: org }],
+      primaryKey: {
+        from: { columns: ['id', 'org'], name: 'users__id_org_pk' },
+        to: { columns: ['id'], name: 'users__id_pk' },
+      },
+    };
+    expect(new SqlSchemaGenerator(new CockroachDialect()).generateAlterTable(diff)).toEqual([
+      'ALTER TABLE "users" DROP CONSTRAINT "users__id_org_pk", ADD CONSTRAINT "users__id_pk" PRIMARY KEY ("id");',
+      'ALTER TABLE "users" DROP COLUMN "org";',
+    ]);
+  });
+
   it('should diff nothing where the desired schema has no table for the entity', () => {
-    const current = buildEntityAST(generator, [DiffUser]).getTable('DiffUser');
+    const current = generator.buildAST([DiffUser]).getTable('DiffUser');
     expect(generator.diffSchema(DiffUser, current, new SchemaAST())).toBeUndefined();
   });
 
@@ -1374,16 +1389,28 @@ describe('SqlSchemaGenerator on every dialect', () => {
       });
 
       it('should generate correct DROP TABLE SQL', () => {
-        expect(generator.generateDropTable('users', { ifExists: true })).toContain('DROP TABLE IF EXISTS');
-        expect(generator.generateDropTable('users', { ifExists: true })).toContain('users');
+        expect(generator.generateOperation({ type: 'dropTable', tableName: 'users', ifExists: true })).toEqual([
+          `DROP TABLE IF EXISTS ${dialect.escapeId('users')};`,
+        ]);
       });
 
       it('should generate correct SQL type for Boolean', () => {
         expect(sqlTypeOf(dialect, { type: Boolean })).toBe(booleanType);
       });
 
-      it('should generate correct column comments', () => {
-        expect(generator.generateColumnComment('Testing')).toBe(comment);
+      it('should comment a column inline only where the engine keeps one there', () => {
+        const column = {
+          name: 'c',
+          type: 'INT',
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+        };
+
+        expect(tableDdlFor(dialect).columnDefinition({ ...column, comment: 'Testing' })).toBe(
+          `${dialect.escapeId('c')} INT${comment}`,
+        );
       });
     },
   );
@@ -1423,6 +1450,13 @@ describe('triggers', () => {
     expect(generator.generateDropSchema([GenPost], { ifExists: true })).toEqual([
       'DROP TABLE IF EXISTS "GenPost";',
       `DROP FUNCTION IF EXISTS "${audit.name}"();`,
+    ]);
+  });
+
+  /** A table the catalogue says is absent left no function, and CockroachDB refuses one named in a schema not made yet. */
+  it('should drop no function for a table the database does not have', () => {
+    expect(generator.generateDropSchema([GenPost], { ifExists: true, existing: new SchemaAST() })).toEqual([
+      'DROP TABLE IF EXISTS "GenPost";',
     ]);
   });
 

@@ -1,19 +1,13 @@
 import type { CheckSchema } from '../../schema/types.js';
-import type { ColumnSchema, ForeignKeySchema, IndexSchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
+  type ReadColumn,
   type TableRowReader,
 } from './abstractSqlSchemaIntrospector.js';
 
-/**
- * SQL Server schema introspector.
- *
- * `INFORMATION_SCHEMA` answers columns and foreign keys, but not indexes: it has no view for them at
- * all, and its `CONSTRAINT_COLUMN_USAGE` conflates a unique index with a unique constraint. Those
- * come from `sys.indexes` instead, which is also the only place the filtered-index predicate and the
- * included columns are readable.
- */
+/** SQL Server schema introspector: `INFORMATION_SCHEMA` has no view of indexes, which come from `sys.indexes`. */
 export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected override readonly defaultSchemaExpr = 'SCHEMA_NAME()';
 
@@ -50,24 +44,15 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected tableExistsQuery(): string {
     return /*sql*/ `
-      SELECT COUNT(*) as count
-      FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = @p1
+      SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = @p1 AND TABLE_TYPE = 'BASE TABLE'
     `;
   }
 
-  protected parseTableExistsResult([row]: { count: number }[]): boolean {
-    return row.count > 0;
-  }
-
-  /**
-   * From `sys` rather than `INFORMATION_SCHEMA`, which has no identity flag and no per-column view of
-   * the key or of a unique index. A key column is not also `isUnique`, as on MySQL: only a unique index
-   * of its own, other than the key's, makes it so.
-   */
-  protected getColumnsQuery(_tableName: string): string {
-    return /*sql*/ `
+  /** From `sys` rather than `INFORMATION_SCHEMA`, which has no identity flag. */
+  protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
+    const rows = await read<MsSqlColumnRow>(
+      /*sql*/ `
       SELECT
         c.name as column_name,
         t.name as data_type,
@@ -77,8 +62,6 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         c.is_nullable as is_nullable,
         c.is_identity as is_identity,
         d.definition as column_default,
-        f.is_primary_key,
-        f.is_unique,
         CASE WHEN cc.is_persisted = 1 THEN cc.definition END as generated_as
       FROM sys.columns c
       JOIN sys.objects o ON o.object_id = c.object_id
@@ -86,30 +69,41 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.types t ON t.user_type_id = c.user_type_id
       LEFT JOIN sys.default_constraints d ON d.object_id = c.default_object_id
       LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
-      OUTER APPLY (
-        SELECT
-          MAX(CAST(i.is_primary_key AS INT)) as is_primary_key,
-          MAX(CASE WHEN i.is_primary_key = 0 AND n.key_columns = 1 THEN 1 ELSE 0 END) as is_unique
-        FROM sys.index_columns ic
-        JOIN sys.indexes i ON i.object_id = ic.object_id AND i.index_id = ic.index_id
-        CROSS APPLY (
-          SELECT COUNT(*) as key_columns FROM sys.index_columns k
-          WHERE k.object_id = i.object_id AND k.index_id = i.index_id AND k.is_included_column = 0
-        ) n
-        WHERE ic.object_id = c.object_id AND ic.column_id = c.column_id
-          AND ic.is_included_column = 0 AND i.is_unique = 1
-      ) f
       WHERE s.name = ${this.schemaExpr} AND o.name = @p1
       ORDER BY c.column_id
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => {
+      const type = row.data_type.toUpperCase();
+      const bytes = this.toNumber(row.max_length);
+      return {
+        name: row.column_name,
+        type: spelledType(type, bytes, this.toNumber(row.numeric_scale)),
+        nullable: Boolean(row.is_nullable),
+        defaultValue: this.parseDefaultValue(row.column_default),
+        isAutoIncrement: Boolean(row.is_identity),
+        length: widthOf(type, bytes),
+        precision: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_precision) : undefined,
+        scale: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_scale) : undefined,
+        generatedAs: row.generated_as ?? undefined,
+      };
+    });
   }
 
   /** `is_primary_key` is excluded: the key is read separately, the way every other engine reads it. */
-  protected getIndexesQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const rows = await read<{
+      index_name: string;
+      columns: string;
+      is_unique: boolean;
+      filter_definition: string | null;
+    }>(
+      /*sql*/ `
       SELECT
         i.name as index_name,
         i.is_unique as is_unique,
+        i.filter_definition as filter_definition,
         STRING_AGG(c.name, ',') WITHIN GROUP (ORDER BY ic.key_ordinal) as columns
       FROM sys.indexes i
       JOIN sys.objects o ON o.object_id = i.object_id
@@ -118,13 +112,22 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
       WHERE s.name = ${this.schemaExpr} AND o.name = @p1
         AND i.is_primary_key = 0 AND i.name IS NOT NULL AND ic.is_included_column = 0
-      GROUP BY i.name, i.is_unique
+      GROUP BY i.name, i.is_unique, i.filter_definition
       ORDER BY i.name
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => ({
+      name: row.index_name,
+      entries: row.columns.split(',').map((column) => ({ column })),
+      unique: Boolean(row.is_unique),
+      where: row.filter_definition ?? undefined,
+    }));
   }
 
-  protected getForeignKeysQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
+    const rows = await read<JoinedForeignKeyRow>(
+      /*sql*/ `
       SELECT
         fk.name as constraint_name,
         STRING_AGG(pc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) as columns,
@@ -142,11 +145,16 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       WHERE s.name = ${this.schemaExpr} AND o.name = @p1
       GROUP BY fk.name, rt.name, fk.delete_referential_action_desc, fk.update_referential_action_desc
       ORDER BY fk.name
-    `;
+    `,
+      [tableName],
+    );
+    return this.joinedForeignKeys(rows);
   }
 
-  protected getPrimaryKeyQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
+    return this.readPrimaryKey(
+      read,
+      /*sql*/ `
       SELECT c.name as column_name, i.name as constraint_name
       FROM sys.indexes i
       JOIN sys.objects o ON o.object_id = i.object_id
@@ -155,51 +163,9 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
       WHERE s.name = ${this.schemaExpr} AND o.name = @p1 AND i.is_primary_key = 1
       ORDER BY ic.key_ordinal
-    `;
-  }
-
-  protected async mapColumnsResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: MsSqlColumnRow[],
-  ): Promise<ColumnSchema[]> {
-    return results.map((row) => {
-      const type = row.data_type.toUpperCase();
-      const bytes = this.toNumber(row.max_length);
-      return {
-        name: row.column_name,
-        type: spelledType(type, bytes, this.toNumber(row.numeric_scale)),
-        nullable: Boolean(row.is_nullable),
-        defaultValue: this.parseDefaultValue(row.column_default),
-        isAutoIncrement: Boolean(row.is_identity),
-        isPrimaryKey: Boolean(row.is_primary_key),
-        isUnique: Boolean(row.is_unique),
-        length: widthOf(type, bytes),
-        precision: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_precision) : undefined,
-        scale: NUMERIC_TYPES.has(type) ? this.toNumber(row.numeric_scale) : undefined,
-        generatedAs: row.generated_as ?? undefined,
-      };
-    });
-  }
-
-  protected async mapIndexesResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: { index_name: string; columns: string; is_unique: boolean }[],
-  ): Promise<IndexSchema[]> {
-    return results.map((row) => ({
-      name: row.index_name,
-      entries: row.columns.split(',').map((column) => ({ column })),
-      unique: Boolean(row.is_unique),
-    }));
-  }
-
-  protected async mapForeignKeysResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: JoinedForeignKeyRow[],
-  ): Promise<ForeignKeySchema[]> {
-    return this.joinedForeignKeys(results);
+    `,
+      tableName,
+    );
   }
 
   /**
@@ -263,7 +229,5 @@ type MsSqlColumnRow = {
   is_nullable: boolean;
   is_identity: boolean;
   column_default: string | null;
-  is_primary_key: number | null;
-  is_unique: number | null;
   generated_as: string | null;
 };

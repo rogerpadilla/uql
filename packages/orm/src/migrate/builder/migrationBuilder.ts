@@ -1,11 +1,11 @@
-import { DEFAULT_FOREIGN_KEY_ACTION } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/index.js';
-import type { ForeignKeySchema, SchemaGenerator } from '../../type/migration.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { indexDefinition } from '../generator/definitionToNode.js';
 import { TableBuilder } from './tableBuilder.js';
 import type {
   AnyMigrationOperation,
+  ForeignKeyOptions,
+  ForeignKeyTarget,
   FullColumnDefinition,
   IAlterTableBuilder,
   IColumnBuilder,
@@ -13,9 +13,6 @@ import type {
   IMigrationBuilder,
   ITableBuilder,
 } from './types.js';
-
-type ForeignKeyTarget = ForeignKeySchema['references'];
-type ForeignKeyOptions = Pick<ForeignKeySchema, 'name' | 'onDelete' | 'onUpdate'>;
 
 /** One column declared through `createTable`'s vocabulary, a throwaway {@link TableBuilder}, so its type is stated. */
 function buildOneColumn(callback: (columns: IColumnFactory) => IColumnBuilder): FullColumnDefinition {
@@ -64,12 +61,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
         `alterColumn changes '${column.name}' alone: add its index with createIndex, its foreign key with addForeignKey`,
       );
     }
-    this.operations.push({
-      type: 'alterColumn',
-      tableName: this.tableName,
-      columnName: column.name,
-      changes: column,
-    });
+    this.operations.push({ type: 'alterColumn', tableName: this.tableName, changes: column });
     return this;
   }
 
@@ -95,13 +87,7 @@ class AlterTableBuilder implements IAlterTableBuilder {
     this.operations.push({
       type: 'addForeignKey',
       tableName: this.tableName,
-      foreignKey: {
-        name: options.name,
-        columns,
-        references: { table: target.table, columns: target.columns },
-        onDelete: options.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION,
-        onUpdate: options.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION,
-      },
+      foreignKey: { ...options, columns, references: target },
     });
     return this;
   }
@@ -116,61 +102,32 @@ class AlterTableBuilder implements IAlterTableBuilder {
   }
 }
 
-function collectAlterOperations(
-  tableName: string,
-  callback: (table: IAlterTableBuilder) => void,
-): readonly AnyMigrationOperation[] {
-  const builder = new AlterTableBuilder(tableName);
-  callback(builder);
-  return builder.operations;
-}
-
 /**
- * Records migration operations without executing them.
- * Use for migration code generation and dry-run scenarios.
+ * The type-safe migration builder: each change is declared once, as an operation handed to `apply`.
+ * `migrationBuilderFor` builds one running the statements its querier's generator writes for each.
  */
-export class OperationRecorder implements IMigrationBuilder {
-  protected readonly operations: AnyMigrationOperation[] = [];
+export class MigrationBuilder implements IMigrationBuilder {
+  constructor(private readonly apply: (operation: AnyMigrationOperation) => Promise<void>) {}
 
-  /**
-   * Where every operation this class builds lands, and the one thing {@link MigrationBuilder}
-   * overrides: it records and then runs. Each operation is spelled once, here, rather than once per
-   * class, which is what let the two drift into recording different shapes of the same change.
-   */
-  protected async record(operation: AnyMigrationOperation): Promise<void> {
-    this.operations.push(operation);
-  }
-
-  async createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void> {
+  createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void> {
     const builder = new TableBuilder(name);
     callback(builder);
-
-    await this.record({
-      type: 'createTable',
-      table: builder.build(),
-    });
+    return this.apply({ type: 'createTable', table: builder.build() });
   }
 
-  async dropTable(name: string, options: { ifExists?: boolean; cascade?: boolean } = {}): Promise<void> {
-    await this.record({
-      type: 'dropTable',
-      tableName: name,
-      ifExists: options.ifExists,
-      cascade: options.cascade,
-    });
+  dropTable(name: string, options: { ifExists?: boolean; cascade?: boolean } = {}): Promise<void> {
+    return this.apply({ type: 'dropTable', tableName: name, ifExists: options.ifExists, cascade: options.cascade });
   }
 
-  async renameTable(oldName: string, newName: string): Promise<void> {
-    await this.record({
-      type: 'renameTable',
-      oldName,
-      newName,
-    });
+  renameTable(oldName: string, newName: string): Promise<void> {
+    return this.apply({ type: 'renameTable', oldName, newName });
   }
 
   async alterTable(name: string, callback: (table: IAlterTableBuilder) => void): Promise<void> {
-    for (const operation of collectAlterOperations(name, callback)) {
-      await this.record(operation);
+    const table = new AlterTableBuilder(name);
+    callback(table);
+    for (const operation of table.operations) {
+      await this.apply(operation);
     }
   }
 
@@ -212,34 +169,7 @@ export class OperationRecorder implements IMigrationBuilder {
     return this.alterTable(tableName, (table) => table.dropForeignKey(constraintName));
   }
 
-  async raw(sql: string): Promise<void> {
-    await this.record({
-      type: 'raw',
-      sql,
-    });
-  }
-
-  getOperations(): AnyMigrationOperation[] {
-    return [...this.operations];
-  }
-}
-
-/**
- * Records each operation, then runs the statements `generator` writes for it through `run`. Build one
- * for a querier with `migrationBuilderFor`.
- */
-export class MigrationBuilder extends OperationRecorder {
-  constructor(
-    private readonly generator: SchemaGenerator,
-    private readonly run: (statement: string) => Promise<unknown>,
-  ) {
-    super();
-  }
-
-  protected override async record(operation: AnyMigrationOperation): Promise<void> {
-    await super.record(operation);
-    for (const statement of this.generator.generateOperation(operation)) {
-      await this.run(statement);
-    }
+  raw(sql: string): Promise<void> {
+    return this.apply({ type: 'raw', sql });
   }
 }

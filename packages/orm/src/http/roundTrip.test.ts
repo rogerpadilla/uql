@@ -1,8 +1,8 @@
 // The browser client against the fetch handler, over a real database and a real HTTP server. Each side's
 // own spec mocks the other, so only here does a route have to answer what the client's method promises.
 
+import { ok } from 'node:assert';
 import { createServer, type Server } from 'node:http';
-import type { AddressInfo } from 'node:net';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HttpQuerier } from '../browser/querier/httpQuerier.js';
 import { Entity, Field, Id } from '../entity/index.js';
@@ -46,8 +46,9 @@ describe('the browser client against the fetch handler', () => {
     await new Promise<void>((resolve) => {
       server.listen(0, '127.0.0.1', resolve);
     });
-    const { port } = server.address() as AddressInfo;
-    querier = new HttpQuerier(`http://127.0.0.1:${port}`);
+    const address = server.address();
+    ok(typeof address === 'object' && address);
+    querier = new HttpQuerier(`http://127.0.0.1:${address.port}`);
   });
 
   afterAll(async () => {

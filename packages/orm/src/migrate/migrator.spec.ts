@@ -9,6 +9,7 @@ import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
 import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
 import type { Migration, MigratorOptions, Querier, SqlQuerier } from '../type/index.js';
+import { runDriftCheck } from './cli.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineMigration, Migrator } from './migrator.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
@@ -337,6 +338,15 @@ describe('Migrator', () => {
       const generator = new SqlSchemaGenerator(new PostgresDialect());
       const migrator = new Migrator(poolOf(new PostgresDialect()), { schemaGenerator: generator });
       expect(await migrator.getSchemaGenerator()).toBe(generator);
+    });
+
+    /** A collection has no columns to compare, so the check would call every entity drifted. */
+    it('should refuse a drift check on MongoDB, pointing at the dry run that lists the index changes', async () => {
+      const pool = poolOf(new MongoDialect());
+
+      await expect(runDriftCheck(new Migrator(pool), { pool, entities: [MigNote] })).rejects.toThrow(
+        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
+      );
     });
   });
 });

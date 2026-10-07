@@ -82,9 +82,7 @@ describe('cli-config', () => {
     const brokenPath = path.resolve(process.cwd(), 'broken-uql.config.js');
     try {
       await fs.writeFile(brokenPath, 'export default {');
-      await expect(loadConfig('broken-uql.config.js')).rejects.toThrow(
-        `Could not load configuration file at broken-uql.config.js: Could not import ${brokenPath}`,
-      );
+      await expect(loadConfig('broken-uql.config.js')).rejects.toThrow(`Could not import ${brokenPath}`);
     } finally {
       await fs.unlink(brokenPath).catch(() => {});
     }

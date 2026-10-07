@@ -1,17 +1,14 @@
-import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
-import { tmpdir } from 'node:os';
+import { readFile, writeFile } from 'node:fs/promises';
 import { join } from 'node:path';
-import { afterAll, beforeAll, describe, expect, it, onTestFinished } from 'vitest';
+import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index, Trigger } from '../entity/index.js';
 import { runMongoCommand, serializeMongoCommand } from '../mongo/mongoCommand.js';
 import type { MongoQuerier } from '../mongo/mongoQuerier.js';
 import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
 import { MongodbQuerierPool } from '../mongo/mongodbQuerierPool.js';
-import { mongoUri, provisioningTimeout } from '../test/index.js';
-import { loadTsDefaultExport } from '../test/loadTsDefaultExport.js';
+import { loadTsDefaultExport, migrationsDir, mongoUri, provisioningTimeout } from '../test/index.js';
 import type { MigrationDefinition } from '../type/index.js';
 import { raw } from '../util/index.js';
-import { runDriftCheck } from './cli.js';
 import { buildMigrationModule, emitMongoCommandCalls } from './codegen/migrationFile.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineBuilderMigration, Migrator } from './migrator.js';
@@ -168,7 +165,7 @@ describe('Migrator on MongoDB (integration)', () => {
     }
 
     await pool.withQuerier(async (querier) => {
-      for (const statement of new MongoSchemaGenerator().generateCreateTable(UrgentTicket)) {
+      for (const statement of new MongoSchemaGenerator().generateCreateSchema([UrgentTicket])) {
         await runMongoCommand(querier.db, statement);
       }
       const tickets = querier.db.collection('UrgentTicket');
@@ -241,16 +238,6 @@ describe('Migrator on MongoDB (integration)', () => {
     expect(await migrator.getDiffs()).toEqual([]);
   });
 
-  it('should scaffold a migration typed on the MongoDB querier', async () => {
-    const migrator = new Migrator(pool, { migrationsPath: await migrationsDir() });
-
-    const source = await readFile(await migrator.generate('seed'), 'utf8');
-
-    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/mongo';`);
-    expect(source).toContain('async up(querier: MongoQuerier): Promise<void> {');
-    expect(source).not.toContain('querier.run(');
-  });
-
   it('should generate a migration from the entities as MongoDB driver calls', async () => {
     @Entity()
     class DraftMongoUser {
@@ -269,24 +256,4 @@ describe('Migrator on MongoDB (integration)', () => {
     expect(source).toContain('    await querier.db.collection("DraftMongoUser").drop();');
     expect(source).not.toContain('querier.run(');
   });
-
-  /** A collection has no columns to compare, so the check would call every entity drifted. */
-  it('should refuse a drift check, pointing at the dry run that lists the index changes', async () => {
-    @Entity()
-    class DriftMongoNote {
-      @Id({ type: String }) id?: string;
-    }
-    const migrator = new Migrator(pool, { entities: [DriftMongoNote] });
-
-    await expect(runDriftCheck(migrator, { pool, entities: [DriftMongoNote] })).rejects.toThrow(
-      'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
-    );
-  });
 });
-
-/** A migrations directory of its own for this test, removed when the test finishes. */
-async function migrationsDir(): Promise<string> {
-  const dir = await mkdtemp(join(tmpdir(), 'uql-mongo-'));
-  onTestFinished(() => rm(dir, { recursive: true, force: true }));
-  return dir;
-}

@@ -3,7 +3,6 @@ import type { Item } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
-  derivedConstraintName,
   derivedForeignKeyName,
   derivedIndexName,
   derivedPrimaryKeyName,
@@ -20,7 +19,7 @@ const unflatRows = <T extends object>(rows: RawRow[]): T[] => {
 };
 
 it('should name a constraint over no parts after its table alone', () => {
-  expect(derivedConstraintName('users', [], 'pk')).toBe('users_pk');
+  expect(derivedPrimaryKeyName('users', [])).toBe('users_pk');
 });
 
 /** A string key has no successor to infer, so only a single-row write can be named by it. */

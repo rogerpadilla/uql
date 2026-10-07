@@ -27,7 +27,6 @@ export function mockTableNode(
       isAutoIncrement: col.isAutoIncrement ?? false,
       isUnique: col.isUnique ?? false,
       table,
-      referencedBy: [],
       ...col,
     };
     table.columns.set(column.name, column);
@@ -47,7 +46,7 @@ export function mockSqlTableNode(
     columns.map(({ sql, length, ...column }) => ({
       nullable: !column.isPrimaryKey,
       ...column,
-      type: { ...sqlToCanonical(sql), length },
+      type: sqlToCanonical(sql, { length }),
     })),
   );
 }

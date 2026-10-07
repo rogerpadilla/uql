@@ -3,7 +3,7 @@
 // itself rather than recurse until SQLite's depth limit refuses the write.
 
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, removeEntity } from '../entity/index.js';
+import { Entity, Field, Id } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { raw } from '../util/raw.js';
 import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
@@ -20,14 +20,11 @@ describe('a stamp on SQLite with recursive triggers on', () => {
 
   beforeAll(async () => {
     pool = new NodeSqliteQuerierPool(':memory:');
-    await new Migrator(pool, { entities: [RecursiveStamp] }).sync({ logging: false });
+    await new Migrator(pool, { entities: [RecursiveStamp] }).sync();
     await pool.run('PRAGMA recursive_triggers = ON');
   });
 
-  afterAll(async () => {
-    await pool.end();
-    removeEntity(RecursiveStamp);
-  });
+  afterAll(() => pool.end());
 
   it('should stamp once, its own restatement finding nothing left to change', async () => {
     const id = await pool.insertOne(RecursiveStamp, { body: 'first' });

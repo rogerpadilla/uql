@@ -1,7 +1,8 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index, removeEntity } from '../entity/index.js';
+import { describe, expect, it } from 'vitest';
+import { Entity, Field, Id, Index } from '../entity/index.js';
 import { PgQuerierPool } from '../postgres/pgQuerierPool.js';
-import { postgresConnection, provisioningTimeout } from '../test/index.js';
+import { postgresConnection } from '../test/index.js';
+import { syncedPool } from '../test/sqlPools.js';
 import { raw } from '../util/index.js';
 import { Migrator } from './migrator.js';
 
@@ -9,8 +10,8 @@ const TABLE = 'RawColumnTypeCaption';
 
 /**
  * An engine's own type, which uql models no family for, carrying the search vector a full-text query
- * ranks by. Only Postgres is driven here: every dialect renders a column type through the one
- * `canonicalTypeToSql`, which returns a raw one verbatim before any engine mapping is consulted.
+ * ranks by. Only Postgres is driven here: every dialect renders a column type through `canonicalToSql`,
+ * which returns a raw one verbatim before any engine mapping is consulted.
  */
 @Index((caption) => [caption.searchVector], { name: 'rct_search_idx', type: 'gin' })
 @Entity({ name: TABLE })
@@ -30,44 +31,32 @@ class Caption {
 }
 
 describe('a raw column type (PostgreSQL)', () => {
-  const pool = new PgQuerierPool(postgresConnection());
-  const migrator = new Migrator(pool, { entities: [Caption] });
-
-  beforeAll(async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-    await migrator.sync({ logging: false });
-  }, provisioningTimeout);
-
-  afterAll(async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-    await pool.end();
-    removeEntity(Caption);
-  }, provisioningTimeout);
+  const pool = syncedPool(() => new PgQuerierPool(postgresConnection()), [Caption]);
 
   it('should create the column as the engine spells it', async () => {
-    const [column] = await pool.all<{ data_type: string }>(
+    const [column] = await pool().all<{ data_type: string }>(
       `SELECT data_type FROM information_schema.columns WHERE table_name = '${TABLE}' AND column_name = 'searchVector'`,
     );
     expect(column.data_type).toBe('tsvector');
   });
 
   it('should keep the generated expression the engine fills', async () => {
-    await pool.insertOne(Caption, { text: 'la reunión del proyecto' });
-    const [row] = await pool.all<{ hit: boolean }>(
+    await pool().insertOne(Caption, { text: 'la reunión del proyecto' });
+    const [row] = await pool().all<{ hit: boolean }>(
       `SELECT "searchVector" @@ to_tsquery('simple', 'proyecto') AS hit FROM "${TABLE}"`,
     );
     expect(row.hit).toBe(true);
   });
 
   it('should index it, which is why the column needs the engine type and not a text one', async () => {
-    const indexes = await pool.all<{ indexname: string }>(
-      `SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}'`,
+    const indexes = await pool().all<{ indexname: string }>(
+      `SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}' ORDER BY indexname`,
     );
-    expect(indexes.map((it) => it.indexname)).toContain('rct_search_idx');
+    expect(indexes).toEqual([{ indexname: `${TABLE}__id_pk` }, { indexname: 'rct_search_idx' }]);
   });
 
   // The entity renders `tsvector` and the catalogue reports `tsvector`, so neither side translates it.
   it('should report no drift against the schema it just created', async () => {
-    expect(await migrator.planSync()).toEqual([]);
+    expect(await new Migrator(pool(), { entities: [Caption] }).planSync({ safe: false })).toEqual([]);
   });
 });

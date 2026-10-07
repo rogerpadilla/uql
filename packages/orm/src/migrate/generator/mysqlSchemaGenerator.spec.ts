@@ -41,8 +41,7 @@ describe('MysqlSchemaGenerator Specifics', () => {
       isAutoIncrement: false,
       isUnique: false,
     };
-    // newDefinition should include the column name (as generateColumnDefinitionFromSchema does)
-    const statements = tableDdl.alterColumn('users', col, '`age` INT NOT NULL DEFAULT 18');
+    const statements = tableDdl.alterColumns('users', [{ to: col }]);
 
     expect(statements).toEqual(['ALTER TABLE `users` MODIFY COLUMN `age` INT NOT NULL DEFAULT 18;']);
   });
@@ -93,11 +92,24 @@ describe('MysqlSchemaGenerator Specifics', () => {
     ]);
   });
 
-  it('should generate column comment', () => {
-    expect(generator.generateColumnComment("user's name")).toBe(" COMMENT 'user\\'s name'");
+  it('should comment a column inline, its quotes escaped', () => {
+    const column = {
+      name: 'name',
+      type: 'TEXT',
+      nullable: true,
+      isPrimaryKey: false,
+      isAutoIncrement: false,
+      isUnique: false,
+    };
+
+    expect(tableDdl.columnDefinition({ ...column, comment: "user's name" })).toBe(
+      "`name` TEXT COMMENT 'user\\'s name'",
+    );
   });
 
   it('should generate DROP INDEX statement', () => {
-    expect(generator.generateDropIndex('users', 'test_idx')).toBe('DROP INDEX `test_idx` ON `users`;');
+    expect(generator.generateOperation({ type: 'dropIndex', tableName: 'users', indexName: 'test_idx' })).toEqual([
+      'DROP INDEX `test_idx` ON `users`;',
+    ]);
   });
 });

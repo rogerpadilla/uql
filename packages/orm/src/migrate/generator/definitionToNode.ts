@@ -3,7 +3,12 @@ import type { TableNode } from '../../schema/types.js';
 import type { IndexColumnInput, IndexOptions } from '../../type/entity.js';
 import type { ForeignKeySchema, IndexSchema } from '../../type/migration.js';
 import type { QueryRaw } from '../../type/queryRaw.js';
-import { enumCheck, indexNameParts, normalizeIndexColumn, renderIndexColumn } from '../../util/ddlExpression.util.js';
+import {
+  declaredIndexName,
+  enumCheck,
+  normalizeIndexColumn,
+  renderIndexColumn,
+} from '../../util/ddlExpression.util.js';
 import { derivedIndexName, splitQualifiedName } from '../../util/sql.util.js';
 import type { ColumnDefinition, FullColumnDefinition, IndexDefinition, TableDefinition } from '../builder/types.js';
 
@@ -23,7 +28,7 @@ export function tableDefinitionToNode(def: TableDefinition, render: (sql: QueryR
   const { columns } = table;
 
   for (const colDef of def.columns) {
-    columns.set(colDef.name, { ...bareColumn(colDef), table, referencedBy: [] });
+    columns.set(colDef.name, { ...bareColumn(colDef), table });
   }
   table.checks.push(...def.columns.flatMap((column) => enumCheck(name, column, render)));
   // A declared key keeps only the columns the table has, in its own order.
@@ -82,7 +87,7 @@ export function indexDefinition(
   const entries = columns.map(normalizeIndexColumn);
   return {
     ...options,
-    name: name ?? derivedIndexName(tableName, indexNameParts(entries), uniqueName),
+    name: declaredIndexName(name, tableName, entries, uniqueName),
     entries,
     unique,
   };

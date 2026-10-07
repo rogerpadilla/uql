@@ -63,7 +63,7 @@ export function nonEmpty<T>(items: readonly T[]): readonly T[] | undefined {
 }
 
 /** `change` undone: an add becomes a drop, a drop an add, and an alter runs the other way. */
-export function swap<T>({ from, to }: Change<T>): Change<T> {
+function swap<T>({ from, to }: Change<T>): Change<T> {
   return { from: to, to: from };
 }
 

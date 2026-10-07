@@ -1,16 +1,15 @@
-import { FLOATED_DECIMAL } from '../querier/abstractSqlQuerier-test.js';
-import { VectorQuerierIt } from '../querier/vectorQuerier-test.js';
-import { createSpec, tursoServerUrl } from '../test/index.js';
+import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
+import { SqliteLikeQuerierIt } from '../querier/sqliteLikeQuerier-test.js';
+import { createSpec, type SpecRequirements, tursoServerUrl } from '../test/index.js';
 import { TursoQuerierPool } from './tursoQuerierPool.js';
 
-/** Turso Cloud as it runs by default, libSQL's server, reached through a session per querier. */
-export class TursoQuerierIt extends VectorQuerierIt {
-  constructor() {
-    super(new TursoQuerierPool({ url: tursoServerUrl }));
-  }
-  protected override expectedExactDecimal() {
-    return FLOATED_DECIMAL;
+/** `end()` closes nothing: each querier holds a session of its own, which only its release ends. */
+class TursoQuerierPoolIt extends SqlQuerierPoolIt {
+  requirements(): SpecRequirements<this> {
+    return { shouldRefuseAStatementAfterEnd: false };
   }
 }
 
-createSpec(new TursoQuerierIt());
+// Turso Cloud as it runs by default, libSQL's server, reached through a session per querier.
+createSpec(new SqliteLikeQuerierIt(new TursoQuerierPool({ url: tursoServerUrl })));
+createSpec(new TursoQuerierPoolIt(() => new TursoQuerierPool({ url: tursoServerUrl })));

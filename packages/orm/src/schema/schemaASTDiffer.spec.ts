@@ -63,7 +63,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target);
 
       expect(diff.columns).toHaveLength(1);
-      expect(diff.columns[0].description).toContain('type');
+      expect(diff.columns[0]).toMatchObject({ changed: ['type'] });
       // Either direction drops half the range, so it is not something safe mode may apply.
       expect(diff.columns[0].isBreaking).toBe(true);
     });
@@ -94,8 +94,7 @@ describe('SchemaASTDiffer', () => {
       const diff = diffSchemas(source, target);
 
       expect(diff.columns).toHaveLength(1);
-      expect(diff.columns[0].description).toContain('default');
-      expect(diff.columns[0].description).not.toContain('type');
+      expect(diff.columns[0]).toMatchObject({ changed: ['default'] });
       expect(diff.columns[0].isBreaking).toBe(false);
     });
 
@@ -233,7 +232,11 @@ describe('SchemaASTDiffer', () => {
         ]),
       );
       const result = diffSchemas(source, target);
-      expect(result.columns[0].description).toContain('default: 20 -> 30');
+      expect(result.columns[0]).toMatchObject({
+        changed: ['default'],
+        from: { defaultValue: 20 },
+        to: { defaultValue: 30 },
+      });
     });
 
     /** A unique column is a unique index, compared with the indexes, so the column alone differs in nothing. */
@@ -294,11 +297,9 @@ describe('SchemaASTDiffer', () => {
       const amountDiff = diff.columns.find((c) => c.column === 'amount');
       const bioDiff = diff.columns.find((c) => c.column === 'bio');
 
-      expect(amountDiff).toBeDefined();
-      expect(amountDiff?.description).toContain('type: decimal(10,2) unsigned -> decimal(8,2)');
+      expect(amountDiff).toMatchObject({ changed: ['type'] });
 
-      expect(bioDiff).toBeDefined();
-      expect(bioDiff?.description).toContain('type: string(255) -> string(100)');
+      expect(bioDiff).toMatchObject({ changed: ['type'] });
     });
   });
 
@@ -325,7 +326,7 @@ describe('SchemaASTDiffer', () => {
 
       source.addTable(sourceTable);
       target.addTable(targetTable);
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.some((i) => i.name === 'users__email_idx' && kindOf(i) === 'create')).toBe(true);
     });
@@ -352,7 +353,7 @@ describe('SchemaASTDiffer', () => {
 
       source.addTable(sourceTable);
       target.addTable(targetTable);
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.some((i) => i.name === 'users__email_idx' && kindOf(i) === 'drop')).toBe(true);
     });
@@ -368,7 +369,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(sourceTable);
       target.addTable(targetTable);
 
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes).toEqual([]);
     });
@@ -385,7 +386,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(sourceTable);
       target.addTable(targetTable);
 
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.map((index) => [index.name, kindOf(index)])).toEqual([['users_email_uq', 'drop']]);
     });
@@ -410,7 +411,7 @@ describe('SchemaASTDiffer', () => {
       source.addTable(sourceTable);
       target.addTable(targetTable);
 
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.map((index) => [index.name, kindOf(index)])).toEqual([['users__email_idx', 'alter']]);
     });
@@ -438,7 +439,7 @@ describe('SchemaASTDiffer', () => {
         entries: [{ column: 'email' }],
         unique: false, // Changed uniqueness
       });
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
@@ -467,7 +468,7 @@ describe('SchemaASTDiffer', () => {
         entries: [{ column: 'login' }],
         unique: true,
       });
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
@@ -502,7 +503,7 @@ describe('SchemaASTDiffer', () => {
         unique: true,
         type: 'hash', // Changed type
       });
-      const diff = diffSchemas(source, target, { compareIndexes: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.indexes.some((i) => kindOf(i) === 'alter')).toBe(true);
     });
@@ -532,9 +533,31 @@ describe('SchemaASTDiffer', () => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
-      const diff = diffSchemas(source, target, { compareRelationships: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.relationships.some((r) => r.name === 'posts_users_fk' && kindOf(r) === 'create')).toBe(true);
+    });
+
+    /** Each column pairs with the one it points at: the same columns paired otherwise are another key. */
+    it('should tell a composite foreign key from the same columns paired otherwise', () => {
+      const source = new SchemaAST();
+      const target = new SchemaAST();
+      const parent = mockTableNode('parent', [{ name: 'x' }, { name: 'y' }]);
+      const child = mockTableNode('child', [{ name: 'a' }, { name: 'b' }]);
+      for (const ast of [source, target]) {
+        ast.addTable(parent);
+        ast.addTable(child);
+      }
+      const keyTo = (targets: string[]) => ({
+        name: 'child_parent_fk',
+        type: 'ManyToOne' as const,
+        from: { table: child, columns: columnsOf(child, 'a', 'b') },
+        to: { table: parent, columns: columnsOf(parent, ...targets) },
+      });
+      source.addRelationship(keyTo(['x', 'y']));
+      target.addRelationship(keyTo(['y', 'x']));
+
+      expect(diffSchemas(source, target).relationships.map(kindOf)).toEqual(['create', 'drop']);
     });
 
     it('should detect relationships to drop', () => {
@@ -560,7 +583,7 @@ describe('SchemaASTDiffer', () => {
         onDelete: 'CASCADE',
         onUpdate: 'CASCADE',
       });
-      const diff = diffSchemas(source, target, { compareRelationships: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.relationships.some((r) => r.name === 'posts_users_fk' && kindOf(r) === 'drop')).toBe(true);
     });
@@ -596,7 +619,7 @@ describe('SchemaASTDiffer', () => {
         onDelete: 'SET NULL',
         onUpdate: 'CASCADE',
       });
-      const diff = diffSchemas(source, target, { compareRelationships: true });
+      const diff = diffSchemas(source, target);
 
       expect(diff.relationships.some((r) => kindOf(r) === 'alter')).toBe(true);
     });
@@ -624,7 +647,7 @@ describe('SchemaASTDiffer', () => {
       };
       source.addIndex(idx1);
       target.addIndex(idx2);
-      const result = diffSchemas(source, target, { compareIndexes: true });
+      const result = diffSchemas(source, target);
       expect(result.indexes.length).toBe(0);
     });
 
@@ -651,7 +674,7 @@ describe('SchemaASTDiffer', () => {
       };
       source.addRelationship(rel1);
       target.addRelationship(rel2);
-      const result = diffSchemas(source, target, { compareRelationships: true });
+      const result = diffSchemas(source, target);
       expect(result.relationships.length).toBe(0);
     });
 
@@ -681,7 +704,7 @@ describe('SchemaASTDiffer', () => {
       source.addRelationship(rel1);
       target.addRelationship(rel2);
 
-      const result = diffSchemas(source, target, { compareRelationships: true });
+      const result = diffSchemas(source, target);
       expect(result.relationships.length).toBe(0);
     });
   });
@@ -773,7 +796,7 @@ describe('SchemaASTDiffer', () => {
         unique: false,
         ...target,
       });
-      return diffSchemas(sourceSchema, targetSchema, { compareIndexes: true }).indexes;
+      return diffSchemas(sourceSchema, targetSchema).indexes;
     };
 
     it('should leave the entries of an expression index uncompared, whatever the text says', () => {

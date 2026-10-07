@@ -24,16 +24,13 @@ describe('DriftDetector', () => {
       expect(report.drifts).toEqual([]);
     });
 
-    it('should report a default mismatch only when asked to', () => {
+    it('should report a default mismatch', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
       expected.addTable(mockTableNode('users', [{ name: 'status', defaultValue: 'active' }]));
       actual.addTable(mockTableNode('users', [{ name: 'status', defaultValue: 'pending' }]));
 
-      const options = { dialect: new MySqlDialect() };
-      expect(detectDrift(expected, actual, options).drifts).toEqual([]);
-
-      const drifts = detectDrift(expected, actual, { ...options, checkDefaults: true }).drifts;
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect() }).drifts;
       expect(drifts).toHaveLength(1);
       expect(drifts[0].details).toContain('Default mismatch');
     });
@@ -83,7 +80,7 @@ describe('DriftDetector', () => {
         ]),
       );
 
-      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true }).drifts;
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect() }).drifts;
 
       expect(drifts).toMatchObject([
         { column: 'tags', expected: '["x"]', actual: '["y"]' },
@@ -127,7 +124,7 @@ describe('DriftDetector', () => {
         ]),
       );
 
-      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true }).drifts;
+      const drifts = detectDrift(expected, actual, { dialect: new MySqlDialect() }).drifts;
 
       expect(drifts.map((drift) => [drift.column, drift.expected, drift.actual])).toEqual([
         ['status', 'NULL', 'pending'],
@@ -145,7 +142,7 @@ describe('DriftDetector', () => {
       );
       actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true, nullable: true, defaultValue: 'b' }]));
 
-      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect(), checkDefaults: true });
+      const { drifts } = detectDrift(expected, actual, { dialect: new MySqlDialect() });
 
       expect(drifts.map((drift) => drift.details)).toEqual(['Default mismatch for "id"']);
     });
@@ -368,7 +365,7 @@ describe('DriftDetector', () => {
         unique: true,
       });
 
-      const report = detectDrift(expected, actual, { checkIndexes: true });
+      const report = detectDrift(expected, actual);
 
       expect(report.drifts.some((d) => d.type === 'missing_index')).toBe(true);
     });
@@ -403,7 +400,7 @@ describe('DriftDetector', () => {
         unique: false,
       });
 
-      const report = detectDrift(expected, actual, { checkIndexes: true });
+      const report = detectDrift(expected, actual);
 
       const drift = report.drifts.find((d) => d.type === 'index_mismatch');
       expect(drift?.index).toBe('email_idx');
@@ -434,7 +431,7 @@ describe('DriftDetector', () => {
         onUpdate: 'CASCADE',
       });
 
-      const report = detectDrift(expected, actual, { checkForeignKeys: true });
+      const report = detectDrift(expected, actual);
 
       expect(report.drifts.some((d) => d.type === 'missing_relationship')).toBe(true);
     });
@@ -460,7 +457,7 @@ describe('DriftDetector', () => {
         return ast;
       };
 
-      const report = detectDrift(schema('CASCADE'), schema('SET NULL'), { checkForeignKeys: true });
+      const report = detectDrift(schema('CASCADE'), schema('SET NULL'));
 
       expect(report.drifts).toEqual([
         {
@@ -517,7 +514,7 @@ describe('DriftDetector', () => {
         unique: true,
       });
 
-      const report = detectDrift(expected, actual, { checkIndexes: true });
+      const report = detectDrift(expected, actual);
 
       expect(report.drifts.some((d) => d.type === 'unexpected_index')).toBe(true);
     });
@@ -546,30 +543,9 @@ describe('DriftDetector', () => {
         onUpdate: 'CASCADE',
       });
 
-      const report = detectDrift(expected, actual, { checkForeignKeys: true });
+      const report = detectDrift(expected, actual);
 
       expect(report.drifts.some((d) => d.type === 'unexpected_relationship')).toBe(true);
-    });
-
-    it('should respect checkOptions', () => {
-      const expected = new SchemaAST();
-      const actual = new SchemaAST();
-
-      const table1 = mockTableNode('users', [
-        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-        { name: 'age', type: { category: 'integer' } },
-      ]);
-      const table2 = mockTableNode('users', [
-        { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-        { name: 'age', type: { category: 'string' } },
-      ]);
-
-      expected.addTable(table1);
-      actual.addTable(table2);
-
-      const report = detectDrift(expected, actual, { checkTypes: false });
-
-      expect(report.status).toBe('in_sync');
     });
 
     it('should format type with precision and scale', () => {
@@ -686,59 +662,6 @@ describe('DriftDetector', () => {
       expect(report.drifts.some((d) => d.type === 'unexpected_relationship')).toBe(true);
     });
 
-    it('should respect checkIndexes: false', () => {
-      const expected = new SchemaAST();
-      const actual = new SchemaAST();
-      const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]);
-      expected.addTable(t1);
-      expected.addIndex({ name: '1_idx', table: t1, entries: [], unique: false });
-
-      actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }]));
-
-      const report = detectDrift(expected, actual, { checkIndexes: false });
-      expect(report.drifts.some((d) => d.type === 'missing_index')).toBe(false);
-    });
-
-    it('should respect checkForeignKeys: false', () => {
-      const expected = new SchemaAST();
-      const actual = new SchemaAST();
-      const t1 = mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]);
-      expected.addTable(t1);
-      expected.addRelationship({
-        name: '1_fk',
-        type: 'ManyToOne',
-        from: { table: t1, columns: columnsOf(t1, 'role_id') },
-        to: { table: t1, columns: columnsOf(t1, 'id') },
-      });
-
-      actual.addTable(mockTableNode('users', [{ name: 'id', isPrimaryKey: true }, { name: 'role_id' }]));
-
-      const report = detectDrift(expected, actual, { checkForeignKeys: false });
-      expect(report.drifts.some((d) => d.type === 'missing_relationship')).toBe(false);
-    });
-
-    it('should respect checkNullable: false', () => {
-      const expected = new SchemaAST();
-      const actual = new SchemaAST();
-
-      expected.addTable(
-        mockTableNode('users', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-          { name: 'email', type: { category: 'string' }, nullable: false },
-        ]),
-      );
-      actual.addTable(
-        mockTableNode('users', [
-          { name: 'id', type: { category: 'integer' }, isPrimaryKey: true },
-          { name: 'email', type: { category: 'string' }, nullable: true },
-        ]),
-      );
-
-      const report = detectDrift(expected, actual, { checkNullable: false, checkTypes: false });
-      expect(report.drifts.some((d) => d.type === 'constraint_mismatch')).toBe(false);
-      expect(report.status).toBe('in_sync');
-    });
-
     it('should return drifted status for non-critical drifts', () => {
       const expected = new SchemaAST();
       const actual = new SchemaAST();
@@ -751,8 +674,7 @@ describe('DriftDetector', () => {
       ]);
       actual.addTable(t2);
 
-      // No type check, no nullable check - only warning-level unexpected column
-      const report = detectDrift(expected, actual, { checkTypes: false });
+      const report = detectDrift(expected, actual);
       expect(report.status).toBe('drifted');
       expect(report.summary.warning).toBeGreaterThan(0);
     });

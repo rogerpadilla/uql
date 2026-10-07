@@ -4,9 +4,15 @@
 ALTER RANGE default CONFIGURE ZONE USING gc.ttlseconds = 60;
 -- Every table the suites create would start a statistics job of its own.
 SET CLUSTER SETTING sql.stats.automatic_collection.enabled = false;
--- One database per test file that runs DDL (AGENTS.md).
+-- The drivers' own databases, and one per test file that runs DDL (AGENTS.md).
+CREATE DATABASE IF NOT EXISTS test_crdb;
+CREATE DATABASE IF NOT EXISTS test_bun_crdb;
 CREATE DATABASE IF NOT EXISTS test_trigger;
 CREATE DATABASE IF NOT EXISTS test_drift;
 CREATE DATABASE IF NOT EXISTS test_stamp;
 CREATE DATABASE IF NOT EXISTS test_default;
 CREATE DATABASE IF NOT EXISTS test_check;
+CREATE DATABASE IF NOT EXISTS test_introspector;
+CREATE DATABASE IF NOT EXISTS test_builder;
+CREATE DATABASE IF NOT EXISTS test_sync;
+CREATE DATABASE IF NOT EXISTS test_vector;

@@ -61,31 +61,29 @@ describe('MongoDB Atlas vector search', () => {
   });
 
   it('should plan nothing more once the index exists', async () => {
-    expect(await migrator().planSync()).toEqual([]);
+    expect(await migrator().planSync({ safe: false })).toEqual([]);
   });
 
+  /** Searched at 92 degrees, so 100 is nearer than 80, which was inserted first. */
   it('should rank the nearest documents through the index', async () => {
-    const found = await pool.withQuerier((querier) =>
-      querier.findMany(Chunk, { $select: { degrees: true }, $sort: { embedding: { $vector: at(90) } }, $limit: 3 }),
-    );
-    const degrees = found.map((doc) => doc.degrees);
+    const found = await pool.findMany(Chunk, {
+      $select: { degrees: true },
+      $sort: { embedding: { $vector: at(92) } },
+      $limit: 3,
+    });
 
-    // 80 and 100 are as near as each other, so only the first place is fixed.
-    expect(degrees[0]).toBe(90);
-    expect(degrees.sort()).toEqual([100, 80, 90]);
+    expect(found.map((doc) => doc.degrees)).toEqual([90, 100, 80]);
   });
 
+  /** 90 is odd, so its two even neighbours are nearest. */
   it('should pre-filter on a field the index declares', async () => {
-    const found = await pool.withQuerier((querier) =>
-      querier.findMany(Chunk, {
-        $select: { degrees: true },
-        $where: { tenant: 'even' },
-        $sort: { embedding: { $vector: at(90) } },
-        $limit: 2,
-      }),
-    );
+    const found = await pool.findMany(Chunk, {
+      $select: { degrees: true },
+      $where: { tenant: 'even' },
+      $sort: { embedding: { $vector: at(92) } },
+      $limit: 2,
+    });
 
-    // 90 is odd, so its two even neighbours are nearest.
-    expect(found.map((doc) => doc.degrees).sort()).toEqual([100, 80]);
+    expect(found.map((doc) => doc.degrees)).toEqual([100, 80]);
   });
 });

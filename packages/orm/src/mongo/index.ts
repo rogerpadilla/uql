@@ -5,4 +5,3 @@ export * from './mongoIntrospector.js';
 export * from './mongoMigrationStorage.js';
 export { isMongoQuerier, type MongoQuerier } from './mongoQuerier.js';
 export * from './mongoSchemaGenerator.js';
-export * from './textLanguage.js';

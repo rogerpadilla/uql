@@ -1,9 +1,13 @@
 import type { AbstractSqlDialect } from '../../dialect/index.js';
+import type { IndexFacet } from '../../schema/indexDifferences.js';
+import type { SchemaAST } from '../../schema/schemaAST.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { CheckSchema, TriggerSchema } from '../../schema/types.js';
 import { FOREIGN_KEY_ACTIONS, type ForeignKeyAction } from '../../schema/types.js';
 import type {
+  ColumnRenames,
   ColumnSchema,
+  Except,
   ForeignKeySchema,
   IndexSchema,
   PrimaryKeySchema,
@@ -14,23 +18,19 @@ import type {
   StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
-import { isSqlQuerier } from '../../type/index.js';
 import { isOwnedName } from '../../util/sql.util.js';
-import { UqlUsageError } from '../../util/uqlError.js';
+import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { knownDefault } from '../ddl/defaultSql.js';
-import { BaseSqlIntrospector } from './baseSqlIntrospector.js';
+import { renamedTable, tableSchemasToAST } from './tableSchemaAST.js';
 
 /**
- * Reads the rows of one statement while introspecting a table.
- *
- * Identical statements share a single round trip, which is what the mappers get instead of a querier:
- * describing one table needs four facts, and on SQLite three of them come out of the same two PRAGMAs
- * (`table_info` is both the column list and the primary key; the column mapper walks `index_list` and
- * `index_info` for single-column uniqueness while the index mapper is walking them too). That was four
- * redundant statements out of ten per table - on D1 and Turso, where every PRAGMA is an HTTP round trip,
- * it is four avoidable ones.
+ * Reads the rows of one statement while introspecting a table, an identical statement sent once: SQLite's
+ * `table_info` is both the column list and the key, and on D1 and Turso every PRAGMA is a round trip.
  */
 export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[]) => Promise<T[]>;
+
+/** A column as its engine's catalogue reads it; the key and the indexes say which it belongs to. */
+export type ReadColumn = Except<ColumnSchema, 'isPrimaryKey' | 'isUnique'>;
 
 /** A foreign key as MySQL and SQL Server list one: a row, its column lists comma-joined. */
 export type JoinedForeignKeyRow = {
@@ -42,13 +42,23 @@ export type JoinedForeignKeyRow = {
   readonly update_rule: string;
 };
 
-/** A SQL introspector: an engine states its catalogue queries (`get*Query`) and how their rows map (`map*Result`). */
-export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector implements SchemaIntrospector {
+/** A SQL introspector: an engine reads each part of a table from its catalogue (`get*`), on a {@link TableRowReader}. */
+export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospector {
+  /** Columns and uniqueness only; each introspector opts in to what its catalogue queries report. */
+  protected readonly indexFacets: ReadonlySet<IndexFacet> = new Set();
+
+  protected readonly dialect: AbstractSqlDialect;
+
+  /**
+   * `schema` is the one these queries read, `undefined` for the connection's own default. Every table
+   * reported is stamped with it, so a diff compares like with like: entity and database both say
+   * `undefined` for "wherever the connection points", and name a schema only when one was asked for.
+   */
   constructor(
     protected readonly pool: QuerierPool,
-    schema?: string,
+    readonly schema?: string,
   ) {
-    super(pool.dialect as AbstractSqlDialect, schema);
+    this.dialect = pool.dialect as AbstractSqlDialect;
   }
 
   /**
@@ -65,6 +75,26 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
    * an engine with no schemas, whose catalogue queries never reference one.
    */
   protected readonly defaultSchemaExpr: string = '';
+
+  /**
+   * The database as a {@link SchemaAST}, or just the tables named. A name nothing matches is left out
+   * rather than raised: the point of naming them is to read a database other things are still
+   * changing, where scanning every table is both wasted work and a relation that can vanish mid-scan.
+   */
+  async introspect(tables?: readonly string[], renames?: ColumnRenames): Promise<SchemaAST> {
+    const schemas: TableSchema[] = [];
+    for (const tableName of tables ?? (await this.getTableNames())) {
+      const schema = await this.getTableSchema(tableName);
+      if (schema) {
+        schemas.push(renames ? renamedTable(schema, renames, this.schema) : schema);
+      }
+    }
+    return tableSchemasToAST(schemas, {
+      dialectName: this.dialect.dialectName,
+      schema: this.schema,
+      indexFacets: this.indexFacets,
+    });
+  }
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     return this.withSqlQuerier(async (querier) => {
@@ -84,9 +114,14 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
         this.getDefinition(read, tableName),
       ]);
 
+      const unique = uniqueColumns(indexes);
       return {
         name: tableName,
-        columns,
+        columns: columns.map((column) => ({
+          ...column,
+          isPrimaryKey: primaryKey?.columns.includes(column.name) ?? false,
+          isUnique: unique.has(column.name),
+        })),
         primaryKey,
         indexes,
         foreignKeys,
@@ -97,17 +132,46 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     });
   }
 
-  /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
-  protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
-    return undefined;
-  }
-
   async getTableNames(): Promise<string[]> {
     return this.withSqlQuerier(async (querier) => {
-      const results = await querier.all<RawRow>(this.getTableNamesQuery());
-      return results.map((row) => this.mapTableNameRow(row));
+      const rows = await querier.all<{ table_name: string }>(this.getTableNamesQuery());
+      return rows.map((row) => row.table_name);
     });
   }
+
+  async tableExists(tableName: string): Promise<boolean> {
+    return this.withSqlQuerier((querier) => this.tableExistsInternal(createTableRowReader(querier), tableName));
+  }
+
+  /** On the querier migrations run on, which is not the app's on a libSQL embedded replica. */
+  protected withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
+    return withSqlQuerierForMigrations(this.pool, this.constructor.name, task);
+  }
+
+  /** Whether the base table exists: its query answers a row for it, none for a view or nothing. */
+  protected async tableExistsInternal(read: TableRowReader, tableName: string): Promise<boolean> {
+    return (await read(this.tableExistsQuery(), [tableName])).length > 0;
+  }
+
+  /** SQL listing the base tables' names, as `table_name`. */
+  protected abstract getTableNamesQuery(): string;
+
+  /** SQL answering a row where the base table its one parameter names exists. */
+  protected abstract tableExistsQuery(): string;
+
+  /** The table's columns, in their order. */
+  protected abstract getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]>;
+
+  /** The table's indexes, but its key's own. */
+  protected abstract getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]>;
+
+  protected abstract getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]>;
+
+  /** The table's key, its columns in key order, or `undefined` for a table without one. */
+  protected abstract getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined>;
+
+  /** Every check on the table, each `expression` as the engine reprints it, which is what a rollback restores. */
+  protected abstract getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]>;
 
   /**
    * The triggers uql installed on the table, each with the statements recreating it as the engine keeps it.
@@ -123,67 +187,31 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     );
   }
 
-  async tableExists(tableName: string): Promise<boolean> {
-    return this.withSqlQuerier((querier) => this.tableExistsInternal(createTableRowReader(querier), tableName));
+  /**
+   * SQL listing the triggers on the table named by its single parameter: each one's `name`, its `definition`
+   * as the engine reprints it, and what it `requires` to be recreated first. It reads what is installed, not
+   * what uql wrote, which is exactly what a rollback restores.
+   */
+  protected abstract triggersQuery(): string;
+
+  /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
+  protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
+    return undefined;
   }
 
   /**
-   * Introspection reads, so `withQuerier` rather than `transaction`: the pool owns the release either
-   * way, and wrapping catalogue queries in a transaction would hold one open for nothing.
+   * The key `sql` lists a row of for each column, in key order: its `column_name`, and the `constraint_name`
+   * where the engine names the key's constraint. Only a `DROP` needs that name, and only the reported one will do.
    */
-  protected withSqlQuerier<T>(task: (querier: SqlQuerier) => Promise<T>): Promise<T> {
-    return this.pool.withQuerier((querier) => {
-      if (!isSqlQuerier(querier)) {
-        throw new UqlUsageError(`${this.constructor.name} requires a SQL-based querier`);
-      }
-      return task(querier);
-    });
-  }
-
-  protected async tableExistsInternal(read: TableRowReader, tableName: string): Promise<boolean> {
-    const results = await read<RawRow>(this.tableExistsQuery(), this.tableExistsParams(tableName));
-    return this.parseTableExistsResult(results);
-  }
-
-  protected async getColumns(read: TableRowReader, tableName: string): Promise<ColumnSchema[]> {
-    const results = await read<RawRow>(this.getColumnsQuery(tableName), this.getColumnsParams(tableName));
-    return this.mapColumnsResult(read, tableName, results);
-  }
-
-  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
-    const results = await read<RawRow>(this.getIndexesQuery(tableName), this.getIndexesParams(tableName));
-    return this.mapIndexesResult(read, tableName, results);
-  }
-
-  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
-    const results = await read<RawRow>(this.getForeignKeysQuery(tableName), this.getForeignKeysParams(tableName));
-    return this.mapForeignKeysResult(read, tableName, results);
-  }
-
-  protected async getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
-    const results = await read<RawRow>(this.getPrimaryKeyQuery(tableName), this.getPrimaryKeyParams(tableName));
-    const columns = this.mapPrimaryKeyResult(results);
-    return columns && { columns, name: this.mapPrimaryKeyName(results) };
-  }
-
-  protected tableExistsParams(tableName: string): unknown[] {
-    return [tableName];
-  }
-
-  protected getColumnsParams(tableName: string): unknown[] {
-    return [tableName];
-  }
-
-  protected getIndexesParams(tableName: string): unknown[] {
-    return [tableName];
-  }
-
-  protected getForeignKeysParams(tableName: string): unknown[] {
-    return [tableName];
-  }
-
-  protected getPrimaryKeyParams(tableName: string): unknown[] {
-    return [tableName];
+  protected async readPrimaryKey(
+    read: TableRowReader,
+    sql: string,
+    tableName: string,
+  ): Promise<PrimaryKeySchema | undefined> {
+    const rows = await read<{ column_name: string; constraint_name?: string | null }>(sql, [tableName]);
+    return rows.length
+      ? { columns: rows.map((row) => row.column_name), name: rows[0].constraint_name ?? undefined }
+      : undefined;
   }
 
   /** The {@link ForeignKeyAction} a catalogue names, whatever its case, and `SET_NULL` as SQL Server spells it. */
@@ -203,96 +231,12 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
     }));
   }
 
-  /**
-   * Convert bigint/null values to number safely.
-   */
+  /** A catalogue's number, which a driver may answer as a `bigint`, or `undefined` for none. */
   protected toNumber(value: unknown): number | undefined {
     if (value == null || value === '') {
       return undefined;
     }
     return Number(value);
-  }
-
-  /** SQL query to list all table names. */
-  protected abstract getTableNamesQuery(): string;
-
-  /** SQL query to check if a table exists. Parameter: tableName. */
-  protected abstract tableExistsQuery(): string;
-
-  /** Parse the result of tableExistsQuery to boolean. */
-  protected abstract parseTableExistsResult(results: RawRow[]): boolean;
-
-  /** SQL query to get column metadata. Parameter: tableName (for PRAGMA-style). */
-  protected abstract getColumnsQuery(tableName: string): string;
-
-  /** SQL query to get index metadata. Parameter: tableName (for PRAGMA-style). */
-  protected abstract getIndexesQuery(tableName: string): string;
-
-  /** SQL query to get foreign key metadata. Parameter: tableName (for PRAGMA-style). */
-  protected abstract getForeignKeysQuery(tableName: string): string;
-
-  /** SQL query to get primary key columns. Parameter: tableName (for PRAGMA-style). */
-  protected abstract getPrimaryKeyQuery(tableName: string): string;
-
-  /** Every check on the table, each `expression` as the engine reprints it, which is what a rollback restores. */
-  protected abstract getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]>;
-
-  /**
-   * SQL listing the triggers on the table named by its single parameter: each one's `name`, its `definition`
-   * as the engine reprints it, and what it `requires` to be recreated first. It reads what is installed, not
-   * what uql wrote, which is exactly what a rollback restores.
-   */
-  protected abstract triggersQuery(): string;
-
-  /**
-   * Extract table name from a row returned by getTableNamesQuery.
-   *
-   * Defaults to `information_schema`'s own column, which is what every engine with an
-   * `information_schema` returns and what Postgres and MySQL both restated identically. SQLite reads
-   * `sqlite_master` instead and overrides.
-   */
-  protected mapTableNameRow(row: RawRow): string {
-    return row['table_name'] as string;
-  }
-
-  /** Map column query results to ColumnSchema array. Allows async for SQLite's unique column check. */
-  protected abstract mapColumnsResult(
-    read: TableRowReader,
-    tableName: string,
-    results: RawRow[],
-  ): Promise<ColumnSchema[]>;
-
-  /** Map index query results to IndexSchema array. Allows async for SQLite's index_info calls. */
-  protected abstract mapIndexesResult(
-    read: TableRowReader,
-    tableName: string,
-    results: RawRow[],
-  ): Promise<IndexSchema[]>;
-
-  /** Map foreign key query results to ForeignKeySchema array. */
-  protected abstract mapForeignKeysResult(
-    read: TableRowReader,
-    tableName: string,
-    results: RawRow[],
-  ): Promise<ForeignKeySchema[]>;
-
-  /**
-   * Map primary key query results to column names, in key order. `information_schema` gives every SQL
-   * engine here a `column_name` per row; SQLite reads its key off `PRAGMA table_info` instead and
-   * overrides this.
-   */
-  protected mapPrimaryKeyResult(results: RawRow[]): string[] | undefined {
-    const columns = results.map((row) => String(row['column_name']));
-    return columns.length ? columns : undefined;
-  }
-
-  /**
-   * What the engine calls the key's constraint, where the query reported one. Only a `DROP` needs it,
-   * and only the reported name will do - see {@link PrimaryKeySchema.name}.
-   */
-  protected mapPrimaryKeyName(results: RawRow[]): string | undefined {
-    const name = results[0]?.['constraint_name'];
-    return name === undefined || name === null ? undefined : String(name);
   }
 
   /** Parses a default as the catalogue reports it: to its literal value, or through {@link sqlDefault} if SQL. */
@@ -305,6 +249,15 @@ export abstract class AbstractSqlSchemaIntrospector extends BaseSqlIntrospector 
   protected sqlDefault(sql: string): SqlExpression {
     return knownDefault(SqlExpression.parenthesized(sql), this.dialect);
   }
+}
+
+/** The columns a unique index makes unique alone: over that one plain column, unfiltered. The key's is not among them. */
+function uniqueColumns(indexes: readonly IndexSchema[]): Set<string> {
+  return new Set(
+    indexes.flatMap(({ unique, where, entries }) =>
+      unique && !where && entries.length === 1 && !entries[0].expression ? [entries[0].column] : [],
+    ),
+  );
 }
 
 /** A {@link TableRowReader} over one querier: the same statement is only ever sent once. */

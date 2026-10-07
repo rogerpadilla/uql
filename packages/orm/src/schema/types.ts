@@ -140,14 +140,8 @@ export interface ColumnNode {
   readonly generatedAs?: string;
   /** Column comment/description */
   readonly comment?: string;
-
-  // === Graph Links ===
-  /** Reference to the parent table */
+  /** The table the column is in. */
   table: TableNode;
-  /** Relationships where this column is referenced (FKs pointing TO this column) */
-  referencedBy: RelationshipNode[];
-  /** Relationship where this column is the foreign key (FK this column points FROM) */
-  references?: RelationshipNode;
 }
 
 /**
@@ -188,7 +182,6 @@ export interface TableNode {
   /** The foreign keys to tables this AST does not hold, which a rebuild keeps as they are. */
   readonly externalForeignKeys: ForeignKeySchema[];
 
-  // === Graph Links ===
   /** Relationships pointing TO this table (other tables referencing this one) */
   incomingRelations: RelationshipNode[];
   /** Relationships pointing FROM this table (this table referencing others) */
@@ -248,7 +241,6 @@ export type ColumnDiff = NodeChange<ColumnNode, { readonly changed: readonly Col
   readonly column: string;
   /** Whether the change can lose data: a drop, or a type change that narrows the column. */
   readonly isBreaking?: boolean;
-  readonly description?: string;
 };
 
 /** A part of a column the differ compares. */
@@ -277,7 +269,6 @@ export type TableChange<T> = Change<T> & { readonly table: string };
 /** The differences within a table that exists on both sides. */
 export interface TableDiff {
   readonly columns: ColumnDiff[];
-  readonly indexes: IndexDiff[];
   /** A check or trigger only one side has. Never both: a changed one is a new name, one dropped and one added. */
   readonly checks: TableChange<CheckSchema>[];
   readonly triggers: TableChange<TriggerSchema>[];
@@ -295,62 +286,4 @@ export interface SchemaDiffResult {
   readonly triggers: TableChange<TriggerSchema>[];
   readonly primaryKeys: PrimaryKeyDiff[];
   readonly relationships: RelationshipDiff[];
-}
-
-/**
- * Severity level for schema drift issues.
- */
-export type DriftSeverity = 'critical' | 'warning' | 'info';
-
-/**
- * Type of schema drift.
- */
-export type DriftType =
-  | 'missing_table'
-  | 'unexpected_table'
-  | 'missing_column'
-  | 'unexpected_column'
-  | 'type_mismatch'
-  | 'constraint_mismatch'
-  | 'missing_index'
-  | 'unexpected_index'
-  | 'index_mismatch'
-  | 'missing_relationship'
-  | 'unexpected_relationship'
-  | 'relationship_mismatch';
-
-/**
- * A single schema drift issue.
- */
-export interface Drift {
-  readonly type: DriftType;
-  readonly severity: DriftSeverity;
-  readonly table?: string;
-  readonly column?: string;
-  readonly index?: string;
-  readonly relationship?: string;
-  readonly expected?: unknown;
-  readonly actual?: unknown;
-  readonly details: string;
-  readonly suggestion: string;
-}
-
-/**
- * Overall drift status.
- */
-export type DriftStatus = 'in_sync' | 'drifted' | 'critical';
-
-/**
- * Complete drift detection report.
- */
-export interface DriftReport {
-  readonly status: DriftStatus;
-  readonly drifts: Drift[];
-  readonly generatedAt: Date;
-  /** Count by severity */
-  readonly summary: {
-    readonly critical: number;
-    readonly warning: number;
-    readonly info: number;
-  };
 }

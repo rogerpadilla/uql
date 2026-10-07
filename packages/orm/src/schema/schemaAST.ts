@@ -1,6 +1,6 @@
 import type { PrimaryKeySchema } from '../type/migration.js';
 import { qualifyName } from '../util/sql.util.js';
-import { createOrder, dropOrder } from './dependencyGraph.js';
+import { createOrder } from './dependencyGraph.js';
 import type { IndexFacet } from './indexDifferences.js';
 import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from './types.js';
 
@@ -57,26 +57,18 @@ export class SchemaAST {
 
   /** Tables in `DROP` order, each before the tables it references. */
   getDropOrder(): TableNode[] {
-    return dropOrder(this.tables.values(), referencedTables);
+    return this.getCreateOrder().reverse();
   }
 
   addIndex(index: IndexNode): void {
-    if (!index.table.indexes.includes(index)) {
-      index.table.indexes.push(index);
-    }
+    index.table.indexes.push(index);
   }
 
-  /** Adds a foreign key, linking it from both tables and both column sets. */
+  /** Adds a foreign key, linking it from both tables. */
   addRelationship(rel: RelationshipNode): void {
     this.relationships.push(rel);
     rel.from.table.outgoingRelations.push(rel);
     rel.to.table.incomingRelations.push(rel);
-    for (const col of rel.from.columns) {
-      col.references = rel;
-    }
-    for (const col of rel.to.columns) {
-      col.referencedBy.push(rel);
-    }
   }
 }
 

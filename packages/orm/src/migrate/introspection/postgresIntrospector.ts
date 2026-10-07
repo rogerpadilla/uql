@@ -1,8 +1,12 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { type CheckSchema, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
-import type { ColumnSchema, ForeignKeySchema, IndexColumnSchema, IndexSchema, RawRow } from '../../type/index.js';
+import type { ForeignKeySchema, IndexColumnSchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
-import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
+import {
+  AbstractSqlSchemaIntrospector,
+  type ReadColumn,
+  type TableRowReader,
+} from './abstractSqlSchemaIntrospector.js';
 
 /**
  * PostgreSQL schema introspector
@@ -14,7 +18,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * Expressions and predicates are read back too, for `generate:from-db`, but they are text the
    * database reprints in its own words, so they are not comparable and are not claimed here.
    */
-  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
+  protected override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
     'order',
     'nulls',
     'opsClass',
@@ -60,16 +64,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected tableExistsQuery(): string {
     return /*sql*/ `
-      SELECT EXISTS (
-        SELECT FROM information_schema.tables
-        WHERE table_schema = ${this.schemaExpr}
-          AND table_name = $1
-      ) AS exists
+      SELECT 1 FROM information_schema.tables
+      WHERE table_schema = ${this.schemaExpr} AND table_name = $1 AND table_type = 'BASE TABLE'
     `;
-  }
-
-  protected parseTableExistsResult([row]: RawRow[]): boolean {
-    return row['exists'] === true;
   }
 
   /**
@@ -82,11 +79,10 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * virtual one Postgres 18 added and uql never declares. CockroachDB states it too. `format_type` for an
    * extension type's modifier, which `information_schema` drops: a `vector(256)` read back as `vector`.
    * CockroachDB names that type `vector` where Postgres says `USER-DEFINED`.
-   *
-   * A column is unique by a unique index over it alone, a constraint's or its own, as every engine reads it.
    */
-  protected getColumnsQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
+    const rows = await read<PostgresColumnRow>(
+      /*sql*/ `
       SELECT
         c.column_name,
         c.data_type,
@@ -101,20 +97,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         CASE WHEN a.attgenerated = 's' THEN c.generation_expression END AS generated_as,
         CASE WHEN (c.data_type IN ('USER-DEFINED', 'vector') OR c.data_type LIKE 'timestamp%') AND a.atttypmod > -1
           THEN format_type(a.atttypid, a.atttypmod) END AS formatted_type,
-        EXISTS (
-          SELECT 1 FROM information_schema.table_constraints tc
-          JOIN information_schema.key_column_usage kcu USING (constraint_schema, constraint_name)
-          WHERE tc.table_schema = c.table_schema
-            AND tc.table_name = c.table_name
-            AND tc.constraint_type = 'PRIMARY KEY'
-            AND kcu.column_name = c.column_name
-        ) AS is_primary_key,
-        EXISTS (
-          SELECT 1 FROM pg_catalog.pg_index ix
-          WHERE ix.indrelid = a.attrelid AND ix.indisunique AND NOT ix.indisprimary
-            AND ix.indnkeyatts = 1 AND ix.indkey[0] = a.attnum
-            AND ix.indpred IS NULL AND ix.indexprs IS NULL
-        ) AS is_unique,
         pg_catalog.col_description(
           to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name)),
           c.ordinal_position
@@ -125,9 +107,27 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND a.attname = c.column_name
       WHERE c.table_schema = ${this.schemaExpr}
         AND c.table_name = $1
+        AND ${this.visibleColumnSql}
       ORDER BY c.ordinal_position
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => ({
+      name: row.column_name,
+      type: row.formatted_type?.toUpperCase() ?? this.normalizeType(row.data_type, row.udt_name),
+      nullable: row.is_nullable === 'YES',
+      defaultValue: this.parseDefaultValue(row.column_default),
+      isAutoIncrement: this.isAutoIncrement(row.column_default, row.is_identity),
+      length: row.character_maximum_length ?? undefined,
+      precision: row.numeric_precision ?? undefined,
+      scale: row.numeric_scale ?? undefined,
+      comment: row.column_comment ?? undefined,
+      generatedAs: row.generated_as ?? undefined,
+    }));
   }
+
+  /** Whether `information_schema.columns c` lists a column the table shows: every one, on Postgres. */
+  protected readonly visibleColumnSql: string = 'TRUE';
 
   /**
    * `attname` where the entry is a column, `pg_get_indexdef` for that one position where it is an
@@ -140,8 +140,9 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * and the MySQL family report theirs: the diff reads one over a single column as that column's
    * uniqueness, and one over several as the unique `@Index` it is.
    */
-  protected getIndexesQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const rows = await read<PostgresIndexRow>(
+      /*sql*/ `
       SELECT
         i.relname AS index_name,
         ix.indisunique AS is_unique,
@@ -168,7 +169,23 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
           SELECT 1 FROM pg_constraint con WHERE con.conindid = ix.indexrelid AND con.contype = 'x'
         )
       ORDER BY i.relname, k.n
-    `;
+    `,
+      [tableName],
+    );
+    // One row per index entry, ordered by position, so the rows of an index are its entries in order.
+    return [...Map.groupBy(rows, (row) => row.index_name)].map(([name, ofIndex]) => {
+      const [first] = ofIndex;
+      const include = ofIndex.filter((row) => !row.is_key).map((row) => row.entry);
+      return this.withVectorDistance({
+        name,
+        entries: ofIndex.filter((row) => row.is_key).map(mapIndexEntry),
+        unique: first.is_unique,
+        type: INDEX_TYPES.find((type) => type === first.method),
+        where: first.predicate ?? undefined,
+        include: include.length > 0 ? include : undefined,
+        ...fulltextIndex(ofIndex),
+      });
+    });
   }
 
   /** Whether an entry sorts nulls first, which Postgres states on every entry. */
@@ -181,13 +198,14 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected readonly opsClassSql: string = 'CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END';
 
   /** From `pg_constraint`, whose key arrays keep each column paired with the one it references. */
-  protected getForeignKeysQuery(_tableName: string): string {
+  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const columnsOf = (keys: string, table: string) => /*sql*/ `ARRAY_TO_JSON(ARRAY(
       SELECT a.attname FROM UNNEST(${keys}) WITH ORDINALITY AS k(attnum, n)
       JOIN pg_attribute a ON a.attrelid = ${table} AND a.attnum = k.attnum
       ORDER BY k.n
     ))`;
-    return /*sql*/ `
+    const rows = await read<PostgresForeignKeyRow>(
+      /*sql*/ `
       SELECT
         con.conname AS constraint_name,
         ${columnsOf('con.conkey', 'con.conrelid')} AS columns,
@@ -203,42 +221,39 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND t.relname = $1
         AND n.nspname = ${this.schemaExpr}
       ORDER BY con.conname
-    `;
+    `,
+      [tableName],
+    );
+    return rows.map((row) => ({
+      name: row.constraint_name,
+      columns: row.columns,
+      references: { table: row.referenced_table, columns: row.referenced_columns },
+      onDelete: FOREIGN_KEY_ACTION_CODES[row.delete_rule],
+      onUpdate: FOREIGN_KEY_ACTION_CODES[row.update_rule],
+    }));
   }
 
-  protected getPrimaryKeyQuery(_tableName: string): string {
-    return /*sql*/ `
+  protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
+    return this.readPrimaryKey(
+      read,
+      /*sql*/ `
       SELECT kcu.column_name, tc.constraint_name
       FROM information_schema.table_constraints tc
       JOIN information_schema.key_column_usage kcu
         ON tc.constraint_name = kcu.constraint_name
         AND tc.table_schema = kcu.table_schema
+      JOIN information_schema.columns c
+        ON c.table_schema = kcu.table_schema
+        AND c.table_name = kcu.table_name
+        AND c.column_name = kcu.column_name
       WHERE tc.constraint_type = 'PRIMARY KEY'
         AND tc.table_name = $1
         AND tc.table_schema = ${this.schemaExpr}
+        AND ${this.visibleColumnSql}
       ORDER BY kcu.ordinal_position
-    `;
-  }
-
-  protected async mapColumnsResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: PostgresColumnRow[],
-  ): Promise<ColumnSchema[]> {
-    return results.map((row) => ({
-      name: row.column_name,
-      type: row.formatted_type?.toUpperCase() ?? this.normalizeType(row.data_type, row.udt_name),
-      nullable: row.is_nullable === 'YES',
-      defaultValue: this.parseDefaultValue(row.column_default),
-      isPrimaryKey: row.is_primary_key,
-      isAutoIncrement: this.isAutoIncrement(row.column_default, row.is_identity),
-      isUnique: row.is_unique,
-      length: row.character_maximum_length ?? undefined,
-      precision: row.numeric_precision ?? undefined,
-      scale: row.numeric_scale ?? undefined,
-      comment: row.column_comment ?? undefined,
-      generatedAs: row.generated_as ?? undefined,
-    }));
+    `,
+      tableName,
+    );
   }
 
   /**
@@ -254,40 +269,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     const distance = this.dialect.indexedDistance(opsClass ? /_([a-z0-9]+)_ops$/.exec(opsClass)?.[1] : 'l2');
     const entries = index.entries.map(({ opsClass: _opsClass, ...entry }) => entry);
     return distance ? { ...index, distance, entries } : index;
-  }
-
-  protected async mapIndexesResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: PostgresIndexRow[],
-  ): Promise<IndexSchema[]> {
-    // One row per index entry, ordered by position, so the rows of an index are its entries in order.
-    return [...Map.groupBy(results, (row) => row.index_name)].map(([name, rows]) => {
-      const include = rows.filter((row) => !row.is_key).map((row) => row.entry);
-      return this.withVectorDistance({
-        name,
-        entries: rows.filter((row) => row.is_key).map(mapIndexEntry),
-        unique: rows[0].is_unique,
-        type: INDEX_TYPES.find((type) => type === rows[0].method),
-        where: rows[0].predicate ?? undefined,
-        include: include.length > 0 ? include : undefined,
-        ...fulltextIndex(rows),
-      });
-    });
-  }
-
-  protected async mapForeignKeysResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: PostgresForeignKeyRow[],
-  ): Promise<ForeignKeySchema[]> {
-    return results.map((row) => ({
-      name: row.constraint_name,
-      columns: row.columns,
-      references: { table: row.referenced_table, columns: row.referenced_columns },
-      onDelete: FOREIGN_KEY_ACTION_CODES[row.delete_rule],
-      onUpdate: FOREIGN_KEY_ACTION_CODES[row.update_rule],
-    }));
   }
 
   protected normalizeType(dataType: string, udtName: string): string {
@@ -397,12 +378,15 @@ function mapIndexEntry(row: PostgresIndexRow): IndexColumnSchema {
  * every ascending index as drifted, against an entity that could not have asked for one.
  */
 export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
-  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
+  protected override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>([
     'order',
     'include',
     'vector',
     'distance',
   ]);
+
+  /** Not `rowid`, the `NOT VISIBLE` key it gives a table declared without one, which no entity can name. */
+  protected override readonly visibleColumnSql = "c.is_hidden = 'NO'";
 
   /** None: it rejects a stated nulls order, so reading one back gives an index it would refuse to rebuild. */
   protected override readonly nullsFirstSql = 'NULL::BOOL';
@@ -446,9 +430,7 @@ type PostgresColumnRow = {
   formatted_type: string | null;
   is_nullable: string;
   column_default: string | null;
-  is_primary_key: boolean;
   is_identity: string;
-  is_unique: boolean;
   character_maximum_length: number | null;
   numeric_precision: number | null;
   numeric_scale: number | null;

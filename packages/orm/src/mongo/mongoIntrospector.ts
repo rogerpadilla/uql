@@ -2,8 +2,7 @@ import type { IndexFacet } from '../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
 import type { QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
-import { UqlUsageError } from '../util/uqlError.js';
-import { isMongoQuerier, type MongoQuerier } from './mongoQuerier.js';
+import { type MongoQuerier, withMongoQuerierForMigrations } from './mongoQuerier.js';
 import { textConfigOf } from './textLanguage.js';
 
 /** The parts of a `listIndexes` entry this introspector reads: the server names every index. */
@@ -32,9 +31,6 @@ const SEARCH_NOT_ENABLED = 31082;
  * MongoDB doesn't have a fixed schema, so this primarily focuses on collections and indexes.
  */
 export class MongoSchemaIntrospector implements SchemaIntrospector {
-  /** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
-  readonly indexFacets: ReadonlySet<IndexFacet> = new Set(['textIndex']);
-
   constructor(private readonly pool: QuerierPool) {}
 
   async introspect(tables?: readonly string[]): Promise<SchemaAST> {
@@ -44,7 +40,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
     for (const name of tableNames) {
       const schema = await this.getTableSchema(name);
       if (schema) {
-        ast.addTable(buildTable(schema, this.indexFacets));
+        ast.addTable(buildTable(schema));
       }
     }
 
@@ -104,12 +100,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
   }
 
   private withDb<T>(task: (db: MongoQuerier['db']) => Promise<T>): Promise<T> {
-    return this.pool.withQuerier((querier) => {
-      if (!isMongoQuerier(querier)) {
-        throw new UqlUsageError('MongoSchemaIntrospector requires a MongoDB querier');
-      }
-      return task(querier.db);
-    });
+    return withMongoQuerierForMigrations(this.pool, 'MongoSchemaIntrospector', (querier) => task(querier.db));
   }
 }
 
@@ -138,8 +129,11 @@ async function hasCollection(db: MongoQuerier['db'], name: string): Promise<bool
 }
 
 /** Mongo has no columns to read, so a table's are the fields its indexes name, one node per field. */
-function buildTable({ name, indexes = [] }: TableSchema, indexFacets: ReadonlySet<IndexFacet>): TableNode {
-  const table = createTableNode(name, undefined, indexFacets);
+/** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
+const INDEX_FACETS: ReadonlySet<IndexFacet> = new Set(['textIndex']);
+
+function buildTable({ name, indexes = [] }: TableSchema): TableNode {
+  const table = createTableNode(name, undefined, INDEX_FACETS);
 
   for (const index of indexes) {
     for (const { column } of index.entries) {
@@ -152,7 +146,6 @@ function buildTable({ name, indexes = [] }: TableSchema, indexFacets: ReadonlySe
           isAutoIncrement: false,
           isUnique: false,
           table,
-          referencedBy: [],
         });
       }
     }

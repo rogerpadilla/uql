@@ -4,8 +4,7 @@
  * Fluent API for defining columns in migrations.
  */
 
-import type { EnumValues } from '../../schema/types.js';
-import { type CanonicalType, DEFAULT_FOREIGN_KEY_ACTION, type ForeignKeyAction } from '../../schema/types.js';
+import type { CanonicalType, EnumValues, ForeignKeyAction } from '../../schema/types.js';
 import type { BaseColumnOptions, FullColumnDefinition, IColumnBuilder, IForeignKeyBuilder } from './types.js';
 
 /**
@@ -31,8 +30,8 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
       index: options.index,
       foreignKey: references && {
         references: { table: references.table, columns: [references.column ?? 'id'] },
-        onDelete: references.onDelete ?? DEFAULT_FOREIGN_KEY_ACTION,
-        onUpdate: references.onUpdate ?? DEFAULT_FOREIGN_KEY_ACTION,
+        onDelete: references.onDelete,
+        onUpdate: references.onUpdate,
       },
     };
   }
@@ -128,13 +127,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    * Returns a ForeignKeyBuilder for additional options.
    */
   references(table: string, column = 'id'): IForeignKeyBuilder {
-    return this.set({
-      foreignKey: {
-        references: { table, columns: [column] },
-        onDelete: DEFAULT_FOREIGN_KEY_ACTION,
-        onUpdate: DEFAULT_FOREIGN_KEY_ACTION,
-      },
-    });
+    return this.set({ foreignKey: { references: { table, columns: [column] } } });
   }
 
   /**

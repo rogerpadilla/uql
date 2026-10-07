@@ -34,18 +34,10 @@ describe('ColumnBuilder', () => {
       expect(def.foreignKey?.onDelete).toBe('CASCADE');
     });
 
-    it('should use default values for inline references', () => {
-      const col = new ColumnBuilder(
-        'userId',
-        { category: 'integer' },
-        {
-          references: { table: 'users' },
-        },
-      );
-      const def = col.build();
-      expect(def.foreignKey?.references.columns).toEqual(['id']);
-      expect(def.foreignKey?.onDelete).toBe('NO ACTION');
-      expect(def.foreignKey?.onUpdate).toBe('NO ACTION');
+    /** No action is stated, so the generator renders its own default, as for any other foreign key. */
+    it('should reference the id and state no action for an inline reference', () => {
+      const def = new ColumnBuilder('userId', { category: 'integer' }, { references: { table: 'users' } }).build();
+      expect(def.foreignKey).toEqual({ references: { table: 'users', columns: ['id'] } });
     });
   });
 
@@ -70,6 +62,11 @@ describe('ColumnBuilder', () => {
       const def = col.build();
       expect(def.isPrimaryKey).toBe(true);
       expect(def.nullable).toBe(false); // PK implies NOT NULL
+    });
+
+    it('should set unsigned, keeping the type', () => {
+      const col = new ColumnBuilder('n', { category: 'integer', size: 'big' }).unsigned();
+      expect(col.build().type).toEqual({ category: 'integer', size: 'big', unsigned: true });
     });
 
     it('should set autoIncrement', () => {

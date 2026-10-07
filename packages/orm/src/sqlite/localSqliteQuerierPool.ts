@@ -1,6 +1,5 @@
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { SqliteDialect } from './sqliteDialect.js';
-import { applySqlitePragmas } from './sqlitePragmas.js';
 import { type SqliteDatabase, type SqlitePreparedStatement, SqliteQuerier } from './sqliteQuerier.js';
 
 /** What every local SQLite pool accepts on top of its driver's own options. */
@@ -20,6 +19,8 @@ export type LocalSqlitePoolOptions = {
 export type LocalSqliteDatabase = {
   prepare(sql: string): SqlitePreparedStatement;
   loadExtension(path: string): void;
+  /** Defines a SQL function, which `bun:sqlite` cannot. */
+  function?(name: string, options: { deterministic: boolean }, fn: (...args: SqlValue[]) => SqlValue): unknown;
   close(): unknown;
 };
 
@@ -42,17 +43,30 @@ export function adaptSqlite<S extends Omit<SqlitePreparedStatement, 'reader'>>(
       };
     },
     loadExtension: (path) => db.loadExtension(path),
+    function: db.function?.bind(db),
     close: () => db.close(),
   };
 }
 
-/** `db` with each loadable extension installed, which `node:sqlite` refuses unless opened to allow them. */
-export function loadExtensions(db: LocalSqliteDatabase, extensions: readonly string[] = []): LocalSqliteDatabase {
+/**
+ * `db` extended past SQLite's own: each loadable extension installed, which `node:sqlite` refuses unless
+ * opened to allow them, and `REGEXP` defined as libSQL builds it in, which SQLite leaves to the application.
+ */
+export function extendSqlite(db: LocalSqliteDatabase, extensions: readonly string[] = []): LocalSqliteDatabase {
   for (const extension of extensions) {
     db.loadExtension(extension);
   }
+  db.function?.('regexp', { deterministic: true }, regexp);
   return db;
 }
+
+/** `value REGEXP pattern`: NULL where the value is, as an operator answers. */
+function regexp(pattern: SqlValue, value: SqlValue): SqlValue {
+  return value === null ? null : Number(new RegExp(String(pattern)).test(String(value)));
+}
+
+/** A value SQLite hands a function, and takes back. */
+type SqlValue = string | number | bigint | Uint8Array | null;
 
 /** A pool for a database file opened in this process, configured the same way whichever driver's {@link createDb} opens it. */
 export abstract class AbstractLocalSqliteQuerierPool<
@@ -62,9 +76,17 @@ export abstract class AbstractLocalSqliteQuerierPool<
   /** Opens the driver's database, reading integers as `bigint`, which the querier decodes exactly past 2^53. */
   protected abstract createDb(): Promise<DB>;
 
+  /**
+   * WAL, so a reader does not wait on the writer, and `foreign_keys`, which SQLite ships off per connection:
+   * without it a declared `onDelete: 'CASCADE'` does nothing and a dangling reference is accepted.
+   */
   protected override async openDb(): Promise<DB> {
     const db = await this.createDb();
-    await applySqlitePragmas(db);
+    for (const pragma of ['journal_mode = WAL', 'foreign_keys = ON']) {
+      const stmt = await db.prepare(`PRAGMA ${pragma}`);
+      // `journal_mode` answers with a row and `foreign_keys` with none.
+      await (stmt.reader ? stmt.all() : stmt.run());
+    }
     return db;
   }
 

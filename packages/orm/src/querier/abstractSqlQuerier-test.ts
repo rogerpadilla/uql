@@ -12,17 +12,18 @@ import {
   InvoiceLine,
   ItemAdjustment,
   LedgerAccount,
+  MeasureUnit,
+  MeasureUnitCategory,
   provisioningTimeout,
   type SpecRequirements,
   type SpecTimeouts,
   Tax,
-  TaxCategory,
   TypedGroup,
   TypedRow,
   User,
   violateConstraints,
 } from '../test/index.js';
-import type { QuerierPool, Type } from '../type/index.js';
+import type { Type } from '../type/index.js';
 import { currentTimestamp, raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
@@ -35,31 +36,16 @@ import { queryErrorKind } from './queryError.js';
  */
 const EXACT_DECIMAL = '12345678901234500000.99';
 
-/**
- * What {@link EXACT_DECIMAL} becomes on the SQLite family, which has no DECIMAL type: NUMERIC affinity
- * converts the literal to a float *on write*, so the digits are gone in the database before anything on
- * the read side could preserve them. Every SQLite driver here answers `expectedExactDecimal` with it.
- */
-export const FLOATED_DECIMAL = 12345678901234500000;
-
-export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier> {
-  declare protected pool: QuerierPool<AbstractSqlQuerier, AbstractSqlDialect>;
-
-  requirements(): SpecRequirements<this> {
+export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSqlQuerier, AbstractSqlDialect> {
+  /** A held lock is only visible to another connection, which a shared-handle pool has not got. */
+  override requirements(): SpecRequirements<this> {
     const rowLocks = !!this.pool.dialect.features.rowLocks;
-    // A held lock is only visible to another connection, which a shared-handle pool has not got.
-    const connections = !(this.pool instanceof AbstractSharedHandleQuerierPool);
-    // Every engine with vector functions ranks through a relation; MySQL has none outside HeatWave.
-    const vectors = this.pool.dialect.vectorMetrics.size > 0;
     return {
-      shouldRankByTheNearestRowOfAToMany: vectors,
-      shouldRankByTheNearestTargetOfAManyToMany: vectors,
-      shouldRankByAToOneWithoutPopulatingIt: vectors,
-      shouldRejectLockOutsideTransaction: rowLocks,
-      shouldRejectLockOutsideTransactionOnAStream: rowLocks,
-      shouldRejectALockTheEngineLacks: !rowLocks,
+      ...super.requirements(),
+      shouldRefuseALockOutsideATransaction: rowLocks,
+      shouldRefuseALockOutsideATransactionOnAStream: rowLocks,
       shouldFindManyAndCountUnderALock: rowLocks,
-      shouldSkipOrRefuseLockedRows: rowLocks && connections,
+      shouldSkipOrRefuseLockedRows: rowLocks && !(this.pool instanceof AbstractSharedHandleQuerierPool),
     };
   }
 
@@ -100,19 +86,13 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /** A lock outside a transaction drops as the statement commits, so the querier refuses it on a live connection. */
-  async shouldRejectLockOutsideTransaction() {
+  async shouldRefuseALockOutsideATransaction() {
     await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow('requires an open transaction');
   }
 
   /** A stream is a read like any other, so the same rule reaches it rather than only `findMany`. */
-  async shouldRejectLockOutsideTransactionOnAStream() {
+  async shouldRefuseALockOutsideATransactionOnAStream() {
     expect(() => this.querier.findManyStream(LedgerAccount, { $lock: true })).toThrow('requires an open transaction');
-  }
-
-  async shouldRejectALockTheEngineLacks() {
-    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow(
-      'does not support row-level locking',
-    );
   }
 
   /**
@@ -123,24 +103,20 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     await this.querier.insertMany(LedgerAccount, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
 
     await this.querier.beginTransaction();
-    try {
-      const [rows, total] = await this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true });
-      expect([rows.length, total]).toEqual([2, 3]);
-    } finally {
-      await this.querier.rollbackTransaction();
-    }
+    const [rows, total] = await this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true });
+
+    expect([rows.length, total]).toEqual([2, 3]);
   }
 
   /**
    * Two workers drawing from one queue never get the same row, and one that will not wait is refused as
-   * `retryable`.
+   * `retryable`. A plain read first resolves the inserts' intents, which CockroachDB's SKIP LOCKED would
+   * otherwise skip as locks.
    */
   async shouldSkipOrRefuseLockedRows() {
     for (let i = 0; i < 6; i++) {
       await this.querier.insertOne(LedgerAccount, { name: `job-${i}` });
     }
-    // A plain read resolves the inserts' intents, which CockroachDB's SKIP LOCKED would otherwise skip
-    // as locks: https://github.com/cockroachdb/cockroach/issues/167582
     await this.querier.findMany(LedgerAccount, { $select: { id: true } });
 
     const other = await this.pool.getQuerier();
@@ -162,33 +138,23 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
         .findMany(LedgerAccount, { $select: { id: true }, $where: { id: mineIds[0] }, $lock: { $wait: 'nowait' } })
         .catch((thrown: unknown) => thrown);
       expect(queryErrorKind(refused)).toBe('retryable');
-
-      await other.rollbackTransaction();
-      await this.querier.rollbackTransaction();
     } finally {
       await other.release();
     }
   }
 
   /**
-   * A read returns the JS types the entity declared, on every dialect: an engine stores a type in what it
-   * has (SQLite has no boolean, node-postgres returns BIGINT as text), and only a real read shows it.
+   * A read returns the JS types the entity declared, on every dialect, the BIGINT id included: an engine
+   * stores a type in what it has (SQLite has no boolean, node-postgres returns BIGINT as text), and only a
+   * real read shows it.
    */
   async shouldReadBackDeclaredTypes() {
-    const id = await this.querier.insertOne(TypedRow, { name: 'typed', count: 7, amount: 12.5, enabled: true });
+    const id = await this.querier.insertOne(TypedRow, { id: 7, name: 'typed', count: 7, amount: 12.5, enabled: true });
     const found = await this.querier.findOneById(TypedRow, id, {
       $select: { id: true, name: true, count: true, amount: true, enabled: true },
     });
 
-    // The id too: it is BIGINT on every engine here, and the one every consumer indexes by.
-    expect(typeof found?.id).toBe('number');
-    expect(typeof found?.name).toBe('string');
-    expect(typeof found?.count).toBe('number');
-    expect(found?.count).toBe(7);
-    expect(typeof found?.amount).toBe('number');
-    expect(found?.amount).toBe(12.5);
-    expect(typeof found?.enabled).toBe('boolean');
-    expect(found?.enabled).toBe(true);
+    expect(found).toEqual({ id: 7, name: 'typed', count: 7, amount: 12.5, enabled: true });
   }
 
   /**
@@ -231,8 +197,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /**
-   * A date the database stamps is the instant it is, whichever zone reads it. Not a zoneless column's
-   * on Postgres, which the database fills with the session's wall clock.
+   * A date the database stamps is the instant it is, whichever zone reads it, and reads back as the value it
+   * stored, so it matches itself where SQLite's `CURRENT_TIMESTAMP` wrote other text. Not a zoneless
+   * column's on Postgres, which the database fills with the session's wall clock.
    */
   async shouldReadADatabaseStampAsTheCurrentInstant() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'stamped' });
@@ -243,7 +210,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     expect(Math.abs(Number(own.at) - Date.now())).toBeLessThan(60_000);
     expect(populated).toEqual(own);
-    // Read back as the value it stored, so it matches itself, where SQLite's `CURRENT_TIMESTAMP` wrote other text.
     expect(await this.querier.count(TypedRow, { $where: { groupId, at: own.at } })).toBe(1);
   }
 
@@ -293,7 +259,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   }
 
   /** The same rows read on their own and populated under their group, both sorted by name. */
-  protected async readTypedRowsBothWays() {
+  private async readTypedRowsBothWays() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'typed group' });
     const at = new Date(Date.UTC(2026, 8, 10, 12, 30, 0, 123));
     await this.querier.insertMany(TypedRow, [
@@ -344,7 +310,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /**
    * What survives a round-trip through a DECIMAL column declared `String`: the text itself, on every
-   * engine that has a real DECIMAL. The SQLite family overrides with {@link FLOATED_DECIMAL}.
+   * engine that has a real DECIMAL, which the SQLite family has not.
    */
   protected expectedExactDecimal(): string | number {
     return EXACT_DECIMAL;
@@ -382,8 +348,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /**
    * A `$sum` reads as the column it totals, so a wide one keeps every digit rather than rounding through
-   * a float - the same rule a relation aggregate's `sum` reads by. A `$count` and an `$avg` are numbers
-   * whatever they read, since the engine widens one and floats the other.
+   * a float to an even neighbour: a `bigint`, as the result type promises, whichever of a number or its
+   * digits the engine sent. A `$count` is a number whatever it reads, as the relation aggregate's `sum` is.
    */
   async shouldTotalAWideIntegerExactly() {
     const groupId = await this.querier.insertOne(TypedGroup, { name: 'wide totals' });
@@ -398,8 +364,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       $select: { total: { $sum: { wide: true } }, rows: { $count: '*' } },
     });
 
-    // Odd past 2^53, so a total that went through a float would answer an even neighbour instead. A
-    // `bigint`, which is what the result type promises, whichever of a number or its digits the engine sent.
     expect(row?.total).toBe(9007199254740995n);
     expect(row?.rows).toBe(2);
   }
@@ -500,7 +464,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     return 'SELECT 9007199254740993 AS big';
   }
 
-  override recreateTables() {
+  override recreateTables(_querier: AbstractSqlQuerier) {
     return recreateTables(this.pool);
   }
 
@@ -508,16 +472,20 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     return clearTables(this.querier);
   }
 
-  /**
-   * `created` is `undefined` where an upsert has no insert-or-update signal (SQLite, MariaDB,
-   * CockroachDB); an engine with one (Postgres's `xmax`, MySQL's `affectedRows`) overrides both.
-   */
-  protected assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBeUndefined();
-  }
+  /** Needing no id, a tally composes with a raw projection too. */
+  async shouldCountBesideARawSelect() {
+    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'raw category' });
+    await this.querier.insertMany(MeasureUnit, [
+      { name: 'one', categoryId },
+      { name: 'two', categoryId },
+    ]);
 
-  protected assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBeUndefined();
+    const found = await this.querier.findMany(MeasureUnitCategory, {
+      $select: [raw`name`],
+      $count: { measureUnits: true },
+    });
+
+    expect(found).toEqual([{ name: 'raw category', _count: { measureUnits: 2 } }]);
   }
 
   /**
@@ -531,10 +499,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       { code: 'BRAND-NEW', label: 'New' },
       { code: 'EXISTING', label: 'Updated' },
     ]);
-    expect(result.changes).toBeGreaterThanOrEqual(2);
 
     const inserted = await this.querier.findOne(Coupon, { $select: { id: true }, $where: { code: 'BRAND-NEW' } });
-    expect(result.ids.map(String)).toEqual([String(inserted?.id), String(existingId)]);
+    expect(result).toEqual({ ids: [inserted?.id, existingId], changes: this.upsertReport(1, 1).changes });
   }
 
   /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
@@ -546,7 +513,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     ]);
     const found = await this.querier.findMany(Coupon, { $select: { id: true }, $sort: { code: 1 } });
 
-    expect(ids.map(String)).toEqual(found.map(({ id }) => String(id)));
+    expect(ids).toEqual(found.map(({ id }) => id));
   }
 
   /** Every column the key or its default: each row its own `DEFAULT VALUES`, or MySQL's `() VALUES ()`. */
@@ -608,35 +575,15 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
     const { id } = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
 
-    expect(String(id)).toBe(String(existingId));
-  }
-
-  override async shouldUpsertOne() {
-    const pk = '507f1f77bcf86cd799439011';
-
-    const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
-    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.id).toBe(pk);
-    this.assertUpsertCreatedOnInsert(insertResult.created);
-
-    const record2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
-    expect(record2).toMatchObject({ name: 'Some Name C' });
-
-    const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
-    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.id).toBe(pk);
-    this.assertUpsertCreatedOnUpdate(updateResult.created);
-
-    const record3 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
-    expect(record3).toMatchObject({ name: 'Some Name D' });
+    expect(id).toBe(existingId);
   }
 
   async shouldFindWith$excludeOmittingTheColumn() {
-    await this.querier.insertOne(LedgerAccount, { name: 'Some Account' });
+    const id = await this.querier.insertOne(LedgerAccount, { name: 'Some Account' });
 
     const [found] = await this.querier.findMany(LedgerAccount, { $exclude: { name: true } });
 
-    expect(found.id).toBeDefined();
+    expect(found.id).toBe(id);
     expect('name' in found).toBe(false);
   }
 
@@ -664,7 +611,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     });
 
     const [found] = await this.querier.findMany(InventoryAdjustment, {
-      $populate: { itemAdjustments: { $exclude: { inventoryAdjustmentId: true, number: true } } },
+      $populate: {
+        itemAdjustments: { $exclude: { inventoryAdjustmentId: true, number: true }, $sort: { buyPrice: 1 } },
+      },
     });
 
     expect(found.itemAdjustments).toMatchObject([{ buyPrice: 50 }, { buyPrice: 300 }]);
@@ -691,10 +640,6 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       { description: 'Some Name B' },
       { description: 'Some Name C' },
     ]);
-    expect(ids).toHaveLength(3);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
     const founds = await this.querier.findMany(Invoice, { $sort: { id: 1 } });
     expect(founds.map(({ id }) => id)).toEqual(ids);
   }
@@ -705,28 +650,15 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       { id: 5000, description: 'Mixed B' },
       { description: 'Mixed C' },
     ]);
-    expect(ids).toHaveLength(3);
-    expect(ids[1]).toBe(5000);
+    const founds = await this.querier.findMany(Invoice, { $select: { id: true }, $sort: { description: 1 } });
 
-    const founds = await this.querier.findMany(Invoice, {
-      $select: { id: true, description: true },
-      $where: { description: ['Mixed A', 'Mixed B', 'Mixed C'] },
-      $sort: { description: 1 },
-    });
-    expect(founds).toHaveLength(3);
-    const persistedIds = founds.map(({ id }) => id);
-    for (const id of persistedIds) {
-      expect(id).toBeDefined();
-    }
-    expect(Number(persistedIds[1])).toBe(5000);
-    expect(ids).toEqual([persistedIds[0], 5000, persistedIds[2]]);
+    expect(ids).toEqual(founds.map(({ id }) => id));
+    expect(ids[1]).toBe(5000);
   }
 
   /**
-   * The same mixed batch, cascading. Header-derived ids are only sound when every row in the
-   * *statement* left the key to the database, and that was asked of the whole batch: one supplied id
-   * made every id `undefined`, so the cascade had no parent to point at and wrote a null foreign
-   * key, silently orphaning the child.
+   * The same mixed batch, cascading: header-derived ids hold only for a statement whose every row left the
+   * key to the database, so a supplied one in the batch must not cost the generated row's child its parent.
    */
   async shouldCascadeFromABatchMixingProvidedAndGeneratedIds() {
     const ids = await this.querier.insertMany(Invoice, [
@@ -734,25 +666,26 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
       { id: 5001, description: 'mixed cascade b' },
     ]);
 
-    expect(ids[0]).toBeDefined();
-    expect(Number(ids[1])).toBe(5001);
-
     const [found] = await this.querier.findMany(Invoice, {
+      $select: { id: true },
       $where: { description: 'mixed cascade a' },
       $populate: { lines: { $select: { amount: true } } },
     });
-    expect(found.lines).toMatchObject([{ amount: 50 }]);
+    expect(ids).toEqual([found.id, 5001]);
+    expect(found.lines).toEqual([{ amount: 50 }]);
   }
 }
 
-/** Runs `fn` with the process in `zone`, the way a server in another zone would run it. */
+/**
+ * Runs `fn` with the process in `zone`, the way a server in another zone would run it. An unset zone is
+ * deleted again, since assigning `undefined` would set the text "undefined", a zone every later test ran in.
+ */
 async function inTimeZone<T>(zone: string, fn: () => Promise<T>): Promise<T> {
   const previous = process.env.TZ;
   process.env.TZ = zone;
   try {
     return await fn();
   } finally {
-    // Assigning `undefined` would set the text "undefined", an unknown zone every later test ran in.
     if (previous === undefined) delete process.env.TZ;
     else process.env.TZ = previous;
   }

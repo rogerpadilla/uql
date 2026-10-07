@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { createTableNode, SchemaAST } from './schemaAST.js';
-import type { ColumnNode, IndexNode, RelationshipNode, TableNode } from './types.js';
+import type { ColumnNode, RelationshipNode, TableNode } from './types.js';
 
 describe('SchemaAST', () => {
   let ast: SchemaAST;
@@ -30,8 +30,6 @@ describe('SchemaAST', () => {
     expect(ast.relationships).toEqual([rel]);
     expect(posts.outgoingRelations).toEqual([rel]);
     expect(users.incomingRelations).toEqual([rel]);
-    expect(rel.from.columns[0].references).toBe(rel);
-    expect(rel.to.columns[0].referencedBy).toEqual([rel]);
   });
 
   it('should order tables for CREATE after what they reference, and for DROP before it', () => {
@@ -47,17 +45,6 @@ describe('SchemaAST', () => {
     expect(ast.getCreateOrder().map((table) => table.name)).toEqual(['users', 'posts', 'comments']);
     expect(ast.getDropOrder().map((table) => table.name)).toEqual(['comments', 'posts', 'users']);
   });
-
-  it('should add an index to its table once, however often it is added', () => {
-    const users = createTable('users');
-    ast.addTable(users);
-    const idx: IndexNode = { name: 'users__email_idx', table: users, entries: [], unique: false };
-
-    ast.addIndex(idx);
-    ast.addIndex(idx);
-
-    expect(users.indexes).toEqual([idx]);
-  });
 });
 
 function createTable(name: string, columnCount = 2): TableNode {
@@ -71,7 +58,6 @@ function createTable(name: string, columnCount = 2): TableNode {
       isAutoIncrement: i === 0,
       isUnique: false,
       table,
-      referencedBy: [],
     };
     table.columns.set(col.name, col);
   }

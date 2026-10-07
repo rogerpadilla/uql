@@ -45,7 +45,6 @@ export const PG_FEATURES: SqlDialectFeatures = {
   schemas: true,
   dropTableCascade: true,
   rebuildsTables: false,
-  commentSyntax: 'statement',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
   vectorBytes: false,

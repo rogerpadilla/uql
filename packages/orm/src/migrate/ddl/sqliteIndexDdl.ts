@@ -1,5 +1,5 @@
 import type { IndexColumnSchema, IndexSchema } from '../../type/index.js';
-import { indexDistance, isVectorIndexType, unsupportedVectorMetric } from '../../type/vector.js';
+import { isVectorIndexType } from '../../type/vector.js';
 import { UqlUsageError } from '../../util/uqlError.js';
 import { IndexDdl } from './indexDdl.js';
 
@@ -24,15 +24,10 @@ export class SqliteIndexDdl extends IndexDdl {
 
   /** The metric libSQL's index names, or `undefined` where the index is no vector index or the engine has none. */
   private vectorIndexMetric(index: IndexSchema): string | undefined {
-    const { vectorMetrics, dialectName } = this.dialect;
     if (!isVectorIndexType(index.type) || !this.dialect.hasVectorIndex()) {
       return undefined;
     }
-    const distance = indexDistance(index);
-    const metric = vectorMetrics.get(distance)?.index;
-    if (!metric) {
-      throw unsupportedVectorMetric(dialectName, distance, index.name);
-    }
+    const metric = this.indexMetric(index);
     // Its tables are named after the index, unquoted: any other name fails with "unable to initialize diskann".
     if (!/^\w+$/.test(index.name) || index.entries.length !== 1) {
       throw new UqlUsageError(

@@ -6,45 +6,31 @@ import type { MigrationStorage, Querier } from '../../type/index.js';
  * Useful for development or environments without a database.
  */
 export class JsonMigrationStorage implements MigrationStorage {
-  private executedMigrations: string[] = [];
-  private readonly filePath: string;
+  constructor(private readonly filePath = './migrations/.uql-migrations.json') {}
 
-  constructor(filePath = './migrations/.uql-migrations.json') {
-    this.filePath = filePath;
-  }
-
-  async ensureStorage(): Promise<void> {
-    const content = await fs.readFile(this.filePath, 'utf-8').catch(async (error) => {
-      if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-        const initial = '[]';
-        await fs.writeFile(this.filePath, initial, 'utf-8');
-        return initial;
+  /** The names the file records, a missing file read as none run yet; any other read failure is the caller's. */
+  async executed(): Promise<string[]> {
+    const content = await fs.readFile(this.filePath, 'utf-8').catch((error: NodeJS.ErrnoException) => {
+      if (error.code === 'ENOENT') {
+        return '[]';
       }
       throw error;
     });
-    this.executedMigrations = JSON.parse(content);
-  }
-
-  async executed(): Promise<string[]> {
-    await this.ensureStorage();
-    return this.executedMigrations;
+    return JSON.parse(content);
   }
 
   async logWithQuerier(_querier: Querier, migrationName: string): Promise<void> {
-    await this.ensureStorage();
-    if (!this.executedMigrations.includes(migrationName)) {
-      this.executedMigrations.push(migrationName);
-      await this.save();
+    const executed = await this.executed();
+    if (!executed.includes(migrationName)) {
+      await this.save([...executed, migrationName]);
     }
   }
 
   async unlogWithQuerier(_querier: Querier, migrationName: string): Promise<void> {
-    await this.ensureStorage();
-    this.executedMigrations = this.executedMigrations.filter((m) => m !== migrationName);
-    await this.save();
+    await this.save((await this.executed()).filter((name) => name !== migrationName));
   }
 
-  private async save(): Promise<void> {
-    await fs.writeFile(this.filePath, JSON.stringify(this.executedMigrations, null, 2), 'utf-8');
+  private save(names: readonly string[]): Promise<void> {
+    return fs.writeFile(this.filePath, JSON.stringify(names, null, 2), 'utf-8');
   }
 }

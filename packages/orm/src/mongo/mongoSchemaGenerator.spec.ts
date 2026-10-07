@@ -80,7 +80,7 @@ describe('MongoSchemaGenerator', () => {
    * each `CREATE INDEX`; the key spec carries a descending or a text entry as declared.
    */
   it('should generate createCollection followed by a createIndex per index', () => {
-    const statements = generator.generateCreateTable(MongoUser).map((json) => JSON.parse(json));
+    const statements = generator.generateCreateSchema([MongoUser]).map((json) => JSON.parse(json));
 
     expect(statements[0]).toMatchObject({ action: 'createCollection', name: 'MongoUser' });
     expect(statements.slice(1)).toEqual([
@@ -111,7 +111,7 @@ describe('MongoSchemaGenerator', () => {
 
     expect(
       generator
-        .generateCreateTable(MongoHandle)
+        .generateCreateSchema([MongoHandle])
         .map((json) => JSON.parse(json))
         .slice(1),
     ).toEqual([
@@ -189,7 +189,7 @@ describe('MongoSchemaGenerator', () => {
       @Field({ type: String }) body?: string | null;
     }
 
-    const [, index] = generator.generateCreateTable(MongoArticle).map((json) => JSON.parse(json));
+    const [, index] = generator.generateCreateSchema([MongoArticle]).map((json) => JSON.parse(json));
 
     expect(index.options.default_language).toBe('spanish');
   });
@@ -289,7 +289,7 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should create the indexes @Index declares, a partial one with its filter', () => {
-    const statements = generator.generateCreateTable(MongoTicket).map((json) => JSON.parse(json));
+    const statements = generator.generateCreateSchema([MongoTicket]).map((json) => JSON.parse(json));
 
     expect(statements.slice(1)).toEqual([
       {
@@ -330,14 +330,14 @@ describe('MongoSchemaGenerator', () => {
   ];
 
   it.each(refused)('should refuse %s in a partial index, which MongoDB has no room for', (part, where) => {
-    expect(() => generator.generateCreateTable(ticketIndexedWhere(where))).toThrow(
+    expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
       `mongodb does not support ${part} in a partial index predicate (index "ticket_idx")`,
     );
   });
 
   it('should refuse SQL as a partial index predicate', () => {
     const where: EntityWhere<TicketShape> = (ticket) => raw`${ticket.status} = 'open'`;
-    expect(() => generator.generateCreateTable(ticketIndexedWhere(where))).toThrow(
+    expect(() => generator.generateCreateSchema([ticketIndexedWhere(where)])).toThrow(
       'mongodb does not support partial indexes from a SQL predicate (index "ticket_idx")',
     );
   });
@@ -357,7 +357,8 @@ describe('MongoSchemaGenerator', () => {
   });
 
   it('should generate dropIndex statement', () => {
-    expect(JSON.parse(generator.generateDropIndex('MongoUser', 'test_idx'))).toEqual({
+    const [command] = generator.generateOperation({ type: 'dropIndex', tableName: 'MongoUser', indexName: 'test_idx' });
+    expect(JSON.parse(command)).toEqual({
       action: 'dropIndex',
       collection: 'MongoUser',
       name: 'test_idx',

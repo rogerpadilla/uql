@@ -1,7 +1,8 @@
 import { expect } from 'vitest';
 import { withContext } from '../context/context.js';
-import { getEntities } from '../entity/index.js';
+import type { AbstractDialect } from '../dialect/index.js';
 import {
+  anyUuid,
   assertDefined,
   Company,
   type CompanyKind,
@@ -9,10 +10,12 @@ import {
   Item,
   ItemAdjustment,
   ItemTag,
+  LedgerAccount,
   MeasureUnit,
   MeasureUnitCategory,
   Profile,
   type Spec,
+  type SpecRequirements,
   Tag,
   Tax,
   TaxCategory,
@@ -35,7 +38,7 @@ import type {
   QueryWhere,
   Type,
 } from '../type/index.js';
-import { raw, withDeleted } from '../util/index.js';
+import { withDeleted } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { queryErrorKind } from './queryError.js';
 
@@ -43,19 +46,20 @@ const thrownValue = (thrown: unknown) => thrown;
 const asTenant = <T>(tenantId: string, fn: () => Promise<T>) => withContext({ tenantId }, fn);
 const asSystem = <T>(fn: () => Promise<T>) => withContext({ system: true }, fn);
 
-export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
+export abstract class AbstractQuerierIt<
+  Q extends Querier,
+  D extends AbstractDialect = AbstractDialect,
+> implements Spec {
   querier!: Q;
 
-  constructor(protected pool: QuerierPool<Q>) {}
+  constructor(protected pool: QuerierPool<Q, D>) {}
+
+  requirements(): SpecRequirements<this> {
+    return { shouldRefuseALockTheEngineLacks: !this.pool.dialect.features.rowLocks };
+  }
 
   async beforeAll() {
-    const querier = await this.pool.getQuerier();
-    try {
-      this.querier = querier;
-      await this.recreateTables();
-    } finally {
-      await querier.release();
-    }
+    await this.pool.withQuerier((querier) => this.recreateTables(querier));
   }
 
   async beforeEach() {
@@ -71,54 +75,42 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.pool.end();
   }
 
-  /**
-   * Every driver inherits `Symbol.asyncDispose` from `AbstractQuerier`, so `await using` has to
-   * release on any backend. Takes its own querier rather than `this.querier`, which the harness owns,
-   * and counts calls by wrapping `release` instead of mocking: this suite also runs under `bun:test`.
-   */
+  /** Every fixture table, empty, whatever an earlier run left behind. */
+  abstract recreateTables(querier: Q): Promise<void>;
+
+  /** Every fixture table emptied, through `this.querier`. */
+  abstract clearTables(): Promise<void>;
+
+  /** `await using` releases on any backend, through `Symbol.asyncDispose` every querier inherits. */
   async shouldReleaseOnAsyncDispose() {
     const querier = await this.pool.getQuerier();
-    const release = querier.release.bind(querier);
-    let releases = 0;
-    querier.release = async () => {
-      releases++;
-      return release();
-    };
 
     {
       await using scoped = querier;
       await scoped.count(User);
     }
 
-    expect(releases).toBe(1);
+    await expect(querier.count(User)).rejects.toThrow('querier already released');
   }
 
   /** The release still happens when the block exits through a throw. */
   async shouldReleaseOnAsyncDisposeWhenBodyThrows() {
     const querier = await this.pool.getQuerier();
-    const release = querier.release.bind(querier);
-    let releases = 0;
-    querier.release = async () => {
-      releases++;
-      return release();
-    };
 
-    const failed = await (async () => {
-      await using scoped = querier;
-      await scoped.count(User);
-      throw new TypeError('boom');
-    })().then(
-      () => undefined,
-      (err: Error) => err.message,
-    );
+    await expect(
+      (async () => {
+        await using scoped = querier;
+        await scoped.count(User);
+        throw new TypeError('boom');
+      })(),
+    ).rejects.toThrow('boom');
 
-    expect(failed).toBe('boom');
-    expect(releases).toBe(1);
+    await expect(querier.count(User)).rejects.toThrow('querier already released');
   }
 
   /**
    * Releasing with a transaction open rolls it back and hands the connection over, rather than throwing
-   * and losing both the caller's error and the connection.
+   * and losing both the caller's error and the connection: the write is gone from the next unit of work.
    */
   async shouldRollBackAnOpenTransactionOnRelease() {
     const querier = await this.pool.getQuerier();
@@ -127,39 +119,32 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     await expect(querier.release()).resolves.toBeUndefined();
     expect(querier.hasOpenTransaction).toBe(false);
-
-    // The write is gone, and the next unit of work is not sitting on someone else's transaction.
     await expect(this.pool.count(User, { $where: { email: 'rolledback@example.com' } })).resolves.toBe(0);
   }
 
-  /** The same, through `await using`: the real error must reach the caller unwrapped. */
+  /**
+   * The same, through `await using`: the real error reaches the caller unwrapped, where a throwing dispose
+   * would hand it a SuppressedError with an empty message.
+   */
   async shouldRollBackAnOpenTransactionOnAsyncDispose() {
-    const failed = await (async () => {
-      await using querier = await this.pool.getQuerier();
-      await querier.beginTransaction();
-      await querier.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
-      throw new TypeError('the real failure');
-    })().then(
-      () => undefined,
-      // A throwing dispose would arrive as a SuppressedError instead, hiding this behind an empty message.
-      (err: Error) => err.message,
-    );
+    await expect(
+      (async () => {
+        await using querier = await this.pool.getQuerier();
+        await querier.beginTransaction();
+        await querier.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
+        throw new TypeError('the real failure');
+      })(),
+    ).rejects.toThrow('the real failure');
 
-    expect(failed).toBe('the real failure');
     await expect(this.pool.count(User, { $where: { email: 'disposed@example.com' } })).resolves.toBe(0);
   }
 
-  /**
-   * Every backend refuses, not just the pooled ones: a pooled querier that kept working took a second
-   * connection nothing would give back, and whether a released querier still works should not depend on
-   * which database you picked.
-   */
+  /** On every backend, as the caller's mistake: a `usage` error, which a transport answers with a 400. */
   async shouldRefuseToWorkAfterBeingReleased() {
     const querier = await this.pool.getQuerier();
     await querier.release();
 
     await expect(querier.count(User)).rejects.toThrow('querier already released');
-    // The caller's mistake, so a transport answers it with a 400.
     expect(queryErrorKind(await querier.count(User).catch(thrownValue))).toBe('usage');
   }
 
@@ -170,32 +155,30 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       email: 'poolwrite@example.com',
       password: '123456789p!',
     });
-    expect(id).toBeDefined();
 
     const updated = await this.pool.updateMany(User, { $where: { id } }, { name: 'Pool Write Renamed' });
     expect(updated).toBe(1);
 
     const found = await this.pool.findOneById(User, id, { $select: { name: true } });
-    expect(found).toMatchObject({ name: 'Pool Write Renamed' });
+    expect(found).toEqual({ name: 'Pool Write Renamed' });
 
     expect(await this.pool.deleteMany(User, { $where: { id } })).toBe(1);
     expect(await this.pool.count(User, { $where: { id } })).toBe(0);
   }
 
-  /** The one pool call whose connection outlives the call itself: it is held until the loop ends. */
+  /**
+   * The one pool call whose connection outlives the call itself: it is held until the loop ends, and given
+   * back then, so the pool still hands one out.
+   */
   async shouldStreamFromThePool() {
     await this.pool.insertMany(User, [
       { name: 'Stream A', email: 'streama@example.com', password: '123456789a!' },
       { name: 'Stream B', email: 'streamb@example.com', password: '123456789b!' },
     ]);
 
-    const names: (string | null | undefined)[] = [];
-    for await (const user of this.pool.findManyStream(User, { $select: { name: true }, $sort: { name: 1 } })) {
-      names.push(user.name);
-    }
-    expect(names).toEqual(['Stream A', 'Stream B']);
+    const rows = await Array.fromAsync(this.pool.findManyStream(User, { $select: { name: true }, $sort: { name: 1 } }));
 
-    // The pool still hands one out, so the loop gave its connection back.
+    expect(rows.map(({ name }) => name)).toEqual(['Stream A', 'Stream B']);
     expect(await this.pool.count(User)).toBe(2);
   }
 
@@ -212,10 +195,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         password: '123456789b!',
       },
     ]);
-    expect(ids).toHaveLength(2);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
+    expect(ids).toEqual([anyUuid, anyUuid]);
   }
 
   async shouldInsertManyEmpty() {
@@ -229,31 +209,27 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
    */
   async shouldRefuseAStaleVersion() {
     const id = await this.querier.insertOne(VersionedNote, { title: 'first' });
-    const stale = (await this.querier.findOneById(VersionedNote, id))!.version!;
 
-    expect(await this.querier.updateOneById(VersionedNote, id, { title: 'winner', version: stale })).toBe(1);
+    expect(await this.querier.updateOneById(VersionedNote, id, { title: 'winner', version: 0 })).toBe(1);
 
-    const err = await this.querier
-      .updateOneById(VersionedNote, id, { title: 'loser', version: stale })
-      .catch(thrownValue);
+    const err = await this.querier.updateOneById(VersionedNote, id, { title: 'loser', version: 0 }).catch(thrownValue);
     expect(err).toBeInstanceOf(UqlOptimisticLockError);
-    expect(err).toMatchObject({ expected: stale, actual: stale + 1 });
+    expect(err).toMatchObject({ expected: 0, actual: 1 });
     expect(queryErrorKind(err)).toBe('optimisticLock');
-
-    const found = await this.querier.findOneById(VersionedNote, id);
-    expect(found?.title).toBe('winner');
-    expect(found?.version).toBe(stale + 1);
+    expect(await this.querier.findOneById(VersionedNote, id, { $select: { title: true, version: true } })).toEqual({
+      title: 'winner',
+      version: 1,
+    });
   }
 
   /** Two queriers writing at once: the same rule holds across connections, which is where it matters. */
   async shouldLetOnlyOneOfTwoWritersWin() {
     const id = await this.querier.insertOne(VersionedNote, { title: 'contested' });
-    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
     const other = await this.pool.getQuerier();
     try {
       const results = await Promise.allSettled([
-        this.querier.updateOneById(VersionedNote, id, { title: 'a', version }),
-        other.updateOneById(VersionedNote, id, { title: 'b', version }),
+        this.querier.updateOneById(VersionedNote, id, { title: 'a', version: 0 }),
+        other.updateOneById(VersionedNote, id, { title: 'b', version: 0 }),
       ]);
       const lost = results.filter((result): result is PromiseRejectedResult => result.status === 'rejected');
       expect(results).toHaveLength(2);
@@ -262,34 +238,32 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     } finally {
       await other.release();
     }
-    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(version + 1);
+    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(1);
   }
 
   /** A `BigInt` version bumps as exactly as it reads, whatever the driver answers a BIGINT with. */
   async shouldBumpAWideVersion() {
     const id = await this.querier.insertOne(WideVersionedNote, { title: 'wide' });
-    const version = (await this.querier.findOneById(WideVersionedNote, id))!.version!;
-    expect(String(version)).toBe('0');
 
-    expect(await this.querier.updateOneById(WideVersionedNote, id, { title: 'bumped', version })).toBe(1);
-    expect(String((await this.querier.findOneById(WideVersionedNote, id))?.version)).toBe('1');
+    expect(await this.querier.updateOneById(WideVersionedNote, id, { title: 'bumped', version: 0n })).toBe(1);
+    expect(await this.querier.findOneById(WideVersionedNote, id, { $select: { version: true } })).toEqual({
+      version: 1n,
+    });
   }
 
   /** Each of the three ways an update matches nothing reads as itself, which is what the caller acts on. */
   async shouldTellAGoneRowFromAMovedOne() {
     const id = await this.querier.insertOne(VersionedNote, { title: 'doomed' });
-    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
 
     const excluded = await this.querier
-      .updateMany(VersionedNote, { $where: { id, title: 'wrong' } }, { title: 'x', version })
+      .updateMany(VersionedNote, { $where: { id, title: 'wrong' } }, { title: 'x', version: 0 })
       .catch(thrownValue);
-    expect(excluded).toMatchObject({ expected: version, actual: version });
-    expect((excluded as Error).message).toContain('excluded it');
+    expect(excluded).toMatchObject({ expected: 0, actual: 0, message: expect.stringContaining('excluded it') });
 
     await this.querier.deleteOneById(VersionedNote, id, { hardDelete: true });
-    const gone = await this.querier.updateOneById(VersionedNote, id, { title: 'ghost', version }).catch(thrownValue);
+    const gone = await this.querier.updateOneById(VersionedNote, id, { title: 'ghost', version: 0 }).catch(thrownValue);
     expect(queryErrorKind(gone)).toBe('optimisticLock');
-    expect(gone).toMatchObject({ expected: version, actual: undefined });
+    expect(gone).toMatchObject({ expected: 0, actual: undefined });
   }
 
   /** One version cannot speak for many rows, so a versioned update is named by its id or refused. */
@@ -305,11 +279,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /** Delete and restore move the row's lifecycle, not its content, so neither carries a version. */
   async shouldDeleteAndRestoreAVersionedRowWithoutItsVersion() {
     const id = await this.querier.insertOne(VersionedNote, { title: 'archived' });
-    const version = (await this.querier.findOneById(VersionedNote, id))!.version!;
 
     expect(await this.querier.deleteOneById(VersionedNote, id)).toBe(1);
     expect(await this.querier.restoreOneById(VersionedNote, id)).toBe(1);
-    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(version);
+    expect((await this.querier.findOneById(VersionedNote, id))?.version).toBe(0);
     expect(await this.querier.deleteOneById(VersionedNote, id, { hardDelete: true })).toBe(1);
   }
 
@@ -326,7 +299,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /** The driver's own error, read as it reaches the caller, on every backend MongoDB included. */
   async shouldNameAUniqueViolation() {
     const id = await this.querier.insertOne(User, { name: 'first' });
-    const err = await this.querier.insertOne(User, { id, name: 'second' }).catch((thrown: unknown) => thrown);
+    const err = await this.querier.insertOne(User, { id, name: 'second' }).catch(thrownValue);
     expect(queryErrorKind(err)).toBe('uniqueViolation');
   }
 
@@ -336,13 +309,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       email: 'someemailc@example.com',
       password: '123456789z!',
     });
-    expect(creatorId).toBeDefined();
 
     const companyId = await this.querier.insertOne(Company, {
       name: 'Some Name C',
       creatorId,
     });
-    expect(companyId).toBeDefined();
 
     const taxCategoryId = await this.querier.insertOne(TaxCategory, {
       name: 'Some Name C',
@@ -350,19 +321,18 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       creatorId,
       companyId,
     });
-    expect(taxCategoryId).toBeDefined();
+    expect(
+      await this.querier.findOneById(TaxCategory, taxCategoryId, { $select: { creatorId: true, companyId: true } }),
+    ).toEqual({ creatorId, companyId });
   }
 
-  async shouldInsertOneWithOnInsertId() {
-    const id1 = await this.querier.insertOne(TaxCategory, {
-      name: 'Some Name',
-    });
-    const id2 = await this.querier.insertOne(TaxCategory, {
-      pk: '123',
-      name: 'Some Name',
-    });
-    expect(id1).toBeDefined();
-    expect(id2).toBeDefined();
+  /** A supplied key is the row's own, and an `onInsert` one fills a key left out: each names the row written. */
+  async shouldKeepASuppliedKeyAndGenerateAMissingOne() {
+    const supplied = await this.querier.insertOne(TaxCategory, { pk: '123', name: 'supplied' });
+    const generated = await this.querier.insertOne(TaxCategory, { name: 'generated' });
+
+    expect([supplied, generated]).toEqual(['123', anyUuid]);
+    expect(await this.taxCategoryNames(supplied, generated)).toEqual(['generated', 'supplied']);
   }
 
   async shouldInsertManyWithSpecifiedIdsAndOnInsertIdAsDefault() {
@@ -382,10 +352,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
         name: 'Some Name D',
       },
     ]);
-    expect(ids).toHaveLength(4);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
+    expect(ids).toEqual([anyUuid, '50', anyUuid, '70']);
   }
 
   async shouldInsertManyWithHeterogeneousFieldSets() {
@@ -393,17 +360,14 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Het A', email: 'heta@example.com', password: '123456789a!' },
       { name: 'Het B' },
     ]);
-    expect(ids).toHaveLength(2);
-    for (const id of ids) {
-      expect(id).toBeDefined();
-    }
+    expect(ids).toEqual([anyUuid, anyUuid]);
     const founds = await this.querier.findMany(User, {
-      $select: { id: true, name: true, email: true },
+      $select: { name: true, email: true },
       $where: { name: ['Het A', 'Het B'] },
       $sort: { name: 1 },
     });
     expect(founds).toHaveLength(2);
-    expect(founds[0]).toMatchObject({ name: 'Het A', email: 'heta@example.com' });
+    expect(founds[0]).toEqual({ name: 'Het A', email: 'heta@example.com' });
     expect(founds[1].name).toBe('Het B');
     // The missing column falls back to its database default: SQL surfaces it as null, Mongo omits
     // the field (undefined). Either way it is nullish, never a value bleed from the sibling record.
@@ -417,7 +381,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       profile: { picture: 'abc', createdAt: 123 },
     } satisfies User;
     const id = await this.querier.insertOne(User, payload);
-    expect(id).toBeDefined();
     const found = await this.querier.findOneById(User, id, { $populate: { profile: true } });
     expect(found).toMatchObject({ id, profile: payload.profile });
   }
@@ -430,8 +393,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     } satisfies MeasureUnit;
 
     const id = await this.querier.insertOne(MeasureUnit, payload);
-
-    expect(id).toBeDefined();
 
     const found = await this.querier.findOneById(MeasureUnit, id, { $populate: { category: true } });
 
@@ -485,71 +446,19 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const id = await this.querier.insertOne(MeasureUnit, payload);
 
-    expect(id).toBeDefined();
-
     const found = await this.querier.findOneById(MeasureUnit, id);
 
     expect(found).toMatchObject(payload);
   }
 
   async shouldInsertOneAndCascadeOneToMany() {
-    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
-
-    const date = new Date();
-
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+    const id = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some description',
-      date,
-      itemAdjustments,
+      date: new Date(),
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
 
-    expect(inventoryAdjustmentId).toBeDefined();
-
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $populate: { itemAdjustments: true },
-    });
-
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
-      itemAdjustments,
-    });
-
-    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $where: { inventoryAdjustmentId } });
-
-    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
-  }
-
-  async shouldInsertOneAndCascadeOneToManyWithSpecificFields() {
-    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
-
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
-      description: 'some description',
-      itemAdjustments: itemAdjustments.slice(),
-    });
-
-    expect(inventoryAdjustmentId).toBeDefined();
-
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
-    });
-
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
-      itemAdjustments,
-    });
-
-    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $where: { inventoryAdjustmentId } });
-
-    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
-  }
-
-  async shouldThrowWhenSelectAndExcludeConflict() {
-    await expect(
-      this.querier.findMany(User, {
-        $select: { name: true },
-        $exclude: { createdAt: true },
-      }),
-    ).rejects.toThrow('Cannot combine $select and $exclude');
+    expect(await this.adjustmentPrices(id)).toEqual([50, 300]);
   }
 
   /** A `$select` naming fields only to drop them subtracts as `$exclude` does, so the two combine. */
@@ -569,32 +478,14 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldUpdateOneAndCascadeOneToMany() {
-    const itemAdjustments: ItemAdjustment[] = [{ buyPrice: 50 }, { buyPrice: 300 }];
+    const id = await this.querier.insertOne(InventoryAdjustment, { description: 'some description' });
 
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
-      description: 'some description',
-    });
-
-    expect(inventoryAdjustmentId).toBeDefined();
-
-    const changes = await this.querier.updateOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      itemAdjustments,
+    const changes = await this.querier.updateOneById(InventoryAdjustment, id, {
+      itemAdjustments: [{ buyPrice: 50 }, { buyPrice: 300 }],
     });
 
     expect(changes).toBe(1);
-
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $populate: { itemAdjustments: { $select: { buyPrice: true } } },
-    });
-
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
-      itemAdjustments,
-    });
-
-    const itemAdjustmentsFound = await this.querier.findMany(ItemAdjustment, { $where: { inventoryAdjustmentId } });
-
-    expect(itemAdjustmentsFound).toMatchObject(itemAdjustments);
+    expect(await this.adjustmentPrices(id)).toEqual([50, 300]);
   }
 
   /**
@@ -662,12 +553,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { itemAdjustments: [{ buyPrice: 7 }, { buyPrice: 9 }] },
     );
 
-    for (const id of [first, second]) {
-      const found = await this.querier.findOneById(InventoryAdjustment, id, {
-        $populate: { itemAdjustments: { $select: { buyPrice: true } } },
-      });
-      expect(found?.itemAdjustments?.map(({ buyPrice }) => buyPrice).sort()).toEqual([7, 9]);
-    }
+    expect([await this.adjustmentPrices(first), await this.adjustmentPrices(second)]).toEqual([
+      [7, 9],
+      [7, 9],
+    ]);
     await expect(this.querier.count(ItemAdjustment, {})).resolves.toBe(4);
   }
 
@@ -712,11 +601,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const id = await this.querier.insertOne(Item, payload);
 
-    expect(id).toBeDefined();
-
     const foundItem = await this.querier.findOneById(Item, id, {
       $select: { id: true, name: true, createdAt: true },
-      $populate: { tags: { $select: { name: true, createdAt: true } } },
+      $populate: { tags: { $select: { name: true, createdAt: true }, $sort: { name: 1 } } },
     });
 
     expect(foundItem).toMatchObject({
@@ -727,13 +614,17 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const foundTags = await this.querier.findMany(Tag, {
       $select: { name: true, createdAt: true },
       $populate: { items: { $select: { id: true, name: true, createdAt: true } } },
+      $sort: { name: 1 },
     });
 
     const item = { id, name: payload.name, createdAt: payload.createdAt };
     expect(foundTags).toMatchObject(tags.map((tag) => ({ ...tag, items: [item] })));
   }
 
-  /** A narrowed query keeps its projection while populating, which on MongoDB means the aggregation path. */
+  /**
+   * A narrowed query keeps its projection while populating, and the relation's own narrows inside the join,
+   * which on MongoDB means the aggregation path.
+   */
   async shouldNarrowTheProjectionWhilePopulatingAJoinedRelation() {
     const measureUnitId = await this.querier.insertOne(MeasureUnit, { name: 'unit one' });
     const id = await this.querier.insertOne(Item, { name: 'item one', salePrice: 5, measureUnitId });
@@ -745,7 +636,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     expect(found).toMatchObject({ id, name: 'item one', measureUnit: { name: 'unit one' } });
     expect(found).not.toHaveProperty('salePrice');
-    // the relation's own projection narrows too, inside the join
     expect(found?.measureUnit).not.toHaveProperty('categoryId');
   }
 
@@ -815,7 +705,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const found = await this.querier.findOneById(Item, id, {
       $select: { id: true, name: true, updatedAt: true },
-      $populate: { tags: true },
+      $populate: { tags: { $sort: { name: 1 } } },
     });
 
     expect(found).toMatchObject({
@@ -824,11 +714,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
   }
 
-  /**
-   * Updating a 1-1 replaces the child rather than leaving the old row behind. `saveRelation` threads
-   * `isUpdate`, but only the to-many branch read it, so the update inserted a second row and a
-   * `$populate` then had two to choose from.
-   */
+  /** Updating a 1-1 replaces the child rather than leaving the old row behind for a `$populate` to choose from. */
   async shouldUpdateOneAndReplaceOneToOne() {
     const id = await this.querier.insertOne(User, {
       name: 'Profile Replace',
@@ -855,8 +741,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(mergeResult).toBe(1);
 
     let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toBeDefined();
-    expect(found?.kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b'] });
+    expect(found?.kind).toEqual({ public: 1, private: 1, tags: ['a', 'b'] });
 
     const pushResult = await this.querier.updateOneById(Company, id, {
       kind: { $push: { tags: 'c' } },
@@ -864,7 +749,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(pushResult).toBe(1);
 
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, private: 1, tags: ['a', 'b', 'c'] });
+    expect(found?.kind).toEqual({ public: 1, private: 1, tags: ['a', 'b', 'c'] });
 
     const unsetResult = await this.querier.updateOneById(Company, id, {
       kind: { $unset: ['public'] },
@@ -872,11 +757,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(unsetResult).toBe(1);
 
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ private: 1, tags: ['a', 'b', 'c'] });
-    expect(found?.kind).not.toHaveProperty('public');
+    expect(found?.kind).toEqual({ private: 1, tags: ['a', 'b', 'c'] });
   }
 
-  /** `$pull` removes every matching element, and is a no-op when there is nothing to remove. */
+  /**
+   * `$pull` removes every matching element, leaves the array as it is when none matches, and leaves an
+   * empty array rather than a missing key once it pulls the last.
+   */
   async shouldPullFromJsonArray() {
     const id = await this.querier.insertOne(Company, {
       name: 'JSON Company Pull',
@@ -889,18 +776,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(pullResult).toBe(1);
 
     let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, tags: ['b', 'c'] });
+    expect(found?.kind).toEqual({ public: 1, tags: ['b', 'c'] });
 
-    // No matching element leaves the array untouched.
     await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'absent' } } });
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, tags: ['b', 'c'] });
+    expect(found?.kind).toEqual({ public: 1, tags: ['b', 'c'] });
 
-    // Pulling the last element leaves an empty array, not a missing key.
     await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'b' } } });
     await this.querier.updateOneById(Company, id, { kind: { $pull: { tags: 'c' } } });
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, tags: [] });
+    expect(found?.kind).toEqual({ public: 1, tags: [] });
   }
 
   /**
@@ -919,8 +804,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(result).toBe(1);
 
     const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ private: 1, tags: ['b', 'fresh'] });
-    expect(found?.kind).not.toHaveProperty('public');
+    expect(found?.kind).toEqual({ private: 1, tags: ['b', 'fresh'] });
   }
 
   /**
@@ -940,7 +824,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(result).toBe(1);
 
     const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, tags: ['kept', 'appended'] });
+    expect(found?.kind).toEqual({ public: 1, tags: ['kept', 'appended'] });
   }
 
   /** `$set` and `$unset` on the same key: `$unset` is applied last, so the key ends up removed. */
@@ -955,8 +839,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     const found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ public: 1, country: 'US' });
-    expect(found?.kind).not.toHaveProperty('private');
+    expect(found?.kind).toEqual({ public: 1, country: 'US' });
   }
 
   /** A `$pull` on an absent key is a no-op: it must not create the key or null the document. */
@@ -1117,12 +1000,14 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(MeasureUnitCategory, q));
   }
 
-  /** Seven items: a tie on each price, two with none, and codes where the nulls fall apart from the prices'. */
+  /**
+   * Seven items: a tie on each price, two with none, and codes where the nulls fall apart from the prices'.
+   * One at a time, so each key is minted after the last and the ties break in insertion order.
+   */
   private async insertPricedItems() {
     const prices = [3, null, 1, 3, null, 2, 1];
     const codes = ['b', null, 'a', 'b', null, 'c', 'a'];
     for (const [at, salePrice] of prices.entries()) {
-      // One at a time, so each key is minted after the last and the ties break in insertion order.
       await this.querier.insertOne(Item, { name: `priced ${at}`, salePrice, code: codes[at] });
     }
   }
@@ -1154,7 +1039,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * Where nulls land is asked for rather than left to the engine: unqualified, Postgres sorts them last
-   * on `asc` where every other engine sorts them first. A placement reads the same everywhere - through
+   * on `asc` where every other engine sorts them first. A placement reads the same everywhere: through
    * `NULLS FIRST/LAST` where the engine has it, a leading term where it does not.
    */
   async shouldSortByNullPlacement() {
@@ -1198,8 +1083,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.insertOne(Company, { name: 'JSON Scalar One', kind: { public: 1 } });
     await this.querier.insertOne(Company, { name: 'JSON Scalar Zero', kind: { public: 0 } });
 
-    const founds = await this.querier.findMany(Company, { $where: { 'kind.public': 1 } });
-    expect(founds.map(({ name }) => name)).toEqual(['JSON Scalar One']);
+    expect(await this.companyNames({ 'kind.public': 1 })).toEqual(['JSON Scalar One']);
 
     const sorted = await this.querier.findMany(Company, { $sort: { 'kind.public': -1 } });
     expect(sorted.map(({ name }) => name)).toEqual(['JSON Scalar One', 'JSON Scalar Zero']);
@@ -1243,7 +1127,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
-   * Ordering parents by how many rows a to-many holds - "the categories with the most units". A
+   * Ordering parents by how many rows a to-many holds, as "the categories with the most units" does: a
    * correlated tally per parent, so no relation rows are loaded and the page still cuts to a top-N.
    */
   async shouldSortByARelationCount() {
@@ -1318,9 +1202,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * `$distinct` collapses rows onto the columns it projects, and a relation tally is not one of
-   * them - so ranking by one is refused rather than answered all-equal, on every backend.
+   * them, so ranking by one is refused rather than answered all-equal, on every backend.
    */
-  async shouldRejectSortingByARelationCountWithDistinct() {
+  async shouldRefuseSortingByARelationCountWithDistinct() {
     await expect(
       this.querier.findMany(MeasureUnitCategory, {
         $select: { name: true },
@@ -1352,8 +1236,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * A relation aggregate is a field: the same tally `$count` answers with, under a name every clause
-   * takes. Read only where a query names it, and narrowed by the target's own filters, so a
-   * soft-deleted row is as invisible here as it is to `$count`.
+   * takes, filtering and ordering by the expression, which no read has to have selected. Read only where
+   * a query names it, and narrowed by the target's own filters, so a soft-deleted row is as invisible here
+   * as it is to `$count`.
    */
   async shouldReadARelationAggregateAsAField() {
     const [alpha, beta] = await this.querier.insertMany(MeasureUnitCategory, [
@@ -1373,7 +1258,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
     expect(read.map((it) => it.unitCount)).toEqual([2, 1]);
 
-    // A field, so it filters and orders like one - by the expression, which no read has to have selected.
     const filtered = await this.querier.findMany(MeasureUnitCategory, {
       $select: { name: true },
       $where: { name: { $istartsWith: 'aggregate' }, unitCount: { $gte: 2 } },
@@ -1389,9 +1273,24 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(afterDelete?.unitCount).toBe(0);
   }
 
+  /** The names `$where` matches, in code-unit order whatever the column's collation. */
   private async categoryNames($where: QueryWhere<MeasureUnitCategory>) {
     const rows = await this.querier.findMany(MeasureUnitCategory, { $select: { name: true }, $where });
     return rows.map((it) => it.name).sort();
+  }
+
+  private async companyNames($where: QueryWhere<Company>) {
+    const rows = await this.querier.findMany(Company, { $select: { name: true }, $where });
+    return rows.map((it) => it.name).sort();
+  }
+
+  private async taxCategoryNames(...pks: TaxCategory['pk'][]) {
+    const rows = await this.querier.findMany(TaxCategory, {
+      $select: { name: true },
+      $where: { pk: pks },
+      $sort: { name: 1 },
+    });
+    return rows.map((it) => it.name);
   }
 
   async shouldMatchAStringOperatorValueLiterally() {
@@ -1426,6 +1325,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(await this.categoryNames({ name: { $ilike: 'PAT A.B' } })).toEqual(['pat a.b']);
     expect(await this.categoryNames({ name: { $like: 'pat a' } })).toEqual([]);
     await expect(this.categoryNames({ name: { $like: 'pat a\\' } })).rejects.toThrow('with nothing after it to escape');
+  }
+
+  /** Case-sensitive on every engine, whatever the column's collation folds. */
+  async shouldMatchARegexCaseSensitively() {
+    await this.querier.insertMany(MeasureUnitCategory, [{ name: 'Alpha' }, { name: 'beta' }, { name: 'alpha' }]);
+    expect(await this.categoryNames({ name: { $regex: '^A' } })).toEqual(['Alpha']);
+    expect(await this.categoryNames({ name: { $regex: '^a|^b' } })).toEqual(['alpha', 'beta']);
   }
 
   /** A relation aggregate groups and aggregates like any field: the rows computing it are read first. */
@@ -1490,7 +1396,8 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * A report in one statement: rows grouped by a to-one relation's field, pivoted into columns by each
-   * aggregate's own `$where`. A group no row of an aggregate reaches answers null, as SQL does.
+   * aggregate's own `$where`. A group no row of an aggregate reaches answers null, as SQL does, and a row
+   * pointing nowhere is in no group of the path, where its own foreign key groups it under null.
    */
   async shouldAggregateAcrossARelationPivotingByEachAggregatesWhere() {
     const [itemA, itemB] = await this.querier.insertMany(Item, [{ code: 'pivot-a' }, { code: 'pivot-b' }]);
@@ -1517,7 +1424,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { code: 'pivot-b', ones: 7, twos: null, adjustments: 1 },
     ]);
 
-    // A row pointing nowhere is in no group of the path, and its own foreign key groups it under null.
     const pathGroups = await this.querier.aggregate(ItemAdjustment, {
       $where: { inventoryAdjustmentId, itemId: null },
       $group: { code: { item: { code: true } } },
@@ -1571,22 +1477,6 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(found.map((it) => it._count.measureUnits)).toEqual([2, 1]);
-  }
-
-  /** Needing no id, a tally composes with a raw projection too. */
-  async shouldCountBesideARawSelect() {
-    const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'raw category' });
-    await this.querier.insertMany(MeasureUnit, [
-      { name: 'one', categoryId },
-      { name: 'two', categoryId },
-    ]);
-
-    const found = await this.querier.findMany(MeasureUnitCategory, {
-      $select: [raw`name`],
-      $count: { measureUnits: true },
-    });
-
-    expect(found).toEqual([{ name: 'raw category', _count: { measureUnits: 2 } }]);
   }
 
   /** A tally read inside the statement needs no id, so `$distinct` deduplicates whole rows, tallies included. */
@@ -1667,16 +1557,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'b', categoryId },
     ]);
 
-    const streamed: unknown[] = [];
-    for await (const row of this.querier.findManyStream(MeasureUnitCategory, {
-      $select: { name: true },
-      $where: { id: categoryId },
-      $count: { measureUnits: true },
-    })) {
-      streamed.push(row);
-    }
+    const streamed = await Array.fromAsync(
+      this.querier.findManyStream(MeasureUnitCategory, {
+        $select: { name: true },
+        $where: { id: categoryId },
+        $count: { measureUnits: true },
+      }),
+    );
 
-    expect(streamed).toMatchObject([{ name: 'streamed count', _count: { measureUnits: 2 } }]);
+    expect(streamed).toEqual([{ name: 'streamed count', _count: { measureUnits: 2 } }]);
   }
 
   /** A filter narrows what counts, without touching which parents come back. */
@@ -1802,7 +1691,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   /**
    * Ordering a to-many relation's own rows: `$sort` inside `$populate` orders the children's own read,
    * which is where "each parent with its children in order" lives. The parent-level `$sort` cannot
-   * express it - it orders parents, and a parent has many children.
+   * express it: it orders parents, and a parent has many children.
    */
   async shouldPopulateToManySortedByItsOwnField() {
     const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Sorted category' });
@@ -1899,11 +1788,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     ]);
   }
 
-  /**
-   * `$distinct` collapses rows that agree on every projected column - the set a SQL dialect names
-   * after `SELECT DISTINCT`. MongoDB dropped the clause outright and returned the duplicates, so
-   * this is shared rather than per-backend: the whole point of the clause is the same answer anywhere.
-   */
+  /** `$distinct` collapses rows that agree on every projected column, as `SELECT DISTINCT` does, on every backend. */
   async shouldFindDistinctRows() {
     await this.querier.insertMany(Item, [
       { name: 'dup', code: 'd1' },
@@ -1923,9 +1808,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * A page on a write picks which rows it touches, so it has to settle them with a read first: no
-   * engine but MySQL takes `LIMIT` on an UPDATE or a DELETE, and MongoDB takes neither. MongoDB
-   * resolved ids from `$where` alone and dropped the page, so a write meant for one row hit every
-   * match - a shared expectation is what keeps the two backends answering the same way.
+   * engine but MySQL takes `LIMIT` on an UPDATE or a DELETE, and MongoDB takes neither.
    */
   async shouldUpdateOnlyThePagedRows() {
     await this.querier.insertMany(Item, [
@@ -2006,10 +1889,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $sort: { tax: { name: 1 } },
     });
 
-    expect(founds.map(({ name }) => name)).toEqual(['by alpha', 'by zulu']);
-    // The ordering brought the relation in; it must not have widened the row it returns - which the
-    // row's own type now says too, so the key is tested by name rather than read.
-    expect(founds.every((found) => !('tax' in found))).toBe(true);
+    expect(founds).toEqual([{ name: 'by alpha' }, { name: 'by zulu' }]);
   }
 
   /**
@@ -2044,17 +1924,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.insertOne(Company, { name: 'JSON Typed On', kind: { isArchived: true, public: 1 } });
     await this.querier.insertOne(Company, { name: 'JSON Typed Off', kind: { isArchived: false, public: 0 } });
 
-    const byTrue = await this.querier.findMany(Company, { $where: { 'kind.isArchived': true } });
-    expect(byTrue.map(({ name }) => name)).toEqual(['JSON Typed On']);
-
-    const byFalse = await this.querier.findMany(Company, { $where: { 'kind.isArchived': { $ne: true } } });
-    expect(byFalse.map(({ name }) => name)).toEqual(['JSON Typed Off']);
-
-    const byIn = await this.querier.findMany(Company, { $where: { 'kind.public': { $in: [1] } } });
-    expect(byIn.map(({ name }) => name)).toEqual(['JSON Typed On']);
-
-    const byInBoth = await this.querier.findMany(Company, { $where: { 'kind.public': { $in: [0, 1] } } });
-    expect(byInBoth).toHaveLength(2);
+    expect(await this.companyNames({ 'kind.isArchived': true })).toEqual(['JSON Typed On']);
+    expect(await this.companyNames({ 'kind.isArchived': { $ne: true } })).toEqual(['JSON Typed Off']);
+    expect(await this.companyNames({ 'kind.public': { $in: [1] } })).toEqual(['JSON Typed On']);
+    expect(await this.companyNames({ 'kind.public': { $in: [0, 1] } })).toEqual(['JSON Typed Off', 'JSON Typed On']);
   }
 
   /** A fractional operand against a JSON number compares as a fraction, on a path and inside `$elemMatch`. */
@@ -2062,28 +1935,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.insertOne(Company, { name: 'JSON Rated Low', kind: { rating: 1.4, items: [{ count: 1.4 }] } });
     await this.querier.insertOne(Company, { name: 'JSON Rated High', kind: { rating: 2.6, items: [{ count: 2.6 }] } });
 
-    const byGt = await this.querier.findMany(Company, { $where: { 'kind.rating': { $gt: 1.2 } } });
-    expect(byGt).toHaveLength(2);
-
-    const byLt = await this.querier.findMany(Company, { $where: { 'kind.rating': { $lt: 1.5 } } });
-    expect(byLt.map(({ name }) => name)).toEqual(['JSON Rated Low']);
-
-    const byEq = await this.querier.findMany(Company, { $where: { 'kind.rating': 1.4 } });
-    expect(byEq.map(({ name }) => name)).toEqual(['JSON Rated Low']);
-
-    const byIn = await this.querier.findMany(Company, { $where: { 'kind.rating': { $in: [2.6] } } });
-    expect(byIn.map(({ name }) => name)).toEqual(['JSON Rated High']);
-
-    const byBetween = await this.querier.findMany(Company, { $where: { 'kind.rating': { $between: [1.3, 1.5] } } });
-    expect(byBetween.map(({ name }) => name)).toEqual(['JSON Rated Low']);
-
-    const byElem = await this.querier.findMany(Company, {
-      $where: { 'kind.items': { $elemMatch: { count: { $gt: 1.5 } } } },
-    });
-    expect(byElem.map(({ name }) => name)).toEqual(['JSON Rated High']);
-
-    const byNot = await this.querier.findMany(Company, { $where: { 'kind.rating': { $not: { $gt: 2 } } } });
-    expect(byNot.map(({ name }) => name)).toEqual(['JSON Rated Low']);
+    expect(await this.companyNames({ 'kind.rating': { $gt: 1.2 } })).toEqual(['JSON Rated High', 'JSON Rated Low']);
+    expect(await this.companyNames({ 'kind.rating': { $lt: 1.5 } })).toEqual(['JSON Rated Low']);
+    expect(await this.companyNames({ 'kind.rating': 1.4 })).toEqual(['JSON Rated Low']);
+    expect(await this.companyNames({ 'kind.rating': { $in: [2.6] } })).toEqual(['JSON Rated High']);
+    expect(await this.companyNames({ 'kind.rating': { $between: [1.3, 1.5] } })).toEqual(['JSON Rated Low']);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { count: { $gt: 1.5 } } } })).toEqual([
+      'JSON Rated High',
+    ]);
+    expect(await this.companyNames({ 'kind.rating': { $not: { $gt: 2 } } })).toEqual(['JSON Rated Low']);
   }
 
   /**
@@ -2108,36 +1968,25 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       },
     ]);
 
-    const byAll = await this.querier.findMany(Company, { $where: { 'kind.items': { $all: [{ name: 'first' }] } } });
-    expect(byAll.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byNested = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $all: [{ tag: { key: 'a' } }] } },
-    });
-    expect(byNested.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byNestedArray = await this.querier.findMany(Company, { $where: { 'kind.meta.grid': { $all: [[2, 1]] } } });
-    expect(byNestedArray.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byElem = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: 'a' } } } },
-    });
-    expect(byElem.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byElemArray = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { labels: ['y'] } } },
-    });
-    expect(byElemArray.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byElemBesideOperator = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: 'a' }, labels: ['y'], n: { $gt: 1 } } } },
-    });
-    expect(byElemBesideOperator.map(({ name }) => name)).toEqual(['JSON Contained']);
-
-    const byNestedOperator = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { tag: { key: { $in: ['a', 'c'] } } } } },
-    });
-    expect(byNestedOperator.map(({ name }) => name)).toEqual(['JSON Contained']);
+    expect(await this.companyNames({ 'kind.items': { $all: [{ name: 'first' }] } })).toEqual(['JSON Contained']);
+    expect(await this.companyNames({ 'kind.meta.list': { $all: [{ tag: { key: 'a' } }] } })).toEqual([
+      'JSON Contained',
+    ]);
+    expect(await this.companyNames({ 'kind.meta.grid': { $all: [[2, 1]] } })).toEqual(['JSON Contained']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { tag: { key: 'a' } } } })).toEqual([
+      'JSON Contained',
+    ]);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { labels: ['y'] } } })).toEqual([
+      'JSON Contained',
+    ]);
+    expect(
+      await this.companyNames({
+        'kind.meta.list': { $elemMatch: { tag: { key: 'a' }, labels: ['y'], n: { $gt: 1 } } },
+      }),
+    ).toEqual(['JSON Contained']);
+    expect(
+      await this.companyNames({ 'kind.meta.list': { $elemMatch: { tag: { key: { $in: ['a', 'c'] } } } } }),
+    ).toEqual(['JSON Contained']);
   }
 
   /** A path holding a scalar or an object has no elements: no array operator matches it, and none fails the read. */
@@ -2148,27 +1997,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'JSON List Array', kind: { meta: { list: [5], none: [] } } },
     ]);
 
-    const bySize = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $size: 1 } } });
-    expect(bySize.map(({ name }) => name)).toEqual(['JSON List Array']);
-
-    const byBounds = await this.querier.findMany(Company, {
-      $where: {
+    expect(await this.companyNames({ 'kind.meta.list': { $size: 1 } })).toEqual(['JSON List Array']);
+    expect(
+      await this.companyNames({
         'kind.meta.list': { $size: { $lte: 2 }, $elemMatch: { $eq: 5 } },
         'kind.meta.none': { $size: { $lt: 1 } },
-      },
-    });
-    expect(byBounds.map(({ name }) => name)).toEqual(['JSON List Array']);
-
-    const byElem = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $elemMatch: { $gt: 1 } } } });
-    expect(byElem.map(({ name }) => name)).toEqual(['JSON List Array']);
-
-    const byElemEq = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $elemMatch: { $eq: 5 } } } });
-    expect(byElemEq.map(({ name }) => name)).toEqual(['JSON List Array']);
-
-    const byElemIn = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { $in: [5, 6] } } },
-    });
-    expect(byElemIn.map(({ name }) => name)).toEqual(['JSON List Array']);
+      }),
+    ).toEqual(['JSON List Array']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $gt: 1 } } })).toEqual(['JSON List Array']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $eq: 5 } } })).toEqual(['JSON List Array']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $in: [5, 6] } } })).toEqual(['JSON List Array']);
   }
 
   /**
@@ -2188,18 +2026,11 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
     expect(byScore.map(({ name }) => name)).toEqual(['JSON Mixed Nine', 'JSON Mixed Ten']);
 
-    const byNumber = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { $eq: 1 } } },
-    });
-    expect(byNumber.map(({ name }) => name)).toEqual(['JSON Mixed Nine']);
-
-    const byText = await this.querier.findMany(Company, {
-      $where: { 'kind.meta.list': { $elemMatch: { $in: ['1', 'x'] } } },
-    });
-    expect(byText.map(({ name }) => name)).toEqual(['JSON Mixed Ten']);
-
-    const byBoolean = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $all: [true] } } });
-    expect(byBoolean.map(({ name }) => name)).toEqual(['JSON Mixed Text']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $eq: 1 } } })).toEqual(['JSON Mixed Nine']);
+    expect(await this.companyNames({ 'kind.meta.list': { $elemMatch: { $in: ['1', 'x'] } } })).toEqual([
+      'JSON Mixed Ten',
+    ]);
+    expect(await this.companyNames({ 'kind.meta.list': { $all: [true] } })).toEqual(['JSON Mixed Text']);
   }
 
   /** A JSON null is an element like any other: `$all` finds the array holding one, and no other. */
@@ -2209,9 +2040,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'JSON Holds None', kind: { meta: { list: [1] } } },
     ]);
 
-    const found = await this.querier.findMany(Company, { $where: { 'kind.meta.list': { $all: [null] } } });
-
-    expect(found.map(({ name }) => name)).toEqual(['JSON Holds Null']);
+    expect(await this.companyNames({ 'kind.meta.list': { $all: [null] } })).toEqual(['JSON Holds Null']);
   }
 
   /**
@@ -2228,25 +2057,20 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       kind: { items: [{ name: 'second', active: false }] },
     });
 
-    const byContainment = await this.querier.findMany(Company, {
-      $where: { 'kind.items': { $elemMatch: { name: 'first' } } },
-    });
-    expect(byContainment.map(({ name }) => name)).toEqual(['JSON Elem Active']);
-
-    const byBoolean = await this.querier.findMany(Company, {
-      $where: { 'kind.items': { $elemMatch: { active: { $eq: true } } } },
-    });
-    expect(byBoolean.map(({ name }) => name)).toEqual(['JSON Elem Active']);
-
-    const byMixed = await this.querier.findMany(Company, {
-      $where: { 'kind.items': { $elemMatch: { active: { $eq: false }, name: { $startsWith: 'sec' } } } },
-    });
-    expect(byMixed.map(({ name }) => name)).toEqual(['JSON Elem Idle']);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { name: 'first' } } })).toEqual(['JSON Elem Active']);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { active: { $eq: true } } } })).toEqual([
+      'JSON Elem Active',
+    ]);
+    expect(
+      await this.companyNames({
+        'kind.items': { $elemMatch: { active: { $eq: false }, name: { $startsWith: 'sec' } } },
+      }),
+    ).toEqual(['JSON Elem Idle']);
   }
 
   /**
-   * `$elemMatch` edge shapes: plain equality keeps a number's cast and turns `null` into `IS NULL`, an
-   * empty match is valid SQL, and an operator applies to a scalar element.
+   * `$elemMatch` edge shapes: plain equality agrees with its `$eq` spelling, a null field is a null check
+   * rather than `= NULL`, and an operator applies to a scalar element itself.
    */
   async shouldFindByJsonElemMatchEdgeShapes() {
     await this.querier.insertOne(Company, {
@@ -2258,23 +2082,12 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       kind: { items: [{ name: 'b', count: 9, note: 'set' }], flags: [false] },
     });
 
-    // Plain equality and its explicit `$eq` spelling must agree.
-    const byPlain = await this.querier.findMany(Company, { $where: { 'kind.items': { $elemMatch: { count: 5 } } } });
-    expect(byPlain.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
-    const byEq = await this.querier.findMany(Company, {
-      $where: { 'kind.items': { $elemMatch: { count: { $eq: 5 } } } },
-    });
-    expect(byEq.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
-
-    // A null element field is a null check, not `= NULL`.
-    const byNull = await this.querier.findMany(Company, { $where: { 'kind.items': { $elemMatch: { note: null } } } });
-    expect(byNull.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
-
-    // An operator applied to the element itself, on an array of scalars.
-    const byFlag = await this.querier.findMany(Company, {
-      $where: { 'kind.flags': { $elemMatch: { $eq: true } } },
-    });
-    expect(byFlag.map(({ name }) => name)).toEqual(['JSON Edge Counted']);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { count: 5 } } })).toEqual(['JSON Edge Counted']);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { count: { $eq: 5 } } } })).toEqual([
+      'JSON Edge Counted',
+    ]);
+    expect(await this.companyNames({ 'kind.items': { $elemMatch: { note: null } } })).toEqual(['JSON Edge Counted']);
+    expect(await this.companyNames({ 'kind.flags': { $elemMatch: { $eq: true } } })).toEqual(['JSON Edge Counted']);
   }
 
   /**
@@ -2285,30 +2098,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await this.querier.insertOne(Company, { name: 'JSON Path Two', kind: { tags: ['a', 'b'], ranks: [1, 2] } });
     await this.querier.insertOne(Company, { name: 'JSON Path One', kind: { tags: ['c'], ranks: [3] } });
 
-    const bySize = await this.querier.findMany(Company, { $where: { 'kind.tags': { $size: 2 } } });
-    expect(bySize.map(({ name }) => name)).toEqual(['JSON Path Two']);
-
-    const byAll = await this.querier.findMany(Company, { $where: { 'kind.tags': { $all: ['b', 'a'] } } });
-    expect(byAll.map(({ name }) => name)).toEqual(['JSON Path Two']);
-
-    const byMissing = await this.querier.findMany(Company, { $where: { 'kind.tags': { $all: ['absent'] } } });
-    expect(byMissing).toEqual([]);
-
-    const byElem = await this.querier.findMany(Company, { $where: { 'kind.tags': { $elemMatch: { $eq: 'b' } } } });
-    expect(byElem.map(({ name }) => name)).toEqual(['JSON Path Two']);
-
-    const byElemIn = await this.querier.findMany(Company, {
-      $where: { 'kind.tags': { $elemMatch: { $in: ['c', 'z'] } } },
-    });
-    expect(byElemIn.map(({ name }) => name)).toEqual(['JSON Path One']);
-
-    const byRank = await this.querier.findMany(Company, { $where: { 'kind.ranks': { $elemMatch: { $eq: 2 } } } });
-    expect(byRank.map(({ name }) => name)).toEqual(['JSON Path Two']);
-
-    const byRankIn = await this.querier.findMany(Company, {
-      $where: { 'kind.ranks': { $elemMatch: { $in: [3, 9] } } },
-    });
-    expect(byRankIn.map(({ name }) => name)).toEqual(['JSON Path One']);
+    expect(await this.companyNames({ 'kind.tags': { $size: 2 } })).toEqual(['JSON Path Two']);
+    expect(await this.companyNames({ 'kind.tags': { $all: ['b', 'a'] } })).toEqual(['JSON Path Two']);
+    expect(await this.companyNames({ 'kind.tags': { $all: ['absent'] } })).toEqual([]);
+    expect(await this.companyNames({ 'kind.tags': { $elemMatch: { $eq: 'b' } } })).toEqual(['JSON Path Two']);
+    expect(await this.companyNames({ 'kind.tags': { $elemMatch: { $in: ['c', 'z'] } } })).toEqual(['JSON Path One']);
+    expect(await this.companyNames({ 'kind.ranks': { $elemMatch: { $eq: 2 } } })).toEqual(['JSON Path Two']);
+    expect(await this.companyNames({ 'kind.ranks': { $elemMatch: { $in: [3, 9] } } })).toEqual(['JSON Path One']);
   }
 
   /** `$push` onto an absent key creates the array, consistently across every dialect. */
@@ -2376,57 +2172,36 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       kind: { $set: { isArchived: true } },
     });
     let found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toBeInstanceOf(Object);
-    expect(found?.kind?.isArchived).toBe(true);
+    expect(found?.kind).toEqual({ description: 'x', isArchived: true });
 
     await this.querier.updateOneById(Company, id, {
       kind: { $set: { isArchived: false } },
     });
     found = await this.querier.findOneById(Company, id, { $select: { kind: true } });
-    expect(found?.kind).toMatchObject({ isArchived: false });
+    expect(found?.kind).toEqual({ description: 'x', isArchived: false });
   }
 
+  /** The first upsert inserts the row and the second updates it, each reported as the engine counts it. */
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
-    const record1 = await this.querier.findOne(TaxCategory, {
-      $select: { name: true },
-      $where: { pk },
-    });
-    expect(record1).toBeUndefined();
-    const insertResult = await this.querier.upsertOne(
-      TaxCategory,
-      { pk: true },
-      {
-        pk,
-        name: 'Some Name C',
-      },
-    );
-    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.id).toBe(pk);
-    const record2 = await this.querier.findOne(TaxCategory, {
-      $select: { name: true },
-      $where: { pk },
-    });
-    expect(record2).toMatchObject({
-      name: 'Some Name C',
-    });
-    const updateResult = await this.querier.upsertOne(
-      TaxCategory,
-      { pk: true },
-      {
-        pk,
-        name: 'Some Name D',
-      },
-    );
-    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.id).toBe(pk);
-    const record3 = await this.querier.findOne(TaxCategory, {
-      $select: { name: true },
-      $where: { pk },
-    });
-    expect(record3).toMatchObject({
-      name: 'Some Name D',
-    });
+
+    const inserted = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
+    expect(await this.taxCategoryNames(pk)).toEqual(['Some Name C']);
+    const updated = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
+
+    expect([inserted, updated]).toEqual([
+      { id: pk, ...this.upsertReport(1, 0) },
+      { id: pk, ...this.upsertReport(0, 1) },
+    ]);
+    expect(await this.taxCategoryNames(pk)).toEqual(['Some Name D']);
+  }
+
+  /**
+   * What an upsert reports inserting `inserted` rows and updating `updated`: a change each, and `created`
+   * only where the engine tells an insert from an update (Postgres's `xmax`, MySQL's `affectedRows`).
+   */
+  protected upsertReport(inserted: number, updated: number): { changes: number; created?: boolean } {
+    return { changes: inserted + updated };
   }
 
   /** The row inserts as written; on a conflict, only `update` applies, so a counter can count. */
@@ -2435,13 +2210,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const row = { id, name: 'VAT', percentage: 10 };
     const update = { percentage: { $inc: 5 } } as const;
     await this.querier.upsertOne(Tax, { id: true }, row, update);
-    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
+    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toEqual({
       name: 'VAT',
       percentage: 10,
     });
     await this.querier.upsertOne(Tax, { id: true }, { ...row, name: 'renamed' }, update);
     await this.querier.upsertMany(Tax, { id: true }, [row], update);
-    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toMatchObject({
+    expect(await this.querier.findOneById(Tax, id, { $select: { name: true, percentage: true } })).toEqual({
       name: 'VAT',
       percentage: 20,
     });
@@ -2459,12 +2234,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect([stored.name, stored.updatedAt == null]).toEqual(['VAT', true]);
   }
 
-  private async adjustmentPrices(inventoryAdjustmentId: string) {
+  private async adjustmentPrices(inventoryAdjustmentId: InventoryAdjustment['id']) {
     const rows = await this.querier.findMany(ItemAdjustment, {
       $select: { buyPrice: true },
       $where: { inventoryAdjustmentId },
+      $sort: { buyPrice: 1 },
     });
-    return rows.map((it) => it.buyPrice).sort();
+    return rows.map((it) => it.buyPrice);
   }
 
   /** An upsert writes a row's relations on either branch, as an insert or an update does: a found row's are replaced. */
@@ -2539,38 +2315,23 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldUpsertMany() {
-    const pk1 = '507f1f77bcf86cd799439021';
-    const pk2 = '507f1f77bcf86cd799439022';
+    const pks = ['507f1f77bcf86cd799439021', '507f1f77bcf86cd799439022'];
 
-    // Verify records don't exist
-    const existing1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
-    const existing2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
-    expect(existing1).toBeUndefined();
-    expect(existing2).toBeUndefined();
-
-    // Insert via upsertMany
-    const insertResult = await this.querier.upsertMany(TaxCategory, { pk: true }, [
-      { pk: pk1, name: 'Upsert A' },
-      { pk: pk2, name: 'Upsert B' },
+    const inserted = await this.querier.upsertMany(TaxCategory, { pk: true }, [
+      { pk: pks[0], name: 'Upsert A' },
+      { pk: pks[1], name: 'Upsert B' },
     ]);
-    expect(insertResult.changes).toBeGreaterThanOrEqual(2);
-
-    const inserted1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
-    const inserted2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
-    expect(inserted1).toMatchObject({ name: 'Upsert A' });
-    expect(inserted2).toMatchObject({ name: 'Upsert B' });
-
-    // Update via upsertMany (same keys, different names)
-    const updateResult = await this.querier.upsertMany(TaxCategory, { pk: true }, [
-      { pk: pk1, name: 'Updated A' },
-      { pk: pk2, name: 'Updated B' },
+    expect(await this.taxCategoryNames(...pks)).toEqual(['Upsert A', 'Upsert B']);
+    const updated = await this.querier.upsertMany(TaxCategory, { pk: true }, [
+      { pk: pks[0], name: 'Updated A' },
+      { pk: pks[1], name: 'Updated B' },
     ]);
-    expect(updateResult.changes).toBeGreaterThanOrEqual(2);
 
-    const updated1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
-    const updated2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
-    expect(updated1).toMatchObject({ name: 'Updated A' });
-    expect(updated2).toMatchObject({ name: 'Updated B' });
+    expect([inserted, updated]).toEqual([
+      { ids: pks, changes: this.upsertReport(2, 0).changes },
+      { ids: pks, changes: this.upsertReport(0, 2).changes },
+    ]);
+    expect(await this.taxCategoryNames(...pks)).toEqual(['Updated A', 'Updated B']);
   }
 
   /**
@@ -2588,10 +2349,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     await this.querier.upsertMany(TaxCategory, { pk: true }, [{ pk: pk1 }, { pk: pk2, name: 'Het B updated' }]);
 
-    const found1 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk1 } });
-    const found2 = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk: pk2 } });
-    expect(found1).toMatchObject({ name: 'Het A' });
-    expect(found2).toMatchObject({ name: 'Het B updated' });
+    expect(await this.taxCategoryNames(pk1, pk2)).toEqual(['Het A', 'Het B updated']);
   }
 
   /** `saveMany` reports its ids in payload order, as `insertMany` does, whatever mix of rows it was given. */
@@ -2603,16 +2361,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Save Order New', createdAt: 2 },
     ]);
 
-    expect(ids).toHaveLength(2);
-    expect(ids[0]).toBe(seeded);
-    // Not a type assertion: the same declared `number` key is an `ObjectId` on MongoDB, and a
-    // BIGINT some SQL drivers hand back as a string. What is invariant is that it names the row.
-    expect(ids[1]).toBeDefined();
-
-    const updated = await this.querier.findOneById(User, ids[0], { $select: { name: true } });
-    expect(updated).toMatchObject({ name: 'Save Order Updated' });
-    const inserted = await this.querier.findOneById(User, ids[1], { $select: { name: true } });
-    expect(inserted).toMatchObject({ name: 'Save Order New' });
+    expect(ids).toEqual([seeded, anyUuid]);
+    expect(await this.querier.findOneById(User, ids[0], { $select: { name: true } })).toEqual({
+      name: 'Save Order Updated',
+    });
+    expect(await this.querier.findOneById(User, ids[1], { $select: { name: true } })).toEqual({
+      name: 'Save Order New',
+    });
   }
 
   async shouldFillTheTenantOfARowInsertedWithoutOne() {
@@ -2621,7 +2376,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { tenantId: true } }));
 
-    expect(row).toMatchObject({ tenantId: 'a' });
+    expect(row).toEqual({ tenantId: 'a' });
   }
 
   async shouldInsertARowNamingItsOwnTenant() {
@@ -2670,7 +2425,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const rows = await asSystem(() =>
       this.querier.findMany(TenantNote, { $select: { tenantId: true, title: true }, $sort: { title: 'asc' } }),
     );
-    expect(rows).toMatchObject([
+    expect(rows).toEqual([
       { tenantId: 'a', title: 'final' },
       { tenantId: 'a', title: 'new' },
     ]);
@@ -2688,7 +2443,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const row = await asSystem(() =>
       this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
     );
-    expect(row).toMatchObject({ tenantId: 'b', title: 'theirs' });
+    expect(row).toEqual({ tenantId: 'b', title: 'theirs' });
   }
 
   async shouldUpsertItsOwnRowOnAConflict() {
@@ -2701,7 +2456,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const row = await asSystem(() =>
       this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
     );
-    expect(row).toMatchObject({ tenantId: 'a', title: 'final' });
+    expect(row).toEqual({ tenantId: 'a', title: 'final' });
   }
 
   /** A guarded upsert reads its row through the filter first, then gives it `update`, as the statement would. */
@@ -2714,7 +2469,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     );
 
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
-    expect(row).toMatchObject({ title: 'update' });
+    expect(row).toEqual({ title: 'update' });
   }
 
   async shouldUpsertAGuardedRowWithAnEmptyUpdateLeavingItAsItIs() {
@@ -2727,7 +2482,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
     expect(result).toMatchObject({ id, changes: 0 });
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
-    expect(row).toMatchObject({ title: 'draft' });
+    expect(row).toEqual({ title: 'draft' });
   }
 
   async shouldRollBackAGuardedUpsertBatchReachingAnotherTenantsRow() {
@@ -2745,7 +2500,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     const rows = await asSystem(() =>
       this.querier.findMany(TenantNote, { $select: { tenantId: true, title: true }, $sort: { tenantId: 'asc' } }),
     );
-    expect(rows).toMatchObject([
+    expect(rows).toEqual([
       { tenantId: 'a', title: 'draft' },
       { tenantId: 'b', title: 'theirs' },
     ]);
@@ -2765,103 +2520,58 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   async shouldFindOne() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    await this.querier.insertMany(User, [
+      { name: 'a', email: 'a@example.com', password: '123456789a!' },
+      { name: 'b', email: 'b@example.com', password: '123456789b!' },
+    ]);
 
     const found = await this.querier.findOne(User, {
-      $select: { id: true, name: true, email: true, password: true },
-      $where: {
-        email: 'someemaila@example.com',
-      },
+      $select: { name: true, email: true, password: true },
+      $where: { email: 'a@example.com' },
     });
 
-    expect(found).toMatchObject({
-      name: 'Some Name A',
-      email: 'someemaila@example.com',
-      password: '123456789a!',
-    });
-
-    const notFound = await this.querier.findOne(User, {
-      $where: {
-        name: 'some name',
-      },
-    });
-
-    expect(notFound).toBeUndefined();
+    expect(found).toEqual({ name: 'a', email: 'a@example.com', password: '123456789a!' });
+    expect(await this.querier.findOne(User, { $where: { name: 'nobody' } })).toBeUndefined();
   }
 
   /**
-   * `$not` negates the AND of its clauses, `$nor` the OR. MongoDB has no root-level `$not` and
-   * spells both with its own `$nor`, so this is shared rather than per-backend.
+   * `$not` negates the AND of its clauses and `$nor` the OR: alone, together, beside a field, nested in a
+   * group, over an operator map, and over a relation, whose join (MongoDB's `$lookup` too) still has to be
+   * there. With nothing to negate, either constrains nothing, as an empty `$and` does.
    */
   async shouldFindByRootNegationOperators() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]); // Users A, B and C
-
-    const names = async (where: QueryWhere<User>) =>
-      (
-        await this.querier.findMany(User, {
-          $select: { name: true },
-          $sort: { name: 1 },
-          $where: where,
-        })
-      ).map(({ name }) => name);
-
-    // NOT (name = A AND email = A's) excludes only A, where the same pair under `$nor` excludes B too.
-    await expect(names({ $not: [{ name: 'Some Name A' }, { email: 'someemaila@example.com' }] })).resolves.toEqual([
-      'Some Name B',
-      'Some Name C',
-    ]);
-    await expect(names({ $nor: [{ name: 'Some Name A' }, { email: 'someemailb@example.com' }] })).resolves.toEqual([
-      'Some Name C',
-    ]);
-
-    await expect(names({ $not: [{ name: 'Some Name A' }] })).resolves.toEqual(['Some Name B', 'Some Name C']);
-
-    // Both negations at once, and one alongside an ordinary field.
-    await expect(names({ $not: [{ name: 'Some Name A' }], $nor: [{ name: 'Some Name B' }] })).resolves.toEqual([
-      'Some Name C',
-    ]);
-    await expect(names({ email: 'someemailc@example.com', $nor: [{ name: 'Some Name A' }] })).resolves.toEqual([
-      'Some Name C',
-    ]);
-
-    // Nested inside another group, and negating a clause with its own operator map.
-    await expect(names({ $or: [{ $not: [{ name: 'Some Name A' }] }, { name: 'Some Name A' }] })).resolves.toEqual([
-      'Some Name A',
-      'Some Name B',
-      'Some Name C',
-    ]);
-    await expect(names({ $nor: [{ name: { $in: ['Some Name A', 'Some Name B'] } }] })).resolves.toEqual([
-      'Some Name C',
-    ]);
-
-    // A negated relation condition still has to emit its join, MongoDB's `$lookup` included.
     const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
-    await this.querier.insertOne(User, { name: 'Some Name D', email: 'somemaild@example.com', companyId });
-
-    await expect(names({ $nor: [{ company: { name: 'Acme' } }] })).resolves.toEqual([
-      'Some Name A',
-      'Some Name B',
-      'Some Name C',
+    await this.querier.insertMany(User, [
+      { name: 'a', email: 'a@example.com' },
+      { name: 'b', email: 'b@example.com' },
+      { name: 'c', email: 'c@example.com' },
+      { name: 'd', email: 'd@example.com', companyId },
     ]);
-    await expect(names({ $not: [{ company: { name: 'Acme' } }] })).resolves.toEqual([
-      'Some Name A',
-      'Some Name B',
-      'Some Name C',
-    ]);
+    const names = async ($where: QueryWhere<User>) =>
+      (await this.querier.findMany(User, { $select: { name: true }, $sort: { name: 1 }, $where })).map(
+        ({ name }) => name,
+      );
 
-    // An operator with nothing to negate constrains nothing, the way an empty `$and` does.
-    await expect(names({ $nor: [] })).resolves.toEqual(['Some Name A', 'Some Name B', 'Some Name C', 'Some Name D']);
-    await expect(names({ $and: [] })).resolves.toEqual(['Some Name A', 'Some Name B', 'Some Name C', 'Some Name D']);
+    expect(await names({ $not: [{ name: 'a' }, { email: 'a@example.com' }] })).toEqual(['b', 'c', 'd']);
+    expect(await names({ $nor: [{ name: 'a' }, { email: 'b@example.com' }] })).toEqual(['c', 'd']);
+    expect(await names({ $not: [{ name: 'a' }] })).toEqual(['b', 'c', 'd']);
+    expect(await names({ $not: [{ name: 'a' }], $nor: [{ name: 'b' }] })).toEqual(['c', 'd']);
+    expect(await names({ email: 'c@example.com', $nor: [{ name: 'a' }] })).toEqual(['c']);
+    expect(await names({ $or: [{ $not: [{ name: 'a' }] }, { name: 'a' }] })).toEqual(['a', 'b', 'c', 'd']);
+    expect(await names({ $nor: [{ name: { $in: ['a', 'b'] } }] })).toEqual(['c', 'd']);
+    expect(await names({ $nor: [{ company: { name: 'Acme' } }] })).toEqual(['a', 'b', 'c']);
+    expect(await names({ $not: [{ company: { name: 'Acme' } }] })).toEqual(['a', 'b', 'c']);
+    expect(await names({ $nor: [] })).toEqual(['a', 'b', 'c', 'd']);
+    expect(await names({ $and: [] })).toEqual(['a', 'b', 'c', 'd']);
   }
 
   async shouldCount() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }, { name: 'c', companyId }]);
 
     await expect(this.querier.count(User, {})).resolves.toBe(3);
-    await expect(this.querier.count(User, { $where: { companyId: null } })).resolves.toBe(3);
-    await expect(this.querier.count(User, { $where: { companyId: '1' } })).resolves.toBe(0);
+    await expect(this.querier.count(User, { $where: { companyId: null } })).resolves.toBe(2);
+    await expect(this.querier.count(User, { $where: { companyId } })).resolves.toBe(1);
   }
 
   /** No value is in the empty set, so `$in: []` matches no row and `$nin: []` every one, a null included. */
@@ -2875,7 +2585,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /** `max(0, total - $skip)`, capped at `$limit`. */
   async shouldCountAPage() {
-    await this.shouldInsertMany(); // 2 Users
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }]);
 
     await expect(this.querier.count(User, { $limit: 1 })).resolves.toBe(1);
     await expect(this.querier.count(User, { $limit: 10 })).resolves.toBe(2);
@@ -2885,26 +2595,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, { $skip: 1, $limit: 5 })).resolves.toBe(1);
   }
 
-  /** A capped count: true the moment one row matches, false when none does. */
-  async shouldExists() {
-    await this.shouldInsertMany(); // 2 Users
+  /** A capped count, in either call form: true the moment one row matches, false when none does, an empty table included. */
+  async shouldTellWhetherARowExists() {
+    await expect(this.querier.exists(User)).resolves.toBe(false);
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }]);
 
     await expect(this.querier.exists(User)).resolves.toBe(true);
-    await expect(this.querier.exists(User, { $where: { name: 'Some Name B' } })).resolves.toBe(true);
+    await expect(this.querier.exists(User, { $where: { name: 'b' } })).resolves.toBe(true);
     await expect(this.querier.exists(User, { $where: { name: 'nobody' } })).resolves.toBe(false);
-  }
-
-  /** Nothing inserted, so the same calls answer false rather than throwing on an empty table. */
-  async shouldExistsOnAnEmptyTable() {
-    await expect(this.querier.exists(User)).resolves.toBe(false);
-    await expect(this.querier.exists(User, { $where: { name: 'nobody' } })).resolves.toBe(false);
-  }
-
-  /** The `$entity` form takes the same filter and gives the same answer as the two-argument one. */
-  async shouldExistsInTheEntityAsFieldForm() {
-    await this.shouldInsertMany(); // 2 Users
-
-    await expect(this.querier.exists({ $entity: User, $where: { name: 'Some Name B' } })).resolves.toBe(true);
+    await expect(this.querier.exists({ $entity: User, $where: { name: 'b' } })).resolves.toBe(true);
     await expect(this.querier.exists({ $entity: User, $where: { name: 'nobody' } })).resolves.toBe(false);
   }
 
@@ -2913,7 +2612,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
    * The SQL it emits is pinned in `shouldCountDroppingASmuggledSort`.
    */
   async shouldCountIgnoringASmuggledSort() {
-    await this.shouldInsertMany(); // 2 Users
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }]);
 
     const sorted: QuerySearch<User> = { $sort: { name: -1 }, $skip: 1, $limit: 1 };
 
@@ -2922,20 +2621,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, { $sort: { name: 1 } })).resolves.toBe(2);
   }
 
-  /**
-   * `$limit: 0` asks for no rows on every backend, the same as it has since 0.30.0. MongoDB reads
-   * `limit(0)` as *unlimited*, so a read that handed it to the driver answered with the whole
-   * collection - the one clause where the two engines mean opposite things by the same value.
-   */
+  /** `$limit: 0` asks for no rows on every backend, where MongoDB's own `limit(0)` means *unlimited*. */
   async shouldReadNoRowsOnAZeroLimit() {
-    await this.shouldInsertMany(); // 2 Users
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }]);
 
     await expect(this.querier.findMany(User, { $limit: 0 })).resolves.toEqual([]);
     await expect(this.querier.count(User, { $limit: 0 })).resolves.toBe(0);
   }
 
   async shouldUpdateMany() {
-    await Promise.all([this.shouldInsertMany(), this.shouldInsertOne()]);
+    await this.querier.insertMany(User, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
     const companyId = await this.querier.insertOne(Company, { name: 'Acme' });
 
     await expect(this.querier.updateMany(User, { $where: { companyId } }, { companyId: null })).resolves.toBe(0);
@@ -2943,7 +2638,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.updateMany(User, { $where: { companyId } }, { companyId: null })).resolves.toBe(3);
   }
 
-  async shouldThrowIfUnknownComparisonOperator() {
+  async shouldRefuseAnUnknownComparisonOperator() {
     await expect(
       this.querier.findMany(User, {
         // @ts-expect-error: no such operator
@@ -2957,48 +2652,34 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(this.querier.hasOpenTransaction).toBe(false);
   }
 
+  /** What a transaction writes it sees, and a commit keeps, at the default isolation level or one asked for. */
   async shouldCommit() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
     await this.querier.beginTransaction();
     await this.querier.insertOne(User, {});
     await expect(this.querier.count(User, {})).resolves.toBe(1);
     await this.querier.commitTransaction();
-    await expect(this.querier.count(User, {})).resolves.toBe(1);
-    await this.querier.release();
-  }
-
-  async shouldRollback() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-    await this.querier.beginTransaction();
-    await this.querier.insertOne(User, {});
-    await expect(this.querier.count(User, {})).resolves.toBe(1);
-    await this.querier.rollbackTransaction();
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-    await this.querier.release();
-  }
-
-  async shouldCommitWithIsolationLevel() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
     await this.querier.beginTransaction({ isolationLevel: 'serializable' });
     await this.querier.insertOne(User, {});
-    await expect(this.querier.count(User, {})).resolves.toBe(1);
     await this.querier.commitTransaction();
-    await expect(this.querier.count(User, {})).resolves.toBe(1);
-    await this.querier.release();
+
+    await expect(this.querier.count(User, {})).resolves.toBe(2);
   }
 
-  async shouldRollbackWithIsolationLevel() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-    await this.querier.beginTransaction({ isolationLevel: 'read committed' });
+  /** What a transaction writes it sees, and a rollback drops, at the default isolation level or one asked for. */
+  async shouldRollback() {
+    await this.querier.beginTransaction();
     await this.querier.insertOne(User, {});
     await expect(this.querier.count(User, {})).resolves.toBe(1);
     await this.querier.rollbackTransaction();
+    await this.querier.beginTransaction({ isolationLevel: 'read committed' });
+    await this.querier.insertOne(User, {});
+    await this.querier.rollbackTransaction();
+
     await expect(this.querier.count(User, {})).resolves.toBe(0);
-    await this.querier.release();
   }
 
-  async shouldTransactionCallbackWithIsolationLevel() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
+  /** The callback's value comes back once its writes commit. */
+  async shouldRunATransactionCallbackAtAnIsolationLevel() {
     const result = await this.querier.transaction(
       async () => {
         await this.querier.insertOne(User, { name: 'isolated' });
@@ -3010,49 +2691,15 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, {})).resolves.toBe(1);
   }
 
-  async shouldThrowWhenBeginTransactionAfterBeginTransaction() {
-    expect(this.querier.hasOpenTransaction).toBeFalsy();
+  async shouldRefuseABeginInsideATransaction() {
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
     await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
     expect(queryErrorKind(await this.querier.beginTransaction().catch(thrownValue))).toBe('usage');
-    await this.querier.rollbackTransaction();
-    await this.querier.release();
   }
 
-  async shouldReturnTransactionValue() {
-    const affectedRows = await this.querier.transaction(async () => {
-      await this.shouldInsertMany();
-      const count = await this.querier.count(User, {});
-      await this.querier.deleteMany(User, {}, { unfiltered: true });
-      return count;
-    });
-    expect(affectedRows).toBe(2);
-  }
-
-  async shouldReuseTransactionWhenNested() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-
-    const result = await this.querier.transaction(async () => {
-      await this.querier.insertOne(User, { name: 'outer' });
-
-      // Nested transaction should reuse the outer one
-      const innerResult = await this.querier.transaction(async () => {
-        await this.querier.insertOne(User, { name: 'inner' });
-        return this.querier.count(User, {});
-      });
-
-      expect(innerResult).toBe(2);
-      return innerResult;
-    });
-
-    expect(result).toBe(2);
-    await expect(this.querier.count(User, {})).resolves.toBe(2);
-  }
-
+  /** A nested transaction joins the outer one, so its throw rolls back both. */
   async shouldRollbackEntireTransactionWhenNestedThrows() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-
     await expect(
       this.querier.transaction(async () => {
         await this.querier.insertOne(User, { name: 'outer' });
@@ -3063,13 +2710,10 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       }),
     ).rejects.toThrow('inner error');
 
-    // Both outer and inner inserts should be rolled back
     await expect(this.querier.count(User, {})).resolves.toBe(0);
   }
 
   async shouldReuseDeeplyNestedTransactions() {
-    await expect(this.querier.count(User, {})).resolves.toBe(0);
-
     const result = await this.querier.transaction(async () => {
       await this.querier.insertOne(User, { name: 'level-1' });
       return this.querier.transaction(async () => {
@@ -3085,71 +2729,46 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     await expect(this.querier.count(User, {})).resolves.toBe(3);
   }
 
-  async shouldThrowWhenCommitTransactionWithoutBeginTransaction() {
+  async shouldRefuseACommitWithoutATransaction() {
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
     expect(queryErrorKind(await this.querier.commitTransaction().catch(thrownValue))).toBe('usage');
   }
 
-  async shouldSelectOneToManyEmpty() {
-    const inventoryAdjustment = await this.querier.findOneById(InventoryAdjustment, '-1', {
-      $populate: { itemAdjustments: true, creator: true },
-    });
-    expect(inventoryAdjustment).toBeUndefined();
-
-    const inventoryAdjustments = await this.querier.findMany(InventoryAdjustment, {
-      $populate: { itemAdjustments: true },
-    });
-    expect(inventoryAdjustments).toHaveLength(0);
+  async shouldPopulateOverNoRows() {
+    expect(
+      await this.querier.findOneById(InventoryAdjustment, '-1', {
+        $populate: { itemAdjustments: true, creator: true },
+      }),
+    ).toBeUndefined();
+    expect(await this.querier.findMany(InventoryAdjustment, { $populate: { itemAdjustments: true } })).toEqual([]);
   }
 
-  async shouldSelectOneToMany() {
-    await this.shouldInsertOne();
-
-    const [user, company] = await Promise.all([
-      this.querier.findOne(User, { $select: { id: true } }),
-      this.querier.findOne(Company, { $select: { id: true } }),
-    ]);
-
-    assertDefined(user);
-    assertDefined(company);
-
+  async shouldPopulateAToManyAndAToOne() {
+    const creatorId = await this.querier.insertOne(User, { name: 'creator', email: 'creator@example.com' });
     const [firstItemId, secondItemId] = await this.querier.insertMany(Item, [
-      {
-        name: 'some item name a',
-        creatorId: user.id,
-        companyId: company.id,
-      },
-      {
-        name: 'some item name b',
-        creatorId: user.id,
-        companyId: company.id,
-      },
+      { name: 'some item name a', creatorId },
+      { name: 'some item name b', creatorId },
     ]);
-
-    const inventoryAdjustmentId = await this.querier.insertOne(InventoryAdjustment, {
+    const id = await this.querier.insertOne(InventoryAdjustment, {
       description: 'some inventory adjustment',
-      creatorId: user.id,
-      companyId: company.id,
+      creatorId,
       itemAdjustments: [
         { buyPrice: 1000, itemId: firstItemId },
         { buyPrice: 2000, itemId: secondItemId },
       ],
     });
 
-    const inventoryAdjustmentFound = await this.querier.findOneById(InventoryAdjustment, inventoryAdjustmentId, {
-      $populate: { itemAdjustments: true, creator: true },
+    const found = await this.querier.findOneById(InventoryAdjustment, id, {
+      $populate: { itemAdjustments: { $sort: { buyPrice: 1 } }, creator: true },
     });
 
-    expect(inventoryAdjustmentFound).toMatchObject({
-      id: inventoryAdjustmentId,
+    expect(found).toMatchObject({
+      id,
       itemAdjustments: [
         { buyPrice: 1000, itemId: firstItemId },
         { buyPrice: 2000, itemId: secondItemId },
       ],
-      creator: {
-        email: 'someemailc@example.com',
-        name: 'Some Name C',
-      },
+      creator: { name: 'creator', email: 'creator@example.com' },
     });
   }
 
@@ -3163,60 +2782,37 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
   }
 
   /**
-   * A bulk write names the rows it changes. An empty `$where` addresses every row of the table, which
-   * is a thing to ask for by name rather than to reach by leaving a filter off.
+   * A bulk write names the rows it changes: an empty `$where`, a key left `undefined` (the WHERE drops it)
+   * or a group none of whose clauses names one addresses every row, which is asked for by name instead.
+   * The caller's mistake, so a `usage` error, a 400 over a transport, before any statement runs.
    */
   async shouldRefuseABulkWriteThatNamesNoRows() {
-    await this.querier.insertMany(User, [
-      { name: 'unfiltered one', email: 'unfiltered.one@test.com' },
-      { name: 'unfiltered two', email: 'unfiltered.two@test.com' },
-    ]);
+    await this.querier.insertMany(User, [{ name: 'one' }, { name: 'two' }]);
 
     await expect(this.querier.deleteMany(User, {})).rejects.toThrow("'deleteMany' over 'User' names no rows");
+    await expect(this.querier.updateMany(User, {}, { name: 'x' })).rejects.toThrow(
+      "'updateMany' over 'User' names no rows",
+    );
     await expect(this.querier.deleteMany(User, { $where: {} })).rejects.toThrow('names no rows');
-    // A key left `undefined` names nothing either: the WHERE drops it.
     await expect(this.querier.deleteMany(User, { $where: { id: undefined } })).rejects.toThrow('names no rows');
     await expect(this.querier.updateMany(User, { $where: { id: undefined } }, { name: 'x' })).rejects.toThrow(
       'names no rows',
     );
-    // Nor does a group none of whose clauses names one, at any depth.
     await expect(this.querier.deleteMany(User, { $where: { $or: [{ id: undefined }] } })).rejects.toThrow(
       'names no rows',
     );
     await expect(this.querier.deleteMany(User, { $where: { $and: [] } })).rejects.toThrow('names no rows');
-    await expect(this.querier.updateMany(User, {}, { name: 'x' })).rejects.toThrow(
-      "'updateMany' over 'User' names no rows",
-    );
-
-    // The caller's mistake, so a `usage` a transport answers with a 400 rather than a 500.
-    const refused = await this.querier.deleteMany(User, {}).catch(thrownValue);
-    expect(queryErrorKind(refused)).toBe('usage');
-
-    // Still there: the refusal happens before any statement runs.
+    expect(queryErrorKind(await this.querier.deleteMany(User, {}).catch(thrownValue))).toBe('usage');
     await expect(this.querier.count(User)).resolves.toBe(2);
-
-    // A `$limit` names them too - it caps how many rows the write reaches.
-    await expect(this.querier.updateMany(User, { $limit: 1 }, { name: 'capped' })).resolves.toBe(1);
-
-    const changed = await this.querier.updateMany(User, {}, { name: 'renamed' }, { unfiltered: true });
-    expect(changed).toBe(2);
-    const removed = await this.querier.deleteMany(User, {}, { unfiltered: true });
-    expect(removed).toBe(2);
   }
 
-  async shouldSoftDelete() {
-    const id = await this.querier.insertOne(MeasureUnit, { name: 'To be soft deleted' });
-    const changes = await this.querier.deleteOneById(MeasureUnit, id);
-    expect(changes).toBe(1);
+  /** A `$limit` names the rows a bulk write reaches, and `unfiltered` asks for every one. */
+  async shouldBulkWriteTheRowsALimitOrUnfilteredNames() {
+    await this.querier.insertMany(User, [{ name: 'one' }, { name: 'two' }]);
 
-    const found = await this.querier.findOneById(MeasureUnit, id);
-    expect(found).toBeUndefined();
-
-    const foundWithSoftDeleted = await this.querier.findOneById(MeasureUnit, id, {
-      $where: { deletedAt: { $ne: null } },
-    });
-    expect(foundWithSoftDeleted).toBeDefined();
-    expect(foundWithSoftDeleted?.name).toBe('To be soft deleted');
+    await expect(this.querier.updateMany(User, { $limit: 1 }, { name: 'capped' })).resolves.toBe(1);
+    await expect(this.querier.updateMany(User, {}, { name: 'renamed' }, { unfiltered: true })).resolves.toBe(2);
+    await expect(this.querier.deleteMany(User, {}, { unfiltered: true })).resolves.toBe(2);
   }
 
   /**
@@ -3239,9 +2835,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     });
 
     expect(total).toBe(3);
-    expect(page).toHaveLength(1);
-    expect(page[0].name).toBe('Bob');
-    expect(Object.keys(page[0])).not.toContain('_uql_total');
+    expect(page).toEqual([{ name: 'Bob' }]);
   }
 
   /** No page clauses: the total is the whole result, which the rows themselves already are. */
@@ -3283,9 +2877,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'uniq', email: 'dc3@test.com' },
     ]);
 
-    const [rows, total] = await this.querier.findManyAndCount(User, { $select: { name: true }, $distinct: true });
+    const [rows, total] = await this.querier.findManyAndCount(User, {
+      $select: { name: true },
+      $distinct: true,
+      $sort: { name: 1 },
+    });
 
-    expect(rows).toHaveLength(2);
+    expect(rows).toEqual([{ name: 'dup' }, { name: 'uniq' }]);
     expect(total).toBe(2);
   }
 
@@ -3310,7 +2908,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
     expect(total).toBe(2);
   }
 
-  /** Nothing matched, so the page is empty and so is the total - not the count of every row. */
+  /** Nothing matched, so the page is empty and so is the total, not the count of every row. */
   async shouldFindManyAndCountMatchingNothing() {
     await this.querier.insertMany(User, [{ name: 'Alice', email: 'alice@test.com' }]);
 
@@ -3338,7 +2936,7 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
 
   /**
    * A `$required` relation drops parents with no match, and the total counts what is left rather than
-   * what the filter alone matched - a page of one out of one, not out of three the read can never
+   * what the filter alone matched: a page of one out of one, not out of three the read can never
    * return. SQL reads it off the window in the joined statement; MongoDB counts past the `$unwind`.
    */
   async shouldFindManyAndCountThroughARequiredRelation() {
@@ -3362,13 +2960,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Charlie', email: 'charlie@test.com' },
     ]);
 
-    const collected: User[] = [];
-    for await (const row of this.querier.findManyStream(User, {})) {
-      collected.push(row);
-    }
+    const rows = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: 1 } }));
 
-    expect(collected).toHaveLength(3);
-    expect(collected.map((u) => u.name).sort()).toEqual(['Alice', 'Bob', 'Charlie']);
+    expect(rows.map(({ name }) => name)).toEqual(['Alice', 'Bob', 'Charlie']);
   }
 
   async shouldFindManyStreamWithFilter() {
@@ -3378,25 +2972,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Charlie', email: 'charlie@test.com' },
     ]);
 
-    const collected: User[] = [];
-    for await (const row of this.querier.findManyStream(User, {
-      $where: { name: 'Bob' },
-    })) {
-      collected.push(row);
-    }
+    const rows = await Array.fromAsync(this.querier.findManyStream(User, { $where: { name: 'Bob' } }));
 
-    expect(collected).toHaveLength(1);
-    expect(collected[0].name).toBe('Bob');
+    expect(rows.map(({ name }) => name)).toEqual(['Bob']);
   }
 
   async shouldFindManyStreamEmpty() {
-    const collected: User[] = [];
-    for await (const row of this.querier.findManyStream(User, {})) {
-      collected.push(row);
-    }
-    expect(collected).toHaveLength(0);
+    expect(await Array.fromAsync(this.querier.findManyStream(User, {}))).toEqual([]);
   }
 
+  /** The stream leaves the caller's transaction open, and its own rows visible to it. */
   async shouldFindManyStreamInsideATransaction() {
     await this.querier.beginTransaction();
     await this.querier.insertMany(User, [
@@ -3404,13 +2989,9 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Bob', email: 'bob@test.com' },
     ]);
 
-    const collected: User[] = [];
-    for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
-      collected.push(row);
-    }
+    const rows = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: 1 } }));
 
-    expect(collected.map((it) => it.name)).toEqual(['Alice', 'Bob']);
-    // The stream must leave the caller's transaction open, and its own rows visible to it.
+    expect(rows.map(({ name }) => name)).toEqual(['Alice', 'Bob']);
     expect(this.querier.hasOpenTransaction).toBe(true);
     expect(await this.querier.count(User, {})).toBe(2);
     await this.querier.commitTransaction();
@@ -3426,11 +3007,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       Array.from({ length: 250 }, (_, index) => ({ name: `u${String(index).padStart(3, '0')}` })),
     );
 
+    const read: (string | null | undefined)[] = [];
     for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
-      expect(row.name).toBe('u000');
+      read.push(row.name);
       break;
     }
 
+    expect(read).toEqual(['u000']);
     expect(await this.querier.count(User, {})).toBe(250);
   }
 
@@ -3444,12 +3027,14 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Bob', email: 'bob@test.com' },
     ]);
 
+    const refusals: unknown[] = [];
     for await (const _row of this.querier.findManyStream(User, {})) {
-      await expect(this.querier.count(User, {})).rejects.toThrow(UqlUsageError);
-      await expect(this.querier.findManyStream(User, {})[Symbol.asyncIterator]().next()).rejects.toThrow(UqlUsageError);
+      refusals.push(await this.querier.count(User, {}).catch(thrownValue));
+      refusals.push(await this.querier.findManyStream(User, {})[Symbol.asyncIterator]().next().catch(thrownValue));
       break;
     }
 
+    expect(refusals).toEqual([expect.any(UqlUsageError), expect.any(UqlUsageError)]);
     expect(await this.querier.count(User, {})).toBe(2);
   }
 
@@ -3490,19 +3075,17 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       { name: 'Bob', email: 'bob@test.com' },
     ]);
 
-    const first: User[] = [];
-    for await (const row of this.querier.findManyStream(User, { $sort: { name: 1 } })) {
-      first.push(row);
-    }
-    const second: User[] = [];
-    for await (const row of this.querier.findManyStream(User, { $sort: { name: -1 } })) {
-      second.push(row);
-    }
+    const first = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: 1 } }));
+    const second = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: -1 } }));
 
     expect(first.map((it) => it.name)).toEqual(['Alice', 'Bob']);
     expect(second.map((it) => it.name)).toEqual(['Bob', 'Alice']);
   }
 
+  /**
+   * Exact, never coerced: Postgres widens a SUM over BIGINT to NUMERIC and hands it back as text, and
+   * MongoDB's `$group` answers with an `_id` the row does not declare.
+   */
   async shouldAggregate() {
     await this.querier.insertMany(User, [
       { name: 'Alice', createdAt: 100 },
@@ -3515,22 +3098,16 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $select: { total: { $sum: { createdAt: true } } },
     });
 
-    // Exact, never coerced: Postgres widens a SUM over BIGINT to NUMERIC and hands it back as text, and
-    // MongoDB's `$group` answers with an `_id` the row does not declare.
     expect(res).toEqual([{ total: 500 }]);
   }
 
+  /** A soft delete stamps the row out of every read but one `withDeleted()` makes, and a restore brings it back. */
   async shouldSoftDeleteExcludeFromReadsAndRestore() {
     const id = await this.querier.insertOne(MeasureUnit, { name: 'unit' });
 
-    // soft-delete stamps the row instead of removing it
     expect(await this.querier.deleteOneById(MeasureUnit, id)).toBe(1);
-
-    // excluded from normal reads, included via withDeleted()
     expect(await this.querier.findOneById(MeasureUnit, id)).toBeUndefined();
     expect(await this.querier.findOneById(MeasureUnit, id, {}, withDeleted())).toMatchObject({ id, name: 'unit' });
-
-    // restore brings it back
     expect(await this.querier.restoreOneById(MeasureUnit, id)).toBe(1);
     expect(await this.querier.findOneById(MeasureUnit, id)).toMatchObject({ id, name: 'unit' });
   }
@@ -3547,46 +3124,41 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       withDeleted(),
     );
 
-    expect(unit).toMatchObject({ name: 'unit' });
-    expect(unit).not.toHaveProperty('category');
+    expect(unit).toEqual({ name: 'unit' });
   }
 
+  /**
+   * "Only trashed" is a plain, serializable query: constraining the soft-delete field makes the default
+   * `deletedAt IS NULL` filter step aside, and the live row still reads as ever.
+   */
   async shouldListOnlyTrashed() {
     const [liveId, deadId] = await this.querier.insertMany(MeasureUnit, [{ name: 'live' }, { name: 'dead' }]);
     await this.querier.deleteOneById(MeasureUnit, deadId);
 
-    // "only trashed" is a plain, serializable query - constraining the soft-delete field makes the
-    // default `deletedAt IS NULL` filter step aside (no helper, no bypass needed).
-    const trashedIds = (await this.querier.findMany(MeasureUnit, { $where: { deletedAt: { $ne: null } } })).map((it) =>
-      String(it.id),
-    ); // stringify so ObjectId/number ids compare by value
-    expect(trashedIds).toContain(String(deadId));
-    expect(trashedIds).not.toContain(String(liveId));
+    const trashed = await this.querier.findMany(MeasureUnit, {
+      $select: { id: true },
+      $where: { deletedAt: { $ne: null } },
+    });
 
-    // the live row is still readable normally
+    expect(trashed).toEqual([{ id: deadId }]);
     expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ id: liveId, name: 'live' });
+  }
+
+  async shouldRefuseALockTheEngineLacks() {
+    await expect(this.querier.findMany(LedgerAccount, { $lock: true })).rejects.toThrow(
+      'does not support row-level locking',
+    );
   }
 
   async shouldHardDeletePermanently() {
     const id = await this.querier.insertOne(MeasureUnit, { name: 'gone' });
     expect(await this.querier.deleteOneById(MeasureUnit, id, { hardDelete: true })).toBe(1);
-    // not recoverable - the row is physically removed
     expect(await this.querier.findOneById(MeasureUnit, id, {}, withDeleted())).toBeUndefined();
   }
 
-  async clearTables() {
-    const entities = getEntities();
-    await asSystem(() =>
-      Promise.all(entities.map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true }))),
-    );
-  }
-
-  /** Every fixture table, empty, whatever an earlier run left behind. */
-  abstract recreateTables(): Promise<void>;
-
   /**
    * Against real data: a category whose only matching unit is trashed must not match, and the count
-   * must skip it. Runs on every driver - relation subqueries are emulated with `$lookup` on MongoDB.
+   * must skip it, on every driver: MongoDB emulates the relation subqueries with `$lookup`.
    */
   async shouldNotMatchOrCountTrashedRowsThroughARelation() {
     const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'Weight' });
@@ -3606,13 +3178,13 @@ export abstract class AbstractQuerierIt<Q extends Querier> implements Spec {
       $select: { id: true },
       $where: { measureUnits: { name: 'kg' } },
     });
-    expect(byLive.map(({ id }) => String(id))).toEqual([String(categoryId)]);
+    expect(byLive).toEqual([{ id: categoryId }]);
 
     const bySize = await this.querier.findMany(MeasureUnitCategory, {
       $select: { id: true },
       $where: { measureUnits: { $size: 1 } },
     });
-    expect(bySize.map(({ id }) => String(id))).toEqual([String(categoryId)]);
+    expect(bySize).toEqual([{ id: categoryId }]);
 
     expect(await this.querier.findOneById(MeasureUnit, liveId)).toMatchObject({ name: 'kg' });
   }

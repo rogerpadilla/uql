@@ -6,7 +6,7 @@ import {
   adaptSqlite,
   type LocalSqliteDatabase,
   type LocalSqlitePoolOptions,
-  loadExtensions,
+  extendSqlite,
 } from './localSqliteQuerierPool.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -40,12 +40,12 @@ export class Sqlite3QuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqli
         typeof this.filename === 'string'
           ? new Database(this.filename, bunOpts)
           : Database.deserialize(this.filename, bunOpts);
-      return loadExtensions(
+      return extendSqlite(
         adaptSqlite(bunDb, (stmt) => stmt.columnNames.length > 0),
         extensions,
       );
     }
     const { default: BetterSqlite3 } = await import('better-sqlite3');
-    return loadExtensions(new BetterSqlite3(this.filename, driverOpts).defaultSafeIntegers(true), extensions);
+    return extendSqlite(new BetterSqlite3(this.filename, driverOpts).defaultSafeIntegers(true), extensions);
   }
 }

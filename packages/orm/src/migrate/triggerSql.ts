@@ -17,7 +17,7 @@ import { TriggerWriteRaw } from '../type/index.js';
 import { stampEvents } from '../util/field.util.js';
 import { definedEntries } from '../util/object.util.js';
 import { raw, refs, rowRefs } from '../util/raw.js';
-import { ownedName } from '../util/sql.util.js';
+import { ownedName, splitQualifiedName } from '../util/sql.util.js';
 import { written } from '../util/triggerWrite.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
@@ -40,15 +40,11 @@ export function renderTrigger<E>(
 }
 
 /**
- * What removes one trigger: the trigger, named with its table only where the engine scopes the name to
- * one, then {@link dropTriggerBody}.
+ * What removes one trigger of `table`, a name qualified where its schema is: the trigger, in that schema and
+ * named with its table only where the engine scopes the name to one, then {@link dropTriggerBody}.
  */
-export function dropTrigger(
-  dialect: AbstractSqlDialect,
-  table: string,
-  schema: string | undefined,
-  name: string,
-): string[] {
+export function dropTrigger(dialect: AbstractSqlDialect, table: string, name: string): string[] {
+  const { schema } = splitQualifiedName(table);
   const on = dialect.features.triggers.scope === 'table' ? ` ON ${dialect.escapeId(table)}` : '';
   return [`DROP TRIGGER IF EXISTS ${triggerId(dialect, schema, name)}${on}`, ...dropTriggerBody(dialect, schema, name)];
 }

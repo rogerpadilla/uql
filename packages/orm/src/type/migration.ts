@@ -1,5 +1,4 @@
 import type { AnyMigrationOperation } from '../migrate/builder/types.js';
-import type { IndexFacet } from '../schema/indexDifferences.js';
 import type { SchemaAST } from '../schema/schemaAST.js';
 import type { DiffOptions } from '../schema/schemaASTDiffer.js';
 import type {
@@ -11,10 +10,7 @@ import type {
   TriggerSchema,
 } from '../schema/types.js';
 import type {
-  EntityMeta,
-  EntityWhereMeta,
   Except,
-  FieldOptions,
   IndexColumnSchema,
   IndexedVectorField,
   LoggingOptions,
@@ -133,7 +129,7 @@ export interface MigrationResult {
 }
 
 /** A column as a statement renders one: a {@link ColumnNode} with the engine's type spelling and no graph links. */
-export interface ColumnSchema extends Except<ColumnNode, 'type' | 'table' | 'referencedBy' | 'references'> {
+export interface ColumnSchema extends Except<ColumnNode, 'type' | 'table'> {
   /**
    * The engine's own type spelling, `TINYINT(1)`, compared as stored: canonical types would differ where
    * the engine stores them alike. `sqlToCanonical` reads it.
@@ -202,8 +198,7 @@ export interface IndexSchema extends VectorIndexOptions, IndexedVectorField {
 
 /**
  * A foreign key constraint, wherever one is described: read back by introspection, planned into a
- * {@link SchemaDiff}, or declared through the migration builder. One shape for all three - they
- * differed only in spelling, and the translation between them was pure overhead.
+ * {@link SchemaDiff}, or declared through the migration builder: one shape for all three.
  */
 export interface ForeignKeySchema {
   /** Absent when nothing named it, which the generator fills in with `derivedForeignKeyName`. */
@@ -257,11 +252,6 @@ export interface PrimaryKeySchema {
 export interface SchemaDiff {
   /** Qualified where the table has a schema, since it is also the key the table is found under. */
   readonly tableName: string;
-  /**
-   * The schema {@link tableName} is in, carried separately for the identifiers that live in it
-   * rather than name it: a Postgres index is dropped as `schema.index`, never `schema.table`.
-   */
-  readonly schema?: string;
   readonly type: 'create' | 'alter' | 'drop';
   readonly primaryKey?: Change<PrimaryKeySchema>;
   readonly columns?: readonly ColumnChange[];
@@ -316,9 +306,6 @@ export interface DropSchemaOptions {
  * Interface for generating DDL statements from entity metadata
  */
 export interface SchemaGenerator {
-  /** Whether a column's stored default is the one the entity declares, as the engine reprints it. Absent where columns are not compared. */
-  readonly defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
-
   /** The whole schema for `entities`, tables then the foreign keys between them, which need every entity at once. */
   generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[];
 
@@ -329,39 +316,14 @@ export interface SchemaGenerator {
    */
   generateDropSchema(entities: readonly Type<object>[], options?: DropSchemaOptions): string[];
 
-  /** Generate DROP TABLE statement. */
-  generateDropTable(tableName: string, options?: DropSchemaOptions): string;
-
   /** The statements taking a table through `diff`; its rollback is the diff reversed, see `reverseDiff`. */
   generateAlterTable(diff: SchemaDiff): string[];
-
-  /**
-   * Generate CREATE INDEX statement
-   */
-  generateCreateIndex(tableName: string, index: IndexSchema): string;
-
-  /**
-   * Generate DROP INDEX statement
-   */
-  generateDropIndex(tableName: string, indexName: string): string;
 
   /**
    * The statements one migration builder operation runs as, one string each. An operation the engine
    * has no form for throws: MongoDB has no columns, constraints or SQL.
    */
   generateOperation(operation: AnyMigrationOperation): string[];
-
-  /**
-   * The text of SQL an entity declares - a check, a stored computed column, an index expression or
-   * predicate - rendered for this engine, which is what building an entity's schema needs from it.
-   */
-  compileDdl(sql: EntityWhereMeta<object>, entity: Type<object>): string;
-
-  /**
-   * A partial index's `$where` as this engine writes it into {@link IndexSchema.where}, refused where its
-   * index takes less of a predicate than a query does: SQL Server's filter has no `OR`.
-   */
-  compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string;
 
   /**
    * An entity's differences from its table. `desiredAst`, from {@link buildAST}, has to span every entity
@@ -380,39 +342,12 @@ export interface SchemaGenerator {
 
   /** How this engine's diff compares types and defaults. Absent where {@link buildAST} is. */
   diffOptions?(): DiffOptions;
-
-  /**
-   * The table's key: {@link resolveTableAlias} behind {@link resolveSchema}, which is how a
-   * `SchemaAST` stores it and how a diff finds it again.
-   */
-  resolveTableName<E>(meta: EntityMeta<E>): string;
-
-  /**
-   * The table's own name, unqualified. What a derived index or constraint name is built from, since
-   * those are single identifiers.
-   */
-  resolveTableAlias<E>(meta: EntityMeta<E>): string;
-
-  /** The schema the table lives in, `undefined` where nothing named one. */
-  resolveSchema<E>(meta: EntityMeta<E>): string | undefined;
-
-  /**
-   * Resolve column name using field options and naming strategy
-   */
-  resolveColumnName(key: string, field: FieldOptions): string;
 }
 
 /**
  * Interface for introspecting the current database schema
  */
 export interface SchemaIntrospector {
-  /**
-   * What this introspector can read back about an index, and so all that diffing may compare.
-   * Comparing a feature it cannot read reports the same drift forever: the entity side declares it,
-   * the database side never reports it, and no migration can close the gap.
-   */
-  readonly indexFacets: ReadonlySet<IndexFacet>;
-
   /**
    * The whole database, or just the tables named. Names nothing matches are left out. `renames` reads
    * each column under the name it is being renamed to, so a diff compares it as the column it becomes.

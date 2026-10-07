@@ -30,10 +30,12 @@ describe('MsSqlSchemaGenerator Specifics', () => {
   });
 
   it('should rename through sp_rename, the new name bare', () => {
-    expect(generator.generateRenameColumnSql('users', 'age', 'years')).toBe(
-      `EXEC sp_rename N'"users"."age"', N'years', 'COLUMN';`,
-    );
-    expect(generator.generateRenameTableSql('crm.users', 'people')).toBe(`EXEC sp_rename N'"crm"."users"', N'people';`);
+    expect(
+      generator.generateOperation({ type: 'renameColumn', tableName: 'users', oldName: 'age', newName: 'years' }),
+    ).toEqual([`EXEC sp_rename N'"users"."age"', N'years', 'COLUMN';`]);
+    expect(generator.generateOperation({ type: 'renameTable', oldName: 'crm.users', newName: 'people' })).toEqual([
+      `EXEC sp_rename N'"crm"."users"', N'people';`,
+    ]);
   });
 
   /** Looked up by column, since the server named each constraint, and differently in every database. */
@@ -56,22 +58,15 @@ describe('MsSqlSchemaGenerator Specifics', () => {
   });
 
   it('should drop a column as two statements a migration runs apart: the lookup whole, then the column', () => {
-    expect(generator.generateDropColumnSql('users', 'age')).toHaveLength(2);
+    expect(generator.generateOperation({ type: 'dropColumn', tableName: 'users', columnName: 'age' })).toHaveLength(2);
   });
 
   it('should alter a column around its default, which ALTER COLUMN cannot restate', () => {
-    const [lookup, alter, restore] = tableDdl.alterColumn('users', age, '');
+    const [lookup, alter, restore] = tableDdl.alterColumns('users', [{ to: age }]);
 
     expect(lookup).toContain('sys.default_constraints');
     expect(lookup).not.toContain('sys.check_constraints');
     expect(alter).toBe('ALTER TABLE "users" ALTER COLUMN "age" BIGINT NOT NULL;');
     expect(restore).toBe('ALTER TABLE "users" ADD DEFAULT 18 FOR "age";');
-  });
-
-  it('should size a type introspection read back apart from its length', () => {
-    const name = { ...age, name: 'name', type: 'NVARCHAR', length: 100, nullable: true, defaultValue: undefined };
-    expect(tableDdl.alterColumn('users', name, '').slice(1)).toEqual([
-      'ALTER TABLE "users" ALTER COLUMN "name" NVARCHAR(100) NULL;',
-    ]);
   });
 });

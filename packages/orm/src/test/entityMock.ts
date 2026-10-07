@@ -3,23 +3,16 @@ import { v7 as uuidv7 } from 'uuid';
 import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
 import { idKey, type Json, versionKey } from '../type/index.js';
 
-/**
- * an `abstract` class can (optionally) be used as the base "template" for the entities
- * (so common fields' declaration is easily reused).
- */
+/** The fields most fixtures share. */
 export abstract class BaseEntity {
   /**
-   * A client-generated key, so the same entity runs on every backend: MongoDB cannot mint a number,
-   * so a key left to the database is a SQL-only shape - {@link Invoice} declares one for the tests
-   * that need it. Version 7 rather than random, so insertion order is still key order, which is
-   * what the auto-increment it replaces gave and what the docs recommend for the same reason.
+   * A client-generated key, so the same entity runs on every backend: MongoDB cannot mint a number, so a
+   * key left to the database is a SQL-only shape, which {@link Invoice} declares. Version 7 rather than
+   * random, so insertion order is still key order.
    */
   @Id({ type: String, onInsert: uuidv7 })
   id?: string;
 
-  /**
-   * foreign-keys are really simple to specify with the `references` property.
-   */
   @Field({ references: () => Company })
   companyId?: string | null;
 
@@ -32,24 +25,16 @@ export abstract class BaseEntity {
   @ManyToOne({ entity: () => User, references: (baseEntity) => baseEntity.creatorId })
   creator?: User;
 
-  /**
-   * 'onInsert' property can be used to specify a custom mechanism for
-   * obtaining the value of a field when inserting:
-   */
   @Field({ type: Number, onInsert: Date.now })
   createdAt?: number | null;
 
-  /**
-   * 'onUpdate' property can be used to specify a custom mechanism for
-   * obtaining the value of a field when updating:
-   */
   @Field({ type: Number, onUpdate: Date.now })
   updatedAt?: number | null;
 }
 
-export type CompanyKindKey = 'public' | 'private';
-
-export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
+export type CompanyKind = {
+  public?: 0 | 1;
+  private?: 0 | 1;
   tags?: string[];
   /** Second array key, so `$push`/`$pull` on two keys at once stays typed in the specs. */
   labels?: string[];
@@ -71,9 +56,6 @@ export type CompanyKind = { [k in CompanyKindKey]?: 0 | 1 } & {
   isArchived?: boolean;
 };
 
-/**
- * `Company` will inherit all the fields (including the `Id`) declared in `BaseEntity`.
- */
 @Entity()
 export class Company extends BaseEntity {
   @Field({ type: String })
@@ -86,19 +68,12 @@ export class Company extends BaseEntity {
   kind?: Json<CompanyKind> | null;
 }
 
-/**
- * and entity can specify the table name.
- */
 @Entity({ name: 'user_profile' })
 export class Profile extends BaseEntity {
   // Names the key for the type level: the inherited `id` would otherwise be taken for it, since a
   // conventional name outranks the fallback and nothing else says `pk` replaced it.
   [idKey]?: 'pk';
 
-  /**
-   * an entity can specify its own ID Field and still inherit the others
-   * columns/relations from its parent entity.
-   */
   @Id({ type: String, onInsert: uuidv7 })
   pk?: string;
 
@@ -209,19 +184,9 @@ export class LedgerAccount extends BaseEntity {
 
 @Entity()
 export class TaxCategory extends BaseEntity {
-  /**
-   * `idKey` symbol can be used to specify the name of the identifier property,
-   * so the type of the identifier can always be type-safe
-   * (the identifiers named as `id` or `_id` are auto-inferred).
-   */
+  /** Names the key for the type level, as on {@link Profile}. */
   [idKey]?: 'pk';
 
-  /**
-   * an entity can override the ID Field and still inherit the others
-   * columns/relations from its parent entity.
-   * 'onInsert' property can be used to specify a custom mechanism for
-   * auto-generating the primary-key's value when inserting.
-   */
   @Id({ type: String, onInsert: randomUUID })
   pk?: string;
 
@@ -250,10 +215,7 @@ export class Tax extends BaseEntity {
   description?: string | null;
 }
 
-/**
- * A `softDelete` field makes the entity "soft deletable": deletes stamp the field instead of
- * removing the row. Use `true` for the current timestamp, or a callback for a custom value.
- */
+/** Soft deletable: a delete stamps `deletedAt` instead of removing the row. */
 @Entity()
 export class MeasureUnitCategory extends BaseEntity {
   @Field({ type: String })
@@ -477,7 +439,7 @@ export class Coupon {
  * One column per declared JS type, for the round-trip that asserts a read gives back what the entity
  * promised. Engines disagree wildly underneath: `Number` becomes BIGINT (or DECIMAL with a scale),
  * `Boolean` becomes TINYINT(1) or a plain INTEGER, and several drivers hand every one of those back
- * as text. Three shipped bugs of that shape were found before this existed.
+ * as text.
  */
 @Entity()
 export class TypedRow {
@@ -552,8 +514,8 @@ export class VectorCitation {
 
 /**
  * pgvector's narrower vector types, which every other dialect maps onto the one it has. Their point
- * here is the round-trip: `halfvec` and `sparsevec` used to bind as plain arrays on insert, and
- * `sparsevec` rejects the dense literal the others take, both invisible to a SQL-text assertion.
+ * here is the round-trip: `sparsevec` rejects the dense literal the others take, which a SQL-text
+ * assertion cannot show.
  */
 @Entity()
 export class NarrowVectorItem {

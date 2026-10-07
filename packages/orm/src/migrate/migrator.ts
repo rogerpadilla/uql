@@ -2,9 +2,8 @@ import { mkdir, readdir, writeFile } from 'node:fs/promises';
 import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
-import { SchemaAST } from '../schema/index.js';
+import { SchemaAST } from '../schema/schemaAST.js';
 import { columnRenames, tableRenameCandidates } from '../schema/schemaASTDiffer.js';
-import type { TableNode } from '../schema/types.js';
 import type {
   Change,
   ColumnRenames,
@@ -60,7 +59,7 @@ export class Migrator {
     this.target = migrationTargetFor(pool, options.defaultForeignKeyAction);
     this.storage = options.storage ?? this.target.storage(options.tableName);
     this.migrationsPath = options.migrationsPath ?? './migrations';
-    this.logger = new LoggerWrapper(options.logger!, { logValues: options.logValues, slowQuery: options.slowQuery });
+    this.logger = new LoggerWrapper(options.logger, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
     this.schemaIntrospector = introspectorFor(pool);
     this.schemaGenerator = options.schemaGenerator;
@@ -90,14 +89,20 @@ export class Migrator {
     return migrations.sort((a, b) => a.name.localeCompare(b.name));
   }
 
-  /**
-   * Get list of pending migrations (not yet executed)
-   */
-  async pending(): Promise<Migration<Querier>[]> {
+  /** The migrations on disk the storage records as run (`applied`) or not (`pending`), and every name it records. */
+  private async journal() {
     const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
+    const ran = new Set(executed);
+    return {
+      executed,
+      applied: migrations.filter((migration) => ran.has(migration.name)),
+      pending: migrations.filter((migration) => !ran.has(migration.name)),
+    };
+  }
 
-    const executedSet = new Set(executed);
-    return migrations.filter((m) => !executedSet.has(m.name));
+  /** The migrations not yet run. */
+  async pending(): Promise<Migration<Querier>[]> {
+    return (await this.journal()).pending;
   }
 
   /**
@@ -118,12 +123,7 @@ export class Migrator {
    * Rollback migrations
    */
   async down(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    const [migrations, executed] = await Promise.all([this.getMigrations(), this.storage.executed()]);
-
-    const executedSet = new Set(executed);
-    const executedMigrations = migrations.filter((m) => executedSet.has(m.name)).reverse(); // Rollback in reverse order
-
-    return this.runInOrder(executedMigrations, 'down', options);
+    return this.runInOrder((await this.journal()).applied.reverse(), 'down', options);
   }
 
   /** Runs the list narrowed by `to`/`step`, stopping at the first failure: `up` over the pending, `down` over the executed reversed. */
@@ -164,6 +164,13 @@ export class Migrator {
   public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
     const startTime = Date.now();
 
+    const finished = (error?: Error): MigrationResult => ({
+      name: migration.name,
+      direction,
+      duration: Date.now() - startTime,
+      success: error === undefined,
+      ...(error && { error }),
+    });
     return this.target.withSession(async ({ querier, transaction }) => {
       try {
         this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
@@ -179,28 +186,14 @@ export class Migrator {
         };
         await (migration.transaction === false ? work() : transaction(work));
 
-        const duration = Date.now() - startTime;
+        const result = finished();
         this.logger.logMigration(
-          `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`,
+          `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${result.duration}ms`,
         );
-
-        return {
-          name: migration.name,
-          direction,
-          duration,
-          success: true,
-        };
+        return result;
       } catch (error) {
-        const duration = Date.now() - startTime;
         this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
-
-        return {
-          name: migration.name,
-          direction,
-          duration,
-          success: false,
-          error: error as Error,
-        };
+        return finished(error as Error);
       }
     });
   }
@@ -220,7 +213,7 @@ export class Migrator {
     name: string,
     body: Pick<MigrationModuleOptions, 'upInner' | 'downInner' | 'docExtraLines'>,
   ): Promise<string> {
-    const filePath = join(this.migrationsPath, `${this.getTimestamp()}_${this.slugify(name)}.ts`);
+    const filePath = join(this.migrationsPath, `${timestamp()}_${slugify(name)}.ts`);
     const content = buildMigrationModule({
       migrationName: name,
       createdAt: new Date(),
@@ -376,7 +369,7 @@ export class Migrator {
       this.noteForeignChecks(desiredAst, ast);
     }
     return this.entities.flatMap((entity) => {
-      const tableName = generator.resolveTableName(getMeta(entity));
+      const tableName = this.tableOf(entity);
       const diff = generator.diffSchema(entity, ast.getTable(tableName), desiredAst, renames.get(tableName));
       return diff ? [diff] : [];
     });
@@ -445,7 +438,7 @@ export class Migrator {
     const meta = getMeta(entity);
     const { dialect } = this.pool;
     const introspector = this.schemaIntrospectorFor(dialect.resolveSchema(meta));
-    const tableName = generator.resolveTableName(meta);
+    const tableName = this.tableOf(entity);
 
     if (!(await introspector.tableExists(dialect.resolveTableAlias(meta)))) {
       // Spanning the whole set, so a foreign key resolves against the tables it points at, and always
@@ -454,22 +447,10 @@ export class Migrator {
     }
     // With the tables it references, which its foreign keys resolve against.
     const ast = await this.introspectEntities([entity, ...referencedEntities(meta)]);
-    const altered = this.alterFromEntity(generator, entity, ast.getTable(tableName), options);
+    const diff = generator.diffSchema(entity, ast.getTable(tableName), generator.buildAST?.(this.entitiesWith(entity)));
+    const altered = diff?.type === 'alter' ? [this.filterDiff(diff, options)] : [];
     await this.assertFillable(altered);
-    return altered.flatMap((diff) => generator.generateAlterTable(diff));
-  }
-
-  /** The diff for one entity against the table it already has, and none where the two agree. */
-  private alterFromEntity(
-    generator: SchemaGenerator,
-    entity: Type<object>,
-    table: TableNode | undefined,
-    options: SyncOptions,
-  ): SchemaDiff[] {
-    // Spanning the set for the reason `planEntity` spells out: a foreign key needs the table it
-    // points at, which a sync of one entity outside the configured list would not otherwise have.
-    const diff = generator.diffSchema(entity, table, generator.buildAST?.(this.entitiesWith(entity)));
-    return diff?.type === 'alter' ? [this.filterDiff(diff, options)] : [];
+    return altered.flatMap((change) => generator.generateAlterTable(change));
   }
 
   /** The configured entities, with `entity` among them however the migrator was built. */
@@ -530,7 +511,7 @@ export class Migrator {
    * Without `drop`, a column's drop is held too. A rebuilt table applies its diff whole, so holding any
    * part of it holds the rebuild, and only what an `ALTER` adds goes ahead: a plain column, an index.
    */
-  protected filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
+  private filterDiff(diff: SchemaDiff, options: { safe?: boolean; drop?: boolean }): SchemaDiff {
     const safe = options.safe !== false;
     let held = false;
     const skip = (what: string, names: readonly string[], fix: string) => {
@@ -595,9 +576,8 @@ export class Migrator {
    * Get migration status
    */
   async status(): Promise<{ pending: string[]; executed: string[] }> {
-    const [pending, executed] = await Promise.all([this.pending().then((m) => m.map((x) => x.name)), this.executed()]);
-
-    return { pending, executed };
+    const { pending, executed } = await this.journal();
+    return { pending: pending.map((migration) => migration.name), executed };
   }
 
   /**
@@ -631,7 +611,7 @@ export class Migrator {
 
       if (this.isMigration(migration)) {
         return {
-          name: this.getMigrationName(fileName),
+          name: basename(fileName, extname(fileName)),
           up: migration.up.bind(migration),
           down: migration.down.bind(migration),
           transaction: migration.transaction,
@@ -652,38 +632,21 @@ export class Migrator {
   public isMigration(obj: unknown): obj is MigrationDefinition<Querier> {
     return isRecord(obj) && typeof obj['up'] === 'function' && typeof obj['down'] === 'function';
   }
+}
 
-  /**
-   * Extract migration name from filename
-   */
-  public getMigrationName(fileName: string): string {
-    return basename(fileName, extname(fileName));
-  }
+/** The local time a migration file is named by, `YYYYMMDDHHmmss`, so names sort in the order they were made. */
+function timestamp(): string {
+  const now = new Date();
+  const parts = [now.getMonth() + 1, now.getDate(), now.getHours(), now.getMinutes(), now.getSeconds()];
+  return `${now.getFullYear()}${parts.map((part) => String(part).padStart(2, '0')).join('')}`;
+}
 
-  /**
-   * Generate timestamp string for migration names
-   */
-  protected getTimestamp(): string {
-    const now = new Date();
-    return [
-      now.getFullYear(),
-      String(now.getMonth() + 1).padStart(2, '0'),
-      String(now.getDate()).padStart(2, '0'),
-      String(now.getHours()).padStart(2, '0'),
-      String(now.getMinutes()).padStart(2, '0'),
-      String(now.getSeconds()).padStart(2, '0'),
-    ].join('');
-  }
-
-  /**
-   * Convert a string to a slug for filenames
-   */
-  protected slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '_')
-      .replace(/^_+|_+$/g, '');
-  }
+/** `text` as a file name's part: lower case, each run of anything else an underscore. */
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, '_')
+    .replace(/^_+|_+$/g, '');
 }
 
 /**

@@ -3017,12 +3017,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return escapeAnsiSqlLiteral(value);
   }
 
-  /**
-   * The `$regex` predicate. An infix operator on the MySQL family (`REGEXP`) and the Postgres one
-   * (`~`), but a function on Oracle and SQL Server 2025 (`REGEXP_LIKE(col, ?)`) - which is why this
-   * is a method rather than the operator token alone. An engine with no regex at all overrides it to
-   * throw, the way {@link appendTextSearch} already does.
-   */
+  /** The `$regex` predicate, case-sensitive on every engine. */
   protected regexCondition(operand: string, placeholder: string): string {
     return `${operand} REGEXP ${placeholder}`;
   }
@@ -3051,8 +3046,4 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
   /** Reads extracted JSON text as a number, which every engine spells its own way. */
   protected abstract numericCast(expr: string): string;
-
-  override toString(): string {
-    return this.dialectName;
-  }
 }

@@ -2,14 +2,14 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { Drift, DriftReport } from '../schema/index.js';
-import type { Config, MigratorOptions } from '../type/index.js';
+import type { Config, MigrationResult } from '../type/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { assertCliConfig } from './assertCliConfig.js';
 import { loadConfig } from './cli-config.js';
-import { createEntityCodeGenerator } from './codegen/entityCodeGenerator.js';
+import { EntityCodeGenerator } from './codegen/entityCodeGenerator.js';
 import { entityTypesSource } from './codegen/entityTypes.js';
 import { detectDrift } from './drift/driftDetector.js';
+import type { Drift, DriftReport } from './drift/index.js';
 import { Migrator } from './migrator.js';
 import { DEFAULT_MIGRATIONS_TABLE } from './storage/databaseStorage.js';
 
@@ -36,47 +36,65 @@ export async function main(args = process.argv.slice(2)) {
     const config = await loadConfig(customPath);
     assertCliConfig(config);
 
-    const options: MigratorOptions = {
-      migrationsPath: config.migrationsPath ?? './migrations',
+    const migrator = new Migrator(config.pool, {
+      migrationsPath: config.migrationsPath,
       tableName: config.tableName,
       // A dry run's stdout is the SQL alone, so what the migrator notes on the way goes to stderr.
       logger: filteredArgs.includes('--dry-run') ? console.error : console.log,
       entities: config.entities,
       defaultForeignKeyAction: config.defaultForeignKeyAction,
-    };
-
-    const migrator = new Migrator(config.pool, options);
+    });
+    const rest = filteredArgs.slice(1);
 
     switch (command) {
       case 'up':
-        await runUp(migrator, filteredArgs.slice(1));
+        reportRun(
+          await migrator.up({ to: readFlag(rest, '--to'), step: readStep(rest) }),
+          'Migrations',
+          'No pending migrations.',
+        );
         break;
-      case 'down':
-        await runDown(migrator, filteredArgs.slice(1));
+      case 'down': {
+        const to = readFlag(rest, '--to');
+        const step = to || rest.includes('--all') ? readStep(rest) : (readStep(rest) ?? 1);
+        reportRun(await migrator.down({ to, step }), 'Rollback', 'No migrations to rollback.');
         break;
-      case 'status':
-        await runStatus(migrator);
+      }
+      case 'status': {
+        const { executed, pending } = await migrator.status();
+        print(
+          '\n=== Migration Status ===\n',
+          'Executed migrations:',
+          ...listed(executed, '✓'),
+          '\nPending migrations:',
+          ...listed(pending, '○'),
+          '',
+        );
         break;
+      }
+      case 'pending': {
+        const pending = (await migrator.pending()).map((migration) => migration.name);
+        print(...(pending.length ? ['Pending migrations:', ...listed(pending, '○')] : ['No pending migrations.']));
+        break;
+      }
+      // The migrator logs the file it created.
       case 'generate':
       case 'create':
-        await runGenerate(migrator, filteredArgs.slice(1));
+        await migrator.generate(rest.join('_') || 'migration');
         break;
       case 'generate:entities':
       case 'generate-entities':
-        await runGenerateFromEntities(migrator, filteredArgs.slice(1));
+        await migrator.generateFromEntities(rest.join('_') || 'schema');
         break;
       case 'generate:from-db':
       case 'generate-from-db':
-        await runGenerateFromDb(migrator, filteredArgs.slice(1));
+        await runGenerateFromDb(migrator, rest);
         break;
       case 'sync':
-        await runSync(migrator, filteredArgs.slice(1), config);
+        await runSync(migrator, rest);
         break;
       case 'types':
-        runTypes(migrator, filteredArgs.slice(1));
-        break;
-      case 'pending':
-        await runPending(migrator);
+        runTypes(migrator, rest);
         break;
       case 'drift:check':
       case 'drift-check':
@@ -95,135 +113,54 @@ export async function main(args = process.argv.slice(2)) {
   }
 }
 
-export async function runUp(migrator: Migrator, args: string[]) {
-  const options: { to?: string; step?: number } = {};
+/** The value after the first of `names` the arguments hold. */
+function readFlag(args: readonly string[], ...names: string[]): string | undefined {
+  const at = args.findIndex((arg) => names.includes(arg));
+  return at === -1 ? undefined : args[at + 1];
+}
 
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--to' && args[i + 1]) {
-      options.to = args[++i];
-    } else if (args[i] === '--step' && args[i + 1]) {
-      options.step = Number.parseInt(args[++i], 10);
-    }
-  }
+function readStep(args: readonly string[]): number | undefined {
+  const step = readFlag(args, '--step');
+  return step === undefined ? undefined : Number.parseInt(step, 10);
+}
 
-  const results = await migrator.up(options);
-
-  if (results.length === 0) {
-    console.log('No pending migrations.');
+/** How a run of migrations went, failing the process on any failure. */
+function reportRun(results: readonly MigrationResult[], title: string, none: string) {
+  if (!results.length) {
+    console.log(none);
     return;
   }
-
-  const successful = results.filter((r) => r.success).length;
-  const failed = results.filter((r) => !r.success).length;
-
-  console.log(`\nMigrations complete: ${successful} successful, ${failed} failed`);
-
-  if (failed > 0) {
+  const failed = results.filter((result) => !result.success).length;
+  console.log(`\n${title} complete: ${results.length - failed} successful, ${failed} failed`);
+  if (failed) {
     process.exit(1);
   }
 }
 
-export async function runDown(migrator: Migrator, args: string[]) {
-  const options: { to?: string; step?: number } = { step: 1 }; // Default to 1 step
-
-  for (let i = 0; i < args.length; i++) {
-    if (args[i] === '--to' && args[i + 1]) {
-      options.to = args[++i];
-      delete options.step;
-    } else if (args[i] === '--step' && args[i + 1]) {
-      options.step = Number.parseInt(args[++i], 10);
-    } else if (args[i] === '--all') {
-      delete options.step;
-    }
-  }
-
-  const results = await migrator.down(options);
-
-  if (results.length === 0) {
-    console.log('No migrations to rollback.');
-    return;
-  }
-
-  const successful = results.filter((r) => r.success).length;
-  const failed = results.filter((r) => !r.success).length;
-
-  console.log(`\nRollback complete: ${successful} successful, ${failed} failed`);
-
-  if (failed > 0) {
-    process.exit(1);
-  }
+/** Migration names, one a line, or `(none)`. */
+function listed(names: readonly string[], icon: string): string[] {
+  return names.length ? names.map((name) => `  ${icon} ${name}`) : ['  (none)'];
 }
 
-export async function runStatus(migrator: Migrator) {
-  const status = await migrator.status();
-
-  console.log('\n=== Migration Status ===\n');
-
-  console.log('Executed migrations:');
-  if (status.executed.length === 0) {
-    console.log('  (none)');
-  } else {
-    for (const name of status.executed) {
-      console.log(`  ✓ ${name}`);
-    }
+/** Each line its own `console.log`. */
+function print(...lines: string[]) {
+  for (const line of lines) {
+    console.log(line);
   }
-
-  console.log('\nPending migrations:');
-  if (status.pending.length === 0) {
-    console.log('  (none)');
-  } else {
-    for (const name of status.pending) {
-      console.log(`  ○ ${name}`);
-    }
-  }
-
-  console.log('');
-}
-
-export async function runPending(migrator: Migrator) {
-  const pending = await migrator.pending();
-
-  if (pending.length === 0) {
-    console.log('No pending migrations.');
-    return;
-  }
-
-  console.log('Pending migrations:');
-  for (const migration of pending) {
-    console.log(`  ○ ${migration.name}`);
-  }
-}
-
-export async function runGenerate(migrator: Migrator, args: string[]) {
-  const name = args.join('_') || 'migration';
-  const filePath = await migrator.generate(name);
-  console.log(`\nCreated migration: ${filePath}`);
-}
-
-export async function runGenerateFromEntities(migrator: Migrator, args: string[]) {
-  const name = args.join('_') || 'schema';
-  const filePath = await migrator.generateFromEntities(name);
-  console.log(`\nCreated migration from entities: ${filePath}`);
 }
 
 /**
  * Writes a `.d.ts` for the registered entities. The point is a schema defined at runtime: the same
  * registration that made the tables is what the compiler then checks queries against.
  */
-export function runTypes(migrator: Migrator, args: string[]) {
-  const output = readOutput(args) ?? './uql-entities.d.ts';
+function runTypes(migrator: Migrator, args: string[]) {
+  const output = readFlag(args, '--output', '-o') ?? './uql-entities.d.ts';
   fs.mkdirSync(path.dirname(output), { recursive: true });
   fs.writeFileSync(output, entityTypesSource(migrator.entities), 'utf-8');
   console.log(`Wrote ${migrator.entities.length} entities to ${output}`);
 }
 
-/** `--output`/`-o`, wherever a command takes one. */
-function readOutput(args: readonly string[]): string | undefined {
-  const at = args.findIndex((arg) => arg === '--output' || arg === '-o');
-  return at === -1 ? undefined : args[at + 1];
-}
-
-export async function runSync(migrator: Migrator, args: string[], config: Partial<Config>) {
+async function runSync(migrator: Migrator, args: string[]) {
   // Pulling the database into entity files is what `generate:from-db` does; one implementation.
   if (args.includes('--pull')) {
     return runGenerateFromDb(migrator, args);
@@ -254,8 +191,8 @@ export async function runSync(migrator: Migrator, args: string[], config: Partia
   console.log('\nSchema sync completed.');
 }
 
-export async function runGenerateFromDb(migrator: Migrator, args: string[]) {
-  const outputDir = readOutput(args) ?? './src/entities';
+async function runGenerateFromDb(migrator: Migrator, args: string[]) {
+  const outputDir = readFlag(args, '--output', '-o') ?? './src/entities';
 
   console.log('\nAnalyzing database schema...');
 
@@ -265,13 +202,7 @@ export async function runGenerateFromDb(migrator: Migrator, args: string[]) {
   console.log(`Found ${tableCount} table(s): ${Array.from(ast.tables.keys()).join(', ')}`);
   console.log('\nGenerating entities...');
 
-  const generator = createEntityCodeGenerator(ast, {
-    addSyncComments: true,
-    includeRelations: true,
-    includeIndexes: true,
-  });
-
-  const entities = generator.generateAll();
+  const entities = new EntityCodeGenerator(ast).generateAll();
 
   fs.mkdirSync(outputDir, { recursive: true });
   for (const entity of entities) {
@@ -305,8 +236,8 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
     // The dialect renders canonical types as SQL: without it no type drift is reported, silently
     // passing a mismatched column as in sync.
     const report = detectDrift(expectedAST, actualAST, {
+      ...generator.diffOptions?.(),
       dialect: config.pool?.dialect,
-      defaultsEqual: generator.defaultsEqual,
       excludeTables: [config.tableName ?? DEFAULT_MIGRATIONS_TABLE],
     });
 

@@ -173,7 +173,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       shouldFindWithLockSkipLocked: locks,
       shouldFindWithLockNoWait: locks,
       shouldPlaceLockAfterLimitAndOffset: locks,
-      shouldRejectALockTheEngineLacks: !locks,
+      shouldRefuseALockTheEngineLacks: !locks,
       shouldNarrowLockToRootTableWhenPopulating: locks && rowLocks.of,
       shouldRefuseToNarrowALockItCannot: locks && !rowLocks.of,
     };
@@ -200,7 +200,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     expect(this.lockedSql({ $select: { id: true }, $lock: { $wait: 'nowait' } })).toContain(this.lockClause('nowait'));
   }
 
-  shouldRejectALockTheEngineLacks() {
+  shouldRefuseALockTheEngineLacks() {
     expect(() => this.lockedSql({ $select: { id: true }, $lock: true })).toThrow(
       `${this.dialect.dialectName} does not support row-level locking`,
     );

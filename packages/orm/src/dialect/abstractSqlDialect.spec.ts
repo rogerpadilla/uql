@@ -20,7 +20,6 @@ class TestSqlDialect extends AbstractSqlDialect {
     indexIfNotExists: false,
     dropTableCascade: false,
     rebuildsTables: false,
-    commentSyntax: 'inline',
     vectorIndexRequiresNotNull: true,
     vectorSupportsLength: false,
     supportsTimestamptz: false,

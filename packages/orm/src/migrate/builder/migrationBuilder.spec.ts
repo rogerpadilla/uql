@@ -1,19 +1,30 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { SqlSchemaGenerator } from '../schemaGenerator.js';
-import { MigrationBuilder, OperationRecorder } from './migrationBuilder.js';
+import { createMockQuerier } from '../../test/index.js';
+import { migrationBuilderFor } from '../migrationTarget.js';
+import { MigrationBuilder } from './migrationBuilder.js';
+import type { AnyMigrationOperation } from './types.js';
 
-describe('OperationRecorder', () => {
+/** A builder keeping each operation it is handed, in `operations`. */
+function recording() {
+  const operations: AnyMigrationOperation[] = [];
+  const recorder = new MigrationBuilder(async (operation) => {
+    operations.push(operation);
+  });
+  return { recorder, operations };
+}
+
+describe('MigrationBuilder operations', () => {
   describe('createTable', () => {
     it('should record createTable operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createTable('users', (table) => {
         table.id();
         table.string('email', { unique: true });
       });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createTable');
 
@@ -23,42 +34,42 @@ describe('OperationRecorder', () => {
 
   describe('dropTable', () => {
     it('should record dropTable operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropTable('users');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropTable');
       expect(ops[0]).toMatchObject({ tableName: 'users' });
     });
 
     it('should support ifExists option', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropTable('users', { ifExists: true });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ ifExists: true });
     });
 
     it('should support cascade option', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropTable('users', { cascade: true });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ cascade: true });
     });
   });
 
   describe('renameTable', () => {
     it('should record renameTable operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.renameTable('old_users', 'users');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('renameTable');
       expect(ops[0]).toMatchObject({ oldName: 'old_users' });
@@ -68,11 +79,11 @@ describe('OperationRecorder', () => {
 
   describe('addColumn', () => {
     it('should record addColumn operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.addColumn('users', (c) => c.integer('age'));
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('addColumn');
       expect(ops[0]).toMatchObject({ tableName: 'users' });
@@ -82,11 +93,11 @@ describe('OperationRecorder', () => {
 
   describe('dropColumn', () => {
     it('should record dropColumn operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropColumn('users', 'age');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropColumn');
       expect(ops[0]).toMatchObject({ tableName: 'users' });
@@ -96,11 +107,11 @@ describe('OperationRecorder', () => {
 
   describe('renameColumn', () => {
     it('should record renameColumn operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.renameColumn('users', 'old_name', 'new_name');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('renameColumn');
       expect(ops[0]).toMatchObject({ oldName: 'old_name' });
@@ -110,51 +121,51 @@ describe('OperationRecorder', () => {
 
   describe('createIndex', () => {
     it('should record createIndex operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createIndex('users', ['email']);
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('createIndex');
       expect(ops[0]).toMatchObject({ index: { entries: [{ column: 'email' }] } });
     });
 
     it('should auto-generate index name', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createIndex('users', ['email', 'status']);
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ index: { name: 'users__email_status_idx' } });
     });
 
     it('should use custom index name', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createIndex('users', ['email'], { name: 'custom_idx' });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ index: { name: 'custom_idx' } });
     });
 
     it('should support unique option', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createIndex('users', ['email'], { unique: true });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ index: { unique: true } });
     });
   });
 
   describe('dropIndex', () => {
     it('should record dropIndex operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropIndex('users', 'users__email_idx');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropIndex');
       expect(ops[0]).toMatchObject({ indexName: 'users__email_idx' });
@@ -163,11 +174,11 @@ describe('OperationRecorder', () => {
 
   describe('addForeignKey', () => {
     it('should record addForeignKey operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('addForeignKey');
       expect(ops[0]).toMatchObject({ foreignKey: { columns: ['authorId'] } });
@@ -175,22 +186,22 @@ describe('OperationRecorder', () => {
     });
 
     it('should support onDelete option', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.addForeignKey('posts', ['authorId'], { table: 'users', columns: ['id'] }, { onDelete: 'CASCADE' });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops[0]).toMatchObject({ foreignKey: { onDelete: 'CASCADE' } });
     });
   });
 
   describe('dropForeignKey', () => {
     it('should record dropForeignKey operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.dropForeignKey('posts', 'posts_author_fk');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('dropForeignKey');
       expect(ops[0]).toMatchObject({ constraintName: 'posts_author_fk' });
@@ -199,11 +210,11 @@ describe('OperationRecorder', () => {
 
   describe('raw', () => {
     it('should record raw SQL operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.raw('ALTER TABLE users ADD CONSTRAINT custom CHECK (age > 0)');
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('raw');
       expect(ops[0]).toMatchObject({ sql: 'ALTER TABLE users ADD CONSTRAINT custom CHECK (age > 0)' });
@@ -212,7 +223,7 @@ describe('OperationRecorder', () => {
 
   describe('multiple operations', () => {
     it('should record multiple operations in order', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.createTable('users', (table) => {
         table.id();
@@ -227,7 +238,7 @@ describe('OperationRecorder', () => {
 
       await recorder.createIndex('users', ['email'], { unique: true });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(3);
       expect(ops[0].type).toBe('createTable');
       expect(ops[1].type).toBe('createTable');
@@ -235,25 +246,9 @@ describe('OperationRecorder', () => {
     });
   });
 
-  describe('getOperations', () => {
-    it('should return a copy of operations', async () => {
-      const recorder = new OperationRecorder();
-
-      await recorder.createTable('users', (table) => {
-        table.id();
-      });
-
-      const ops1 = recorder.getOperations();
-      const ops2 = recorder.getOperations();
-
-      expect(ops1).not.toBe(ops2);
-      expect(ops1).toEqual(ops2);
-    });
-  });
-
   describe('alterTable', () => {
     it('should record alterTable operation with nested column changes', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.alterTable('users', (table) => {
         table.addColumn((c) => c.string('email', { unique: true }));
@@ -262,26 +257,26 @@ describe('OperationRecorder', () => {
         table.alterColumn((c) => c.string('email', { nullable: true }));
       });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.map((o) => o.type)).toEqual(['addColumn', 'dropColumn', 'renameColumn', 'alterColumn']);
-      expect(ops[3]).toMatchObject({ columnName: 'email' });
+      expect(ops[3]).toMatchObject({ changes: { name: 'email' } });
     });
   });
 
   describe('alterColumn', () => {
     it('should record alterColumn operation', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.alterColumn('users', (c) => c.string('email', { nullable: true }));
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.length).toBe(1);
       expect(ops[0].type).toBe('alterColumn');
     });
 
     /** An alter restates the column alone, so an index or a key declared on it would be lost without a word. */
     it('should refuse an index or a foreign key declared on the column', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await expect(recorder.alterColumn('users', (c) => c.string('email').index())).rejects.toThrow(
         /alterColumn changes 'email' alone: add its index with createIndex/,
@@ -289,13 +284,13 @@ describe('OperationRecorder', () => {
       await expect(recorder.alterColumn('users', (c) => c.integer('orgId').references('orgs'))).rejects.toThrow(
         /alterColumn changes 'orgId' alone: .*its foreign key with addForeignKey/,
       );
-      expect(recorder.getOperations()).toEqual([]);
+      expect(operations).toEqual([]);
     });
   });
 
   describe('alterTable operations', () => {
     it('should record addIndex, dropIndex, addForeignKey, dropForeignKey', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
 
       await recorder.alterTable('users', (table) => {
         table.addIndex(['email'], { unique: true, name: 'custom_idx' });
@@ -308,7 +303,7 @@ describe('OperationRecorder', () => {
         table.dropForeignKey('users_profile_fk');
       });
 
-      const ops = recorder.getOperations();
+      const ops = operations;
       expect(ops.map((o) => o.type)).toEqual(['createIndex', 'dropIndex', 'addForeignKey', 'dropForeignKey']);
 
       expect(ops[0]).toMatchObject({ index: { name: 'custom_idx', unique: true } });
@@ -320,33 +315,31 @@ describe('OperationRecorder', () => {
 
   describe('default values', () => {
     it('should use default names and actions if not provided', async () => {
-      const recorder = new OperationRecorder();
+      const { recorder, operations } = recording();
       await recorder.alterTable('users', (table) => {
         table.addIndex(['name']);
         table.addForeignKey(['role_id'], { table: 'roles', columns: ['id'] });
       });
 
-      expect(recorder.getOperations()).toMatchObject([
+      expect(operations).toMatchObject([
         { type: 'createIndex', index: { name: 'users__name_idx', unique: false } },
-        { type: 'addForeignKey', foreignKey: { onDelete: 'NO ACTION', onUpdate: 'NO ACTION' } },
+        {
+          type: 'addForeignKey',
+          foreignKey: { columns: ['role_id'], references: { table: 'roles', columns: ['id'] } },
+        },
       ]);
     });
   });
 });
 
-describe('MigrationBuilder', () => {
-  const createMockQuerier = () => ({
-    run: vi.fn().mockResolvedValue({}),
-    dialect: new PostgresDialect(),
-  });
-
-  const builderOn = (querier: ReturnType<typeof createMockQuerier>) =>
-    new MigrationBuilder(new SqlSchemaGenerator(querier.dialect), (sql) => querier.run(sql));
+describe('migrationBuilderFor', () => {
+  const sqlQuerier = () =>
+    createMockQuerier({ all: vi.fn(), run: vi.fn().mockResolvedValue({}), dialect: new PostgresDialect() });
 
   describe('execution', () => {
     it('should generate SQL and run it', async () => {
-      const mockQuerier = createMockQuerier();
-      const builder = builderOn(mockQuerier);
+      const mockQuerier = sqlQuerier();
+      const builder = await migrationBuilderFor(mockQuerier);
 
       await builder.createTable('users', (table) => {
         table.id();
@@ -355,22 +348,20 @@ describe('MigrationBuilder', () => {
       expect(mockQuerier.run).toHaveBeenCalled();
       const calledSql = mockQuerier.run.mock.calls[0][0];
       expect(calledSql).toContain('CREATE TABLE "users"');
-      expect(builder.getOperations().length).toBe(1);
     });
   });
 
   describe('alterTable execution', () => {
     /** Every nested change has run by the time `alterTable` resolves, in the order it was declared. */
-    it('should record and run each nested column change', async () => {
-      const mockQuerier = createMockQuerier();
-      const builder = builderOn(mockQuerier);
+    it('should run each nested column change', async () => {
+      const mockQuerier = sqlQuerier();
+      const builder = await migrationBuilderFor(mockQuerier);
 
       await builder.alterTable('users', (table) => {
         table.addColumn((c) => c.string('nickname', { nullable: true }));
         table.dropColumn('legacy');
       });
 
-      expect(builder.getOperations().map((op) => op.type)).toEqual(['addColumn', 'dropColumn']);
       expect(mockQuerier.run).toHaveBeenCalledTimes(2);
       expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
         'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255);',
@@ -381,8 +372,8 @@ describe('MigrationBuilder', () => {
 
   describe('raw execution', () => {
     it('should run raw SQL', async () => {
-      const mockQuerier = createMockQuerier();
-      const builder = builderOn(mockQuerier);
+      const mockQuerier = sqlQuerier();
+      const builder = await migrationBuilderFor(mockQuerier);
 
       await builder.raw('SELECT 1');
 
@@ -392,8 +383,8 @@ describe('MigrationBuilder', () => {
 
   describe('all operations with execution', () => {
     it('should generate SQL for all operations', async () => {
-      const mockQuerier = createMockQuerier();
-      const builder = builderOn(mockQuerier);
+      const mockQuerier = sqlQuerier();
+      const builder = await migrationBuilderFor(mockQuerier);
 
       await builder.createTable('t', (t) => t.id());
       await builder.dropTable('t');

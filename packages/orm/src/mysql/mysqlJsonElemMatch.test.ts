@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { mysqlConnection, provisioningTimeout } from '../test/index.js';
+import { dropTables } from '../test/sqlPools.js';
 import type { Json } from '../type/index.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
@@ -27,8 +28,7 @@ describe('MySQL JSON $elemMatch', () => {
   const pool = new MySql2QuerierPool(mysqlConnection());
 
   beforeAll(async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS \`${TABLE}\``));
-    await new Migrator(pool, { entities: [ElemMatched] }).sync({ logging: false });
+    await new Migrator(pool, { entities: [ElemMatched] }).sync({ force: true });
     await pool.insertMany(
       ElemMatched,
       Array.from({ length: ROWS }, (_, n) => ({ items: [{ name: `n${n}` }], tags: [`t${n}`] })),
@@ -36,7 +36,7 @@ describe('MySQL JSON $elemMatch', () => {
   }, provisioningTimeout);
 
   afterAll(async () => {
-    await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS \`${TABLE}\``));
+    await dropTables(pool, TABLE);
     await pool.end();
   }, provisioningTimeout);
 

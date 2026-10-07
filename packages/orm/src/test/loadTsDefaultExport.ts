@@ -2,6 +2,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { onTestFinished } from 'vitest';
 
 /**
  * Write TypeScript source to a temp file and load its default export.
@@ -23,4 +24,11 @@ export async function loadTsDefaultExport<T>(source: string): Promise<T> {
   } finally {
     await rm(dir, { recursive: true, force: true });
   }
+}
+
+/** A migrations directory of the running test's own, removed when it finishes. */
+export async function migrationsDir(): Promise<string> {
+  const dir = await mkdtemp(join(tmpdir(), 'uql-migrations-'));
+  onTestFinished(() => rm(dir, { recursive: true, force: true }));
+  return dir;
 }

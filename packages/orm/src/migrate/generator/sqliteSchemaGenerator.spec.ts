@@ -67,13 +67,17 @@ describe('SqliteSchemaGenerator Specifics', () => {
 
   it('should refuse a hand-written column alteration, which only a generated rebuild makes', () => {
     expect(() =>
-      generator.generateAlterColumnSql('users', 'age', {
-        name: 'age',
-        type: { category: 'integer' },
-        nullable: true,
-        isPrimaryKey: false,
-        isAutoIncrement: false,
-        isUnique: false,
+      generator.generateOperation({
+        type: 'alterColumn',
+        tableName: 'users',
+        changes: {
+          name: 'age',
+          type: { category: 'integer' },
+          nullable: true,
+          isPrimaryKey: false,
+          isAutoIncrement: false,
+          isUnique: false,
+        },
       }),
     ).toThrow('sqlite: Altering the column "age" of "users" rebuilds the table');
   });
@@ -128,9 +132,5 @@ describe('SqliteSchemaGenerator Specifics', () => {
     expect(generator.generateAlterTable(diff)).toEqual([
       'ALTER TABLE `RebuiltUser` ADD COLUMN `age` INTEGER NOT NULL DEFAULT 0;',
     ]);
-  });
-
-  it('should return empty string for column comment', () => {
-    expect(generator.generateColumnComment('comment')).toBe('');
   });
 });

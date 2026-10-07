@@ -9,7 +9,7 @@ const NEW_TABLE_PREFIX = `${OWNED_PREFIX}_new_`;
 const GUARD_TABLE = `${OWNED_PREFIX}_rebuild_guard`;
 
 /** What the copy reads besides the columns both sides share: renamed ones, and a default filling a column's nulls. */
-export type RebuildCopy = {
+type RebuildCopy = {
   readonly renames: readonly Rename[];
   readonly fills: ReadonlyMap<string, string>;
 };

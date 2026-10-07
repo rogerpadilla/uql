@@ -108,10 +108,19 @@ export function migrationTargetFor(
 /** A builder running each operation on `querier`, as SQL or as MongoDB driver commands. */
 export async function migrationBuilderFor(querier: Querier): Promise<MigrationBuilder> {
   if (isSqlQuerier(querier)) {
-    return new MigrationBuilder(new SqlSchemaGenerator(querier.dialect), sqlSession(querier).run);
+    return builderOn(new SqlSchemaGenerator(querier.dialect), sqlSession(querier).run);
   }
   if (isMongoQuerier(querier)) {
-    return new MigrationBuilder(await mongoSchemaGenerator(), mongoSession(querier).run);
+    return builderOn(await mongoSchemaGenerator(), mongoSession(querier).run);
   }
   throw new UqlUsageError('A migration builder needs a SQL or a MongoDB querier');
+}
+
+/** A builder running each statement `generator` writes for an operation through `run`. */
+function builderOn(generator: SchemaGenerator, run: (statement: string) => Promise<unknown>): MigrationBuilder {
+  return new MigrationBuilder(async (operation) => {
+    for (const statement of generator.generateOperation(operation)) {
+      await run(statement);
+    }
+  });
 }

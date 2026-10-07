@@ -3,10 +3,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
-import { driftOf } from '../../test/drift.js';
+import { driftOf, planOf, syncOf } from '../../test/drift.js';
 import { provisioningTimeout } from '../../test/index.js';
-import { dropTables, sqlPools } from '../../test/sqlPools.js';
-import type { SqlQuerierPool, SyncOptions, Type } from '../../type/index.js';
+import { dropTables, sqlPools, syncedPool } from '../../test/sqlPools.js';
+import type { SqlQuerierPool, Type } from '../../type/index.js';
+import { raw } from '../../util/index.js';
 import { Migrator } from '../migrator.js';
 
 const TABLE = 'drift_sync_user';
@@ -171,18 +172,13 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   const pool = connect();
   afterAll(() => pool.end());
 
-  const syncOf = (entity: Type<object>, options: SyncOptions) =>
-    new Migrator(pool, { entities: [entity] }).sync({ logging: false, ...options });
-  const planOf = (entity: Type<object>, options: SyncOptions) =>
-    new Migrator(pool, { entities: [entity] }).planSync(options);
-
   it(
     'should report no drift, and plan nothing, for a table it just synced',
     async () => {
-      await syncOf(DriftUniqueUser, { force: true });
+      await syncOf(pool, DriftUniqueUser, { force: true });
 
       expect(await driftOf(pool, DriftUniqueUser, TABLE)).toEqual([]);
-      expect(await planOf(DriftUniqueUser, { safe: false })).toEqual([]);
+      expect(await planOf(pool, DriftUniqueUser, { safe: false })).toEqual([]);
     },
     provisioningTimeout,
   );
@@ -191,12 +187,12 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should widen an older timestamp to the one a Date field declares',
     async () => {
-      await syncOf(DatedBefore, { force: true });
+      await syncOf(pool, DatedBefore, { force: true });
 
-      await syncOf(DatedAfter, { safe: false });
+      await syncOf(pool, DatedAfter, { safe: false });
 
       expect(await driftOf(pool, DatedAfter, DATED)).toEqual([]);
-      expect(await planOf(DatedAfter, { safe: false })).toEqual([]);
+      expect(await planOf(pool, DatedAfter, { safe: false })).toEqual([]);
     },
     provisioningTimeout,
   );
@@ -205,16 +201,16 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should add a uniqueness the database lacks, and drop one the entity no longer declares',
     async () => {
-      await syncOf(ShapeBefore, { force: true });
+      await syncOf(pool, ShapeBefore, { force: true });
 
       expect(await driftOf(pool, ShapeUnique, SHAPE)).toEqual([
         { type: 'missing_index', index: 'drift_sync_shape__email_idx' },
       ]);
 
-      await syncOf(ShapeUnique, {});
+      await syncOf(pool, ShapeUnique, {});
       expect(await driftOf(pool, ShapeUnique, SHAPE)).toEqual([]);
 
-      await syncOf(ShapeBefore, { safe: false });
+      await syncOf(pool, ShapeBefore, { safe: false });
       expect(await driftOf(pool, ShapeBefore, SHAPE)).toEqual([]);
     },
     provisioningTimeout,
@@ -224,17 +220,17 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should pair an index under a legacy name, and rebuild a changed one only outside safe mode',
     async () => {
-      await syncOf(ShapeBefore, { force: true });
+      await syncOf(pool, ShapeBefore, { force: true });
 
       expect(await driftOf(pool, ShapeAfter, SHAPE)).toEqual([
         { type: 'index_mismatch', index: 'drift_sync_shape_code_idx' },
       ]);
-      expect(await planOf(ShapeAfter, {})).toEqual([]);
+      expect(await planOf(pool, ShapeAfter, {})).toEqual([]);
 
-      await syncOf(ShapeAfter, { safe: false });
+      await syncOf(pool, ShapeAfter, { safe: false });
 
       expect(await driftOf(pool, ShapeAfter, SHAPE)).toEqual([]);
-      expect(await planOf(ShapeAfter, { safe: false })).toEqual([]);
+      expect(await planOf(pool, ShapeAfter, { safe: false })).toEqual([]);
     },
     provisioningTimeout,
   );
@@ -243,7 +239,7 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should roll a generated migration back, restoring the column and the unique index it dropped',
     async () => {
-      await syncOf(ShapeUnique, { force: true });
+      await syncOf(pool, ShapeUnique, { force: true });
       const migrator = await generating(pool, ShapeNoEmail);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
 
@@ -262,13 +258,15 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should not warn about a retype that only widens a column',
     async () => {
-      await syncOf(NamedShort, { force: true });
+      await syncOf(pool, NamedShort, { force: true });
       const migrator = await generating(pool, NamedLong);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
 
       await migrator.generateFromEntities('widen_name');
+      await migrator.up();
 
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Retypes'));
+      expect(await driftOf(pool, NamedLong, WIDENED)).toEqual([]);
     },
     provisioningTimeout,
   );
@@ -277,7 +275,7 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should suggest renaming a table no entity names to a new one identical to it',
     async () => {
-      await syncOf(Article, { force: true });
+      await syncOf(pool, Article, { force: true });
       await dropTables(pool, POSTS);
       onTestFinished(() => dropTables(pool, ARTICLES, POSTS));
       const migrator = await generating(pool, Post);
@@ -294,16 +292,22 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
   it(
     'should rename a column its field was renamed from, and back',
     async () => {
-      await syncOf(TitledBefore, { force: true });
+      await syncOf(pool, TitledBefore, { force: true });
       await pool.insertOne(TitledBefore, { id: 1, title: 'kept' });
       await pool.insertOne(TitledBefore, { id: 2, title: 'child', parentId: 1 });
-      // Drift reads no rename into a database nobody migrated: it is missing a column and holds another.
-      expect(await driftOf(pool, TitledAfter, RENAMED)).toEqual(
-        expect.arrayContaining([
-          expect.objectContaining({ type: 'missing_column', column: 'headline' }),
-          expect.objectContaining({ type: 'unexpected_column', column: 'title' }),
-        ]),
-      );
+      // Drift reads no rename into a database nobody migrated: each renamed thing is missing and held under its old name.
+      expect(await driftOf(pool, TitledAfter, RENAMED)).toEqual([
+        { type: 'missing_column', column: 'headline' },
+        { type: 'missing_column', column: 'ownerId' },
+        { type: 'unexpected_column', column: 'title' },
+        { type: 'unexpected_column', column: 'parentId' },
+        { type: 'missing_index', index: 'drift_sync_renamed__headline_idx' },
+        { type: 'missing_index', index: 'drift_sync_renamed__ownerId_idx' },
+        { type: 'unexpected_index', index: 'drift_sync_renamed__parentId_idx' },
+        { type: 'unexpected_index', index: 'drift_sync_renamed__title_idx' },
+        { type: 'missing_relationship' },
+        { type: 'unexpected_relationship' },
+      ]);
       const migrator = await generating(pool, TitledAfter);
 
       await migrator.generateFromEntities('rename_title');
@@ -329,7 +333,7 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'mssql'))('retype (%s)'
   it(
     'should retype text holding a number to a number, and back',
     async () => {
-      await new Migrator(pool, { entities: [CodedAsText] }).sync({ logging: false, force: true });
+      await syncOf(pool, CodedAsText, { force: true });
       await pool.insertOne(CodedAsText, { id: 1, code: '42' });
       const migrator = await generating(pool, CodedAsNumber);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
@@ -346,3 +350,80 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'mssql'))('retype (%s)'
     provisioningTimeout,
   );
 });
+
+const INDEXED = 'drift_index_user';
+
+/**
+ * Everything an index carries that the Postgres family reprints in its own words: an expression, a partial
+ * predicate, a stored order, `INCLUDE` columns. CockroachDB also registers a `UNIQUE` constraint for a plain
+ * `CREATE UNIQUE INDEX`, which a catalogue filter written for Postgres hides, and so reports missing.
+ */
+@Index(() => [raw`lower("email")`], { unique: true, where: raw`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
+@Index((user) => [user.status], { unique: true, name: 'drift_status_unique_idx' })
+@Index((user) => [user.status, { column: user.createdAt, order: 'desc' }], { name: 'drift_status_recent_idx' })
+@Index((user) => [user.tenantId], { include: (user) => [user.status], name: 'drift_tenant_covering_idx' })
+@Entity({ name: INDEXED })
+class IndexedUser {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: Number }) tenantId?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+}
+
+/** The same table with one index no longer unique, one covering column dropped, and the `status` ones gone. */
+@Index(() => [raw`lower("email")`], { where: raw`"deletedAt" IS NULL`, name: 'drift_email_live_idx' })
+@Index((user) => [user.tenantId], { name: 'drift_tenant_covering_idx' })
+@Entity({ name: INDEXED })
+class IndexedUserEdited {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: String }) email?: string | null;
+  @Field({ type: String }) status?: string | null;
+  @Field({ type: Number }) tenantId?: number | null;
+  @Field({ type: Date }) createdAt?: Date | null;
+  @Field({ type: Date, softDelete: true }) deletedAt?: Date | null;
+}
+
+/**
+ * The round trip every piece of index comparison has to survive: emit the DDL, read it back out of the
+ * catalogue, and compare it with the entity it came from, so whatever the comparison fails to fold away
+ * shows as drift no migration could ever settle.
+ */
+describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'sqlite', 'mssql'))('index drift (%s)', (_engine, connect) => {
+  const pool = syncedPool(connect, [IndexedUser]);
+
+  it('should report nothing for the indexes it just created', async () => {
+    expect(await driftOf(pool(), IndexedUser, INDEXED)).toEqual([]);
+  });
+
+  it('should report the indexes whose definition the entity changed', async () => {
+    expect(await driftOf(pool(), IndexedUserEdited, INDEXED)).toEqual([
+      { type: 'index_mismatch', index: 'drift_tenant_covering_idx' },
+      { type: 'index_mismatch', index: 'drift_email_live_idx' },
+      { type: 'unexpected_index', index: 'drift_status_recent_idx' },
+      { type: 'unexpected_index', index: 'drift_status_unique_idx' },
+    ]);
+  });
+});
+
+const CLASSED = 'drift_index_classed';
+
+/** An operator class, which CockroachDB cannot state. */
+@Index((row) => [{ column: row.data, opsClass: 'jsonb_path_ops' }], { type: 'gin', name: 'drift_data_idx' })
+@Entity({ name: CLASSED })
+class ClassedData {
+  @Id({ type: Number }) id?: number;
+  @Field({ type: 'jsonb' }) data?: object | null;
+}
+
+describe.each(sqlPools('test_drift', 'cockroachdb', 'mysql', 'mariadb', 'sqlite', 'mssql'))(
+  'operator class drift (%s)',
+  (_engine, connect) => {
+    const pool = syncedPool(connect, [ClassedData]);
+
+    it('should report nothing for the index it just created', async () => {
+      expect(await driftOf(pool(), ClassedData, CLASSED)).toEqual([]);
+    });
+  },
+);

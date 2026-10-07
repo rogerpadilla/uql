@@ -52,13 +52,14 @@ export function indexNameParts(entries: readonly EntityIndexColumn[]): string[] 
   return entries.map((entry, at) => (typeof entry.column === 'string' ? entry.column : `expr${at}`));
 }
 
-/** The name an index is created and read by: its own, else one derived from its table and its entries' columns. */
+/** The name an index is created and read by: its own, else one derived from its table, entries' columns and uniqueness. */
 export function declaredIndexName(
   name: string | undefined,
   table: string,
   entries: readonly EntityIndexColumn[],
+  unique = false,
 ): string {
-  return name ?? derivedIndexName(table, indexNameParts(entries));
+  return name ?? derivedIndexName(table, indexNameParts(entries), unique);
 }
 
 /**

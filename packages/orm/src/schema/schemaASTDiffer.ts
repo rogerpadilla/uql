@@ -26,10 +26,6 @@ import { DEFAULT_FOREIGN_KEY_ACTION } from './types.js';
  * Options for schema diffing.
  */
 export interface DiffOptions {
-  /** Compare indexes */
-  compareIndexes?: boolean;
-  /** Compare foreign keys/relationships */
-  compareRelationships?: boolean;
   /** Tables to exclude from comparison */
   excludeTables?: string[];
   /**
@@ -41,12 +37,7 @@ export interface DiffOptions {
   defaultsEqual?: (expected: unknown, actual: unknown) => boolean;
 }
 
-/**
- * Default diff options.
- */
 const DEFAULT_OPTIONS: Required<DiffOptions> = {
-  compareIndexes: true,
-  compareRelationships: true,
   normalizeType: (type) => type,
   defaultsEqual: defaultsEqualAsWritten,
   excludeTables: [],
@@ -67,25 +58,27 @@ export function diffSchemas(source: SchemaAST, target: SchemaAST, options: DiffO
   return {
     tables: [...created.map((to) => ({ to })), ...dropped.map((from) => ({ from }))],
     columns: altered.flatMap((tableDiff) => tableDiff.columns),
-    indexes: altered.flatMap((tableDiff) => tableDiff.indexes),
+    indexes: matched.flatMap(([sourceTable, targetTable]) => diffTableIndexes(sourceTable, targetTable)),
     checks: altered.flatMap((tableDiff) => tableDiff.checks),
     triggers: altered.flatMap((tableDiff) => tableDiff.triggers),
     primaryKeys: altered.flatMap((tableDiff) => tableDiff.primaryKey ?? []),
     // Relationships span tables, so they are compared over the whole schema rather than per table.
-    relationships: opts.compareRelationships ? diffRelationshipNodes(source.relationships, target.relationships) : [],
+    relationships: diffRelationshipNodes(source.relationships, target.relationships),
   };
 }
 
-/** The differences between two tables, shared by migrations and drift detection so they cannot disagree. */
+/**
+ * The differences between two tables but their indexes, which a migration pairs on its own; shared by
+ * migrations and drift detection so they cannot disagree.
+ */
 export function diffTable(source: TableNode, target: TableNode, options: DiffOptions = {}): TableDiff | undefined {
   const opts = { ...DEFAULT_OPTIONS, ...options };
   const columns = diffTableColumns(source, target, opts);
-  const indexes = opts.compareIndexes ? diffTableIndexes(source, target) : [];
   const checks = diffOwned(source.name, source.checks, target.checks);
   const triggers = diffOwned(source.name, source.triggers, target.triggers);
   const primaryKey = diffPrimaryKey(source, target);
-  return columns.length || indexes.length || checks.length || triggers.length || primaryKey
-    ? { columns, indexes, checks, triggers, primaryKey }
+  return columns.length || checks.length || triggers.length || primaryKey
+    ? { columns, checks, triggers, primaryKey }
     : undefined;
 }
 
@@ -113,9 +106,6 @@ function diffPrimaryKey(source: TableNode, target: TableNode): PrimaryKeyDiff | 
   return { table: source.name, from: target.primaryKey, to: source.primaryKey };
 }
 
-/**
- * Compare columns between two tables.
- */
 function diffTableColumns(source: TableNode, target: TableNode, opts: Required<DiffOptions>): ColumnDiff[] {
   const { created, dropped, matched } = matchByKey(
     source.columns.values(),
@@ -128,14 +118,12 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
       table: source.name,
       column: column.name,
       to: column,
-      description: `Add column "${column.name}"`,
     })),
     ...dropped.map<ColumnDiff>((column) => ({
       table: target.name,
       column: column.name,
       from: column,
       isBreaking: true,
-      description: `Drop column "${column.name}"`,
     })),
     ...matched
       .map(([sourceColumn, targetColumn]) => diffColumn(source.name, sourceColumn, targetColumn, opts))
@@ -200,16 +188,13 @@ function diffTableIndexes(source: TableNode, target: TableNode): IndexDiff[] {
   }));
 }
 
-/**
- * Compare two columns and return the difference.
- */
+/** How `target`, the database's column, differs from `source`, the entity's, or `undefined` where they agree. */
 function diffColumn(
   tableName: string,
   source: ColumnNode,
   target: ColumnNode,
   opts: Required<DiffOptions>,
 ): ColumnDiff | undefined {
-  const differences: string[] = [];
   const changed: ColumnFacet[] = [];
 
   // A key column's type and nullability are implied, not stated, and catalogues report them
@@ -219,51 +204,35 @@ function diffColumn(
 
   const expectedType = opts.normalizeType(source.type);
   const actualType = opts.normalizeType(target.type);
-  const typeChanged = !generatedType && !areTypesEqual(expectedType, actualType);
+  // A generated key's signedness alone: the one part of its serial spelling that round trips, and an unsigned
+  // key refuses every foreign key, which takes the canonical, signed type.
+  const typeChanged = generatedType
+    ? !!source.type.unsigned !== !!target.type.unsigned
+    : !areTypesEqual(expectedType, actualType);
   if (typeChanged) {
-    differences.push(`type: ${formatType(source.type)} -> ${formatType(target.type)}`);
     changed.push('type');
   }
-
-  // Signedness is the one thing compared on a generated key, because it is the one part of the serial
-  // spelling that does round trip - and a key left unsigned refuses every foreign key pointing at it,
-  // since the referencing column takes its type from the canonical one, which is signed. Without this
-  // a database created before the serial became signed could never gain a foreign key.
-  const signednessChanged = generatedType && !!source.type.unsigned !== !!target.type.unsigned;
-  if (signednessChanged) {
-    differences.push(`type: ${formatType(source.type)} -> ${formatType(target.type)}`);
-    changed.push('type');
-  }
-
   if (!impliedNotNull && source.nullable !== target.nullable) {
-    differences.push(`nullable: ${target.nullable} -> ${source.nullable}`);
     changed.push('nullable');
   }
 
   // Not compared, since no statement this generator emits could settle a difference: `isAutoIncrement`,
   // `generatedAs`, and `comment`. Nor `isUnique`: a unique column is a unique index, compared with the indexes.
 
-  // Compare default values (if both defined)
   if (!opts.defaultsEqual(source.defaultValue, target.defaultValue)) {
-    differences.push(`default: ${target.defaultValue ?? 'NULL'} -> ${source.defaultValue ?? 'NULL'}`);
     changed.push('default');
   }
-
-  if (differences.length === 0) {
+  if (!changed.length) {
     return undefined;
   }
-
   return {
     table: tableName,
     column: source.name,
     from: target,
     to: source,
     changed,
-    // Only the type this diff actually reports: a column altered for its default carries no data loss,
-    // and a generated key's type - never compared above - reads as unsigned against an entity that
-    // cannot say so.
-    isBreaking: (typeChanged || signednessChanged) && isBreakingTypeChange(actualType, expectedType),
-    description: differences.join(', '),
+    // Only by the type this diff reports: a column altered for its default loses nothing.
+    isBreaking: typeChanged && isBreakingTypeChange(actualType, expectedType),
   };
 }
 
@@ -272,7 +241,7 @@ export function diffRelationshipNodes(
   source: readonly RelationshipNode[],
   target: readonly RelationshipNode[],
 ): RelationshipDiff[] {
-  const { created, dropped, matched } = matchByKey(source, target, getRelationshipKey);
+  const { created, dropped, matched } = matchByKey(source, target, relationshipKey);
 
   return [
     ...created.map<RelationshipDiff>((relation) => ({ ...relationEnds(relation), to: relation })),
@@ -303,33 +272,10 @@ function diffRelationship(source: RelationshipNode, target: RelationshipNode): R
   return undefined;
 }
 
-/**
- * Generate a unique key for a relationship based on its structure.
- */
-function getRelationshipKey(rel: RelationshipNode): string {
-  const fromCols = rel.from.columns
-    .map((c) => c.name)
-    .sort()
-    .join(',');
-  const toCols = rel.to.columns
-    .map((c) => c.name)
-    .sort()
-    .join(',');
-  return `${rel.from.table.name}.${fromCols}->${rel.to.table.name}.${toCols}`;
-}
-
-/**
- * Format a canonical type for display.
- */
-function formatType(type: ColumnNode['type']): string {
-  let result = type.category;
-  if (type.size) result += `(${type.size})`;
-  if (type.length) result += `(${type.length})`;
-  if (type.precision) {
-    result += type.scale !== undefined ? `(${type.precision},${type.scale})` : `(${type.precision})`;
-  }
-  if (type.unsigned) result += ' unsigned';
-  return result;
+/** What a foreign key is: its two tables, and each of its columns with the one it points at, in any order. */
+function relationshipKey(rel: RelationshipNode): string {
+  const pairs = rel.from.columns.map((column, at) => `${column.name}>${rel.to.columns[at].name}`).sort();
+  return `${rel.from.table.name}->${rel.to.table.name}:${pairs.join(',')}`;
 }
 
 /**

@@ -51,8 +51,8 @@ The core needed four seams, all in: `returningPosition` (`OUTPUT INSERTED` sits 
 | `booleanLiteral`          | `integer` (`BIT`)                                                              | `native` (23ai)                               |
 | `beginTransactionCommand` | `BEGIN TRANSACTION`, sent through the driver's `Transaction` (`internalBegin`) | none - `internalBegin` turns `autoCommit` off |
 | `isolationLevelStrategy`  | `set-before`                                                                   | `set-before`                                  |
-| `TableDdl.alterColumn`    | `ALTER COLUMN`, type and nullability alone; the default is a constraint        | `MODIFY`                                      |
-| `commentSyntax`           | `none` - extended properties are not comments                                  | `statement`                                   |
+| `TableDdl.alterColumns`   | `ALTER COLUMN`, type and nullability alone; the default is a constraint        | `MODIFY`                                      |
+| `TableDdl` comments       | none - extended properties are not comments                                    | `COMMENT ON`, as `commentStatements`          |
 | `dropTableCascade`        | false                                                                          | true (`CASCADE CONSTRAINTS`)                  |
 | `features.rowLocks`       | true, as table hints                                                           | true, `FOR UPDATE` verbatim                   |
 | `maxBindValues`           | **2098** - the server's 2100, less the two `sp_executesql` takes               | 65535                                         |

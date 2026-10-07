@@ -2,19 +2,9 @@ import { expect } from 'vitest';
 import { MariadbQuerierPool } from '../../maria/mariadbQuerierPool.js';
 import { createSpec, mariadbConnection } from '../../test/index.js';
 import { MySqlFamilyIntrospectorIt } from './mysqlFamilyIntrospector-test.js';
-import { MariadbSchemaIntrospector } from './mysqlIntrospector.js';
 
 class MariadbIntrospectorIt extends MySqlFamilyIntrospectorIt {
-  constructor() {
-    const pool = new MariadbQuerierPool(mariadbConnection());
-    super(pool, new MariadbSchemaIntrospector(pool));
-  }
-
   protected readonly otherDatabase = 'test_maria';
-
-  protected introspectorOf(database: string) {
-    return new MariadbSchemaIntrospector(this.pool, database);
-  }
 
   /** MariaDB prints a nullable column's default as `NULL`, stated or not, where MySQL prints none. */
   async shouldReadANullableColumnsDefaultAsNull() {
@@ -29,4 +19,4 @@ class MariadbIntrospectorIt extends MySqlFamilyIntrospectorIt {
   }
 }
 
-createSpec(new MariadbIntrospectorIt());
+createSpec(new MariadbIntrospectorIt(new MariadbQuerierPool(mariadbConnection('test_introspector'))));

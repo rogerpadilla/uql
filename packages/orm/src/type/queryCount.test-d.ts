@@ -79,8 +79,8 @@ export async function countShapesTheResult() {
 
 /** A tally is read with its row, so it needs no id and composes with `$distinct` and a raw `$select`. */
 export async function countBesideDistinctAndARawSelect() {
-  // Asserted here only for what they are: legal to write. What each does at runtime is pinned on
-  // every backend by `shouldCountBeside$distinct` / `shouldCountBesideARawSelect`.
+  // Asserted here only for what they are: legal to write. What each does at runtime is pinned by
+  // `shouldCountBeside$distinct` on every backend, and `shouldCountBesideARawSelect` on SQL.
   await querier.findMany(Story, { $distinct: true, $count: { comments: true } });
   await querier.findMany(Story, { $select: [], $count: { comments: true } });
 }

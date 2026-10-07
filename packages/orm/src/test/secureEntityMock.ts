@@ -6,7 +6,7 @@ declare module '../type/index.js' {
   }
 }
 
-/** The joined (m1) side of a `security: true` filter - the regression case for the JOIN/populate gap. */
+/** The joined (m1) side of a `security: true` filter, which a JOIN or a populate applies as a read does. */
 @Filter('tenant', {
   where: (ctx) => (ctx?.secureTenantId != null ? { tenantId: ctx.secureTenantId } : undefined),
   security: true,

@@ -2,7 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { defineEntity } from '../entity/index.js';
 import { detectDrift } from '../migrate/drift/index.js';
 import { PostgresSchemaIntrospector } from '../migrate/introspection/postgresIntrospector.js';
-import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
+import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 import { PostgresDialect } from './postgresDialect.js';
@@ -32,8 +32,10 @@ describe('PostgreSQL column type drift', () => {
       fields: { id: { type: Number, isId: true }, title: { type: String, length } },
     });
     const actual = await new PostgresSchemaIntrospector(pool, SCHEMA).introspect([TABLE]);
-    const expected = buildSchemaAST([Row], { namingStrategy: dialect.namingStrategy });
-    return detectDrift(expected, actual, { dialect }).drifts.filter((drift) => drift.type === 'type_mismatch');
+    const generator = new SqlSchemaGenerator(dialect);
+    return detectDrift(generator.buildAST([Row]), actual, { ...generator.diffOptions(), dialect }).drifts.filter(
+      (drift) => drift.type === 'type_mismatch',
+    );
   };
 
   beforeAll(async () => {
@@ -50,12 +52,7 @@ describe('PostgreSQL column type drift', () => {
   }, provisioningTimeout);
 
   it('should report the VARCHAR(255) the entity would have created as TEXT', async () => {
-    const drifts = await driftFor();
-
-    expect(drifts).toHaveLength(1);
-    expect(drifts[0].column).toBe('title');
-    expect(drifts[0].expected).toBe('TEXT');
-    expect(drifts[0].actual).toBe('VARCHAR(255)');
+    expect(await driftFor()).toMatchObject([{ column: 'title', expected: 'TEXT', actual: 'VARCHAR(255)' }]);
   });
 
   it('should report nothing once the entity states the length the column has', async () => {

@@ -20,7 +20,6 @@ export function isVectorCategory(category: TypeCategory | undefined): category i
  * Handles variations across dialects (PostgreSQL, MySQL, SQLite).
  */
 const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
-  // === Integers ===
   int: { category: 'integer' },
   int4: { category: 'integer' },
   integer: { category: 'integer' },
@@ -34,7 +33,6 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   bigserial: { category: 'integer', size: 'big' },
   smallserial: { category: 'integer', size: 'small' },
 
-  // === Floats ===
   float: { category: 'float' },
   float4: { category: 'float' },
   real: { category: 'float' },
@@ -42,12 +40,10 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   double: { category: 'float', size: 'big' },
   'double precision': { category: 'float', size: 'big' },
 
-  // === Decimals ===
   decimal: { category: 'decimal' },
   numeric: { category: 'decimal' },
   money: { category: 'decimal' },
 
-  // === Strings ===
   char: { category: 'string' },
   character: { category: 'string' },
   varchar: { category: 'string' },
@@ -60,12 +56,10 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   mediumtext: { category: 'string', size: 'medium' },
   longtext: { category: 'string', size: 'big' },
 
-  // === Boolean ===
   bool: { category: 'boolean' },
   boolean: { category: 'boolean' },
   bit: { category: 'boolean' },
 
-  // === Date/Time ===
   date: { category: 'date' },
   time: { category: 'time' },
   'time without time zone': { category: 'time' },
@@ -80,15 +74,12 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   smalldatetime: { category: 'timestamp' },
   datetimeoffset: { category: 'timestamp', withTimezone: true },
 
-  // === JSON ===
   json: { category: 'json' },
   jsonb: { category: 'json' },
 
-  // === UUID ===
   uuid: { category: 'uuid' },
   uniqueidentifier: { category: 'uuid' },
 
-  // === Binary ===
   blob: { category: 'blob' },
   bytea: { category: 'blob' },
   binary: { category: 'blob' },
@@ -98,7 +89,6 @@ const SQL_TO_CANONICAL: Readonly<Record<string, CanonicalType>> = {
   longblob: { category: 'blob', size: 'big' },
   image: { category: 'blob', size: 'big' },
 
-  // === Vector (for AI/embeddings) ===
   vector: { category: 'vector' },
   f32_blob: { category: 'vector' },
   halfvec: { category: 'halfvec' },
@@ -277,11 +267,21 @@ const CANONICAL_TO_TS: Record<TypeCategory, string> = {
   sparsevec: 'number[]',
 };
 
+/** The bounds an engine reports beside a type's name, or a field declares beside its SQL type. */
+type TypeBounds = {
+  readonly length?: number;
+  readonly precision?: number;
+  readonly scale?: number;
+  readonly dimensions?: number;
+};
+
 /**
- * Parse a SQL type string into a canonical type.
- * Handles complex types like VARCHAR(255), DECIMAL(10,2), etc.
+ * The canonical type of a SQL type string, and of the bounds an engine reports beside it
+ * (`character_maximum_length` and friends), which win over the name's own. The one place a SQL type is
+ * read: everything downstream compares and renders canonical types, so no consumer has to know that
+ * `TINYINT(1)` means boolean on MySQL.
  */
-export function sqlToCanonical(sqlType: string): CanonicalType {
+export function sqlToCanonical(sqlType: string, reported: TypeBounds = {}): CanonicalType {
   const normalized = sqlType.toLowerCase().trim();
   const unsigned = normalized.includes('unsigned');
   const withoutUnsigned = normalized.replace(/\s*unsigned\s*/i, ' ').trim();
@@ -292,15 +292,17 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
     .replace(/^(\w+)\((\d+)\)\s+(.+)$/, '$1 $3($2)')
     .match(/^([a-z][a-z0-9_ ]*?)(?:\(([^)]+)\))?$/);
   const base = match ? SQL_TO_CANONICAL[match[1]] : undefined;
+  const length = reported.dimensions ?? reported.length;
   if (!match || !base) {
-    return { category: 'string', raw: sqlType };
+    return { category: 'string', raw: sqlType, length };
   }
 
   const params = match[2]?.split(',').map((param) => param.trim()) ?? [];
   const [first, second] = params
     .map((param) => Number.parseInt(param, 10))
     .map((n) => (Number.isNaN(n) ? undefined : n));
-  // A length for a string or a blob, the dimensions for a vector: `VARCHAR(255)`, `VECTOR(1536)`.
+  // A length for a string, a blob or a vector (its dimensions), a precision for a decimal or a timestamp,
+  // a scale for a decimal: catalogues also report an integer's digits or a float's bits, which no type states.
   const measured = base.category === 'string' || base.category === 'blob' || isVectorCategory(base.category);
   const decimal = base.category === 'decimal';
 
@@ -309,30 +311,10 @@ export function sqlToCanonical(sqlType: string): CanonicalType {
     // SQL Server's unbounded `(MAX)` is what it creates for a `TEXT`.
     size: measured && params[0] === 'max' ? 'small' : base.size,
     withTimezone: base.withTimezone,
-    length: measured ? first : undefined,
-    precision: decimal || base.category === 'timestamp' ? first : undefined,
-    scale: decimal ? second : undefined,
+    length: measured ? (length ?? first) : undefined,
+    precision: decimal || base.category === 'timestamp' ? (reported.precision ?? first) : undefined,
+    scale: decimal ? (reported.scale ?? second) : undefined,
     unsigned: unsigned || undefined,
-  };
-}
-
-/**
- * The canonical type for a column an engine reported, merging the metadata columns it reports beside
- * the type name (`character_maximum_length` and friends) over whatever the name itself carried. This is
- * the one place a SQL type string is parsed: everything downstream compares and renders canonical
- * types, so no consumer has to know that `TINYINT(1)` means boolean on MySQL.
- */
-export function canonicalColumnType(
-  sqlType: string,
-  reported: { length?: number; precision?: number; scale?: number; dimensions?: number } = {},
-): CanonicalType {
-  const base = sqlToCanonical(sqlType);
-  return {
-    ...base,
-    // A vector states its length as `dimensions`, and only a vector may: one bound, named from either side.
-    length: reported.dimensions ?? reported.length ?? base.length,
-    precision: reported.precision ?? base.precision,
-    scale: reported.scale ?? base.scale,
   };
 }
 
@@ -359,7 +341,7 @@ export function canonicalToSql(type: CanonicalType, dialect: AbstractDialect): s
   // A `size` the engine spells out wins outright; anything else falls through to the rules below.
   // `TEXT` canonicalizes to `size: 'small'`, so a string counts as unsized only where the engine
   // declares no variant for it, which is how Postgres reaches `TEXT` rather than its base `VARCHAR`.
-  const sized = engine.sizes?.[type.category]?.[type.size!];
+  const sized = type.size && engine.sizes?.[type.category]?.[type.size];
   let sqlType = sized ?? engine.scalars[type.category];
 
   if (type.category === 'string' && !sized) {
@@ -407,14 +389,14 @@ export function canonicalToTypeScript(type: CanonicalType): string {
   return CANONICAL_TO_TS[type.category];
 }
 
-/** The fractional-second digits an engine's timestamp holds when its type states none; `undefined` where it counts none. */
-export function defaultTimestampPrecision(dialectName: DialectName): number | undefined {
-  return ENGINE_TYPES[dialectName].timestampPrecision;
+/** Gives a timestamp type that states no precision `digits` fractional seconds; other types pass through. */
+function withTimestampPrecision(type: CanonicalType, digits: number | undefined): CanonicalType {
+  return type.category === 'timestamp' && type.precision === undefined ? { ...type, precision: digits } : type;
 }
 
-/** Gives a timestamp type that states no precision `digits` fractional seconds; other types pass through. */
-export function withTimestampPrecision(type: CanonicalType, digits: number | undefined): CanonicalType {
-  return type.category === 'timestamp' && type.precision === undefined ? { ...type, precision: digits } : type;
+/** A SQL type as `dialectName` stores it: a timestamp stating no precision holds the engine's default digits. */
+export function storedType(dialectName: DialectName, sqlType: string, reported?: TypeBounds): CanonicalType {
+  return withTimestampPrecision(sqlToCanonical(sqlType, reported), ENGINE_TYPES[dialectName].timestampPrecision);
 }
 
 /**
@@ -422,8 +404,7 @@ export function withTimestampPrecision(type: CanonicalType, digits: number | und
  * the engine settles an unstated bound. Migrations and drift both compare through it.
  */
 export function engineType(dialect: AbstractDialect): (type: CanonicalType) => CanonicalType {
-  const timestampPrecision = defaultTimestampPrecision(dialect.dialectName);
-  return (type) => withTimestampPrecision(sqlToCanonical(canonicalToSql(type, dialect)), timestampPrecision);
+  return (type) => storedType(dialect.dialectName, canonicalToSql(type, dialect));
 }
 
 /** A field's canonical type; a timestamp without precision gets a `Date`'s milliseconds, unless it is `raw` SQL. */
@@ -437,7 +418,7 @@ function fieldType(options: FieldOptions): CanonicalType {
   // beside it is read the same way either way.
   const declared = declaredSqlType(options);
   if (declared !== undefined) {
-    return canonicalColumnType(declared, options);
+    return sqlToCanonical(declared, options);
   }
 
   switch (columnFamily(options.type)) {

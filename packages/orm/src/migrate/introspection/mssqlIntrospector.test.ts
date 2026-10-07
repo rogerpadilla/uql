@@ -1,15 +1,20 @@
-import { expect } from 'vitest';
+import { expect, onTestFinished } from 'vitest';
 import { MsSqlQuerierPool } from '../../mssql/mssqlQuerierPool.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { ForeignKeyAction } from '../../schema/types.js';
 import { createSpec, mssqlConnection } from '../../test/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
-import { MsSqlSchemaIntrospector } from './mssqlIntrospector.js';
+import { introspectorFor } from './registry.js';
 
 class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
-  constructor() {
-    const pool = new MsSqlQuerierPool(mssqlConnection('test_introspector'));
-    super(pool, new MsSqlSchemaIntrospector(pool));
+  /** A boolean is a `BIT`. */
+  protected override expectedTrueDefault() {
+    return 1;
+  }
+
+  /** Reprinted from the engine's parse tree, as a default is. */
+  protected override expectedPartialPredicate() {
+    return '([code]>(0))';
   }
 
   /** SQL Server takes no type on a computed column, and recomputes one per read unless told to persist it. */
@@ -54,13 +59,6 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
     expect(this.getColumn(schema, 'embedding')).toMatchObject({ type: 'VECTOR', length: 1536 });
   }
 
-  async shouldReadAPrecisionOnlyWhereTheTypeDeclaresOne() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    expect(this.getColumn(schema, 'amount')).toMatchObject({ precision: 10, scale: 2 });
-    expect(this.getColumn(schema, 'score')).toMatchObject({ precision: undefined, scale: undefined });
-  }
-
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
       querier.run(/*sql*/ `
@@ -88,34 +86,41 @@ class MsSqlIntrospectorIt extends AbstractIntrospectorIt {
   /** A table of the same name in the default schema is neither read nor in the way. */
   async shouldReadOnlyTheSchemaItWasGiven() {
     const table = `uql_probe.${INTROSPECT_TABLES.A}`;
-    const querier = await this.pool.getQuerier();
-    try {
-      await querier.run('CREATE SCHEMA uql_probe');
-      await querier.run(
-        `CREATE TABLE ${table} (id INT CONSTRAINT probe_pk PRIMARY KEY, code INT UNIQUE, note NVARCHAR(9), INDEX probe_note_idx (note))`,
-      );
+    const dropProbe = async () => {
+      await this.pool.run(`DROP TABLE IF EXISTS ${table}`);
+      await this.pool.run('DROP SCHEMA IF EXISTS uql_probe');
+    };
+    await dropProbe();
+    onTestFinished(dropProbe);
+    await this.pool.run('CREATE SCHEMA uql_probe');
+    await this.pool.run(
+      `CREATE TABLE ${table} (id INT CONSTRAINT probe_pk PRIMARY KEY, code INT UNIQUE, note NVARCHAR(9), INDEX probe_note_idx (note))`,
+    );
 
-      const named = await new MsSqlSchemaIntrospector(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
-      const own = await this.getTableSchema(INTROSPECT_TABLES.A);
+    const named = await introspectorFor(this.pool, 'uql_probe').getTableSchema(INTROSPECT_TABLES.A);
+    const own = await this.getTableSchema(INTROSPECT_TABLES.A);
 
-      expect(named).toMatchObject({ primaryKey: { columns: ['id'], name: 'probe_pk' }, foreignKeys: [] });
-      expect(named?.indexes?.map((index) => index.name)).toContain('probe_note_idx');
-      expect(named?.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
-        { name: 'id', isUnique: false },
-        { name: 'code', isUnique: true },
-        { name: 'note', isUnique: false },
-      ]);
-      expect(own.columns.map((column) => column.name)).toContain('status');
-    } finally {
-      await querier.run(`DROP TABLE IF EXISTS ${table}`);
-      await querier.run('DROP SCHEMA IF EXISTS uql_probe');
-      await querier.release();
-    }
+    expect(named).toMatchObject({ primaryKey: { columns: ['id'], name: 'probe_pk' }, foreignKeys: [] });
+    expect(named?.indexes?.filter((index) => !index.unique).map((index) => index.name)).toEqual(['probe_note_idx']);
+    expect(named?.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
+      { name: 'id', isUnique: false },
+      { name: 'code', isUnique: true },
+      { name: 'note', isUnique: false },
+    ]);
+    expect(own.columns.map((column) => column.name)).toEqual([
+      'id',
+      'name',
+      'status',
+      'is_enabled',
+      'score',
+      'created_at',
+      'amount',
+    ]);
   }
 
   async shouldEscapeTheSchemaItWasGiven() {
-    await expect(new MsSqlSchemaIntrospector(this.pool, "uql'probe").getTableNames()).resolves.toEqual([]);
+    await expect(introspectorFor(this.pool, "uql'probe").getTableNames()).resolves.toEqual([]);
   }
 }
 
-createSpec(new MsSqlIntrospectorIt());
+createSpec(new MsSqlIntrospectorIt(new MsSqlQuerierPool(mssqlConnection('test_introspector'))));

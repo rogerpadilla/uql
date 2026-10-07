@@ -1,53 +1,39 @@
 import { expect, vi } from 'vitest';
 import { SqlExpression } from '../../schema/sqlExpression.js';
-import type { TypeCategory } from '../../schema/types.js';
 import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { createMockQuerier, createMockQuerierPool, createSpec } from '../../test/index.js';
-import { UqlUsageError } from '../../util/uqlError.js';
+import { createMockQuerierPool, createSpec } from '../../test/index.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
 
 class SqliteIntrospectorIt extends AbstractIntrospectorIt {
-  constructor() {
-    const pool = new Sqlite3QuerierPool(':memory:');
-    super(pool, new SqliteSchemaIntrospector(pool));
+  /** A string is `TEXT`, which keeps no length. */
+  override requirements() {
+    return { ...super.requirements(), shouldIntrospectVarcharLength: false };
   }
 
-  /** SQLite has no date/time type: a timestamp is stored, and read back, as `TEXT`. */
-  protected override expectedTimestampCategory(): TypeCategory {
-    return 'string';
+  /** None: SQLite stores a decimal as `REAL`. */
+  protected override expectedDecimalBounds() {
+    return [undefined, undefined];
   }
 
-  async shouldIntrospectIntegerPrimaryKeyAsAutoIncrement() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const idCol = this.getColumn(schema, 'id');
-    expect(idCol.isPrimaryKey).toBe(true);
-    expect(idCol.isAutoIncrement).toBe(true);
+  /** A boolean is stored as 0/1. */
+  protected override expectedTrueDefault() {
+    return 1;
   }
 
-  /**
-   * `PRAGMA index_info` names an expression entry `null`, and only `sqlite_master.sql` holds its text,
-   * so such an index is left out rather than reported over a column called `null`.
-   */
-  async shouldSkipAnExpressionIndexRatherThanNameItNull() {
-    const querier = await this.pool.getQuerier();
-    try {
-      const table = querier.dialect.escapeId(INTROSPECT_TABLES.A);
-      await querier.run(`CREATE INDEX expr_name_idx ON ${table} (lower(${querier.dialect.escapeId('name')}))`);
+  /** `PRAGMA index_info` names an expression entry `null`: it is reported as an expression, not a column called `null`. */
+  async shouldReportAnExpressionEntryAsAnExpression() {
+    const schema = await this.probe('probe_expression', async (querier, table) => {
+      await querier.run(`CREATE TABLE ${table} (name TEXT)`);
+      await querier.run(`CREATE INDEX probe_lower_idx ON ${table} (lower(name))`);
+    });
 
-      const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-      const names = schema.indexes?.map((index) => index.name) ?? [];
-
-      expect(names).not.toContain('expr_name_idx');
-      expect(schema.indexes?.flatMap((index) => index.entries.map((column) => column.column))).not.toContain(null);
-    } finally {
-      await querier.run('DROP INDEX expr_name_idx');
-      await querier.release();
-    }
+    expect(schema.indexes).toEqual([
+      { name: 'probe_lower_idx', unique: false, entries: [{ column: '', expression: true }] },
+    ]);
   }
 
-  /** Columns and key both read `table_info`, indexes and uniqueness both walk `index_list`: each is sent once. */
+  /** Columns and key both read `table_info`: each statement is sent once. */
   async shouldSendEachIntrospectionStatementOnce() {
     const querier = await this.pool.getQuerier();
     const all = vi.spyOn(querier, 'all');
@@ -57,39 +43,6 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     const sent = all.mock.calls.map(([sql]) => sql);
     expect(sent.length).toBe(new Set(sent).size);
-  }
-
-  async shouldRefuseAPoolWhoseQuerierIsNotSql() {
-    const pool = createMockQuerierPool(this.pool.dialect, async () => createMockQuerier());
-
-    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(
-      'SqliteSchemaIntrospector requires a SQL-based querier',
-    );
-    await expect(new SqliteSchemaIntrospector(pool).getTableNames()).rejects.toThrow(UqlUsageError);
-  }
-
-  async shouldIntrospectTextDefault() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const statusCol = this.getColumn(schema, 'status');
-    expect(statusCol.type).toBe('TEXT');
-    expect(statusCol.defaultValue).toBe('active');
-  }
-
-  async shouldIntrospectIntegerDefault() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const isEnabledCol = this.getColumn(schema, 'is_enabled');
-    expect(isEnabledCol.type).toBe('INTEGER');
-    expect(isEnabledCol.defaultValue).toBe(1);
-  }
-
-  async shouldIntrospectTimestampAsText() {
-    const schema = await this.getTableSchema(INTROSPECT_TABLES.A);
-
-    const createdAtCol = this.getColumn(schema, 'created_at');
-    expect(createdAtCol.type).toBe('TEXT');
-    expect(createdAtCol.defaultValue).toEqual(new SqlExpression('currentTimestamp'));
   }
 
   /**
@@ -162,7 +115,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
     const schema = await this.getTableSchema(INTROSPECT_TABLES.B);
     const ast = await this.introspector.introspect([INTROSPECT_TABLES.A, INTROSPECT_TABLES.B]);
 
-    expect(this.getForeignKey(schema, 'a_id').name).toBe(undefined);
+    expect(schema.foreignKeys?.map((key) => key.name)).toEqual([undefined]);
     expect(ast.getTable(INTROSPECT_TABLES.B)?.outgoingRelations.map((relation) => relation.name)).toEqual([
       `${INTROSPECT_TABLES.B}__a_id_fk`,
     ]);
@@ -170,20 +123,14 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
   /** A trigger written by hand is left alone: only the ones under uql's own prefix are reported, to reconcile. */
   async shouldReportOnlyTheTriggersUqlInstalled() {
-    const table = 'probe_triggers';
-    const body = `AFTER UPDATE ON ${table} BEGIN SELECT 1; END`;
-    const run = (sql: string) => this.pool.withQuerier((querier) => querier.run(sql));
-    await run(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY, n INTEGER)`);
-    try {
-      await run(`CREATE TRIGGER hand_made ${body}`);
-      await run(`CREATE TRIGGER _uql_probe_triggers__mine ${body}`);
+    const mine = 'CREATE TRIGGER _uql_probe_triggers__mine AFTER UPDATE ON "probe_triggers" BEGIN SELECT 1; END';
+    const schema = await this.probe('probe_triggers', async (querier, table) => {
+      await querier.run(`CREATE TABLE ${table} (id INTEGER PRIMARY KEY, n INTEGER)`);
+      await querier.run(`CREATE TRIGGER hand_made AFTER UPDATE ON ${table} BEGIN SELECT 1; END`);
+      await querier.run(mine);
+    });
 
-      expect((await this.introspector.getTableSchema(table))?.triggers).toEqual([
-        { name: '_uql_probe_triggers__mine', statements: [`CREATE TRIGGER _uql_probe_triggers__mine ${body}`] },
-      ]);
-    } finally {
-      await run(`DROP TABLE ${table}`);
-    }
+    expect(schema.triggers).toEqual([{ name: '_uql_probe_triggers__mine', statements: [mine] }]);
   }
 
   async shouldReadATableWhoseNameNeedsEscaping() {
@@ -196,4 +143,4 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
   }
 }
 
-createSpec(new SqliteIntrospectorIt());
+createSpec(new SqliteIntrospectorIt(new Sqlite3QuerierPool(':memory:')));

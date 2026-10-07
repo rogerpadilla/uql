@@ -44,6 +44,13 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
   }
 
   /** The MySQL family takes an `OFFSET` only behind a `LIMIT`, and its manual gives the largest for every row. */
+  override shouldFind$regex() {
+    const res = this.exec((ctx) =>
+      this.dialect.find(ctx, User, { $select: { id: true }, $where: { name: { $regex: '^some' } } }),
+    );
+    expect(res.sql).toBe("SELECT `id` FROM `User` WHERE `name` REGEXP CONCAT('(?-i)', ?)");
+  }
+
   shouldReadEveryRowPastAnOffset() {
     const { sql } = this.exec((ctx) => this.dialect.find(ctx, User, { $skip: 5 }));
     expect(sql).toMatch(/ LIMIT 18446744073709551615 OFFSET 5$/);
@@ -245,7 +252,7 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     // A JSON path folds case exactly as a column does: both sides, never the pattern alone.
     expect(ctx.sql).toContain(`LOWER(${this.elemPath('f')}) ${this.likeSql()}`);
     expect(ctx.values).toContain('hi');
-    expect(ctx.sql).toContain(`${this.elemPath('m')} REGEXP ?`);
+    expect(ctx.sql).toContain(`${this.elemPath('m')} REGEXP CONCAT('(?-i)', ?)`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('n')} AS DOUBLE) IN (`);
     expect(ctx.sql).toContain(`CAST(${this.elemPath('o')} AS DOUBLE) NOT IN (`);
   }

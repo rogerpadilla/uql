@@ -1,18 +1,10 @@
 import { getLoadablePath } from 'sqlite-vec';
+import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
+import { SqliteLikeQuerierIt } from '../querier/sqliteLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
-import { Sqlite3QuerierIt } from './sqliteQuerier.test.js';
 
-/**
- * Replays the whole better-sqlite3 suite against Node's built-in driver. `node:sqlite` is specified
- * to behave identically here, so any divergence - bind coercion, `RETURNING` rows, extension loading,
- * a wide integer - is a real bug rather than an expected per-driver difference, and gets no overridable
- * hook.
- */
-class NodeSqliteQuerierIt extends Sqlite3QuerierIt {
-  constructor() {
-    super(new NodeSqliteQuerierPool(':memory:', { extensions: [getLoadablePath()] }));
-  }
-}
-
-createSpec(new NodeSqliteQuerierIt());
+// The better-sqlite3 suite on Node's built-in driver, specified to behave identically: a divergence (bind
+// coercion, `RETURNING` rows, extension loading, a wide integer) is a bug, not an overridable hook.
+createSpec(new SqliteLikeQuerierIt(new NodeSqliteQuerierPool(':memory:', { extensions: [getLoadablePath()] })));
+createSpec(new SqlQuerierPoolIt(() => new NodeSqliteQuerierPool(':memory:')));

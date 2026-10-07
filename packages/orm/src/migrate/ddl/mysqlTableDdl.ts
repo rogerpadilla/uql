@@ -2,30 +2,32 @@ import type { ColumnSchema } from '../../type/index.js';
 import { lacksValue } from '../schemaChange.js';
 import { dropIndexOnTable, TableDdl } from './tableDdl.js';
 
-/** Table DDL for the MySQL family: `MODIFY COLUMN`, and dedicated clauses to drop a primary key or foreign key. */
+/** Table DDL for the MySQL family: `MODIFY COLUMN`, inline comments, and dedicated clauses to drop a key. */
 export class MySqlTableDdl extends TableDdl {
-  override readonly tableOptions = 'ENGINE=InnoDB DEFAULT CHARSET=utf8mb4';
+  override tableSuffix(comment?: string): string {
+    return ` ENGINE=InnoDB DEFAULT CHARSET=utf8mb4${comment ? ` COMMENT=${this.dialect.escape(comment)}` : ''}`;
+  }
+
+  protected override columnComment(comment?: string): string {
+    return comment ? ` COMMENT ${this.dialect.escape(comment)}` : '';
+  }
 
   /**
    * MySQL fills existing rows with a zero when it adds a required column that has no default. So the column
    * is added nullable and then made required, which fails on those rows as it does on other engines.
    */
-  override addColumnStatements(
-    table: string,
-    column: ColumnSchema,
-    render: (column: ColumnSchema) => string,
-  ): string[] {
+  override addColumnStatements(table: string, column: ColumnSchema, constraints = ''): string[] {
     if (!lacksValue(column)) {
-      return super.addColumnStatements(table, column, render);
+      return super.addColumnStatements(table, column, constraints);
     }
     return [
-      this.addColumn(table, render({ ...column, nullable: true })),
-      ...this.alterColumn(table, column, render(column)),
+      this.addColumn(table, this.columnDefinition({ ...column, nullable: true }) + constraints),
+      ...this.alterColumns(table, [{ to: column }]),
     ];
   }
 
-  protected override alterClauses(_column: ColumnSchema, definition: string): string[] {
-    return [`MODIFY COLUMN ${definition}`];
+  protected override alterClauses(column: ColumnSchema): string[] {
+    return [`MODIFY COLUMN ${this.columnDefinition(column)}`];
   }
 
   /** Ignores `schema`: MySQL reads it from the table name, which is already qualified. */
@@ -38,7 +40,7 @@ export class MySqlTableDdl extends TableDdl {
   }
 
   /** MySQL always names the primary key `PRIMARY`, so it is dropped without a name. */
-  override dropPrimaryKey(table: string): string {
-    return `ALTER TABLE ${this.dialect.escapeId(table)} DROP PRIMARY KEY;`;
+  protected override dropPrimaryKey(): string {
+    return 'DROP PRIMARY KEY';
   }
 }

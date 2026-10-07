@@ -1,7 +1,9 @@
-/**
- * Drift Detection Module
- *
- * Detects schema drift between expected and actual database schemas.
- */
-
-export { type DriftDetectorOptions, detectDrift } from './driftDetector.js';
+export {
+  type Drift,
+  type DriftDetectorOptions,
+  type DriftReport,
+  type DriftSeverity,
+  type DriftStatus,
+  type DriftType,
+  detectDrift,
+} from './driftDetector.js';

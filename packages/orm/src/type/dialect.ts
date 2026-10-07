@@ -109,8 +109,6 @@ export interface DialectFeatures {
    * the migration builder refuses the change by name.
    */
   readonly rebuildsTables: boolean;
-  /** Where a comment goes: in the declaration (MySQL family), a `COMMENT ON` of its own (Postgres family), or nowhere. */
-  readonly commentSyntax: 'inline' | 'statement' | 'none';
   /**
    * Whether every column of a vector index has to be `NOT NULL`, which MariaDB 12.3 enforces ("All
    * parts of a VECTOR index must be NOT NULL") and CockroachDB 26.3 does not - so being indexed, not

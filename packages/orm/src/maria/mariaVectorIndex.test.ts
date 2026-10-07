@@ -1,119 +1,31 @@
-import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { Entity, Field, Id, Index } from '../entity/index.js';
+import { afterAll, describe, expect, it } from 'vitest';
 import { MariadbSchemaIntrospector } from '../migrate/introspection/mysqlIntrospector.js';
-import { Migrator } from '../migrate/migrator.js';
-import { mariadbConnection, provisioningTimeout } from '../test/index.js';
+import { assertDefined, mariadbConnection, provisioningTimeout } from '../test/index.js';
+import { dropTables } from '../test/sqlPools.js';
 import { MariadbQuerierPool } from './mariadbQuerierPool.js';
 
 const TABLE = 'maria_vector_index';
 
-/** The column is declared nullable, which the generator has to override: MariaDB refuses otherwise. */
-@Index((mariaVectorIndexed) => [mariaVectorIndexed.vec], {
-  type: 'vector',
-  distance: 'cosine',
-  m: 8,
-  name: 'ix_maria_vec',
-})
-@Entity({ name: TABLE })
-class MariaVectorIndexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3 }) vec?: number[] | null;
-}
-
-/** The same table before the index is declared on it, so `autoSync` has one to add. */
-@Entity({ name: TABLE })
-class MariaVectorUnindexed {
-  @Id({ type: Number }) id?: number;
-  @Field({ type: 'vector', dimensions: 3, nullable: false }) vec?: number[];
-}
-
-/**
- * MariaDB declares a vector index inside `CREATE TABLE` and, from 11.7, as `CREATE VECTOR INDEX`, the
- * one `autoSync` can add to a table that exists. Only the server can say either statement is right.
- */
+/** MariaDB keeps a vector index's distance only in the table's definition, and leaves its own default, euclidean, out. */
 describe('MariaDB vector index', () => {
   const pool = new MariadbQuerierPool(mariadbConnection());
 
-  const indexesOf = () =>
-    pool.withQuerier((querier) =>
-      querier.all<{ INDEX_NAME: string; INDEX_TYPE: string }>(
-        `SELECT INDEX_NAME, INDEX_TYPE FROM information_schema.STATISTICS
-         WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME <> 'PRIMARY'`,
-        [TABLE],
-      ),
-    );
-
-  const drop = () => pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS \`${TABLE}\``));
-
-  beforeAll(drop, provisioningTimeout);
-
   afterAll(async () => {
-    await drop();
+    await dropTables(pool, TABLE);
     await pool.end();
   }, provisioningTimeout);
 
-  it('should create the index with the table it belongs to', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
-
-    expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
-  });
-
-  /**
-   * The column has to be NOT NULL before the index can be added, which is why the unindexed entity
-   * declares it so: the statement adds an index, never a column's nullability, and MariaDB answers
-   * "All parts of a VECTOR index must be NOT NULL".
-   */
-  it('should add the index to a table that already exists', async () => {
-    await drop();
-    await new Migrator(pool, { entities: [MariaVectorUnindexed] }).sync({ logging: false });
-    expect(await indexesOf()).toEqual([]);
-
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
-
-    expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
-  });
-
-  /** `IF NOT EXISTS` is MariaDB's, and it is what keeps a second `autoSync` from failing on it. */
-  it('should leave the index alone on a second sync', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
-
-    expect(await indexesOf()).toEqual([{ INDEX_NAME: 'ix_maria_vec', INDEX_TYPE: 'VECTOR' }]);
-  });
-
-  /**
-   * `$candidates` prefixes the SELECT with `SET STATEMENT mhnsw_ef_search=N FOR`, which needs no
-   * transaction and cannot leak to the next query on this pooled connection. Only the server can say
-   * the variable exists and that the prefix parses ahead of a SELECT this shape.
-   */
-  it('should run a tuned vector search through SET STATEMENT', async () => {
-    await new Migrator(pool, { entities: [MariaVectorIndexed] }).sync({ logging: false });
-    await pool.insertMany(MariaVectorIndexed, [{ vec: [0, 1, 0] }, { vec: [1, 0, 0] }]);
-
-    const rows = await pool.findMany(MariaVectorIndexed, {
-      $select: { vec: true },
-      $sort: { vec: { $vector: [0, 1, 0] } },
-      $limit: 2,
-      $candidates: 40,
-    });
-
-    expect(rows.map((row) => row.vec)).toEqual([
-      [0, 1, 0],
-      [1, 0, 0],
-    ]);
-  });
-
-  /** MariaDB keeps a vector index's distance only in the table's definition, and leaves its own default, euclidean, out. */
   it('should read a vector index built without a distance as euclidean, beside a plain index', async () => {
-    await drop();
-    await pool.withQuerier(async (querier) => {
-      await querier.run(
-        `CREATE TABLE \`${TABLE}\` (id INT PRIMARY KEY, n INT, vec VECTOR(3) NOT NULL, VECTOR INDEX ix_maria_vec (vec), INDEX ix_maria_n (n))`,
-      );
-    });
+    await dropTables(pool, TABLE);
+    await pool.run(
+      `CREATE TABLE ${TABLE} (id INT PRIMARY KEY, n INT, vec VECTOR(3) NOT NULL, VECTOR INDEX ix_maria_vec (vec), INDEX ix_maria_n (n))`,
+    );
 
     const schema = await new MariadbSchemaIntrospector(pool).getTableSchema(TABLE);
 
-    expect(schema?.indexes?.map(({ name, type, distance }) => ({ name, type, distance }))).toEqual([
+    assertDefined(schema);
+    assertDefined(schema.indexes);
+    expect(schema.indexes.map(({ name, type, distance }) => ({ name, type, distance }))).toEqual([
       { name: 'ix_maria_n', type: undefined, distance: undefined },
       { name: 'ix_maria_vec', type: 'vector', distance: 'l2' },
     ]);

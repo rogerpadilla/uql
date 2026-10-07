@@ -1,6 +1,5 @@
-import type { Alteration, ColumnSchema } from '../../type/index.js';
 import { escapeSingleQuotes } from '../../util/sqlLiteral.js';
-import { dropIndexOnTable, sizedType, TableDdl } from './tableDdl.js';
+import { type ColumnAlteration, dropIndexOnTable, TableDdl } from './tableDdl.js';
 
 /** What pins column `c`, the `sys.columns` row {@link MsSqlTableDdl} reads: each constraint, then each index, by kind. */
 const PINNED_BY = {
@@ -30,7 +29,7 @@ export class MsSqlTableDdl extends TableDdl {
   }
 
   /** T-SQL rejects the optional `COLUMN` keyword after `ADD`. */
-  override addColumn(table: string, definition: string): string {
+  protected override addColumn(table: string, definition: string): string {
     return /*sql*/ `ALTER TABLE ${this.dialect.escapeId(table)} ADD ${definition};`;
   }
 
@@ -40,25 +39,21 @@ export class MsSqlTableDdl extends TableDdl {
   }
 
   /**
-   * `ALTER COLUMN` takes the type and nullability alone, so the default is dropped and added back as a
-   * constraint of its own. A `CHECK` or `UNIQUE` stays, and the server refuses a retype it blocks.
+   * A statement per column: `ALTER COLUMN` takes the type and nullability alone, so the default is dropped and
+   * added back as a constraint of its own. A `CHECK` or `UNIQUE` stays, and the server refuses a retype it blocks.
    */
-  override alterColumn(table: string, column: ColumnSchema): string[] {
+  override alterColumns(table: string, alterations: readonly ColumnAlteration[]): string[] {
     const target = this.dialect.escapeId(table);
-    const name = this.dialect.escapeId(column.name);
-    const statements = [
-      this.dropPinning(table, column.name, [PINNED_BY.default]),
-      /*sql*/ `ALTER TABLE ${target} ALTER COLUMN ${name} ${sizedType(column)} ${column.nullable ? 'NULL' : 'NOT NULL'};`,
-    ];
-    if (column.defaultValue !== undefined) {
-      statements.push(/*sql*/ `ALTER TABLE ${target} ADD${this.defaultClause(column)} FOR ${name};`);
-    }
-    return statements;
-  }
-
-  /** One column an `ALTER COLUMN`, each with the batch {@link alterColumn} writes. */
-  override alterColumns(table: string, alterations: readonly Alteration<ColumnSchema>[]): string[] {
-    return alterations.flatMap(({ to }) => this.alterColumn(table, to));
+    return alterations.flatMap(({ to: column }) => {
+      const name = this.dialect.escapeId(column.name);
+      return [
+        this.dropPinning(table, column.name, [PINNED_BY.default]),
+        /*sql*/ `ALTER TABLE ${target} ALTER COLUMN ${name} ${column.type} ${column.nullable ? 'NULL' : 'NOT NULL'};`,
+        ...(column.defaultValue === undefined
+          ? []
+          : [/*sql*/ `ALTER TABLE ${target} ADD${this.defaultClause(column)} FOR ${name};`]),
+      ];
+    });
   }
 
   override renameColumn(table: string, oldName: string, newName: string): string {
@@ -74,7 +69,7 @@ export class MsSqlTableDdl extends TableDdl {
     return dropIndexOnTable(this.dialect, table, index);
   }
 
-  override storedGeneratedColumn(_type: string, expression: string): string {
+  protected override storedGeneratedColumn(_type: string, expression: string): string {
     return /*sql*/ `AS (${expression}) PERSISTED`;
   }
 

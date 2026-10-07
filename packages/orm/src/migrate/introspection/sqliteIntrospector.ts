@@ -1,14 +1,24 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import type { CheckSchema } from '../../schema/types.js';
-import type { ColumnSchema, ForeignKeySchema, IndexSchema, StoredDefinition } from '../../type/index.js';
-import { AbstractSqlSchemaIntrospector, type TableRowReader } from './abstractSqlSchemaIntrospector.js';
+import type {
+  ForeignKeySchema,
+  IndexColumnSchema,
+  IndexSchema,
+  PrimaryKeySchema,
+  StoredDefinition,
+} from '../../type/index.js';
+import {
+  AbstractSqlSchemaIntrospector,
+  type ReadColumn,
+  type TableRowReader,
+} from './abstractSqlSchemaIntrospector.js';
 
 /**
  * SQLite schema introspector
  */
 export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** Whether an index is libSQL's vector index, where the engine has one; elsewhere a declared one is built plain. */
-  override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(
+  protected override readonly indexFacets: ReadonlySet<IndexFacet> = new Set<IndexFacet>(
     this.dialect.hasVectorIndex() ? ['vector', 'distance'] : [],
   );
 
@@ -19,7 +29,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** User tables only: skips SQLite's own and libSQL's vector index tables (its metadata and `<index>_shadow`). */
   protected getTableNamesQuery(): string {
     return /*sql*/ `
-      SELECT name
+      SELECT name AS table_name
       FROM sqlite_master
       WHERE type = 'table'
         AND name NOT LIKE 'sqlite_%'
@@ -30,147 +40,80 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected tableExistsQuery(): string {
-    return /*sql*/ `
-      SELECT COUNT(*) as count
-      FROM sqlite_master
-      WHERE type = 'table'
-        AND name = ?
-    `;
-  }
-
-  protected parseTableExistsResult([row]: SqliteCountRow[]): boolean {
-    return Number(row.count) > 0;
+    return /*sql*/ `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`;
   }
 
   /**
    * `table_xinfo`, not `table_info`: the latter omits generated columns entirely, so a table carrying
    * one read back without it and every sync offered to add a column that was already there - which
-   * SQLite cannot do to an existing table anyway. PRAGMA takes no bound parameters, hence the splice.
+   * SQLite cannot do to an existing table anyway. Also the key, by each column's `pk`: one statement for both.
    */
-  protected getColumnsQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA table_xinfo(${this.dialect.escapeId(tableName)})`;
+  private tableInfo(read: TableRowReader, tableName: string): Promise<SqliteColumnRow[]> {
+    return read<SqliteColumnRow>(/*sql*/ `PRAGMA table_xinfo(${this.dialect.escapeId(tableName)})`);
   }
 
-  protected getIndexesQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA index_list(${this.dialect.escapeId(tableName)})`;
-  }
-
-  protected getForeignKeysQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA foreign_key_list(${this.dialect.escapeId(tableName)})`;
-  }
-
-  protected getPrimaryKeyQuery(tableName: string): string {
-    return /*sql*/ `PRAGMA table_info(${this.dialect.escapeId(tableName)})`;
-  }
-
-  protected override getColumnsParams(_tableName: string): unknown[] {
-    return [];
-  }
-
-  protected override getIndexesParams(_tableName: string): unknown[] {
-    return [];
-  }
-
-  protected override getForeignKeysParams(_tableName: string): unknown[] {
-    return [];
-  }
-
-  protected override getPrimaryKeyParams(_tableName: string): unknown[] {
-    return [];
-  }
-
-  /** `sqlite_master`, not `information_schema`, so the column is `name`. */
-  protected override mapTableNameRow(row: { name: string }): string {
-    return row.name;
-  }
-
-  protected async mapColumnsResult(
-    read: TableRowReader,
-    tableName: string,
-    results: SqliteColumnRow[],
-  ): Promise<ColumnSchema[]> {
-    const uniqueColumns = await this.getUniqueColumns(read, tableName);
+  protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
+    const rows = await this.tableInfo(read, tableName);
     // Only a sole `INTEGER PRIMARY KEY` is the rowid, which is what numbers itself.
-    const soleKey = results.filter((row) => row.pk > 0).length === 1;
-    const [table] = results.some((row) => row.hidden === STORED_GENERATED)
+    const soleKey = rows.filter((row) => row.pk > 0).length === 1;
+    const [table] = rows.some((row) => row.hidden === STORED_GENERATED)
       ? await this.getDefinition(read, tableName)
       : [];
     const ddl = table?.sql ?? '';
 
-    return results.map((row): ColumnSchema => ({
+    return rows.map((row): ReadColumn => ({
       name: row.name,
       type: this.normalizeType(row.type),
       nullable: row.notnull === 0,
       defaultValue: this.parseDefaultValue(row.dflt_value),
-      isPrimaryKey: row.pk > 0,
       isAutoIncrement: soleKey && row.pk > 0 && row.type.toUpperCase() === 'INTEGER',
-      isUnique: uniqueColumns.has(row.name),
       length: this.extractLength(row.type),
-      precision: undefined,
-      scale: undefined,
-      comment: undefined, // SQLite doesn't support column comments
       generatedAs: row.hidden === STORED_GENERATED ? generatedExpression(ddl, row.name) : undefined,
     }));
   }
 
-  protected async mapIndexesResult(
-    read: TableRowReader,
-    _tableName: string,
-    results: SqliteIndexRow[],
-  ): Promise<IndexSchema[]> {
-    const indexSchemas: IndexSchema[] = [];
-
-    for (const index of results) {
-      const columns = await this.getIndexColumns(read, index.name);
-
-      // A unique constraint's index ('u') is reported as every engine reports it, and only the key's ('pk') left out.
-
-      // `PRAGMA index_info` names an expression entry `null` (its `cid` is -2), and the expression text
-      // lives only in `sqlite_master.sql`. Reporting `{ column: null }` put a column literally named
-      // `null` into the diff, so an index UQL cannot describe is left out, libSQL's vector index aside.
-      const named = columns.filter((column): column is { name: string } => column.name !== null);
-
-      if (index.origin === 'pk') {
-        continue;
-      }
-      if (named.length === columns.length) {
-        indexSchemas.push({
-          name: index.name,
-          entries: named.map((column) => ({ column: column.name })),
-          unique: Boolean(index.unique),
-        });
-      } else {
-        const vectorIndex = await this.getVectorIndex(read, index.name);
-        if (vectorIndex) {
-          indexSchemas.push(vectorIndex);
-        }
-      }
-    }
-
-    return indexSchemas;
+  protected async getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
+    const key = (await this.tableInfo(read, tableName)).filter((row) => row.pk > 0).sort((a, b) => a.pk - b.pk);
+    return key.length ? { columns: key.map((row) => row.name) } : undefined;
   }
 
-  protected async mapForeignKeysResult(
-    _read: TableRowReader,
-    _tableName: string,
-    results: SqliteForeignKeyRow[],
-  ): Promise<ForeignKeySchema[]> {
-    // Group by id to handle composite foreign keys
-    const grouped = new Map<number, SqliteForeignKeyRow[]>();
-    for (const row of results) {
-      const id = row.id;
-      const existing = grouped.get(id) ?? [];
-      existing.push(row);
-      grouped.set(id, existing);
+  protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
+    const list = await read<SqliteIndexRow>(/*sql*/ `PRAGMA index_list(${this.dialect.escapeId(tableName)})`);
+    const statements = new Map((await this.getDefinition(read, tableName)).map(({ name, sql }) => [name, sql]));
+    const indexes: IndexSchema[] = [];
+    // The key's own index ('pk') is left out; a unique constraint's ('u') is reported as every engine reports one.
+    for (const index of list.filter((it) => it.origin !== 'pk')) {
+      const sql = statements.get(index.name) ?? '';
+      // `PRAGMA index_info` names an expression entry `null`, its text kept only in `sqlite_master.sql`: it is
+      // reported as the expression it is, as MySQL reports one, and libSQL's vector index is read off that text.
+      const entries = (await this.getIndexColumns(read, index.name)).map(({ name }): IndexColumnSchema =>
+        name === null ? { column: '', expression: true } : { column: name },
+      );
+      indexes.push(
+        this.vectorIndex(index.name, sql) ?? {
+          name: index.name,
+          entries,
+          unique: Boolean(index.unique),
+          where: index.partial ? indexPredicate(sql) : undefined,
+        },
+      );
     }
+    return indexes;
+  }
 
-    return Array.from(grouped.entries()).map(([, rows]) => {
-      const first = rows[0];
-      const columns = rows.map((r) => r.from);
-      // Unnamed: `PRAGMA foreign_key_list` reports none, so the AST derives one from the columns, as the entity side does.
+  /**
+   * A row per column of each key, grouped by its id. Unnamed: `PRAGMA foreign_key_list` reports none, so the
+   * AST derives one from the columns, as the entity side does.
+   */
+  protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
+    const rows = await read<SqliteForeignKeyRow>(
+      /*sql*/ `PRAGMA foreign_key_list(${this.dialect.escapeId(tableName)})`,
+    );
+    return [...Map.groupBy(rows, (row) => row.id).values()].map((key) => {
+      const [first] = key;
       return {
-        columns,
-        references: { table: first.table, columns: rows.map((r) => r.to) },
+        columns: key.map((row) => row.from),
+        references: { table: first.table, columns: key.map((row) => row.to) },
         onDelete: this.normalizeReferentialAction(first.on_delete),
         onUpdate: this.normalizeReferentialAction(first.on_update),
       };
@@ -191,48 +134,15 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     );
   }
 
-  protected override mapPrimaryKeyResult(results: SqliteColumnRow[]): string[] | undefined {
-    const pkColumns = results.filter((r) => r.pk > 0).sort((a, b) => a.pk - b.pk);
-
-    if (pkColumns.length === 0) {
-      return undefined;
-    }
-
-    return pkColumns.map((r) => r.name);
-  }
-
-  private async getUniqueColumns(read: TableRowReader, tableName: string): Promise<Set<string>> {
-    const indexes = await read<SqliteIndexRow>(this.getIndexesQuery(tableName));
-    const uniqueColumns = new Set<string>();
-
-    // The key's own index is left out: a key column is unique already, which the entity side never states.
-    for (const index of indexes) {
-      if (index.unique && index.origin !== 'pk') {
-        const columns = await this.getIndexColumns(read, index.name);
-        // Only single-column unique constraints, and only over a real column (not an expression)
-        const [column] = columns;
-        if (columns.length === 1 && column.name !== null) {
-          uniqueColumns.add(column.name);
-        }
-      }
-    }
-
-    return uniqueColumns;
-  }
-
   /** libSQL's `libsql_vector_idx(col, 'metric=...')`, read back from the statement that created it. */
-  private async getVectorIndex(read: TableRowReader, indexName: string): Promise<IndexSchema | undefined> {
-    const [row] = await read<{ sql: string | null }>(
-      /*sql*/ `SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?`,
-      [indexName],
-    );
-    const column = row?.sql?.match(/libsql_vector_idx\s*\(\s*[`"[]?([^`"\],\s)]+)/i)?.[1];
+  private vectorIndex(name: string, sql: string): IndexSchema | undefined {
+    const column = sql.match(/libsql_vector_idx\s*\(\s*[`"[]?([^`"\],\s)]+)/i)?.[1];
     if (!column) {
       return undefined;
     }
-    const metric = row.sql?.match(/'metric=(\w+)'/i)?.[1]?.toLowerCase();
+    const metric = sql.match(/'metric=(\w+)'/i)?.[1]?.toLowerCase();
     return {
-      name: indexName,
+      name,
       entries: [{ column }],
       unique: false,
       type: 'vector',
@@ -313,6 +223,19 @@ function tableEntries(ddl: string): string[] {
   return [...entries, body.slice(start)];
 }
 
+/** A partial index's predicate: what follows `WHERE` after its column list, as the statement gave it. */
+function indexPredicate(sql: string): string | undefined {
+  let rest = '';
+  scan(sql, (char, index, depth) => {
+    const closes = char === ')' && depth === 0;
+    if (closes) {
+      rest = sql.slice(index + 1);
+    }
+    return closes;
+  });
+  return /^\s*WHERE\s+([\s\S]+)$/i.exec(rest)?.[1].trim();
+}
+
 /** What a leading `(` encloses, its own nesting and quoting respected. */
 function parenthesized(text: string): string {
   let end = text.length;
@@ -357,18 +280,14 @@ function leadingIdentifier(entry: string): string {
   return token.replace(/^["`[]|["`\]]$/g, '');
 }
 
-type SqliteCountRow = {
-  count: number | bigint;
-};
-
 type SqliteColumnRow = {
   name: string;
   type: string;
   notnull: number;
   dflt_value: string | null;
   pk: number;
-  /** `PRAGMA table_xinfo`'s flag: 0 ordinary, 1 a hidden `VIRTUAL` table column, 2 virtual, 3 stored. Absent from `table_info`. */
-  hidden?: number;
+  /** 0 ordinary, 1 a hidden `VIRTUAL` table column, 2 virtual, 3 stored. */
+  hidden: number;
 };
 
 type SqliteIndexRow = {

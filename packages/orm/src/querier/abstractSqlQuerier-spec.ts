@@ -76,7 +76,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(0);
   }
 
-  async shouldThrowWhenSelectAndExcludeConflictOnFindOne() {
+  async shouldRefuseASelectAndExcludeConflictOnFindOne() {
     await expect(
       this.querier.findOne(User, {
         $select: { name: true },
@@ -86,7 +86,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
   }
 
   /** Checked as written, before the page reads a sort key the projection left out and spells `$select` whole. */
-  async shouldThrowWhenSelectAndExcludeConflictOnFindManyPage() {
+  async shouldRefuseASelectAndExcludeConflictOnFindManyPage() {
     await expect(
       this.querier.findManyPage(User, {
         $select: { name: true },
@@ -97,7 +97,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     ).rejects.toThrow('Cannot combine $select and $exclude');
   }
 
-  async shouldThrowWhenSelectAndExcludeConflictOnFindManyAndCount() {
+  async shouldRefuseASelectAndExcludeConflictOnFindManyAndCount() {
     await expect(
       this.querier.findManyAndCount(User, {
         $select: { name: true },
@@ -106,7 +106,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     ).rejects.toThrow('Cannot combine $select and $exclude');
   }
 
-  shouldThrowWhenSelectAndExcludeConflictOnFindManyStream() {
+  shouldRefuseASelectAndExcludeConflictOnFindManyStream() {
     expect(() =>
       this.querier.findManyStream(User, {
         $select: { name: true },
@@ -115,7 +115,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     ).toThrow('Cannot combine $select and $exclude');
   }
 
-  async shouldThrowWhenNestedSelectAndExcludeConflict() {
+  async shouldRefuseANestedSelectAndExcludeConflict() {
     await expect(
       this.querier.findMany(User, {
         $populate: {
@@ -1297,7 +1297,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
   }
 
-  async shouldThrowIfRollbackIfErrorInCallback() {
+  async shouldRollBackAndRethrowAnErrorInTheCallback() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     const prom = this.querier.transaction(async () => {
       expect(this.querier.hasOpenTransaction).toBe(true);
@@ -1309,7 +1309,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.all).toHaveBeenCalledTimes(0);
   }
 
-  async shouldThrowIfTransactionIsPending() {
+  async shouldRefuseABeginWhileATransactionIsPending() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await this.querier.beginTransaction();
     expect(this.querier.hasOpenTransaction).toBe(true);
@@ -1415,7 +1415,7 @@ export abstract class AbstractSqlQuerierSpec implements Spec {
     expect(this.querier.run).toHaveBeenCalledTimes(1);
   }
 
-  async shouldThrowIfCommitWithNoPendingTransaction() {
+  async shouldRefuseACommitWithNoPendingTransaction() {
     expect(this.querier.hasOpenTransaction).toBeFalsy();
     await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
     expect(this.querier.hasOpenTransaction).toBeFalsy();

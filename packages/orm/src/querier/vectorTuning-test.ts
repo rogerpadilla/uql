@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import { provisioningTimeout } from '../test/index.js';
+import { dropTables } from '../test/sqlPools.js';
 import type { SqlQuerierPool } from '../type/index.js';
 
 const TABLE = 'vector_tuning';
@@ -16,29 +17,24 @@ class TunedItem {
 
 /**
  * `$candidates` compiles to a `SET LOCAL` of each engine's own setting (`hnsw.ef_search`, CockroachDB's
- * `vector_search_beam_size`), which only the server can say is spelled right - one that does not exist is
+ * `vector_search_beam_size`), which only the server can say is spelled right: one that does not exist is
  * an error, and one merely ignored leaves the query at the default recall. Nothing else executes these.
  */
 export function describeVectorTuning(name: string, createPool: () => SqlQuerierPool): void {
   describe(`${name} query-time vector tuning`, () => {
     const pool = createPool();
 
-    const seed = async () => {
-      await new Migrator(pool, { entities: [TunedItem] }).sync({ logging: false });
+    beforeAll(async () => {
+      await new Migrator(pool, { entities: [TunedItem] }).sync({ force: true });
       await pool.insertMany(TunedItem, [
         { name: 'north', vec: [0, 1, 0] },
         { name: 'east', vec: [1, 0, 0] },
         { name: 'northeast', vec: [Math.SQRT1_2, Math.SQRT1_2, 0] },
       ]);
-    };
-
-    beforeAll(async () => {
-      await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
-      await seed();
     }, provisioningTimeout);
 
     afterAll(async () => {
-      await pool.withQuerier((querier) => querier.run(`DROP TABLE IF EXISTS "${TABLE}"`));
+      await dropTables(pool, TABLE);
       await pool.end();
     }, provisioningTimeout);
 

@@ -1,5 +1,8 @@
 import { AbstractCursor, Collection, MongoClient, MongoServerError } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
+import { UqlUsageError } from '../util/uqlError.js';
+import { MongoDialect } from './mongoDialect.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -37,5 +40,16 @@ describe('MongoSchemaIntrospector search indexes', () => {
     const introspector = introspectorFailingSearchIndexes(new MongoServerError({ message: 'Unauthorized', code: 13 }));
 
     await expect(introspector.getTableSchema('items')).rejects.toThrow('Unauthorized');
+  });
+});
+
+describe('MongoSchemaIntrospector', () => {
+  it('should refuse a pool whose querier is not MongoDB', async () => {
+    const other = createMockQuerierPool(new MongoDialect(), async () => createMockQuerier());
+
+    await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(
+      'MongoSchemaIntrospector requires a MongoDB querier',
+    );
+    await expect(new MongoSchemaIntrospector(other).getTableNames()).rejects.toThrow(UqlUsageError);
   });
 });

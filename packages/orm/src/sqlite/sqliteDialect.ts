@@ -50,7 +50,6 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   schemas: false, // SQLite's namespaces are attached database files, not declared objects
   dropTableCascade: false,
   rebuildsTables: true,
-  commentSyntax: 'none',
   vectorIndexRequiresNotNull: false,
   vectorSupportsLength: true,
   vectorBytes: true,

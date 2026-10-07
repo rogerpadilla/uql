@@ -8,7 +8,7 @@ const ddlDefault = (value: unknown, dialect: AbstractSqlDialect): unknown =>
   schemaDefault(value, (sql) => dialect.compileDdl(sql));
 
 /** How one engine renders a DDL default. A new per-dialect rule is a field here, not a second table. */
-export type DialectDefaults = {
+type DialectDefaults = {
   /** Column types whose `DEFAULT` this engine takes only as a parenthesized expression. */
   readonly wrapTypes?: RegExp;
   /** Column types whose clock default must repeat their precision, captured by the pattern. */
@@ -52,9 +52,7 @@ export function formatDefaultValue(value: unknown, dialect: AbstractSqlDialect, 
  * and two SQL defaults match when the dialect renders them alike once {@link reprinted} normalizes them.
  */
 export function sameDefault(desired: unknown, current: unknown, dialect: AbstractSqlDialect): boolean {
-  // Both spellings of "no default" are the same fact, and engines disagree on which they report:
-  // MariaDB says `null` where MySQL says nothing at all. Reading them as different values asked to
-  // `MODIFY` every nullable column, on every sync, forever.
+  // Both spellings of "no default" are one fact: MariaDB reports `null` where MySQL reports nothing.
   if (desired == null || current == null) return desired == null && current == null;
   const [want, have] = [ddlDefault(desired, dialect), ddlDefault(current, dialect)];
   if (SqlExpression.isExpression(want) || SqlExpression.isExpression(have)) {

@@ -90,6 +90,13 @@ describe('DefaultLogger', () => {
     expect(call).toContain('migration: Running migration');
   });
 
+  it('should log skipped migration', () => {
+    const logger = new DefaultLogger();
+    logger.logSkippedMigration('Skipped 1 column drops');
+    const call = stripAnsi(spyInfo.mock.calls[0][0]);
+    expect(call).toContain('skipped migration: Skipped 1 column drops');
+  });
+
   it('should log query without values', () => {
     const logger = new DefaultLogger();
     logger.logQuery('SELECT 1');

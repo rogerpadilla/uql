@@ -9,7 +9,6 @@ import { indexChanges } from '../schema/indexDifferences.js';
 import type { IndexType, TableNode } from '../schema/types.js';
 import {
   type CreateSchemaOptions,
-  type EntityIndexMeta,
   type EntityMeta,
   type EntityWhereMeta,
   type IndexFeature,
@@ -48,74 +47,67 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     super({ namingStrategy });
   }
 
-  /** A collection has no SQL to render a check, a computed column or an index expression into. */
-  compileDdl(): string {
-    throw new UqlUsageError('mongodb has no SQL to render a check, a computed column or an index expression into');
-  }
-
   /**
    * A document store has no cross-collection constraint, so unlike the SQL generator there is nothing to
-   * defer and no order to respect: this is each collection and nothing more. `foreignKeys` is accepted
-   * and ignored for the same reason.
+   * defer and no order to respect: this is each collection and nothing more.
    */
   generateCreateSchema(entities: readonly Type<object>[], options?: CreateSchemaOptions): string[] {
-    return this.selected(entities, options?.only).flatMap((entity) => this.generateCreateTable(entity, options));
+    const wanted = options?.only && new Set(options.only);
+    return entities
+      .map((entity) => getMeta(entity))
+      .filter((meta) => !wanted || wanted.has(this.resolveTableName(meta)))
+      .flatMap((meta) => {
+        const name = this.resolveTableName(meta);
+        return this.createCollection(name, this.indexesOf(meta, name));
+      });
   }
 
   generateDropSchema(entities: readonly Type<object>[]): string[] {
-    return this.selected(entities).map((entity) => this.generateDropTable(this.resolveTableName(getMeta(entity))));
+    return entities.map((entity) =>
+      serializeMongoCommand({ action: 'dropCollection', name: this.resolveTableName(getMeta(entity)) }),
+    );
   }
 
-  private selected(entities: readonly Type<object>[], only?: readonly string[]): readonly Type<object>[] {
-    if (!only) {
-      return entities;
-    }
-    const wanted = new Set(only);
-    return entities.filter((entity) => wanted.has(this.resolveTableName(getMeta(entity))));
+  /** A collection, and one `createIndex` command for each of its indexes, as SQL's `[CREATE TABLE, ...CREATE INDEX]`. */
+  private createCollection(name: string, indexes: readonly IndexSchema[]): string[] {
+    return [
+      serializeMongoCommand({ action: 'createCollection', name }),
+      ...indexes.map((index) => this.generateCreateIndex(name, index)),
+    ];
   }
 
   /**
-   * The indexes an entity declares, as the collection would hold them. One owner because two paths need
-   * it: creating a collection, and working out which of its indexes are missing.
+   * The indexes an entity declares, as the collection would hold them: members resolved to document paths, a
+   * `where` to a filter document, and every other option spread through, so a new one cannot be lost.
    */
   private indexesOf<E extends object>(meta: EntityMeta<E>, collectionName: string): IndexSchema[] {
-    return declaredIndexes(meta).map((index) => this.indexSchema(meta, collectionName, index));
-  }
-
-  /**
-   * A declared index, with its members resolved to document paths and its `where` to a filter document.
-   * Every other option is spread through, so a newly added one, such as the text `config`, cannot be lost.
-   */
-  private indexSchema<E extends object>(
-    meta: EntityMeta<E>,
-    collectionName: string,
-    { columns, where, ...options }: EntityIndexMeta<E>,
-  ): IndexSchema {
-    const entries = columns
-      .map((entry) => renderIndexColumn(entry, () => this.compileDdl()))
-      .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
-    const [first] = columns;
-    const vector =
-      options.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
-    const name = vector
-      ? this.vectorSearchIndexName(options.name, entries[0].column)
-      : declaredIndexName(options.name, collectionName, entries);
-    return {
-      ...options,
-      name,
-      entries,
-      unique: options.unique ?? false,
-      where: where && this.compileIndexPredicate(where, meta.entity, name),
-      distance: options.distance ?? vector?.distance,
-      dimensions: vector?.dimensions,
-    };
+    return declaredIndexes(meta).map(({ columns, where, ...options }) => {
+      const entries = columns
+        .map((entry) => renderIndexColumn(entry, refuseSql))
+        .map((entry) => ({ ...entry, column: this.columnOf(meta, entry.column) }));
+      const [first] = columns;
+      const vector =
+        options.type === 'vectorSearch' && typeof first?.column === 'string' ? meta.fields[first.column] : undefined;
+      const name = vector
+        ? this.vectorSearchIndexName(options.name, entries[0].column)
+        : declaredIndexName(options.name, collectionName, entries);
+      return {
+        ...options,
+        name,
+        entries,
+        unique: options.unique ?? false,
+        where: where && this.indexFilter(where, meta.entity, name),
+        distance: options.distance ?? vector?.distance,
+        dimensions: vector?.dimensions,
+      };
+    });
   }
 
   /**
    * The JSON of the document `partialFilterExpression` takes, refused where the predicate reaches past
    * what that holds or what a migration carries as JSON.
    */
-  compileIndexPredicate(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
+  private indexFilter(where: EntityWhereMeta<object>, entity: Type<object>, indexName: string): string {
     if (where instanceof QueryRaw) {
       throw new UqlUsageError(`mongodb does not support partial indexes from a SQL predicate (index "${indexName}")`);
     }
@@ -128,33 +120,12 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     return JSON.stringify(filter);
   }
 
-  generateCreateTable<E extends object>(entity: Type<E>, _options?: { ifNotExists?: boolean }): string[] {
-    const meta = getMeta(entity);
-    const collectionName = this.resolveTableName(meta);
-    // One `createIndex` command each, mirroring the SQL generator's `[CREATE TABLE, ...CREATE INDEX]`,
-    // so the key spec is built here and the migrator only executes it.
-    return [
-      serializeMongoCommand({ action: 'createCollection', name: collectionName }),
-      ...this.indexesOf(meta, collectionName).map((index) => this.generateCreateIndex(collectionName, index)),
-    ];
-  }
-
-  generateDropTable(tableName: string): string {
-    return serializeMongoCommand({ action: 'dropCollection', name: tableName });
-  }
-
   /** A collection's indexes: each dropped, then each created, an alter as both. */
   generateAlterTable(diff: SchemaDiff): string[] {
     return [
-      ...sides(diff.indexes, 'from').map((index) => this.dropIndexCommand(diff.tableName, index)),
+      ...sides(diff.indexes, 'from').map((index) => dropIndex(diff.tableName, index.name, index.type)),
       ...sides(diff.indexes, 'to').map((index) => this.generateCreateIndex(diff.tableName, index)),
     ];
-  }
-
-  private dropIndexCommand(tableName: string, index: IndexSchema): string {
-    return index.type === 'vectorSearch'
-      ? serializeMongoCommand({ action: 'dropSearchIndex', collection: tableName, name: index.name })
-      : this.generateDropIndex(tableName, index.name);
   }
 
   /** An index as MongoDB's key spec (`-1` descending, `'text'` full-text), refusing the SQL-only options. */
@@ -212,32 +183,25 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     });
   }
 
-  generateDropIndex(tableName: string, indexName: string): string {
-    return serializeMongoCommand({ action: 'dropIndex', collection: tableName, name: indexName });
-  }
-
   /** A collection and its indexes, which is all a document store has: a column, a constraint or SQL throws. */
   generateOperation(operation: AnyMigrationOperation): string[] {
-    const render = (index: IndexDefinition) => renderIndexDefinition(index, () => this.compileDdl());
+    const render = (index: IndexDefinition) => renderIndexDefinition(index, refuseSql);
     switch (operation.type) {
       case 'createTable': {
         const { name, columns, indexes } = operation.table;
         if (columns.length) {
           throw new UqlUsageError(`mongodb does not support columns in a migration (collection "${name}")`);
         }
-        return [
-          serializeMongoCommand({ action: 'createCollection', name }),
-          ...indexes.map((index) => this.generateCreateIndex(name, render(index))),
-        ];
+        return this.createCollection(name, indexes.map(render));
       }
       case 'dropTable':
-        return [this.generateDropTable(operation.tableName)];
+        return [serializeMongoCommand({ action: 'dropCollection', name: operation.tableName })];
       case 'renameTable':
         return [serializeMongoCommand({ action: 'renameCollection', from: operation.oldName, to: operation.newName })];
       case 'createIndex':
         return [this.generateCreateIndex(operation.tableName, render(operation.index))];
       case 'dropIndex':
-        return [this.generateDropIndex(operation.tableName, operation.indexName)];
+        return [dropIndex(operation.tableName, operation.indexName)];
       default:
         throw new UqlUsageError(`mongodb does not support ${operation.type} in a migration`);
     }
@@ -260,6 +224,16 @@ export class MongoSchemaGenerator extends MongoDialect implements SchemaGenerato
     const indexes = changes.map(({ from, to }) => ({ from: from && indexNodeToSchema(from), to }));
     return indexes.length ? { tableName: collectionName, type: 'alter', indexes } : undefined;
   }
+}
+
+/** A collection has no SQL to render a check, a computed column or an index expression into. */
+function refuseSql(): never {
+  throw new UqlUsageError('mongodb has no SQL to render a check, a computed column or an index expression into');
+}
+
+/** The command dropping an index, a search index by its own. */
+function dropIndex(collection: string, name: string, type?: IndexType): string {
+  return serializeMongoCommand({ action: type === 'vectorSearch' ? 'dropSearchIndex' : 'dropIndex', collection, name });
 }
 
 /** The first value `partialFilterExpression` refuses, `null`, or a migration cannot carry as JSON, such as a `Date`. */

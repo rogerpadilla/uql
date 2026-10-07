@@ -5,19 +5,11 @@ import type { Type } from '../type/index.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
- * Shared expectations for the MySQL family (MySQL and MariaDB, on their own drivers and Bun's), which
- * report header-derived ids rather than `RETURNING` them.
+ * The MySQL family, MariaDB among them, on their own drivers and Bun's: `ANALYZE TABLE` statistics, a
+ * `group_concat_max_len` a read lifts, a stream drained when left, and a session in UTC.
+ * {@link MySqlQuerierIt} adds what MySQL alone has.
  */
-export abstract class MySqlLikeQuerierIt extends VectorQuerierIt {
-  /** MySQL's `affectedRows` convention exposes the `created` flag on upsert. */
-  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBe(true);
-  }
-
-  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBe(false);
-  }
-
+export class MySqlLikeQuerierIt extends VectorQuerierIt {
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
     await this.querier.run(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`);
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
@@ -80,16 +72,9 @@ export abstract class MySqlLikeQuerierIt extends VectorQuerierIt {
   }
 }
 
-/**
- * MariaDB's upsert hands its id back through `RETURNING`, which answers rows rather than the `affectedRows`
- * MySQL's `created` flag is read from, so it reports none.
- */
-export abstract class MariadbLikeQuerierIt extends MySqlLikeQuerierIt {
-  protected override assertUpsertCreatedOnInsert(created: boolean | undefined): void {
-    expect(created).toBeUndefined();
-  }
-
-  protected override assertUpsertCreatedOnUpdate(created: boolean | undefined): void {
-    expect(created).toBeUndefined();
+/** MySQL proper: its `affectedRows` tells an upsert's insert from its update, which it counts twice. */
+export class MySqlQuerierIt extends MySqlLikeQuerierIt {
+  protected override upsertReport(inserted: number, updated: number) {
+    return { changes: inserted + 2 * updated, created: updated === 0 };
   }
 }

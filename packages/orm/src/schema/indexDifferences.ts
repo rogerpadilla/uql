@@ -91,7 +91,7 @@ export function indexChanges<I extends IndexSchema>(
 
 /**
  * Whether uql named the index itself, from its own columns: `Order__total_idx`, its unique `_uk`, or
- * the `idx_Order_total` it wrote until 0.42.1.
+ * `idx_Order_total`, which a database an older uql created holds.
  */
 function hasDerivedName(table: string, index: ComparableIndex): boolean {
   const parts = index.entries.map((entry, at) => (isColumnEntry(entry) ? entry.column : `expr${at}`));
@@ -107,7 +107,7 @@ function hasDerivedName(table: string, index: ComparableIndex): boolean {
 const KIND_SUFFIX = /_(?:idx|fk|ck|pk|uk|uq)$/i;
 
 /**
- * What it only ever *reads*: uql wrote `idx_User_email` until 0.42.1, and a database it did not
+ * What it only ever *reads*: a database an older uql created holds `idx_User_email`, and one it did not
  * create at all - the one `generate:from-db` points at - most often spells it that way too. Tried
  * second, so a name already marked at the end keeps a leading `pk_` that is part of its table.
  */

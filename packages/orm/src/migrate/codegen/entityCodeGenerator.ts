@@ -65,42 +65,29 @@ export class EntityCodeGenerator {
     private readonly ast: SchemaAST,
     options: EntityCodeGeneratorOptions = {},
   ) {
+    const singular = options.singularize ?? singularize;
     this.options = {
       uqlImportPath: options.uqlImportPath ?? 'uql-orm',
       addSyncComments: options.addSyncComments ?? true,
-      classNameTransformer: options.classNameTransformer ?? this.defaultClassNameTransformer.bind(this),
-      propertyNameTransformer: options.propertyNameTransformer ?? this.defaultPropertyNameTransformer.bind(this),
+      classNameTransformer: options.classNameTransformer ?? ((tableName) => pascalCase(singular(tableName))),
+      propertyNameTransformer: options.propertyNameTransformer ?? camelCase,
       includeRelations: options.includeRelations ?? true,
       includeIndexes: options.includeIndexes ?? true,
-      singularize: options.singularize ?? this.defaultSingularize.bind(this),
+      singularize: singular,
     };
   }
 
-  /**
-   * Generate entities for all tables in the AST.
-   */
+  /** An entity for each table of the AST. */
   generateAll(): GeneratedEntity[] {
-    const entities: GeneratedEntity[] = [];
-
-    for (const table of this.ast.tables.values()) {
-      entities.push(this.generateEntity(table));
-    }
-
-    return entities;
+    return [...this.ast.tables.values()].map((table) => this.generateEntity(table));
   }
 
-  /**
-   * Generate entity for a specific table.
-   */
+  /** The entity for the table named, if the AST has it. */
   generateForTable(tableName: string): GeneratedEntity | undefined {
     const table = this.ast.getTable(tableName);
-    if (!table) return undefined;
-    return this.generateEntity(table);
+    return table && this.generateEntity(table);
   }
 
-  /**
-   * Generate entity code for a table.
-   */
   private generateEntity(table: TableNode): GeneratedEntity {
     const className = this.options.classNameTransformer(table.name);
     const fileName = `${className}.ts`;
@@ -121,9 +108,6 @@ export class EntityCodeGenerator {
     };
   }
 
-  /**
-   * Build import statements.
-   */
   private buildImports(table: TableNode): string {
     const uqlImports = new Set<string>(['Entity', 'Field']);
     const relatedImports: string[] = [];
@@ -176,9 +160,6 @@ export class EntityCodeGenerator {
     ].join('\n');
   }
 
-  /**
-   * Build entity decorators.
-   */
   private buildEntityDecorators(table: TableNode): string {
     const lines: string[] = [];
 
@@ -189,24 +170,20 @@ export class EntityCodeGenerator {
       }
     }
 
-    // Entity decorator
     lines.push(`@Entity({ name: '${table.name}' })`);
 
     return lines.join('\n');
   }
 
-  /**
-   * Build field definitions.
-   */
   private buildFields(table: TableNode): string {
-    const lines: string[] = [];
+    return [...table.columns.values()].map((col) => this.buildField(col)).join('\n\n');
+  }
 
-    for (const col of table.columns.values()) {
-      const fieldCode = this.buildField(col);
-      lines.push(fieldCode);
-    }
-
-    return lines.join('\n\n');
+  /** The `@sync-added` JSDoc a generated member opens with, saying `what` it is, where asked for. */
+  private syncDoc(what: string): string[] {
+    return this.options.addSyncComments
+      ? ['  /**', `   * @sync-added ${new Date().toISOString().split('T')[0]}`, `   * ${what}`, '   */']
+      : [];
   }
 
   /**
@@ -224,30 +201,15 @@ export class EntityCodeGenerator {
     return `  [idKey]?: ${keys.map(quoted).join(' | ')};`;
   }
 
-  /**
-   * Build a single field definition.
-   */
   private buildField(col: ColumnNode): string {
-    const lines: string[] = [];
     const propertyName = this.options.propertyNameTransformer(col.name);
-
-    // JSDoc comment if enabled
-    if (this.options.addSyncComments) {
-      lines.push('  /**');
-      lines.push(`   * @sync-added ${new Date().toISOString().split('T')[0]}`);
-      lines.push(`   * Column: ${col.name} (${this.formatTypeDescription(col.type)})`);
-      lines.push('   */');
-    }
-
-    lines.push(`  @${col.isPrimaryKey ? 'Id' : 'Field'}(${this.buildFieldOptions(col, propertyName)})`);
-    lines.push(`  ${propertySource(col, propertyName)};`);
-
-    return lines.join('\n');
+    return [
+      ...this.syncDoc(`Column: ${col.name} (${formatTypeDescription(col.type)})`),
+      `  @${col.isPrimaryKey ? 'Id' : 'Field'}(${this.buildFieldOptions(col, propertyName)})`,
+      `  ${propertySource(col, propertyName)};`,
+    ].join('\n');
   }
 
-  /**
-   * Build Field decorator options.
-   */
   private buildFieldOptions(col: ColumnNode, propertyName: string): string {
     const indexes = this.options.includeIndexes ? col.table.indexes : [];
     const fieldIndex = indexes.find((idx) => isPlainFieldIndex(idx) && idx.entries[0]?.column === col.name);
@@ -262,60 +224,30 @@ export class EntityCodeGenerator {
     return table.indexes.filter((index) => !isPlainFieldIndex(index));
   }
 
-  /**
-   * Build relation definitions.
-   */
+  /** The relations on both sides: where this table holds the foreign key, then where another points here. */
   private buildRelations(table: TableNode): string {
-    const lines: string[] = [];
-
-    // Outgoing relations (this table has FK)
-    for (const rel of table.outgoingRelations) {
-      const relCode = this.buildOutgoingRelation(rel);
-      lines.push(relCode);
-    }
-
-    // Incoming relations (other tables have FK to this)
-    for (const rel of table.incomingRelations) {
-      const relCode = this.buildIncomingRelation(rel);
-      lines.push(relCode);
-    }
-
-    if (lines.length > 0) {
-      return '\n' + lines.join('\n\n');
-    }
-
-    return '';
+    const lines = [
+      ...table.outgoingRelations.map((rel) => this.buildOutgoingRelation(rel)),
+      ...table.incomingRelations.map((rel) => this.buildIncomingRelation(rel)),
+    ];
+    return lines.length ? `\n${lines.join('\n\n')}` : '';
   }
 
-  /**
-   * Build outgoing relation (ManyToOne or OneToOne where this table has FK).
-   */
+  /** The side holding the foreign key; `onDelete`/`onUpdate` only where the database states an action of its own. */
   private buildOutgoingRelation(rel: RelationshipNode): string {
-    const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.to.table.name);
-    const propertyName = this.owningPropertyName(rel);
-
-    // JSDoc
-    if (this.options.addSyncComments) {
-      lines.push('  /**');
-      lines.push(`   * @sync-added ${new Date().toISOString().split('T')[0]}`);
-      lines.push(`   * Relation to ${rel.to.table.name} via ${rel.from.columns.map((c) => c.name).join(', ')}`);
-      lines.push('   */');
-    }
-
-    // Decorator. `onDelete`/`onUpdate` only when introspection found a real referential action, so a
-    // round-trip through an unconstrained column stays as terse as before.
-    const options = [`entity: () => ${relatedClassName}`];
     const references = this.referencesSource(rel, relatedClassName);
-    if (references) options.push(`references: ${references}`);
-    if (rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onDelete: '${rel.onDelete}'`);
-    if (rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION) options.push(`onUpdate: '${rel.onUpdate}'`);
-    lines.push(`  @${rel.type}({ ${options.join(', ')} })`);
-
-    // Property
-    lines.push(`  ${propertyName}?: ${relatedClassName};`);
-
-    return lines.join('\n');
+    const options = [
+      `entity: () => ${relatedClassName}`,
+      ...(references ? [`references: ${references}`] : []),
+      ...(rel.onDelete && rel.onDelete !== DEFAULT_FOREIGN_KEY_ACTION ? [`onDelete: '${rel.onDelete}'`] : []),
+      ...(rel.onUpdate && rel.onUpdate !== DEFAULT_FOREIGN_KEY_ACTION ? [`onUpdate: '${rel.onUpdate}'`] : []),
+    ];
+    return [
+      ...this.syncDoc(`Relation to ${rel.to.table.name} via ${rel.from.columns.map((c) => c.name).join(', ')}`),
+      `  @${rel.type}({ ${options.join(', ')} })`,
+      `  ${this.owningPropertyName(rel)}?: ${relatedClassName};`,
+    ].join('\n');
   }
 
   /**
@@ -362,84 +294,27 @@ export class EntityCodeGenerator {
     return `(${local}, ${foreign}) => [${pairs.join(', ')}]`;
   }
 
-  /**
-   * Build incoming relation (OneToMany where other tables have FK to this).
-   */
+  /** The inverse side, mapped by the related class's property that points back at this one. */
   private buildIncomingRelation(rel: RelationshipNode): string {
-    const lines: string[] = [];
     const relatedClassName = this.options.classNameTransformer(rel.from.table.name);
-    const propertyName = this.inversePropertyName(rel);
-
-    // JSDoc
-    if (this.options.addSyncComments) {
-      lines.push('  /**');
-      lines.push(`   * @sync-added ${new Date().toISOString().split('T')[0]}`);
-      lines.push(`   * Inverse relation from ${rel.from.table.name}`);
-      lines.push('   */');
-    }
-
-    // The inverse side, mapped by the related class's property that points back at this one.
     const param = lowerFirst(relatedClassName);
     const inverse = memberSource(param, this.owningPropertyName(rel));
     const inverseType = INVERSE_RELATION[rel.type];
-    lines.push(`  @${inverseType}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`);
     const many = inverseType === 'OneToMany' || inverseType === 'ManyToMany';
-    lines.push(`  ${propertyName}?: ${relatedClassName}${many ? '[]' : ''};`);
-
-    return lines.join('\n');
+    return [
+      ...this.syncDoc(`Inverse relation from ${rel.from.table.name}`),
+      `  @${inverseType}({ entity: () => ${relatedClassName}, mappedBy: (${param}) => ${inverse} })`,
+      `  ${this.inversePropertyName(rel)}?: ${relatedClassName}${many ? '[]' : ''};`,
+    ].join('\n');
   }
+}
 
-  /**
-   * Format type for description.
-   */
-  private formatTypeDescription(type: CanonicalType): string {
-    let desc = type.category.toUpperCase();
-    if (type.size) desc = `${type.size.toUpperCase()}${desc}`;
-    if (type.length) desc += `(${type.length})`;
-    if (type.precision) {
-      desc += `(${type.precision}`;
-      if (type.scale) desc += `,${type.scale}`;
-      desc += ')';
-    }
-    if (type.unsigned) desc += ' UNSIGNED';
-    return desc;
-  }
-
-  /**
-   * Default class name transformer: table_name -> TableName (PascalCase, singular).
-   */
-  private defaultClassNameTransformer(tableName: string): string {
-    const singular = this.options.singularize(tableName);
-    return this.toPascalCase(singular);
-  }
-
-  /**
-   * Default property name transformer: column_name -> columnName (camelCase).
-   */
-  private defaultPropertyNameTransformer(name: string): string {
-    return this.toCamelCase(name);
-  }
-
-  /**
-   * Convert to PascalCase (delegates to shared utility).
-   */
-  private toPascalCase(str: string): string {
-    return pascalCase(str);
-  }
-
-  /**
-   * Convert to camelCase (delegates to shared utility).
-   */
-  private toCamelCase(str: string): string {
-    return camelCase(str);
-  }
-
-  /**
-   * Default singularize function (delegates to shared utility).
-   */
-  private defaultSingularize(name: string): string {
-    return singularize(name);
-  }
+/** A canonical type as the JSDoc of its field names it: `BIGINTEGER UNSIGNED`, `STRING(255)`, `DECIMAL(10,2)`. */
+function formatTypeDescription(type: CanonicalType): string {
+  const size = type.size?.toUpperCase() ?? '';
+  const length = type.length ? `(${type.length})` : '';
+  const precision = type.precision ? `(${type.precision}${type.scale ? `,${type.scale}` : ''})` : '';
+  return `${size}${type.category.toUpperCase()}${length}${precision}${type.unsigned ? ' UNSIGNED' : ''}`;
 }
 
 /**
@@ -455,11 +330,4 @@ function propertySource(col: ColumnNode, propertyName: string): string {
   }
   const filled = !col.isPrimaryKey && col.defaultValue !== undefined;
   return `${written}${propertyName}${filled ? '?' : '!'}: ${type}`;
-}
-
-/**
- * Create an EntityCodeGenerator from SchemaAST.
- */
-export function createEntityCodeGenerator(ast: SchemaAST, options?: EntityCodeGeneratorOptions): EntityCodeGenerator {
-  return new EntityCodeGenerator(ast, options);
 }

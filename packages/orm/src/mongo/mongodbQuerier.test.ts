@@ -1,19 +1,8 @@
-import { v7 as uuidv7 } from 'uuid';
 import { expect } from 'vitest';
+import { withContext } from '../context/context.js';
 import { Entity, Field, getEntities, getMeta, Id } from '../entity/index.js';
 import { AbstractQuerierIt } from '../querier/abstractQuerier-test.js';
-import {
-  assertDefined,
-  createSpec,
-  Item,
-  MeasureUnitCategory,
-  mongoUri,
-  Profile,
-  TaxCategory,
-  TypedRow,
-  User,
-  uuidPattern,
-} from '../test/index.js';
+import { assertDefined, createSpec, MeasureUnitCategory, mongoUri, Profile, TypedRow, User } from '../test/index.js';
 import { raw } from '../util/index.js';
 import type { MongodbQuerier } from './mongodbQuerier.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
@@ -37,30 +26,29 @@ class TwoVectorDoc {
 }
 
 class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
-  constructor() {
-    super(new MongodbQuerierPool(mongoUri('uql_querier')));
-  }
-
-  override async recreateTables() {
-    await this.querier.conn.db().dropDatabase();
-    const entities = getEntities();
+  override async recreateTables(querier: MongodbQuerier) {
+    await querier.db.dropDatabase();
     await Promise.all(
-      entities.map((entity) => {
+      getEntities().map((entity) => {
         const { name } = getMeta(entity);
         assertDefined(name);
-        return this.querier.conn.db().createCollection(name);
+        return querier.db.createCollection(name);
       }),
     );
   }
 
-  /**
-   * MongoDB has no row lock to map `$lock` onto, and the querier refuses one in the words every engine
-   * without locks uses - the SQLite family included.
-   */
-  async shouldRejectARowLock() {
-    await expect(this.querier.findMany(Item, { $lock: true })).rejects.toThrow(
-      'mongodb does not support row-level locking ($lock)',
+  /** For good, and under a system context, so neither a soft delete nor the tenant filter leaves a row behind. */
+  override async clearTables() {
+    await withContext({ system: true }, () =>
+      Promise.all(
+        getEntities().map((entity) => this.querier.deleteMany(entity, {}, { unfiltered: true, hardDelete: true })),
+      ),
     );
+  }
+
+  /** MongoDB's reply tells an upsert's insert from its update. */
+  protected override upsertReport(inserted: number, updated: number) {
+    return { ...super.upsertReport(inserted, updated), created: updated === 0 };
   }
 
   /**
@@ -70,21 +58,20 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldKeepAWideIntegerExact() {
     const id = await this.querier.insertOne(TypedRow, { id: 1, name: 'wide', wide: 9007199254740993n });
     await this.querier.updateOneById(TypedRow, id, { wide: { $inc: 1n } });
-    const raw = this.querier.conn.db().collection<{ _id: number; count?: bigint }>('TypedRow');
-    await raw.updateOne({ _id: 1 }, { $set: { count: 9007199254740993n } });
+    const collection = this.querier.db.collection<{ _id: number; count?: bigint }>('TypedRow');
+    await collection.updateOne({ _id: 1 }, { $set: { count: 9007199254740993n } });
 
     const found = await this.querier.findOneById(TypedRow, id, { $select: { wide: true, count: true } });
 
-    expect(found?.wide).toBe(9007199254740994n);
-    expect(found?.count).toBe('9007199254740993');
+    expect(found).toEqual({ wide: 9007199254740994n, count: '9007199254740993' });
   }
 
   /** An aggregate decodes as a document does: a total over a `BigInt` field a `bigint`, over any other the number it is. */
   async shouldTotalAWideIntegerAsItsField() {
-    const raw = this.querier.conn
-      .db()
-      .collection<{ _id: number; name: string; count: bigint; wide: bigint }>('TypedRow');
-    await raw.insertMany([
+    const collection = this.querier.db.collection<{ _id: number; name: string; count: bigint; wide: bigint }>(
+      'TypedRow',
+    );
+    await collection.insertMany([
       { _id: 1, name: 'a', count: 5n, wide: 9007199254740993n },
       { _id: 2, name: 'a', count: 2n, wide: 1n },
     ]);
@@ -97,112 +84,11 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     expect(rows).toEqual([{ name: 'a', total: 7, wideTotal: 9007199254740994n }]);
   }
 
-  /** A raw projection is SQL, which MongoDB refuses before it could count anything beside one. */
-  override async shouldCountBesideARawSelect() {
+  /** A raw projection is SQL, which MongoDB refuses, a tally beside it included. */
+  async shouldRefuseARawSelect() {
     await expect(
       this.querier.findMany(MeasureUnitCategory, { $select: [raw`name`], $count: { measureUnits: true } }),
     ).rejects.toThrow('raw() in $select is not supported on MongoDB');
-  }
-
-  /**
-   * `$text` against a real text index, which declares the fields: `$fields` is accepted for API
-   * consistency and ignored, as `$distance` is.
-   */
-  async shouldFindByTextSearch() {
-    await this.querier.conn.db().collection('Item').createIndex({ name: 'text', description: 'text' });
-    await this.querier.insertMany(Item, [
-      { name: 'red bicycle', description: 'a fast one' },
-      { name: 'blue hammer', description: 'a heavy tool' },
-    ]);
-
-    const found = await this.querier.findMany(Item, {
-      $select: { name: true },
-      $where: { $text: { $fields: { name: true }, $value: 'bicycle' } },
-    });
-
-    expect(found.map(({ name }) => name)).toEqual(['red bicycle']);
-  }
-
-  override async shouldUpsertOne() {
-    const pk = '507f1f77bcf86cd799439011';
-
-    const insertResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name C' });
-    expect(insertResult.changes).toBeGreaterThanOrEqual(1);
-    expect(insertResult.id).toBe(pk);
-    expect(insertResult.created).toBe(true);
-
-    const updateResult = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
-    expect(updateResult.changes).toBeGreaterThanOrEqual(1);
-    expect(updateResult.id).toBe(pk);
-    expect(updateResult.created).toBe(false);
-
-    const record = await this.querier.findOne(TaxCategory, { $select: { name: true }, $where: { pk } });
-    expect(record).toMatchObject({ name: 'Some Name D' });
-  }
-
-  async shouldThrowOnDoubleBeginTransaction() {
-    await this.querier.beginTransaction();
-    await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
-    await this.querier.rollbackTransaction();
-  }
-
-  async shouldThrowOnCommitWithoutBeginTransaction() {
-    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
-  }
-
-  async shouldIgnoreRollbackWithoutBeginTransaction() {
-    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
-    expect(this.querier.hasOpenTransaction).toBe(false);
-  }
-
-  async shouldRollBackOnReleaseWithPendingTransaction() {
-    await this.querier.beginTransaction();
-    await expect(this.querier.release()).resolves.toBeUndefined();
-    expect(this.querier.hasOpenTransaction).toBe(false);
-  }
-
-  async shouldUpsertManyReturnGeneratedIdsOnlyForInsertedDocs() {
-    // Conflict path is `email`, not `_id` - so a newly-inserted document's `_id` is
-    // MongoDB-generated and unknown to the caller ahead of time.
-    const existingEmail = `existing-${uuidv7()}@example.com`;
-    const newEmail = `new-${uuidv7()}@example.com`;
-
-    await this.querier.insertOne(User, { name: 'Existing', email: existingEmail, createdAt: 1 });
-
-    const result = await this.querier.upsertMany(User, { email: true }, [
-      { name: 'New', email: newEmail, createdAt: 2 },
-      { name: 'Existing Updated', email: existingEmail, createdAt: 3 },
-    ]);
-
-    expect(result.changes).toBeGreaterThanOrEqual(2);
-    // Only the inserted document's id is knowable from `bulkWrite`'s response - the updated
-    // document's `_id` isn't returned, so it must not appear here.
-    // Payload-aligned: the inserted row's id lands on its own index, the updated row's stays a gap.
-    expect(result.ids).toHaveLength(2);
-
-    const inserted = await this.querier.findOne(User, { $select: { id: true }, $where: { email: newEmail } });
-    expect(inserted).toBeDefined();
-    expect(result.ids.map(String)).toContain(String(inserted?.id));
-  }
-
-  /** A supplied key is the row's `_id`, so the row is reachable by the value the caller holds. */
-  async shouldKeepASuppliedKey() {
-    const id = await this.querier.insertOne(User, { id: 'supplied-key', name: 'supplied', createdAt: 1 });
-
-    expect(id).toBe('supplied-key');
-    expect(await this.querier.findOneById(User, 'supplied-key', { $select: { name: true } })).toMatchObject({
-      name: 'supplied',
-    });
-  }
-
-  /** The same for a key an `onInsert` generated - the documented portable-key pattern. */
-  async shouldKeepAKeyAnOnInsertGenerated() {
-    const id = await this.querier.insertOne(TaxCategory, { name: 'generated' });
-
-    expect(String(id)).toMatch(uuidPattern);
-    expect(await this.querier.findOneById(TaxCategory, id, { $select: { name: true } })).toMatchObject({
-      name: 'generated',
-    });
   }
 
   /**
@@ -221,16 +107,12 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     expect(pages.flatMap((page) => page.items)).toEqual(await this.querier.findMany(Ticket, q));
   }
 
-  /**
-   * A key the driver minted comes back as its hex string, the type the docs promise, not the
-   * `ObjectId` itself - which compared unequal to its own string form.
-   */
+  /** A key the driver minted comes back as its hex string, the type the docs promise, not the `ObjectId` itself. */
   async shouldHandBackAMintedKeyAsAHexString() {
     const id = await this.querier.insertOne(Ticket, { subject: 'minted' });
 
-    expect(typeof id).toBe('string');
-    expect(String(id)).toMatch(/^[0-9a-f]{24}$/);
-    expect(await this.querier.findOneById(Ticket, id, { $select: { subject: true } })).toMatchObject({
+    expect(id).toMatch(/^[0-9a-f]{24}$/);
+    expect(await this.querier.findOneById(Ticket, id, { $select: { subject: true } })).toEqual({
       subject: 'minted',
     });
   }
@@ -239,7 +121,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldReportTheIdAnUpsertMinted() {
     const { id } = await this.querier.upsertOne(Ticket, { subject: true }, { subject: 'upserted' });
 
-    expect(String(id)).toMatch(/^[0-9a-f]{24}$/);
+    expect(id).toMatch(/^[0-9a-f]{24}$/);
     expect(await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'upserted' } })).toEqual({
       id,
     });
@@ -292,23 +174,6 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     const profile = await this.querier.findOne(Profile, { $select: { creatorId: true }, $where: { creatorId } });
     expect(profile?.creatorId).toBe(creatorId);
   }
-
-  async shouldFindManyWithSortAndLimit() {
-    await this.querier.insertMany(User, [
-      { name: 'Charlie', createdAt: 3 },
-      { name: 'Alice', createdAt: 1 },
-      { name: 'Bob', createdAt: 2 },
-    ]);
-
-    const res = await this.querier.findMany(User, {
-      $sort: { name: 1 },
-      $skip: 1,
-      $limit: 1,
-    });
-
-    expect(res).toHaveLength(1);
-    expect(res[0].name).toBe('Bob');
-  }
 }
 
-createSpec(new MongodbQuerierIt());
+createSpec(new MongodbQuerierIt(new MongodbQuerierPool(mongoUri('uql_querier'))));
