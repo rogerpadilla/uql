@@ -206,7 +206,7 @@ Release notes live in [CHANGELOG.md](https://github.com/rogerpadilla/uql/blob/ma
 
 ---
 
-## ⭐ Wanna help UQL grow? Give us a star please!
+## ⭐ Wanna see UQL grow? Give it a star please!
 
 Your star helps other developers find UQL.
 
