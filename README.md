@@ -9,7 +9,7 @@
 
 <h3>JSON-native ORM for TypeScript</h3>
 
-<p align="left">UQL queries SQL databases and MongoDB with plain, type-safe JSON-syntax.
+<p align="left">UQL hanldes SQL databases and MongoDB with plain & type-safe JSON-syntax.
 </p>
 
 <p>
