@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import { MySql2QuerierPool } from '../../mysql/mysql2QuerierPool.js';
 import { createSpec, mysqlConnection } from '../../test/index.js';
+import { raw } from '../../util/raw.js';
 import { MySqlFamilyIntrospectorIt } from './mysqlFamilyIntrospector-test.js';
 
 class MysqlIntrospectorIt extends MySqlFamilyIntrospectorIt {
@@ -9,7 +10,7 @@ class MysqlIntrospectorIt extends MySqlFamilyIntrospectorIt {
   /** A functional key part has no column name, so its place is kept and it reads as an expression. */
   async shouldReadAFunctionalKeyPartAsAnExpression() {
     const schema = await this.probe('probe_functional', async (querier, table) => {
-      await querier.run(`CREATE TABLE ${table} (word VARCHAR(9), KEY probe_lower_idx (word, (lower(word))))`);
+      await querier.run(raw.text(`CREATE TABLE ${table} (word VARCHAR(9), KEY probe_lower_idx (word, (lower(word))))`));
     });
 
     expect(schema.indexes).toEqual([

@@ -3,7 +3,9 @@
 
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
+import { assertDefined } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
+import type { PrimaryKey } from '../type/index.js';
 import { currentTimestamp, raw } from '../util/raw.js';
 import { Migrator } from './migrator.js';
 
@@ -43,9 +45,11 @@ describe.each(sqlPools('test_stamp'))('a stamp on %s', (_name, connect) => {
   const pool = syncedPool(connect, [StampNote, StampTouch, StampClocks, StampCoded]);
 
   /** Sets `column` of the row `id` in `table` to the SQL `value`, a write uql does not make. */
-  const updateAround = (table: string, column: string, value: string, id: unknown) => {
+  const updateAround = (table: string, column: string, value: string, id: PrimaryKey | undefined) => {
+    assertDefined(id);
     const escapeId = (name: string) => pool().dialect.escapeId(name);
-    return pool().run(`UPDATE ${escapeId(table)} SET ${escapeId(column)} = ${value} WHERE ${escapeId('id')} = ${id}`);
+    return pool()
+      .run`UPDATE ${raw.text(escapeId(table))} SET ${raw.text(escapeId(column))} = ${raw.text(value)} WHERE ${raw.text(escapeId('id'))} = ${id}`;
   };
 
   // `onUpdate` would stamp only what uql writes; this write goes around it entirely.

@@ -155,9 +155,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
    */
   generateDropSchema(entities: readonly Type<object>[], options: DropSchemaOptions = {}): string[] {
     const tables = this.orderedTables(entities, 'drop');
-    // A `CASCADE` drop takes the foreign keys with it, and SQLite drops with its constraints off.
-    const cascades = options.cascade && this.features.dropTableCascade;
-    const existing = cascades || this.features.rebuildsTables ? [] : (options.existing?.getTables() ?? []);
+    const existing = dropsForeignKeysFirst(this.features, options) ? (options.existing?.getTables() ?? []) : [];
     const foreignKeyDrops = existing.flatMap((table) => {
       const tableName = qualifyName(table.name, table.schema);
       const names = [
@@ -171,7 +169,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...tables.flatMap((table) => {
         const name = qualifyName(table.name, table.schema);
         // A table the database lacks left no function: CockroachDB refuses one named in a schema not made yet.
-        const triggers = options.existing && !options.existing.getTable(name) ? [] : table.triggers;
+        const triggers = options.present && !options.present.has(name) ? [] : table.triggers;
         return [
           this.dropTableSql(name, options),
           ...terminated(triggers.flatMap((trigger) => dropTriggerBody(this.dialect, table.schema, trigger.name))),
@@ -447,6 +445,12 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       this.dialect.features.serialDeclaresPrimaryKey &&
       key?.columns.length === 1 &&
       table.columns.get(key.columns[0])?.isAutoIncrement;
+    const inline = new Map(
+      table.indexes.flatMap((index) => {
+        const definition = this.indexDdl.inlineDefinition(indexNodeToSchema(index));
+        return definition ? [[index, definition] as const] : [];
+      }),
+    );
     const definitions = [
       ...[...table.columns.values()].map((column) => this.tableDdl.columnDefinition(this.columnNodeToSchema(column))),
       ...(key && !declaredByColumn ? [this.tableDdl.primaryKeyConstraint(table.name, key)] : []),
@@ -461,6 +465,7 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...table.externalForeignKeys.map((foreignKey) =>
         this.foreignKeyConstraint(table.name, foreignKey, this.escapeId(foreignKey.references.table)),
       ),
+      ...inline.values(),
     ];
     const target = this.dialect.escapeQualifiedId(table.name, table.schema);
     const body = definitions.map((definition) => `  ${definition}`).join(',\n');
@@ -475,7 +480,9 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       ...this.tableDdl.commentStatements(qualifyName(table.name, table.schema), table.comment, [
         ...table.columns.values(),
       ]),
-      ...table.indexes.map((index) => this.createIndexFromNode(index, indexOptions)),
+      ...table.indexes
+        .filter((index) => !inline.has(index))
+        .map((index) => this.createIndexFromNode(index, indexOptions)),
     ];
   }
 
@@ -580,6 +587,11 @@ export class SqlSchemaGenerator implements SchemaGenerator {
       throw rebuildRefusal(this.dialect, what);
     }
   }
+}
+
+/** Whether a drop leaves foreign keys to drop first: a `CASCADE` takes them along, and SQLite drops with its constraints off. */
+export function dropsForeignKeysFirst(features: DialectFeatures, options: Pick<DropSchemaOptions, 'cascade'>): boolean {
+  return !(options.cascade && features.dropTableCascade) && !features.rebuildsTables;
 }
 
 /** Statements as a migration runs them, each ended. */

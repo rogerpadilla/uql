@@ -4,7 +4,7 @@
 
 import { beforeAll, describe, expect, it, onTestFinished } from 'vitest';
 import { Entity, Field, Id, Trigger } from '../entity/index.js';
-import { assertDefined, migrationsDir, provisioningTimeout } from '../test/index.js';
+import { assertDefined, linkUqlOrmSource, migrationsDir, provisioningTimeout } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { Type } from '../type/index.js';
 import { raw, refs } from '../util/raw.js';
@@ -91,8 +91,10 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     ]);
     const [table, title, key] = ['TgPost', 'title', 'id'].map((name) => pool().dialect.escapeId(name));
     await pool().run(
-      `UPDATE ${table} SET ${title} = CASE WHEN ${key} = ${moved} THEN 'After' ELSE ${title} END ` +
-        `WHERE ${key} IN (${moved}, ${kept})`,
+      raw.text(
+        `UPDATE ${table} SET ${title} = CASE WHEN ${key} = ${moved} THEN 'After' ELSE ${title} END ` +
+          `WHERE ${key} IN (${moved}, ${kept})`,
+      ),
     );
     expect([await audited(moved), await audited(kept)]).toEqual([1, 0]);
   });
@@ -139,11 +141,11 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     const before = await installed();
     const edit = migrator(TgPostWatchingViews, await migrationsDir());
 
-    await edit.generateFromEntities('edit_audit');
-    expect(await edit.up()).toMatchObject([{ success: true }]);
+    await linkUqlOrmSource(await edit.generateFromEntities('edit_audit'));
+    expect(await edit.up()).toMatchObject([{ direction: 'up' }]);
     expect(await installed()).not.toEqual(before);
     expect(await edit.generateFromEntities('again')).toBe('');
-    expect(await edit.down()).toMatchObject([{ success: true }]);
+    expect(await edit.down()).toMatchObject([{ direction: 'down' }]);
 
     expect(await installed()).toEqual(before);
     const id = await pool().insertOne(TgPost, { title: 'Rolled', views: 0 });
@@ -170,9 +172,9 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
     const before = await installed();
     const retype = migrator(TgPostRetyped, await migrationsDir());
 
-    await retype.generateFromEntities('retype_title');
-    expect(await retype.up()).toMatchObject([{ success: true }]);
-    expect(await retype.down()).toMatchObject([{ success: true }]);
+    await linkUqlOrmSource(await retype.generateFromEntities('retype_title'));
+    expect(await retype.up()).toMatchObject([{ direction: 'up' }]);
+    expect(await retype.down()).toMatchObject([{ direction: 'down' }]);
 
     expect(await installed()).toEqual(before);
     expect(await migrator().planSync({ safe: false })).toEqual([]);
@@ -203,10 +205,10 @@ describe.each(TRIGGER_POOLS)('a trigger on %s', (_engine, connect) => {
       await dropTables(pool(), 'TgPost');
       const create = migrator(TgPost, await migrationsDir());
 
-      await create.generateFromEntities('create_post');
-      expect(await create.up()).toMatchObject([{ success: true }]);
+      await linkUqlOrmSource(await create.generateFromEntities('create_post'));
+      expect(await create.up()).toMatchObject([{ direction: 'up' }]);
       expect(await installed()).toEqual(audit);
-      expect(await create.down()).toMatchObject([{ success: true }]);
+      expect(await create.down()).toMatchObject([{ direction: 'down' }]);
 
       expect(await introspectorFor(pool()).tableExists('TgPost')).toBe(false);
     },
@@ -551,8 +553,10 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
     const functionsIn = async (schema: string, table: string) =>
       (
         await pool().all(
-          `SELECT 1 FROM information_schema.routines WHERE routine_schema = '${schema}' ` +
-            `AND routine_name LIKE '\\_uql\\_${table}\\_%'`,
+          raw.text(
+            `SELECT 1 FROM information_schema.routines WHERE routine_schema = '${schema}' ` +
+              `AND routine_name LIKE '\\_uql\\_${table}\\_%'`,
+          ),
         )
       ).length;
 
@@ -626,7 +630,7 @@ describe.each(TRIGGER_POOLS.filter(([, , { features }]) => features.triggers.bod
         for (const statement of new SqlSchemaGenerator(pool().dialect).generateDropSchema([Schemed], {
           ifExists: true,
         })) {
-          await pool().run(statement);
+          await pool().run(raw.text(statement));
         }
       });
       const migrator = new Migrator(pool(), { entities: [Schemed] });

@@ -23,7 +23,6 @@ export class QuerierPoolIt<P extends AnyQuerierPool = AnyQuerierPool> implements
   async shouldGetQuerier() {
     const querier = await this.pool.getQuerier();
     expect(querier).toBeInstanceOf(AbstractQuerier);
-    expect(querier.hasOpenTransaction).toBe(false);
     await querier.release();
   }
 
@@ -57,15 +56,11 @@ export class QuerierPoolIt<P extends AnyQuerierPool = AnyQuerierPool> implements
     await querier2.release();
   }
 
-  /**
-   * A unit of work started while a pool transaction is open (a pool read helper, say) gets its own
-   * querier: releasing the transaction's querier would throw and roll it back.
-   */
+  /** A unit of work inside the pool's transaction runs on its querier, so it is part of the transaction. */
   async shouldRunNestedUnitOfWorkInsideTransaction() {
     const result = await this.pool.transaction(async (outer) => {
-      expect(outer.hasOpenTransaction).toBe(true);
       return this.pool.withQuerier(async (inner) => {
-        expect(inner).not.toBe(outer);
+        expect(inner).toBe(outer);
         return 42;
       });
     });

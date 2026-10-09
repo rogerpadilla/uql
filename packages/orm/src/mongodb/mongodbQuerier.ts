@@ -3,7 +3,6 @@ import type {
   ClientSession,
   Document,
   FindCursor,
-  ModifyResult,
   MongoClient,
   OptionalUnlessRequiredId,
   UpdateFilter,
@@ -14,6 +13,7 @@ import { fieldOf, getMeta, namesKey, soleIdOf } from '../entity/index.js';
 import { AbstractQuerier } from '../querier/index.js';
 import type {
   EntityData,
+  EntityMeta,
   ExtraOptions,
   IdValue,
   PrimaryKey,
@@ -60,7 +60,7 @@ function asksForNoRows(q: QueryPager): boolean {
 /**
  * MongoDB runs no trigger within a write (Atlas Database Triggers fire after the commit), so a write to
  * an entity declaring one - a stamp included - would skip it silently. Refused instead, as a query naming
- * SQL is. The why, in `architecture/triggers.md`.
+ * SQL is.
  */
 function refuseTriggers(entity: Type<object>): void {
   if (hasTriggers(getMeta(entity))) {
@@ -72,7 +72,12 @@ function refuseTriggers(entity: Type<object>): void {
 }
 
 export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
-  private session?: ClientSession;
+  #session?: ClientSession;
+
+  /** The open transaction's session, for a raw call through `db` to run inside it: `{ session: querier.session }`. */
+  get session(): ClientSession | undefined {
+    return this.#session;
+  }
 
   constructor(
     readonly dialect: MongoDialect,
@@ -84,7 +89,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
   private async execute<T>(task: (session: ClientSession) => Promise<T>): Promise<T> {
     return this.serialize(async () => {
-      return task(this.session!);
+      return task(this.#session!);
     });
   }
 
@@ -127,7 +132,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       ? this.buildVectorPipeline(entity, q, vectorSort, opts)
       : this.readsThroughPipeline(entity, q) && this.dialect.aggregationPipeline(entity, q, opts);
     return pipeline
-      ? this.collection(entity).aggregate<E>(pipeline, { session: this.session })
+      ? this.collection(entity).aggregate<E>(pipeline, { session: this.#session })
       : this.buildFindCursor(entity, q, opts);
   }
 
@@ -155,7 +160,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
 
   /** Build a MongoDB FindCursor with filter, projection, sort, skip, and limit from the query. */
   private buildFindCursor<E extends Document>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    const cursor = this.collection(entity).find<E>({}, { session: this.session });
+    const cursor = this.collection(entity).find<E>({}, { session: this.#session });
 
     const filter = this.dialect.where(entity, q.$where, opts);
     if (hasKeys(filter)) {
@@ -319,17 +324,19 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   /**
-   * `_id` is immutable, so a key the payload names can only be written on the insert branch of an
-   * upsert; in `$set` it would refuse every matched document. Everything else updates either way.
+   * What an upsert writes, as SQL's does: a found document takes the payload and the `onUpdate` fills, and only
+   * an inserted one the `onInsert` fills and the key, which is immutable, so in `$set` it would refuse every match.
    */
-  private upsertUpdate<E extends Document>(persistable: Partial<E>): UpdateFilter<E> {
-    const { _id, ...rest } = persistable;
+  private upsertUpdate<E extends Document>(meta: EntityMeta<E>, payload: E): UpdateFilter<E> {
+    const updated: Document = this.dialect.getPersistable(meta, clone(payload), 'onUpdate');
+    const inserted: Document = this.dialect.getPersistable(meta, clone(payload), 'onInsert');
+    const insertOnly = Object.fromEntries(Object.entries(inserted).filter(([column]) => !(column in updated)));
     const update: Document = {};
-    if (hasKeys(rest)) {
-      update['$set'] = rest;
+    if (hasKeys(updated)) {
+      update['$set'] = updated;
     }
-    if (_id !== undefined) {
-      update['$setOnInsert'] = { _id };
+    if (hasKeys(insertOnly)) {
+      update['$setOnInsert'] = insertOnly;
     }
     return update;
   }
@@ -364,54 +371,12 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
         { upsert: true, returnDocument: 'after', includeResultMetadata: true, session },
       ),
     );
-    const { id, created } = this.upserted(res);
-    // An empty `update` leaves a found document as it is, as `DO NOTHING` does.
-    const updates = !created && hasKeys(update);
-    if (updates) {
+    // `updatedExisting` is false where the document was inserted; an empty `update` leaves a found one
+    // as it is, as `DO NOTHING` does.
+    if (res.lastErrorObject?.['updatedExisting'] && hasKeys(update)) {
       await this.internalUpdateMany(entity, { $where: whereEach(getKeys(conflictPaths), (key) => row[key]) }, update);
     }
-    return { id, created, changes: created || updates ? 1 : 0 };
-  }
-
-  /** The id and whether it was created, read off the document a `findOneAndUpdate` upsert wrote. */
-  private upserted<E extends Document>(res: ModifyResult<E>): { id: PrimaryKey | undefined; created: boolean } {
-    const id = this.dialect.fromWireId(res.value?._id) as PrimaryKey | undefined;
-    // `updatedExisting` is false when a new document was inserted (upserted).
-    return { id, created: res.lastErrorObject?.['updatedExisting'] === false };
-  }
-
-  protected override async internalUpsertOne<E extends Document>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E,
-    update?: UpdatePayload<E>,
-  ) {
-    refuseTriggers(entity);
-    if (update) {
-      const { id, created, changes } = await this.upsertWithUpdate(entity, conflictPaths, payload, update);
-      return { ids: [id], changes, created };
-    }
-    return this.timed('upsertOne', undefined, async () => {
-      payload = clone(payload);
-
-      const meta = getMeta(entity);
-      const persistable = this.dialect.getPersistable(meta, payload, 'onInsert');
-      const filter = this.buildConflictFilter(entity, conflictPaths, payload);
-      const update = this.upsertUpdate(persistable);
-
-      const res = await this.execute((session) =>
-        this.collection(entity).findOneAndUpdate(filter, update, {
-          upsert: true,
-          returnDocument: 'after',
-          includeResultMetadata: true,
-          session,
-        }),
-      );
-
-      // Read off the document as written, which carries its `_id` on either branch.
-      const { id, created } = this.upserted(res);
-      return { ids: [id], changes: 1, created };
-    });
+    return this.dialect.fromWireId(res.value?._id) as PrimaryKey | undefined;
   }
 
   protected override async internalUpsertMany<E extends Document>(
@@ -423,42 +388,26 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
     refuseTriggers(entity);
     if (update) {
       const ids: (PrimaryKey | undefined)[] = [];
-      let changes = 0;
       for (const row of payload) {
-        const written = await this.upsertWithUpdate(entity, conflictPaths, row, update);
-        ids.push(written.id);
-        changes += written.changes;
+        ids.push(await this.upsertWithUpdate(entity, conflictPaths, row, update));
       }
-      return { ids, changes };
+      return ids;
     }
     return this.timed('upsertMany', undefined, async () => {
-      if (!payload?.length) {
-        return { changes: 0 };
+      if (!payload.length) {
+        return [];
       }
-
       const meta = getMeta(entity);
       // Asked before `getPersistable` fills an `onInsert` key into rows it may only update.
       const unnamed = payload.map((row) => !namesKey(meta, row));
-
-      payload = clone(payload);
-
-      const operations = payload.map((item) => {
-        const persistable = this.dialect.getPersistable(meta, item, 'onInsert');
-        const filter = this.buildConflictFilter(entity, conflictPaths, item);
-        const update = this.upsertUpdate(persistable);
-
-        return {
-          updateOne: {
-            filter,
-            update,
-            upsert: true,
-          },
-        };
-      });
-
+      const operations = payload.map((item) => ({
+        updateOne: {
+          filter: this.buildConflictFilter(entity, conflictPaths, item),
+          update: this.upsertUpdate(meta, item),
+          upsert: true,
+        },
+      }));
       const res = await this.execute((session) => this.collection(entity).bulkWrite(operations, { session }));
-
-      const changes = res.upsertedCount + res.modifiedCount;
       // `upsertedIds` names only the documents inserted, keyed by operation index, so each lands on
       // its own row; an updated document's `_id` is read back by the conflict fields instead.
       const reported = payload.map((_, index) => {
@@ -467,8 +416,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
       });
       const unplaced = reported.some((id, index) => id === undefined && unnamed[index]);
       const found = unplaced ? await this.idsByConflict(entity, conflictPaths, payload) : [];
-
-      return { changes, ids: reported.map((id, index) => id ?? found[index]) };
+      return reported.map((id, index) => id ?? found[index]);
     });
   }
 
@@ -505,7 +453,7 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   override get hasOpenTransaction(): boolean {
-    return !!this.session?.inTransaction();
+    return !!this.#session?.inTransaction();
   }
 
   /** Every read and write goes through here, which makes it where a released querier is caught. */
@@ -522,10 +470,10 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
   }
 
   protected override async openTransaction(_opts?: TransactionOptions) {
-    this.logger.logInfo('beginTransaction');
-    await this.session?.endSession();
-    this.session = this.conn.startSession();
-    this.session.startTransaction();
+    this.logger.logInfo('startTransaction');
+    await this.#session?.endSession();
+    this.#session = this.conn.startSession();
+    this.#session.startTransaction();
   }
 
   /**
@@ -533,15 +481,15 @@ export class MongodbQuerier extends AbstractQuerier implements MongoQuerier {
    * or abort still leaves `inTransaction()` false and the querier releasable.
    */
   protected override async endTransaction(commit: boolean) {
-    this.logger.logInfo(commit ? 'commitTransaction' : 'rollbackTransaction');
-    await (commit ? this.session?.commitTransaction() : this.session?.abortTransaction());
+    this.logger.logInfo(commit ? 'commitTransaction' : 'abortTransaction');
+    await (commit ? this.#session?.commitTransaction() : this.#session?.abortTransaction());
   }
 
   override async internalRelease() {
-    const session = this.session;
+    const session = this.#session;
     // Cleared first, so a failing `endSession` cannot leave the querier holding a session it already
     // tried to end.
-    this.session = undefined;
+    this.#session = undefined;
     await session?.endSession();
   }
 }

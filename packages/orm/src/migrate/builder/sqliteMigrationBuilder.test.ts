@@ -1,9 +1,9 @@
 import { expect } from 'vitest';
 import type { TypeCategory } from '../../schema/types.js';
-import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
 import { createSpec } from '../../test/index.js';
 import { decodeDate } from '../../util/date.js';
-import { currentDate } from '../../util/raw.js';
+import { currentDate, raw } from '../../util/raw.js';
 import { AbstractMigrationBuilderIt, BUILDER_TABLES } from './abstractMigrationBuilder-test.js';
 
 /**
@@ -28,10 +28,12 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
         t.date('day', { defaultValue: currentDate });
       }),
     );
-    await this.pool.run(`INSERT INTO ${table} DEFAULT VALUES`);
-    const [row] = await this.pool.all<{ day: string }>(`SELECT day FROM ${table}`);
+    await this.pool.run(raw.text(`INSERT INTO ${table} DEFAULT VALUES`));
+    const [row] = await this.pool.all<{ day: string }>(raw.text(`SELECT day FROM ${table}`));
 
-    expect(await this.pool.all(`SELECT id FROM ${table} WHERE day = ?`, [decodeDate(row.day)])).toEqual([{ id: 1 }]);
+    expect(await this.pool.all`SELECT id FROM ${raw.text(table)} WHERE day = ${decodeDate(row.day)}`).toEqual([
+      { id: 1 },
+    ]);
   }
 
   async shouldRefuseToAlterAColumn() {
@@ -70,4 +72,4 @@ class SqliteMigrationBuilderIt extends AbstractMigrationBuilderIt {
   }
 }
 
-createSpec(new SqliteMigrationBuilderIt(new Sqlite3QuerierPool(':memory:')));
+createSpec(new SqliteMigrationBuilderIt(new SqliteQuerierPool(':memory:')));

@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { UqlUsageError } from '../util/uqlError.js';
 import { HranaQuerier } from './hranaQuerier.js';
 import { SqliteDialect } from './sqliteDialect.js';
 
@@ -52,7 +51,6 @@ describe('HranaQuerier', () => {
     expect(res).toEqual({
       changes: 1,
       ids: [100],
-      firstId: 100,
     });
   });
 
@@ -69,44 +67,44 @@ describe('HranaQuerier', () => {
 
     const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`');
 
-    expect(res).toEqual({ changes: 1, ids: [100], firstId: 100 });
+    expect(res).toEqual({ changes: 1, ids: [100] });
   });
 
-  it('should handle transactions', async () => {
-    await querier.beginTransaction();
-    expect(mockClient.transaction).toHaveBeenCalledWith('write');
-    expect(querier.hasOpenTransaction).toBe(true);
-
-    // Queries should now go through tx
+  it('should run a transaction on the session the client opens', async () => {
     mockTx.execute.mockResolvedValue({
       rows: [],
       columns: [],
       columnTypes: [],
       rowsAffected: 0,
     });
-    await querier.internalAll('SELECT 1');
+
+    await querier.transaction(async () => {
+      await querier.internalAll('SELECT 1');
+    });
+
+    expect(mockClient.transaction).toHaveBeenCalledWith('write');
     expect(mockTx.execute).toHaveBeenCalled();
     expect(mockClient.execute).not.toHaveBeenCalled();
-
-    await querier.commitTransaction();
     expect(mockTx.commit).toHaveBeenCalled();
-    expect(querier.hasOpenTransaction).toBe(false);
   });
 
-  it('should rollback transaction', async () => {
-    await querier.beginTransaction();
-    await querier.rollbackTransaction();
+  it('should roll the session back when the callback throws', async () => {
+    await expect(
+      querier.transaction(async () => {
+        throw new Error('callback failed');
+      }),
+    ).rejects.toThrow('callback failed');
+
     expect(mockTx.rollback).toHaveBeenCalled();
-    expect(querier.hasOpenTransaction).toBe(false);
+    expect(mockTx.commit).not.toHaveBeenCalled();
   });
 
   it('should roll the open transaction back on release', async () => {
     await querier.beginTransaction();
-
     await expect(querier.release()).resolves.toBeUndefined();
 
     expect(mockTx.rollback).toHaveBeenCalled();
-    expect(querier.hasOpenTransaction).toBe(false);
+    expect(mockTx.commit).not.toHaveBeenCalled();
   });
 
   it('should close client on internalRelease when closeClientOnRelease', async () => {
@@ -115,21 +113,5 @@ describe('HranaQuerier', () => {
     });
     await q.internalRelease();
     expect(mockClient.close).toHaveBeenCalled();
-  });
-
-  it('should throw error on double beginTransaction', async () => {
-    await querier.beginTransaction();
-    await expect(querier.beginTransaction()).rejects.toThrow(UqlUsageError);
-    await expect(querier.beginTransaction()).rejects.toThrow('pending transaction');
-  });
-
-  it('should throw error on commitTransaction without transaction', async () => {
-    await expect(querier.commitTransaction()).rejects.toThrow(UqlUsageError);
-    await expect(querier.commitTransaction()).rejects.toThrow('not a pending transaction');
-  });
-
-  it('should ignore rollbackTransaction without transaction', async () => {
-    await expect(querier.rollbackTransaction()).resolves.toBeUndefined();
-    expect(querier.hasOpenTransaction).toBe(false);
   });
 });

@@ -71,17 +71,36 @@ export class IndexDdl {
   }
 
   getCreateIndexStatement(tableName: string, index: IndexSchema, opts: { ifNotExists?: boolean } = {}): string {
+    this.assertExpressible(index);
+    const unique = index.unique ? 'UNIQUE ' : '';
+    const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
+    return (
+      `CREATE ${unique}${this.indexKeyword(index)} ${ifNotExists}${this.dialect.escapeId(index.name)} ` +
+      `ON ${this.dialect.escapeId(tableName)}${this.indexAccessMethod(index)} ${this.indexBody(index)};`
+    );
+  }
+
+  /**
+   * A plain index as a definition of its `CREATE TABLE`, where the engine takes one; `undefined` for its own
+   * `CREATE INDEX`. Never a unique one: CockroachDB makes that a constraint, which `DROP INDEX` refuses.
+   */
+  inlineDefinition(index: IndexSchema): string | undefined {
+    if (!this.capabilities.inline || index.type || index.unique) {
+      return undefined;
+    }
+    this.assertExpressible(index);
+    return `INDEX ${this.dialect.escapeId(index.name)} ${this.indexBody(index)}`;
+  }
+
+  private assertExpressible(index: IndexSchema): void {
     const { types, features, hints } = this.capabilities;
     assertIndexType(index, types, this.dialect.dialectName, hints);
     assertIndexFeatures(index, features, this.dialect.dialectName);
-    const unique = index.unique ? 'UNIQUE ' : '';
-    const ifNotExists = (opts.ifNotExists ?? this.dialect.features.indexIfNotExists) ? 'IF NOT EXISTS ' : '';
-    const columns = this.indexTarget(index);
-    return (
-      `CREATE ${unique}${this.indexKeyword(index)} ${ifNotExists}${this.dialect.escapeId(index.name)} ` +
-      `ON ${this.dialect.escapeId(tableName)}${this.indexAccessMethod(index)} (${columns})` +
-      `${this.indexInclude(index)}${this.indexTuning(index)}${this.indexPredicate(index)};`
-    );
+  }
+
+  /** What follows the name and access method, in either form: the columns, then what qualifies them. */
+  private indexBody(index: IndexSchema): string {
+    return `(${this.indexTarget(index)})${this.indexInclude(index)}${this.indexTuning(index)}${this.indexPredicate(index)}`;
   }
 
   /** What an index added to a table that has rows needs run after it to serve queries; nothing, mostly. */

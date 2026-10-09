@@ -142,13 +142,13 @@ const DRIVER_ENTRIES: Readonly<Record<string, { readonly loads?: string[]; reado
   './mysql': { loads: ['mysql2'] },
   './postgres': { loads: ['pg'] },
   './cockroachdb': { loads: ['pg'] },
-  './maria': { loads: ['mariadb'] },
+  './mariadb': { loads: ['mariadb'] },
   './mssql': { loads: ['mssql'] },
-  './mongo': { loads: ['mongodb'] },
+  './mongodb': { loads: ['mongodb'] },
   './express': { loads: ['express'] },
   './nestjs': { loads: ['@nestjs/common', '@nestjs/core', 'rxjs'] },
   './neon': { loads: ['@neondatabase/serverless'] },
-  './bunSql': { loads: ['bun'] },
+  './bun-sql': { loads: ['bun'] },
   './sqlite': { lazy: ['better-sqlite3'] },
   './libsql': { lazy: ['@libsql/client'] },
   './turso': { lazy: ['@tursodatabase/serverless'] },
@@ -159,7 +159,7 @@ const DRIVER_ENTRIES: Readonly<Record<string, { readonly loads?: string[]; reado
 
 /**
  * Each entry's declarations reach only the peers {@link DRIVER_ENTRIES} says it is for, so `uql-orm/postgres`
- * reaches `pg` and nothing reaches `mongodb` but `uql-orm/mongo`. The tsc check below cannot tell: it has
+ * reaches `pg` and nothing reaches `mongodb` but `uql-orm/mongodb`. The tsc check below cannot tell: it has
  * to let an uninstalled peer's "Cannot find module" through, and `uql-orm@0.89.0` shipped `mongodb`'s `Db`
  * in the root's types that way.
  */
@@ -201,8 +201,9 @@ function checkPeerReach(): void {
 // these budgets aren't. Each is the entry as measured plus 2%, rounded up to the next hundred, so
 // raising one is deliberate - and the commit raising it says which module grew.
 const BUDGETS: Record<string, number> = {
-  '.': 39_900,
-  './postgres': 37_700,
+  // The root is decorators, types and helpers: no querier or dialect is reachable from it.
+  '.': 9_400,
+  './postgres': 40_300,
   './migrate': 63_300,
   './browser': 2_100,
 };
@@ -296,6 +297,34 @@ function checkRuntimes(checkDir: string): void {
       'the package does not run on every runtime with no driver installed',
       broken,
       'Import driver code on use (`await import(...)`), or move what the entry needs out of the driver module.',
+    );
+  }
+}
+
+/**
+ * Every entry loads on Node with its driver installed, as the repo has them: a driver that is CommonJS
+ * exposes no named exports to an ESM import, and `uql-orm@0.99.0`'s `mssql` entry failed on that while
+ * the check above, having no driver, skipped it. `bun` only exists inside Bun.
+ */
+function checkDriverLoads(): void {
+  const files = entries
+    .filter((entry) => !DRIVER_ENTRIES[entry]?.loads?.includes('bun'))
+    .map((entry) => {
+      const target = pkg.exports[entry];
+      return join(pkgDir, typeof target === 'string' ? target : target.import);
+    });
+  const script = /*ts*/ `for (const file of ${JSON.stringify(files)}) {
+    await import(file).catch((err) => { console.error(file + ': ' + String(err).split('\\n')[0]); process.exitCode = 1; });
+  }`;
+  const { status, stderr } = spawnSync('node', ['--input-type=module', '-e', script], {
+    cwd: pkgDir,
+    encoding: 'utf8',
+  });
+  if (status !== 0) {
+    refuse(
+      'an entry fails to load on Node with its driver installed',
+      stderr.trim().split('\n'),
+      "Import a CommonJS driver by its default export (`import mssql from 'mssql'`), not by named exports.",
     );
   }
 }
@@ -416,6 +445,7 @@ settle();
 
 const browserModules = checkBrowserGraph();
 checkPeerReach();
+checkDriverLoads();
 await checkSizeBudgets();
 const { checkDir, installed } = writeConsumerProject();
 try {
@@ -429,6 +459,6 @@ settle();
 console.log(
   `verify-dist: OK (${declaredPaths} declared paths present; ${browserModules} browser-facing modules clean; ` +
     `${entries.length} entry points' types resolve with \`types: []\` and reach only the peers each is for; ` +
-    `every entry loads and queries with no driver on ${RUNTIMES.map(([bin]) => bin).join(', ')}; ` +
+    `every entry loads and queries with no driver on ${RUNTIMES.map(([bin]) => bin).join(', ')}, and with its driver on node; ` +
     `${Object.keys(BUDGETS).length} entry budgets within limits)`,
 );

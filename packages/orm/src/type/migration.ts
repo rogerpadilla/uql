@@ -47,26 +47,6 @@ export interface Migration<Q extends Querier = SqlQuerier> extends MigrationDefi
 }
 
 /**
- * Storage backend for tracking which migrations have been executed
- */
-export interface MigrationStorage {
-  /**
-   * Get list of already executed migration names
-   */
-  executed(): Promise<string[]>;
-
-  /**
-   * Mark a migration as executed, on the querier that ran it (inside its transaction, where there is one)
-   */
-  logWithQuerier(querier: Querier, migrationName: string): Promise<void>;
-
-  /**
-   * Remove a migration from the executed list, on the querier that reverted it
-   */
-  unlogWithQuerier(querier: Querier, migrationName: string): Promise<void>;
-}
-
-/**
  * Configuration options for the Migrator
  */
 export interface MigratorOptions {
@@ -76,14 +56,15 @@ export interface MigratorOptions {
   readonly migrationsPath?: string;
 
   /**
-   * Custom storage implementation. Defaults to DatabaseMigrationStorage, or MongoMigrationStorage on MongoDB.
-   */
-  readonly storage?: MigrationStorage;
-
-  /**
-   * Table, or MongoDB collection, name for storing migration state. Defaults to 'uql_migrations'.
+   * Table, or MongoDB collection, name for storing migration state. Defaults to 'uql_migrations'. The lock a
+   * run holds is named after it.
    */
   readonly tableName?: string;
+
+  /**
+   * Milliseconds `up` and `down` wait for the lock another run holds before failing. Defaults to 5 minutes.
+   */
+  readonly lockTimeout?: number;
 
   /**
    * Logger function or options for migration output
@@ -117,15 +98,12 @@ export interface MigratorOptions {
   readonly schemaGenerator?: SchemaGenerator;
 }
 
-/**
- * Result of a migration run
- */
+/** A migration `up` or `down` ran: a failing one throws instead. */
 export interface MigrationResult {
   readonly name: string;
   readonly direction: 'up' | 'down';
+  /** Milliseconds it took. */
   readonly duration: number;
-  readonly success: boolean;
-  readonly error?: Error;
 }
 
 /** A column as a statement renders one: a {@link ColumnNode} with the engine's type spelling and no graph links. */
@@ -298,6 +276,8 @@ export interface CreateSchemaOptions {
 export interface DropSchemaOptions {
   readonly ifExists?: boolean;
   readonly cascade?: boolean;
+  /** The tables the database holds, by qualified name: one it lacks left no trigger function to drop. */
+  readonly present?: ReadonlySet<string>;
   /** The schema as it stands, whose foreign keys are dropped before any table, since a cycle of them has no drop order. */
   readonly existing?: SchemaAST;
 }
@@ -337,7 +317,7 @@ export interface SchemaGenerator {
     renamedColumns?: readonly Rename[],
   ): SchemaDiff | undefined;
 
-  /** The entities as one AST, built once per run for every {@link diffSchema}. Absent on MongoDB, which diffs only indexes. */
+  /** The entities as one AST, built once per run for every {@link diffSchema}. Absent on MongoDB, which diffs only indexes and a validator. */
   buildAST?(entities: readonly Type<object>[]): SchemaAST;
 
   /** How this engine's diff compares types and defaults. Absent where {@link buildAST} is. */

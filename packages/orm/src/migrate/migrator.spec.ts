@@ -3,16 +3,18 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
-import { MongoDialect } from '../mongo/mongoDialect.js';
-import { MongoSchemaGenerator } from '../mongo/mongoSchemaGenerator.js';
+import { MongoDialect } from '../mongodb/mongoDialect.js';
+import { MongoSchemaGenerator } from '../mongodb/mongoSchemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
-import { createMockQuerier, createMockQuerierPool } from '../test/index.js';
-import type { Migration, MigratorOptions, Querier, SqlQuerier } from '../type/index.js';
+import { createMockQuerier, createMockQuerierPool, linkUqlOrmSource, UQL_ORM_SOURCE } from '../test/index.js';
+import type { MigratorOptions, Querier } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { runDriftCheck } from './cli.js';
 import { migrationBuilderFor } from './migrationTarget.js';
 import { defineMigration, Migrator } from './migrator.js';
 import { SqlSchemaGenerator } from './schemaGenerator.js';
+import { createMigrationsTable } from './storage/databaseStorage.js';
 
 @Entity()
 class MigNote {
@@ -44,22 +46,25 @@ describe('Migrator', () => {
 
   const tables = async () =>
     (
-      await pool.all<{ name: string }>(
-        "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-      )
+      await pool.all<{
+        name: string;
+      }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name`
     ).map((row) => row.name);
 
   const columns = async (table: string) =>
-    (await pool.all<{ name: string }>(`SELECT name FROM pragma_table_info('${table}')`)).map((row) => row.name);
+    (await pool.all<{ name: string }>(raw.text(`SELECT name FROM pragma_table_info('${table}')`))).map(
+      (row) => row.name,
+    );
 
   /** A migration file whose `up` runs each of `up` and whose `down` runs `down`, with what else it `declares`. */
   const writeMigration = (name: string, up: readonly string[], down: readonly string[] = [], declares = '') =>
     writeFile(
       join(dir, `${name}.mjs`),
-      `export default {
+      `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+      export default {
         ${declares}
-        async up(querier) { for (const sql of ${JSON.stringify(up)}) await querier.run(sql); },
-        async down(querier) { for (const sql of ${JSON.stringify(down)}) await querier.run(sql); },
+        async up(querier) { for (const sql of ${JSON.stringify(up)}) await querier.run(raw.text(sql)); },
+        async down(querier) { for (const sql of ${JSON.stringify(down)}) await querier.run(raw.text(sql)); },
       };`,
     );
 
@@ -86,7 +91,7 @@ describe('Migrator', () => {
       await writeThree();
       const migrator = migratorOf();
 
-      expect(await migrator.pending()).toEqual(['m1', 'm2', 'm3']);
+      expect((await migrator.status()).pending).toEqual(['m1', 'm2', 'm3']);
       expect((await migrator.up()).map((it) => it.name)).toEqual(['m1', 'm2', 'm3']);
       expect(await tables()).toEqual(['m1', 'm2', 'm3', 'uql_migrations']);
       expect(await migrator.status()).toEqual({ pending: [], executed: ['m1', 'm2', 'm3'] });
@@ -117,35 +122,45 @@ describe('Migrator', () => {
       await expect(migrator.down({ to: 'missing' })).rejects.toThrow("Migration 'missing' not found");
     });
 
-    it('should stop up at the first failure, leaving it and what follows pending', async () => {
+    /** An app migrating as it starts must not boot on a half-migrated schema, so the failure is thrown. */
+    it('should stop up at the first failure, rejecting with its error, what ran before it recorded', async () => {
       await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)']);
       await writeMigration('m2', ['NOT SQL']);
       await writeMigration('m3', ['CREATE TABLE m3 (id INTEGER)']);
       const migrator = migratorOf();
 
-      expect((await migrator.up()).map(({ name, success }) => ({ name, success }))).toEqual([
-        { name: 'm1', success: true },
-        { name: 'm2', success: false },
-      ]);
+      await expect(migrator.up()).rejects.toThrow('syntax error');
       expect(await migrator.status()).toEqual({ pending: ['m2', 'm3'], executed: ['m1'] });
+      expect(logger).toHaveBeenCalledWith(expect.stringContaining('Migration m2 failed: '), expect.any(Error));
     });
 
-    it('should stop down at the first failure', async () => {
+    it('should stop down at the first failure, rejecting with its error', async () => {
       await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)'], ['DROP TABLE m1']);
       await writeMigration('m2', ['CREATE TABLE m2 (id INTEGER)'], ['NOT SQL']);
       const migrator = migratorOf();
       await migrator.up();
 
-      expect((await migrator.down({ step: 2 })).map(({ name, success }) => ({ name, success }))).toEqual([
-        { name: 'm2', success: false },
+      await expect(migrator.down({ step: 2 })).rejects.toThrow('syntax error');
+      expect((await migrator.status()).executed).toEqual(['m1', 'm2']);
+    });
+
+    it('should report each migration it ran, in order, with its direction', async () => {
+      await writeThree();
+      const migrator = migratorOf();
+
+      expect(await migrator.up({ step: 2 })).toEqual([
+        { name: 'm1', direction: 'up', duration: expect.any(Number) },
+        { name: 'm2', direction: 'up', duration: expect.any(Number) },
       ]);
-      expect(await migrator.executed()).toEqual(['m1', 'm2']);
+      expect(await migrator.down({ step: 1 })).toEqual([
+        { name: 'm2', direction: 'down', duration: expect.any(Number) },
+      ]);
     });
 
     it('should roll a failing migration back whole, its record included', async () => {
       await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)', 'NOT SQL']);
 
-      expect(await migratorOf().up()).toMatchObject([{ name: 'm1', success: false }]);
+      await expect(migratorOf().up()).rejects.toThrow('syntax error');
       expect(await tables()).toEqual(['uql_migrations']);
     });
 
@@ -158,9 +173,92 @@ describe('Migrator', () => {
       await writeMigration('m1', ['CREATE TABLE m1 (id INTEGER)', 'NOT SQL'], [], 'transaction: false,');
       const migrator = migratorOf();
 
-      expect(await migrator.up()).toMatchObject([{ name: 'm1', success: false }]);
+      await expect(migrator.up()).rejects.toThrow('syntax error');
       expect(await tables()).toEqual(['m1', 'uql_migrations']);
-      expect(await migrator.executed()).toEqual([]);
+      expect((await migrator.status()).executed).toEqual([]);
+    });
+  });
+
+  /**
+   * SQLite has no lock a session holds, so a run records one in the journal for as long as it runs. Two
+   * pools on one file are two instances: each has its own connection, as two processes would.
+   */
+  describe('the migration lock', () => {
+    const pools: NodeSqliteQuerierPool[] = [];
+
+    /** A pool over the test's database file, which waits out another connection's writes. */
+    const connect = () => {
+      const own = new NodeSqliteQuerierPool(join(dir, 'app.db'), { timeout: 5000 });
+      pools.push(own);
+      return own;
+    };
+
+    const instance = (options: MigratorOptions = {}) =>
+      new Migrator(connect(), { migrationsPath: dir, logger, entities: [MigNote], ...options });
+
+    /** A migration adding one to `counter`, after `wait` milliseconds, so another instance starts meanwhile. */
+    const writeIncrement = (name: string, wait = 0) =>
+      writeFile(
+        join(dir, `${name}.mjs`),
+        `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+        export default {
+          async up(querier) {
+            await new Promise((resolve) => setTimeout(resolve, ${wait}));
+            await querier.run(raw.text('UPDATE counter SET n = n + 1'));
+          },
+          async down() {},
+        };`,
+      );
+
+    const counter = async () => {
+      const [{ n }] = await pools[0].all<{ n: number | bigint }>`SELECT n FROM counter`;
+      return Number(n);
+    };
+
+    beforeEach(async () => {
+      const own = connect();
+      await own.run`CREATE TABLE counter (n INTEGER)`;
+      await own.run`INSERT INTO counter VALUES (0)`;
+    });
+
+    afterEach(async () => {
+      for (const own of pools.splice(0)) {
+        await own.end();
+      }
+    });
+
+    it('should run each pending migration once when two instances run up at once', async () => {
+      await writeIncrement('m1', 300);
+      await writeIncrement('m2');
+      await writeIncrement('m3');
+
+      const runs = await Promise.all([instance().up(), instance().up()]);
+
+      expect(runs.flat().map((result) => result.name)).toEqual(['m1', 'm2', 'm3']);
+      expect(await counter()).toBe(3);
+      expect(await instance().status()).toEqual({ pending: [], executed: ['m1', 'm2', 'm3'] });
+    });
+
+    it('should give up waiting for the lock once its timeout passes, saying how to release it', async () => {
+      await writeIncrement('m1', 1500);
+      const running = instance().up();
+      await vi.waitFor(async () => expect(await pools[0].all`SELECT name FROM uql_migrations`).toHaveLength(1));
+
+      await expect(instance({ lockTimeout: 50 }).up()).rejects.toThrow(
+        `Gave up after 50ms waiting for the migration lock on "uql_migrations", which another run holds. If none is running, one stopped before releasing it: delete the row 'uql/lock' from "uql_migrations".`,
+      );
+      expect(await instance().status()).toEqual({ pending: ['m1'], executed: [] });
+      await running;
+      expect(await counter()).toBe(1);
+    });
+
+    it('should release the lock when a migration fails', async () => {
+      await writeMigration('m1', ['NOT SQL']);
+
+      await expect(instance().up()).rejects.toThrow('syntax error');
+
+      expect(await pools[0].all`SELECT name FROM uql_migrations`).toEqual([]);
+      await expect(instance({ lockTimeout: 0 }).down()).resolves.toEqual([]);
     });
   });
 
@@ -169,33 +267,30 @@ describe('Migrator', () => {
       for (const file of ['b.ts', 'a.ts', 'c.txt', 'd.d.ts', 'e.mjs', 'f.js']) {
         await writeFile(join(dir, file), 'export default {');
       }
-      expect(await migratorOf().pending()).toEqual(['a', 'b', 'e', 'f']);
+      expect((await migratorOf().status()).pending).toEqual(['a', 'b', 'e', 'f']);
     });
 
     it('should list none where the directory is missing', async () => {
-      expect(await migratorOf({ migrationsPath: join(dir, 'missing') }).pending()).toEqual([]);
+      expect((await migratorOf({ migrationsPath: join(dir, 'missing') }).status()).pending).toEqual([]);
     });
 
     it('should rethrow an error reading the directory other than its absence', async () => {
       const file = join(dir, 'file');
       await writeFile(file, '');
-      await expect(migratorOf({ migrationsPath: file }).pending()).rejects.toThrow('ENOTDIR');
+      await expect(migratorOf({ migrationsPath: file }).status()).rejects.toThrow('ENOTDIR');
     });
 
     it('should refuse two files of one name', async () => {
       await writeFile(join(dir, 'm1.mjs'), '');
       await writeFile(join(dir, 'm1.ts'), '');
-      await expect(migratorOf().pending()).rejects.toThrow("Migrations m1.mjs and m1.ts share the name 'm1'");
+      await expect(migratorOf().status()).rejects.toThrow("Migrations m1.mjs and m1.ts share the name 'm1'");
     });
 
     it('should run a default export or a module export', async () => {
       await writeFile(join(dir, 'm1.mjs'), 'export default { up: async () => {}, down: async () => {} };');
       await writeFile(join(dir, 'm2.mjs'), 'export const up = async () => {}; export const down = async () => {};');
 
-      expect(await migratorOf().up()).toMatchObject([
-        { name: 'm1', success: true },
-        { name: 'm2', success: true },
-      ]);
+      expect(await migratorOf().up()).toMatchObject([{ name: 'm1' }, { name: 'm2' }]);
     });
 
     it('should run nothing where a migration to run fails to load', async () => {
@@ -205,7 +300,7 @@ describe('Migrator', () => {
       const migrator = migratorOf();
 
       await expect(migrator.up()).rejects.toThrow('Migration m2.mjs failed to load');
-      expect(await migrator.executed()).toEqual([]);
+      expect((await migrator.status()).executed).toEqual([]);
       expect(await tables()).toEqual(['uql_migrations']);
     });
 
@@ -215,24 +310,30 @@ describe('Migrator', () => {
       const migrator = migratorOf();
 
       await expect(migrator.up()).rejects.toThrow('Migration m2.mjs exports no migration');
-      expect(await migrator.executed()).toEqual([]);
+      expect((await migrator.status()).executed).toEqual([]);
     });
 
     it('should not load a migration already run', async () => {
       const migrator = migratorOf();
-      await migrator.runMigration({ name: 'm1', up: async () => {}, down: async () => {} }, 'up');
+      await pool.withQuerier(async (querier) => {
+        await createMigrationsTable(querier, 'uql_migrations');
+        await querier.run`INSERT INTO uql_migrations (name) VALUES (${'m1'})`;
+      });
       await writeFile(join(dir, 'm1.mjs'), 'export default {');
       await writeMigration('m2', ['CREATE TABLE m2 (id INTEGER)']);
 
-      expect(await migrator.up()).toMatchObject([{ name: 'm2', success: true }]);
+      expect(await migrator.up()).toMatchObject([{ name: 'm2' }]);
     });
 
     it('should refuse to roll back a migration recorded as run whose file is gone', async () => {
       const migrator = migratorOf();
-      await migrator.runMigration({ name: 'm1', up: async () => {}, down: async () => {} }, 'up');
+      await pool.withQuerier(async (querier) => {
+        await createMigrationsTable(querier, 'uql_migrations');
+        await querier.run`INSERT INTO uql_migrations (name) VALUES (${'m1'})`;
+      });
 
       await expect(migrator.down()).rejects.toThrow(`Migration 'm1' is recorded as run but has no file in ${dir}`);
-      expect(await migrator.executed()).toEqual(['m1']);
+      expect((await migrator.status()).executed).toEqual(['m1']);
     });
 
     it('should return a migration definition as given', () => {
@@ -255,11 +356,67 @@ describe('Migrator', () => {
 
       const filePath = await migrator.generateFromEntities('initial_schema');
 
-      expect(await readFile(filePath, 'utf-8')).toContain('await querier.run("CREATE TABLE `MigNote` (');
+      expect(await readFile(filePath, 'utf-8')).toContain('await querier.run`CREATE TABLE \\`MigNote\\` (');
+      await linkUqlOrmSource(filePath);
       await migrator.up();
       expect(await tables()).toEqual(['MigNote', 'uql_migrations']);
       await migrator.down();
       expect(await tables()).toEqual(['uql_migrations']);
+    });
+
+    /**
+     * Identical but for its name is no evidence of a rename: renaming `legacyNotes` would publish its
+     * notes as the summary. The column is dropped and the new one added, and the rename only suggested.
+     */
+    it('should drop a column replaced by one identical to it but for its name, suggesting the rename', async () => {
+      @Entity({ name: 'Doc' })
+      class DocBefore {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: 'text' }) legacyNotes?: string | null;
+      }
+      @Entity({ name: 'Doc' })
+      class DocAfter {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: 'text' }) publicSummary?: string | null;
+      }
+      await migratorOf({ entities: [DocBefore] }).sync();
+
+      const source = await readFile(
+        await migratorOf({ entities: [DocAfter] }).generateFromEntities('summary'),
+        'utf-8',
+      );
+
+      expect(source).toContain('ALTER TABLE \\`Doc\\` DROP COLUMN \\`legacyNotes\\`;');
+      expect(source).not.toContain('RENAME');
+      expect(logger).toHaveBeenCalledWith(
+        `"publicSummary" is identical to "Doc"."legacyNotes", which this migration drops: if one was renamed to the ` +
+          `other, replace both with \`renameColumn('Doc', 'legacyNotes', 'publicSummary')\`, which keeps its data.`,
+      );
+    });
+
+    it('should rename a column its naming strategy now spells otherwise, keeping its data', async () => {
+      @Entity({ name: 'Person' })
+      class PersonBefore {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String }) firstName?: string | null;
+      }
+      @Entity({ name: 'Person' })
+      class PersonAfter {
+        @Id({ type: Number }) id?: number;
+        @Field({ type: String, name: 'first_name' }) firstName?: string | null;
+      }
+      await migratorOf({ entities: [PersonBefore] }).sync();
+      await pool.insertOne(PersonBefore, { firstName: 'Ada' });
+      const migrator = migratorOf({ entities: [PersonAfter] });
+
+      const filePath = await migrator.generateFromEntities('snake_case');
+      expect(await readFile(filePath, 'utf-8')).toContain(
+        'ALTER TABLE \\`Person\\` RENAME COLUMN \\`firstName\\` TO \\`first_name\\`;',
+      );
+      await linkUqlOrmSource(filePath);
+      await migrator.up();
+      expect(await pool.findMany(PersonAfter, { $select: { firstName: true } })).toEqual([{ firstName: 'Ada' }]);
+      expect(logger).not.toHaveBeenCalledWith(expect.stringContaining('is identical to'));
     });
 
     it('should write no migration where the database already matches', async () => {
@@ -278,7 +435,7 @@ describe('Migrator', () => {
       );
 
       const down = source.split('async down')[1];
-      expect([...down.matchAll(/DROP TABLE IF EXISTS `(\w+)`/g)].map(([, table]) => table)).toEqual([
+      expect([...down.matchAll(/DROP TABLE IF EXISTS \\`(\w+)\\`/g)].map(([, table]) => table)).toEqual([
         'MigBook',
         'MigAuthor',
       ]);
@@ -295,17 +452,20 @@ describe('Migrator', () => {
       class Second {
         @Id({ type: Number }) id?: number;
       }
-      await pool.run('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)');
-      await pool.run('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)');
+      await pool.run(raw.text('CREATE TABLE `First` (`id` INTEGER PRIMARY KEY)'));
+      await pool.run(raw.text('CREATE TABLE `Second` (`id` INTEGER PRIMARY KEY, `b` TEXT)'));
       const migrator = migratorOf({ entities: [First, Second] });
 
-      const source = await readFile(await migrator.generateFromEntities('reorder'), 'utf-8');
+      const filePath = await migrator.generateFromEntities('reorder');
+      const source = await readFile(filePath, 'utf-8');
 
       const down = source.split('async down')[1];
-      expect([...down.matchAll(/querier\.run\("(.+?)"\)/g)].map(([, sql]) => sql)).toEqual([
+      const statements = [...down.matchAll(/querier\.run`((?:\\.|[^`\\])*)`;/g)];
+      expect(statements.map(([, sql]) => sql.replace(/\\([\\`$])/g, '$1'))).toEqual([
         'ALTER TABLE `Second` ADD COLUMN `b` TEXT;',
         'ALTER TABLE `First` DROP COLUMN `a`;',
       ]);
+      await linkUqlOrmSource(filePath);
       await migrator.up();
       await migrator.down();
       expect([await columns('First'), await columns('Second')]).toEqual([['id'], ['id', 'b']]);
@@ -322,6 +482,18 @@ describe('Migrator', () => {
       expect(logger).toHaveBeenCalledWith('Schema synchronization completed');
       await migrator.sync({ logging: true });
       expect(logger).toHaveBeenCalledWith('Schema is already in sync.');
+    });
+
+    /** A drop that takes its foreign keys along needs to know only which tables are there. */
+    it('should force a sync reading no more than which tables exist', async () => {
+      const migrator = migratorOf({ entities: [MigAuthor, MigBook] });
+      await migrator.sync();
+      const read = vi.spyOn(migrator.schemaIntrospector, 'getTableSchema');
+
+      await migrator.sync({ force: true });
+
+      expect(read).not.toHaveBeenCalled();
+      expect(await tables()).toEqual(['MigAuthor', 'MigBook']);
     });
 
     /** The tables a relation reaches are read too, so its foreign key compares against the table it points at. */
@@ -373,7 +545,7 @@ describe('Migrator', () => {
       const pool = poolOf(new MongoDialect());
 
       await expect(runDriftCheck(new Migrator(pool), { pool, entities: [MigNote] })).rejects.toThrow(
-        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
+        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index and validator changes a sync would make',
       );
     });
   });
@@ -385,45 +557,53 @@ describe('Migrator', () => {
  * mocked querier fails at that point, under the real `transaction`.
  */
 describe('Migrator under a failing connection', () => {
-  const noteMigration: Migration = {
-    name: 'm1',
-    up: async (querier: SqlQuerier) => {
-      await querier.run('CREATE TABLE "MigNote" ("id" INTEGER)');
-    },
-    down: async () => {},
-  };
+  let dir: string;
+
+  beforeEach(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'uql-migrator-'));
+    await writeFile(
+      join(dir, 'm1.mjs'),
+      `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+      export default { up: (querier) => querier.run(raw.text('CREATE TABLE "MigNote" ("id" INTEGER)')), down: async () => {} };`,
+    );
+  });
+
+  afterEach(() => rm(dir, { recursive: true, force: true }));
+
   const migratorOn = (querier: Querier) =>
     new Migrator(
       createMockQuerierPool(new PostgresDialect(), async () => querier),
-      { entities: [MigNote] },
+      { entities: [MigNote], migrationsPath: dir },
     );
+
+  /** A Postgres connection taking the lock at its first read and finding the journal empty at the next. */
   const failing = () => {
-    const querier = createMockQuerier({ all: vi.fn(async () => []), run: vi.fn(), dialect: new PostgresDialect() });
+    const querier = createMockQuerier({
+      all: vi.fn(async (): Promise<object[]> => []),
+      run: vi.fn(async () => ({})),
+      dialect: new PostgresDialect(),
+    });
+    querier.all.mockResolvedValueOnce([{}]);
     return { querier, migrator: migratorOn(querier) };
   };
 
   it("should report why a migration's transaction never started, not that it is missing", async () => {
     const { querier, migrator } = failing();
-    querier.beginTransaction.mockRejectedValueOnce(new Error('password authentication failed'));
+    querier.transaction.mockRejectedValueOnce(new Error('password authentication failed'));
 
-    await expect(migrator.runMigration(noteMigration, 'up')).resolves.toMatchObject({
-      success: false,
-      error: new Error('password authentication failed'),
-    });
+    await expect(migrator.up()).rejects.toThrow('password authentication failed');
     expect(querier.release).toHaveBeenCalled();
   });
 
-  /** A rollback that fails too is a consequence of the original error, and must not replace it. */
-  it('should keep the original error of a migration when the rollback fails too', async () => {
+  /** Released when the migration failed, its error kept: a release failing too is a consequence of it. */
+  it('should keep the original error of a migration when releasing the lock fails too', async () => {
     const { querier, migrator } = failing();
-    querier.run.mockRejectedValueOnce(new Error('Migration error'));
-    querier.rollbackTransaction.mockRejectedValueOnce(new Error('connection is dead'));
+    querier.run
+      .mockResolvedValueOnce({})
+      .mockRejectedValueOnce(new Error('Migration error'))
+      .mockRejectedValueOnce(new Error('connection is dead'));
 
-    await expect(migrator.runMigration(noteMigration, 'up')).resolves.toMatchObject({
-      success: false,
-      error: new Error('Migration error'),
-    });
-    expect(querier.release).toHaveBeenCalled();
+    await expect(migrator.up()).rejects.toThrow('Migration error');
   });
 
   it('should refuse a querier that is not SQL, and release it', async () => {
@@ -431,7 +611,7 @@ describe('Migrator under a failing connection', () => {
     const migrator = migratorOn(querier);
 
     await expect(migrator.sync({ force: true })).rejects.toThrow('requires a SQL-based querier');
-    await expect(migrator.runMigration(noteMigration, 'up')).rejects.toThrow('Migrator requires a SQL-based querier');
+    await expect(migrator.up()).rejects.toThrow('Migrator requires a SQL-based querier');
     expect(querier.release).toHaveBeenCalledTimes(2);
   });
 });

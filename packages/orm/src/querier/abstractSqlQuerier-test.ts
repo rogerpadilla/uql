@@ -23,7 +23,7 @@ import {
   User,
   violateConstraints,
 } from '../test/index.js';
-import type { Type } from '../type/index.js';
+import type { QueryRaw, Type } from '../type/index.js';
 import { currentTimestamp, raw, refs } from '../util/index.js';
 import { AbstractQuerierIt } from './abstractQuerier-test.js';
 import { AbstractSharedHandleQuerierPool } from './abstractSharedHandleQuerierPool.js';
@@ -102,8 +102,9 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
   async shouldFindManyAndCountUnderALock() {
     await this.querier.insertMany(LedgerAccount, [{ name: 'a' }, { name: 'b' }, { name: 'c' }]);
 
-    await this.querier.beginTransaction();
-    const [rows, total] = await this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true });
+    const [rows, total] = await this.querier.transaction(() =>
+      this.querier.findManyAndCount(LedgerAccount, { $limit: 2, $lock: true }),
+    );
 
     expect([rows.length, total]).toEqual([2, 3]);
   }
@@ -120,25 +121,36 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     await this.querier.findMany(LedgerAccount, { $select: { id: true } });
 
     const other = await this.pool.getQuerier();
+    const firstThree = { $sort: { id: 'asc' }, $limit: 3, $lock: { $wait: 'skip' } } as const;
+    const { promise: mineTaken, resolve: takeMine } = Promise.withResolvers<LedgerAccount['id'][]>();
+    const { promise: othersDone, resolve: finishOthers } = Promise.withResolvers<void>();
     try {
-      await this.querier.beginTransaction();
-      await other.beginTransaction();
+      const held = this.querier.transaction(async () => {
+        const mine = await this.querier.findMany(LedgerAccount, firstThree);
+        takeMine(mine.map((it) => it.id));
+        await othersDone;
+      });
+      const mineIds = await mineTaken;
+      const theirs = await other.transaction(() => other.findMany(LedgerAccount, firstThree));
+      const refused = await other
+        .transaction(() =>
+          other.findMany(LedgerAccount, {
+            $select: { id: true },
+            $where: { id: mineIds[0] },
+            $lock: { $wait: 'nowait' },
+          }),
+        )
+        .catch((thrown: unknown) => thrown);
+      finishOthers();
+      await held;
 
-      const lock = { $wait: 'skip' } as const;
-      const mine = await this.querier.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
-      const theirs = await other.findMany(LedgerAccount, { $sort: { id: 'asc' }, $limit: 3, $lock: lock });
-
-      expect(mine).toHaveLength(3);
+      expect(mineIds).toHaveLength(3);
       expect(theirs).toHaveLength(3);
-      const mineIds = mine.map((it) => it.id);
       const theirsIds = theirs.map((it) => it.id);
       expect(mineIds.filter((id) => theirsIds.includes(id))).toEqual([]);
-
-      const refused = await other
-        .findMany(LedgerAccount, { $select: { id: true }, $where: { id: mineIds[0] }, $lock: { $wait: 'nowait' } })
-        .catch((thrown: unknown) => thrown);
       expect(queryErrorKind(refused)).toBe('retryable');
     } finally {
+      finishOthers();
       await other.release();
     }
   }
@@ -312,7 +324,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
    * What survives a round-trip through a DECIMAL column declared `String`: the text itself, on every
    * engine that has a real DECIMAL, which the SQLite family has not.
    */
-  protected expectedExactDecimal(): string | number {
+  protected expectedExactDecimal(): string {
     return EXACT_DECIMAL;
   }
 
@@ -460,8 +472,8 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     );
   }
 
-  protected wideIntegerSql(): string {
-    return 'SELECT 9007199254740993 AS big';
+  protected wideIntegerSql(): QueryRaw {
+    return raw`SELECT 9007199254740993 AS big`;
   }
 
   override recreateTables(_querier: AbstractSqlQuerier) {
@@ -470,6 +482,23 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   override clearTables() {
     return clearTables(this.querier);
+  }
+
+  /** Each nested transaction a savepoint inside the last, all committing with the outermost. */
+  async shouldReuseDeeplyNestedTransactions() {
+    const result = await this.querier.transaction(async () => {
+      await this.querier.insertOne(User, { name: 'level-1' });
+      return this.querier.transaction(async () => {
+        await this.querier.insertOne(User, { name: 'level-2' });
+        return this.querier.transaction(async () => {
+          await this.querier.insertOne(User, { name: 'level-3' });
+          return this.querier.count(User, {});
+        });
+      });
+    });
+
+    expect(result).toBe(3);
+    await expect(this.querier.count(User, {})).resolves.toBe(3);
   }
 
   /** Needing no id, a tally composes with a raw projection too. */
@@ -501,12 +530,12 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     ]);
 
     const inserted = await this.querier.findOne(Coupon, { $select: { id: true }, $where: { code: 'BRAND-NEW' } });
-    expect(result).toEqual({ ids: [inserted?.id, existingId], changes: this.upsertReport(1, 1).changes });
+    expect(result).toEqual([inserted?.id, existingId]);
   }
 
   /** A statement per shape, which reorders the rows: the ids still have to follow the payload. */
   async shouldUpsertManyReportIdsInPayloadOrder() {
-    const { ids } = await this.querier.upsertMany(Coupon, { code: true }, [
+    const ids = await this.querier.upsertMany(Coupon, { code: true }, [
       { code: 'A', label: 'x' },
       { code: 'B' },
       { code: 'C', label: 'y' },
@@ -527,7 +556,7 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
 
   /** Pins each engine's bind budget against its server: a statement binding that many values has to run. */
   async shouldRunAStatementFillingTheBindBudget() {
-    const rows = await this.querier.all(...this.readBinding(this.querier.dialect.maxBindValues));
+    const rows = await this.querier.all(this.readBinding(this.querier.dialect.maxBindValues));
 
     expect(rows).toHaveLength(1);
   }
@@ -558,22 +587,22 @@ export abstract class AbstractSqlQuerierIt extends AbstractQuerierIt<AbstractSql
     expect([updated, deleted]).toEqual([count, count]);
   }
 
-  /** A read binding `count` values, a placeholder each, in the dialect's own spelling. */
-  private readBinding(count: number): [string, number[]] {
+  /** A read binding `count` values. */
+  private readBinding(count: number): QueryRaw {
     const { dialect } = this.querier;
-    const values = Array.from({ length: count }, (_, index) => index);
-    const placeholders = values.map((_, index) => dialect.placeholder(index + 1)).join(', ');
-    return [
-      `SELECT COUNT(*) AS n FROM ${dialect.escapeId('Coupon')} WHERE ${dialect.escapeId('id')} IN (${placeholders})`,
-      values,
-    ];
+    const ids = raw(({ ctx }) => {
+      for (let index = 0; index < count; index++) {
+        ctx.append(index ? ', ' : '').addValue(index);
+      }
+    });
+    return raw`SELECT COUNT(*) AS n FROM ${raw.text(dialect.escapeId('Coupon'))} WHERE ${raw.text(dialect.escapeId('id'))} IN (${ids})`;
   }
 
   /** Matched on a column that is not the key, which leaves MySQL's header with no id for the row. */
   async shouldUpsertOneReportTheIdOfTheRowItUpdated() {
     const existingId = await this.querier.insertOne(Coupon, { code: 'EXISTING', label: 'Old' });
 
-    const { id } = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
+    const id = await this.querier.upsertOne(Coupon, { code: true }, { code: 'EXISTING', label: 'Updated' });
 
     expect(id).toBe(existingId);
   }

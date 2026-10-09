@@ -3,7 +3,7 @@ import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { D1SqliteDialect } from '../d1/d1SqliteDialect.js';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, OneToMany } from '../entity/index.js';
 import { LibsqlDialect } from '../libsql/libsqlDialect.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';

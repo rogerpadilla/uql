@@ -56,7 +56,7 @@ describe('createFetchHandler', () => {
     expect(resp.status).toBe(200);
     expect(await resp.json()).toEqual({ data: 1, count: 1 });
     expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'John' });
-    expect(mockQuerier.commitTransaction).toHaveBeenCalled();
+    expect(mockQuerier.transaction).toHaveBeenCalled();
   });
 
   it('should read with the JSON query in the body of a QUERY (RFC 10008)', async () => {

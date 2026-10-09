@@ -9,6 +9,7 @@ import type {
   ExactlyOne,
   IsEqual,
   IsJson,
+  JsonBrand,
   IsMany,
   Json,
   Scalar,
@@ -45,7 +46,7 @@ export type Key<E> = keyof E & string;
  * class is kept off the `Json` arm by the weak-type check.
  */
 export type FieldKey<E> = {
-  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | Json | readonly Json[]]
+  readonly [K in keyof E]-?: [NonNullable<E[K]>] extends [Scalar | readonly Scalar[] | JsonBrand | readonly JsonBrand[]]
     ? K
     : never;
 }[Key<E>];
@@ -103,8 +104,9 @@ export type ToOneRelationKey<E> = { [K in RelationKey<E>]: IsMany<E[K]> extends 
 /** The relation names a parent holds many rows of: what a populated query fills, and what an aggregate reads. */
 export type ToManyRelationKey<E> = Exclude<RelationKey<E>, ToOneRelationKey<E>>;
 
-/** The payload `P` of a branded `Json<P>`, or `never` for any other type. */
-type UnwrapJson<T> = IsJson<T> extends true ? (T extends Json<infer P> ? P : never) : never;
+/** The payload `P` of a branded `Json<P>`, `unknown` for a bare `Json`, which any path reads into, or `never` for any other type. */
+type UnwrapJson<T> =
+  IsJson<T> extends true ? (IsEqual<T, Json> extends true ? unknown : T extends Json<infer P> ? P : never) : never;
 
 /** What a JSON column declared as `V` holds, `Json<P>` or `Json<P>[]` alike; `never` on any other column. */
 type JsonPayload<V, T = NonNullable<V>> = IsJson<T> extends true ? UnwrapJson<T> : UnwrapJson<NonNullable<Unpacked<T>>>;
@@ -325,6 +327,9 @@ export type DateColumnType = ColumnTypeOf<'date'>;
 
 /** A date column holding a time of day, which names no day: every driver reads it back as text, never a `Date`. */
 type TimeColumnType = 'time';
+
+/** A numeric column holding an exact decimal, read as its text: a JS number would round it. */
+type DecimalColumnType = 'decimal' | 'numeric';
 export type JsonColumnType = ColumnTypeOf<'json'>;
 export type BlobColumnType = ColumnTypeOf<'blob'>;
 export type BooleanColumnType = ColumnTypeOf<'boolean'>;
@@ -368,9 +373,9 @@ export type TypeFor<V, T = NonNullable<V>> =
     : T extends readonly number[]
       ? VectorColumnType
       : T extends string
-        ? StringConstructor | StringColumnType | TimeColumnType
+        ? StringConstructor | StringColumnType | TimeColumnType | DecimalColumnType
         : T extends number
-          ? NumberConstructor | NumericColumnType
+          ? NumberConstructor | Exclude<NumericColumnType, DecimalColumnType>
           : T extends bigint
             ? BigIntConstructor | NumericColumnType
             : T extends boolean
@@ -496,7 +501,7 @@ export type TsTypeOf<T> = T extends StringConstructor
         ? boolean
         : T extends DateConstructor
           ? Date
-          : T extends StringColumnType | TimeColumnType
+          : T extends StringColumnType | TimeColumnType | DecimalColumnType
             ? string
             : T extends NumericColumnType
               ? number | bigint
@@ -505,7 +510,7 @@ export type TsTypeOf<T> = T extends StringConstructor
                 : T extends DateColumnType
                   ? Date
                   : T extends JsonColumnType
-                    ? Json<unknown> | readonly Json<unknown>[]
+                    ? JsonBrand | readonly JsonBrand[]
                     : T extends BlobColumnType
                       ? Uint8Array
                       : T extends VectorColumnType
@@ -533,18 +538,17 @@ export type FieldOptionsFor<V, E = unknown> =
 type DeclaresNotNull<V> = null extends V ? unknown : { readonly nullable: false };
 
 /**
- * A field a relation aggregate computes: the aggregate types it, so it declares no `type`, and only the
- * two a row change turns into a delta - `count` and `sum` - may be `stored`.
+ * A field a relation aggregate computes: the aggregate types it, so it declares no `type`, and it is
+ * read on each query, never `stored`.
  */
-type AggregateOptionsFor<V, E> = Except<FieldOptions<NonNullable<V>, E>, 'computed' | 'stored' | 'type'> &
-  (
-    | { readonly computed: AggregateReading<E, V, boolean>; readonly stored?: false }
-    | { readonly computed: AggregateReading<E, V, true>; readonly stored: true }
-  );
+type AggregateOptionsFor<V, E> = Except<FieldOptions<NonNullable<V>, E>, 'computed' | 'stored' | 'type'> & {
+  readonly computed: AggregateReading<E, V>;
+  readonly stored?: false;
+};
 
 /** An aggregate reading what the property holds, bivariant the way {@link EntitySql} is. */
-type AggregateReading<E, V, S extends boolean> = {
-  agg(refs: ComputedRefs<E>): RelationAggregate<null extends V ? NonNullable<V> | null : NonNullable<V>, S>;
+type AggregateReading<E, V> = {
+  agg(refs: ComputedRefs<E>): RelationAggregate<null extends V ? NonNullable<V> | null : NonNullable<V>>;
 }['agg'];
 
 /** The entity a relation points at: `Company` for `company?: Company` and `companies?: Company[]` alike. */
@@ -639,9 +643,12 @@ type RelationOwnerJoin<E, O> =
   | (Required<Pick<RelationOptions<E, O>, 'through'>> & { readonly references?: never })
   | { readonly references: RelationReferencePairs<E, O>; readonly through?: never };
 
-/** The side holding the foreign key, which `references` names and the actions attach to. */
-type RelationOptionsOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade' | 'onDelete' | 'onUpdate'> &
-  Required<Pick<RelationOptions<E, O>, 'references'>>;
+/**
+ * The side holding the foreign key, which `references` names and the actions attach to. It cascades
+ * `'persist'` only: its target may be other rows' too, so a delete cascades from the side owning the rows.
+ */
+type RelationOptionsOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'onDelete' | 'onUpdate'> &
+  Required<Pick<RelationOptions<E, O>, 'references'>> & { readonly cascade?: 'persist' };
 type RelationOptionsInverseSide<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> &
   Required<Pick<RelationOptions<E, O>, 'mappedBy'>>;
 type RelationOptionsThroughOwner<E, O> = Pick<RelationOptions<E, O>, 'entity' | 'cascade'> & RelationOwnerJoin<E, O>;
@@ -659,39 +666,26 @@ export type EntitySql<E> = QueryRaw | { sql(refs: RefMap<E>): QueryRaw }['sql'];
 type PickRef<C, K extends keyof C> = (refs: RefMap<C>) => ColumnRef<K & string>;
 
 /**
- * A relation as a `computed` field reads it, its aggregates typed against the related entity. `count`
- * and `sum` are the two a row change turns into a delta, so they alone may be `stored`; the rest read
- * as a subquery and are `null` where the relation holds no row.
+ * A relation as a `computed` field reads it, its aggregates typed against the related entity. Each
+ * reads as a subquery; all but `count` and `sum` are `null` where the relation holds no row.
  */
 export type RelationRef<C> = {
-  count(q?: AggregateFilter<C>): RelationAggregate<number, true>;
-  count(q: AggregatePage<C>): RelationAggregate<number, false>;
+  count(q?: AggregatePage<C>): RelationAggregate<number>;
   sum<K extends FieldKeyOf<C, number | bigint>>(
     pick: PickRef<C, K>,
-    q?: AggregateFilter<C>,
-  ): RelationAggregate<NonNullable<C[K]>, true>;
-  sum<K extends FieldKeyOf<C, number | bigint>>(
-    pick: PickRef<C, K>,
-    q: AggregateTopRows<C>,
-  ): RelationAggregate<NonNullable<C[K]>, false>;
-  min<K extends FieldKey<C>>(
-    pick: PickRef<C, K>,
     q?: AggregateRows<C>,
-  ): RelationAggregate<NonNullable<C[K]> | null, false>;
-  max<K extends FieldKey<C>>(
-    pick: PickRef<C, K>,
-    q?: AggregateRows<C>,
-  ): RelationAggregate<NonNullable<C[K]> | null, false>;
+  ): RelationAggregate<NonNullable<C[K]>>;
+  min<K extends FieldKey<C>>(pick: PickRef<C, K>, q?: AggregateRows<C>): RelationAggregate<NonNullable<C[K]> | null>;
+  max<K extends FieldKey<C>>(pick: PickRef<C, K>, q?: AggregateRows<C>): RelationAggregate<NonNullable<C[K]> | null>;
   avg<K extends FieldKeyOf<C, number | bigint>>(
     pick: PickRef<C, K>,
     q?: AggregateRows<C>,
-  ): RelationAggregate<number | null, false>;
+  ): RelationAggregate<number | null>;
 };
 
 /**
- * What an aggregate reads of the related rows. The predicate is an {@link EntityPredicate} rather than a
- * full `$where` so that `stored: true` changes no call site: a trigger sees one row, and can evaluate
- * nothing that traverses a relation or opens a subquery.
+ * What an aggregate reads of the related rows: an {@link EntityPredicate} over each row's own fields,
+ * so a trigger could keep the aggregate one row at a time without any call site changing.
  */
 export type AggregateFilter<C> = { readonly $where?: EntityPredicate<C> };
 
@@ -710,7 +704,7 @@ export type AggregateTopRows<C> = AggregateFilter<C> &
   Required<Pick<RelationQuery<C>, '$sort' | '$limit'>> &
   Pick<RelationQuery<C>, '$skip'>;
 
-/** Either of those, for the aggregates that are never `stored` and so need no second signature. */
+/** Every related row, filtered or not, or the top ones an order picks. */
 export type AggregateRows<C> = AggregateFilter<C> | AggregateTopRows<C>;
 
 /** What a `computed` callback reads: the entity's fields as columns, its to-many relations as aggregates. */

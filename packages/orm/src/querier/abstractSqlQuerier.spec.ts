@@ -3,7 +3,8 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { createMockQuerierPool } from '../test/mockQuerierPool.js';
-import type { ExtraOptions, Json, QueryUpdateResult, RawRow } from '../type/index.js';
+import type { ExtraOptions, Json, QueryUpdateResult, QueryWhere, RawRow } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import type { QueryError } from './queryError.js';
@@ -37,6 +38,7 @@ class StubSqlQuerier extends AbstractSqlQuerier {
   rows: RawRow[] = [];
   failOn?: string;
   failure: unknown = new Error('driver rejected the statement');
+  readonly statements: string[] = [];
   releases = 0;
   handedBackWithOpenTransaction = false;
 
@@ -54,6 +56,7 @@ class StubSqlQuerier extends AbstractSqlQuerier {
   }
 
   protected override async internalRun(query: string): Promise<QueryUpdateResult> {
+    this.statements.push(query);
     if (query === this.failOn) {
       throw this.failure;
     }
@@ -156,11 +159,27 @@ describe('AbstractQuerier logger', () => {
   });
 });
 
+describe('AbstractSqlQuerier returning', () => {
+  /** A key the driver did not report cannot name the row to read back, which `returning` needs. */
+  it('should refuse to return a row whose key the driver did not report', async () => {
+    await expect(
+      new StubSqlQuerier().insertOne(HydratedParent, { name: 'a' }, { returning: { name: true } }),
+    ).rejects.toThrow('did not report for every row');
+  });
+
+  /** A row gone before it is read back, which a trigger can do, is not returned. */
+  it('should return nothing for a written row it cannot read back', async () => {
+    expect(
+      await new StubSqlQuerier().insertOne(HydratedParent, { id: 1, name: 'a' }, { returning: { name: true } }),
+    ).toBeUndefined();
+  });
+});
+
 describe('AbstractSqlQuerier error context', () => {
   /** Drains a stream query and returns the error the stub driver ends it with. */
-  function streamError(querier: StubSqlQuerier, name?: string): Promise<QueryError> {
+  function streamError(querier: StubSqlQuerier, $where: QueryWhere<HydratedParent> = {}): Promise<QueryError> {
     const consume = async () => {
-      for await (const _row of querier.findManyStream(HydratedParent, { $where: { name } })) {
+      for await (const _row of querier.findManyStream(HydratedParent, { $where })) {
         // drain until the stub driver throws
       }
     };
@@ -171,40 +190,45 @@ describe('AbstractSqlQuerier error context', () => {
   }
 
   /** Transaction statements are not run through `timed()`, so they attach their own query context. */
-  it('should attach the failing BEGIN statement to the error', async () => {
+  it('should attach the failing BEGIN statement to the error and never run the callback', async () => {
     const querier = new StubSqlQuerier();
     querier.failOn = 'BEGIN TRANSACTION';
+    const callback = vi.fn(async () => {});
 
-    await expect(querier.beginTransaction()).rejects.toMatchObject({ query: 'BEGIN TRANSACTION' });
-    expect(querier.hasOpenTransaction).toBe(false);
+    await expect(querier.transaction(callback)).rejects.toMatchObject({ query: 'BEGIN TRANSACTION' });
+    expect(callback).not.toHaveBeenCalled();
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION']);
   });
 
-  it.each([
-    ['COMMIT', (querier: StubSqlQuerier) => querier.commitTransaction()],
-    ['ROLLBACK', (querier: StubSqlQuerier) => querier.rollbackTransaction()],
-  ] as const)('should attach the failing %s statement to the error', async (statement, act) => {
+  /** A COMMIT can be refused with the transaction left running (SQLITE_BUSY), and something still has to roll that back. */
+  it('should attach the failing COMMIT to the error and roll the transaction back', async () => {
     const querier = new StubSqlQuerier();
-    await querier.beginTransaction();
-    querier.failOn = statement;
-
-    await expect(act(querier)).rejects.toMatchObject({ query: statement });
-    // Still open, because the statement that would have ended it failed: a COMMIT can be refused with
-    // the transaction left running, and something still has to roll that back.
-    expect(querier.hasOpenTransaction).toBe(true);
-  });
-
-  /** The rollback a refused COMMIT still needs, which `release()` reaches on the way out. */
-  it('should roll back a transaction whose COMMIT was refused', async () => {
-    const querier = new StubSqlQuerier();
-    await querier.beginTransaction();
     querier.failOn = 'COMMIT';
 
-    await expect(querier.commitTransaction()).rejects.toMatchObject({ query: 'COMMIT' });
-    querier.failOn = undefined;
+    await expect(querier.transaction(async () => {})).rejects.toMatchObject({ query: 'COMMIT' });
     await querier.release();
 
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'COMMIT', 'ROLLBACK']);
     expect(querier.handedBackWithOpenTransaction).toBe(false);
     expect(querier.releases).toBe(1);
+  });
+
+  /** A refused ROLLBACK (SQL Server's, for a deadlock victim) left nothing open to roll back. */
+  it('should attach the failing ROLLBACK to the error and end the transaction', async () => {
+    const logError = vi.fn();
+    const querier = new StubSqlQuerier({ logger: { logError } });
+    querier.failOn = 'ROLLBACK';
+
+    await expect(
+      querier.transaction(async () => {
+        throw new TypeError('what actually went wrong');
+      }),
+    ).rejects.toThrow('what actually went wrong');
+    querier.failOn = undefined;
+    await querier.transaction(async () => {});
+
+    expect(logError).toHaveBeenCalledWith('rollback failed', expect.objectContaining({ query: 'ROLLBACK' }));
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'ROLLBACK', 'BEGIN TRANSACTION', 'COMMIT']);
   });
 
   /**
@@ -233,13 +257,47 @@ describe('AbstractSqlQuerier error context', () => {
   it('should still release when the rollback it does on the way out fails', async () => {
     const logError = vi.fn();
     const querier = new StubSqlQuerier({ logger: { logError } });
-    await querier.beginTransaction();
-    querier.failOn = 'ROLLBACK';
 
-    await expect(querier.release()).resolves.toBeUndefined();
+    await expect(
+      querier.transaction(async () => {
+        querier.failOn = 'ROLLBACK';
+        await expect(querier.release()).resolves.toBeUndefined();
+      }),
+    ).rejects.toThrow(UqlUsageError);
 
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'ROLLBACK']);
     expect(querier.releases).toBe(1);
     expect(logError).toHaveBeenCalled();
+  });
+
+  /** Its writes are gone, so the transaction cannot report a commit. */
+  it('should reject a transaction whose callback released the querier, which rolled it back', async () => {
+    const querier = new StubSqlQuerier();
+
+    await expect(querier.transaction(() => querier.release())).rejects.toThrow('released inside its transaction');
+
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'ROLLBACK']);
+    expect(querier.releases).toBe(1);
+  });
+
+  /** The callback owns its transaction, so a release from another flow waits for it to end. */
+  it('should release after the transaction another flow runs commits', async () => {
+    const querier = new StubSqlQuerier();
+    const { promise: started, resolve: start } = Promise.withResolvers<void>();
+    const { promise: gate, resolve: open } = Promise.withResolvers<void>();
+    const held = querier.transaction(async () => {
+      start();
+      await gate;
+    });
+    await started;
+
+    const released = querier.release();
+    open();
+    await Promise.all([held, released]);
+
+    expect(querier.statements).toEqual(['BEGIN TRANSACTION', 'COMMIT']);
+    expect(querier.handedBackWithOpenTransaction).toBe(false);
+    expect(querier.releases).toBe(1);
   });
 
   it('should attach the query of a failed stream', async () => {
@@ -256,19 +314,44 @@ describe('AbstractSqlQuerier error context', () => {
   it('should attach the values of a failed stream when the logger surfaces them', async () => {
     const querier = new StubSqlQuerier({ logger: { logQuery: vi.fn() }, logValues: true });
 
-    const err = await streamError(querier, 'maz');
+    const err = await streamError(querier, { name: 'maz' });
 
     expect(err.values).toEqual(['maz']);
   });
 
   it('should rethrow a non-Error driver rejection untouched', async () => {
     const querier = new StubSqlQuerier();
-    await querier.beginTransaction();
     querier.failOn = 'COMMIT';
     querier.failure = 'plain string failure';
 
-    await expect(querier.commitTransaction()).rejects.toBe('plain string failure');
+    await expect(querier.transaction(async () => {})).rejects.toBe('plain string failure');
   });
+});
+
+/** `all` and `run` are tags themselves, binding what they interpolate as `raw` does. */
+it('should take a statement written as a tag, binding each value', async () => {
+  const seen: [query?: string, values?: unknown[]][] = [];
+  class RecordingSqlQuerier extends StubSqlQuerier {
+    protected override async internalAll<T>(...statement: [query?: string, values?: unknown[]]): Promise<T[]> {
+      seen.push(statement);
+      return [];
+    }
+    protected override async internalRun(
+      ...statement: [query?: string, values?: unknown[]]
+    ): Promise<QueryUpdateResult> {
+      seen.push(statement);
+      return { changes: 0 };
+    }
+  }
+  const querier = new RecordingSqlQuerier();
+
+  await querier.all`SELECT * FROM t WHERE id = ${1}`;
+  await querier.run`DELETE FROM t WHERE id = ${2}`;
+
+  expect(seen).toEqual([
+    ['SELECT * FROM t WHERE id = ?', [1]],
+    ['DELETE FROM t WHERE id = ?', [2]],
+  ]);
 });
 
 /** Refused before the driver sees it, which would fail it, or on PGlite answer it and every read after it wrong. */
@@ -276,7 +359,9 @@ it('should refuse a statement past the bind budget', async () => {
   const querier = new StubSqlQuerier();
   const values = Array.from({ length: querier.dialect.maxBindValues + 1 }, (_, index) => index);
 
-  await expect(querier.all('SELECT 1', values)).rejects.toThrow(UqlUsageError);
+  await expect(querier.all(raw(({ ctx }) => ctx.append('SELECT 1').pushValue(...values)))).rejects.toThrow(
+    UqlUsageError,
+  );
 });
 
 describe('AbstractSqlQuerier stream', () => {

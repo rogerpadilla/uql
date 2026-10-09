@@ -1,20 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { createMockQuerier } from '../../test/index.js';
+import { createMockQuerier, sentStatements } from '../../test/index.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
-import { MigrationBuilder } from './migrationBuilder.js';
+import { MigrationOperationBuilder } from './migrationBuilder.js';
 import type { AnyMigrationOperation } from './types.js';
 
 /** A builder keeping each operation it is handed, in `operations`. */
 function recording() {
   const operations: AnyMigrationOperation[] = [];
-  const recorder = new MigrationBuilder(async (operation) => {
+  const recorder = new MigrationOperationBuilder(async (operation) => {
     operations.push(operation);
   });
   return { recorder, operations };
 }
 
-describe('MigrationBuilder operations', () => {
+describe('MigrationOperationBuilder operations', () => {
   describe('createTable', () => {
     it('should record createTable operation', async () => {
       const { recorder, operations } = recording();
@@ -333,8 +333,10 @@ describe('MigrationBuilder operations', () => {
 });
 
 describe('migrationBuilderFor', () => {
-  const sqlQuerier = () =>
-    createMockQuerier({ all: vi.fn(), run: vi.fn().mockResolvedValue({}), dialect: new PostgresDialect() });
+  const dialect = new PostgresDialect();
+  const sqlQuerier = () => createMockQuerier({ all: vi.fn(), run: vi.fn().mockResolvedValue({}), dialect });
+  const sentSql = (querier: ReturnType<typeof sqlQuerier>) =>
+    sentStatements(dialect, querier.run).map(({ sql }) => sql);
 
   describe('execution', () => {
     it('should generate SQL and run it', async () => {
@@ -345,9 +347,8 @@ describe('migrationBuilderFor', () => {
         table.id();
       });
 
-      expect(mockQuerier.run).toHaveBeenCalled();
-      const calledSql = mockQuerier.run.mock.calls[0][0];
-      expect(calledSql).toContain('CREATE TABLE "users"');
+      const [created] = sentSql(mockQuerier);
+      expect(created).toContain('CREATE TABLE "users"');
     });
   });
 
@@ -362,8 +363,7 @@ describe('migrationBuilderFor', () => {
         table.dropColumn('legacy');
       });
 
-      expect(mockQuerier.run).toHaveBeenCalledTimes(2);
-      expect(mockQuerier.run.mock.calls.map(([sql]) => sql)).toEqual([
+      expect(sentSql(mockQuerier)).toEqual([
         'ALTER TABLE "users" ADD COLUMN "nickname" VARCHAR(255);',
         'ALTER TABLE "users" DROP COLUMN "legacy";',
       ]);
@@ -377,7 +377,7 @@ describe('migrationBuilderFor', () => {
 
       await builder.raw('SELECT 1');
 
-      expect(mockQuerier.run).toHaveBeenCalledWith('SELECT 1');
+      expect(sentSql(mockQuerier)).toEqual(['SELECT 1']);
     });
   });
 
@@ -399,8 +399,9 @@ describe('migrationBuilderFor', () => {
       await builder.dropForeignKey('t', 'f');
 
       // Each operation should have called querier.run, an alter once for all its clauses
-      expect(mockQuerier.run).toHaveBeenCalledTimes(11);
-      expect(mockQuerier.run).toHaveBeenCalledWith(
+      const sent = sentSql(mockQuerier);
+      expect(sent).toHaveLength(11);
+      expect(sent).toContain(
         'ALTER TABLE "t" ALTER COLUMN "c" TYPE INTEGER USING "c"::INTEGER, ALTER COLUMN "c" DROP NOT NULL, ALTER COLUMN "c" DROP DEFAULT;',
       );
     });

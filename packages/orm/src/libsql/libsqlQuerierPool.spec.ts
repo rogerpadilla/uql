@@ -1,5 +1,6 @@
 import { createClient } from '@libsql/client';
 import { describe, expect, it } from 'vitest';
+
 import { LibsqlQuerierPool } from './libsqlQuerierPool.js';
 
 /** A server nothing listens on: an HTTP client opens no connection until a statement is sent. */
@@ -10,7 +11,7 @@ describe('LibsqlQuerierPool', () => {
     const pool = new LibsqlQuerierPool({ url: ':memory:', intMode: 'number' });
     const querier = await pool.getQuerier();
 
-    expect(await querier.all('SELECT 9007199254740993 AS big')).toEqual([{ big: '9007199254740993' }]);
+    expect(await querier.all`SELECT 9007199254740993 AS big`).toEqual([{ big: '9007199254740993' }]);
     await pool.end();
   });
 
@@ -43,7 +44,7 @@ describe('LibsqlQuerierPool', () => {
     const pool = new LibsqlQuerierPool({ url: 'file:replica.db', syncUrl: unreachable });
 
     const migration = await pool.getMigrationQuerier();
-    await expect(migration.all('SELECT 1')).rejects.toThrow('fetch failed');
+    await expect(migration.all`SELECT 1`).rejects.toThrow('fetch failed');
     await migration.release();
 
     await expect(migration.client.execute({ sql: 'SELECT 1' })).rejects.toThrow('Client is closed');
@@ -55,7 +56,7 @@ describe('LibsqlQuerierPool', () => {
 
     await pool.end();
 
-    await expect(querier.all('SELECT 1')).rejects.toThrow('CLIENT_CLOSED');
+    await expect(querier.all`SELECT 1`).rejects.toThrow('CLIENT_CLOSED');
   });
 
   it('should close nothing on end when no querier was acquired', async () => {

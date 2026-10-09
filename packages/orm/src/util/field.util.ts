@@ -11,6 +11,7 @@ import {
   type RelationAggregateSpec,
 } from '../type/index.js';
 import { definedEntries, getKeys } from './object.util.js';
+import { UqlUsageError } from './uqlError.js';
 
 // Constructors and type strings in one map: a logical type is either, and every caller asks the same
 // question of both.
@@ -26,6 +27,15 @@ const FAMILY_OF = new Map<unknown, ColumnFamily>([
 /** The family of a logical field type, or `undefined` where it names none. */
 export function columnFamily(type: unknown): ColumnFamily | undefined {
   return FAMILY_OF.get(typeof type === 'string' ? type.toLowerCase() : type);
+}
+
+/**
+ * Whether a field reads as an exact decimal's text: a DECIMAL column not declared `Number` or `BigInt`,
+ * which opt in to a JS number, rounding where it has to.
+ */
+export function isExactDecimal(field: Pick<FieldOptions, 'type' | 'columnType'>): boolean {
+  const column = field.columnType ?? field.type;
+  return field.type !== Number && field.type !== BigInt && (column === 'decimal' || column === 'numeric');
 }
 
 /** The numeric column types that hold whole numbers. */
@@ -139,4 +149,24 @@ export function fieldKeys<E>(meta: EntityMeta<E>, pick: (field: FieldMeta) => un
  */
 export function defaultReadKeys<E>(meta: EntityMeta<E>): FieldKey<E>[] {
   return fieldKeys(meta, (field) => field.eager ?? !aggregateOf(field));
+}
+
+const JSON_KEY = /^[\p{L}_][\p{L}\p{N}_]*$/u;
+
+/**
+ * A JSON document key, refused unless it is an identifier: the one shape every engine's path reads
+ * unquoted, so a key never needs escaping into SQL and never reads as path syntax.
+ */
+export function jsonKey(key: string): string {
+  if (!JSON_KEY.test(key)) {
+    throw new UqlUsageError(
+      `'${key}' is not a JSON key: name one with letters, digits and '_', not starting with a digit`,
+    );
+  }
+  return key;
+}
+
+/** The keys of a dotted JSON path (`settings.theme`), each a {@link jsonKey}. */
+export function jsonPathKeys(path: string): string[] {
+  return path.split('.').map(jsonKey);
 }

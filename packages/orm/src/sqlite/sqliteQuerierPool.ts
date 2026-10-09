@@ -11,16 +11,16 @@ import {
 import { SqliteDialect } from './sqliteDialect.js';
 
 /** Driver options, plus the loadable extensions to install on the connection. */
-export type Sqlite3PoolOptions = Options & LocalSqlitePoolOptions;
+export type SqlitePoolOptions = Options & LocalSqlitePoolOptions;
 
 /**
  * Pool for `better-sqlite3`, or `bun:sqlite` when running under Bun - the same file, through whichever
  * driver the runtime provides.
  */
-export class Sqlite3QuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqliteDatabase, SqliteDialect> {
+export class SqliteQuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqliteDatabase, SqliteDialect> {
   constructor(
     readonly filename: string | Buffer = ':memory:',
-    readonly opts?: Sqlite3PoolOptions,
+    readonly opts?: SqlitePoolOptions,
     extra?: ExtraOptions,
   ) {
     super(new SqliteDialect(dialectOptionsFrom(extra)), extra);

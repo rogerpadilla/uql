@@ -5,13 +5,14 @@ import { Entity, Field, Id } from '../entity/index.js';
 import { AbstractSqlQuerierSpec } from '../querier/abstractSqlQuerier-spec.js';
 import { Coupon, createSpec, Invoice, InvoiceLine, probeForeignKeys, TenantNote } from '../test/index.js';
 import { idKey } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
-import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
+import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 
 class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
   constructor() {
-    super(new Sqlite3QuerierPool(':memory:'));
+    super(new SqliteQuerierPool(':memory:'));
   }
 
   override async beforeEach() {
@@ -19,11 +20,11 @@ class SqliteQuerierSpec extends AbstractSqlQuerierSpec {
     await Promise.all([
       // No `foreign_keys` here on purpose: the pool sets it on connect now, and a suite that turns it on
       // itself is exactly why nobody noticed the pool never did. See the enforcement test below.
-      this.querier.run('PRAGMA journal_mode = WAL'),
-      this.querier.run('PRAGMA synchronous = normal'),
-      this.querier.run('PRAGMA temp_store = memory'),
+      this.querier.run`PRAGMA journal_mode = WAL`,
+      this.querier.run`PRAGMA synchronous = normal`,
+      this.querier.run`PRAGMA temp_store = memory`,
     ]);
-    vi.spyOn(this.querier, 'run').mockClear();
+    this.run.mockClear();
   }
 }
 
@@ -53,8 +54,8 @@ class TextPkNote {
 describe('insertMany id semantics', () => {
   it('should split oversized batches by maxBindValues and return every id', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)');
-    const runSpy = vi.spyOn(querier, 'run');
+    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    const runSpy = vi.spyOn(querier, 'internalRun');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({ code: `c${index}`, label: `chunk ${index}` }));
     const ids = await querier.insertMany(Coupon, payload);
     expect(ids).toEqual([1, 2, 3, 4, 5, 6, 7]);
@@ -70,7 +71,7 @@ describe('insertMany id semantics', () => {
   /** The assignments bind once per statement beside the rows, so a split filling the budget would bind one too many. */
   it('should split an upsert leaving room for what its assignments bind', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT UNIQUE, `label` TEXT)'));
     const payload = Array.from({ length: 6 }, (_, index) => ({ code: `c${index}`, label: 'new' }));
 
     await querier.insertOne(Coupon, { code: 'c0', label: 'old' });
@@ -85,11 +86,11 @@ describe('insertMany id semantics', () => {
   /** Each key is read back once, so one listed in two batches is not taken for two rows sharing it. */
   it('should read a guarded upsert back once per key, however the batches fall', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
     const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: 'old' }));
 
-    const { ids } = await asTenant(() =>
+    const ids = await asTenant(() =>
       querier.upsertMany(TenantNote, { id: true }, [
         { id: 'a', title: 'first' },
         { id: 'b', title: 'b' },
@@ -112,7 +113,7 @@ describe('insertMany id semantics', () => {
   /** A null never conflicts, as a unique index reads it, so a row whose conflict key holds one is inserted. */
   it('should insert a guarded row whose conflict key holds a null, not update one that holds it too', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
-    await querier.run('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `TenantNote` (`id` TEXT PRIMARY KEY, `tenantId` TEXT, `title` TEXT)'));
     const asTenant = <T>(fn: () => Promise<T>) => withContext({ tenantId: 't' }, fn);
     await asTenant(() => querier.insertOne(TenantNote, { id: 'a', title: null }));
 
@@ -129,8 +130,8 @@ describe('insertMany id semantics', () => {
 
   it('should split oversized batches by maxInsertRows', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
-    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)');
-    const runSpy = vi.spyOn(querier, 'run');
+    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    const runSpy = vi.spyOn(querier, 'internalRun');
 
     const ids = await querier.insertMany(
       Coupon,
@@ -144,7 +145,7 @@ describe('insertMany id semantics', () => {
 
   it('should return the real persisted value (not the internal rowid) when the primary key is not database-generated', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new SqliteDialect());
-    await querier.run('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `TextPkNote` (`code` TEXT PRIMARY KEY, `title` TEXT)'));
     // No id provided: the persisted key is NULL, which names no row, so none is reported - never the rowid.
     const generated = await querier.insertMany(TextPkNote, [{ title: 'no pk' }]);
     expect(generated).toEqual([undefined]);
@@ -167,8 +168,8 @@ describe('insertMany id semantics', () => {
    */
   it('should split an oversized upsert by maxBindValues', async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)');
-    const runSpy = vi.spyOn(querier, 'run');
+    await querier.run(raw.text('CREATE TABLE `Coupon` (`id` INTEGER PRIMARY KEY, `code` TEXT, `label` TEXT)'));
+    const runSpy = vi.spyOn(querier, 'internalRun');
     const payload: Coupon[] = Array.from({ length: 7 }, (_, index) => ({
       id: index + 1,
       code: `c${index}`,
@@ -190,8 +191,10 @@ describe('insertMany id semantics', () => {
 describe('id lists past the bind budget', () => {
   const tables = async () => {
     const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TinyBatchDialect());
-    await querier.run('CREATE TABLE `Invoice` (`id` INTEGER PRIMARY KEY, `description` TEXT)');
-    await querier.run('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)');
+    await querier.run(raw.text('CREATE TABLE `Invoice` (`id` INTEGER PRIMARY KEY, `description` TEXT)'));
+    await querier.run(
+      raw.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
+    );
     return querier;
   };
   const seven = <T>(row: (index: number) => T) => Array.from({ length: 7 }, (_, index) => row(index));
@@ -247,6 +250,31 @@ describe('id lists past the bind budget', () => {
     await querier.release();
   });
 
+  it('should return the rows of a write naming more ids than one statement binds', async () => {
+    const querier = await tables();
+
+    const inserted = await querier.insertMany(
+      InvoiceLine,
+      seven(() => ({ amount: 1 })),
+      { returning: { amount: true } },
+    );
+    const updated = await querier.updateMany(
+      InvoiceLine,
+      { $where: { amount: 1 } },
+      { amount: 2 },
+      { returning: { amount: true } },
+    );
+    const deleted = await querier.deleteMany(InvoiceLine, { $where: { amount: 2 } }, { returning: { amount: true } });
+
+    expect([inserted, updated, deleted]).toEqual([
+      seven(() => ({ amount: 1 })),
+      seven(() => ({ amount: 2 })),
+      seven(() => ({ amount: 2 })),
+    ]);
+    expect(await querier.count(InvoiceLine, {})).toBe(0);
+    await querier.release();
+  });
+
   /** A split write lands whole: a later batch failing takes the earlier ones with it. */
   it('should roll every batch back when a later one fails', async () => {
     const querier = await tables();
@@ -255,7 +283,9 @@ describe('id lists past the bind budget', () => {
       seven(() => ({ amount: 1 })),
     );
     await querier.run(
-      "CREATE TRIGGER `refuseLast` BEFORE UPDATE ON `InvoiceLine` WHEN NEW.`id` = 7 BEGIN SELECT RAISE(ABORT, 'refused'); END",
+      raw.text(
+        "CREATE TRIGGER `refuseLast` BEFORE UPDATE ON `InvoiceLine` WHEN NEW.`id` = 7 BEGIN SELECT RAISE(ABORT, 'refused'); END",
+      ),
     );
 
     await expect(querier.updateMany(InvoiceLine, { $where: { amount: 1 }, ...paged }, { amount: 2 })).rejects.toThrow(
@@ -269,7 +299,9 @@ describe('id lists past the bind budget', () => {
 /** A chunk of rows that name nothing is one `DEFAULT VALUES` each, however the rows around it chunk. */
 it('should insert the rows naming nothing in a chunk of their own one at a time', async () => {
   const querier = new SqliteQuerier(new BetterSqlite3(':memory:'), new TwoRowDialect());
-  await querier.run('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)');
+  await querier.run(
+    raw.text('CREATE TABLE `InvoiceLine` (`id` INTEGER PRIMARY KEY, `amount` INTEGER, `invoiceId` INTEGER)'),
+  );
 
   const ids = await querier.insertMany(InvoiceLine, [{ amount: 1 }, {}, {}, {}]);
 
@@ -284,7 +316,7 @@ describe('foreign key enforcement', () => {
    * pool's `PRAGMA` is what makes the difference is `bun:sqlite`, covered in `sqliteQuerier.bun.test.ts`.
    */
   it('should enforce the constraints in its own DDL', async () => {
-    const pool = new Sqlite3QuerierPool(':memory:');
+    const pool = new SqliteQuerierPool(':memory:');
     const querier = await pool.getQuerier();
 
     expect(await probeForeignKeys(querier)).toEqual({ dangling: 'rejected', orphans: [] });

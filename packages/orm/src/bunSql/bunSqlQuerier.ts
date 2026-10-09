@@ -17,7 +17,6 @@ export class BunSqlQuerier extends AbstractPoolQuerier<BunSqlConn> {
       rows: Array.from(res, decodeBigInts),
       changes: getAffectedRows(res),
       id: getInsertId(res),
-      upsertStatus: res.affectedRows ?? undefined,
     });
   }
 

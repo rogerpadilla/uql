@@ -10,11 +10,11 @@ import type {
   QueryPage,
   QueryProjected,
   QuerySearch,
-  QueryUpsertOneResult,
-  QueryUpsertManyResult,
+  ReturningResult,
+  WriteOptions,
 } from './query.js';
 import type { QueryAggMap, QueryAggregate, QueryAggregateResult, QueryGroupMap } from './queryAggregate.js';
-import type { Type } from './utility.js';
+import type { BooleanLike, Type } from './utility.js';
 import type { QuerierCountedResult, QuerierRaw, QuerierResult, QuerierTransport } from './wire.js';
 
 /** The query type each projected read takes, keyed by the kind of read. */
@@ -159,57 +159,89 @@ export interface UniversalQuerier extends SharedQuerier<'server', QueryOptions> 
    */
   findManyStream: ProjectedRead<'many', 'stream', 'server', QueryOptions>;
 
-  /** Insert a record and resolve to its id. See {@link UniversalQuerier.insertMany}. */
-  insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined>;
+  /** Insert a record and resolve to its id, or the row `returning` reads back. See {@link UniversalQuerier.insertMany}. */
+  insertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
 
   /**
-   * Insert records in as few statements as the bind limit allows, resolving to their ids in payload order.
-   * Ids are exact everywhere but MySQL, which infers them from its header and reports `undefined` rather
-   * than a guess where it cannot: a batch naming some keys, or a key that is not `AUTO_INCREMENT`.
+   * Insert records in as few statements as the bind limit allows, resolving to their ids in payload order, or
+   * the rows `returning` reads back. Ids are exact everywhere but MySQL, which infers them from its header and
+   * reports `undefined` rather than a guess for a generated key that is not `AUTO_INCREMENT`.
    */
-  insertMany<E extends object>(
+  insertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]>;
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
+
+  /** Update the record with the given primary key; resolves to the number of affected rows, or the row `returning` reads back. */
+  updateOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
+
+  /** Update the records matching the query; resolves to the number of affected rows, or the rows `returning` reads back. */
+  updateMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
+
+  /** Delete, or soft-delete, the record with the given key; resolves to the number of affected rows, or the row as it was. */
+  deleteOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
+
+  /** Delete, or soft-delete, the records matching the query; resolves to the number of affected rows, or the rows as they were. */
+  deleteMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
 
   /**
-   * Insert or update a record by its conflict paths; resolves to its id and whether it was created. A conflicting
-   * row takes the payload less those paths, or `update` as `updateMany` takes one: `{ uses: { $inc: 1 } }` counts,
-   * and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
+   * Insert or update a record by its conflict paths; resolves to its id, or the row `returning` reads back. A
+   * conflicting row takes the payload less those paths, or `update` as `updateMany` takes one: `{ uses: { $inc: 1 } }`
+   * counts, and `{}` leaves the row as it is. Either branch writes the cascaded relations it is given.
    */
-  upsertOne<E extends object>(
+  upsertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
-  ): Promise<QueryUpsertOneResult<E>>;
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
 
-  /** Insert or update records by their conflict paths, as `upsertOne` does; resolves to their ids in payload order. */
-  upsertMany<E extends object>(
+  /** Insert or update records by their conflict paths, as `upsertOne` does; resolves to their ids in payload order, or the rows. */
+  upsertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
-  ): Promise<QueryUpsertManyResult<E>>;
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
 
-  /**
-   * insert or update a record.
-   * @param entity the entity to persist on
-   * @param payload the data to be persisted
-   * @return the ID
-   */
-  saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined>;
+  /** Insert a record, or upsert one naming its key; resolves to its id, or the row `returning` reads back. */
+  saveOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
 
-  /**
-   * Insert or update records.
-   * @param entity the entity to persist on
-   * @param payload the data to be persisted
-   * @return the IDs
-   */
-  saveMany<E extends object>(
+  /** Insert records, or upsert those naming their key; resolves to their ids in payload order, or the rows. */
+  saveMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
-  ): Promise<(WrittenId<E> | undefined)[]>;
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
 
   /**
    * Restore soft-deleted records (sets the soft-delete field back to `null`). Throws if the

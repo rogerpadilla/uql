@@ -24,8 +24,9 @@ class Ledger {
   // A key is NOT NULL on every engine, whichever decorator declares it.
   @Field({ type: Number, isId: true }) alternateKey?: number;
 
-  // A family the property narrows: `numeric` reads either number kind, `jsonb` any document.
-  @Field({ type: 'numeric' }) amount?: number | null;
+  // A family the property narrows: `numeric` reads as exact text, `bigint` either number kind, `jsonb` any document.
+  @Field({ type: 'numeric' }) amount?: string | null;
+  @Field({ type: 'bigint' }) total?: number | null;
   @Field({ type: 'jsonb' }) payload?: Json<{ lines: number }> | null;
 }
 

@@ -35,7 +35,9 @@ describe('a raw column type (PostgreSQL)', () => {
 
   it('should create the column as the engine spells it', async () => {
     const [column] = await pool().all<{ data_type: string }>(
-      `SELECT data_type FROM information_schema.columns WHERE table_name = '${TABLE}' AND column_name = 'searchVector'`,
+      raw.text(
+        `SELECT data_type FROM information_schema.columns WHERE table_name = '${TABLE}' AND column_name = 'searchVector'`,
+      ),
     );
     expect(column.data_type).toBe('tsvector');
   });
@@ -43,14 +45,14 @@ describe('a raw column type (PostgreSQL)', () => {
   it('should keep the generated expression the engine fills', async () => {
     await pool().insertOne(Caption, { text: 'la reunión del proyecto' });
     const [row] = await pool().all<{ hit: boolean }>(
-      `SELECT "searchVector" @@ to_tsquery('simple', 'proyecto') AS hit FROM "${TABLE}"`,
+      raw.text(`SELECT "searchVector" @@ to_tsquery('simple', 'proyecto') AS hit FROM "${TABLE}"`),
     );
     expect(row.hit).toBe(true);
   });
 
   it('should index it, which is why the column needs the engine type and not a text one', async () => {
     const indexes = await pool().all<{ indexname: string }>(
-      `SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}' ORDER BY indexname`,
+      raw.text(`SELECT indexname FROM pg_indexes WHERE tablename = '${TABLE}' ORDER BY indexname`),
     );
     expect(indexes).toEqual([{ indexname: `${TABLE}__id_pk` }, { indexname: 'rct_search_idx' }]);
   });

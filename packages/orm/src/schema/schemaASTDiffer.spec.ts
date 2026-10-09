@@ -4,7 +4,7 @@ import { columnsOf, mockTableNode } from '../test/index.js';
 import { engineType } from './canonicalType.js';
 import type { IndexFacet } from './indexDifferences.js';
 import { SchemaAST } from './schemaAST.js';
-import { columnRenames, diffSchemas, tableRenameCandidates } from './schemaASTDiffer.js';
+import { columnRenameCandidates, columnRenames, diffSchemas, tableRenameCandidates } from './schemaASTDiffer.js';
 import { SqlExpression } from './sqlExpression.js';
 import type { ColumnNode, IndexNode, RelationshipNode } from './types.js';
 
@@ -907,59 +907,101 @@ describe('SchemaASTDiffer', () => {
     });
   });
 
-  describe('columnRenames', () => {
+  describe('column renames', () => {
     const id = { name: 'id', type: { category: 'integer' }, isPrimaryKey: true } as const;
     const text = { type: { category: 'string', length: 255 } } as const;
 
-    /** The entities' `users` against the database's, each holding `id` and the columns given. */
-    function renamesOf(expected: Partial<ColumnNode>[], actual: Partial<ColumnNode>[]) {
+    /** The entities' `users` and the database's, each holding `id` and the columns given. */
+    function usersOf(expected: Partial<ColumnNode>[], actual: Partial<ColumnNode>[]) {
       const desired = new SchemaAST();
       const current = new SchemaAST();
       desired.addTable(mockTableNode('users', [id, ...expected]));
       current.addTable(mockTableNode('users', [id, ...actual]));
-      return columnRenames(desired, current);
+      return [desired, current] as const;
     }
 
-    it('should rename the one column a new one is identical to but for its name', () => {
-      expect(renamesOf([{ name: 'headline', ...text }], [{ name: 'title', ...text }])).toEqual(
-        new Map([['users', [{ from: 'title', to: 'headline' }]]]),
-      );
+    describe('columnRenames', () => {
+      it('should rename a column its naming strategy spells otherwise', () => {
+        expect(columnRenames(...usersOf([{ name: 'first_name', ...text }], [{ name: 'firstName', ...text }]))).toEqual(
+          new Map([['users', [{ from: 'firstName', to: 'first_name' }]]]),
+        );
+      });
+
+      /** The name is the evidence, so the rest of the diff alters the renamed column as it would any other. */
+      it('should rename a column its naming strategy spells otherwise whose type changes too', () => {
+        expect(
+          columnRenames(...usersOf([{ name: 'BORN_AT', ...text }], [{ name: 'bornAt', type: { category: 'date' } }])),
+        ).toEqual(new Map([['users', [{ from: 'bornAt', to: 'BORN_AT' }]]]));
+      });
+
+      /** Identical but for its name is no evidence: a column dropped while another of its type is added. */
+      it('should not rename a column a new one is identical to but for its name', () => {
+        expect(columnRenames(...usersOf([{ name: 'headline', ...text }], [{ name: 'title', ...text }])).size).toBe(0);
+      });
+
+      it('should not rename where two columns are spelled alike', () => {
+        const [desired, current] = usersOf(
+          [{ name: 'first_name', ...text }],
+          [
+            { name: 'firstName', ...text },
+            { name: 'FirstName', ...text },
+          ],
+        );
+        expect(columnRenames(desired, current).size).toBe(0);
+      });
+
+      it('should not rename across tables', () => {
+        const desired = new SchemaAST();
+        const current = new SchemaAST();
+        desired.addTable(mockTableNode('users', [id, { name: 'first_name', ...text }]));
+        current.addTable(mockTableNode('users', [id]));
+        current.addTable(mockTableNode('posts', [id, { name: 'firstName', ...text }]));
+
+        expect(columnRenames(desired, current).size).toBe(0);
+      });
     });
 
-    it('should not rename a column whose type changes too', () => {
-      expect(renamesOf([{ name: 'headline', ...text }], [{ name: 'title', type: { category: 'integer' } }]).size).toBe(
-        0,
-      );
-    });
+    describe('columnRenameCandidates', () => {
+      it('should name the one column a new one is identical to but for its name', () => {
+        expect(
+          columnRenameCandidates(...usersOf([{ name: 'headline', ...text }], [{ name: 'title', ...text }])),
+        ).toEqual([{ table: 'users', from: 'title', to: 'headline' }]);
+      });
 
-    it('should not rename a column whose nullability changes too', () => {
-      expect(renamesOf([{ name: 'headline', ...text, nullable: false }], [{ name: 'title', ...text }]).size).toBe(0);
-    });
+      it('should name none whose type changes too', () => {
+        expect(
+          columnRenameCandidates(
+            ...usersOf([{ name: 'headline', ...text }], [{ name: 'title', type: { category: 'integer' } }]),
+          ),
+        ).toEqual([]);
+      });
 
-    it('should not rename a column whose default changes too', () => {
-      expect(renamesOf([{ name: 'headline', ...text, defaultValue: 'a' }], [{ name: 'title', ...text }]).size).toBe(0);
-    });
+      it('should name none whose nullability changes too', () => {
+        expect(
+          columnRenameCandidates(
+            ...usersOf([{ name: 'headline', ...text, nullable: false }], [{ name: 'title', ...text }]),
+          ),
+        ).toEqual([]);
+      });
 
-    it('should not rename where two columns could have been renamed', () => {
-      expect(
-        renamesOf(
+      it('should name none whose default changes too', () => {
+        expect(
+          columnRenameCandidates(
+            ...usersOf([{ name: 'headline', ...text, defaultValue: 'a' }], [{ name: 'title', ...text }]),
+          ),
+        ).toEqual([]);
+      });
+
+      it('should name none where two columns could have been renamed', () => {
+        const [desired, current] = usersOf(
           [{ name: 'headline', ...text }],
           [
             { name: 'title', ...text },
             { name: 'subtitle', ...text },
           ],
-        ).size,
-      ).toBe(0);
-    });
-
-    it('should not rename across tables', () => {
-      const desired = new SchemaAST();
-      const current = new SchemaAST();
-      desired.addTable(mockTableNode('users', [id, { name: 'headline', ...text }]));
-      current.addTable(mockTableNode('users', [id]));
-      current.addTable(mockTableNode('posts', [id, { name: 'title', ...text }]));
-
-      expect(columnRenames(desired, current).size).toBe(0);
+        );
+        expect(columnRenameCandidates(desired, current)).toEqual([]);
+      });
     });
   });
 

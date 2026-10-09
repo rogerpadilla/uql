@@ -1,4 +1,4 @@
-import { AbstractCursor, Collection, type Document, MongoClient } from 'mongodb';
+import { AbstractCursor, ClientSession, Collection, type Document, MongoClient } from 'mongodb';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { AGGREGATE_VALUE_ALIAS } from '../dialect/aliases.js';
 import { Entity, Field, Id, Index, ManyToOne, Trigger } from '../entity/index.js';
@@ -88,6 +88,27 @@ function pipelineOf(calls: readonly (readonly [Document[]?, ...unknown[]])[], ca
 
 afterEach(() => {
   vi.restoreAllMocks();
+});
+
+/** The driver settles its own transaction state, so a commit it refused may leave none open to abort. */
+describe('MongodbQuerier transactions', () => {
+  it('should send no abort after a commit that ended the transaction it failed', async () => {
+    const querier = new MongodbQuerier(new MongoDialect(), new MongoClient('mongodb://127.0.0.1:1'));
+    let open = false;
+    vi.spyOn(ClientSession.prototype, 'startTransaction').mockImplementation(() => {
+      open = true;
+    });
+    vi.spyOn(ClientSession.prototype, 'inTransaction').mockImplementation(() => open);
+    vi.spyOn(ClientSession.prototype, 'commitTransaction').mockImplementation(async () => {
+      open = false;
+      throw new Error('commit refused');
+    });
+    const abort = vi.spyOn(ClientSession.prototype, 'abortTransaction');
+
+    await expect(querier.transaction(async () => {})).rejects.toThrow('commit refused');
+    expect(abort).not.toHaveBeenCalled();
+    await querier.release();
+  });
 });
 
 // MongoDB runs no trigger within a write, so a write to an entity declaring one would silently skip it.

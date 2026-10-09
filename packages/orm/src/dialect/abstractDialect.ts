@@ -16,7 +16,7 @@ import { parseQueryLock } from '../type/index.js';
 import { QueryRaw } from '../type/queryRaw.js';
 import { applyFilters } from '../util/dialect.util.js';
 import { aggregateOf, definedEntries, entityName, someKey } from '../util/index.js';
-import { assertWhere } from '../util/query.util.js';
+import { assertNoUndefined, assertWhere } from '../util/query.util.js';
 import { qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { groupClauses, isGroupOp } from './operators.js';
@@ -156,7 +156,9 @@ export abstract class AbstractDialect {
    */
   protected scopedWhere<E>(meta: EntityMeta<E>, where: QueryWhere<E> = {}, opts?: QueryOptions): QueryWhere<E> {
     assertWhere(meta, where);
-    return applyFilters(meta, where, opts);
+    const scoped = applyFilters(meta, where, opts);
+    assertNoUndefined(scoped, `$where on '${entityName(meta)}'`);
+    return scoped;
   }
 
   /**

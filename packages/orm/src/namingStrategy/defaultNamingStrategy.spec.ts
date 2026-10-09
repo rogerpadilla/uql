@@ -11,8 +11,4 @@ describe('DefaultNamingStrategy', () => {
   it('should name a column as its property', () => {
     expect(strategy.columnName('firstName')).toBe('firstName');
   });
-
-  it('should name a join table after both sides', () => {
-    expect(strategy.joinTableName('User', 'Role')).toBe('User_Role');
-  });
 });

@@ -356,7 +356,6 @@ describe('buildUpdateResult', () => {
     expect(res).toEqual({
       changes: 3,
       ids: [10, 11, 12],
-      firstId: 10,
       created: undefined,
     });
   });
@@ -364,7 +363,7 @@ describe('buildUpdateResult', () => {
   it('should apply an auto-increment stride > 1 (clustered MySQL)', () => {
     const res = buildUpdateResult({ changes: 3, id: 10, insertIdSource: 'firstId', insertIdIncrement: 2 });
     expect(res.ids).toEqual([10, 12, 14]);
-    expect(res.firstId).toBe(10);
+    expect(res.ids?.[0]).toBe(10);
     const big = buildUpdateResult({ changes: 3, id: 10n, insertIdSource: 'firstId', insertIdIncrement: 3 });
     expect(big.ids).toEqual([10n, 13n, 16n]);
   });
@@ -378,7 +377,6 @@ describe('buildUpdateResult', () => {
     expect(res).toEqual({
       changes: 3,
       ids: [],
-      firstId: undefined,
       created: undefined,
     });
     expect(buildUpdateResult({ changes: 2, id: 0n, insertIdSource: 'firstId' }).ids).toEqual([]);
@@ -393,7 +391,6 @@ describe('buildUpdateResult', () => {
     expect(res).toEqual({
       changes: 2,
       ids: [],
-      firstId: undefined,
       created: undefined,
     });
     const withRows = buildUpdateResult({
@@ -401,29 +398,13 @@ describe('buildUpdateResult', () => {
       insertIdSource: 'returning',
     });
     expect(withRows.ids).toEqual([5, 9]);
-    expect(withRows.firstId).toBe(5);
-  });
-
-  it('should detect created status from upsertStatus', () => {
-    expect(buildUpdateResult({ upsertStatus: 1 }).created).toBe(true);
-    expect(buildUpdateResult({ upsertStatus: 2 }).created).toBe(false);
-    expect(buildUpdateResult({ upsertStatus: 0 }).created).toBe(false);
-    expect(buildUpdateResult({ upsertStatus: undefined }).created).toBe(undefined);
-  });
-
-  it('should ignore upsertStatus for RETURNING dialects without a created flag', () => {
-    // MariaDB's `ON DUPLICATE KEY UPDATE ... RETURNING` doesn't follow the MySQL 1/2/0
-    // affectedRows convention (driver-dependent, sometimes non-numeric, sometimes a stale/wrong
-    // value); treating it as a `created` signal produced a real false positive/negative on insert.
-    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 1 }).created).toBeUndefined();
-    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 2 }).created).toBeUndefined();
-    expect(buildUpdateResult({ insertIdSource: 'returning', upsertStatus: 0 }).created).toBeUndefined();
+    expect(withRows.ids?.[0]).toBe(5);
   });
 
   it('should return empty ids when no id or rows provided', () => {
     const res = buildUpdateResult({ changes: 5 });
     expect(res.ids).toEqual([]);
-    expect(res.firstId).toBeUndefined();
+    expect(res.ids?.[0]).toBeUndefined();
   });
 });
 

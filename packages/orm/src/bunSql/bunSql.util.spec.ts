@@ -43,14 +43,14 @@ describe('bunSql.util', () => {
 
     test('should refuse an engine it does not drive rather than reading it as postgres', () => {
       expect(() => inferDialectName({ url: 'mssql://localhost' })).toThrow(
-        'uql-orm/bunSql does not drive mssql; use the dedicated uql-orm/mssql pool',
+        'uql-orm/bun-sql does not drive mssql; use the dedicated uql-orm/mssql pool',
       );
       expect(() => inferDialectName({ url: 'sqlserver://localhost' })).toThrow('uql-orm/mssql pool');
     });
 
-    /** `Sqlite3QuerierPool` runs on `bun:sqlite` under Bun, and streams, prepares and loads extensions. */
+    /** `SqliteQuerierPool` runs on `bun:sqlite` under Bun, and streams, prepares and loads extensions. */
     test('should refuse SQLite, pointing at its own pool', () => {
-      const refusal = 'uql-orm/bunSql does not drive sqlite; use the dedicated uql-orm/sqlite pool';
+      const refusal = 'uql-orm/bun-sql does not drive sqlite; use the dedicated uql-orm/sqlite pool';
       expect(() => inferDialectName({ filename: 'app.db' })).toThrow(refusal);
       expect(() => inferDialectName({ url: ':memory:' })).toThrow(refusal);
       expect(() => inferDialectName({ url: 'sqlite://app.db' })).toThrow(refusal);

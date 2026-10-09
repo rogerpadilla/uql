@@ -1,12 +1,4 @@
-import type {
-  FieldKey,
-  FieldKeyOf,
-  JsonFieldPaths,
-  RelationKey,
-  RelationTarget,
-  ToManyRelationKey,
-  WrittenId,
-} from './entity.js';
+import type { FieldKey, FieldKeyOf, JsonFieldPaths, RelationKey, RelationTarget, ToManyRelationKey } from './entity.js';
 import type { QueryLock } from './queryLock.js';
 import type { QueryRaw } from './queryRaw.js';
 import type { QueryWhere } from './queryWhere.js';
@@ -552,22 +544,14 @@ type QueryProjectedRow<
 /** The to-many relations a query populated, which come back as lists rather than as optional ones. */
 type PopulatedToMany<E, P> = Extract<P, ToManyRelationKey<E>>;
 
-/** What upserting one row reports. `created` is only knowable for a single statement, so a batch has none. */
-export type QueryUpsertOneResult<E> = {
-  readonly id?: WrittenId<E>;
-  readonly changes?: number;
-  /** Whether the record was created (`true`) or updated (`false`), where the dialect can tell. */
-  readonly created?: boolean;
-};
-
 /**
- * What upserting many rows reports. `ids` is payload-aligned like an insert's, so it zips with the
- * rows that were passed, and carries a composite key as the map naming it.
+ * A write's options: `returning` projects each row it writes as `$select` projects a read, `{ id: true, createdAt: true }`,
+ * read in the same transaction after the write (before it, for a delete), so they hold what the database filled.
  */
-export type QueryUpsertManyResult<E> = {
-  readonly ids: (WrittenId<E> | undefined)[];
-  readonly changes?: number;
-};
+export type WriteOptions<E, S extends FieldKey<E>, V = true> = { readonly returning?: QuerySelect<E, S, V> };
+
+/** What a write resolves to: `Plain`, its ids or its count, where it names no `returning` field; else `Read`. */
+export type ReturningResult<S, Plain, Read> = [S] extends [never] ? Plain : Read;
 
 /**
  * result of an update operation, as the driver reports it - which is what `run` hands back, where
@@ -585,13 +569,4 @@ export type QueryUpdateResult = {
    * altogether when the header reports nothing.
    */
   ids?: (PrimaryKey | undefined)[];
-  /**
-   * first inserted ID.
-   */
-  firstId?: PrimaryKey;
-  /**
-   * whether the record was created (`true`) or updated (`false`).
-   * `undefined` when the dialect cannot determine this (e.g. SQLite).
-   */
-  created?: boolean;
 };

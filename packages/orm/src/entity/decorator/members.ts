@@ -1,6 +1,5 @@
 import type {
   AggregateValue,
-  ComputedRefs,
   EntityAggregate,
   EntityGetter,
   Except,
@@ -16,7 +15,6 @@ import type {
   RelationManyToOneOptions,
   RelationOneToManyOptions,
   RelationOneToOneOptions,
-  RelationAggregate,
   RelationOptions,
   TsTypeOf,
   Writable,
@@ -102,19 +100,11 @@ export function Field(opts: FieldOptions<never, unknown>): MemberDecorator<unkno
   };
 }
 
-/**
- * A field the aggregate itself types: `stored: true` only where a trigger could keep it, and every other
- * option as a column takes it.
- */
-type AggregateOptions<E> =
-  | (Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
-      readonly computed: EntityAggregate<E>;
-      readonly stored?: false;
-    })
-  | (Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
-      readonly computed: { agg(refs: ComputedRefs<E>): RelationAggregate<unknown, true> }['agg'];
-      readonly stored: true;
-    });
+/** A field the aggregate itself types, read on each query, never `stored`, and every other option as a column takes it. */
+type AggregateOptions<E> = Except<FieldOptions<never, E>, 'computed' | 'stored' | 'type'> & {
+  readonly computed: EntityAggregate<E>;
+  readonly stored?: false;
+};
 
 /**
  * A key the type level cannot name, reported on each `@Id` that leaves it unnamed. Where no `idKey`

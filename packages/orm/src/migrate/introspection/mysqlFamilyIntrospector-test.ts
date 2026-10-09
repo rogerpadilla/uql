@@ -1,6 +1,7 @@
 import { expect } from 'vitest';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { SqlQuerier } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { introspectorFor } from './registry.js';
 
@@ -28,7 +29,9 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
    * that declared it.
    */
   protected override async addDialectSpecificColumnsA(querier: SqlQuerier): Promise<void> {
-    await querier.run(`ALTER TABLE ${INTROSPECT_TABLES.A} ADD COLUMN kind JSON NULL, ADD COLUMN notes LONGTEXT NULL`);
+    await querier.run(
+      raw.text(`ALTER TABLE ${INTROSPECT_TABLES.A} ADD COLUMN kind JSON NULL, ADD COLUMN notes LONGTEXT NULL`),
+    );
   }
 
   async shouldIntrospectJsonColumn() {
@@ -53,7 +56,8 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
    */
   async shouldReadEveryDefaultSpelling() {
     const schema = await this.probe('probe_defaults', (querier, table) =>
-      querier.run(/*sql*/ `
+      querier.run(
+        raw.text(/*sql*/ `
         CREATE TABLE ${table} (
           word VARCHAR(9) DEFAULT 'hello', quoted VARCHAR(9) DEFAULT 'it''s', slash VARCHAR(9) DEFAULT 'a\\\\b',
           lined VARCHAR(9) DEFAULT 'a\\nb', fraction DECIMAL(6, 2) DEFAULT -12.5, negative INT DEFAULT -3,
@@ -61,6 +65,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
           spelled VARCHAR(20) DEFAULT 'CURRENT_TIMESTAMP'
         )
       `),
+      ),
     );
 
     expect(Object.fromEntries(schema.columns.map((column) => [column.name, column.defaultValue]))).toEqual({
@@ -79,7 +84,7 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
 
   async shouldReadAColumnComment() {
     const schema = await this.probe('probe_comment', (querier, table) =>
-      querier.run(`CREATE TABLE ${table} (noted INT COMMENT 'probed', plain INT)`),
+      querier.run(raw.text(`CREATE TABLE ${table} (noted INT COMMENT 'probed', plain INT)`)),
     );
 
     expect(schema.columns.map(({ name, comment }) => ({ name, comment }))).toEqual([
@@ -93,9 +98,11 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
     const querier = await this.pool.getQuerier();
     const table = `${this.otherDatabase}.${INTROSPECT_TABLES.A}`;
     try {
-      await querier.run(`DROP TABLE IF EXISTS ${table}`);
+      await querier.run(raw.text(`DROP TABLE IF EXISTS ${table}`));
       await querier.run(
-        `CREATE TABLE ${table} (id INT PRIMARY KEY, code INT UNIQUE, note VARCHAR(9), KEY probe_note_idx (note))`,
+        raw.text(
+          `CREATE TABLE ${table} (id INT PRIMARY KEY, code INT UNIQUE, note VARCHAR(9), KEY probe_note_idx (note))`,
+        ),
       );
 
       const named = await introspectorFor(this.pool, this.otherDatabase).getTableSchema(INTROSPECT_TABLES.A);
@@ -111,13 +118,13 @@ export abstract class MySqlFamilyIntrospectorIt extends AbstractIntrospectorIt {
         { name: 'note', isUnique: false },
       ]);
     } finally {
-      await querier.run(`DROP TABLE ${table}`);
+      await querier.run(raw.text(`DROP TABLE ${table}`));
       await querier.release();
     }
   }
 
-  /** Escaped as the engine's own literal: the ANSI doubling leaves a backslash to escape the quote. */
-  async shouldEscapeTheDatabaseItWasGiven() {
+  /** Bound, so a backslash and a quote in its name are only text. */
+  async shouldBindTheDatabaseItWasGiven() {
     await expect(introspectorFor(this.pool, "uql\\'probe").getTableNames()).resolves.toEqual([]);
   }
 }

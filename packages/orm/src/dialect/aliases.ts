@@ -68,9 +68,6 @@ export const UPSERT_NEW_ROW_ALIAS = '_uql_new';
 /** The row source a `MERGE` upsert reads its incoming values from, on SQL Server and Oracle. */
 export const UPSERT_SOURCE_ALIAS = '_uql_src';
 
-/** The column a Postgres upsert returns beside the id: `(xmax = 0)`, true when it inserted the row. */
-export const UPSERT_CREATED_ALIAS = '_uql_created';
-
 /**
  * Where a `$sort` by a relation's aggregate - its size, or its nearest row - parks the value until the
  * ordering has run. A function, so the `$sort` that names the field and the stage that produces it cannot

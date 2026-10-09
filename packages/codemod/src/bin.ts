@@ -2,7 +2,7 @@
 import { parseArgs } from './cli.js';
 import { run } from './index.js';
 
-const USAGE = 'usage: uql-codemod [--project=<path>] [--include=<a,b>] [--dry-run]';
+const USAGE = 'usage: uql-codemod [--project=<path>] [--include=<a,b>] [--dry-run] [--help]';
 
 // Exit 2 is "could not start", so a script can tell it apart from exit 1, "there is work left".
 const stop = (message: string): never => {
@@ -10,7 +10,11 @@ const stop = (message: string): never => {
   process.exit(2);
 };
 
-const { options, errors } = parseArgs(process.argv.slice(2));
+const { options, help, errors } = parseArgs(process.argv.slice(2));
+if (help) {
+  console.log(USAGE);
+  process.exit(0);
+}
 if (errors.length) {
   stop([...errors, USAGE].join('\n'));
 }
@@ -24,8 +28,11 @@ for (const line of summary.notes) {
 for (const line of summary.unresolved) {
   console.error(`needs a decision: ${line}`);
 }
+for (const file of summary.changed) {
+  console.log(`${options.dryRun ? 'would change' : 'changed'}: ${file}`);
+}
 console.log(`${summary.changed.length} file(s) ${options.dryRun ? 'would change' : 'changed'}`);
 if (summary.unresolved.length) {
-  console.error(`${summary.unresolved.length} property(ies) left untouched; see above`);
+  console.error(`${summary.unresolved.length} item(s) need a decision; see above`);
   process.exit(1);
 }

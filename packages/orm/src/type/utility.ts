@@ -24,9 +24,15 @@ export type PrimaryKey = string | number | bigint;
 
 /**
  * Brands a JSON field, `settings?: Json<{ isArchived?: boolean }>`, so it reads as a field rather than a
- * relation; `Json<T>[]` is a list of documents.
+ * relation; `Json<T>[]` is a list of documents, and a bare `Json` holds any JSON value, under any path. A
+ * `null` in `T` stays `null`, so a `JsonValue` type that includes it is a field that may be `null`.
  */
-export type Json<T = unknown> = T & JsonBrand;
+export type Json<T extends object | string | number | boolean | null = JsonDocument> = T extends null
+  ? null
+  : T & JsonBrand;
+
+/** Any value a JSON column holds, which a bare {@link Json} stands for. */
+export type JsonDocument = string | number | boolean | readonly unknown[] | { readonly [key: string]: unknown };
 
 declare const json: unique symbol;
 

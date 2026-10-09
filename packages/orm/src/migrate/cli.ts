@@ -51,13 +51,18 @@ export async function main(args = process.argv.slice(2)) {
         reportRun(
           await migrator.up({ to: readFlag(rest, '--to'), step: readStep(rest) }),
           'Migrations',
+          'applied',
           'No pending migrations.',
         );
         break;
       case 'down': {
-        const to = readFlag(rest, '--to');
-        const step = to || rest.includes('--all') ? readStep(rest) : (readStep(rest) ?? 1);
-        reportRun(await migrator.down({ to, step }), 'Rollback', 'No migrations to rollback.');
+        const step = rest.includes('--all') ? Infinity : readStep(rest);
+        reportRun(
+          await migrator.down({ to: readFlag(rest, '--to'), step }),
+          'Rollback',
+          'reverted',
+          'No migrations to rollback.',
+        );
         break;
       }
       case 'status': {
@@ -73,7 +78,7 @@ export async function main(args = process.argv.slice(2)) {
         break;
       }
       case 'pending': {
-        const pending = await migrator.pending();
+        const { pending } = await migrator.status();
         print(...(pending.length ? ['Pending migrations:', ...listed(pending, '○')] : ['No pending migrations.']));
         break;
       }
@@ -124,17 +129,9 @@ function readStep(args: readonly string[]): number | undefined {
   return step === undefined ? undefined : Number.parseInt(step, 10);
 }
 
-/** How a run of migrations went, failing the process on any failure. */
-function reportRun(results: readonly MigrationResult[], title: string, none: string) {
-  if (!results.length) {
-    console.log(none);
-    return;
-  }
-  const failed = results.filter((result) => !result.success).length;
-  console.log(`\n${title} complete: ${results.length - failed} successful, ${failed} failed`);
-  if (failed) {
-    process.exit(1);
-  }
+/** How many migrations ran; a failed one threw, which exits the process. */
+function reportRun(results: readonly MigrationResult[], title: string, verb: string, none: string) {
+  console.log(results.length ? `\n${title} complete: ${results.length} ${verb}.` : none);
 }
 
 /** Migration names, one a line, or `(none)`. */
@@ -222,10 +219,10 @@ export async function runDriftCheck(migrator: Migrator, config: Partial<Config>)
     console.log('\nChecking for schema drift...');
 
     const generator = await migrator.getSchemaGenerator();
-    // MongoDB's generator builds no AST: a collection has only its indexes to compare, which a dry run lists.
+    // MongoDB's generator builds no AST: a collection has only its indexes and validator to compare, which a dry run lists.
     if (!generator.buildAST) {
       throw new UqlUsageError(
-        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index changes a sync would make',
+        'drift:check compares tables, and this database has none: `sync --dry-run` prints the index and validator changes a sync would make',
       );
     }
     const expectedAST = generator.buildAST(config.entities);

@@ -6,6 +6,7 @@ import type { TableNode } from '../schema/types.js';
 import { assertDefined } from '../test/index.js';
 import type { EntityWhere, Type } from '../type/index.js';
 import { raw } from '../util/index.js';
+import { validatorCheck } from './mongoCommand.js';
 import { MongoSchemaGenerator } from './mongoSchemaGenerator.js';
 
 @Entity()
@@ -430,6 +431,123 @@ describe('MongoSchemaGenerator', () => {
     expect(JSON.parse(JSON.stringify(diff))).toEqual(diff);
   });
 });
+
+describe('MongoSchemaGenerator validator', () => {
+  const generator = new MongoSchemaGenerator();
+
+  @Entity({ checks: [{ where: { priority: { $gte: 0 } } }, { name: 'capped', where: { priority: { $lte: 9 } } }] })
+  class MongoTask {
+    @Id({ type: String }) id?: string;
+    @Field({ type: String, enum: ['open', 'closed'] as const }) status?: 'open' | 'closed' | null;
+    @Field({ type: Number }) priority?: number | null;
+  }
+
+  const taskValidator = {
+    $and: [{ priority: { $gte: 0 } }, { priority: { $lte: 9 } }, { status: { $in: ['open', 'closed', null] } }],
+  };
+
+  @Entity()
+  class MongoLabel {
+    @Id({ type: String }) id?: string;
+    @Field({ type: Number, enum: [1, 2] as const }) tier?: 1 | 2 | null;
+  }
+
+  type TaskShape = { id?: string; dueAt?: Date | null; status?: string | null };
+
+  const taskChecking = (where: EntityWhere<TaskShape>): Type<object> => {
+    @Entity({ name: 'Task', checks: [{ where }] })
+    class Task implements TaskShape {
+      @Id({ type: String }) id?: string;
+      @Field({ type: Date }) dueAt?: Date | null;
+      @Field({ type: String }) status?: string | null;
+    }
+    return Task;
+  };
+
+  const commands = (statements: readonly string[]) => statements.map((json) => JSON.parse(json));
+
+  /** A missing or null value passes an enum, as SQL's `CHECK` passes NULL. */
+  it('should create the collection with a validator of its checks, then each enum', () => {
+    expect(commands(generator.generateCreateSchema([MongoTask]))).toEqual([
+      { action: 'createCollection', name: 'MongoTask', validator: taskValidator },
+    ]);
+  });
+
+  it('should take a lone clause as the validator itself', () => {
+    expect(commands(generator.generateCreateSchema([MongoLabel]))).toEqual([
+      { action: 'createCollection', name: 'MongoLabel', validator: { tier: { $in: [1, 2, null] } } },
+    ]);
+  });
+
+  it('should refuse a check given as SQL', () => {
+    expect(() => generator.generateCreateSchema([taskChecking((task) => raw`${task.status} <> 'x'`)])).toThrow(
+      'mongodb does not support checks from a SQL predicate (collection "Task")',
+    );
+  });
+
+  it('should refuse a value a migration cannot carry as JSON', () => {
+    expect(() => generator.generateCreateSchema([taskChecking({ dueAt: { $gt: new Date(0) } })])).toThrow(
+      'mongodb does not support a Date in a check (collection "Task")',
+    );
+  });
+
+  it('should keep a null a check compares with, which a validator holds', () => {
+    expect(commands(generator.generateCreateSchema([taskChecking({ status: { $ne: null } })]))).toEqual([
+      { action: 'createCollection', name: 'Task', validator: { status: { $ne: null } } },
+    ]);
+  });
+
+  it('should set the validator a collection lacks with collMod, and remove it on the way down', () => {
+    const diff = generator.diffSchema(MongoTask, createTableNode('MongoTask'));
+    assertDefined(diff);
+
+    expect(commands(generator.generateAlterTable(diff))).toEqual([
+      { action: 'collMod', name: 'MongoTask', validator: taskValidator },
+    ]);
+    expect(commands(generator.generateAlterTable(reverseDiff(diff)))).toEqual([
+      { action: 'collMod', name: 'MongoTask', validator: {} },
+    ]);
+  });
+
+  it('should replace a changed validator, and restore it on the way down', () => {
+    const stale = { tier: { $in: [1, null] } };
+    const diff = generator.diffSchema(MongoLabel, withValidator(createTableNode('MongoLabel'), stale));
+    assertDefined(diff);
+
+    expect(commands(generator.generateAlterTable(diff))).toEqual([
+      { action: 'collMod', name: 'MongoLabel', validator: { tier: { $in: [1, 2, null] } } },
+    ]);
+    expect(commands(generator.generateAlterTable(reverseDiff(diff)))).toEqual([
+      { action: 'collMod', name: 'MongoLabel', validator: stale },
+    ]);
+  });
+
+  it('should remove a validator the entity no longer declares', () => {
+    const current = collectionWith(
+      'MongoUser',
+      { name: 'MongoUser__username_idx', unique: false },
+      { name: 'email_idx', unique: true },
+    );
+    const diff = generator.diffSchema(MongoUser, withValidator(current, { email: { $exists: true } }));
+    assertDefined(diff);
+
+    expect(commands(generator.generateAlterTable(diff))).toEqual([
+      { action: 'collMod', name: 'MongoUser', validator: {} },
+    ]);
+  });
+
+  it('should plan nothing where the validator is in sync', () => {
+    expect(
+      generator.diffSchema(MongoLabel, withValidator(createTableNode('MongoLabel'), { tier: { $in: [1, 2, null] } })),
+    ).toBeUndefined();
+  });
+});
+
+/** `table` holding `validator`, as the introspector reads one back. */
+function withValidator(table: TableNode, validator: Record<string, unknown>): TableNode {
+  table.checks.push(validatorCheck(table.name, validator));
+  return table;
+}
 
 /**
  * A collection as the database holds it: each index over the one field it is named after, `<field>_idx`

@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { afterAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { driftOf, planOf, syncOf } from '../../test/drift.js';
-import { provisioningTimeout } from '../../test/index.js';
+import { linkUqlOrmSource, provisioningTimeout } from '../../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../../test/sqlPools.js';
 import type { SqlQuerierPool, Type } from '../../type/index.js';
 import { raw } from '../../util/index.js';
@@ -89,22 +89,22 @@ class ShapeNoEmail {
 
 const RENAMED = 'drift_sync_renamed';
 
-/** An indexed title, and a parent by foreign key, before their fields were renamed. */
-@Index((row) => [row.title])
+/** An indexed subtitle, and a parent by foreign key, named as their fields are. */
+@Index((row) => [row.subTitle])
 @Entity({ name: RENAMED })
 class TitledBefore {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) title?: string | null;
+  @Field({ type: String, length: 100 }) subTitle?: string | null;
   @Field({ type: Number, references: () => TitledBefore }) parentId?: number | null;
 }
 
-/** The same columns as `headline` and `ownerId`, identical but for their names. */
-@Index((row) => [row.headline])
+/** The same columns in snake case, as a naming strategy switched to it spells them. */
+@Index((row) => [row.subTitle])
 @Entity({ name: RENAMED })
 class TitledAfter {
   @Id({ type: Number }) id?: number;
-  @Field({ type: String, length: 100 }) headline?: string | null;
-  @Field({ type: Number, references: () => TitledAfter }) ownerId?: number | null;
+  @Field({ type: String, length: 100, name: 'sub_title' }) subTitle?: string | null;
+  @Field({ type: Number, references: () => TitledAfter, name: 'parent_id' }) parentId?: number | null;
 }
 
 const RETYPED = 'drift_sync_retyped';
@@ -243,7 +243,7 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
       const migrator = await generating(pool, ShapeNoEmail);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
 
-      await migrator.generateFromEntities('drop_email');
+      await linkUqlOrmSource(await migrator.generateFromEntities('drop_email'));
       expect(warn).toHaveBeenCalledWith(`Drops "${SHAPE}"."email", losing what it holds.`);
       await migrator.up();
       expect(await driftOf(pool, ShapeNoEmail, SHAPE)).toEqual([]);
@@ -262,7 +262,7 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
       const migrator = await generating(pool, NamedLong);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
 
-      await migrator.generateFromEntities('widen_name');
+      await linkUqlOrmSource(await migrator.generateFromEntities('widen_name'));
       await migrator.up();
 
       expect(warn).not.toHaveBeenCalledWith(expect.stringContaining('Retypes'));
@@ -288,35 +288,35 @@ describe.each(sqlPools('test_drift'))('drift and sync (%s)', (_engine, connect) 
     provisioningTimeout,
   );
 
-  /** A field renamed but otherwise unchanged keeps its data: the generated migration renames the column, and back. */
+  /** A column its naming strategy now spells otherwise keeps its data: the generated migration renames it, and back. */
   it(
-    'should rename a column its field was renamed from, and back',
+    'should rename a column its naming strategy spells otherwise, and back',
     async () => {
       await syncOf(pool, TitledBefore, { force: true });
-      await pool.insertOne(TitledBefore, { id: 1, title: 'kept' });
-      await pool.insertOne(TitledBefore, { id: 2, title: 'child', parentId: 1 });
+      await pool.insertOne(TitledBefore, { id: 1, subTitle: 'kept' });
+      await pool.insertOne(TitledBefore, { id: 2, subTitle: 'child', parentId: 1 });
       // Drift reads no rename into a database nobody migrated: each renamed thing is missing and held under its old name.
       expect(await driftOf(pool, TitledAfter, RENAMED)).toEqual([
-        { type: 'missing_column', column: 'headline' },
-        { type: 'missing_column', column: 'ownerId' },
-        { type: 'unexpected_column', column: 'title' },
+        { type: 'missing_column', column: 'sub_title' },
+        { type: 'missing_column', column: 'parent_id' },
+        { type: 'unexpected_column', column: 'subTitle' },
         { type: 'unexpected_column', column: 'parentId' },
-        { type: 'missing_index', index: 'drift_sync_renamed__headline_idx' },
-        { type: 'missing_index', index: 'drift_sync_renamed__ownerId_idx' },
+        { type: 'missing_index', index: 'drift_sync_renamed__sub_title_idx' },
+        { type: 'missing_index', index: 'drift_sync_renamed__parent_id_idx' },
         { type: 'unexpected_index', index: 'drift_sync_renamed__parentId_idx' },
-        { type: 'unexpected_index', index: 'drift_sync_renamed__title_idx' },
+        { type: 'unexpected_index', index: 'drift_sync_renamed__subTitle_idx' },
         { type: 'missing_relationship' },
         { type: 'unexpected_relationship' },
       ]);
       const migrator = await generating(pool, TitledAfter);
 
-      await migrator.generateFromEntities('rename_title');
+      await linkUqlOrmSource(await migrator.generateFromEntities('snake_case'));
       await migrator.up();
-      expect(await pool.findOneById(TitledAfter, 2)).toEqual({ id: 2, headline: 'child', ownerId: 1 });
+      expect(await pool.findOneById(TitledAfter, 2)).toEqual({ id: 2, subTitle: 'child', parentId: 1 });
       expect(await driftOf(pool, TitledAfter, RENAMED)).toEqual([]);
 
       await migrator.down();
-      expect(await pool.findOneById(TitledBefore, 2)).toEqual({ id: 2, title: 'child', parentId: 1 });
+      expect(await pool.findOneById(TitledBefore, 2)).toEqual({ id: 2, subTitle: 'child', parentId: 1 });
     },
     provisioningTimeout,
   );
@@ -338,7 +338,7 @@ describe.each(sqlPools('test_drift', 'mysql', 'mariadb', 'mssql'))('retype (%s)'
       const migrator = await generating(pool, CodedAsNumber);
       const warn = vi.spyOn(migrator.logger, 'logWarn');
 
-      await migrator.generateFromEntities('retype_code');
+      await linkUqlOrmSource(await migrator.generateFromEntities('retype_code'));
       await migrator.up();
 
       expect(warn).toHaveBeenCalledWith(expect.stringContaining(`Retypes "${RETYPED}"."code"`));

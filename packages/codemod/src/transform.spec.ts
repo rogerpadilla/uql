@@ -12,8 +12,8 @@ const FILE_NAME = '/entities.ts';
  * from disk rather than stubbed, since `Company[]` only resolves its element type when `Array` has a
  * declaration, and unwrapping arrays is exactly what the to-many relation transform depends on.
  */
-function codemodFile(text: string) {
-  const readFile = (name: string) => (name === FILE_NAME ? text : ts.sys.readFile(name));
+function codemodFile(text: string, files: Readonly<Record<string, string>> = {}, strictNullChecks = true) {
+  const readFile = (name: string) => (name === FILE_NAME ? text : (files[name] ?? ts.sys.readFile(name)));
   const host: ts.CompilerHost = {
     getSourceFile: (name, lang) => {
       const source = readFile(name);
@@ -28,8 +28,13 @@ function codemodFile(text: string) {
     fileExists: (name) => readFile(name) !== undefined,
     readFile,
   };
-  const program = ts.createProgram([FILE_NAME], { target: ts.ScriptTarget.ESNext, lib: ['lib.esnext.d.ts'] }, host);
-  return transformFile(program.getSourceFile(FILE_NAME)!, program.getTypeChecker());
+  const options = {
+    target: ts.ScriptTarget.ESNext,
+    lib: ['lib.esnext.d.ts'],
+    moduleResolution: ts.ModuleResolutionKind.Node10,
+  };
+  const program = ts.createProgram([FILE_NAME], options, host);
+  return transformFile(program.getSourceFile(FILE_NAME)!, program.getTypeChecker(), { strictNullChecks });
 }
 
 /** What a snippet is compiled against, so the checker resolves the decorators and the `Relation` alias. */
@@ -60,6 +65,23 @@ const STUBS = `
 
 /** Runs the codemod over a snippet compiled against {@link STUBS}, for the per-property cases. */
 const codemod = (snippet: string) => codemodFile(`${STUBS}${snippet}`);
+
+/** The SQL querier as 0.99.0 typed it, its `run`/`all` taking a string, installed where `uql-orm` resolves. */
+const UQL_ORM_0_99 = {
+  '/node_modules/uql-orm/package.json': '{ "name": "uql-orm", "types": "index.d.ts" }',
+  '/node_modules/uql-orm/index.d.ts': `export interface SqlQuerier {
+    run(sql: string, values?: unknown[]): Promise<unknown>;
+    all<T>(sql: string, values?: unknown[]): Promise<T[]>;
+  }
+  export interface Querier {
+    upsertOne(entity: unknown, conflictPaths: unknown, payload: unknown): Promise<{ id?: number; created?: boolean }>;
+  }
+  export declare class Migrator {
+    pending(): Promise<string[]>;
+    executed(): Promise<string[]>;
+    down(options?: { to?: string; step?: number }): Promise<unknown>;
+  }`,
+};
 
 describe('codemod transforms', () => {
   it('writes the type reflection used to supply, for every scalar shape', () => {
@@ -419,6 +441,48 @@ class Entity {
 
     expect(changed).toBe(true);
     expect(text).toContain('@Field({ references: () => Company }) companyId?: number | null;');
+  });
+
+  it('admits no null in a project without strictNullChecks, where it would change nothing', () => {
+    const { text } = codemodFile(
+      `${STUBS}
+      class Entity {
+        @Field({ type: String }) name?: string;
+      }
+    `,
+      {},
+      false,
+    );
+
+    expect(text).toContain('@Field({ type: String }) name?: string;');
+  });
+
+  it('turns an upsert destructured for its id into the id it resolves to, reporting any other key', () => {
+    const { text, unresolved } = codemodFile(
+      `import type { Querier } from 'uql-orm';
+export async function f(q: Querier) {
+  const { id } = await q.upsertOne(Object, {}, {});
+  const { id: saved } = await q.upsertOne(Object, {}, {});
+  const { created } = await q.upsertOne(Object, {}, {});
+  return [id, saved, created];
+}
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toContain('  const id = await q.upsertOne(Object, {}, {});');
+    expect(text).toContain('  const saved = await q.upsertOne(Object, {}, {});');
+    expect(unresolved).toEqual(["/entities.ts:5: upsertOne() resolves to the id; 'created' and 'changes' are gone"]);
+  });
+
+  it('leaves a computed field without a type, since its SQL decides the column', () => {
+    const { text } = codemod(`
+      class Account {
+        @Field({ computed: () => 1, eager: true }) readonly passkeyCount?: number;
+      }
+    `);
+
+    expect(text).toContain('@Field({ computed: () => 1, eager: true }) readonly passkeyCount?: number;');
   });
 
   it('adds the entity getter relations can no longer infer, for one and for many', () => {
@@ -1119,27 +1183,207 @@ let a: SqlQueryDialect; let b: DialectName; let c: D1Queryable; let d: DialectFe
     expect(unresolved).toEqual([]);
   });
 
-  it('moves the MongoDB migration exports to uql-orm/mongo', () => {
+  it('moves the MongoDB migration exports to uql-orm/mongodb', () => {
     const { text, unresolved } =
-      codemodFile(`import { defineMigration, MongoMigrationStorage, type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/migrate';
+      codemodFile(`import { defineMigration, type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/migrate';
 import { isMongoQuerier } from 'uql-orm';
-let a: MongoQuerier; let b = [MongoMigrationStorage, MongoSchemaIntrospector, isMongoQuerier, defineMigration];
+let a: MongoQuerier; let b = [MongoSchemaIntrospector, isMongoQuerier, defineMigration];
 `);
 
     expect(text).toBe(`import { defineMigration } from 'uql-orm/migrate';
-import { MongoMigrationStorage, type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/mongo';
-import { isMongoQuerier } from 'uql-orm/mongo';
-let a: MongoQuerier; let b = [MongoMigrationStorage, MongoSchemaIntrospector, isMongoQuerier, defineMigration];
+import { type MongoQuerier, MongoSchemaIntrospector } from 'uql-orm/mongodb';
+import { isMongoQuerier } from 'uql-orm/mongodb';
+let a: MongoQuerier; let b = [MongoSchemaIntrospector, isMongoQuerier, defineMigration];
 `);
     expect(unresolved).toEqual([]);
   });
 
   it('leaves an import already from the entry its export moved to', () => {
-    const { changed } = codemodFile(`import type { MongoQuerier } from 'uql-orm/mongo';
+    const { changed } = codemodFile(`import type { MongoQuerier } from 'uql-orm/mongodb';
 let a: MongoQuerier;
 `);
 
     expect(changed).toBe(false);
+  });
+
+  it('moves an import off a renamed entry', () => {
+    const { text, unresolved } = codemodFile(`import { MariadbQuerierPool } from 'uql-orm/maria';
+import { MongodbQuerierPool } from "uql-orm/mongo";
+import { BunSqlQuerierPool } from 'uql-orm/bunSql';
+`);
+
+    expect(text).toBe(`import { MariadbQuerierPool } from 'uql-orm/mariadb';
+import { MongodbQuerierPool } from "uql-orm/mongodb";
+import { BunSqlQuerierPool } from 'uql-orm/bun-sql';
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('moves an import off an entry the root repeated to the root', () => {
+    const { text } = codemodFile(`import type { Query } from 'uql-orm/type';
+import { SnakeCaseNamingStrategy } from 'uql-orm/namingStrategy';
+let q: Query<object>; let n = SnakeCaseNamingStrategy;
+`);
+
+    expect(text).toBe(`import type { Query } from 'uql-orm';
+import { SnakeCaseNamingStrategy } from 'uql-orm';
+let q: Query<object>; let n = SnakeCaseNamingStrategy;
+`);
+  });
+
+  it("renames /http's hook types and the lock error, leaving the entity HookContext alone", () => {
+    const { text } = codemodFile(`import type { Hook, HookContext } from 'uql-orm/http';
+import { type HookContext as EntityHookContext, UqlLockUsageError } from 'uql-orm';
+let a: Hook; let b: HookContext<object>; let c: EntityHookContext; let d = UqlLockUsageError;
+`);
+
+    expect(text).toBe(`import type { RequestHook, RequestHookContext } from 'uql-orm/http';
+import { type HookContext as EntityHookContext, UqlUsageError } from 'uql-orm';
+let a: RequestHook; let b: RequestHookContext<object>; let c: EntityHookContext; let d = UqlUsageError;
+`);
+  });
+
+  it('writes a literal statement to a querier as a tagged call, which needs no import', () => {
+    const { text, unresolved } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+export const up = (q: SqlQuerier) => [q.run('CREATE TABLE "a" (b INT)'), q.all<{ n: number }>(\`SELECT 1\`)];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import type { SqlQuerier } from 'uql-orm';
+export const up = (q: SqlQuerier) => [q.run\`CREATE TABLE "a" (b INT)\`, q.all<{ n: number }>\`SELECT 1\`];
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('wraps SQL built at run time in raw.text, which still splices it, and says so for a template', () => {
+    const { text, notes } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, sql: string, t: string) => [q.all(sql), q.run(\`DROP TABLE \${t}\`)];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import { raw } from 'uql-orm';
+import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, sql: string, t: string) => [q.all(raw.text(sql)), q.run(raw.text(\`DROP TABLE \${t}\`))];
+`);
+    expect(notes).toEqual([
+      '/entities.ts:2: the values in this template are spliced into the SQL; write it as raw`...` to bind them',
+    ]);
+  });
+
+  it('leaves a run() with no statement, or one that is no string', () => {
+    const { changed } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+declare const statement: object;
+export const f = (q: SqlQuerier) => [q.all(), q.run(statement)];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(changed).toBe(false);
+  });
+
+  it('reports a statement passed with its values, and leaves a run() that is not a querier', () => {
+    const { text, unresolved, changed } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+declare const job: { run(name: string): void };
+export const f = (q: SqlQuerier, id: number) => [q.run('DELETE FROM a WHERE id = $1', [id]), job.run('x')];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(changed).toBe(false);
+    expect(text).toContain("job.run('x')");
+    expect(unresolved).toEqual([
+      '/entities.ts:3: run() takes one raw statement: write the values into it, raw`... ${value}`, which binds them',
+    ]);
+  });
+
+  it('reports the Migrator calls whose name or meaning changed', () => {
+    const { unresolved, notes } = codemodFile(
+      `import { Migrator } from 'uql-orm';
+declare const m: Migrator;
+export const f = async () => [await m.pending(), await m.executed(), await m.down(), await m.down({ step: 2 })];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(unresolved).toEqual([
+      "/entities.ts:3: 'pending()' was removed; read `(await migrator.status()).pending`",
+      "/entities.ts:3: 'executed()' was removed; read `(await migrator.status()).executed`",
+    ]);
+    expect(notes).toEqual([
+      '/entities.ts:3: down() with no options reverts only the last migration now; pass `{ step: Infinity }` to revert them all',
+    ]);
+  });
+
+  it('renames the SQLite pool and the migration builder types', () => {
+    const { text } = codemodFile(`import { Sqlite3QuerierPool } from 'uql-orm/sqlite';
+import type { IMigrationBuilder, ITableBuilder } from 'uql-orm/migrate';
+const pool = new Sqlite3QuerierPool();
+let m: IMigrationBuilder; let t: ITableBuilder;
+`);
+
+    expect(text).toBe(`import { SqliteQuerierPool } from 'uql-orm/sqlite';
+import type { MigrationBuilder, TableBuilder } from 'uql-orm/migrate';
+const pool = new SqliteQuerierPool();
+let m: MigrationBuilder; let t: TableBuilder;
+`);
+  });
+
+  it('reports an internal the root no longer exports, and every import from uql-orm/util', () => {
+    const { unresolved } = codemodFile(`import { AbstractSqlQuerier, Entity, fieldOf } from 'uql-orm';
+import { hasKeys } from 'uql-orm/util';
+`);
+
+    expect(unresolved).toEqual([
+      "/entities.ts:1: 'AbstractSqlQuerier' is internal; extend a driver's querier or pool from its entry instead",
+      "/entities.ts:1: 'fieldOf' is internal; read the field off `getMeta(Entity).fields`",
+      "/entities.ts:2: 'uql-orm/util' was removed; its helpers are internal, so write your own `hasKeys`",
+    ]);
+  });
+
+  it('moves what the root still exports out of uql-orm/util, and reports the rest', () => {
+    const { text, unresolved } = codemodFile(`import { hasKeys, raw } from 'uql-orm/util';
+import { refs } from 'uql-orm/util';
+raw\`now()\`;
+`);
+
+    expect(text).toBe(`import { hasKeys } from 'uql-orm/util';
+import { raw } from 'uql-orm';
+import { refs } from 'uql-orm';
+raw\`now()\`;
+`);
+    expect(unresolved).toEqual([
+      "/entities.ts:1: 'uql-orm/util' was removed; its helpers are internal, so write your own `hasKeys`",
+    ]);
+  });
+
+  it('reports an internal imported from an entry that moved to the root', () => {
+    const { unresolved } = codemodFile(`import { AbstractSqlDialect } from 'uql-orm/dialect';
+import { getEntities } from 'uql-orm/entity';
+`);
+
+    expect(unresolved).toEqual([
+      expect.stringContaining("'AbstractSqlDialect' is internal"),
+      expect.stringContaining("'getEntities' is internal"),
+    ]);
+  });
+
+  it('reports the migration storages, which the migrator owns', () => {
+    const { unresolved } =
+      codemodFile(`import { JsonMigrationStorage, DatabaseMigrationStorage } from 'uql-orm/migrate';
+import { MongoMigrationStorage } from 'uql-orm/mongo';
+`);
+
+    expect(unresolved).toEqual([
+      expect.stringContaining("'JsonMigrationStorage' was removed"),
+      expect.stringContaining("'DatabaseMigrationStorage' was removed"),
+      expect.stringContaining("'MongoMigrationStorage' was removed"),
+    ]);
   });
 
   it('reports the dialect, pool, migrator and D1 exports that repeated another or always held', () => {

@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import type { QueryUpdateResult, RawRow } from '../type/index.js';
+
 import { AbstractPoolQuerier } from './abstractPoolQuerier.js';
 
 /** Stands in for a pooled driver connection: `release` hands it back, and can be made to fail. */
@@ -55,7 +56,7 @@ describe('AbstractPoolQuerier connection lifecycle', () => {
     await querier.connectNow();
     await querier.release();
 
-    await expect(querier.all('SELECT 1')).rejects.toThrow('querier already released');
+    await expect(querier.all`SELECT 1`).rejects.toThrow('querier already released');
 
     expect(querier.connects).toBe(1);
     expect(querier.handedBack).toEqual([1]);

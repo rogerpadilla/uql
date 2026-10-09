@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
-import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MongoDialect } from '../mongodb/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier } from '../test/index.js';
 import { isSqlQuerier } from './querier.js';

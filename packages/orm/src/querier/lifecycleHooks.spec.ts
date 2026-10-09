@@ -16,9 +16,9 @@ import {
   OneToMany,
 } from '../entity/index.js';
 import type { HookContext } from '../index.js';
-import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import type { Querier, QuerierListener } from '../type/index.js';
-import { getKeys } from '../util/index.js';
+import { getKeys, raw } from '../util/index.js';
 import { UqlUsageError } from '../util/uqlError.js';
 
 /**
@@ -221,7 +221,6 @@ class Unique {
 
   @BeforeInsert()
   async countTaken(this: Unique, ctx: HookContext) {
-    log.push(`inTransaction:${ctx.querier.hasOpenTransaction}`);
     log.push(`taken:${await ctx.querier.count(Unique, { $where: { email: this.email } })}`);
   }
 }
@@ -332,13 +331,13 @@ const TABLES = {
   Tome: '`id` INTEGER PRIMARY KEY, `title` TEXT, `authorId` INTEGER',
 };
 
-const pool = new Sqlite3QuerierPool(':memory:');
+const pool = new SqliteQuerierPool(':memory:');
 type PooledQuerier = Awaited<ReturnType<typeof pool.getQuerier>>;
 
 /** Drops first: the pooled `:memory:` connection is reused, so rows outlive the test that wrote them. */
 const createTable = async (querier: PooledQuerier, table: keyof typeof TABLES) => {
-  await querier.run(`DROP TABLE IF EXISTS \`${table}\``);
-  await querier.run(`CREATE TABLE \`${table}\` (${TABLES[table]})`);
+  await querier.run(raw.text(`DROP TABLE IF EXISTS \`${table}\``));
+  await querier.run(raw.text(`CREATE TABLE \`${table}\` (${TABLES[table]})`));
 };
 
 describe('lifecycle hooks', () => {
@@ -415,6 +414,13 @@ describe('lifecycle hooks', () => {
     await querier.insertOne(Secret, { code: 'plaintext' });
 
     expect(await querier.findMany(Secret, { $select: { id: true, code: true } })).toEqual([{ id: 1, code: '***' }]);
+  });
+
+  /** `returning` reads its rows back as a read does, through `@AfterLoad`. */
+  it('should return what an @AfterLoad hook assigned to a written row', async () => {
+    expect(await querier.insertOne(Secret, { code: 'plaintext' }, { returning: { code: true } })).toEqual({
+      code: '***',
+    });
   });
 
   it('should run @AfterLoad once per loaded row', async () => {
@@ -564,7 +570,7 @@ describe('lifecycle hooks', () => {
 
     it('should not read the rows back when nothing handles the event', async () => {
       await querier.insertOne(Plain, { title: 'p' });
-      const all = vi.spyOn(querier, 'all');
+      const all = vi.spyOn(querier, 'internalAll');
 
       await querier.deleteMany(Plain, { $where: { id: 1 } });
 
@@ -646,13 +652,13 @@ describe('lifecycle hooks', () => {
 
       // The count sees the uncommitted sibling row, which is the whole point of handing hooks the
       // active querier rather than a fresh one.
-      expect(log).toEqual(['inTransaction:true', 'taken:1']);
+      expect(log).toEqual(['taken:1']);
     });
 
     it('should expose a querier outside a transaction too', async () => {
       await querier.insertOne(Unique, { email: 'a@b.c' });
 
-      expect(log).toEqual(['inTransaction:false', 'taken:0']);
+      expect(log).toEqual(['taken:0']);
     });
   });
 
@@ -712,7 +718,7 @@ describe('global listeners', () => {
       log.push('listener:awaited');
     },
   };
-  const listenerPool = new Sqlite3QuerierPool(':memory:', undefined, { listeners: [listener] });
+  const listenerPool = new SqliteQuerierPool(':memory:', undefined, { listeners: [listener] });
   let querier: PooledQuerier;
 
   beforeEach(async () => {

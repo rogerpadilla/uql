@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
-import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { raw } from '../util/raw.js';
 
 /**
  * The two ways a cascade happens, asserted on the statements and the rows left: a declared constraint
@@ -66,21 +67,25 @@ class WalkedChild {
 }
 
 describe('cascade delegation', () => {
-  const pool = new Sqlite3QuerierPool(':memory:');
+  const pool = new SqliteQuerierPool(':memory:');
   let querier: Awaited<ReturnType<typeof pool.getQuerier>>;
 
   beforeEach(async () => {
     querier = await pool.getQuerier();
     for (const table of ['DelegatedChild', 'DelegatedParent', 'WalkedChild', 'WalkedParent']) {
-      await querier.run(`DROP TABLE IF EXISTS \`${table}\``);
+      await querier.run(raw.text(`DROP TABLE IF EXISTS \`${table}\``));
     }
-    await querier.run('CREATE TABLE `DelegatedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `DelegatedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
     await querier.run(
-      'CREATE TABLE `DelegatedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `DelegatedParent`(`id`) ON DELETE CASCADE)',
+      raw.text(
+        'CREATE TABLE `DelegatedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `DelegatedParent`(`id`) ON DELETE CASCADE)',
+      ),
     );
-    await querier.run('CREATE TABLE `WalkedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)');
+    await querier.run(raw.text('CREATE TABLE `WalkedParent` (`id` INTEGER PRIMARY KEY, `name` TEXT)'));
     await querier.run(
-      'CREATE TABLE `WalkedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `WalkedParent`(`id`))',
+      raw.text(
+        'CREATE TABLE `WalkedChild` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `WalkedParent`(`id`))',
+      ),
     );
   });
 
@@ -90,8 +95,8 @@ describe('cascade delegation', () => {
       { id: 1, parentId: 1 },
       { id: 2, parentId: 1 },
     ]);
-    const run = vi.spyOn(querier, 'run');
-    const all = vi.spyOn(querier, 'all');
+    const run = vi.spyOn(querier, 'internalRun');
+    const all = vi.spyOn(querier, 'internalAll');
 
     const changes = await querier.deleteMany(DelegatedParent, { $where: { id: 1 } });
 
@@ -112,8 +117,8 @@ describe('cascade delegation', () => {
       { id: 1, parentId: 1 },
       { id: 2, parentId: 1 },
     ]);
-    const run = vi.spyOn(querier, 'run');
-    const all = vi.spyOn(querier, 'all');
+    const run = vi.spyOn(querier, 'internalRun');
+    const all = vi.spyOn(querier, 'internalAll');
 
     const changes = await querier.deleteMany(WalkedParent, { $where: { id: 1 } });
 
@@ -123,8 +128,12 @@ describe('cascade delegation', () => {
     // children themselves cascade onto nothing, so removing them takes the one statement.
     expect(all).toHaveBeenCalledTimes(1);
     expect(all).toHaveBeenNthCalledWith(1, 'SELECT `id` FROM `WalkedParent` WHERE `id` = ?', [1]);
-    expect(run).toHaveBeenNthCalledWith(1, 'DELETE FROM `WalkedChild` WHERE `parentId` IN (?)', [1]);
-    expect(run).toHaveBeenNthCalledWith(2, 'DELETE FROM `WalkedParent` WHERE `id` IN (?)', [1]);
+    expect(run.mock.calls).toEqual([
+      ['BEGIN TRANSACTION'],
+      ['DELETE FROM `WalkedChild` WHERE `parentId` IN (?)', [1]],
+      ['DELETE FROM `WalkedParent` WHERE `id` IN (?)', [1]],
+      ['COMMIT'],
+    ]);
     expect(await querier.findMany(WalkedChild, { $select: { id: true } })).toEqual([]);
   });
 
@@ -138,8 +147,8 @@ describe('cascade delegation', () => {
       { id: 1, name: 'p' },
       { id: 2, name: 'p' },
     ]);
-    const run = vi.spyOn(querier, 'run');
-    const all = vi.spyOn(querier, 'all');
+    const run = vi.spyOn(querier, 'internalRun');
+    const all = vi.spyOn(querier, 'internalAll');
 
     const changes = await querier.deleteMany(DelegatedParent, { $where: { name: 'p' }, $limit: 1 });
 
@@ -154,8 +163,8 @@ describe('cascade delegation', () => {
       { id: 1, name: 'p' },
       { id: 2, name: 'p' },
     ]);
-    const run = vi.spyOn(querier, 'run');
-    const all = vi.spyOn(querier, 'all');
+    const run = vi.spyOn(querier, 'internalRun');
+    const all = vi.spyOn(querier, 'internalAll');
 
     const changes = await querier.updateMany(DelegatedParent, { $where: { name: 'p' }, $limit: 1 }, { name: 'q' });
 
@@ -168,7 +177,7 @@ describe('cascade delegation', () => {
 
   /** Nothing matched, so there is no statement to issue - and no unfiltered one to issue by mistake. */
   it('should issue no update when a paged update settles on no rows', async () => {
-    const run = vi.spyOn(querier, 'run');
+    const run = vi.spyOn(querier, 'internalRun');
 
     await expect(
       querier.updateMany(DelegatedParent, { $where: { name: 'absent' }, $limit: 1 }, { name: 'q' }),

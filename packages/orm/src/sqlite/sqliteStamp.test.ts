@@ -21,7 +21,7 @@ describe('a stamp on SQLite with recursive triggers on', () => {
   beforeAll(async () => {
     pool = new NodeSqliteQuerierPool(':memory:');
     await new Migrator(pool, { entities: [RecursiveStamp] }).sync();
-    await pool.run('PRAGMA recursive_triggers = ON');
+    await pool.run`PRAGMA recursive_triggers = ON`;
   });
 
   afterAll(() => pool.end());

@@ -22,7 +22,7 @@ export type NodeSqlitePoolOptions = LocalSqlitePoolOptions & {
 };
 
 /**
- * A pool over Node's built-in `node:sqlite`, needing no dependency at all. {@link Sqlite3QuerierPool} is the
+ * A pool over Node's built-in `node:sqlite`, needing no dependency at all. {@link SqliteQuerierPool} is the
  * faster choice for read-heavy work, and the one on Bun.
  */
 export class NodeSqliteQuerierPool extends AbstractLocalSqliteQuerierPool<LocalSqliteDatabase, SqliteDialect> {

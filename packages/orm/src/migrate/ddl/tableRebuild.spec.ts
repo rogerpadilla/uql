@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { SqliteDialect } from '../../sqlite/sqliteDialect.js';
-import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
+import { raw } from '../../util/raw.js';
 import { migrationTargetFor } from '../migrationTarget.js';
 import { rebuildTable } from './tableRebuild.js';
 
@@ -16,7 +17,7 @@ const STATEMENTS = rebuildTable(
 );
 
 describe('rebuildTable on SQLite', () => {
-  let pool: Sqlite3QuerierPool;
+  let pool: SqliteQuerierPool;
 
   /** Every statement in one migration session, which is how the migrator runs a rebuild. */
   const migrate = (statements: readonly string[]) =>
@@ -28,16 +29,18 @@ describe('rebuildTable on SQLite', () => {
       }),
     );
 
-  const rows = (table: string) => pool.all<{ id: number }>(`SELECT * FROM \`${table}\``);
+  const rows = (table: string) => pool.all<{ id: number }>(raw.text(`SELECT * FROM \`${table}\``));
 
   beforeEach(async () => {
-    pool = new Sqlite3QuerierPool(':memory:');
-    await pool.run('CREATE TABLE `parent` (`id` INTEGER PRIMARY KEY, `code` TEXT)');
+    pool = new SqliteQuerierPool(':memory:');
+    await pool.run(raw.text('CREATE TABLE `parent` (`id` INTEGER PRIMARY KEY, `code` TEXT)'));
     await pool.run(
-      'CREATE TABLE `child` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `parent` (`id`) ON DELETE CASCADE)',
+      raw.text(
+        'CREATE TABLE `child` (`id` INTEGER PRIMARY KEY, `parentId` INTEGER REFERENCES `parent` (`id`) ON DELETE CASCADE)',
+      ),
     );
-    await pool.run("INSERT INTO `parent` VALUES (1, '12')");
-    await pool.run('INSERT INTO `child` VALUES (1, 1)');
+    await pool.run(raw.text("INSERT INTO `parent` VALUES (1, '12')"));
+    await pool.run(raw.text('INSERT INTO `child` VALUES (1, 1)'));
   });
 
   afterEach(() => pool.end());
@@ -47,7 +50,7 @@ describe('rebuildTable on SQLite', () => {
     await expect(
       pool.transaction(async (querier) => {
         for (const statement of STATEMENTS) {
-          await querier.run(statement);
+          await querier.run(raw.text(statement));
         }
       }),
     ).rejects.toThrow('turn foreign keys off to rebuild parent: the rows referencing it would be lost');
@@ -61,21 +64,21 @@ describe('rebuildTable on SQLite', () => {
 
     expect(await rows('parent')).toEqual([{ id: 1, code: 12 }]);
     expect(await rows('child')).toEqual([{ id: 1, parentId: 1 }]);
-    expect(await pool.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
+    expect(await pool.all`PRAGMA foreign_keys`).toEqual([{ foreign_keys: 1 }]);
   });
 
   it('should rebuild on a connection with foreign keys off, and leave them off', async () => {
-    await pool.run('PRAGMA foreign_keys = OFF');
+    await pool.run`PRAGMA foreign_keys = OFF`;
 
     await migrate(STATEMENTS);
 
     expect(await rows('parent')).toEqual([{ id: 1, code: 12 }]);
-    expect(await pool.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 0 }]);
+    expect(await pool.all`PRAGMA foreign_keys`).toEqual([{ foreign_keys: 0 }]);
   });
 
   it('should rebuild a table sharing no column with the old one empty, copying nothing', async () => {
-    await pool.run('CREATE TABLE `solo` (`code` TEXT)');
-    await pool.run("INSERT INTO `solo` VALUES ('a')");
+    await pool.run(raw.text('CREATE TABLE `solo` (`code` TEXT)'));
+    await pool.run(raw.text("INSERT INTO `solo` VALUES ('a')"));
 
     await migrate(
       rebuildTable(
@@ -90,7 +93,7 @@ describe('rebuildTable on SQLite', () => {
     );
 
     expect(await rows('solo')).toEqual([]);
-    expect(await pool.all("SELECT name FROM pragma_table_info('solo')")).toEqual([{ name: 'key' }]);
+    expect(await pool.all`SELECT name FROM pragma_table_info('solo')`).toEqual([{ name: 'key' }]);
   });
 
   it('should roll back a migration that leaves a row referencing a missing one', async () => {
@@ -99,6 +102,6 @@ describe('rebuildTable on SQLite', () => {
     );
 
     expect(await rows('parent')).toEqual([{ id: 1, code: '12' }]);
-    expect(await pool.all('PRAGMA foreign_keys')).toEqual([{ foreign_keys: 1 }]);
+    expect(await pool.all`PRAGMA foreign_keys`).toEqual([{ foreign_keys: 1 }]);
   });
 });

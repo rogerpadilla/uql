@@ -32,15 +32,29 @@ async function importConfig(path: string): Promise<unknown> {
     ? import(pathToFileURL(tsxApi).href).then((api: TsxApi) => api.tsImport(url, import.meta.url))
     : import(url);
   const mod = await loading.catch((cause: unknown) => {
-    throw new UqlUsageError(
-      `Could not import ${path}: ${(cause as Error)?.message}\n` +
-        'If it reaches entity classes, their decorators need a runtime that transforms TypeScript, not ' +
-        'just one that strips its types. Run the CLI with `bun`, or install tsx (`npm i -D tsx`), which the ' +
-        'CLI uses when it finds one. See https://uql-orm.dev/migrations#running-the-cli',
-      { cause },
-    );
+    throw importFailure(path, cause, process.versions, tsxApi);
   });
   return mod.default ?? mod;
+}
+
+/**
+ * Why `path` failed to import. Only plain Node, which strips types without running decorators, can fail on
+ * those, so only there does it point at a runtime that runs them: Bun, Deno, or the project's tsx.
+ */
+export function importFailure(
+  path: string,
+  cause: unknown,
+  versions: { bun?: string; deno?: string },
+  tsxApi: string | undefined,
+): UqlUsageError {
+  const message = cause instanceof Error ? cause.message : String(cause);
+  const hint =
+    tsxApi || versions.bun || versions.deno
+      ? ''
+      : '\nIf it reaches entity classes, their decorators need a runtime that transforms TypeScript, not ' +
+        'just one that strips its types. Run the CLI with `bun`, or install tsx (`npm i -D tsx`), which the ' +
+        'CLI uses when it finds one. See https://uql-orm.dev/migrations#running-the-cli';
+  return new UqlUsageError(`Could not import ${path}: ${message}${hint}`, { cause });
 }
 
 /** Where the CLI looks for its config, in order, when it is given no path. */

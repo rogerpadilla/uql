@@ -1,6 +1,8 @@
+import { writeFile } from 'node:fs/promises';
+import { join } from 'node:path';
 import { afterAll, afterEach, beforeAll, describe, expect, it, onTestFinished, vi } from 'vitest';
 import { Entity, Field, Id, Index } from '../entity/index.js';
-import { assertDefined } from '../test/index.js';
+import { assertDefined, migrationsDir, UQL_ORM_SOURCE } from '../test/index.js';
 import { type SqlPool, sqlPools } from '../test/sqlPools.js';
 import { idKey, type SchemaIntrospector, type SqlQuerierPool } from '../type/index.js';
 import { raw } from '../util/index.js';
@@ -19,7 +21,10 @@ export interface DatabaseConfig {
   keepsComments: boolean;
 }
 
-/** One engine's run of the shared sync suite; each engine is its own test file, so vitest runs them in parallel. */
+/**
+ * One engine's run of the shared suite, `sync` and `up`; each engine is its own test file, so vitest runs them in
+ * parallel.
+ */
 export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
   const [[, connect, { features }]] = sqlPools('test_sync').filter(([name]) => name === engine);
 
@@ -29,7 +34,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     const claimed = new Set<string>();
 
     const escapeId = (id: string) => pool.dialect.escapeId(id);
-    const dropTable = (tableName: string) => pool.run(`DROP TABLE IF EXISTS ${escapeId(tableName)}`);
+    const dropTable = (tableName: string) => pool.run(raw.text(`DROP TABLE IF EXISTS ${escapeId(tableName)}`));
 
     /** The table as introspected, failing the test where it is missing. */
     const introspectTable = async (tableName: string, tables = [tableName]) => {
@@ -46,7 +51,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       (await introspectTable(tableName)).indexes.map((index) => index.name).sort();
 
     const createIndex = (tableName: string, name: string, columns: readonly string[]) =>
-      pool.run(`CREATE INDEX ${escapeId(name)} ON ${escapeId(tableName)} (${columns.map(escapeId).join(', ')})`);
+      pool.run(
+        raw.text(`CREATE INDEX ${escapeId(name)} ON ${escapeId(tableName)} (${columns.map(escapeId).join(', ')})`),
+      );
 
     /** Names the table this test owns, guarantees it does not exist yet, and registers its teardown. */
     const givenNoTable = async (tableName: string) => {
@@ -57,7 +64,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
     /** {@link givenNoTable} plus the pre-existing table a sync is expected to reconcile. */
     const givenTable = async (tableName: string, columns: string) => {
       await givenNoTable(tableName);
-      await pool.run(`CREATE TABLE ${escapeId(tableName)} (${columns})`);
+      await pool.run(raw.text(`CREATE TABLE ${escapeId(tableName)} (${columns})`));
     };
 
     beforeAll(() => {
@@ -340,7 +347,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       await givenNoTable(child);
       await givenTable(parent, idColumn);
       await pool.run(
-        `CREATE TABLE ${escapeId(child)} (${idColumn}, ${escapeId('companyId')} ${db.keyColumnType}${foreignKey})`,
+        raw.text(
+          `CREATE TABLE ${escapeId(child)} (${idColumn}, ${escapeId('companyId')} ${db.keyColumnType}${foreignKey})`,
+        ),
       );
     };
 
@@ -395,7 +404,7 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
           ifExists: true,
           existing,
         })) {
-          await pool.run(sql);
+          await pool.run(raw.text(sql));
         }
       });
       const migrator = new Migrator(pool, { entities });
@@ -494,7 +503,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       await givenNoTable('FkLegacyEmployee');
       await givenTable('FkLegacyCompany', legacyKey);
       await pool.run(
-        `CREATE TABLE ${escapeId('FkLegacyEmployee')} (${legacyKey}, ${escapeId('companyId')} ${db.keyColumnType})`,
+        raw.text(
+          `CREATE TABLE ${escapeId('FkLegacyEmployee')} (${legacyKey}, ${escapeId('companyId')} ${db.keyColumnType})`,
+        ),
       );
 
       const migrator = new Migrator(pool, { entities: [FkLegacyCompany, FkLegacyEmployee] });
@@ -523,9 +534,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       await new Migrator(pool, { entities: [SyncEnumAdded] }).sync();
 
-      await pool.run(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('draft')`);
+      await pool.run(raw.text(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('draft')`));
       await expect(
-        pool.run(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('bogus')`),
+        pool.run(raw.text(`INSERT INTO ${escapeId(tableName)} (${escapeId('status')}) VALUES ('bogus')`)),
       ).rejects.toThrow();
     });
 
@@ -543,9 +554,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       const migrator = new Migrator(pool, { entities: [SyncEnumCreated] });
       await migrator.sync();
 
-      await pool.run(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('on')`);
+      await pool.run(raw.text(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('on')`));
       await expect(
-        pool.run(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('nope')`),
+        pool.run(raw.text(`INSERT INTO ${escapeId('SyncEnumCreated')} (${escapeId('state')}) VALUES ('nope')`)),
       ).rejects.toThrow();
       // The check reads back under the name it was installed with.
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
@@ -570,8 +581,10 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
       await migrator.sync();
 
       const cols = `${escapeId('spent')}, ${escapeId('balance')}`;
-      await pool.run(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (1, 2)`);
-      await expect(pool.run(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (5, 2)`)).rejects.toThrow();
+      await pool.run(raw.text(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (1, 2)`));
+      await expect(
+        pool.run(raw.text(`INSERT INTO ${escapeId('SyncChecked')} (${cols}) VALUES (5, 2)`)),
+      ).rejects.toThrow();
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
     });
 
@@ -637,7 +650,9 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       // The database owns the value; an insert naming it is an error on every engine here.
       const cols = `${escapeId('qty')}, ${escapeId('price')}, ${escapeId('total')}`;
-      await expect(pool.run(`INSERT INTO ${escapeId('SyncComputed')} (${cols}) VALUES (1, 1, 99)`)).rejects.toThrow();
+      await expect(
+        pool.run(raw.text(`INSERT INTO ${escapeId('SyncComputed')} (${cols}) VALUES (1, 1, 99)`)),
+      ).rejects.toThrow();
 
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
     });
@@ -796,6 +811,64 @@ export function describeMigratorSync(engine: SqlPool[0], db: DatabaseConfig) {
 
       expect(await pool.findMany(After, { $select: { rank: true } })).toEqual([{ rank: 5 }]);
       expect(await migrator.planSync({ safe: false, drop: true })).toEqual([]);
+    });
+
+    /** A migration file whose `up` waits `wait` milliseconds, then runs each of `statements`. */
+    const writeMigration = (dir: string, name: string, statements: readonly string[], wait = 0) =>
+      writeFile(
+        join(dir, `${name}.mjs`),
+        `import { raw } from ${JSON.stringify(UQL_ORM_SOURCE)};
+        export default {
+          async up(querier) {
+            await new Promise((resolve) => setTimeout(resolve, ${wait}));
+            for (const sql of ${JSON.stringify(statements)}) await querier.run(raw.text(sql));
+          },
+          async down() {},
+        };`,
+      );
+
+    /** A `counter` table holding one row at zero, and a journal of the test's own, none there yet. */
+    const givenCounter = async () => {
+      await givenTable('counter', `${escapeId('n')} ${db.keyColumnType}`);
+      await pool.run`INSERT INTO counter (n) VALUES (0)`;
+      await givenNoTable('uql_migrations_counter');
+    };
+
+    const counter = async () => {
+      const [{ n }] = await pool.all<{ n: number | bigint | string }>`SELECT n FROM counter`;
+      return Number(n);
+    };
+
+    /**
+     * Two instances starting at once, as a deploy starts them: the second waits on the first's lock, then
+     * finds nothing left to run. The first migration is slow, so the second asks for the lock meanwhile.
+     */
+    it('should run each pending migration once when two instances run up at once', async () => {
+      await givenCounter();
+      const dir = await migrationsDir();
+      const increment = ['UPDATE counter SET n = n + 1'];
+      await writeMigration(dir, 'm1', increment, 300);
+      await writeMigration(dir, 'm2', increment);
+      await writeMigration(dir, 'm3', increment);
+      const instance = () => new Migrator(pool, { migrationsPath: dir, tableName: 'uql_migrations_counter' });
+
+      const runs = await Promise.all([instance().up(), instance().up()]);
+
+      expect(runs.flat().map((result) => result.name)).toEqual(['m1', 'm2', 'm3']);
+      expect(await counter()).toBe(3);
+      expect(await instance().status()).toEqual({ pending: [], executed: ['m1', 'm2', 'm3'] });
+    });
+
+    it('should leave nothing behind of a migration that writes, then fails', async () => {
+      await givenCounter();
+      const dir = await migrationsDir();
+      await writeMigration(dir, 'm1', ['UPDATE counter SET n = n + 1', 'SELECT * FROM no_such_table']);
+      const migrator = new Migrator(pool, { migrationsPath: dir, tableName: 'uql_migrations_counter' });
+
+      await expect(migrator.up()).rejects.toThrow();
+
+      expect(await counter()).toBe(0);
+      expect(await migrator.status()).toEqual({ pending: ['m1'], executed: [] });
     });
   });
 }

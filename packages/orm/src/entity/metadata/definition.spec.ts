@@ -1706,7 +1706,7 @@ it('should keep the relations a junction declares itself', () => {
     id?: number;
     @Field({ references: () => Film })
     filmId?: number | null;
-    @ManyToOne({ entity: () => Film, cascade: 'delete', references: (filmScreening) => filmScreening.filmId })
+    @ManyToOne({ entity: () => Film, cascade: 'persist', references: (filmScreening) => filmScreening.filmId })
     film?: Film;
     @Field({ references: () => Screening })
     screeningId?: number | null;
@@ -1727,8 +1727,29 @@ it('should keep the relations a junction declares itself', () => {
     { local: 'screeningId', foreign: 'id' },
   ]);
   const junction = getMeta(FilmScreening);
-  expect(junction.relations.film?.cascade).toBe('delete');
+  expect(junction.relations.film?.cascade).toBe('persist');
   expect(junction.relations.notes?.references).toEqual([{ local: 'id', foreign: 'filmScreeningId' }]);
+});
+
+it('should refuse a delete cascade on a to-one holding the key, whose target other rows may point at', () => {
+  @Entity()
+  class Venue {
+    @Field({ type: Number, isId: true })
+    id?: number;
+  }
+
+  @Entity()
+  class Gig {
+    @Field({ type: Number, isId: true })
+    id?: number;
+    @Field({ references: () => Venue })
+    venueId?: number | null;
+    // @ts-expect-error a to-one holding the key cascades 'persist' only
+    @ManyToOne({ entity: () => Venue, references: (gig) => gig.venueId, cascade: true })
+    venue?: Venue;
+  }
+
+  expect(() => getMeta(Gig)).toThrow("'Gig.venue' holds the key of a 'Venue' other rows may point at too");
 });
 
 it('should refuse a mappedBy naming an inverse side, since neither side owns the foreign key', () => {

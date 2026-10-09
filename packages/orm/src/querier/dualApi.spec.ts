@@ -9,7 +9,6 @@ import type {
   QueryGroupMap,
   QueryOptions,
   QuerySearch,
-  QueryUpdateResult,
   Type,
 } from '../type/index.js';
 import { AbstractQuerier } from './abstractQuerier.js';
@@ -47,12 +46,8 @@ class MockQuerier extends AbstractQuerier {
     return 0;
   }
 
-  protected override async internalUpsertOne(): Promise<QueryUpdateResult> {
-    return { changes: 0 };
-  }
-
-  protected override async internalUpsertMany(): Promise<QueryUpdateResult> {
-    return { changes: 0 };
+  protected override async internalUpsertMany(): Promise<undefined> {
+    return undefined;
   }
 
   protected override internalDeleteMany<E>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {

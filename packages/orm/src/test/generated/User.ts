@@ -13,7 +13,7 @@ export class User {
   name?: string | null;
 
   @Field({ type: 'jsonb', nullable: false, defaultValue: '{}' })
-  settings?: Json<unknown>;
+  settings?: Json;
 
   @Field({ name: 'manager_id', type: 'int' })
   managerId?: number | null;

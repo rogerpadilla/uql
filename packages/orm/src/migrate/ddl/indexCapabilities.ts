@@ -15,6 +15,8 @@ export type IndexCapabilities = {
   readonly keywords: ReadonlyMap<IndexType, string>;
   /** What to declare instead of a type it lacks, appended to the refusal. */
   readonly hints: ReadonlyMap<IndexType, string>;
+  /** Whether `CREATE TABLE` takes a plain index among its definitions, built with the table. */
+  readonly inline: boolean;
 };
 
 const NONE: ReadonlyMap<IndexType, string> = new Map();
@@ -32,6 +34,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
     features: new Set(['expression', 'partial', 'nullsOrder', 'opsClass', 'include', 'jsonPath']),
     keywords: NONE,
     hints: NONE,
+    inline: false,
   },
   /** v26.3 answers `hash` and `brin` "unimplemented", `ivfflat` "unrecognized"; no nulls order nor operator class. */
   cockroachdb: {
@@ -39,6 +42,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
     features: new Set(['expression', 'partial', 'include', 'jsonPath']),
     keywords: new Map([['vector', 'VECTOR INDEX']]),
     hints: new Map([['ivfflat', DECLARE_VECTOR]]),
+    inline: true,
   },
   /** No vector index: MySQL 26.7 has no distance function outside HeatWave, and `VECTOR INDEX` is MariaDB's. */
   mysql: {
@@ -46,6 +50,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
     features: new Set(['expression', 'prefixLength', 'jsonPath', 'jsonArray']),
     keywords: MYSQL_LIKE_KEYWORDS,
     hints: new Map(VECTOR_INDEX_TYPES.map((type) => [type, '. Vector search on MySQL needs HeatWave'])),
+    inline: true,
   },
   /**
    * No functional index, even on 12.3, where a generated column is the documented workaround: so no JSON index
@@ -59,6 +64,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
       ['hnsw', DECLARE_VECTOR],
       ['ivfflat', DECLARE_VECTOR],
     ]),
+    inline: true,
   },
   /**
    * 2025 rejects an expression (Msg 16216), the subquery a JSON path compiles to (Msg 1046), and any type but
@@ -69,6 +75,7 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
     features: new Set(['partial']),
     keywords: NONE,
     hints: NONE,
+    inline: false,
   },
   /** Every type builds a plain index, so an entity written for Postgres migrates; libSQL's vector is DiskANN. */
   sqlite: {
@@ -76,5 +83,6 @@ export const INDEX_CAPABILITIES: Readonly<Record<SqlDialectName, IndexCapabiliti
     features: new Set(['expression', 'partial', 'jsonPath']),
     keywords: NONE,
     hints: NONE,
+    inline: false,
   },
 };

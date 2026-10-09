@@ -8,7 +8,6 @@ export type {
   Migration,
   MigrationDefinition,
   MigrationResult,
-  MigrationStorage,
   MigratorOptions,
   PrimaryKeySchema,
   SchemaDiff,
@@ -43,7 +42,3 @@ export { type BuilderMigrationDefinition, defineBuilderMigration, defineMigratio
 // Schema generators
 export { reverseDiff } from './schemaChange.js';
 export { SqlSchemaGenerator } from './schemaGenerator.js';
-
-// Storage implementations
-export { DatabaseMigrationStorage } from './storage/databaseStorage.js';
-export { JsonMigrationStorage } from './storage/jsonStorage.js';

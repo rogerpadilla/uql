@@ -3,7 +3,12 @@ import { basename, extname, join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { getEntities, getMeta } from '../entity/index.js';
 import { SchemaAST } from '../schema/schemaAST.js';
-import { columnRenames, tableRenameCandidates } from '../schema/schemaASTDiffer.js';
+import {
+  columnRenameCandidates,
+  columnRenames,
+  type DiffOptions,
+  tableRenameCandidates,
+} from '../schema/schemaASTDiffer.js';
 import type {
   Change,
   ColumnRenames,
@@ -11,7 +16,6 @@ import type {
   Migration,
   MigrationDefinition,
   MigrationResult,
-  MigrationStorage,
   MigratorDialect,
   MigratorOptions,
   Querier,
@@ -24,21 +28,28 @@ import type {
   Type,
 } from '../type/index.js';
 import { definedEntries, isRecord, LoggerWrapper } from '../util/index.js';
+import { raw } from '../util/raw.js';
 import { isOwnedName, qualifyName } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { withSqlQuerierForMigrations } from './acquireQuerierForMigrations.js';
-import type { IMigrationBuilder } from './builder/types.js';
+import type { MigrationBuilder } from './builder/types.js';
 import { buildMigrationModule, type MigrationModuleOptions } from './codegen/migrationFile.js';
 import { introspectorFor } from './introspection/registry.js';
-import { type MigrationTarget, migrationBuilderFor, migrationTargetFor } from './migrationTarget.js';
+import { DEFAULT_LOCK_TIMEOUT, type MigrationLockOptions } from './migrationLock.js';
+import {
+  type MigrationSession,
+  type MigrationTarget,
+  migrationBuilderFor,
+  migrationTargetFor,
+} from './migrationTarget.js';
 import { dropped, lacksValue, newlyRequired, nonEmpty, reverseDiff, sides, withoutRebuild } from './schemaChange.js';
-import { constraintNameOf } from './schemaGenerator.js';
+import { constraintNameOf, dropsForeignKeysFirst } from './schemaGenerator.js';
+import { DEFAULT_MIGRATIONS_TABLE, type MigrationStorage } from './storage/databaseStorage.js';
 
 /**
  * Main class for managing database migrations
  */
 export class Migrator {
-  public readonly storage: MigrationStorage;
   public readonly migrationsPath: string;
 
   public readonly logger: LoggerWrapper;
@@ -51,18 +62,25 @@ export class Migrator {
   public schemaGenerator?: SchemaGenerator;
   public schemaIntrospector: SchemaIntrospector;
   private readonly target: MigrationTarget;
+  private readonly lock: MigrationLockOptions;
+  /** The journal of the migrations run: a table, or a collection on MongoDB. */
+  private readonly storage: MigrationStorage;
 
   constructor(
     private readonly pool: QuerierPool<Querier, MigratorDialect>,
     options: MigratorOptions = {},
   ) {
     this.target = migrationTargetFor(pool, options.defaultForeignKeyAction);
-    this.storage = options.storage ?? this.target.storage(options.tableName);
+    this.storage = this.target.storage(options.tableName);
     this.migrationsPath = options.migrationsPath ?? './migrations';
     this.logger = new LoggerWrapper(options.logger, { logValues: options.logValues, slowQuery: options.slowQuery });
     this._entities = options.entities;
     this.schemaIntrospector = introspectorFor(pool);
     this.schemaGenerator = options.schemaGenerator;
+    this.lock = {
+      name: options.tableName ?? DEFAULT_MIGRATIONS_TABLE,
+      timeout: options.lockTimeout ?? DEFAULT_LOCK_TIMEOUT,
+    };
   }
 
   /** The schema generator, loaded on first use: MongoDB's needs its optional peer. */
@@ -75,46 +93,55 @@ export class Migrator {
    * The migration files by name, the names the storage records as run, and those on disk it does not, all in
    * name order. Read from names alone: a file is imported only when it is about to run.
    */
-  private async journal() {
-    const [files, recorded] = await Promise.all([this.migrationFiles(), this.storage.executed()]);
+  private async journal(recorded: readonly string[]) {
+    const files = await this.migrationFiles();
     const executed = recorded.toSorted();
     const ran = new Set(executed);
     return { files, executed, pending: [...files.keys()].sort().filter((name) => !ran.has(name)) };
   }
 
-  /** The names of the migrations not yet run, in the order `up` runs them. */
-  async pending(): Promise<string[]> {
-    return (await this.journal()).pending;
+  /**
+   * {@link journal} read without the lock, so a run holding it never holds a reader up. Only a run creates the
+   * journal, under the lock, so one not created yet has recorded nothing.
+   */
+  private async unlockedJournal() {
+    const recorded = (await this.schemaIntrospector.tableExists(this.lock.name))
+      ? await this.target.withSession(({ querier }) => this.storage.executed(querier))
+      : [];
+    return this.journal(recorded);
   }
 
   /**
-   * Get list of executed migrations
+   * Runs the pending migrations, up to `to` or `step` of them, each in a transaction of its own where the
+   * engine has one for its statements, and throws the first one's error, those before it staying applied.
+   * It holds the migration lock throughout, so a second run waits, then finds them run.
    */
-  async executed(): Promise<string[]> {
-    return this.storage.executed();
+  up(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
+    return this.migrate('up', options);
   }
 
   /**
-   * Run all pending migrations
+   * Reverts the migrations run, latest first, as {@link up} runs them: down to `to`, or `step` of them, the last
+   * one alone where it names neither. `step: Infinity` reverts them all.
    */
-  async up(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    const { files, pending } = await this.journal();
-    return this.runInOrder(files, pending, 'up', options);
+  down({ to, step = to ? undefined : 1 }: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
+    return this.migrate('down', { to, step });
   }
 
   /**
-   * Rollback migrations
+   * Holding the lock, runs the names narrowed by `to`/`step`, stopping at the first failure: `up` over the
+   * pending, `down` over the executed reversed. Every one is loaded before any runs, so a file that cannot be
+   * leaves the database as it was.
    */
-  async down(options: { to?: string; step?: number } = {}): Promise<MigrationResult[]> {
-    const { files, executed } = await this.journal();
-    return this.runInOrder(files, executed.reverse(), 'down', options);
+  private migrate(direction: 'up' | 'down', options: { to?: string; step?: number }): Promise<MigrationResult[]> {
+    return this.target.withLockedSession(this.lock, async (session) => {
+      const { files, pending, executed } = await this.journal(await this.storage.executed(session.querier));
+      return this.runInOrder(session, files, direction === 'up' ? pending : executed.reverse(), direction, options);
+    });
   }
 
-  /**
-   * Runs the names narrowed by `to`/`step`, stopping at the first failure: `up` over the pending, `down` over
-   * the executed reversed. Every one is loaded before any runs, so a file that cannot be leaves the database as it was.
-   */
   private async runInOrder(
+    session: MigrationSession,
     files: ReadonlyMap<string, string>,
     names: readonly string[],
     direction: 'up' | 'down',
@@ -137,54 +164,42 @@ export class Migrator {
     const migrations = await Promise.all(selected.map((name) => this.loadMigration(name, files.get(name))));
     const results: MigrationResult[] = [];
     for (const migration of migrations) {
-      const result = await this.runMigration(migration, direction);
-      results.push(result);
-      if (!result.success) {
-        break;
-      }
+      results.push(await this.runMigration(session, migration, direction));
     }
     return results;
   }
 
   /**
-   * Run a single migration, in a transaction where the dialect has one for it and the migration has not
-   * declared `transaction: false` - the opt-out a statement an engine refuses inside one needs.
+   * Runs one migration, in a transaction where the dialect has one for it and the migration has not declared
+   * `transaction: false` - the opt-out a statement an engine refuses inside one needs.
    */
-  public async runMigration(migration: Migration<Querier>, direction: 'up' | 'down'): Promise<MigrationResult> {
+  private async runMigration(
+    { querier, transaction }: MigrationSession,
+    migration: Migration<Querier>,
+    direction: 'up' | 'down',
+  ): Promise<MigrationResult> {
     const startTime = Date.now();
-
-    const finished = (error?: Error): MigrationResult => ({
-      name: migration.name,
-      direction,
-      duration: Date.now() - startTime,
-      success: error === undefined,
-      ...(error && { error }),
-    });
-    return this.target.withSession(async ({ querier, transaction }) => {
-      try {
-        this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
-
-        const work = async () => {
-          if (direction === 'up') {
-            await migration.up(querier);
-            await this.storage.logWithQuerier(querier, migration.name);
-          } else {
-            await migration.down(querier);
-            await this.storage.unlogWithQuerier(querier, migration.name);
-          }
-        };
-        await (migration.transaction === false ? work() : transaction(work));
-
-        const result = finished();
-        this.logger.logMigration(
-          `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${result.duration}ms`,
-        );
-        return result;
-      } catch (error) {
-        this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
-        return finished(error as Error);
+    this.logger.logMigration(`${direction === 'up' ? 'Running' : 'Reverting'} migration: ${migration.name}`);
+    const work = async () => {
+      if (direction === 'up') {
+        await migration.up(querier);
+        await this.storage.logWithQuerier(querier, migration.name);
+      } else {
+        await migration.down(querier);
+        await this.storage.unlogWithQuerier(querier, migration.name);
       }
-    });
+    };
+    try {
+      await (migration.transaction === false ? work() : transaction(work));
+    } catch (error) {
+      this.logger.logError(`Migration ${migration.name} failed: ${(error as Error).message}`, error);
+      throw error;
+    }
+    const duration = Date.now() - startTime;
+    this.logger.logMigration(
+      `Migration ${migration.name} ${direction === 'up' ? 'applied' : 'reverted'} in ${duration}ms`,
+    );
+    return { name: migration.name, direction, duration };
   }
 
   /**
@@ -294,7 +309,7 @@ export class Migrator {
       for (const { tableName, column, nullable } of counts) {
         const empty = nullable ? ` WHERE ${escapeId(column)} IS NULL` : '';
         const [{ rows }] = await querier.all<{ rows: number | bigint | string }>(
-          `SELECT COUNT(*) AS ${escapeId('rows')} FROM ${escapeId(tableName)}${empty}`,
+          raw.text(`SELECT COUNT(*) AS ${escapeId('rows')} FROM ${escapeId(tableName)}${empty}`),
         );
         const count = Number(rows);
         if (count) {
@@ -337,14 +352,14 @@ export class Migrator {
   }
 
   /**
-   * The differences between the entities and the database. With `renames`, a column identical to one the
-   * entity no longer names is renamed in place rather than dropped and added, as a generated migration wants.
+   * The differences between the entities and the database. With `renames`, as a generated migration wants, a
+   * column whose name another naming strategy spells is renamed in place rather than dropped and added.
    */
   async getDiffs(options: { renames?: boolean } = {}): Promise<SchemaDiff[]> {
     const generator = await this.getSchemaGenerator();
     // Both sides built once: the database's here, the entities' below. Left to `diffSchema`, each
     // entity would rebuild the whole AST, which is quadratic in the number of entities. Absent on a
-    // generator that compares no schema of its own - MongoDB, which reads only indexes.
+    // generator that compares no schema of its own - MongoDB, which reads only indexes and a validator.
     const desiredAst = generator.buildAST?.(this.entities);
     let ast = await this.introspectEntities(this.entities);
     const diffOptions = generator.diffOptions?.();
@@ -357,11 +372,28 @@ export class Migrator {
     if (desiredAst) {
       this.noteForeignChecks(desiredAst, ast);
     }
+    if (options.renames && desiredAst && diffOptions) {
+      this.noteRenameCandidates(desiredAst, ast, diffOptions);
+    }
     return this.entities.flatMap((entity) => {
       const tableName = this.tableOf(entity);
       const diff = generator.diffSchema(entity, ast.getTable(tableName), desiredAst, renames.get(tableName));
       return diff ? [diff] : [];
     });
+  }
+
+  /**
+   * Each column dropped while one identical to it but for its name is added: maybe a rename, which only its
+   * author can tell, so it is suggested and never written. A wrong guess would carry its data into a column
+   * meant for other data.
+   */
+  private noteRenameCandidates(desired: SchemaAST, actual: SchemaAST, options: DiffOptions): void {
+    for (const { table, from, to } of columnRenameCandidates(desired, actual, options)) {
+      this.logger.logWarn(
+        `"${to}" is identical to "${table}"."${from}", which this migration drops: if one was renamed to the ` +
+          `other, replace both with \`renameColumn('${table}', '${from}', '${to}')\`, which keeps its data.`,
+      );
+    }
   }
 
   /**
@@ -382,15 +414,30 @@ export class Migrator {
     }
   }
 
+  /** Which of the tables `entities` name exist, by qualified name: one catalogue read per schema. */
+  private async presentTables(entities: readonly Type<object>[]): Promise<Set<string>> {
+    const present = new Set<string>();
+    for (const schema of this.entitiesBySchema(entities).keys()) {
+      for (const name of await this.schemaIntrospectorFor(schema).getTableNames()) {
+        present.add(qualifyName(name, schema));
+      }
+    }
+    return present;
+  }
+
+  private entitiesBySchema(entities: readonly Type<object>[]): Map<string | undefined, Type<object>[]> {
+    const { dialect } = this.pool;
+    return Map.groupBy(new Set(entities), (entity) => dialect.resolveSchema(getMeta(entity)));
+  }
+
   /**
    * The tables `entities` name, read a schema at a time so each is keyed as its entity spells it. Those
    * alone: nothing else is diffed, and another table can be dropped mid-scan by whatever else is running.
    */
   private async introspectEntities(entities: readonly Type<object>[], renames?: ColumnRenames): Promise<SchemaAST> {
     const { dialect } = this.pool;
-    const bySchema = Map.groupBy(new Set(entities), (entity) => dialect.resolveSchema(getMeta(entity)));
     const merged = new SchemaAST();
-    for (const [schema, members] of bySchema) {
+    for (const [schema, members] of this.entitiesBySchema(entities)) {
       const tables = members.map((entity) => dialect.resolveTableAlias(getMeta(entity)));
       for (const table of (await this.schemaIntrospectorFor(schema).introspect(tables, renames)).getTables()) {
         merged.addTable(table);
@@ -409,11 +456,18 @@ export class Migrator {
     }
   }
 
-  /** Every table dropped and recreated, the whole entity set at once, so foreign keys resolve and drop in graph order. */
+  /**
+   * Every table dropped and recreated, the whole entity set at once, so foreign keys resolve and drop in graph
+   * order. Only where a drop leaves its foreign keys behind are the tables read beyond whether they exist.
+   */
   private async forceStatements(generator: SchemaGenerator): Promise<string[]> {
-    const existing = await this.introspectEntities(this.entities);
+    const drop = { ifExists: true, cascade: true };
+    const present = await this.presentTables(this.entities);
+    const existing = dropsForeignKeysFirst(this.pool.dialect.features, drop)
+      ? await this.introspectEntities(this.entities)
+      : undefined;
     return [
-      ...generator.generateDropSchema(this.entities, { ifExists: true, cascade: true, existing }),
+      ...generator.generateDropSchema(this.entities, { ...drop, present, existing }),
       ...generator.generateCreateSchema(this.entities),
     ];
   }
@@ -561,11 +615,9 @@ export class Migrator {
     if (options.logging) this.logger.logSchema('Schema synchronization completed');
   }
 
-  /**
-   * Get migration status
-   */
+  /** The names of the migrations pending and run, read without the lock. */
   async status(): Promise<{ pending: string[]; executed: string[] }> {
-    const { pending, executed } = await this.journal();
+    const { pending, executed } = await this.unlockedJournal();
     return { pending, executed };
   }
 
@@ -650,8 +702,8 @@ export function defineMigration<Q extends Querier = SqlQuerier>(
  */
 export interface BuilderMigrationDefinition<Q extends Querier = SqlQuerier> {
   readonly name?: string;
-  up(builder: IMigrationBuilder, querier: Q): Promise<void>;
-  down(builder: IMigrationBuilder, querier: Q): Promise<void>;
+  up(builder: MigrationBuilder, querier: Q): Promise<void>;
+  down(builder: MigrationBuilder, querier: Q): Promise<void>;
 }
 
 /**

@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import {
   type QueryErrorKind,
-  UqlLockUsageError,
   UqlOptimisticLockError,
   UqlError,
   UqlSecurityError,
@@ -90,9 +89,5 @@ describe('UqlError', () => {
 
   it('should not make a misuse a TypeError, which says a value has the wrong type', () => {
     expect(new UqlUsageError('carries no version')).not.toBeInstanceOf(TypeError);
-  });
-
-  it('should keep the deprecated UqlLockUsageError naming UqlUsageError, so an existing instanceof keeps working', () => {
-    expect(new UqlLockUsageError('carries no version')).toBeInstanceOf(UqlUsageError);
   });
 });

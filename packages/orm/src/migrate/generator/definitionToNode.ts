@@ -56,7 +56,7 @@ export function bareColumn({
 /**
  * The index a column-level `index` or `unique` declares, or nothing: a unique column is a unique index.
  *
- * Shared with `TableBuilder.build`, which lifts these into the table it is creating: written twice,
+ * Shared with `TableDefinitionBuilder.build`, which lifts these into the table it is creating: written twice,
  * `addColumn` had no lift at all and silently emitted a column with no index.
  */
 export function columnIndex(

@@ -6,11 +6,11 @@ import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
-import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { assertDefined } from '../test/index.js';
 import type { SchemaDiff, Type } from '../type/index.js';
 import { idKey } from '../type/index.js';
-import { whereIds } from '../util/index.js';
+import { raw, whereIds } from '../util/index.js';
 
 @Entity()
 class Enrolment {
@@ -117,7 +117,7 @@ class Session {
   term?: Term;
 }
 
-const pool = new Sqlite3QuerierPool(':memory:');
+const pool = new SqliteQuerierPool(':memory:');
 
 /**
  * Against a real database, because most of what follows is a claim about rows a statement did or did
@@ -134,7 +134,7 @@ beforeAll(async () => {
     Attempt,
     Ticket,
   ])) {
-    await pool.run(stmt);
+    await pool.run(raw.text(stmt));
   }
   await pool.insertMany(Enrolment, [
     { studentId: 1, courseId: 'maths', grade: 'A' },

@@ -1,4 +1,4 @@
-import { mongoCommandSource } from '../../mongo/mongoCommand.js';
+import { mongoCommandSource } from '../../mongodb/mongoCommand.js';
 
 /** The querier a migration module is written against. */
 export type MigrationQuerierType = 'SqlQuerier' | 'MongoQuerier';
@@ -17,14 +17,14 @@ export type MigrationModuleOptions = {
 };
 
 /**
- * Emit one `await querier.run(...)` line for entity-generated migrations.
- * Uses `JSON.stringify` so SQL with backticks (SQLite/LibSQL), quotes, `${`, etc. stays valid TS source.
+ * One `await querier.run`...`` line, the SQL a template binding nothing, so its lines and quotes read as
+ * written; a backslash, a backtick and a `${` are escaped.
  */
 export function emitSqlRunCall(sql: string): string {
-  return /*ts*/ `    await querier.run(${JSON.stringify(sql)});`;
+  return /*ts*/ `    await querier.run\`${sql.replace(/[\\`]|\$\{/g, (char) => `\\${char}`)}\`;`;
 }
 
-/** Indented `up`/`down` body: one `await querier.run(...)` per SQL string. */
+/** Indented `up`/`down` body: one `await querier.run`...`` per SQL string. */
 export function emitSqlRunCalls(statements: string[]): string {
   return statements.map(emitSqlRunCall).join('\n');
 }
@@ -37,8 +37,8 @@ export function emitMongoCommandCalls(statements: string[]): string {
 /** How a migration on one querier is scaffolded empty, and how a generated statement is spelled in it. */
 export type MigrationSource = {
   readonly querier: MigrationQuerierType;
-  /** The entry exporting that querier's type: a MongoDB one names the driver's `Db`, so only `uql-orm/mongo` has it. */
-  readonly module: string;
+  /** The entry the querier type is imported from: only `uql-orm/mongodb` names the driver's `Db`. */
+  readonly entry: string;
   readonly emptyUp: string;
   readonly emptyDown: string;
   emit(statements: string[]): string;
@@ -47,20 +47,19 @@ export type MigrationSource = {
 export const migrationSource = {
   SqlQuerier: {
     querier: 'SqlQuerier',
-    module: 'uql-orm/migrate',
-    emptyUp: `    // Add your migration logic here.
-    // Use one await querier.run("...") per SQL statement when possible (same style as generate:entities).
+    entry: 'uql-orm',
+    emptyUp: `    // Add your migration logic here: one await querier.run\`...\` per SQL statement.
     // Example (Postgres):
-    // await querier.run("CREATE TABLE \\"users\\" (\\"id\\" SERIAL PRIMARY KEY);");
+    // await querier.run\`CREATE TABLE "users" ("id" SERIAL PRIMARY KEY)\`;
 `,
     emptyDown: `    // Add your rollback logic here.
-    // await querier.run("DROP TABLE IF EXISTS \\"users\\";");
+    // await querier.run\`DROP TABLE IF EXISTS "users"\`;
 `,
     emit: emitSqlRunCalls,
   },
   MongoQuerier: {
     querier: 'MongoQuerier',
-    module: 'uql-orm/mongo',
+    entry: 'uql-orm/mongodb',
     emptyUp: `    // Add your migration logic here, through the database handle.
     // await querier.db.collection('users').updateMany({}, { $set: { active: true } });
 `,
@@ -79,7 +78,7 @@ export function buildMigrationModule(options: MigrationModuleOptions): string {
   const iso = options.createdAt.toISOString();
   const extra = options.docExtraLines?.map((line) => `\n * ${line}`).join('') ?? '';
 
-  return /*ts*/ `import type { ${querier} } from '${migrationSource[querier].module}';
+  return /*ts*/ `import type { ${querier} } from '${migrationSource[querier].entry}';
 
 /**
  * Migration: ${options.migrationName}

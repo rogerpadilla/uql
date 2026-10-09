@@ -1,15 +1,19 @@
+import { stripTypeScriptTypes } from 'node:module';
 import vm from 'node:vm';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
-import { Sqlite3QuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
+import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
+import { loadMigrationSource, loadTsDefaultExport } from '../../test/loadTsDefaultExport.js';
 import type { MigrationDefinition, SqlQuerierPool } from '../../type/index.js';
+
 import { buildMigrationModule, emitMongoCommandCalls, emitSqlRunCall, emitSqlRunCalls } from './migrationFile.js';
 
-function assertEmittedRunCallParses(sql: string): void {
-  const line = emitSqlRunCall(sql);
-  const src = `async function _migrationUp(querier) {\n${line}\n}`;
-  expect(() => new vm.Script(src)).not.toThrow();
+/** The SQL a generated `run`...`` line hands the querier once plain JS evaluates it. */
+async function emittedSql(sql: string): Promise<string> {
+  const run = vm.runInNewContext(`(async (querier) => {\n${emitSqlRunCall(sql)}\n})`);
+  let ran = '';
+  await run({ run: (strings: TemplateStringsArray) => (ran = strings.join('')) });
+  return ran;
 }
 
 describe('emitMongoCommandCalls', () => {
@@ -39,7 +43,7 @@ describe('buildMigrationModule', () => {
       downInner: '',
     });
 
-    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/mongo';`);
+    expect(source).toContain(`import type { MongoQuerier } from 'uql-orm/mongodb';`);
     expect(source).toContain('async up(querier: MongoQuerier): Promise<void> {');
     expect(source).toContain('async down(querier: MongoQuerier): Promise<void> {');
   });
@@ -52,56 +56,34 @@ describe('buildMigrationModule', () => {
       upInner: emitSqlRunCall('SELECT 1;'),
       downInner: emitSqlRunCall('SELECT 2;'),
     });
-    expect(src).toContain(`import type { SqlQuerier } from 'uql-orm/migrate';`);
+    expect(src).toContain(`import type { SqlQuerier } from 'uql-orm';`);
     expect(src).toContain('* Generated from entity definitions');
-    expect(src).toContain('await querier.run("SELECT 1;");');
-    expect(src).toContain('await querier.run("SELECT 2;");');
+    expect(src).toContain('await querier.run`SELECT 1;`;');
+    expect(src).toContain('await querier.run`SELECT 2;`;');
     expect(src).toContain('Migration: add_foo');
     expect(src).toContain('Created: 2026-01-01T00:00:00.000Z');
   });
 });
 
 describe('emitSqlRunCall', () => {
-  it('should escape LibSQL/SQLite backtick identifiers in the generated template', () => {
-    const sql = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);';
-    expect(emitSqlRunCall(sql)).toBe(
-      '    await querier.run("CREATE TABLE `Article` (\\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\\n  `title` TEXT NOT NULL\\n);");',
+  it('should write the SQL as a tagged run, its lines and Postgres quotes as they are', () => {
+    expect(emitSqlRunCall('CREATE TABLE "users" (\n  "id" INTEGER\n);')).toBe(
+      '    await querier.run`CREATE TABLE "users" (\n  "id" INTEGER\n);`;',
     );
-    assertEmittedRunCallParses(sql);
+  });
+
+  it.each([
+    ['backtick identifiers', 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT\n);'],
+    ['a literal ${', "INSERT INTO t VALUES ('${not_template_literal}');"],
+    ['backslashes and quotes', String.raw`SELECT '\\' AS x, "'" AS y;`],
+  ])('should hand the querier the SQL exactly, %s included', async (_name, sql) => {
+    expect(await emittedSql(sql)).toBe(sql);
   });
 
   it('should emit one run() line per statement', () => {
     expect(emitSqlRunCalls(['SELECT 1;', 'SELECT 2;'])).toBe(
       [emitSqlRunCall('SELECT 1;'), emitSqlRunCall('SELECT 2;')].join('\n'),
     );
-  });
-
-  it('should emit an index as a run() call of its own, apart from its table', () => {
-    const table = 'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT\n);';
-    const index = 'CREATE INDEX `Article_title_idx` ON `Article` (`title`);';
-    const block = emitSqlRunCalls([table, index]);
-    expect(block).toContain('await querier.run("CREATE TABLE `Article`');
-    expect(block).toContain('await querier.run("CREATE INDEX `Article_title_idx`');
-    expect(() => new vm.Script(`async function _up(querier) {\n${block}\n}`)).not.toThrow();
-  });
-
-  it('should keep Postgres double-quoted identifiers', () => {
-    const sql = 'ALTER TABLE "users" ADD COLUMN "age" INTEGER;';
-    expect(emitSqlRunCall(sql)).toBe('    await querier.run("ALTER TABLE \\"users\\" ADD COLUMN \\"age\\" INTEGER;");');
-    assertEmittedRunCallParses(sql);
-  });
-
-  it('should keep a literal ${ in SQL from breaking the generated source', () => {
-    const sql = "INSERT INTO t VALUES ('${not_template_literal}');";
-    expect(emitSqlRunCall(sql)).toBe('    await querier.run("INSERT INTO t VALUES (\'${not_template_literal}\');");');
-    assertEmittedRunCallParses(sql);
-  });
-
-  it('should escape backslashes and quotes', () => {
-    const sql = String.raw`SELECT '\\' AS x, "'" AS y;`;
-    // Two backslashes inside the JSON string literal -> four `\` in this template source.
-    expect(emitSqlRunCall(sql)).toBe(`    await querier.run("SELECT '\\\\\\\\' AS x, \\"'\\" AS y;");`);
-    assertEmittedRunCallParses(sql);
   });
 });
 
@@ -116,28 +98,30 @@ describe('a generated SQL migration module', () => {
   });
 
   it.each<[string, () => SqlQuerierPool]>([
-    ['SQLite', () => new Sqlite3QuerierPool(':memory:')],
+    ['SQLite', () => new SqliteQuerierPool(':memory:')],
     ['libSQL', () => new LibsqlQuerierPool({ url: ':memory:' })],
   ])(
-    'should load on plain node and run on %s, its backticks intact and each statement a run() of its own',
+    'should strip on plain node and run on %s, its backticks intact and each statement a run() of its own',
     async (_name, connect) => {
       const pool = connect();
       onTestFinished(() => pool.end());
-      const migration = await loadTsDefaultExport<MigrationDefinition>(
-        buildMigrationModule({
-          migrationName: 'article',
-          createdAt: new Date('2026-04-04T00:00:00.000Z'),
-          upInner: emitSqlRunCalls([
-            'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);',
-            'CREATE INDEX `Article_title_idx` ON `Article` (`title`);',
-          ]),
-          downInner: emitSqlRunCalls(['DROP INDEX IF EXISTS `Article_title_idx`;', 'DROP TABLE IF EXISTS `Article`;']),
-        }),
-      );
+      const source = buildMigrationModule({
+        migrationName: 'article',
+        createdAt: new Date('2026-04-04T00:00:00.000Z'),
+        upInner: emitSqlRunCalls([
+          'CREATE TABLE `Article` (\n  `id` INTEGER PRIMARY KEY AUTOINCREMENT,\n  `title` TEXT NOT NULL\n);',
+          'CREATE INDEX `Article_title_idx` ON `Article` (`title`);',
+        ]),
+        downInner: emitSqlRunCalls(['DROP INDEX IF EXISTS `Article_title_idx`;', 'DROP TABLE IF EXISTS `Article`;']),
+      });
+
+      // What plain node does to a migration before it runs one.
+      expect(() => stripTypeScriptTypes(source)).not.toThrow();
+      const migration = await loadMigrationSource<MigrationDefinition>(source);
 
       await pool.withQuerier(async (querier) => {
         const articles = () =>
-          querier.all("SELECT type, name FROM sqlite_master WHERE name LIKE 'Article%' ORDER BY name");
+          querier.all`SELECT type, name FROM sqlite_master WHERE name LIKE 'Article%' ORDER BY name`;
         await migration.up(querier);
         expect(await articles()).toEqual([
           { type: 'table', name: 'Article' },

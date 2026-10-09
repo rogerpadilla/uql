@@ -1,28 +1,24 @@
 import { type Mock, vi } from 'vitest';
-import { AbstractQuerier } from '../querier/abstractQuerier.js';
-import type { Querier } from '../type/index.js';
-import { LoggerWrapper } from '../util/index.js';
+import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
+import type { Querier, SqlStatement } from '../type/index.js';
+import { statementOf } from '../util/raw.js';
 
-/** Methods become mocks, save the real `transaction`; plain state (`hasOpenTransaction`) keeps its own type. */
+/** Methods become mocks; plain state (`hasOpenTransaction`) keeps its own type. */
 export type MockedQuerier = {
-  -readonly [K in keyof Querier]: K extends 'transaction'
-    ? Querier[K]
-    : Querier[K] extends (...args: never[]) => unknown
-      ? Mock
-      : Querier[K];
+  -readonly [K in keyof Querier]: Querier[K] extends (...args: never[]) => unknown ? Mock : Querier[K];
 };
 
 /**
- * Bare mocked {@link Querier} for transport-layer specs, every method a mock but `transaction`, the real one
- * over these primitives, so "this ran in a transaction" asserts the sequence the ORM performs; its logger is
- * off. `extra` adds what a spec needs on top (`run`, `all`, `dialect`), onto the same object, so
- * `hasOpenTransaction` stays the one the recorders set.
+ * Bare mocked {@link Querier} for transport-layer specs, every method a mock. `transaction` and `onCommit` run
+ * their callback at once. `extra` adds what a spec needs on top (`run`, `all`, `dialect`).
  */
 export function createMockQuerier<E extends object = Record<never, never>>(extra?: E): MockedQuerier & E {
-  const querier: MockedQuerier & { readonly logger: LoggerWrapper } = {
+  const querier: MockedQuerier = {
     hasOpenTransaction: false,
-    transaction: AbstractQuerier.prototype.transaction,
-    logger: new LoggerWrapper(false),
+    transaction: vi.fn(async (callback: () => Promise<unknown>) => callback()),
+    onCommit: vi.fn(async (callback: () => unknown) => {
+      await callback();
+    }),
     findOneById: vi.fn(),
     findOne: vi.fn(),
     findMany: vi.fn(),
@@ -45,17 +41,23 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
     deleteMany: vi.fn(),
     restoreOneById: vi.fn(),
     restoreMany: vi.fn(),
-    beginTransaction: vi.fn(async () => {
-      querier.hasOpenTransaction = true;
-    }),
-    commitTransaction: vi.fn(async () => {
-      querier.hasOpenTransaction = false;
-    }),
-    rollbackTransaction: vi.fn(async () => {
-      querier.hasOpenTransaction = false;
-    }),
+    beginTransaction: vi.fn(),
+    commitTransaction: vi.fn(),
+    rollbackTransaction: vi.fn(),
     release: vi.fn(async () => {}),
     [Symbol.asyncDispose]: vi.fn(() => querier.release()),
   };
   return Object.assign(querier, extra);
+}
+
+/** The statements a mocked `all` or `run` was sent, as `dialect` renders them: each one's SQL and the values it binds. */
+export function sentStatements(
+  dialect: AbstractSqlDialect,
+  method: Mock<(...statement: SqlStatement) => unknown>,
+): { sql: string; values: unknown[] }[] {
+  return method.mock.calls.map((statement) => {
+    const ctx = dialect.createContext();
+    dialect.getRawValue(ctx, { value: statementOf(statement) });
+    return { sql: ctx.sql, values: ctx.values };
+  });
 }

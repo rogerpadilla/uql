@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { MariaDialect } from '../maria/index.js';
+import { MariaDialect } from '../mariadb/index.js';
 import { MySqlDialect } from '../mysql/index.js';
 import { PostgresDialect } from '../postgres/index.js';
 import { assertDefined } from '../test/index.js';
@@ -32,7 +32,7 @@ describe('BunSqlQuerierPool', () => {
     expect(new BunSqlQuerierPool({ url: 'mariadb://localhost' }).dialect).toBeInstanceOf(MariaDialect);
   });
 
-  /** `Sqlite3QuerierPool` runs on `bun:sqlite` under Bun, so SQLite is refused here rather than half-served. */
+  /** `SqliteQuerierPool` runs on `bun:sqlite` under Bun, so SQLite is refused here rather than half-served. */
   it('should refuse SQLite, pointing at its own pool', () => {
     expect(() => new BunSqlQuerierPool({ url: 'sqlite://:memory:' })).toThrow('uql-orm/sqlite pool');
   });

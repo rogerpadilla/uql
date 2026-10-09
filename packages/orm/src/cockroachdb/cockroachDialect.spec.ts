@@ -15,9 +15,6 @@ class CockroachDialectSpec extends PgFamilySpec {
     super(new CockroachDialect({}));
   }
 
-  /** CockroachDB has no `xmax`, so its upsert returns the id and nothing else. */
-  protected override readonly upsertCreatedFlag = '';
-
   shouldUseItsOwnDialectName() {
     expect(this.dialect.dialectName).toBe('cockroachdb');
   }

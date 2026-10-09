@@ -6,11 +6,20 @@ import { decodeFloat32s, parseVectorLiteral, type VectorCast } from './vectorCas
 /**
  * How a stored column is decoded on read: the inverse of `AbstractSqlDialect.persistKind`. `json`
  * parses; a {@link VectorCast} says which literal; `boolean` undoes an engine with no boolean type,
- * `number` and `bigint` a driver that hands a wide integer or a decimal back as text, and `date` and
- * `bytes` a row that crossed JSON inside its parent's statement, which spells both as text. `float32` is
+ * `number` and `bigint` a driver that hands a wide integer or a decimal back as text, `decimal` an exact
+ * decimal read as its text, whatever the driver hands, and `date` and `bytes` a row that crossed JSON inside its parent's statement, which spells both as text. `float32` is
  * a vector bound as bytes (`DialectFeatures.vectorBytes`).
  */
-export type HydrateKind = 'json' | 'boolean' | 'number' | 'bigint' | 'date' | 'bytes' | 'float32' | VectorCast;
+export type HydrateKind =
+  | 'json'
+  | 'boolean'
+  | 'number'
+  | 'bigint'
+  | 'decimal'
+  | 'date'
+  | 'bytes'
+  | 'float32'
+  | VectorCast;
 
 /**
  * Decodes one non-null cell. A no-op where the driver already decoded it, since that varies per driver,
@@ -69,6 +78,7 @@ const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
     }
   },
   number: fromText(decodeWideNumber),
+  decimal: (value) => asText(value) ?? String(value),
   json: fromText((text, value) => {
     try {
       return JSON.parse(text);

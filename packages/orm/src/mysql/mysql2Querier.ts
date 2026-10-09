@@ -14,11 +14,7 @@ export class MySql2Querier extends AbstractPoolQuerier<PoolConnection> {
 
   override async internalRun(query: string, values?: unknown[]) {
     const [res] = await this.getConn().promise().query<ResultSetHeader>(query, values);
-    return this.buildUpdateResult({
-      changes: res.affectedRows,
-      id: res.insertId,
-      upsertStatus: res.affectedRows,
-    });
+    return this.buildUpdateResult({ changes: res.affectedRows, id: res.insertId });
   }
 
   override async *internalStream(query: string, values?: unknown[]) {

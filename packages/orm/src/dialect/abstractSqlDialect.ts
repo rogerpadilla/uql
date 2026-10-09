@@ -2,6 +2,7 @@ import { fieldOf, getMeta, relationOf, soleIdOf } from '../entity/index.js';
 import {
   type AggregateCall,
   type ColumnFamily,
+  type SavepointCommand,
   type DdlRenderOptions,
   COUNT_RESULT_KEY,
   type EntityData,
@@ -60,10 +61,11 @@ import {
   type UpdatePayload,
 } from '../type/index.js';
 import { utcTimestamp } from '../util/date.js';
-import { isInlinedExpression } from '../util/field.util.js';
+import { isExactDecimal, isInlinedExpression, jsonKey, jsonPathKeys } from '../util/field.util.js';
 import {
   isSelectList,
   assertNonNegativeInteger,
+  assertNoUndefined,
   assertWhere,
   definedEntries,
   escapeSqlId,
@@ -391,6 +393,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   readonly commitTransactionCommand: string = 'COMMIT';
   readonly rollbackTransactionCommand: string = 'ROLLBACK';
 
+  /** The statement a savepoint command sends, `''` where the engine needs none. */
+  savepointStatement(command: SavepointCommand, name: string): string {
+    const statements: Record<SavepointCommand, string> = {
+      open: `SAVEPOINT ${name}`,
+      release: `RELEASE SAVEPOINT ${name}`,
+      rollback: `ROLLBACK TO SAVEPOINT ${name}`,
+    };
+    return statements[command];
+  }
+
   /**
    * How this engine declares a namespace, so a generated migration creates the schemas its tables
    * need before creating them. Only reached where {@link DialectFeatures.schemas} is on. MySQL and
@@ -400,7 +412,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return `CREATE SCHEMA IF NOT EXISTS ${this.escapeId(schema, true)}`;
   }
 
-  readonly isolationLevelStrategy: 'inline' | 'set-before' | 'none' = 'inline';
+  readonly isolationLevelStrategy: 'inline' | 'setBefore' | 'none' = 'inline';
 
   readonly booleanLiteral: 'native' | 'integer' = 'native';
 
@@ -432,7 +444,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (strategy === 'inline') {
       return [`${this.beginTransactionCommand} ISOLATION LEVEL ${level}`];
     }
-    // 'set-before' - MySQL/MariaDB pattern
+    // 'setBefore' - MySQL/MariaDB pattern
     return [`SET TRANSACTION ISOLATION LEVEL ${level}`, this.beginTransactionCommand];
   }
 
@@ -893,9 +905,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): void {
     const { clause = 'WHERE' } = opts;
 
-    // An `undefined` value emits nothing, so it must not count towards the terms either: it decides
-    // whether the keys below render as operands of an `AND`.
-    const whereKeys = getKeys(where).filter((key) => where[key] !== undefined);
+    const whereKeys = getKeys(where);
 
     // Each key is an operand of the `AND` joining them; a lone key emits this fragment verbatim, so
     // it inherits this one's position instead.
@@ -1605,7 +1615,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   estimatedCount<E>(_ctx: QueryContext, _entity: Type<E>): void {
     throw new UqlUsageError(`${this.dialectName} does not support estimatedCount`);
   }
-
   aggregate<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
     ctx: QueryContext,
     entity: Type<E>,
@@ -1658,9 +1667,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       ctx.append(` GROUP BY ${groupKeys.join(', ')}`);
     }
 
-    if (q.$having) {
-      this.having(ctx, q.$having, emittedColumns);
-    }
+    this.having(ctx, q.$having ?? {}, emittedColumns);
 
     const sorted = this.aggregateSort(ctx, q.$sort, emittedColumns);
     this.pager(ctx, q, sorted);
@@ -1734,7 +1741,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   protected having(ctx: QueryContext, having: QueryHavingMap, emittedColumns: Record<string, string>): void {
-    const entries = Object.entries(having).filter(([, v]) => v !== undefined);
+    assertNoUndefined(having, '$having');
+    const entries = Object.entries(having);
     if (!entries.length) return;
 
     ctx.append(' HAVING ');
@@ -1837,7 +1845,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   insert<E>(ctx: QueryContext, entity: Type<E>, payload: E | E[], opts?: QueryRenderOptions): void {
     const returning = this.insertedIdReturning(getMeta(entity));
 
-    if (returning && this.returningPosition === 'after-target') {
+    if (returning && this.returningPosition === 'afterTarget') {
       this.appendInsertValues(ctx, entity, payload, returning);
       return;
     }
@@ -1856,7 +1864,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   }
 
   /** Where an insert's id clause goes: `RETURNING` at the end, or SQL Server's `OUTPUT` before `VALUES`. */
-  readonly returningPosition: 'suffix' | 'after-target' = 'suffix';
+  readonly returningPosition: 'suffix' | 'afterTarget' = 'suffix';
 
   /** How an insert writes a row with no column to name, every one its default: a single row. */
   protected readonly emptyRowValues: string = 'DEFAULT VALUES';
@@ -2060,6 +2068,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       return;
     }
     assertWhere(meta, write.where);
+    assertNoUndefined(write.where, `the $where of a trigger's ${write.kind} over '${meta.name}'`);
     if (!namesRows(write.where)) {
       throw new UqlUsageError(
         `a trigger's ${write.kind} over '${meta.name}' names no rows, so it would address every one`,
@@ -2175,9 +2184,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const meta = getMeta(entity);
     const updateCtx = this.upsertUpdateBindsInPlace ? ctx : this.createContext();
     const assignments = this.getUpsertUpdateAssignments(updateCtx, meta, conflictPaths, payload, update);
-    // Composed rather than concatenated: a composite key contributes no id item, and a dialect's own
-    // item (Postgres's created flag) must then come right after the keyword, with no comma before it.
-    const returning = [this.returningIdExpression(meta), this.upsertCreatedReturning].filter(Boolean).join(', ');
+    const returning = this.returningIdExpression(meta);
     this.appendInsertValues(ctx, entity, payload);
     ctx.append(`${this.onConflict(meta, conflictPaths, assignments)}${returning ? ` RETURNING ${returning}` : ''}`);
     if (updateCtx !== ctx) {
@@ -2196,9 +2203,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     this.getUpsertUpdateAssignments(ctx, getMeta(entity), conflictPaths, row, update);
     return ctx.values.length;
   }
-
-  /** One more `RETURNING` item saying whether the row was created, where the engine can tell; else empty. */
-  protected readonly upsertCreatedReturning: string = '';
 
   /** Whether the upsert's assignments bind straight into the statement, as numbered `$n` placeholders can. */
   protected readonly upsertUpdateBindsInPlace: boolean = false;
@@ -2367,9 +2371,12 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (type === BigInt) {
       return 'bigint';
     }
+    if (field && isExactDecimal(field)) {
+      return 'decimal';
+    }
     switch (columnFamily(type)) {
       case 'json':
-        return 'json';
+        return this.features.jsonArrivesDecoded ? undefined : 'json';
       case 'vector':
         return this.features.vectorBytes ? 'float32' : this.supportedVectorType(resolveVectorCast(field));
       case 'boolean':
@@ -2437,6 +2444,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     current = escapedCol,
   ): void {
     const { $pull, $set, $push, $unset } = value;
+    [...getKeys($pull), ...getKeys($set), ...getKeys($push), ...($unset ?? [])].forEach(jsonKey);
     let expr = current;
     if (hasKeys($pull)) {
       expr = this.jsonPull(ctx, expr, current, $pull);
@@ -2520,6 +2528,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     if (sql instanceof QueryRaw) {
       sql.render({ ctx, dialect: this, prefix: '', escapedPrefix: escapedPrefix ?? '', entity, rows });
     } else if (entity) {
+      assertNoUndefined(sql, `a predicate over '${entity.name}'`);
       this.renderWhere(ctx, entity, sql, { clause: false, escapedPrefix, operand });
     } else {
       throw new UqlUsageError('a predicate compiles against the entity it is written for, and none was given');
@@ -2554,7 +2563,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
     const colName = this.resolveColumnName(root, field);
     const prefixed = (prefix ? this.escapeId(prefix, true, true) : '') + this.escapeId(colName);
-    return { base: prefixed, path: key.slice(dotIndex + 1) };
+    return { base: prefixed, path: jsonPathKeys(key.slice(dotIndex + 1)).join('.') };
   }
 
   /**

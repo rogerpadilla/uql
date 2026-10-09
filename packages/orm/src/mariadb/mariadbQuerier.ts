@@ -23,7 +23,7 @@ export class MariadbQuerier extends AbstractPoolQuerier<PoolConnection> {
     // An OK packet reports `affectedRows`; a `RETURNING` statement answers rows instead, and counts by them.
     const changes = res.affectedRows ?? res.length;
     const rows = res.length ? Array.from<RawRow, RawRow>(res, decodeBigInts) : [];
-    return this.buildUpdateResult({ rows, changes, upsertStatus: res.affectedRows });
+    return this.buildUpdateResult({ rows, changes });
   }
 
   /**

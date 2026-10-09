@@ -64,6 +64,7 @@ import {
   aggregateOf,
   isSelectList,
   assertAggregateColumns,
+  assertNoUndefined,
   assertNonNegativeInteger,
   type CallbackKey,
   columnFamily,
@@ -75,6 +76,9 @@ import {
   findVectorIndex,
   findVectorSort,
   getKeys,
+  holdsForeignKey,
+  jsonKey,
+  jsonPathKeys,
   getRelationRequestSummary,
   hasKeys,
   isFieldUpdateOp,
@@ -164,7 +168,7 @@ export const mongoDialectFeatures: DialectFeatures = {
   vectorSupportsLength: false,
   vectorBytes: false,
   supportsTimestamptz: false,
-  stringSizing: 'bounded-text',
+  stringSizing: 'boundedText',
   supportsUnsigned: false,
   serverSideCursors: false,
   correlatedWrites: false,
@@ -231,13 +235,12 @@ function compareCount(count: unknown, size: number | Readonly<Record<string, unk
   if (typeof size === 'number') {
     return { $eq: [count, size] };
   }
-  const comparisons: Record<string, unknown>[] = Object.entries(size)
-    .filter(([, bound]) => bound !== undefined)
-    .flatMap(([op, bound]): Record<string, unknown>[] =>
+  const comparisons: Record<string, unknown>[] = Object.entries(size).flatMap(
+    ([op, bound]): Record<string, unknown>[] =>
       op === '$between' && Array.isArray(bound)
         ? [{ $gte: [count, bound[0]] }, { $lte: [count, bound[1]] }]
         : [{ [op]: [count, bound] }],
-    );
+  );
   if (!comparisons.length) {
     throw new UqlUsageError('$size needs at least one comparison');
   }
@@ -978,7 +981,7 @@ export class MongoDialect extends AbstractDialect {
       assertReadable(meta, key);
       return this.columnOf(meta, key);
     }
-    return this.columnOf(meta, key.slice(0, dot)) + key.slice(dot);
+    return `${this.columnOf(meta, key.slice(0, dot))}.${jsonPathKeys(key.slice(dot + 1)).join('.')}`;
   }
 
   public aggregationPipeline<E extends Document>(
@@ -1184,7 +1187,7 @@ export class MongoDialect extends AbstractDialect {
     relMeta: EntityMeta<R>,
     relOpts: RelationMeta,
   ): { localField: string; foreignField: string } {
-    if (relOpts.cardinality === 'm1') {
+    if (holdsForeignKey(relOpts)) {
       // The target's side, not this entity's: a lookup matches one `localField` against one
       // `foreignField`, so a composite target would join on its first column alone and gather the
       // rows of every key that agrees on it. The other branch is refused by `columnOf` below, whose
@@ -1355,6 +1358,9 @@ export class MongoDialect extends AbstractDialect {
         set[key] = value;
         continue;
       }
+      [...getKeys(value.$set), ...getKeys(value.$push), ...getKeys(value.$pull), ...(value.$unset ?? [])].forEach(
+        jsonKey,
+      );
       for (const [path, v] of Object.entries(value.$set ?? {})) {
         set[`${key}.${path}`] = v;
       }
@@ -1600,25 +1606,23 @@ export class MongoDialect extends AbstractDialect {
    * the fields it reads, so a relation aggregate among them is on the document first.
    */
   private whereExpression<E>(meta: EntityMeta<E>, where: QueryWhere<E>, named: string[]): unknown {
-    const terms = getKeys(where)
-      .filter((key) => where[key] !== undefined)
-      .map((key): unknown => {
-        if (isGroupOp(key)) {
-          const { join, negate } = GROUP_OPS[key];
-          const clauses = groupClauses(key, where[key]).map((clause) => {
-            assertNoRaw(clause, 'an aggregate $where');
-            return this.whereExpression(meta, clause, named);
-          });
-          return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
-        }
-        if (key.startsWith('$')) {
-          throw new UqlUsageError(`aggregate $where operator '${key}' is not supported on MongoDB`);
-        }
-        const val: unknown = where[key];
-        named.push(key);
-        const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : (value: unknown) => value;
-        return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
-      });
+    const terms = getKeys(where).map((key): unknown => {
+      if (isGroupOp(key)) {
+        const { join, negate } = GROUP_OPS[key];
+        const clauses = groupClauses(key, where[key]).map((clause) => {
+          assertNoRaw(clause, 'an aggregate $where');
+          return this.whereExpression(meta, clause, named);
+        });
+        return negate ? { $not: [{ [join]: clauses }] } : { [join]: clauses };
+      }
+      if (key.startsWith('$')) {
+        throw new UqlUsageError(`aggregate $where operator '${key}' is not supported on MongoDB`);
+      }
+      const val: unknown = where[key];
+      named.push(key);
+      const wire = this.holdsKeys(meta, key) ? (value: unknown) => this.toWireId(value) : (value: unknown) => value;
+      return this.fieldExpression(`$${this.pathOf(meta, key)}`, val, wire);
+    });
     return terms.length === 1 ? terms[0] : { $and: terms };
   }
 
@@ -1663,8 +1667,8 @@ export class MongoDialect extends AbstractDialect {
 
   private buildHavingFilter(having: Record<string, unknown>): Record<string, unknown> {
     const filter: Record<string, unknown> = {};
+    assertNoUndefined(having, '$having');
     for (const [alias, condition] of Object.entries(having)) {
-      if (condition === undefined) continue;
       // Classified exactly as the SQL side classifies a `$where`/`$having` value, so the two agree
       // on identical input. Keeping only numbers and objects dropped a string or boolean without a
       // word, handing back every group instead of the filtered ones.

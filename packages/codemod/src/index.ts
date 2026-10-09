@@ -46,12 +46,14 @@ export async function run({ project, dryRun, include }: RunOptions): Promise<Run
     noEmit: true,
   });
   const checker = program.getTypeChecker();
+  const { strictNullChecks, strict } = program.getCompilerOptions();
+  const nulls = { strictNullChecks: strictNullChecks ?? strict ?? false };
 
   const results: FileResult[] = [];
   for (const source of program.getSourceFiles()) {
     if (source.isDeclarationFile || /[/\\]node_modules[/\\]/.test(source.fileName)) continue;
     if (include?.length && !include.some((fragment) => source.fileName.includes(fragment))) continue;
-    const result = transformFile(source, checker);
+    const result = transformFile(source, checker, nulls);
     if (result.changed || result.unresolved.length || result.notes.length) results.push(result);
   }
 

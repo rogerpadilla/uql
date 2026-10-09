@@ -94,7 +94,6 @@ class MsSqlDialectSpec extends AbstractSqlDialectSpec {
       'BEGIN TRANSACTION',
     ]);
   }
-
   override shouldEstimatedCount() {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toContain('FROM sys.partitions p');

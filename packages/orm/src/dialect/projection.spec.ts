@@ -1,5 +1,5 @@
 import { expect, it } from 'vitest';
-import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MongoDialect } from '../mongodb/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { User } from '../test/entityMock.js';
 import type { Query } from '../type/index.js';

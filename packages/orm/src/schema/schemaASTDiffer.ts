@@ -132,24 +132,51 @@ function diffTableColumns(source: TableNode, target: TableNode, opts: Required<D
 }
 
 /**
- * The columns renamed in the tables both sides name, by qualified table:
- * a new column identical to exactly one the entity no longer names, and to no other. The dropped side is
- * always the entity's own table, so a wrong guess renames, keeping the data, and never drops it.
+ * The columns renamed in the tables both sides name, by qualified table: a new column whose name is one the
+ * entity no longer names spelled by another naming strategy, the two alike but for case and underscores
+ * (`firstName`, `first_name`), each the one such on both sides. The name is the evidence, so the rest of the
+ * diff alters the renamed column as it would any other.
  */
 export function columnRenames(desired: SchemaAST, actual: SchemaAST, options: DiffOptions = {}): ColumnRenames {
-  const opts = { ...DEFAULT_OPTIONS, ...options };
+  const spelling = (name: string) => name.replaceAll('_', '').toLowerCase();
   return new Map(
-    matchTables(desired, actual, opts).matched.flatMap(([expected, current]) => {
-      const { created, dropped } = matchByKey(
-        expected.columns.values(),
-        current.columns.values(),
-        (column) => column.name,
-      );
-      const { matched } = pairUnique(created, dropped, (to, from) => !diffColumn(expected.name, to, from, opts));
-      const table = qualifyName(current.name, current.schema);
-      return matched.length ? [[table, matched.map(([to, from]) => ({ from: from.name, to: to.name }))] as const] : [];
-    }),
+    pairedColumns(desired, actual, options, (to, from) => spelling(to.name) === spelling(from.name)).map(
+      ({ table, renames }) => [table, renames] as const,
+    ),
   );
+}
+
+/**
+ * Each column a new one is identical to but for its name, the one such on both sides, with its qualified
+ * table. Suggested, never applied: a column dropped while an unrelated one of its type is added is no rename.
+ */
+export function columnRenameCandidates(
+  desired: SchemaAST,
+  actual: SchemaAST,
+  options: DiffOptions = {},
+): (Rename & { readonly table: string })[] {
+  const opts = { ...DEFAULT_OPTIONS, ...options };
+  return pairedColumns(desired, actual, opts, (to, from) => !diffColumn(to.table.name, to, from, opts)).flatMap(
+    ({ table, renames }) => renames.map((rename) => ({ table, ...rename })),
+  );
+}
+
+/** The columns `same` pairs among those only one side names, per table both sides name, keyed by its qualified name. */
+function pairedColumns(
+  desired: SchemaAST,
+  actual: SchemaAST,
+  options: DiffOptions,
+  same: (to: ColumnNode, from: ColumnNode) => boolean,
+): { readonly table: string; readonly renames: Rename[] }[] {
+  return matchTables(desired, actual, { ...DEFAULT_OPTIONS, ...options }).matched.flatMap(([expected, current]) => {
+    const { created, dropped } = matchByKey(
+      expected.columns.values(),
+      current.columns.values(),
+      (column) => column.name,
+    );
+    const renames = pairUnique(created, dropped, same).matched.map(([to, from]) => ({ from: from.name, to: to.name }));
+    return renames.length ? [{ table: qualifyName(current.name, current.schema), renames }] : [];
+  });
 }
 
 /**

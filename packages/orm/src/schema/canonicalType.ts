@@ -253,7 +253,7 @@ const ENGINE_TYPES: Record<DialectName, EngineTypes> = {
 const CANONICAL_TO_TS: Record<TypeCategory, string> = {
   integer: 'number',
   float: 'number',
-  decimal: 'number',
+  decimal: 'string',
   string: 'string',
   boolean: 'boolean',
   date: 'Date',
@@ -370,7 +370,7 @@ function formatStringSqlType(type: CanonicalType, base: string, sizing: DialectF
   if (type.length) {
     return `${base}(${type.length})`;
   }
-  return sizing === 'bounded-text' ? 'TEXT' : `${base}(255)`;
+  return sizing === 'boundedText' ? 'TEXT' : `${base}(255)`;
 }
 
 function formatDecimalSqlType(type: CanonicalType, fallback: EngineTypes['decimal'], baseType: string): string {

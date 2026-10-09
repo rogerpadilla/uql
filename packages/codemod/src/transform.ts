@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { appended, applyEdits, type Edit, inserted, removeFromList, replaced } from './edits.js';
-import { columnExpressions, handNamedColumns, isRaw, rawTag, rawWhereEdit } from './entitySql.js';
+import { columnExpressions, handNamedColumns, isRaw, rawTag, rawWhereEdit, templateOf } from './entitySql.js';
 import { fieldTypeFor, isBrandedString, relationTargetFor } from './fieldType.js';
 import {
   type Edits,
@@ -72,15 +72,37 @@ const REMOVED_EXPORTS = new Map([
     'POSTGRES_WIRE_DRIVER_CAPABILITIES',
     'pass `driverCapabilities: { nativeArrays: false, explicitJsonCast: true }` to the dialect',
   ],
-  ['MysqlLikeSqlDialect', 'extend `MySqlDialect` (`uql-orm/mysql`) or `MariaDialect` (`uql-orm/maria`)'],
+  ['MysqlLikeSqlDialect', 'extend `MySqlDialect` (`uql-orm/mysql`) or `MariaDialect` (`uql-orm/mariadb`)'],
   ['D1Meta', "uql reads `D1Result['meta']`; the rest of a binding is typed by `@cloudflare/workers-types`"],
   ['D1ExecResult', 'the rest of a binding is typed by `@cloudflare/workers-types`'],
   ['createSchemaGenerator', 'use `new SqlSchemaGenerator(dialect)`, or `migrator.getSchemaGenerator()`'],
+  ...['JsonMigrationStorage', 'DatabaseMigrationStorage', 'MongoMigrationStorage'].map(
+    (name) => [name, 'the migrator keeps its journal in the database itself, named by `tableName`'] as const,
+  ),
 ]);
 
+/** What `uql-orm/util` exported that the root still does. */
+const UTIL_ROOT_EXPORTS = [
+  'currentDate',
+  'currentTime',
+  'currentTimestamp',
+  'raw',
+  'refs',
+  'uuid',
+  'uuidv7',
+  'deleteFrom',
+  'insertInto',
+  'refuse',
+  'updateTable',
+  'upsertInto',
+  'withDeleted',
+  'HookContext',
+  'DefaultLogger',
+];
+
 /**
- * Exports renamed or moved and nothing else - the driver classes were empty subclasses - so the import and
- * every use follow, the import moving to `from` where the name lives in another entry.
+ * Exports renamed or moved and nothing else, so the import and every use follow, the import moving to `from`
+ * where the name lives in another entry. Keyed by name, or by `entry#name` where the name stays elsewhere.
  */
 const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: string }>([
   ['QueryWhereMap', { to: 'QueryWhere' }],
@@ -92,7 +114,7 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['CrdbQuerier', { to: 'PgQuerier', from: 'uql-orm/postgres' }],
   ['NeonQuerier', { to: 'PgQuerier', from: 'uql-orm/postgres' }],
   ['MySql2Dialect', { to: 'MySqlDialect', from: 'uql-orm/mysql' }],
-  ['MongodbNativeDialect', { to: 'MongoDialect', from: 'uql-orm/mongo' }],
+  ['MongodbNativeDialect', { to: 'MongoDialect', from: 'uql-orm/mongodb' }],
   ['LibsqlQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
   ['TursoQuerier', { to: 'HranaQuerier', from: 'uql-orm/sqlite' }],
   ['TursoLocalQuerier', { to: 'SqliteQuerier', from: 'uql-orm/sqlite' }],
@@ -104,10 +126,51 @@ const RENAMED_EXPORTS = new Map<string, { readonly to: string; readonly from?: s
   ['KnownMigratorDialect', { to: 'DialectName', from: 'uql-orm' }],
   ['D1Preparer', { to: 'D1Queryable' }],
   ['D1Database', { to: 'D1Queryable', from: 'uql-orm/d1' }],
-  ['MongoQuerier', { to: 'MongoQuerier', from: 'uql-orm/mongo' }],
-  ['isMongoQuerier', { to: 'isMongoQuerier', from: 'uql-orm/mongo' }],
-  ['MongoMigrationStorage', { to: 'MongoMigrationStorage', from: 'uql-orm/mongo' }],
-  ['MongoSchemaIntrospector', { to: 'MongoSchemaIntrospector', from: 'uql-orm/mongo' }],
+  ['MongoQuerier', { to: 'MongoQuerier', from: 'uql-orm/mongodb' }],
+  ['isMongoQuerier', { to: 'isMongoQuerier', from: 'uql-orm/mongodb' }],
+  ['MongoSchemaIntrospector', { to: 'MongoSchemaIntrospector', from: 'uql-orm/mongodb' }],
+  ['Sqlite3QuerierPool', { to: 'SqliteQuerierPool' }],
+  ['Sqlite3PoolOptions', { to: 'SqlitePoolOptions' }],
+  ['IMigrationBuilder', { to: 'MigrationBuilder' }],
+  ['ITableBuilder', { to: 'TableBuilder' }],
+  ['IAlterTableBuilder', { to: 'AlterTableBuilder' }],
+  ['IColumnBuilder', { to: 'ColumnBuilder' }],
+  ['IColumnFactory', { to: 'ColumnFactory' }],
+  ['IForeignKeyBuilder', { to: 'ForeignKeyBuilder' }],
+  ['ITableForeignKeyBuilder', { to: 'TableForeignKeyBuilder' }],
+  ['UqlLockUsageError', { to: 'UqlUsageError' }],
+  ['uql-orm/http#Hook', { to: 'RequestHook' }],
+  ['uql-orm/http#HookContext', { to: 'RequestHookContext' }],
+  ...UTIL_ROOT_EXPORTS.map((name) => [`uql-orm/util#${name}`, { to: name, from: 'uql-orm' }] as const),
+]);
+
+/** What the root exported that is internal now, and what to write instead. */
+const INTERNAL_EXPORTS = new Map([
+  ...['AbstractDialect', 'AbstractSqlDialect', 'AbstractQuerier', 'AbstractQuerierPool'].map(
+    (name) => [name, "extend a driver's dialect or pool from its entry instead"] as const,
+  ),
+  ...['AbstractSqlQuerier', 'AbstractSqlQuerierPool'].map(
+    (name) => [name, "extend a driver's querier or pool from its entry instead"] as const,
+  ),
+  ['SqlQueryContext', 'make one with `dialect.createContext()`, typed `QueryContext`'],
+  ['dialectOptionsFrom', "pass the options to the driver's dialect"],
+  ...['fieldOf', 'relationOf', 'soleIdOf', 'assertSoleId'].map(
+    (name) => [name, 'read the field off `getMeta(Entity).fields`'] as const,
+  ),
+  ['namesKey', 'read the keys off `getMeta(Entity).ids`'],
+  ['getEntities', 'list your entities in the config'],
+]);
+
+/** Entries renamed, or dropped for repeating the root, each to the one now exporting what it did. */
+const MOVED_ENTRIES = new Map([
+  ['uql-orm/maria', 'uql-orm/mariadb'],
+  ['uql-orm/mongo', 'uql-orm/mongodb'],
+  ['uql-orm/bunSql', 'uql-orm/bun-sql'],
+  ['uql-orm/dialect', 'uql-orm'],
+  ['uql-orm/entity', 'uql-orm'],
+  ['uql-orm/namingStrategy', 'uql-orm'],
+  ['uql-orm/querier', 'uql-orm'],
+  ['uql-orm/type', 'uql-orm'],
 ]);
 
 export type FileResult = {
@@ -252,6 +315,8 @@ function insertOption(options: WritableOptions, option: string): Edit {
 
 type Context = {
   readonly checker: ts.TypeChecker;
+  /** Whether the project checks nulls; without it a `| null` written on a property changes nothing. */
+  readonly strictNullChecks: boolean;
   readonly edits: Edit[];
   readonly unresolved: string[];
   readonly notes: string[];
@@ -307,8 +372,8 @@ function addFieldType(decorator: ts.Decorator, node: ts.PropertyDeclaration, ctx
   const type = addInferredOption(decorator, node, ctx, {
     option: 'type',
     // A `references` field deliberately has no `type`: the column resolves from the primary key it
-    // points at, which also carries that key's `columnType` and length.
-    satisfiedBy: ['type', 'references'],
+    // points at, which also carries that key's `columnType` and length. A `computed` one is its SQL.
+    satisfiedBy: ['type', 'references', 'computed'],
     infer: fieldTypeFor,
   });
 
@@ -584,6 +649,90 @@ function rewriteIndexWhere(options: ts.ObjectLiteralExpression | undefined, ctx:
 /** Whether every value `type` admits is a string. */
 function isStringTyped(type: ts.Type): boolean {
   return type.isUnion() ? type.types.every(isStringTyped) : Boolean(type.flags & ts.TypeFlags.StringLike);
+}
+
+/**
+ * A querier's `run`/`all` handed SQL as a string, which now takes a tagged statement: a literal becomes
+ * `run`...``, SQL built at run time `raw.text`, which splices as the string did. One passed with values is reported.
+ */
+function rewriteSqlCall(call: ts.CallExpression, ctx: Context): void {
+  const callee = call.expression;
+  if (!ts.isPropertyAccessExpression(callee) || !SQL_METHODS.has(callee.name.text) || !isUqlMember(callee, ctx)) {
+    return;
+  }
+  const [sql, ...values] = call.arguments;
+  if (!sql || !isStringTyped(ctx.checker.getTypeAtLocation(sql))) {
+    return;
+  }
+  if (values.length) {
+    ctx.unresolved.push(
+      `${ctx.describe(call)}: ${callee.name.text}() takes one raw statement: write the values into it, raw\`... \${value}\`, which binds them`,
+    );
+    return;
+  }
+  if (ts.isStringLiteral(sql) || ts.isNoSubstitutionTemplateLiteral(sql)) {
+    const typeArguments = call.typeArguments ? `<${call.typeArguments.map((type) => type.getText()).join(', ')}>` : '';
+    ctx.edits.push(replaced(call, `${callee.getText()}${typeArguments}${templateOf(sql.text)}`));
+    return;
+  }
+  if (ts.isTemplateExpression(sql)) {
+    ctx.notes.push(
+      `${ctx.describe(call)}: the values in this template are spliced into the SQL; write it as raw\`...\` to bind them`,
+    );
+  }
+  ctx.edits.push(replaced(sql, `raw.text(${sql.getText()})`));
+  ctx.imports.set('raw', 'the raw.text(...)');
+}
+
+const SQL_METHODS: ReadonlySet<string> = new Set(['run', 'all']);
+
+/** `const { id } = await q.upsertOne(...)`, which resolves to the id now, as the id: other keys are reported. */
+function rewriteUpsertResult(declaration: ts.VariableDeclaration, ctx: Context): void {
+  const { name, initializer } = declaration;
+  const call = initializer && ts.isAwaitExpression(initializer) ? initializer.expression : initializer;
+  if (
+    !ts.isObjectBindingPattern(name) ||
+    !call ||
+    !ts.isCallExpression(call) ||
+    !ts.isPropertyAccessExpression(call.expression) ||
+    call.expression.name.text !== 'upsertOne' ||
+    !isUqlMember(call.expression, ctx)
+  ) {
+    return;
+  }
+  const [element] = name.elements;
+  const key = element && (element.propertyName ?? element.name);
+  if (name.elements.length === 1 && key && ts.isIdentifier(key) && key.text === 'id' && ts.isIdentifier(element.name)) {
+    ctx.edits.push(replaced(name, element.name.text));
+  } else {
+    ctx.unresolved.push(
+      `${ctx.describe(declaration)}: upsertOne() resolves to the id; 'created' and 'changes' are gone`,
+    );
+  }
+}
+
+/** A `Migrator` call whose name or meaning changed: `pending()`/`executed()` are `status()`, and `down()` reverts one. */
+function reportMigratorCall(call: ts.CallExpression, ctx: Context): void {
+  const callee = call.expression;
+  if (!ts.isPropertyAccessExpression(callee) || !isUqlMember(callee, ctx)) {
+    return;
+  }
+  const method = callee.name.text;
+  if (method === 'pending' || method === 'executed') {
+    ctx.unresolved.push(
+      `${ctx.describe(call)}: '${method}()' was removed; read \`(await migrator.status()).${method}\``,
+    );
+  } else if (method === 'down' && !call.arguments.length) {
+    ctx.notes.push(
+      `${ctx.describe(call)}: down() with no options reverts only the last migration now; pass \`{ step: Infinity }\` to revert them all`,
+    );
+  }
+}
+
+/** Whether `member` is declared by uql-orm, so a `run` of another library's is left alone. */
+function isUqlMember(member: ts.PropertyAccessExpression, ctx: Context): boolean {
+  const declarations = ctx.checker.getSymbolAtLocation(member.name)?.declarations ?? [];
+  return declarations.some((declaration) => declaration.getSourceFile().fileName.includes('/node_modules/uql-orm/'));
 }
 
 /** The migration builder's index methods, each with the position of the options it takes. */
@@ -903,14 +1052,20 @@ function addImports(source: ts.SourceFile, rewritten: ReadonlySet<ts.ImportDecla
   if (!missing.length) {
     return;
   }
-  const anchor = uqlImportDeclarations(source).find(({ declaration }) => !rewritten.has(declaration))?.elements[0];
+  const anchor = uqlImportDeclarations(source).find(({ declaration }) => !rewritten.has(declaration));
   if (!anchor) {
     for (const [name, what] of missing) {
       ctx.unresolved.push(`${source.fileName}: import '${name}' from 'uql-orm' for ${what} written here`);
     }
     return;
   }
-  ctx.edits.push(inserted(anchor, missing.map(([name]) => `${name}, `).join('')));
+  const names = missing.map(([name]) => name);
+  const typeOnly = anchor.declaration.importClause?.phaseModifier === ts.SyntaxKind.TypeKeyword;
+  ctx.edits.push(
+    typeOnly
+      ? inserted(anchor.declaration, `import { ${names.join(', ')} } from 'uql-orm';\n`)
+      : inserted(anchor.elements[0], names.map((name) => `${name}, `).join('')),
+  );
 }
 
 /** Everything the standard spec needs written onto one decorated property, and the options renamed since. */
@@ -959,7 +1114,7 @@ function rewriteProperty(node: ts.PropertyDeclaration, ctx: Context): void {
 function admitNull(options: Options, node: ts.PropertyDeclaration, ctx: Context): void {
   // Options it cannot read may state `nullable` themselves, and appending to the property would then
   // contradict the column. `addFieldType` already reports the same options, so this adds no second note.
-  if (options.kind === 'opaque') {
+  if (options.kind === 'opaque' || !ctx.strictNullChecks) {
     return;
   }
   if (
@@ -1027,18 +1182,33 @@ function reportRemovedDecorators(node: ts.Node, ctx: Context): void {
 
 /** Names an export that no longer exists, where it is imported from the package or one of its entries. */
 function reportRemovedExports(source: ts.SourceFile, ctx: Context): void {
-  for (const element of uqlImports(source, true)) {
-    const name = importedName(element);
-    const advice = REMOVED_EXPORTS.get(name);
-    if (advice) {
-      ctx.unresolved.push(`${ctx.describe(element)}: '${name}' was removed; ${advice}`);
+  for (const { declaration, entry, elements } of uqlImportDeclarations(source, true)) {
+    if (entry === 'uql-orm/util') {
+      const names = elements.filter((element) => !renamedTo(element, entry)).map(importedName);
+      if (names.length) {
+        ctx.unresolved.push(
+          `${ctx.describe(declaration)}: 'uql-orm/util' was removed; its helpers are internal, so write your own \`${names.join('`, `')}\``,
+        );
+      }
+      continue;
+    }
+    const root = (MOVED_ENTRIES.get(entry) ?? entry) === 'uql-orm';
+    for (const element of elements) {
+      const name = importedName(element);
+      const removed = REMOVED_EXPORTS.get(name);
+      const internal = root ? INTERNAL_EXPORTS.get(name) : undefined;
+      if (removed) {
+        ctx.unresolved.push(`${ctx.describe(element)}: '${name}' was removed; ${removed}`);
+      } else if (internal) {
+        ctx.unresolved.push(`${ctx.describe(element)}: '${name}' is internal; ${internal}`);
+      }
     }
   }
 }
 
 /**
- * Rewrites each import naming a {@link RENAMED_EXPORTS} export, renaming every use of it: a name moving
- * entries gets an import from its new one, and a name the file already imports is dropped, as is a `dead`
+ * Rewrites each import naming a {@link RENAMED_EXPORTS} export, or from a {@link MOVED_ENTRIES} entry, renaming
+ * every use of it: a name moving entries gets an import from its new one, and a name the file already imports is dropped, as is a `dead`
  * one. Returns the rewritten imports, which nothing else may edit.
  */
 function renameExports(
@@ -1050,8 +1220,9 @@ function renameExports(
   const kept = imports.flatMap(({ entry, elements }) => elements.filter((element) => !renamedTo(element, entry)));
   const bound = new Set(kept.map((element) => element.name.text));
   const rewritten = new Set<ts.ImportDeclaration>();
-  for (const { declaration, entry, elements } of imports) {
-    if (!elements.some((element) => renamedTo(element, entry))) {
+  for (const { declaration, entry: imported, elements } of imports) {
+    const entry = MOVED_ENTRIES.get(imported) ?? imported;
+    if (entry === imported && !elements.some((element) => renamedTo(element, entry))) {
       continue;
     }
     const byEntry = new Map<string, string[]>([[entry, []]]);
@@ -1086,7 +1257,7 @@ function renameExports(
 /** The rename `element` still needs, none where it already names the export at its entry. */
 function renamedTo(element: ts.ImportSpecifier, entry: string) {
   const name = importedName(element);
-  const rename = RENAMED_EXPORTS.get(name);
+  const rename = RENAMED_EXPORTS.get(`${entry}#${name}`) ?? RENAMED_EXPORTS.get(name);
   return rename?.to === name && rename.from === entry ? undefined : rename;
 }
 
@@ -1326,9 +1497,14 @@ function relatedClass(property: ts.Symbol, node: ts.Node, checker: ts.TypeChecke
 }
 
 /** Rewrites one source file for the standard decorator spec. */
-export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): FileResult {
+export function transformFile(
+  source: ts.SourceFile,
+  checker: ts.TypeChecker,
+  options: { readonly strictNullChecks: boolean } = { strictNullChecks: true },
+): FileResult {
   const ctx: Context = {
     checker,
+    strictNullChecks: options.strictNullChecks,
     edits: [],
     unresolved: [],
     notes: [],
@@ -1360,6 +1536,8 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
       rewriteUpsertCall(node, ctx);
       if (importsUql) {
         rewriteBuilderCall(node, ctx);
+        rewriteSqlCall(node, ctx);
+        reportMigratorCall(node, ctx);
       }
       if (importsExpr) {
         rewriteExprCall(node, ctx);
@@ -1367,6 +1545,9 @@ export function transformFile(source: ts.SourceFile, checker: ts.TypeChecker): F
     }
     if (ts.isPropertyAssignment(node)) {
       rewriteStatementKeys(node, ctx);
+    }
+    if (importsUql && ts.isVariableDeclaration(node)) {
+      rewriteUpsertResult(node, ctx);
     }
     ts.forEachChild(node, visit);
   };

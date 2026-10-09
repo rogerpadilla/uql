@@ -5,7 +5,14 @@ import {
   anyUuid,
   assertDefined,
   Company,
+  Carrier,
   type CompanyKind,
+  Label,
+  Parcel,
+  Shipment,
+  ShipmentLabel,
+  JsonHolder,
+  JsonValue,
   InventoryAdjustment,
   Item,
   ItemAdjustment,
@@ -116,9 +123,8 @@ export abstract class AbstractQuerierIt<
     const querier = await this.pool.getQuerier();
     await querier.beginTransaction();
     await querier.insertOne(User, { name: 'Rolled Back', email: 'rolledback@example.com' });
-
     await expect(querier.release()).resolves.toBeUndefined();
-    expect(querier.hasOpenTransaction).toBe(false);
+
     await expect(this.pool.count(User, { $where: { email: 'rolledback@example.com' } })).resolves.toBe(0);
   }
 
@@ -127,13 +133,13 @@ export abstract class AbstractQuerierIt<
    * would hand it a SuppressedError with an empty message.
    */
   async shouldRollBackAnOpenTransactionOnAsyncDispose() {
+    const querier = await this.pool.getQuerier();
     await expect(
-      (async () => {
-        await using querier = await this.pool.getQuerier();
-        await querier.beginTransaction();
-        await querier.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
+      querier.transaction(async () => {
+        await using scoped = querier;
+        await scoped.insertOne(User, { name: 'Disposed', email: 'disposed@example.com' });
         throw new TypeError('the real failure');
-      })(),
+      }),
     ).rejects.toThrow('the real failure');
 
     await expect(this.pool.count(User, { $where: { email: 'disposed@example.com' } })).resolves.toBe(0);
@@ -266,6 +272,18 @@ export abstract class AbstractQuerierIt<
     expect(gone).toMatchObject({ expected: 0, actual: undefined });
   }
 
+  /** `returning` keeps the lock's word: a gone versioned row throws, as it does without it. */
+  async shouldTellAGoneRowWhenReturning() {
+    const id = await this.querier.insertOne(VersionedNote, { title: 'doomed' });
+    await this.querier.deleteOneById(VersionedNote, id, { hardDelete: true });
+
+    const gone = await this.querier
+      .updateOneById(VersionedNote, id, { title: 'ghost', version: 0 }, { returning: { title: true } })
+      .catch(thrownValue);
+
+    expect(gone).toMatchObject({ expected: 0, actual: undefined });
+  }
+
   /** One version cannot speak for many rows, so a versioned update is named by its id or refused. */
   async shouldRefuseAVersionedUpdateNamingMoreThanOneRow() {
     await this.querier.insertOne(VersionedNote, { title: 'batch' });
@@ -292,7 +310,7 @@ export abstract class AbstractQuerierIt<
       "cannot 'save' the versioned 'VersionedNote'",
     );
     await expect(this.querier.upsertOne(VersionedNote, { id: true }, { title: 'upserted' })).rejects.toThrow(
-      "cannot 'upsertOne' the versioned 'VersionedNote'",
+      "cannot 'upsert' the versioned 'VersionedNote'",
     );
   }
 
@@ -2181,7 +2199,7 @@ export abstract class AbstractQuerierIt<
     expect(found?.kind).toEqual({ description: 'x', isArchived: false });
   }
 
-  /** The first upsert inserts the row and the second updates it, each reported as the engine counts it. */
+  /** The first upsert inserts the row and the second updates it, each resolving to the row's id. */
   async shouldUpsertOne() {
     const pk = '507f1f77bcf86cd799439011';
 
@@ -2189,19 +2207,8 @@ export abstract class AbstractQuerierIt<
     expect(await this.taxCategoryNames(pk)).toEqual(['Some Name C']);
     const updated = await this.querier.upsertOne(TaxCategory, { pk: true }, { pk, name: 'Some Name D' });
 
-    expect([inserted, updated]).toEqual([
-      { id: pk, ...this.upsertReport(1, 0) },
-      { id: pk, ...this.upsertReport(0, 1) },
-    ]);
+    expect([inserted, updated]).toEqual([pk, pk]);
     expect(await this.taxCategoryNames(pk)).toEqual(['Some Name D']);
-  }
-
-  /**
-   * What an upsert reports inserting `inserted` rows and updating `updated`: a change each, and `created`
-   * only where the engine tells an insert from an update (Postgres's `xmax`, MySQL's `affectedRows`).
-   */
-  protected upsertReport(inserted: number, updated: number): { changes: number; created?: boolean } {
-    return { changes: inserted + updated };
   }
 
   /** The row inserts as written; on a conflict, only `update` applies, so a counter can count. */
@@ -2228,7 +2235,7 @@ export abstract class AbstractQuerierIt<
     await this.querier.upsertOne(Tax, { id: true }, { id, name: 'VAT' }, {});
     const ignored = await this.querier.upsertOne(Tax, { id: true }, { id, name: 'renamed' }, {});
     const batch = await this.querier.upsertMany(Tax, { id: true }, [{ id, name: 'renamed' }], {});
-    expect([ignored.id, ignored.changes, batch.ids, batch.changes]).toEqual([id, 0, [id], 0]);
+    expect([ignored, batch]).toEqual([id, [id]]);
     const stored = await this.querier.findOneById(Tax, id, { $select: { name: true, updatedAt: true } });
     assertDefined(stored);
     expect([stored.name, stored.updatedAt == null]).toEqual(['VAT', true]);
@@ -2310,8 +2317,7 @@ export abstract class AbstractQuerierIt<
   }
 
   async shouldUpsertManyEmpty() {
-    const result = await this.querier.upsertMany(TaxCategory, { pk: true }, []);
-    expect(result.changes).toBe(0);
+    expect(await this.querier.upsertMany(TaxCategory, { pk: true }, [])).toEqual([]);
   }
 
   async shouldUpsertMany() {
@@ -2327,10 +2333,7 @@ export abstract class AbstractQuerierIt<
       { pk: pks[1], name: 'Updated B' },
     ]);
 
-    expect([inserted, updated]).toEqual([
-      { ids: pks, changes: this.upsertReport(2, 0).changes },
-      { ids: pks, changes: this.upsertReport(0, 2).changes },
-    ]);
+    expect([inserted, updated]).toEqual([pks, pks]);
     expect(await this.taxCategoryNames(...pks)).toEqual(['Updated A', 'Updated B']);
   }
 
@@ -2452,7 +2455,7 @@ export abstract class AbstractQuerierIt<
 
     const result = await asTenant('a', () => this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'final' }));
 
-    expect(result).toMatchObject({ id, created: false });
+    expect(result).toBe(id);
     const row = await asSystem(() =>
       this.querier.findOneById(TenantNote, id, { $select: { tenantId: true, title: true } }),
     );
@@ -2480,7 +2483,7 @@ export abstract class AbstractQuerierIt<
       this.querier.upsertOne(TenantNote, { id: true }, { id, title: 'payload' }, {}),
     );
 
-    expect(result).toMatchObject({ id, changes: 0 });
+    expect(result).toBe(id);
     const row = await asSystem(() => this.querier.findOneById(TenantNote, id, { $select: { title: true } }));
     expect(row).toEqual({ title: 'draft' });
   }
@@ -2507,8 +2510,7 @@ export abstract class AbstractQuerierIt<
   }
 
   async shouldUpsertNoRowsOfAGuardedEntity() {
-    const result = await asTenant('a', () => this.querier.upsertMany(TenantNote, { id: true }, []));
-    expect(result.changes).toBe(0);
+    expect(await asTenant('a', () => this.querier.upsertMany(TenantNote, { id: true }, []))).toEqual([]);
   }
 
   async shouldWriteAnyTenantUnderASystemContext() {
@@ -2647,26 +2649,19 @@ export abstract class AbstractQuerierIt<
     ).rejects.toThrow('unknown operator: $someInvalidOperator');
   }
 
-  async shouldIgnoreRollbackTransactionWithoutBeginTransaction() {
-    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
-    expect(this.querier.hasOpenTransaction).toBe(false);
-  }
-
   /** What a transaction writes it sees, and a commit keeps, at the default isolation level or one asked for. */
   async shouldCommit() {
-    await this.querier.beginTransaction();
-    await this.querier.insertOne(User, {});
-    await expect(this.querier.count(User, {})).resolves.toBe(1);
-    await this.querier.commitTransaction();
-    await this.querier.beginTransaction({ isolationLevel: 'serializable' });
-    await this.querier.insertOne(User, {});
-    await this.querier.commitTransaction();
+    await this.querier.transaction(async () => {
+      await this.querier.insertOne(User, {});
+      await expect(this.querier.count(User, {})).resolves.toBe(1);
+    });
+    await this.querier.transaction(() => this.querier.insertOne(User, {}), { isolationLevel: 'serializable' });
 
     await expect(this.querier.count(User, {})).resolves.toBe(2);
   }
 
   /** What a transaction writes it sees, and a rollback drops, at the default isolation level or one asked for. */
-  async shouldRollback() {
+  async shouldRollBackAManualTransaction() {
     await this.querier.beginTransaction();
     await this.querier.insertOne(User, {});
     await expect(this.querier.count(User, {})).resolves.toBe(1);
@@ -2674,6 +2669,44 @@ export abstract class AbstractQuerierIt<
     await this.querier.beginTransaction({ isolationLevel: 'read committed' });
     await this.querier.insertOne(User, {});
     await this.querier.rollbackTransaction();
+
+    await expect(this.querier.count(User, {})).resolves.toBe(0);
+  }
+
+  async shouldIgnoreRollbackTransactionWithoutBeginTransaction() {
+    await expect(this.querier.rollbackTransaction()).resolves.toBeUndefined();
+    expect(this.querier.hasOpenTransaction).toBe(false);
+  }
+
+  async shouldRefuseABeginInsideATransaction() {
+    await this.querier.beginTransaction();
+    expect(this.querier.hasOpenTransaction).toBe(true);
+    await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
+    expect(queryErrorKind(await this.querier.beginTransaction().catch(thrownValue))).toBe('usage');
+  }
+
+  async shouldRefuseACommitWithoutATransaction() {
+    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
+    expect(queryErrorKind(await this.querier.commitTransaction().catch(thrownValue))).toBe('usage');
+  }
+
+  async shouldRollback() {
+    await expect(
+      this.querier.transaction(async () => {
+        await this.querier.insertOne(User, {});
+        await expect(this.querier.count(User, {})).resolves.toBe(1);
+        throw new TypeError('roll back');
+      }),
+    ).rejects.toThrow('roll back');
+    await expect(
+      this.querier.transaction(
+        async () => {
+          await this.querier.insertOne(User, {});
+          throw new TypeError('roll back');
+        },
+        { isolationLevel: 'read committed' },
+      ),
+    ).rejects.toThrow('roll back');
 
     await expect(this.querier.count(User, {})).resolves.toBe(0);
   }
@@ -2691,13 +2724,6 @@ export abstract class AbstractQuerierIt<
     await expect(this.querier.count(User, {})).resolves.toBe(1);
   }
 
-  async shouldRefuseABeginInsideATransaction() {
-    await this.querier.beginTransaction();
-    expect(this.querier.hasOpenTransaction).toBe(true);
-    await expect(this.querier.beginTransaction()).rejects.toThrow('pending transaction');
-    expect(queryErrorKind(await this.querier.beginTransaction().catch(thrownValue))).toBe('usage');
-  }
-
   /** A nested transaction joins the outer one, so its throw rolls back both. */
   async shouldRollbackEntireTransactionWhenNestedThrows() {
     await expect(
@@ -2708,30 +2734,9 @@ export abstract class AbstractQuerierIt<
           throw new TypeError('inner error');
         });
       }),
-    ).rejects.toThrow('inner error');
+    ).rejects.toThrow(this.nestedTransactionError());
 
     await expect(this.querier.count(User, {})).resolves.toBe(0);
-  }
-
-  async shouldReuseDeeplyNestedTransactions() {
-    const result = await this.querier.transaction(async () => {
-      await this.querier.insertOne(User, { name: 'level-1' });
-      return this.querier.transaction(async () => {
-        await this.querier.insertOne(User, { name: 'level-2' });
-        return this.querier.transaction(async () => {
-          await this.querier.insertOne(User, { name: 'level-3' });
-          return this.querier.count(User, {});
-        });
-      });
-    });
-
-    expect(result).toBe(3);
-    await expect(this.querier.count(User, {})).resolves.toBe(3);
-  }
-
-  async shouldRefuseACommitWithoutATransaction() {
-    await expect(this.querier.commitTransaction()).rejects.toThrow('not a pending transaction');
-    expect(queryErrorKind(await this.querier.commitTransaction().catch(thrownValue))).toBe('usage');
   }
 
   async shouldPopulateOverNoRows() {
@@ -2794,16 +2799,420 @@ export abstract class AbstractQuerierIt<
       "'updateMany' over 'User' names no rows",
     );
     await expect(this.querier.deleteMany(User, { $where: {} })).rejects.toThrow('names no rows');
-    await expect(this.querier.deleteMany(User, { $where: { id: undefined } })).rejects.toThrow('names no rows');
+    await expect(this.querier.deleteMany(User, { $where: { id: undefined } })).rejects.toThrow('holds undefined');
     await expect(this.querier.updateMany(User, { $where: { id: undefined } }, { name: 'x' })).rejects.toThrow(
-      'names no rows',
+      'holds undefined',
     );
     await expect(this.querier.deleteMany(User, { $where: { $or: [{ id: undefined }] } })).rejects.toThrow(
-      'names no rows',
+      'holds undefined',
     );
     await expect(this.querier.deleteMany(User, { $where: { $and: [] } })).rejects.toThrow('names no rows');
     expect(queryErrorKind(await this.querier.deleteMany(User, {}).catch(thrownValue))).toBe('usage');
     await expect(this.querier.count(User)).resolves.toBe(2);
+  }
+
+  /** A to-one holding the key is written first, so the parent inserts already pointing at it. */
+  async shouldWriteAToOneTargetBeforeTheRowHoldingItsKey() {
+    const otherId = await this.querier.insertOne(Carrier, { code: 'other', name: 'Other' });
+    const id = await this.querier.insertOne(Shipment, {
+      name: 's1',
+      carrier: { code: 'fast', name: 'Fast' },
+      waybill: { number: 'W1' },
+    });
+
+    const shipment = await this.querier.findOneById(Shipment, id!, { $populate: { carrier: true, waybill: true } });
+    expect(shipment?.carrier).toMatchObject({ code: 'fast', name: 'Fast' });
+    expect(shipment?.waybill).toMatchObject({ number: 'W1' });
+    expect(await this.querier.findOneById(Carrier, otherId!)).toMatchObject({ code: 'other', name: 'Other' });
+  }
+
+  /** A to-one naming only its key is a link: the target is neither written nor inserted again. */
+  async shouldLinkAToOneReferenceWithoutWritingIt() {
+    const carrierId = await this.querier.insertOne(Carrier, { code: 'fast', name: 'Fast' });
+    const id = await this.querier.insertOne(Shipment, { name: 's1', carrier: { id: carrierId } });
+    expect((await this.querier.findOneById(Shipment, id!))?.carrierId).toBe(carrierId);
+    expect(await this.querier.count(Carrier)).toBe(1);
+
+    await this.querier.updateOneById(Shipment, id!, { carrier: { code: 'slow', name: 'Slow' } });
+
+    const shipment = await this.querier.findOneById(Shipment, id!, { $populate: { carrier: true } });
+    expect(shipment?.carrier).toMatchObject({ code: 'slow', name: 'Slow' });
+    expect(await this.querier.findOneById(Carrier, carrierId!)).toMatchObject({ code: 'fast', name: 'Fast' });
+  }
+
+  /** An update replaces a to-many: the children it lists keep what it does not write, and the rest go. */
+  async shouldUpdateAToManyKeepingTheChildrenItStillLists() {
+    const id = await this.querier.insertOne(Shipment, {
+      name: 's1',
+      parcels: [
+        { content: 'a', weight: 1 },
+        { content: 'b', weight: 2 },
+      ],
+    });
+    const [kept] = await this.querier.findMany(Parcel, { $where: { content: 'a' } });
+
+    await this.querier.updateOneById(Shipment, id!, {
+      parcels: [
+        { id: kept.id, weight: 10 },
+        { content: 'c', weight: 3 },
+      ],
+    });
+
+    const parcels = await this.querier.findMany(Parcel, {
+      $select: { id: true, content: true, weight: true, createdAt: true },
+      $sort: { content: 'asc' },
+    });
+    expect(parcels).toEqual([
+      { id: kept.id, content: 'a', weight: 10, createdAt: kept.createdAt },
+      { id: expect.any(String), content: 'c', weight: 3, createdAt: expect.any(Number) },
+    ]);
+  }
+
+  /** An update replaces a many-to-many link by link: one it still lists is not written again. */
+  async shouldUpdateAManyToManyTouchingOnlyTheLinksThatChanged() {
+    const [first, second, third] = await this.querier.insertMany(Label, [
+      { name: 'l1' },
+      { name: 'l2' },
+      { name: 'l3' },
+    ]);
+    const id = await this.querier.insertOne(Shipment, { name: 's1', labels: [{ id: first }, { id: second }] });
+    const [kept] = await this.querier.findMany(ShipmentLabel, { $where: { labelId: second } });
+
+    await this.querier.updateOneById(Shipment, id!, { labels: [{ id: second }, { id: third }] });
+
+    const links = await this.querier.findMany(ShipmentLabel, {
+      $select: { id: true, labelId: true },
+      $sort: { labelId: 'asc' },
+    });
+    expect(links).toEqual([
+      { id: kept.id, labelId: second },
+      { id: expect.any(String), labelId: third },
+    ]);
+  }
+
+  /** A soft delete stamps what can be stamped and keeps the rest, so a restore brings the whole back. */
+  async shouldKeepWhatASoftDeleteCannotStamp() {
+    const [labelId] = await this.querier.insertMany(Label, [{ name: 'l1' }]);
+    const id = await this.querier.insertOne(Shipment, {
+      name: 's1',
+      parcels: [{ content: 'a' }],
+      labels: [{ id: labelId }],
+    });
+
+    await this.querier.deleteOneById(Shipment, id!);
+    expect(await this.querier.count(Parcel)).toBe(1);
+    expect(await this.querier.count(ShipmentLabel)).toBe(1);
+
+    await this.querier.restoreOneById(Shipment, id!);
+    const restored = await this.querier.findOneById(Shipment, id!, { $populate: { parcels: true, labels: true } });
+    expect(restored?.parcels).toHaveLength(1);
+    expect(restored?.labels).toHaveLength(1);
+
+    await this.querier.deleteOneById(Shipment, id!, { hardDelete: true });
+    expect(await this.querier.count(Parcel)).toBe(0);
+    expect(await this.querier.count(ShipmentLabel)).toBe(0);
+  }
+
+  /** A write that cascades lands whole or not at all, outside a transaction too. */
+  async shouldRollBackAWriteWhoseCascadeFails() {
+    await expect(this.querier.insertOne(Shipment, { name: 'lost', labels: [{ name: 'boom' }] })).rejects.toThrow(
+      'boom',
+    );
+    expect(await this.querier.count(Shipment)).toBe(0);
+
+    const id = await this.querier.insertOne(Shipment, { name: 'kept' });
+    await expect(
+      this.querier.updateOneById(Shipment, id!, { name: 'changed', labels: [{ name: 'boom' }] }),
+    ).rejects.toThrow('boom');
+    expect((await this.querier.findOneById(Shipment, id!))?.name).toBe('kept');
+  }
+
+  /** The names of every `Label`, sorted, read through the filters as any caller reads them. */
+  private async labelNames(): Promise<(string | null | undefined)[]> {
+    const labels = await this.pool.findMany(Label, { $select: { name: true }, $sort: { name: 'asc' } });
+    return labels.map((label) => label.name);
+  }
+
+  /** Two transactions on one querier take turns: neither commits, nor rolls back, the other's work. */
+  async shouldRunConcurrentTransactionsOnOneQuerierInTurn() {
+    const failing = this.querier.transaction(async () => {
+      await this.querier.insertOne(Label, { name: 'undone' });
+      throw new Error('undo');
+    });
+    const passing = this.querier.transaction(async () => {
+      await this.querier.insertOne(Label, { name: 'kept' });
+    });
+
+    await expect(failing).rejects.toThrow('undo');
+    await passing;
+    expect(await this.labelNames()).toEqual(['kept']);
+  }
+
+  /** Why a failing nested transaction rejects: its own error, or the engine having no savepoint to run it in. */
+  protected nestedTransactionError(): string {
+    return 'inner';
+  }
+
+  /** A savepoint undoes the nested writes alone; with none (MongoDB), the nested transaction is refused before it runs. */
+  async shouldUndoAFailedNestedTransactionAlone() {
+    await this.querier.transaction(async () => {
+      await this.querier.insertOne(Label, { name: 'outer' });
+      await expect(
+        this.querier.transaction(async () => {
+          await this.querier.insertOne(Label, { name: 'inner' });
+          throw new Error('inner');
+        }),
+      ).rejects.toThrow(this.nestedTransactionError());
+      await this.querier.insertOne(Label, { name: 'after' });
+    });
+
+    expect(await this.labelNames()).toEqual(['after', 'outer']);
+  }
+
+  /** A pool call inside the pool's transaction runs in it, so it rolls back with it. */
+  async shouldRunAPoolCallInsideThePoolsTransaction() {
+    const failed = await this.pool
+      .transaction(async () => {
+        await this.pool.insertOne(Label, { name: 'joined' });
+        expect(await this.pool.count(Label)).toBe(1);
+        throw new Error('undo');
+      })
+      .catch(thrownValue);
+
+    expect(failed).toBeInstanceOf(Error);
+    expect(await this.labelNames()).toEqual([]);
+  }
+
+  /** A write from another flow waits for a transaction rather than landing in it, so its rollback keeps it. */
+  async shouldKeepAnotherFlowsWriteOutOfATransaction() {
+    let enter!: () => void;
+    let leave!: () => void;
+    const entered = new Promise<void>((resolve) => {
+      enter = resolve;
+    });
+    const left = new Promise<void>((resolve) => {
+      leave = resolve;
+    });
+    const transaction = this.pool
+      .transaction(async () => {
+        await this.pool.insertOne(Label, { name: 'undone' });
+        enter();
+        await left;
+        throw new Error('undo');
+      })
+      .catch(thrownValue);
+
+    await entered;
+    const outside = this.pool.insertOne(Label, { name: 'kept' });
+    leave();
+    await Promise.all([transaction, outside]);
+
+    expect(await this.labelNames()).toEqual(['kept']);
+  }
+
+  /** `onCommit` waits for the commit, is dropped by a rollback, and runs at once outside a transaction. */
+  async shouldRunOnCommitOnlyOnceCommitted() {
+    const ran: string[] = [];
+    await this.querier.transaction(async () => {
+      await this.querier.onCommit(() => ran.push('committed'));
+      expect(ran).toEqual([]);
+    });
+    await this.querier
+      .transaction(async () => {
+        await this.querier.onCommit(() => ran.push('rolled back'));
+        throw new Error('undo');
+      })
+      .catch(thrownValue);
+    await this.querier.onCommit(() => ran.push('at once'));
+
+    expect(ran).toEqual(['committed', 'at once']);
+  }
+
+  /** `returning` reads back what each write wrote, the fields the database or an `onInsert` filled included. */
+  async shouldReturnTheRowsAnInsertWrote() {
+    const inserted = await this.querier.insertOne(Label, { name: 'one' }, { returning: { id: true, createdAt: true } });
+    expect(inserted).toEqual({ id: expect.any(String), createdAt: expect.any(Number) });
+
+    const many = await this.querier.insertMany(Label, [{ name: 'two' }, { name: 'three' }], {
+      returning: { name: true },
+    });
+    expect(many).toEqual([{ name: 'two' }, { name: 'three' }]);
+  }
+
+  /** `returning` projects as `$select` does: a field set false leaves it out of every other field. */
+  async shouldReturnWhatTheProjectionSelects() {
+    const inserted = await this.querier.insertOne(Label, { name: 'a' }, { returning: { name: false } });
+
+    expect(inserted).not.toHaveProperty('name');
+    expect(inserted.id).toEqual(expect.any(String));
+  }
+
+  /** An update returns the rows it changed, named before it ran, so a payload moving them out of `$where` still does. */
+  async shouldReturnTheRowsAnUpdateChanged() {
+    await this.querier.insertMany(Parcel, [{ content: 'a' }, { content: 'b' }, { content: 'c' }]);
+
+    const changed = await this.querier.updateMany(
+      Parcel,
+      { $where: { content: { $in: ['a', 'b'] } } },
+      { content: 'moved' },
+      { returning: { content: true } },
+    );
+    expect(changed).toEqual([{ content: 'moved' }, { content: 'moved' }]);
+    expect(
+      await this.querier.updateMany(
+        Parcel,
+        { $where: { content: 'gone' } },
+        { content: 'x' },
+        { returning: { content: true } },
+      ),
+    ).toEqual([]);
+  }
+
+  /** A delete returns the rows as they were before it, soft-deleted ones as they read. */
+  async shouldReturnTheRowsADeleteRemoved() {
+    const id = await this.querier.insertOne(Shipment, { name: 'gone' });
+
+    const deleted = await this.querier.deleteOneById(Shipment, id!, { returning: { name: true } });
+    expect(deleted).toEqual({ name: 'gone' });
+    expect(await this.querier.count(Shipment)).toBe(0);
+  }
+
+  /** A pool stream inside the pool's transaction reads on its querier, the transaction's own writes included. */
+  async shouldStreamThroughThePoolInsideItsTransaction() {
+    const names = await this.pool.transaction(async (querier) => {
+      await querier.insertOne(User, { name: 'streamed', email: 'streamed@example.com' });
+      const rows = await Array.fromAsync(
+        this.pool.findManyStream(User, { $select: { name: true }, $where: { email: 'streamed@example.com' } }),
+      );
+      return rows.map((row) => row.name);
+    });
+
+    expect(names).toEqual(['streamed']);
+  }
+
+  /** A pool stream from another flow waits for a transaction to end, never reading what it rolls back. */
+  async shouldStreamAfterAnotherFlowsTransaction() {
+    const { promise: inserted, resolve: insert } = Promise.withResolvers<void>();
+    const { promise: finished, resolve: finish } = Promise.withResolvers<void>();
+    const transaction = this.pool.transaction(async (querier) => {
+      await querier.insertOne(User, { name: 'pending', email: 'pending@example.com' });
+      insert();
+      await finished;
+      throw new Error('rolled back');
+    });
+    await inserted;
+
+    const streamed = Array.fromAsync(
+      this.pool.findManyStream(User, { $select: { name: true }, $where: { email: 'pending@example.com' } }),
+    );
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    finish();
+
+    await expect(transaction).rejects.toThrow('rolled back');
+    expect(await streamed).toEqual([]);
+  }
+
+  /** A pool call the callback leaves running past its transaction runs on a querier of its own. */
+  async shouldRunAPoolCallOutlivingItsTransaction() {
+    let later: Promise<unknown> = Promise.resolve();
+    await this.pool.transaction(async () => {
+      later = new Promise((resolve) => setTimeout(resolve, 0)).then(() =>
+        this.pool.insertOne(User, { name: 'later', email: 'later@example.com' }),
+      );
+    });
+
+    await later;
+    expect(await this.querier.count(User, { $where: { email: 'later@example.com' } })).toBe(1);
+  }
+
+  /** By id, an update returns the row, or nothing where the id names none. */
+  async shouldReturnTheRowAnUpdateByIdChanged() {
+    const [id, goneId] = await this.querier.insertMany(Parcel, [{ content: 'a' }, { content: 'gone' }]);
+    await this.querier.deleteOneById(Parcel, goneId!);
+
+    expect(await this.querier.updateOneById(Parcel, id!, { content: 'b' }, { returning: { content: true } })).toEqual({
+      content: 'b',
+    });
+    expect(
+      await this.querier.updateOneById(Parcel, goneId!, { content: 'c' }, { returning: { content: true } }),
+    ).toBeUndefined();
+  }
+
+  /** A hard delete returns a soft-deleted row too, which it removes; a delete matching nothing returns none. */
+  async shouldReturnTheRowsAHardDeleteRemoved() {
+    const id = await this.querier.insertOne(Shipment, { name: 'gone' });
+    await this.querier.deleteOneById(Shipment, id!);
+
+    const removed = await this.querier.deleteMany(
+      Shipment,
+      { $where: { name: 'gone' } },
+      { hardDelete: true, returning: { name: true } },
+    );
+    expect(removed).toEqual([{ name: 'gone' }]);
+    expect(
+      await this.querier.deleteMany(Shipment, { $where: { name: 'gone' } }, { returning: { name: true } }),
+    ).toEqual([]);
+  }
+
+  /** The rows a write wrote are its own, a soft-deleted one included. */
+  async shouldReturnASoftDeletedRowAnInsertWrote() {
+    expect(
+      await this.querier.insertOne(Shipment, { name: 'archived', deletedAt: 1 }, { returning: { name: true } }),
+    ).toEqual({ name: 'archived' });
+  }
+
+  /** An upsert writing relations updates the soft-deleted row its conflict finds, as `ON CONFLICT` does. */
+  async shouldUpsertOntoASoftDeletedRow() {
+    const id = await this.querier.insertOne(Shipment, { name: 'archived' });
+    await this.querier.deleteOneById(Shipment, id!);
+
+    await this.querier.upsertOne(Shipment, { id: true }, { id, name: 'back', carrier: { code: 'fast', name: 'Fast' } });
+    await this.querier.restoreOneById(Shipment, id!);
+
+    const shipment = await this.querier.findOneById(Shipment, id!, { $populate: { carrier: true } });
+    expect(shipment).toMatchObject({ name: 'back', carrier: { code: 'fast' } });
+  }
+
+  /** An upsert and a save return the row either branch wrote. */
+  async shouldReturnTheRowAnUpsertWrote() {
+    await this.querier.insertOne(Carrier, { code: 'fast', name: 'Fast' });
+
+    const updated = await this.querier.upsertOne(Carrier, { code: true }, { code: 'fast', name: 'Faster' }, undefined, {
+      returning: { code: true, name: true },
+    });
+    const saved = await this.querier.saveOne(Carrier, { code: 'slow', name: 'Slow' }, { returning: { name: true } });
+
+    expect([updated, saved]).toEqual([{ code: 'fast', name: 'Faster' }, { name: 'Slow' }]);
+  }
+
+  /** A JSON value reads back as written: a string spelling a number, a boolean or a document stays a string. */
+  async shouldReadJsonValuesBackAsWritten() {
+    const values: NonNullable<JsonValue['value']>[] = ['123', 'true', '{"a":1}', 'plain', 42, true, { x: '7' }, ['1']];
+    const holderId = await this.querier.insertOne(JsonHolder, { name: 'holder' });
+    await this.querier.insertMany(
+      JsonValue,
+      values.map((value, position) => ({ holderId, position, value })),
+    );
+
+    const read = await this.querier.findMany(JsonValue, { $select: { value: true }, $sort: { position: 'asc' } });
+    expect(read.map((row) => row.value)).toEqual(values);
+
+    const holder = await this.querier.findOneById(JsonHolder, holderId!, {
+      $populate: { values: { $select: { value: true }, $sort: { position: 'asc' } } },
+    });
+    expect(holder?.values?.map((row) => row.value)).toEqual(values);
+  }
+
+  /** An `undefined` filters by nothing, so a read naming one would return any row: it is refused. */
+  async shouldRefuseAnUndefinedInAReadWhere() {
+    await this.querier.insertMany(User, [{ name: 'one' }, { name: 'two' }]);
+
+    await expect(this.querier.findOne(User, { $where: { name: undefined } })).rejects.toThrow(
+      "$where on 'User' holds undefined at 'name'",
+    );
+    await expect(this.querier.count(User, { $where: { name: 'one', email: undefined } })).rejects.toThrow(
+      "holds undefined at 'email'",
+    );
   }
 
   /** A `$limit` names the rows a bulk write reaches, and `unfiltered` asks for every one. */
@@ -2981,20 +3390,19 @@ export abstract class AbstractQuerierIt<
     expect(await Array.fromAsync(this.querier.findManyStream(User, {}))).toEqual([]);
   }
 
-  /** The stream leaves the caller's transaction open, and its own rows visible to it. */
+  /** The stream sees the caller's uncommitted rows and leaves its transaction open for the statements after it. */
   async shouldFindManyStreamInsideATransaction() {
-    await this.querier.beginTransaction();
-    await this.querier.insertMany(User, [
-      { name: 'Alice', email: 'alice@test.com' },
-      { name: 'Bob', email: 'bob@test.com' },
-    ]);
-
-    const rows = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: 1 } }));
+    const [rows, count] = await this.querier.transaction(async () => {
+      await this.querier.insertMany(User, [
+        { name: 'Alice', email: 'alice@test.com' },
+        { name: 'Bob', email: 'bob@test.com' },
+      ]);
+      const streamed = await Array.fromAsync(this.querier.findManyStream(User, { $sort: { name: 1 } }));
+      return [streamed, await this.querier.count(User, {})] as const;
+    });
 
     expect(rows.map(({ name }) => name)).toEqual(['Alice', 'Bob']);
-    expect(this.querier.hasOpenTransaction).toBe(true);
-    expect(await this.querier.count(User, {})).toBe(2);
-    await this.querier.commitTransaction();
+    expect(count).toBe(2);
   }
 
   /**

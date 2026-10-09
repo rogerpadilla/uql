@@ -7,6 +7,6 @@ import { VectorQuerierIt } from './vectorQuerier-test.js';
  */
 export class SqliteLikeQuerierIt extends VectorQuerierIt {
   protected override expectedExactDecimal() {
-    return 12345678901234500000;
+    return '12345678901234500000';
   }
 }

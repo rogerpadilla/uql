@@ -277,9 +277,8 @@ describe('createRequestHandler', () => {
     const handle = createRequestHandler({ pool, include: [User] });
     const resp = await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'John' } }));
     expect(resp).toEqual({ status: 200, body: { data: 1, count: 1 } });
-    expect(mockQuerier.beginTransaction).toHaveBeenCalled();
+    expect(mockQuerier.transaction).toHaveBeenCalled();
     expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'John' });
-    expect(mockQuerier.commitTransaction).toHaveBeenCalled();
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
@@ -291,6 +290,18 @@ describe('createRequestHandler', () => {
     );
     expect(resp).toEqual({ status: 200, body: { data: [1, 2], count: 2 } });
     expect(mockQuerier.insertMany).toHaveBeenCalledWith(User, [{ name: 'a' }, { name: 'b' }]);
+  });
+
+  /** A body of the wrong shape is the client's mistake, refused before any write as a malformed query is. */
+  it.each([
+    { what: 'rows, with no body', subPath: 'many', body: undefined, message: 'a JSON array of rows' },
+    { what: 'rows, with one row', subPath: 'many', body: { name: 'a' }, message: 'a JSON array of rows' },
+    { what: 'one row, with rows', subPath: undefined, body: [{ name: 'a' }], message: 'a JSON object' },
+  ])('should refuse a write of $what', async ({ subPath, body, message }) => {
+    const handle = createRequestHandler({ pool, include: [User] });
+    await expect(handle(req({ method: 'POST', entityPath: 'user', subPath, body }))).rejects.toThrow(message);
+    expect(mockQuerier.insertMany).not.toHaveBeenCalled();
+    expect(mockQuerier.insertOne).not.toHaveBeenCalled();
   });
 
   it('should save one row', async () => {
@@ -363,20 +374,11 @@ describe('createRequestHandler', () => {
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
-  it('should roll back, release and propagate a write error', async () => {
+  it('should release and propagate the error of a write in its transaction', async () => {
     mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
     const handle = createRequestHandler({ pool, include: [User] });
     await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
-    expect(mockQuerier.rollbackTransaction).toHaveBeenCalled();
-    expect(mockQuerier.commitTransaction).not.toHaveBeenCalled();
-    expect(mockQuerier.release).toHaveBeenCalled();
-  });
-
-  it('should swallow rollback errors and keep the original one', async () => {
-    mockQuerier.insertOne.mockRejectedValue(new Error('Insert error'));
-    mockQuerier.rollbackTransaction.mockRejectedValue(new Error('Rollback error'));
-    const handle = createRequestHandler({ pool, include: [User] });
-    await expect(handle(req({ method: 'POST', entityPath: 'user', body: {} }))).rejects.toThrow('Insert error');
+    expect(mockQuerier.transaction).toHaveBeenCalled();
     expect(mockQuerier.release).toHaveBeenCalled();
   });
 
@@ -531,7 +533,7 @@ describe('createRequestHandler', () => {
       mockQuerier.insertOne.mockResolvedValue(1);
       await handle(req({ method: 'POST', entityPath: 'user', body: { name: 'a' } }));
       expect(events).toEqual(['findOne', 'insertOne']);
-      expect(mockQuerier.commitTransaction).toHaveBeenCalled();
+      expect(mockQuerier.transaction).toHaveBeenCalled();
     });
 
     it('should let hooks enforce hardDelete, the flags being resolved after them', async () => {

@@ -15,6 +15,8 @@ import {
   RelationAggregate,
   type RelationAggregateOp,
   type RelationAggregateSpec,
+  type RawValue,
+  type SqlStatement,
   type SqlValueName,
   type TriggerRowName,
   TriggerWriteRaw,
@@ -29,11 +31,14 @@ import { UqlUsageError } from './uqlError.js';
  * in place: `raw`GREATEST(0, ${user.credits} - ${amount})``. A callback writes whatever it writes, so
  * never build one from user input. See the Raw SQL guide.
  */
-export function raw(strings: TemplateStringsArray, ...values: readonly unknown[]): QueryRaw;
+export function raw(strings: TemplateStringsArray, ...values: readonly RawValue[]): QueryRaw;
 export function raw(value: QueryRawFn): QueryRaw;
-export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly unknown[]): QueryRaw {
+export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly RawValue[]): QueryRaw {
   if (!isTemplateStrings(value)) {
     return new QueryRaw(value);
+  }
+  if (rest.some((value) => value === undefined)) {
+    throw new UqlUsageError('a raw template interpolated undefined, which binds nothing: leave it out, or write null');
   }
   // Writes joined by whitespace alone are still only writes, so a set-based trigger narrows each one.
   const writes =
@@ -55,6 +60,28 @@ export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly 
     rest.length === 0 ? value[0] : undefined,
   );
 }
+
+/** `parts` one after another, `separator` between each, every part binding its own values: `raw.join(conditions, ' AND ')`. */
+raw.join = function join(parts: readonly QueryRaw[], separator = ', '): QueryRaw {
+  return new QueryRaw((opts) => {
+    parts.forEach((part, index) => {
+      if (index) {
+        opts.ctx.append(separator);
+      }
+      part.render(opts);
+    });
+  });
+};
+
+/** The statement `all` or `run` was handed: a tagged template's, or a `raw` built apart. */
+export function statementOf([sql, ...values]: SqlStatement): QueryRaw {
+  return sql instanceof QueryRaw ? sql : raw(sql, ...values);
+}
+
+/** SQL held in a string, run as written, binding nothing: for trusted text only, never built from user input. */
+raw.text = function text(sql: string): QueryRaw {
+  return new QueryRaw(() => sql, undefined, sql);
+};
 
 /**
  * The SQL of a `raw` that names a constant, for a DDL clause with no dialect to render against and

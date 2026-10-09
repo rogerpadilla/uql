@@ -1,11 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { JsonRecord, NarrowVectorItem, VectorItem } from '../test/index.js';
 import { columnFamily } from '../util/field.util.js';
+import { decodeColumn } from './hydrateColumn.js';
 
 /**
  * Which columns a dialect decodes on read, and as what: the classification itself, for the columns the
@@ -17,13 +18,15 @@ import { columnFamily } from '../util/field.util.js';
 class PlainRow {
   @Id({ type: String }) id?: string;
   @Field({ type: String }) name?: string | null;
-  /**
-   * The opt-out for a decimal wider than 2^53: `columnType` still makes the column DECIMAL, while the
-   * declared `String` keeps it off the numeric path, so the driver's exact text survives untouched.
-   * Drizzle and MikroORM both make *this* their default and require opting in to a number; uql goes
-   * the other way, so the escape hatch has to exist and stay working.
-   */
+}
+
+/** A decimal reads as its exact text, declared by its SQL type or as a `String` over one; `Number` opts in to rounding. */
+@Entity()
+class PriceRow {
+  @Id({ type: String }) id?: string;
+  @Field({ type: 'decimal', precision: 30, scale: 2 }) price?: string | null;
   @Field({ type: String, columnType: 'decimal', precision: 30, scale: 2 }) exact?: string | null;
+  @Field({ type: Number, precision: 12, scale: 2 }) rounded?: number | null;
 }
 
 @Entity()
@@ -41,7 +44,7 @@ class FlagRow {
 class LogicalRow {
   @Id({ type: Number }) id?: number;
   @Field({ type: 'boolean' }) active?: boolean | null;
-  @Field({ type: 'decimal', precision: 12, scale: 2 }) amount?: number | null;
+  @Field({ type: 'decimal', precision: 12, scale: 2 }) amount?: string | null;
   @Field({ type: BigInt }) huge?: bigint | null;
 }
 
@@ -52,8 +55,9 @@ describe('hydratableFields', () => {
     expect(postgres.hydratableFields(PlainRow)).toEqual([]);
   });
 
-  it('should classify a JSON column', () => {
-    expect(postgres.hydratableFields(JsonRecord)).toContainEqual(['entries', 'json']);
+  it('should parse a JSON column only where it arrives as text', () => {
+    expect(new SqliteDialect().hydratableFields(JsonRecord)).toContainEqual(['entries', 'json']);
+    expect(postgres.hydratableFields(JsonRecord)).not.toContainEqual(['entries', 'json']);
   });
 
   it('should classify a dense vector by the cast the dialect writes', () => {
@@ -75,8 +79,21 @@ describe('hydratableFields', () => {
     expect(postgres.hydratableFields(LogicalRow)).toEqual([
       ['id', 'number'],
       ['active', 'boolean'],
-      ['amount', 'number'],
+      ['amount', 'decimal'],
       ['huge', 'bigint'],
+    ]);
+  });
+
+  /** SQLite's numeric affinity hands a decimal back as a number, which reads as its text like any other. */
+  it.each([
+    ['Postgres', postgres],
+    ['SQLite', new SqliteDialect()],
+    ['MariaDB', new MariaDialect()],
+  ])('should read a decimal as its exact text on %s, unless declared `Number`', (_engine, dialect) => {
+    expect(dialect.hydratableFields(PriceRow)).toEqual([
+      ['price', 'decimal'],
+      ['exact', 'decimal'],
+      ['rounded', 'number'],
     ]);
   });
 
@@ -121,5 +138,17 @@ describe('hydratableFields', () => {
     // this: the cache is per dialect, so a shared one would make the second of them read the first's
     // answer for the same entity.
     expect(postgres.hydratableFields(VectorItem)).toBe(postgres.hydratableFields(VectorItem));
+  });
+});
+
+describe('decodeColumn', () => {
+  /** The text a decimal is declared as, whichever way the driver handed it back. */
+  it.each([
+    ['text', '12.50', '12.50'],
+    ['bytes, as Bun hands a MySQL decimal', new TextEncoder().encode('12.50'), '12.50'],
+    ['a float, as the SQLite family stores one', 12.5, '12.5'],
+    ['an integer, as `bun:sqlite` hands a whole one', 12n, '12'],
+  ])('should read a decimal arriving as %s as its text', (_shape, value, text) => {
+    expect(decodeColumn(value, 'decimal')).toBe(text);
   });
 });

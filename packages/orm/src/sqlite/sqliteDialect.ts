@@ -56,6 +56,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
   supportsTimestamptz: false,
   stringSizing: 'text',
   supportsUnsigned: false,
+  jsonArrivesDecoded: false,
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: false,
@@ -76,6 +77,7 @@ export const SQLITE_FEATURES: SqlDialectFeatures = {
     before: true,
     deferrable: false,
   },
+  namedLocks: false,
 };
 
 export class SqliteDialect extends AbstractSqlDialect {
@@ -114,7 +116,7 @@ export class SqliteDialect extends AbstractSqlDialect {
 
   /**
    * The [sqlite-vec](https://github.com/asg017/sqlite-vec) functions, which need that extension
-   * loaded on the connection (see `Sqlite3QuerierPool`'s `extensions` option). libSQL and Turso ship
+   * loaded on the connection (see `SqliteQuerierPool`'s `extensions` option). libSQL and Turso ship
    * their own vector functions instead, so `LibsqlDialect` overrides this.
    */
   override readonly vectorMetrics: ReadonlyMap<VectorDistance, VectorMetric> = new Map([

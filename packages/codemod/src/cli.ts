@@ -4,6 +4,8 @@ const VALUE_FLAGS = new Set(['project', 'include']);
 
 export type ParsedArgs = {
   readonly options: RunOptions;
+  /** Whether to print the usage and stop. */
+  readonly help: boolean;
   /** Why the arguments were rejected. Nothing runs while this is non-empty. */
   readonly errors: readonly string[];
 };
@@ -20,10 +22,15 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
   const errors: string[] = [];
   const values = new Map<string, string>();
   let dryRun = false;
+  let help = false;
 
   for (const arg of argv) {
     if (arg === '--dry-run') {
       dryRun = true;
+      continue;
+    }
+    if (arg === '--help' || arg === '-h') {
+      help = true;
       continue;
     }
     const separator = arg.indexOf('=');
@@ -46,6 +53,7 @@ export function parseArgs(argv: readonly string[]): ParsedArgs {
       dryRun,
       include: values.get('include')?.split(',').filter(Boolean),
     },
+    help,
     errors,
   };
 }

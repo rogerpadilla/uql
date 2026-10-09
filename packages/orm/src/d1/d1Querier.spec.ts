@@ -3,6 +3,7 @@ import { withContext } from '../context/context.js';
 import { SqliteDialect } from '../sqlite/index.js';
 import { Coupon, TenantNote } from '../test/index.js';
 import type { RawRow } from '../type/index.js';
+
 import { D1Querier, type D1Result } from './d1Querier.js';
 import { D1SqliteDialect } from './d1SqliteDialect.js';
 
@@ -36,7 +37,7 @@ describe('D1Querier', () => {
     const d1 = new D1Querier(mockDb, new D1SqliteDialect());
     mockStmt.all.mockResolvedValue(result([]));
 
-    await d1.all('SELECT ?', [9007199254740993n]);
+    await d1.all`SELECT ${9007199254740993n}`;
 
     expect(mockStmt.bind).toHaveBeenCalledWith('9007199254740993');
   });
@@ -114,7 +115,7 @@ describe('D1Querier', () => {
     const res = await querier.internalRun('INSERT INTO ... RETURNING `id` `id`', ['maz']);
 
     expect(mockStmt.bind).toHaveBeenCalledWith('maz');
-    expect(res).toEqual({ changes: 3, ids: [48, 49, 50], firstId: 48 });
+    expect(res).toEqual({ changes: 3, ids: [48, 49, 50] });
   });
 
   it('should count a statement with no RETURNING rows by meta.changes', async () => {
@@ -123,7 +124,7 @@ describe('D1Querier', () => {
     const res = await querier.internalRun('UPDATE ...');
 
     expect(mockStmt.bind).not.toHaveBeenCalled();
-    expect(res).toEqual({ changes: 5, ids: [], firstId: undefined });
+    expect(res).toEqual({ changes: 5, ids: [] });
   });
 
   /** A statement matching nothing reports no rows and no `changes`, which is zero rows affected. */
@@ -132,7 +133,7 @@ describe('D1Querier', () => {
 
     const res = await querier.internalRun('DELETE FROM `User` WHERE `id` = 404');
 
-    expect(res).toEqual({ changes: 0, ids: [], firstId: undefined });
+    expect(res).toEqual({ changes: 0, ids: [] });
   });
 
   it('should release without touching the D1 binding', async () => {
@@ -142,9 +143,11 @@ describe('D1Querier', () => {
 
   /** D1 answers `BEGIN` with `D1_ERROR: not authorized`, so the transaction is refused before it is sent. */
   it('should refuse a transaction, which D1 does not have', async () => {
-    await expect(querier.beginTransaction()).rejects.toThrow('Cloudflare D1 has no transactions');
+    const callback = vi.fn(async () => {});
 
+    await expect(querier.transaction(callback)).rejects.toThrow('Cloudflare D1 has no transactions');
+
+    expect(callback).not.toHaveBeenCalled();
     expect(mockDb.prepare).not.toHaveBeenCalled();
-    expect(querier.hasOpenTransaction).toBe(false);
   });
 });

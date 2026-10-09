@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+
 import { NodeSqliteQuerierPool } from './nodeSqliteQuerierPool.js';
 
 describe('NodeSqliteQuerierPool', () => {
@@ -18,10 +19,10 @@ describe('NodeSqliteQuerierPool', () => {
   it('should report a change count as a number and stream the rows', async () => {
     const pool = new NodeSqliteQuerierPool();
     const querier = await pool.getQuerier();
-    await querier.run('CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, s TEXT)');
-    await querier.run('INSERT INTO t (s) VALUES (?), (?)', ['a', 'b']);
+    await querier.run`CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, s TEXT)`;
+    await querier.run`INSERT INTO t (s) VALUES (${'a'}), (${'b'})`;
 
-    expect((await querier.run('UPDATE t SET s = ?', ['c'])).changes).toBe(2);
+    expect((await querier.run`UPDATE t SET s = ${'c'}`).changes).toBe(2);
     expect(await Array.fromAsync(querier.internalStream('SELECT s FROM t'))).toEqual([{ s: 'c' }, { s: 'c' }]);
     await pool.end();
   });

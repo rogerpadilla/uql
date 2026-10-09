@@ -1,5 +1,6 @@
 import type { CheckSchema } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QueryRaw } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import {
   AbstractSqlSchemaIntrospector,
   type JoinedForeignKeyRow,
@@ -9,31 +10,30 @@ import {
 
 /** SQL Server schema introspector: `INFORMATION_SCHEMA` has no view of indexes, which come from `sys.indexes`. */
 export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected override readonly defaultSchemaExpr = 'SCHEMA_NAME()';
+  protected override readonly defaultSchemaExpr = raw`SCHEMA_NAME()`;
 
-  protected triggersQuery(): string {
-    return /*sql*/ `
+  protected triggersQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT t.name AS name, m.definition AS definition
       FROM sys.triggers t
       JOIN sys.sql_modules m ON m.object_id = t.object_id
       WHERE t.parent_id <> 0 AND OBJECT_SCHEMA_NAME(t.parent_id) = ${this.schemaExpr}
-        AND OBJECT_NAME(t.parent_id) = ${this.dialect.placeholder(1)}
+        AND OBJECT_NAME(t.parent_id) = ${tableName}
     `;
   }
 
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     return read<{ name: string; expression: string }>(
-      /*sql*/ `
+      raw`
       SELECT k.name AS name, k.definition AS expression
       FROM sys.check_constraints k
-      WHERE OBJECT_SCHEMA_NAME(k.parent_object_id) = ${this.schemaExpr} AND OBJECT_NAME(k.parent_object_id) = @p1
+      WHERE OBJECT_SCHEMA_NAME(k.parent_object_id) = ${this.schemaExpr} AND OBJECT_NAME(k.parent_object_id) = ${tableName}
     `,
-      [tableName],
     );
   }
 
-  protected getTableNamesQuery(): string {
-    return /*sql*/ `
+  protected getTableNamesQuery(): QueryRaw {
+    return raw`
       SELECT TABLE_NAME as table_name
       FROM INFORMATION_SCHEMA.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -42,17 +42,17 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(): string {
-    return /*sql*/ `
+  protected tableExistsQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT 1 FROM INFORMATION_SCHEMA.TABLES
-      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = @p1 AND TABLE_TYPE = 'BASE TABLE'
+      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName} AND TABLE_TYPE = 'BASE TABLE'
     `;
   }
 
   /** From `sys` rather than `INFORMATION_SCHEMA`, which has no identity flag. */
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const rows = await read<MsSqlColumnRow>(
-      /*sql*/ `
+      raw`
       SELECT
         c.name as column_name,
         t.name as data_type,
@@ -69,10 +69,9 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.types t ON t.user_type_id = c.user_type_id
       LEFT JOIN sys.default_constraints d ON d.object_id = c.default_object_id
       LEFT JOIN sys.computed_columns cc ON cc.object_id = c.object_id AND cc.column_id = c.column_id
-      WHERE s.name = ${this.schemaExpr} AND o.name = @p1
+      WHERE s.name = ${this.schemaExpr} AND o.name = ${tableName}
       ORDER BY c.column_id
     `,
-      [tableName],
     );
     return rows.map((row) => {
       const type = row.data_type.toUpperCase();
@@ -99,7 +98,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       is_unique: boolean;
       filter_definition: string | null;
     }>(
-      /*sql*/ `
+      raw`
       SELECT
         i.name as index_name,
         i.is_unique as is_unique,
@@ -110,12 +109,11 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.schemas s ON s.schema_id = o.schema_id
       JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
       JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-      WHERE s.name = ${this.schemaExpr} AND o.name = @p1
+      WHERE s.name = ${this.schemaExpr} AND o.name = ${tableName}
         AND i.is_primary_key = 0 AND i.name IS NOT NULL AND ic.is_included_column = 0
       GROUP BY i.name, i.is_unique, i.filter_definition
       ORDER BY i.name
     `,
-      [tableName],
     );
     return rows.map((row) => ({
       name: row.index_name,
@@ -127,7 +125,7 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const rows = await read<JoinedForeignKeyRow>(
-      /*sql*/ `
+      raw`
       SELECT
         fk.name as constraint_name,
         STRING_AGG(pc.name, ',') WITHIN GROUP (ORDER BY fkc.constraint_column_id) as columns,
@@ -142,11 +140,10 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN sys.columns pc ON pc.object_id = fkc.parent_object_id AND pc.column_id = fkc.parent_column_id
       JOIN sys.objects rt ON rt.object_id = fk.referenced_object_id
       JOIN sys.columns rc ON rc.object_id = fkc.referenced_object_id AND rc.column_id = fkc.referenced_column_id
-      WHERE s.name = ${this.schemaExpr} AND o.name = @p1
+      WHERE s.name = ${this.schemaExpr} AND o.name = ${tableName}
       GROUP BY fk.name, rt.name, fk.delete_referential_action_desc, fk.update_referential_action_desc
       ORDER BY fk.name
     `,
-      [tableName],
     );
     return this.joinedForeignKeys(rows);
   }
@@ -154,17 +151,16 @@ export class MsSqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     return this.readPrimaryKey(
       read,
-      /*sql*/ `
+      raw`
       SELECT c.name as column_name, i.name as constraint_name
       FROM sys.indexes i
       JOIN sys.objects o ON o.object_id = i.object_id
       JOIN sys.schemas s ON s.schema_id = o.schema_id
       JOIN sys.index_columns ic ON ic.object_id = i.object_id AND ic.index_id = i.index_id
       JOIN sys.columns c ON c.object_id = ic.object_id AND c.column_id = ic.column_id
-      WHERE s.name = ${this.schemaExpr} AND o.name = @p1 AND i.is_primary_key = 1
+      WHERE s.name = ${this.schemaExpr} AND o.name = ${tableName} AND i.is_primary_key = 1
       ORDER BY ic.key_ordinal
     `,
-      tableName,
     );
   }
 

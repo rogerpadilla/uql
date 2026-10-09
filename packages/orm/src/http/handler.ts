@@ -11,6 +11,7 @@ import type {
   UpdateWrite,
   UqlContext,
 } from '../type/index.js';
+import { isRecord } from '../util/object.util.js';
 import { whereWith } from '../util/query.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import {
@@ -50,7 +51,7 @@ export type HandlerResponse = {
   readonly body: unknown;
 };
 
-export type HookContext<E extends object, Ctx = unknown> = {
+export type RequestHookContext<E extends object, Ctx = unknown> = {
   readonly meta: EntityMeta<E>;
   readonly op: CrudOperation;
   readonly method: HttpMethod;
@@ -66,10 +67,10 @@ export type HookContext<E extends object, Ctx = unknown> = {
   readonly context: Ctx;
 };
 
-export type Hook<Ctx = unknown> = <E extends object>(ctx: HookContext<E, Ctx>) => void | Promise<void>;
+export type RequestHook<Ctx = unknown> = <E extends object>(ctx: RequestHookContext<E, Ctx>) => void | Promise<void>;
 
 export type ResponseHook<Ctx = unknown> = <E extends object>(
-  ctx: HookContext<E, Ctx>,
+  ctx: RequestHookContext<E, Ctx>,
   envelope: RequestSuccessResponse<unknown>,
 ) => void | Promise<void>;
 
@@ -85,15 +86,15 @@ export type RequestHandlerOptions<Ctx = unknown> = {
    * Allow augment any kind of request before it runs. Hooks may be async
    * and abort the request by throwing (a numeric `status` on the error is honored).
    */
-  pre?: Hook<Ctx>;
+  pre?: RequestHook<Ctx>;
   /**
    * Allow augment a save request (POST | PUT | PATCH) before it runs.
    */
-  preSave?: Hook<Ctx>;
+  preSave?: RequestHook<Ctx>;
   /**
    * Allow augment a filter request (GET | DELETE) before it runs.
    */
-  preFilter?: Hook<Ctx>;
+  preFilter?: RequestHook<Ctx>;
   /**
    * Shape the successful response before it is sent: strip sensitive fields,
    * derive presentation fields, or coerce null data. Mutate `envelope.data` in place
@@ -174,7 +175,7 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
     // What the client sent, before the hooks: a relation a hook adds is the server's own to add.
     assertServed(meta, query, served);
     assertServed(meta, req.body, served);
-    const hookCtx: HookContext<E, Ctx> = { meta, op, method, query, body: req.body, context: req.context };
+    const hookCtx: RequestHookContext<E, Ctx> = { meta, op, method, query, body: req.body, context: req.context };
     const appContext = (await getContext?.(req.context)) ?? {};
     // Scope the whole request (hooks + querier + relation/cascade queries) to the resolved context.
     return withContext(appContext, async () => {
@@ -222,21 +223,21 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
           return { data: await querier.findManyPage(entity, { ...query, $limit }) };
         }
         case 'insertOne':
-          return { data: await querier.insertOne(entity, body as E), count: 1 };
+          return { data: await querier.insertOne(entity, rowOf(body) as E), count: 1 };
         case 'saveOne':
-          return { data: await querier.saveOne(entity, body as E), count: 1 };
+          return { data: await querier.saveOne(entity, rowOf(body) as E), count: 1 };
         case 'insertMany': {
-          const data = await querier.insertMany(entity, body as E[]);
+          const data = await querier.insertMany(entity, rowsOf(body) as E[]);
           return { data, count: data.length };
         }
         case 'saveMany': {
-          const data = await querier.saveMany(entity, body as E[]);
+          const data = await querier.saveMany(entity, rowsOf(body) as E[]);
           return { data, count: data.length };
         }
         // A write returns how many rows it changed, and the querier still refuses a delete that names no rows.
         case 'updateMany':
         case 'updateOneById': {
-          const count = await querier.updateMany(entity, scoped, body as UpdateWrite<E>);
+          const count = await querier.updateMany(entity, scoped, rowOf(body) as UpdateWrite<E>);
           return { data: count, count };
         }
         case 'deleteMany':
@@ -247,6 +248,22 @@ export function createRequestHandler<Ctx = unknown>(opts: RequestHandlerOptions<
       }
     }
   }
+}
+
+/** The one row a write sends: a JSON object, refused otherwise as a malformed query is. */
+function rowOf(body: unknown): object {
+  if (!isRecord(body)) {
+    throw new UqlUsageError('the body must be a JSON object');
+  }
+  return body;
+}
+
+/** The rows a `many` write sends: a JSON array of objects. */
+function rowsOf(body: unknown): object[] {
+  if (!Array.isArray(body) || !body.every(isRecord)) {
+    throw new UqlUsageError('the body must be a JSON array of rows');
+  }
+  return body;
 }
 
 /**

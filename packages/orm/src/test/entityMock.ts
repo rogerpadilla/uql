@@ -1,6 +1,16 @@
 import { randomUUID } from 'node:crypto';
 import { v7 as uuidv7 } from 'uuid';
-import { Entity, Field, Filter, Id, ManyToMany, ManyToOne, OneToMany, OneToOne } from '../entity/index.js';
+import {
+  BeforeInsert,
+  Entity,
+  Field,
+  Filter,
+  Id,
+  ManyToMany,
+  ManyToOne,
+  OneToMany,
+  OneToOne,
+} from '../entity/index.js';
 import { idKey, type Json, versionKey } from '../type/index.js';
 
 /** The fields most fixtures share. */
@@ -38,6 +48,8 @@ export type CompanyKind = {
   tags?: string[];
   /** Second array key, so `$push`/`$pull` on two keys at once stays typed in the specs. */
   labels?: string[];
+  /** An array key spelled as SQL's NULL, which a JSON path has to quote. */
+  null?: string[];
   /**
    * Array of objects, so `$elemMatch` on a JSON dot-path is covered with typed element fields:
    * a string, a boolean, a number (plain-equality vs `$eq` must agree) and a nullable field.
@@ -534,6 +546,81 @@ export class NarrowVectorItem {
 export class JsonRecord {
   @Id({ type: Number }) id?: number;
   @Field({ type: 'json' }) entries?: Json<unknown[]> | null;
+}
+
+/** Holds {@link JsonValue}s, so a JSON column is read through a to-many as well as on its own. */
+@Entity()
+export class JsonHolder {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: String }) name?: string | null;
+  @OneToMany({ entity: () => JsonValue, mappedBy: (jsonValue) => jsonValue.holder }) values?: JsonValue[];
+}
+
+/** A JSON column holding any value, a bare string included, which reads back as the string it is. */
+@Entity()
+export class JsonValue {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ type: Number }) position?: number | null;
+  @Field({ references: () => JsonHolder }) holderId?: string | null;
+  @ManyToOne({ entity: () => JsonHolder, references: (jsonValue) => jsonValue.holderId }) holder?: JsonHolder;
+  @Field({ type: 'json' }) value?: Json<string | number | boolean | { [key: string]: unknown } | unknown[]> | null;
+}
+
+/** A to-one target several {@link Shipment}s may point at, written before the row holding its key. */
+@Entity()
+export class Carrier extends BaseEntity {
+  @Field({ type: String, unique: true }) code?: string | null;
+  @Field({ type: String }) name?: string | null;
+}
+
+/** The target of an owning one-to-one: {@link Shipment} holds its key. */
+@Entity()
+export class Waybill extends BaseEntity {
+  @Field({ type: String }) number?: string | null;
+}
+
+/** A soft-deleting parent holding a to-one's key, and owning a to-many and a many-to-many. */
+@Entity()
+export class Shipment extends BaseEntity {
+  @Field({ type: String }) name?: string | null;
+  @Field({ references: () => Carrier }) carrierId?: string | null;
+  @ManyToOne({ entity: () => Carrier, references: (shipment) => shipment.carrierId, cascade: 'persist' })
+  carrier?: Carrier;
+  @Field({ references: () => Waybill }) waybillId?: string | null;
+  @OneToOne({ entity: () => Waybill, references: (shipment) => shipment.waybillId, cascade: 'persist' })
+  waybill?: Waybill;
+  @OneToMany({ entity: () => Parcel, mappedBy: (parcel) => parcel.shipment, cascade: true }) parcels?: Parcel[];
+  @ManyToMany({ entity: () => Label, through: () => ShipmentLabel, cascade: true }) labels?: Label[];
+  @Field({ type: Number, softDelete: () => Date.now() }) deletedAt?: number | null;
+}
+
+/** A child that cannot soft-delete, so a soft-deleted {@link Shipment} keeps it. */
+@Entity()
+export class Parcel extends BaseEntity {
+  @Field({ type: String }) content?: string | null;
+  @Field({ type: Number }) weight?: number | null;
+  @Field({ references: () => Shipment }) shipmentId?: string | null;
+  @ManyToOne({ entity: () => Shipment, references: (parcel) => parcel.shipmentId }) shipment?: Shipment;
+}
+
+@Entity()
+export class Label extends BaseEntity {
+  @Field({ type: String, unique: true }) name?: string | null;
+
+  /** Fails a write naming `boom`, so a cascade can fail after its parent was written, on every engine. */
+  @BeforeInsert()
+  refuseBoom() {
+    if (this.name === 'boom') {
+      throw new Error('boom');
+    }
+  }
+}
+
+@Entity()
+export class ShipmentLabel {
+  @Id({ type: String, onInsert: uuidv7 }) id?: string;
+  @Field({ references: () => Shipment }) shipmentId?: string | null;
+  @Field({ references: () => Label }) labelId?: string | null;
 }
 
 /** A relation the database cascades on its own, through the `ON DELETE CASCADE` its constraint declares. */

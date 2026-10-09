@@ -3,12 +3,12 @@ import { PostgresDialect } from '../../postgres/postgresDialect.js';
 import { currentTimestamp, uuid, raw } from '../../util/index.js';
 import { formatDefaultValue } from '../ddl/defaultSql.js';
 import { renderIndexDefinition } from '../generator/definitionToNode.js';
-import { TableBuilder } from './tableBuilder.js';
+import { TableDefinitionBuilder } from './tableBuilder.js';
 
-describe('TableBuilder', () => {
+describe('TableDefinitionBuilder', () => {
   describe('basic construction', () => {
     it('should create a table with name', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       const def = table.build();
 
       expect(def.name).toBe('users');
@@ -18,7 +18,7 @@ describe('TableBuilder', () => {
 
   describe('column types', () => {
     it('should add id column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.id();
       const def = table.build();
 
@@ -29,7 +29,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add custom id name', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.id('user_id');
       const def = table.build();
 
@@ -37,7 +37,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add integer column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.integer('age');
       const def = table.build();
 
@@ -45,7 +45,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add smallint column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.smallint('rank');
       const def = table.build();
 
@@ -53,7 +53,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add bigint column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.bigint('views');
       const def = table.build();
 
@@ -61,7 +61,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add float column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.float('score');
       const def = table.build();
 
@@ -69,7 +69,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add double column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.double('amount');
       const def = table.build();
 
@@ -78,7 +78,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add decimal column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.decimal('price', { precision: 10, scale: 2 });
       const def = table.build();
 
@@ -88,7 +88,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add string column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('name', { length: 100 });
       const def = table.build();
 
@@ -97,7 +97,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add string column with default length', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('name');
       const def = table.build();
 
@@ -105,7 +105,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add char column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.char('code', { length: 5 });
       const def = table.build();
 
@@ -113,7 +113,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add text column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.text('bio');
       const def = table.build();
 
@@ -121,7 +121,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add boolean column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.boolean('active');
       const def = table.build();
 
@@ -129,7 +129,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add date column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.date('birthdate');
       const def = table.build();
 
@@ -137,7 +137,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add time column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.time('startTime');
       const def = table.build();
 
@@ -145,7 +145,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add timestamp column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.timestamp('createdAt');
       const def = table.build();
 
@@ -153,7 +153,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add timestamptz column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.timestamptz('createdAt');
       const def = table.build();
 
@@ -161,7 +161,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add json column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.json('metadata');
       const def = table.build();
 
@@ -169,7 +169,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add jsonb column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.jsonb('metadata');
       const def = table.build();
 
@@ -177,7 +177,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add uuid column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.uuid('publicId');
       const def = table.build();
 
@@ -185,7 +185,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add blob column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.blob('data');
       const def = table.build();
 
@@ -193,7 +193,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add vector column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.vector('embedding', { dimensions: 1536 });
       const def = table.build();
 
@@ -204,7 +204,7 @@ describe('TableBuilder', () => {
 
   describe('SQL defaults', () => {
     it('should take the values and raw SQL an entity takes, as an option and through defaultValue()', () => {
-      const table = new TableBuilder('events');
+      const table = new TableDefinitionBuilder('events');
       table.timestamp('at', { defaultValue: currentTimestamp });
       table.uuid('key').defaultValue(uuid);
       table.bigint('seq', { defaultValue: raw`nextval('s')` });
@@ -216,7 +216,7 @@ describe('TableBuilder', () => {
 
   describe('convenience methods', () => {
     it('should add createdAt column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.createdAt();
       const def = table.build();
 
@@ -227,7 +227,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add updatedAt column', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.updatedAt();
       const def = table.build();
 
@@ -236,7 +236,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add timestamps', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.timestamps();
       const def = table.build();
 
@@ -248,7 +248,7 @@ describe('TableBuilder', () => {
 
   describe('indexes and constraints', () => {
     it('should add composite primary key', () => {
-      const table = new TableBuilder('user_roles');
+      const table = new TableDefinitionBuilder('user_roles');
       table.integer('userId');
       table.integer('roleId');
       table.primaryKey(['userId', 'roleId']);
@@ -258,7 +258,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add unique constraint', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('email');
       table.string('username');
       table.unique(['email', 'username'], 'users_email_username_uk');
@@ -270,7 +270,7 @@ describe('TableBuilder', () => {
     });
 
     it('should auto-generate unique constraint name', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.unique(['email']);
       const def = table.build();
 
@@ -278,7 +278,7 @@ describe('TableBuilder', () => {
     });
 
     it('should add composite index', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.index(['lastName', 'firstName'], 'users__name_idx');
       const def = table.build();
 
@@ -289,7 +289,7 @@ describe('TableBuilder', () => {
 
     /** `unique` is one of `@Index`'s options, so `index` takes it; only `unique()` derives the `_uk` name. */
     it('should make an index unique where its options say so', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.index(['email'], { unique: true });
 
       expect(table.build().indexes).toEqual([
@@ -298,7 +298,7 @@ describe('TableBuilder', () => {
     });
 
     it('should take the same entries and options as the @Index decorator', () => {
-      const table = new TableBuilder('notes');
+      const table = new TableDefinitionBuilder('notes');
       table.index([raw`lower("email")`, { column: 'body', length: 64 }], {
         name: 'notes_lookup_idx',
         type: 'gin',
@@ -319,21 +319,21 @@ describe('TableBuilder', () => {
     });
 
     it('should name an index after its entries when none is given', () => {
-      const table = new TableBuilder('notes');
+      const table = new TableDefinitionBuilder('notes');
       table.index([{ column: 'tenantId' }, { column: 'createdAt', order: 'desc' }]);
 
       expect(table.build().indexes[0].name).toBe('notes__tenantId_createdAt_idx');
     });
 
     it('should name an expression after its position, as an entity names one', () => {
-      const table = new TableBuilder('notes');
+      const table = new TableDefinitionBuilder('notes');
       table.unique(['tenantId', raw`lower("email")`]);
 
       expect(table.build().indexes[0].name).toBe('notes__tenantId_expr1_uk');
     });
 
     it('should add table-level foreign key with options', () => {
-      const table = new TableBuilder('posts');
+      const table = new TableDefinitionBuilder('posts');
       table.integer('authorId');
       table
         .foreignKey(['authorId'])
@@ -354,7 +354,7 @@ describe('TableBuilder', () => {
 
   describe('column-level indexes', () => {
     it('should collect column-level indexes', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('email').index('email_idx');
       const def = table.build();
 
@@ -363,7 +363,7 @@ describe('TableBuilder', () => {
     });
 
     it('should auto-generate index name', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('email').index();
       const def = table.build();
 
@@ -372,7 +372,7 @@ describe('TableBuilder', () => {
 
     /** A unique column is a unique index, the one spelling of uniqueness every engine can add and drop. */
     it('should make a unique column a unique index', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('email').unique();
 
       expect(table.build().indexes).toEqual([
@@ -383,7 +383,7 @@ describe('TableBuilder', () => {
 
   describe('table comment', () => {
     it('should set table comment', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.comment('User accounts');
       const def = table.build();
 
@@ -393,7 +393,7 @@ describe('TableBuilder', () => {
 
   describe('full table example', () => {
     it('should build a complete table', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.id();
       table.string('email', { unique: true });
       table.string('name', { length: 100, nullable: true });
@@ -411,7 +411,7 @@ describe('TableBuilder', () => {
 
   describe('edge cases', () => {
     it('should auto-generate index name for table-level index()', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.index(['email']);
       const def = table.build();
 
@@ -420,7 +420,7 @@ describe('TableBuilder', () => {
     });
 
     it('should skip FK builder when references not called', () => {
-      const table = new TableBuilder('posts');
+      const table = new TableDefinitionBuilder('posts');
       table.integer('authorId');
       table.foreignKey(['authorId']); // no .references() call
       const def = table.build();
@@ -429,7 +429,7 @@ describe('TableBuilder', () => {
     });
 
     it('should skip duplicate column-level index if table-level index exists', () => {
-      const table = new TableBuilder('users');
+      const table = new TableDefinitionBuilder('users');
       table.string('email').index('users__email_idx');
       table.index(['email'], 'users__email_idx'); // same name as column-level
       const def = table.build();
@@ -442,7 +442,7 @@ describe('TableBuilder', () => {
 
 describe('partial-index predicate', () => {
   it('should be rendered for the engine the migration runs on, a value written as its literal', () => {
-    const table = new TableBuilder('Item');
+    const table = new TableDefinitionBuilder('Item');
     table.index(['name'], { where: raw`"stock" > ${0}` });
     const index = renderIndexDefinition(table.build().indexes[0], (sql) => new PostgresDialect().compileDdl(sql));
     expect(index.where).toBe('"stock" > 0');

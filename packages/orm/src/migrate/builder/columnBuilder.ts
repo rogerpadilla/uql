@@ -5,13 +5,13 @@
  */
 
 import type { CanonicalType, EnumValues, ForeignKeyAction } from '../../schema/types.js';
-import type { BaseColumnOptions, FullColumnDefinition, IColumnBuilder, IForeignKeyBuilder } from './types.js';
+import type { BaseColumnOptions, FullColumnDefinition, ColumnBuilder, ForeignKeyBuilder } from './types.js';
 
 /**
  * Builder for column definitions with a fluent API. Each call replaces the definition it holds, and `build`
  * returns it. Columns are NOT NULL by default (safer).
  */
-export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
+export class ColumnDefinitionBuilder implements ColumnBuilder, ForeignKeyBuilder {
   private column: FullColumnDefinition;
 
   constructor(name: string, type: CanonicalType, options: BaseColumnOptions = {}) {
@@ -126,7 +126,7 @@ export class ColumnBuilder implements IColumnBuilder, IForeignKeyBuilder {
    * Add a foreign key reference.
    * Returns a ForeignKeyBuilder for additional options.
    */
-  references(table: string, column = 'id'): IForeignKeyBuilder {
+  references(table: string, column = 'id'): ForeignKeyBuilder {
     return this.set({ foreignKey: { references: { table, columns: [column] } } });
   }
 

@@ -44,6 +44,11 @@ type Role = 'admin' | 'member';
 expectType<TypeFor<Role>>(String);
 expectType<TypeFor<Role>>('text');
 
+// A decimal is exact text: `Number` over one opts in to rounding.
+expectType<TypeFor<string>>('decimal');
+// @ts-expect-error a decimal column is not declared a number by its SQL type
+expectType<TypeFor<number>>('decimal');
+
 // JSON is matched on the brand, so it survives intersecting its payload, and arrays of it too.
 expectType<TypeFor<Json<{ a: number }>>>('jsonb');
 expectType<TypeFor<Json<string[]>>>('jsonb');
@@ -234,7 +239,7 @@ expectType<RelationOptionsFor<Company[]>>({
 });
 
 // ─── FieldKey / RelationKey: an array of Json is a column, an array of entities is a relation ───
-// The two are told apart by the weak-type check: `Json<unknown>` is all-optional, so an entity class
+// The two are told apart by the weak-type check: `JsonBrand` is all-optional, so an entity class
 // with named properties is not assignable to it. Get this wrong and every to-many silently becomes a
 // column, so both directions are pinned here.
 class WithJsonArray {

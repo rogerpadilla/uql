@@ -1,7 +1,8 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import type { WithProjection } from '../type/index.js';
-import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
+
+import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 
 /** An FTS5 table, which SQLite's `$text` searches: UQL does not create one, so it is made here by hand. */
 @Entity({ name: 'fts_doc' })
@@ -13,7 +14,7 @@ class FtsDoc {
 
 /** `$text` against a real FTS5 table: the query bound whole, column filter and all. */
 describe('SQLite text search', () => {
-  const pool = new Sqlite3QuerierPool(':memory:');
+  const pool = new SqliteQuerierPool(':memory:');
   const search = ($value: string) =>
     pool.findMany(FtsDoc, {
       $select: { title: true },
@@ -22,10 +23,8 @@ describe('SQLite text search', () => {
     }) as Promise<WithProjection<FtsDoc, 'score'>[]>;
 
   beforeAll(async () => {
-    await pool.run('CREATE VIRTUAL TABLE fts_doc USING fts5(title, bodyText)');
-    await pool.run(
-      "INSERT INTO fts_doc (title, bodyText) VALUES ('red chair', 'a lamp'), ('heron', 'watches an otter'), ('otter', 'an otter otter family')",
-    );
+    await pool.run`CREATE VIRTUAL TABLE fts_doc USING fts5(title, bodyText)`;
+    await pool.run`INSERT INTO fts_doc (title, bodyText) VALUES ('red chair', 'a lamp'), ('heron', 'watches an otter'), ('otter', 'an otter otter family')`;
   });
 
   afterAll(() => pool.end());

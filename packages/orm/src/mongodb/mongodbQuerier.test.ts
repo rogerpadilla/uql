@@ -46,9 +46,19 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     );
   }
 
-  /** MongoDB's reply tells an upsert's insert from its update. */
-  protected override upsertReport(inserted: number, updated: number) {
-    return { ...super.upsertReport(inserted, updated), created: updated === 0 };
+  protected override nestedTransactionError(): string {
+    return 'mongodb has no savepoint to nest a transaction in another';
+  }
+
+  /** The open transaction's session reaches a raw call through `db`, which then runs inside it. */
+  async shouldHandARawCallTheTransactionsSession() {
+    await this.querier
+      .transaction(async () => {
+        await this.querier.db.collection('Label').insertOne({ name: 'raw' }, { session: this.querier.session });
+        throw new Error('undo');
+      })
+      .catch((err: unknown) => err);
+    expect(await this.querier.db.collection('Label').countDocuments()).toBe(0);
   }
 
   /**
@@ -119,7 +129,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
 
   /** Upserted on a field that is not the key, so only the database knows the id it minted. */
   async shouldReportTheIdAnUpsertMinted() {
-    const { id } = await this.querier.upsertOne(Ticket, { subject: true }, { subject: 'upserted' });
+    const id = await this.querier.upsertOne(Ticket, { subject: true }, { subject: 'upserted' });
 
     expect(id).toMatch(/^[0-9a-f]{24}$/);
     expect(await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'upserted' } })).toEqual({
@@ -134,7 +144,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
     const inserted = await this.querier.upsertOne(Ticket, { id: true }, { id });
     const found = await this.querier.upsertOne(Ticket, { id: true }, { id });
 
-    expect([inserted.id, inserted.created, found.id, found.created]).toEqual([id, true, id, false]);
+    expect([inserted, found]).toEqual([id, id]);
     expect(await this.querier.findMany(Ticket, {})).toEqual([{ id }]);
   }
 
@@ -149,10 +159,7 @@ class MongodbQuerierIt extends AbstractQuerierIt<MongodbQuerier> {
   async shouldReportEveryIdAnUpsertManyWrote() {
     const existingId = await this.querier.insertOne(Ticket, { subject: 'kept' });
 
-    const { ids } = await this.querier.upsertMany(Ticket, { subject: true }, [
-      { subject: 'kept' },
-      { subject: 'fresh' },
-    ]);
+    const ids = await this.querier.upsertMany(Ticket, { subject: true }, [{ subject: 'kept' }, { subject: 'fresh' }]);
 
     const fresh = await this.querier.findOne(Ticket, { $select: { id: true }, $where: { subject: 'fresh' } });
     expect(ids).toEqual([existingId, fresh?.id]);

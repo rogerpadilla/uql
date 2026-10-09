@@ -33,6 +33,11 @@ export function isToManyRelation(relation: Pick<RelationMeta, 'cardinality'>): b
   return relation.cardinality === '1m' || relation.cardinality === 'mm';
 }
 
+/** Whether the entity declaring the relation holds its foreign key: an owning to-one. */
+export function holdsForeignKey(relation: Pick<RelationMeta, 'cardinality' | 'mappedBy'>): boolean {
+  return !relation.mappedBy && !isToManyRelation(relation);
+}
+
 /** One column of a parent's key, paired with the column matching it on the table being joined. */
 export type ParentJoin = { readonly parent: string; readonly joined: string };
 

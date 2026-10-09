@@ -10,8 +10,4 @@ export interface NamingStrategy {
    * Translates property name to column name.
    */
   columnName(propertyName: string): string;
-  /**
-   * Translates entity names to join table name (many-to-many).
-   */
-  joinTableName(sourceEntityName: string, targetEntityName: string, propertyName?: string): string;
 }

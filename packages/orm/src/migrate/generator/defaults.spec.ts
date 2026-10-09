@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../../dialect/index.js';
-import { MariaDialect } from '../../maria/mariaDialect.js';
+import { MariaDialect } from '../../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';

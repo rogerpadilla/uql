@@ -16,7 +16,7 @@ import type {
   UpdatePayload,
 } from '../type/index.js';
 import { textSearchFields } from '../util/index.js';
-import { escapeMysqlSqlLiteral, escapeSingleQuotes } from '../util/sqlLiteral.js';
+import { escapeMysqlSqlLiteral } from '../util/sqlLiteral.js';
 import {
   ANSI_SQL_VALUES,
   AbstractSqlDialect,
@@ -50,6 +50,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
   supportsTimestamptz: false,
   stringSizing: 'varchar',
   supportsUnsigned: true,
+  jsonArrivesDecoded: true,
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: MYSQL_ROW_LOCKS,
@@ -70,6 +71,7 @@ export const MYSQL_FEATURES: SqlDialectFeatures = {
     before: true,
     deferrable: false,
   },
+  namedLocks: 'session',
 };
 
 /** The one `JSON_TABLE` column an exploded array reads each element through, as a JSON document. */
@@ -110,7 +112,6 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     ctx.append(' AND TABLE_NAME = ');
     ctx.addValue(this.resolveTableAlias(meta));
   }
-
   protected override readonly unboundedLimit = String(MAX_LIMIT);
 
   /** Case-sensitive, as on every other engine, where the column's collation would fold it. */
@@ -125,7 +126,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
 
   override readonly beginTransactionCommand = 'START TRANSACTION';
 
-  override readonly isolationLevelStrategy = 'set-before';
+  override readonly isolationLevelStrategy = 'setBefore';
 
   override readonly booleanLiteral = 'integer';
 
@@ -308,7 +309,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
     const entries = Object.entries(push).map(
-      ([key, value]) => `'${escapeSingleQuotes(key)}', JSON_ARRAY(${this.jsonScalarParam(ctx, value)})`,
+      ([key, value]) => `'${key}', JSON_ARRAY(${this.jsonScalarParam(ctx, value)})`,
     );
     return `JSON_MERGE_PRESERVE(${expr}, JSON_OBJECT(${entries.join(', ')}))`;
   }

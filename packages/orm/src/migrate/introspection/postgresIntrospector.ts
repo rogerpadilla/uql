@@ -1,7 +1,8 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { type CheckSchema, type ForeignKeyAction, INDEX_TYPES } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexColumnSchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexColumnSchema, IndexSchema, PrimaryKeySchema, QueryRaw } from '../../type/index.js';
 import { isVectorIndexType } from '../../type/vector.js';
+import { raw } from '../../util/raw.js';
 import {
   AbstractSqlSchemaIntrospector,
   type ReadColumn,
@@ -12,7 +13,7 @@ import {
  * PostgreSQL schema introspector
  */
 export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
-  protected override readonly defaultSchemaExpr = 'current_schema()';
+  protected override readonly defaultSchemaExpr = raw`current_schema()`;
 
   /**
    * Expressions and predicates are read back too, for `generate:from-db`, but they are text the
@@ -27,33 +28,32 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     'distance',
   ]);
 
-  protected triggersQuery(): string {
-    return /*sql*/ `
+  protected triggersQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT t.tgname AS name, pg_get_triggerdef(t.oid) AS definition, pg_get_functiondef(t.tgfoid) AS requires
       FROM pg_trigger t
       JOIN pg_class c ON c.oid = t.tgrelid
       JOIN pg_namespace n ON n.oid = c.relnamespace
-      WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr} AND c.relname = ${this.dialect.placeholder(1)}
+      WHERE NOT t.tgisinternal AND n.nspname = ${this.schemaExpr} AND c.relname = ${tableName}
     `;
   }
 
   /** `pg_get_expr` answers NULL for a table dropped mid-read, where `pg_get_constraintdef` raises. */
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     const rows = await read<{ name: string; expression: string | null }>(
-      /*sql*/ `
+      raw`
       SELECT con.conname AS name, pg_get_expr(con.conbin, con.conrelid) AS expression
       FROM pg_constraint con
       JOIN pg_class t ON t.oid = con.conrelid
       JOIN pg_namespace n ON n.oid = t.relnamespace
-      WHERE con.contype = 'c' AND t.relname = $1 AND n.nspname = ${this.schemaExpr}
+      WHERE con.contype = 'c' AND t.relname = ${tableName} AND n.nspname = ${this.schemaExpr}
     `,
-      [tableName],
     );
     return rows.flatMap(({ name, expression }) => (expression === null ? [] : [{ name, expression }]));
   }
 
-  protected getTableNamesQuery(): string {
-    return /*sql*/ `
+  protected getTableNamesQuery(): QueryRaw {
+    return raw`
       SELECT table_name
       FROM information_schema.tables
       WHERE table_schema = ${this.schemaExpr}
@@ -62,10 +62,10 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(): string {
-    return /*sql*/ `
+  protected tableExistsQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT 1 FROM information_schema.tables
-      WHERE table_schema = ${this.schemaExpr} AND table_name = $1 AND table_type = 'BASE TABLE'
+      WHERE table_schema = ${this.schemaExpr} AND table_name = ${tableName} AND table_type = 'BASE TABLE'
     `;
   }
 
@@ -82,7 +82,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    */
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const rows = await read<PostgresColumnRow>(
-      /*sql*/ `
+      raw`
       SELECT
         c.column_name,
         c.data_type,
@@ -106,11 +106,10 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         ON a.attrelid = to_regclass(quote_ident(c.table_schema) || '.' || quote_ident(c.table_name))
         AND a.attname = c.column_name
       WHERE c.table_schema = ${this.schemaExpr}
-        AND c.table_name = $1
+        AND c.table_name = ${tableName}
         AND ${this.visibleColumnSql}
       ORDER BY c.ordinal_position
     `,
-      [tableName],
     );
     return rows.map((row) => ({
       name: row.column_name,
@@ -127,7 +126,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   /** Whether `information_schema.columns c` lists a column the table shows: every one, on Postgres. */
-  protected readonly visibleColumnSql: string = 'TRUE';
+  protected readonly visibleColumnSql: QueryRaw = raw`TRUE`;
 
   /**
    * `attname` where the entry is a column, `pg_get_indexdef` for that one position where it is an
@@ -142,7 +141,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    */
   protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
     const rows = await read<PostgresIndexRow>(
-      /*sql*/ `
+      raw`
       SELECT
         i.relname AS index_name,
         ix.indisunique AS is_unique,
@@ -162,7 +161,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       CROSS JOIN LATERAL UNNEST(ix.indkey) WITH ORDINALITY AS k(attnum, n)
       LEFT JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum AND k.attnum > 0
       LEFT JOIN pg_opclass op ON op.oid = ix.indclass[k.n - 1]
-      WHERE t.relname = $1
+      WHERE t.relname = ${tableName}
         AND n.nspname = ${this.schemaExpr}
         AND NOT ix.indisprimary
         AND NOT EXISTS (
@@ -170,7 +169,6 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         )
       ORDER BY i.relname, k.n
     `,
-      [tableName],
     );
     // One row per index entry, ordered by position, so the rows of an index are its entries in order.
     return [...Map.groupBy(rows, (row) => row.index_name)].map(([name, ofIndex]) => {
@@ -189,28 +187,28 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   /** Whether an entry sorts nulls first, which Postgres states on every entry. */
-  protected readonly nullsFirstSql: string = '(ix.indoption[k.n - 1] & 2) <> 0';
+  protected readonly nullsFirstSql: QueryRaw = raw`(ix.indoption[k.n - 1] & 2) <> 0`;
 
   /** An index's access method, which is the type it declares. */
-  protected readonly indexMethodSql: string = 'am.amname';
+  protected readonly indexMethodSql: QueryRaw = raw`am.amname`;
 
   /** An entry's operator class, where it is not the default for its type. */
-  protected readonly opsClassSql: string = 'CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END';
+  protected readonly opsClassSql: QueryRaw = raw`CASE WHEN op.opcdefault THEN NULL ELSE op.opcname END`;
 
   /** From `pg_constraint`, whose key arrays keep each column paired with the one it references. */
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
-    const columnsOf = (keys: string, table: string) => /*sql*/ `ARRAY_TO_JSON(ARRAY(
+    const columnsOf = (keys: QueryRaw, table: QueryRaw) => raw`ARRAY_TO_JSON(ARRAY(
       SELECT a.attname FROM UNNEST(${keys}) WITH ORDINALITY AS k(attnum, n)
       JOIN pg_attribute a ON a.attrelid = ${table} AND a.attnum = k.attnum
       ORDER BY k.n
     ))`;
     const rows = await read<PostgresForeignKeyRow>(
-      /*sql*/ `
+      raw`
       SELECT
         con.conname AS constraint_name,
-        ${columnsOf('con.conkey', 'con.conrelid')} AS columns,
+        ${columnsOf(raw`con.conkey`, raw`con.conrelid`)} AS columns,
         ref.relname AS referenced_table,
-        ${columnsOf('con.confkey', 'con.confrelid')} AS referenced_columns,
+        ${columnsOf(raw`con.confkey`, raw`con.confrelid`)} AS referenced_columns,
         con.confdeltype AS delete_rule,
         con.confupdtype AS update_rule
       FROM pg_constraint con
@@ -218,11 +216,10 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
       JOIN pg_namespace n ON n.oid = t.relnamespace
       JOIN pg_class ref ON ref.oid = con.confrelid
       WHERE con.contype = 'f'
-        AND t.relname = $1
+        AND t.relname = ${tableName}
         AND n.nspname = ${this.schemaExpr}
       ORDER BY con.conname
     `,
-      [tableName],
     );
     return rows.map((row) => ({
       name: row.constraint_name,
@@ -236,7 +233,7 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     return this.readPrimaryKey(
       read,
-      /*sql*/ `
+      raw`
       SELECT kcu.column_name, tc.constraint_name
       FROM information_schema.table_constraints tc
       JOIN information_schema.key_column_usage kcu
@@ -247,12 +244,11 @@ export class PostgresSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         AND c.table_name = kcu.table_name
         AND c.column_name = kcu.column_name
       WHERE tc.constraint_type = 'PRIMARY KEY'
-        AND tc.table_name = $1
+        AND tc.table_name = ${tableName}
         AND tc.table_schema = ${this.schemaExpr}
         AND ${this.visibleColumnSql}
       ORDER BY kcu.ordinal_position
     `,
-      tableName,
     );
   }
 
@@ -386,18 +382,18 @@ export class CockroachSchemaIntrospector extends PostgresSchemaIntrospector {
   ]);
 
   /** Not `rowid`, the `NOT VISIBLE` key it gives a table declared without one, which no entity can name. */
-  protected override readonly visibleColumnSql = "c.is_hidden = 'NO'";
+  protected override readonly visibleColumnSql = raw`c.is_hidden = 'NO'`;
 
   /** None: it rejects a stated nulls order, so reading one back gives an index it would refuse to rebuild. */
-  protected override readonly nullsFirstSql = 'NULL::BOOL';
+  protected override readonly nullsFirstSql = raw`NULL::BOOL`;
 
   /**
    * Every index reports the access method `prefix` and no operator class, so a vector index is read off
    * its definition, `USING cspann (vec vector_cosine_ops)`: its type, and its last key's class.
    */
-  protected override readonly indexMethodSql = `CASE WHEN pg_get_indexdef(ix.indexrelid) LIKE '% USING cspann %' THEN 'vector' ELSE am.amname END`;
+  protected override readonly indexMethodSql = raw`CASE WHEN pg_get_indexdef(ix.indexrelid) LIKE '% USING cspann %' THEN 'vector' ELSE am.amname END`;
 
-  protected override readonly opsClassSql = `CASE WHEN k.n = ix.indnkeyatts THEN substring(pg_get_indexdef(ix.indexrelid) from '(\\w+_ops)\\)') END`;
+  protected override readonly opsClassSql = raw`CASE WHEN k.n = ix.indnkeyatts THEN substring(pg_get_indexdef(ix.indexrelid) from '(\\w+_ops)\\)') END`;
 }
 
 type PostgresForeignKeyRow = {

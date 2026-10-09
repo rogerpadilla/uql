@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest';
-import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { Company, Profile, User } from '../test/entityMock.js';
+
 import { defineBuilderMigration, Migrator } from './migrator.js';
 
 describe('Migrator Shared Pool', () => {
   it('should work when sharing a pool with the application', async () => {
     // 1. Create a single pool
-    const pool = new Sqlite3QuerierPool(':memory:');
+    const pool = new SqliteQuerierPool(':memory:');
 
     // 2. Create migrator with that pool
     const migrator = new Migrator(pool, {
@@ -43,7 +44,7 @@ describe('Migrator Shared Pool', () => {
 
   it('should not deadlock when multiple operations happen on the same shared pool', async () => {
     // Sqlite pool with max 2 connections
-    const pool = new Sqlite3QuerierPool(':memory:');
+    const pool = new SqliteQuerierPool(':memory:');
     const migrator = new Migrator(pool, { entities: [User] });
 
     await migrator.sync();
@@ -59,69 +60,84 @@ describe('Migrator Shared Pool', () => {
     await pool.end();
   });
 
+  it('should read the status holding one connection at a time', async () => {
+    /** A pool of one connection, refusing a second while the first is out. */
+    class OneConnectionPool extends SqliteQuerierPool {
+      #out = false;
+      override async getQuerier() {
+        if (this.#out) {
+          throw new Error('a second connection while the first is out');
+        }
+        const querier = await super.getQuerier();
+        this.#out = true;
+        const release = querier.release.bind(querier);
+        querier.release = () => {
+          this.#out = false;
+          return release();
+        };
+        return querier;
+      }
+    }
+    const pool = new OneConnectionPool(':memory:');
+    const migrator = new Migrator(pool, { entities: [User] });
+    await migrator.up();
+
+    expect(await migrator.status()).toEqual({ pending: [], executed: [] });
+
+    await pool.end();
+  });
+
   it('should run a builder migration with a builder, both ways', async () => {
-    const pool = new Sqlite3QuerierPool(':memory:');
-    const migrator = new Migrator(pool);
-    const migration = {
-      name: 'm1',
-      ...defineBuilderMigration({
-        async up(m) {
-          await m.createTable('notes', (t) => {
-            t.id();
-            t.string('title');
-          });
-        },
-        async down(m) {
-          await m.dropTable('notes');
-        },
-      }),
-    };
+    const pool = new SqliteQuerierPool(':memory:');
+    const migration = defineBuilderMigration({
+      async up(m) {
+        await m.createTable('notes', (t) => {
+          t.id();
+          t.string('title');
+        });
+      },
+      async down(m) {
+        await m.dropTable('notes');
+      },
+    });
     const tables = () =>
-      pool.withQuerier((querier) =>
-        querier.all<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'"),
+      pool.withQuerier(
+        (querier) =>
+          querier.all<{ name: string }>`SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'notes'`,
       );
 
-    expect(await migrator.runMigration(migration, 'up')).toMatchObject({ success: true });
+    await pool.withQuerier((querier) => migration.up(querier));
     expect(await tables()).toEqual([{ name: 'notes' }]);
-    expect(await migrator.executed()).toEqual(['m1']);
 
-    expect(await migrator.runMigration(migration, 'down')).toMatchObject({ success: true });
+    await pool.withQuerier((querier) => migration.down(querier));
     expect(await tables()).toEqual([]);
-    expect(await migrator.executed()).toEqual([]);
 
     await pool.end();
   });
 
   it('should hand a builder migration the querier too, for a backfill that reads before it writes', async () => {
-    const pool = new Sqlite3QuerierPool(':memory:');
-    const migrator = new Migrator(pool);
+    const pool = new SqliteQuerierPool(':memory:');
     await pool.withQuerier(async (querier) => {
-      await querier.run('CREATE TABLE "person" ("id" INTEGER PRIMARY KEY, "name" TEXT NOT NULL)');
-      await querier.run(`INSERT INTO "person" ("id", "name") VALUES (1, 'Ada Lovelace'), (2, 'Alan Turing')`);
+      await querier.run`CREATE TABLE "person" ("id" INTEGER PRIMARY KEY, "name" TEXT NOT NULL)`;
+      await querier.run`INSERT INTO "person" ("id", "name") VALUES (1, 'Ada Lovelace'), (2, 'Alan Turing')`;
     });
-    const migration = {
-      name: 'm1',
-      ...defineBuilderMigration({
-        async up(m, querier) {
-          await m.addColumn('person', (c) => c.text('slug', { nullable: true }));
-          const people = await querier.all<{ id: number; name: string }>('SELECT "id", "name" FROM "person"');
-          for (const { id, name } of people) {
-            await querier.run('UPDATE "person" SET "slug" = ? WHERE "id" = ?', [
-              name.toLowerCase().replace(' ', '-'),
-              id,
-            ]);
-          }
-        },
-        async down(m) {
-          await m.dropColumn('person', 'slug');
-        },
-      }),
-    };
+    const migration = defineBuilderMigration({
+      async up(m, querier) {
+        await m.addColumn('person', (c) => c.text('slug', { nullable: true }));
+        const people = await querier.all<{ id: number; name: string }>`SELECT "id", "name" FROM "person"`;
+        for (const { id, name } of people) {
+          await querier.run`UPDATE "person" SET "slug" = ${name.toLowerCase().replace(' ', '-')} WHERE "id" = ${id}`;
+        }
+      },
+      async down(m) {
+        await m.dropColumn('person', 'slug');
+      },
+    });
 
-    expect(await migrator.runMigration(migration, 'up')).toMatchObject({ success: true });
+    await pool.withQuerier((querier) => migration.up(querier));
 
-    const slugs = await pool.withQuerier((querier) =>
-      querier.all<{ slug: string }>('SELECT "slug" FROM "person" ORDER BY "id"'),
+    const slugs = await pool.withQuerier(
+      (querier) => querier.all<{ slug: string }>`SELECT "slug" FROM "person" ORDER BY "id"`,
     );
     expect(slugs).toEqual([{ slug: 'ada-lovelace' }, { slug: 'alan-turing' }]);
 

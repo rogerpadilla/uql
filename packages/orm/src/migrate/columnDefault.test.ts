@@ -4,7 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
 import { SqlExpression } from '../schema/sqlExpression.js';
-import { migrationsDir } from '../test/index.js';
+import { linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { sqlPools, syncedPool } from '../test/sqlPools.js';
 import type { Json } from '../type/index.js';
 import { currentTimestamp, raw } from '../util/raw.js';
@@ -70,9 +70,9 @@ describe.each(sqlPools('test_default'))('a column default on %s', (_name, connec
     }
     const migrator = new Migrator(pool(), { entities: [Slim], migrationsPath: await migrationsDir() });
 
-    await migrator.generateFromEntities('drop_defaults');
-    expect(await migrator.up()).toMatchObject([{ success: true }]);
-    expect(await migrator.down()).toMatchObject([{ success: true }]);
+    await linkUqlOrmSource(await migrator.generateFromEntities('drop_defaults'));
+    expect(await migrator.up()).toMatchObject([{ direction: 'up' }]);
+    expect(await migrator.down()).toMatchObject([{ direction: 'down' }]);
 
     const id = await pool().insertOne(Slim, { body: 'restored' });
     const [row] = await pool().findMany(DefaultDown, { $select: { createdAt: true, derived: true }, $where: { id } });

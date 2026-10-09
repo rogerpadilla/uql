@@ -1,4 +1,4 @@
-import { MongoSchemaIntrospector } from '../../mongo/mongoIntrospector.js';
+import { MongoSchemaIntrospector } from '../../mongodb/mongoIntrospector.js';
 import type { DialectName, QuerierPool, SchemaIntrospector } from '../../type/index.js';
 import { MsSqlSchemaIntrospector } from './mssqlIntrospector.js';
 import { MariadbSchemaIntrospector, MysqlSchemaIntrospector } from './mysqlIntrospector.js';

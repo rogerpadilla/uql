@@ -1,7 +1,8 @@
 import type { IndexFacet } from '../../schema/indexDifferences.js';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import type { CheckSchema } from '../../schema/types.js';
-import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema } from '../../type/index.js';
+import type { ForeignKeySchema, IndexSchema, PrimaryKeySchema, QueryRaw } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import { unescapeMysqlString } from '../../util/sqlLiteral.js';
 import {
   AbstractSqlSchemaIntrospector,
@@ -16,15 +17,15 @@ import {
  */
 export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   // A MySQL "schema" is a database, so the connection's own is what `DATABASE()` reports.
-  protected override readonly defaultSchemaExpr = 'DATABASE()';
+  protected override readonly defaultSchemaExpr = raw`DATABASE()`;
 
-  protected triggersQuery(): string {
-    return /*sql*/ `
+  protected triggersQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT TRIGGER_NAME AS name,
         CONCAT('CREATE TRIGGER \`', TRIGGER_SCHEMA, '\`.\`', TRIGGER_NAME, '\` ', ACTION_TIMING, ' ', EVENT_MANIPULATION,
           ' ON \`', EVENT_OBJECT_SCHEMA, '\`.\`', EVENT_OBJECT_TABLE, '\` FOR EACH ROW ', ACTION_STATEMENT) AS definition
       FROM information_schema.TRIGGERS
-      WHERE TRIGGER_SCHEMA = ${this.schemaExpr} AND EVENT_OBJECT_TABLE = ${this.dialect.placeholder(1)}
+      WHERE TRIGGER_SCHEMA = ${this.schemaExpr} AND EVENT_OBJECT_TABLE = ${tableName}
     `;
   }
 
@@ -34,20 +35,19 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    */
   protected async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     const rows = await read<{ name: string; expression: string }>(
-      /*sql*/ `
+      raw`
       SELECT k.CONSTRAINT_NAME AS name, c.CHECK_CLAUSE AS expression
       FROM information_schema.TABLE_CONSTRAINTS k
       JOIN information_schema.CHECK_CONSTRAINTS c
         ON c.CONSTRAINT_SCHEMA = k.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME = k.CONSTRAINT_NAME
-      WHERE k.CONSTRAINT_TYPE = 'CHECK' AND k.TABLE_SCHEMA = ${this.schemaExpr} AND k.TABLE_NAME = ?
+      WHERE k.CONSTRAINT_TYPE = 'CHECK' AND k.TABLE_SCHEMA = ${this.schemaExpr} AND k.TABLE_NAME = ${tableName}
     `,
-      [tableName],
     );
     return rows.map(({ name, expression }) => ({ name, expression: unescapeMysqlString(expression) }));
   }
 
-  protected getTableNamesQuery(): string {
-    return /*sql*/ `
+  protected getTableNamesQuery(): QueryRaw {
+    return raw`
       SELECT TABLE_NAME as table_name
       FROM information_schema.TABLES
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
@@ -56,16 +56,16 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(): string {
-    return /*sql*/ `
+  protected tableExistsQuery(tableName: string): QueryRaw {
+    return raw`
       SELECT 1 FROM information_schema.TABLES
-      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ? AND TABLE_TYPE = 'BASE TABLE'
+      WHERE TABLE_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName} AND TABLE_TYPE = 'BASE TABLE'
     `;
   }
 
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const rows = await read<MysqlColumnRow>(
-      /*sql*/ `
+      raw`
       SELECT
         COLUMN_NAME as column_name,
         DATA_TYPE as data_type,
@@ -81,10 +81,9 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         COLUMN_COMMENT as column_comment
       FROM information_schema.COLUMNS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = ?
+        AND TABLE_NAME = ${tableName}
       ORDER BY ORDINAL_POSITION
     `,
-      [tableName],
     );
     return rows.map((row) => ({
       name: row.column_name,
@@ -104,7 +103,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
     const rows = await read<MysqlIndexRow>(
-      /*sql*/ `
+      raw`
       SELECT
         INDEX_NAME as index_name,
         GROUP_CONCAT(COALESCE(COLUMN_NAME, '') ORDER BY SEQ_IN_INDEX) as columns,
@@ -112,12 +111,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         MAX(INDEX_TYPE) as method
       FROM information_schema.STATISTICS
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = ?
+        AND TABLE_NAME = ${tableName}
         AND INDEX_NAME != 'PRIMARY'
       GROUP BY INDEX_NAME, NON_UNIQUE
       ORDER BY INDEX_NAME
     `,
-      [tableName],
     );
     return rows.map((row) => ({
       name: row.index_name,
@@ -132,7 +130,7 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
 
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
     const rows = await read<JoinedForeignKeyRow>(
-      /*sql*/ `
+      raw`
       SELECT
         kcu.CONSTRAINT_NAME as constraint_name,
         GROUP_CONCAT(kcu.COLUMN_NAME ORDER BY kcu.ORDINAL_POSITION) as columns,
@@ -145,12 +143,11 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
         ON kcu.CONSTRAINT_NAME = rc.CONSTRAINT_NAME
         AND kcu.TABLE_SCHEMA = rc.CONSTRAINT_SCHEMA
       WHERE kcu.TABLE_SCHEMA = ${this.schemaExpr}
-        AND kcu.TABLE_NAME = ?
+        AND kcu.TABLE_NAME = ${tableName}
         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
       GROUP BY kcu.CONSTRAINT_NAME, kcu.REFERENCED_TABLE_NAME, rc.DELETE_RULE, rc.UPDATE_RULE
       ORDER BY kcu.CONSTRAINT_NAME
     `,
-      [tableName],
     );
     return this.joinedForeignKeys(rows);
   }
@@ -159,15 +156,14 @@ export class MysqlSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   protected getPrimaryKey(read: TableRowReader, tableName: string): Promise<PrimaryKeySchema | undefined> {
     return this.readPrimaryKey(
       read,
-      /*sql*/ `
+      raw`
       SELECT COLUMN_NAME as column_name
       FROM information_schema.KEY_COLUMN_USAGE
       WHERE TABLE_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = ?
+        AND TABLE_NAME = ${tableName}
         AND CONSTRAINT_NAME = 'PRIMARY'
       ORDER BY ORDINAL_POSITION
     `,
-      tableName,
     );
   }
 
@@ -242,13 +238,12 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
    */
   protected override async getChecks(read: TableRowReader, tableName: string): Promise<CheckSchema[]> {
     return read<{ name: string; expression: string }>(
-      /*sql*/ `
+      raw`
       SELECT CONSTRAINT_NAME AS name, CHECK_CLAUSE AS expression
       FROM information_schema.CHECK_CONSTRAINTS
-      WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ?
+      WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr} AND TABLE_NAME = ${tableName}
         AND CHECK_CLAUSE <> CONCAT('json_valid(\`', CONSTRAINT_NAME, '\`)')
     `,
-      [tableName],
     );
   }
 
@@ -272,7 +267,7 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
     const qualified = [this.schema, tableName]
       .filter((name) => name !== undefined)
       .map((name) => this.dialect.escapeId(name));
-    const [row] = await read<{ 'Create Table': string }>(/*sql*/ `SHOW CREATE TABLE ${qualified.join('.')}`);
+    const [row] = await read<{ 'Create Table': string }>(raw.text(`SHOW CREATE TABLE ${qualified.join('.')}`));
     const lines = row['Create Table'].split('\n');
     return indexes.map((index) => {
       if (index.type !== 'vector') {
@@ -287,14 +282,13 @@ export class MariadbSchemaIntrospector extends MysqlSchemaIntrospector {
   protected override async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
     const columns = await super.getColumns(read, tableName);
     const checks = await read<{ column_name: string }>(
-      /*sql*/ `
+      raw`
       SELECT CONSTRAINT_NAME as column_name
       FROM information_schema.CHECK_CONSTRAINTS
       WHERE CONSTRAINT_SCHEMA = ${this.schemaExpr}
-        AND TABLE_NAME = ?
+        AND TABLE_NAME = ${tableName}
         AND CHECK_CLAUSE = CONCAT('json_valid(\`', CONSTRAINT_NAME, '\`)')
     `,
-      [tableName],
     );
     const jsonColumns = new Set(checks.map((row) => row.column_name));
     // The reported `LONGTEXT` length is that type's maximum, which means nothing for a JSON column.

@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { SqliteDialect } from './sqliteDialect.js';
 import { SqliteQuerier } from './sqliteQuerier.js';
 
@@ -50,7 +51,7 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   });
 
   it('should bind nothing when no values are given', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     expect(db.prepare).toHaveBeenCalledWith('SELECT 1');
     expect(stmt.all).toHaveBeenCalledWith();
   });
@@ -58,7 +59,7 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   it('should spread bound values', async () => {
     stmt.all.mockReturnValue(driver.wrap([{ id: 1 }]));
 
-    const res = await querier.all('SELECT * FROM t WHERE id = ?', [1]);
+    const res = await querier.all`SELECT * FROM t WHERE id = ${1}`;
 
     expect(stmt.all).toHaveBeenCalledWith(1);
     expect(res).toEqual([{ id: 1 }]);
@@ -68,22 +69,22 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
     // `run()` discards returned rows, so `reader` statements must go through `all()`.
     stmt.all.mockReturnValue(driver.wrap([{ id: 100 }]));
 
-    const res = await querier.run('INSERT INTO t ... RETURNING `id` `id`', ['x']);
+    const res = await querier.run`INSERT INTO t (a) VALUES (${'x'}) RETURNING \`id\` \`id\``;
 
     expect(stmt.all).toHaveBeenCalledWith('x');
     expect(stmt.run).not.toHaveBeenCalled();
-    expect(res).toEqual({ changes: 1, ids: [100], firstId: 100 });
+    expect(res).toEqual({ changes: 1, ids: [100] });
   });
 
   it('should run a non-returning statement and report changes', async () => {
     use(false);
     stmt.run.mockReturnValue(driver.wrap({ changes: 3 }));
 
-    const res = await querier.run('UPDATE t SET a = ?', [1]);
+    const res = await querier.run`UPDATE t SET a = ${1}`;
 
     expect(stmt.run).toHaveBeenCalledWith(1);
     expect(stmt.all).not.toHaveBeenCalled();
-    expect(res).toEqual({ changes: 3, ids: [], firstId: undefined, created: undefined });
+    expect(res).toEqual({ changes: 3, ids: [] });
   });
 
   /** `node:sqlite` answers a change count as a `bigint` once it reads integers as ones. */
@@ -91,7 +92,7 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
     use(false);
     stmt.run.mockReturnValue(driver.wrap({ changes: 3n }));
 
-    const res = await querier.run('UPDATE t SET a = ?', [1]);
+    const res = await querier.run`UPDATE t SET a = ${1}`;
 
     expect(res.changes).toBe(3);
   });
@@ -100,7 +101,7 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   it('should run a statement that reads nothing when asked for its rows', async () => {
     use(false);
 
-    const rows = await querier.all('PRAGMA foreign_keys = ON');
+    const rows = await querier.all`PRAGMA foreign_keys = ON`;
 
     expect(stmt.run).toHaveBeenCalledWith();
     expect(stmt.all).not.toHaveBeenCalled();
@@ -122,7 +123,7 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   it('should decode an integer read as a bigint, exact past 2^53', async () => {
     stmt.all.mockReturnValue(driver.wrap([{ id: 1n, big: 9007199254740993n }]));
 
-    const rows = await querier.all('SELECT id, big FROM t');
+    const rows = await querier.all`SELECT id, big FROM t`;
 
     expect(rows).toEqual([{ id: 1, big: '9007199254740993' }]);
   });
@@ -130,9 +131,9 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
   it('should decode the ids a RETURNING statement reads as bigints', async () => {
     stmt.all.mockReturnValue(driver.wrap([{ id: 100n }]));
 
-    const res = await querier.run('INSERT INTO t ... RETURNING `id` `id`', ['x']);
+    const res = await querier.run`INSERT INTO t (a) VALUES (${'x'}) RETURNING \`id\` \`id\``;
 
-    expect(res).toEqual({ changes: 1, ids: [100], firstId: 100 });
+    expect(res).toEqual({ changes: 1, ids: [100] });
   });
 
   it('should decode streamed rows read as bigints', async () => {
@@ -148,10 +149,13 @@ describe.each(drivers)('SqliteQuerier on a $name', (driver) => {
 
   it('should roll back an open transaction on release', async () => {
     use(false);
-    await querier.beginTransaction();
 
+    await querier.beginTransaction();
     await expect(querier.release()).resolves.toBeUndefined();
-    expect(querier.hasOpenTransaction).toBe(false);
+
+    expect(db.prepare).toHaveBeenCalledTimes(2);
+    expect(db.prepare).toHaveBeenNthCalledWith(1, 'BEGIN TRANSACTION');
+    expect(db.prepare).toHaveBeenNthCalledWith(2, 'ROLLBACK');
   });
 
   it('should release cleanly with no open transaction', async () => {

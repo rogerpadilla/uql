@@ -1,5 +1,5 @@
 import type { QueryContext, RelationAggregateSpec, SqlQueryDialect, TriggerRows } from './dialect.js';
-import type { Type } from './utility.js';
+import type { Scalar, Type } from './utility.js';
 
 /** What a `raw` callback receives. See {@link QueryRawFn}. */
 export type QueryRawRenderOptions = {
@@ -39,6 +39,15 @@ export const RAW_ALIAS: unique symbol = Symbol('rawAlias');
 export const RAW_TEXT: unique symbol = Symbol('rawText');
 /** Keys the phantom a ref or an aggregate carries its value type in, which no value ever fills. */
 export const RAW_VALUE_TYPE: unique symbol = Symbol('rawValueType');
+
+/**
+ * What a `raw` template interpolates: a value it binds, a list of them (`= ANY(${ids})`), or SQL it renders in
+ * place. Never `undefined`, which would bind nothing: leave it out, or interpolate `null`.
+ */
+export type RawValue = Scalar | null | readonly (Scalar | null)[] | QueryRaw;
+
+/** A statement as `all` and `run` take one: a tagged template's strings and values, or a `raw` built apart. */
+export type SqlStatement = readonly [strings: TemplateStringsArray, ...values: RawValue[]] | readonly [sql: QueryRaw];
 
 export class QueryRaw {
   readonly [RAW_VALUE]: QueryRawFn;
@@ -97,13 +106,11 @@ export type RawFor<Raw, V> = Raw & { readonly [RAW_VALUE_TYPE]?: V | null };
  * It renders as the correlated subquery a `$count` reads, so a field holding one is read, filtered and
  * sorted like any other.
  *
- * `V` is the value it reads and `Storable` whether a trigger could keep it, both carried in phantom
- * fields so the aggregate a field declares decides the property's type and refuses `stored: true` on
- * one no delta can maintain.
+ * `V` is the value it reads, carried in a phantom field so the aggregate a field declares decides the
+ * property's type.
  */
-export class RelationAggregate<V = unknown, Storable extends boolean = boolean> extends QueryRaw {
+export class RelationAggregate<V = unknown> extends QueryRaw {
   declare readonly [RAW_VALUE_TYPE]?: V;
-  declare private readonly __storable: Storable;
 
   constructor(
     /** What it reads, kept beside the SQL so a read decodes the value the way the target's field does. */

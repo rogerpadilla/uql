@@ -1,4 +1,10 @@
+import type { CheckSchema } from '../schema/types.js';
+import { ownedCheck } from '../util/ddlExpression.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
+
+/** A collection validator in query-filter syntax: every document written has to match it, `{}` none. */
+export type MongoValidator = Readonly<Record<string, unknown>>;
+
 /** The direction, or `'text'`, of one field in a MongoDB index key spec. */
 export type MongoIndexKey = Record<string, 1 | -1 | 'text'>;
 
@@ -27,7 +33,8 @@ export type MongoSearchIndex = {
 
 /** The commands {@link MongoSchemaGenerator} emits as JSON, one per statement. */
 export type MongoCommand =
-  | { readonly action: 'createCollection'; readonly name: string }
+  | { readonly action: 'createCollection'; readonly name: string; readonly validator?: MongoValidator }
+  | { readonly action: 'collMod'; readonly name: string; readonly validator: MongoValidator }
   | { readonly action: 'dropCollection'; readonly name: string }
   | { readonly action: 'renameCollection'; readonly from: string; readonly to: string }
   | {
@@ -41,6 +48,11 @@ export type MongoCommand =
   | { readonly action: 'createSearchIndex'; readonly collection: string; readonly index: MongoSearchIndex }
   | { readonly action: 'dropSearchIndex'; readonly collection: string; readonly name: string };
 
+/** A collection's validator as the check it is, named for its JSON, so an edited one is a new name. */
+export function validatorCheck(collection: string, validator: MongoValidator): CheckSchema {
+  return ownedCheck(collection, 'validator', JSON.stringify(validator));
+}
+
 export function serializeMongoCommand(command: MongoCommand): string {
   return JSON.stringify(command);
 }
@@ -51,7 +63,8 @@ export function serializeMongoCommand(command: MongoCommand): string {
  * satisfy it with a plain object.
  */
 export type MongoCommandTarget = {
-  createCollection(name: string): Promise<unknown>;
+  createCollection(name: string, options?: { readonly validator: MongoValidator }): Promise<unknown>;
+  command(command: { readonly collMod: string; readonly validator: MongoValidator }): Promise<unknown>;
   renameCollection(from: string, to: string): Promise<unknown>;
   collection(name: string): {
     drop(): Promise<unknown>;
@@ -79,7 +92,11 @@ export function runMongoCommand(db: MongoCommandTarget, statement: string): Prom
   const command = parseMongoCommand(statement);
   switch (command.action) {
     case 'createCollection':
-      return db.createCollection(command.name);
+      return command.validator
+        ? db.createCollection(command.name, { validator: command.validator })
+        : db.createCollection(command.name);
+    case 'collMod':
+      return db.command({ collMod: command.name, validator: command.validator });
     case 'dropCollection':
       return db.collection(command.name).drop();
     case 'renameCollection':
@@ -105,7 +122,11 @@ export function mongoCommandSource(statement: string, db: string): string {
   const literal = JSON.stringify;
   switch (command.action) {
     case 'createCollection':
-      return `${db}.createCollection(${literal(command.name)})`;
+      return command.validator
+        ? `${db}.createCollection(${literal(command.name)}, ${literal({ validator: command.validator })})`
+        : `${db}.createCollection(${literal(command.name)})`;
+    case 'collMod':
+      return `${db}.command(${literal({ collMod: command.name, validator: command.validator })})`;
     case 'dropCollection':
       return `${db}.collection(${literal(command.name)}).drop()`;
     case 'renameCollection':

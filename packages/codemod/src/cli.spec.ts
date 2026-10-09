@@ -31,6 +31,7 @@ describe('parseArgs', () => {
   it('defaults to the config in the working directory, writing for real', () => {
     expect(parseArgs([])).toEqual({
       options: { project: 'tsconfig.json', dryRun: false, include: undefined },
+      help: false,
       errors: [],
     });
   });
@@ -38,8 +39,13 @@ describe('parseArgs', () => {
   it('reads every flag it accepts', () => {
     expect(parseArgs(['--project=app/tsconfig.json', '--include=entities,models', '--dry-run'])).toEqual({
       options: { project: 'app/tsconfig.json', dryRun: true, include: ['entities', 'models'] },
+      help: false,
       errors: [],
     });
+  });
+
+  it.each(['--help', '-h'])('asks for the usage with %s', (flag) => {
+    expect(parseArgs([flag])).toMatchObject({ help: true, errors: [] });
   });
 
   /** A misspelled `--dry-run` used to be ignored, which turned a preview into a real rewrite. */
@@ -87,6 +93,7 @@ describe('cli', () => {
     const { code, stdout } = await cli([`--project=${project}`, '--dry-run']);
 
     expect(code).toBe(0);
+    expect(stdout).toContain('would change: ');
     expect(stdout).toContain('3 file(s) would change');
     expect(await readFile(entity, 'utf8')).toBe(ENTITY);
   }, 20_000);
@@ -99,7 +106,7 @@ describe('cli', () => {
     expect(code).toBe(1);
     expect(stderr).toContain('needs a decision: ');
     expect(stderr).toContain("cannot infer 'type'");
-    expect(stderr).toContain('1 property(ies) left untouched');
+    expect(stderr).toContain('1 item(s) need a decision');
     expect(stdout).toContain('file(s) changed');
     expect(await readFile(entity, 'utf8')).toContain('@Field({ type: String }) name?: string | null;');
   }, 20_000);

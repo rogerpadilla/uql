@@ -29,6 +29,8 @@ import {
   entityWhere,
   fieldOptionConflict,
   hasKeys,
+  holdsForeignKey,
+  isCascadable,
   isToManyRelation,
   memberRefs,
   fulltextWeights,
@@ -60,8 +62,7 @@ export function defineField<E>(entity: Type<E>, key: string, opts: FieldOptions 
   const meta = ensureWritableMeta(entity);
   const { computed, ...rest } = opts;
   const sql = computed === undefined ? undefined : entitySql(computed);
-  // A relation aggregate reads as a correlated subquery, which no engine accepts in a generated column:
-  // keeping one on the row takes the triggers a write fires, which are not built yet.
+  // The types refuse this too; an untyped caller still reaches here.
   if (opts.stored && sql instanceof RelationAggregate) {
     throw new UqlUsageError(
       `'${entity.name}.${key}' cannot be 'stored': a relation aggregate reads as a subquery, which no ` +
@@ -459,6 +460,12 @@ function fillRelations<E>(meta: EntityMeta<E>): void {
     if (!relation.through) {
       assertJoins(at, meta, relation, references);
     }
+    if (holdsForeignKey(relation) && isCascadable('delete', relation.cascade)) {
+      throw new UqlUsageError(
+        `${at} holds the key of a '${relation.entity().name}' other rows may point at too, so it cascades ` +
+          "'persist' only: cascade a delete from the side that owns the rows.",
+      );
+    }
   }
   // A column `references` names is a foreign key with or without a relation over it, and one cannot point
   // at a composite key: refused on first read, as a relation that cannot join is, not at the schema build.
@@ -581,7 +588,7 @@ function assertJoins<E>(
 ): void {
   const target = registeredMeta(relOpts.entity());
   // Only the owning side of a to-one holds its foreign key; an inverse side and a to-many join on the target's.
-  const holdsLocally = !relOpts.mappedBy && !isToManyRelation(relOpts);
+  const holdsLocally = holdsForeignKey(relOpts);
   const sides = [
     { meta: columnsOf(meta), keys: pairs.map(({ local }) => local), joins: target.entity, holds: holdsLocally },
     { meta: columnsOf(target), keys: pairs.map(({ foreign }) => foreign), joins: meta.entity, holds: !holdsLocally },
@@ -620,7 +627,7 @@ function isA(entity: Type<unknown>, base: Type<unknown>): boolean {
  */
 export function foreignKeysOf<E>(meta: EntityMeta<E>): RelationMeta[] {
   const owning = definedEntries(meta.relations)
-    .filter(([, relation]) => !relation.mappedBy && !relation.through && !isToManyRelation(relation))
+    .filter(([, relation]) => holdsForeignKey(relation))
     .map(([relKey, relation]) => {
       settledReferences(`'${meta.entity.name}.${relKey}'`, meta, relKey, relation);
       return relation;

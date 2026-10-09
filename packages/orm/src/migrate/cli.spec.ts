@@ -4,6 +4,7 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { NodeSqliteQuerierPool } from '../sqlite/nodeSqliteQuerierPool.js';
+import { raw } from '../util/raw.js';
 import { main } from './cli.js';
 
 const SRC = fileURLToPath(new URL('../', import.meta.url));
@@ -50,10 +51,10 @@ describe('CLI', () => {
   const cli = (...args: string[]) => main(['--config', writeConfig(), ...args]);
 
   /** Runs `sql` on the project's database, outside the CLI. */
-  const query = async <T>(sql: string): Promise<T[]> => {
+  const query = async <T extends object>(sql: string): Promise<T[]> => {
     const pool = new NodeSqliteQuerierPool(join(dir, 'app.db'));
     try {
-      return await pool.all<T>(sql);
+      return await pool.all<T>(raw.text(sql));
     } finally {
       await pool.end();
     }
@@ -76,9 +77,10 @@ describe('CLI', () => {
     mkdirSync(join(dir, 'migrations'), { recursive: true });
     writeFileSync(
       join(dir, 'migrations', `${name}.mjs`),
-      `export default {
-        up: (querier) => querier.run('CREATE TABLE ${table} (id INTEGER PRIMARY KEY)'),
-        down: (querier) => querier.run('DROP TABLE ${table}'),
+      `import { raw } from ${JSON.stringify(join(SRC, 'index.ts'))};
+      export default {
+        up: (querier) => querier.run(raw.text('CREATE TABLE ${table} (id INTEGER PRIMARY KEY)')),
+        down: (querier) => querier.run(raw.text('DROP TABLE ${table}')),
       };`,
     );
   };
@@ -192,7 +194,7 @@ describe('CLI', () => {
       await cli('generate-entities');
       const [file] = migrationFiles().filter((it) => it.endsWith('_init.ts'));
 
-      expect(readFileSync(join(dir, 'migrations', file), 'utf-8')).toContain('CREATE TABLE `CliNote`');
+      expect(readFileSync(join(dir, 'migrations', file), 'utf-8')).toContain('CREATE TABLE \\`CliNote\\`');
       expect(migrationFiles().filter((it) => it.endsWith('_schema.ts'))).toHaveLength(1);
     });
 
@@ -212,7 +214,7 @@ describe('CLI', () => {
 
       await cli('up', '--verbose');
       expect(await tables()).toEqual(['first', 'second', 'uql_migrations']);
-      expect(console.log).toHaveBeenCalledWith('\nMigrations complete: 1 successful, 0 failed');
+      expect(console.log).toHaveBeenCalledWith('\nMigrations complete: 1 applied.');
 
       await cli('up');
       expect(console.log).toHaveBeenCalledWith('No pending migrations.');
@@ -236,7 +238,7 @@ describe('CLI', () => {
       await cli('up');
       await cli('down');
       expect(await tables()).toEqual(['first', 'second', 'uql_migrations']);
-      expect(console.log).toHaveBeenCalledWith('\nRollback complete: 1 successful, 0 failed');
+      expect(console.log).toHaveBeenCalledWith('\nRollback complete: 1 reverted.');
 
       await cli('down', '--to', 'm2');
       expect(await tables()).toEqual(['first', 'uql_migrations']);
@@ -252,12 +254,16 @@ describe('CLI', () => {
       expect(console.log).toHaveBeenCalledWith('No migrations to rollback.');
     });
 
-    it('should exit on a migration that fails, either way', async () => {
+    it('should exit on a migration that fails, either way, naming it', async () => {
       writeMigration('m1', 'first');
       await query('CREATE TABLE first (id INTEGER PRIMARY KEY)');
 
       await cli('up');
-      expect(console.log).toHaveBeenCalledWith('\nMigrations complete: 0 successful, 1 failed');
+      expect(console.log).toHaveBeenCalledWith(
+        expect.stringMatching(/^Migration m1 failed: table `?first`? already exists/),
+        expect.any(Error),
+      );
+      expect(console.error).toHaveBeenCalledWith('Error:', expect.stringMatching(/table `?first`? already exists/));
       expect(process.exit).toHaveBeenCalledWith(1);
 
       await query('DROP TABLE first');
@@ -265,7 +271,7 @@ describe('CLI', () => {
       await query('DROP TABLE first');
       vi.mocked(process.exit).mockClear();
       await cli('down');
-      expect(console.log).toHaveBeenCalledWith('\nRollback complete: 0 successful, 1 failed');
+      expect(console.error).toHaveBeenCalledWith('Error:', expect.stringContaining('no such table: first'));
       expect(process.exit).toHaveBeenCalledWith(1);
     });
 

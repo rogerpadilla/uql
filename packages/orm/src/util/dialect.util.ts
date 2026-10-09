@@ -37,7 +37,7 @@ import {
 import { DEFAULT_VECTOR_DISTANCE, VECTOR_INDEX_TYPES } from '../type/vector.js';
 import { defaultReadKeys, fieldKeys, isDatabaseWritten } from './field.util.js';
 import { entityName, getKeys, hasKeys, isOperatorObject, isRecord, someKey } from './object.util.js';
-import { whereAnd } from './query.util.js';
+import { assertNoUndefined, whereAnd } from './query.util.js';
 import { UqlSecurityError, UqlUsageError } from './uqlError.js';
 
 export type CallbackKey = keyof Pick<FieldOptions, 'onInsert' | 'onUpdate'>;
@@ -489,6 +489,9 @@ export function parseGroupMap<E>(group?: QueryGroupMap<E>, select?: QueryAggMap<
   }
   for (const alias of getKeys(select)) {
     const { $where: where } = select[alias];
+    if (where) {
+      assertNoUndefined(where, `the $where of aggregate '${alias}'`);
+    }
     const call: Readonly<Record<string, unknown>> = select[alias];
     const key = getKeys(call).find((name) => name !== '$where');
     if (key === undefined) {

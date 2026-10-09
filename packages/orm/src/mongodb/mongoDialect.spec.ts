@@ -23,7 +23,7 @@ import {
 import { SecureCollection, SecureParent } from '../test/secureEntityMock.js';
 import { type FieldKey, idKey, type QueryRaw, type QueryWhere } from '../type/index.js';
 import { raw } from '../util/index.js';
-import { UqlSecurityError } from '../util/uqlError.js';
+import { UqlSecurityError, UqlUsageError } from '../util/uqlError.js';
 import { MongoDialect } from './mongoDialect.js';
 import { vectorDistanceExpr } from './vectorDistance.js';
 
@@ -492,9 +492,9 @@ class MongoDialectSpec implements Spec {
   }
 
   shouldThrowOnEmptyRelationSizeComparison() {
-    expect(() =>
-      this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: { $gte: undefined } } }),
-    ).toThrow('$size needs at least one comparison');
+    expect(() => this.dialect.matchStages(MeasureUnitCategory, { measureUnits: { $size: {} } })).toThrow(
+      '$size needs at least one comparison',
+    );
   }
 
   /** Each relation `$size` of one `$where` joins its `$expr`, where the last one replaced the others. */
@@ -691,6 +691,15 @@ class MongoDialectSpec implements Spec {
     expect(() => this.dialect.where(Company, { 'nope.city': 'NY' })).toThrow('path nope.city does not exist in');
     // a declared JSON field may carry any embedded path
     expect(this.dialect.where(Company, { 'kind.country': 'NY' })).toEqual({ 'kind.country': 'NY' });
+  }
+
+  shouldThrowOnJsonPathKeysThatAreNoIdentifier() {
+    // @ts-expect-error: no such key in the document
+    expect(() => this.dialect.where(Company, { 'kind.$where': 'x' })).toThrow(UqlUsageError);
+    // @ts-expect-error: no such key in the document
+    expect(() => this.dialect.where(Company, { 'kind.': 'x' })).toThrow(UqlUsageError);
+    expect(() => this.dialect.getUpdateFilter({ kind: { $set: { 'a.b': 1 } } })).toThrow(UqlUsageError);
+    expect(() => this.dialect.getUpdateFilter({ kind: { $unset: ['$x'] } })).toThrow(UqlUsageError);
   }
 
   shouldBuildSort() {
@@ -1352,13 +1361,13 @@ class MongoDialectSpec implements Spec {
     ).toThrow('unsupported HAVING operator: $bogus');
   }
 
-  shouldBuildAggregateStagesWithHavingUndefined() {
-    const stages = this.dialect.buildAggregateStages(Item, {
-      $select: { count: { $count: '*' } },
-      $having: { count: undefined },
-    });
-    // undefined conditions are skipped, so no HAVING $match stage
-    expect(stages).toEqual([{ $group: { _id: null, count: { $sum: 1 } } }, { $project: { _id: 0, count: 1 } }]);
+  shouldRefuseAnUndefinedHavingCondition() {
+    expect(() =>
+      this.dialect.buildAggregateStages(Item, {
+        $select: { count: { $count: '*' } },
+        $having: { count: undefined },
+      }),
+    ).toThrow("$having holds undefined at 'count'");
   }
 
   shouldBuildAggregateStagesWithSort() {

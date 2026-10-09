@@ -1,6 +1,6 @@
 /**
  * Typed JSON dot-paths in `$where` and `$sort`: a `Json<T>` field gives one typed path per nested key,
- * checked against that key's type; `Json<unknown>` takes any path. Relations filter by nested objects,
+ * checked against that key's type; `Json` takes any path. Relations filter by nested objects,
  * never dotted keys, as the runtime does. Type-checked by `bun run ts` only.
  */
 import type { Json, Querier } from '../index.js';
@@ -14,7 +14,7 @@ class Post {
   id!: number;
   title!: string;
   kind?: Json<{ public?: 0 | 1; theme?: { color?: string }; labels?: string[] }>;
-  data?: Json<unknown>;
+  data?: Json;
   attachments?: Json<unknown[]>;
   items?: Json<{ id: string; count: number; tags: string[] }>[];
   writer?: Writer;
@@ -93,6 +93,12 @@ export async function jsonDotPathSafety() {
   // An untyped payload is not an array, so it keeps the full operator set.
   await querier.updateOneById(Post, 1, { data: { $set: { anything: 1 }, $unset: ['other'] } });
 
+  // An untyped column takes any JSON value whole.
+  await querier.insertOne(Post, { title: 'a', data: { anything: 1 } });
+  await querier.insertOne(Post, { title: 'a', data: 'text' });
+  await querier.insertOne(Post, { title: 'a', data: [1, 'x'] });
+  await querier.updateOneById(Post, 1, { data: { replaced: true } });
+
   // Unknown path on a typed JSON payload is a compile error.
   // @ts-expect-error 'nope' is not a key of Post.kind
   await querier.findMany(Post, { $where: { 'kind.nope': 1 } });
@@ -117,4 +123,20 @@ export async function jsonDotPathSafety() {
   // $sort dot-paths are restricted to JSON fields too.
   // @ts-expect-error 'title' is not a JSON field
   await querier.findMany(Post, { $sort: { 'title.foo': 1 } });
+}
+
+type JsonValue = string | number | boolean | null | JsonValue[] | { [key: string]: JsonValue };
+
+class Setting {
+  id!: number;
+  value?: Json<JsonValue>;
+}
+
+/** A `Json<T>` whose `T` holds `null`, a common `JsonValue`, is a field that may be `null`. */
+export async function nullableJsonValue() {
+  await querier.insertOne(Setting, { value: null });
+  await querier.insertOne(Setting, { value: { theme: 'dark' } });
+  const [row] = await querier.findMany(Setting, { $select: { value: true } });
+  const value: JsonValue | undefined = row?.value;
+  return value;
 }

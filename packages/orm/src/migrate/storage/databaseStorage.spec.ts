@@ -1,79 +1,64 @@
-import { beforeEach, describe, expect, it, type Mock, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';
-import { createMockQuerier, createMockQuerierPool } from '../../test/index.js';
-import type { Querier, QuerierPool } from '../../type/index.js';
-import { DatabaseMigrationStorage } from './databaseStorage.js';
+import { createMockQuerier, sentStatements } from '../../test/index.js';
+import { createMigrationsTable, DatabaseMigrationStorage } from './databaseStorage.js';
+
+const dialect = new PostgresDialect();
 
 const createSqlQuerier = () =>
   createMockQuerier({
     all: vi.fn().mockResolvedValue([]),
     run: vi.fn().mockResolvedValue({}),
-    dialect: new PostgresDialect(),
+    dialect,
   });
 
 describe('DatabaseMigrationStorage', () => {
   let storage: DatabaseMigrationStorage;
-  let pool: QuerierPool;
   let querier: ReturnType<typeof createSqlQuerier>;
-  let getQuerier: Mock<() => Promise<Querier>>;
 
   beforeEach(() => {
     querier = createSqlQuerier();
-    getQuerier = vi.fn(async (): Promise<Querier> => querier);
-    pool = createMockQuerierPool(new PostgresDialect(), getQuerier);
-
-    storage = new DatabaseMigrationStorage(pool);
+    storage = new DatabaseMigrationStorage();
   });
 
-  it('should create the storage table', async () => {
-    await storage.executed();
+  it('should create the table where it is missing, as the lock does before a run', async () => {
+    await createMigrationsTable(querier, 'uql_migrations');
 
-    expect(querier.run).toHaveBeenCalledWith(expect.stringContaining('CREATE TABLE IF NOT EXISTS "uql_migrations"'));
-    expect(querier.release).toHaveBeenCalled();
+    expect(sentStatements(dialect, querier.run)).toEqual([
+      { sql: expect.stringContaining('CREATE TABLE IF NOT EXISTS "uql_migrations"'), values: [] },
+    ]);
   });
 
-  it('should create the storage table once', async () => {
-    await storage.executed();
-    await storage.executed();
-    expect(querier.run).toHaveBeenCalledTimes(1);
+  it('should record on the table it is given, creating none', async () => {
+    await storage.logWithQuerier(querier, 'm1');
+
+    expect(sentStatements(dialect, querier.run)).toEqual([
+      { sql: 'INSERT INTO "uql_migrations" ("name") VALUES ($1)', values: ['m1'] },
+    ]);
   });
 
-  it('should refuse to create storage on a querier that is not SQL', async () => {
-    getQuerier.mockResolvedValue(createMockQuerier());
-    await expect(storage.executed()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
-  });
-
-  it('should return executed migration names', async () => {
+  it('should return executed migration names, leaving out the lock a run holds', async () => {
     querier.all.mockResolvedValueOnce([{ name: 'm1' }, { name: 'm2' }]);
 
-    const executed = await storage.executed();
-
-    expect(executed).toEqual(['m1', 'm2']);
-    expect(querier.all).toHaveBeenCalledWith(expect.stringContaining('SELECT "name" FROM "uql_migrations"'));
+    expect(await storage.executed(querier)).toEqual(['m1', 'm2']);
+    expect(sentStatements(dialect, querier.all)).toEqual([
+      { sql: 'SELECT "name" FROM "uql_migrations" WHERE "name" <> $1 ORDER BY "name" ASC', values: ['uql/lock'] },
+    ]);
   });
 
-  it('should refuse to read executed migrations on a querier that is not SQL', async () => {
-    await storage.executed();
+  it('should record a migration in the table it is given', async () => {
+    await new DatabaseMigrationStorage({ tableName: 'journal' }).logWithQuerier(querier, 'm3');
 
-    getQuerier.mockResolvedValue(createMockQuerier());
-    await expect(storage.executed()).rejects.toThrow('DatabaseMigrationStorage requires a SQL-based querier');
-  });
-
-  it('should insert a record of a migration', async () => {
-    await storage.logWithQuerier(querier, 'm3');
-
-    expect(querier.run).toHaveBeenCalledWith(
-      expect.stringContaining('INSERT INTO "uql_migrations" ("name") VALUES ($1)'),
-      ['m3'],
-    );
+    expect(sentStatements(dialect, querier.run)).toEqual([
+      { sql: 'INSERT INTO "journal" ("name") VALUES ($1)', values: ['m3'] },
+    ]);
   });
 
   it('should delete the record of a migration', async () => {
     await storage.unlogWithQuerier(querier, 'm3');
 
-    expect(querier.run).toHaveBeenCalledWith(
-      expect.stringContaining('DELETE FROM "uql_migrations" WHERE "name" = $1'),
-      ['m3'],
-    );
+    expect(sentStatements(dialect, querier.run)).toEqual([
+      { sql: 'DELETE FROM "uql_migrations" WHERE "name" = $1', values: ['m3'] },
+    ]);
   });
 });

@@ -2,6 +2,7 @@ import type { IndexFacet } from '../schema/indexDifferences.js';
 import { createTableNode, SchemaAST } from '../schema/schemaAST.js';
 import type { TableNode } from '../schema/types.js';
 import type { QuerierPool, SchemaIntrospector, TableSchema } from '../type/index.js';
+import { type MongoValidator, validatorCheck } from './mongoCommand.js';
 import { type MongoQuerier, withMongoQuerierForMigrations } from './mongoQuerier.js';
 import { textConfigOf } from './textLanguage.js';
 
@@ -49,9 +50,12 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
 
   async getTableSchema(tableName: string): Promise<TableSchema | undefined> {
     return this.withDb(async (db) => {
-      if (!(await hasCollection(db, tableName))) {
+      const [info] = await db.listCollections({ name: tableName, type: 'collection' }, { nameOnly: false }).toArray();
+      if (!info) {
         return undefined;
       }
+      // Annotated: the driver types a collection's options as `Document`, whose members are `any`.
+      const validator: MongoValidator | undefined = info.options?.['validator'];
 
       // Annotated: the driver types a `listIndexes` entry as `any`, and its `indexes()` leaves `name` optional.
       const collection = db.collection(tableName);
@@ -61,6 +65,7 @@ export class MongoSchemaIntrospector implements SchemaIntrospector {
       return {
         name: tableName,
         columns: [],
+        ...(validator && { checks: [validatorCheck(tableName, validator)] }),
         indexes: [
           ...indexes.map(({ name, key, unique, weights, default_language }) => ({
             name,
@@ -128,12 +133,16 @@ async function hasCollection(db: MongoQuerier['db'], name: string): Promise<bool
   return collections.length > 0;
 }
 
-/** Mongo has no columns to read, so a table's are the fields its indexes name, one node per field. */
 /** `listIndexes` reports keys, uniqueness and text weights; a `partialFilterExpression` is no SQL predicate. */
 const INDEX_FACETS: ReadonlySet<IndexFacet> = new Set(['textIndex']);
 
-function buildTable({ name, indexes = [] }: TableSchema): TableNode {
+/**
+ * Mongo has no columns to read, so a table's are the fields its indexes name, one node per field. Its
+ * validator is its one check.
+ */
+function buildTable({ name, indexes = [], checks = [] }: TableSchema): TableNode {
   const table = createTableNode(name, undefined, INDEX_FACETS);
+  table.checks.push(...checks);
 
   for (const index of indexes) {
     for (const { column } of index.entries) {

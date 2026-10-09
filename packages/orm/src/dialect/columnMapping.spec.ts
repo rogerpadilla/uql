@@ -1,6 +1,6 @@
 import { expect, it } from 'vitest';
 import { Entity, Field, Id } from '../entity/index.js';
-import { MongoDialect } from '../mongo/mongoDialect.js';
+import { MongoDialect } from '../mongodb/mongoDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { Item } from '../test/entityMock.js';
 

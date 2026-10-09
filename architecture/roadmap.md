@@ -14,9 +14,7 @@ await pool.insertOne(WorkspaceUsage, { total: 1 }); // error: not writable
 
 **R5: an operation as a plan.** Its statements and how their results read, built without running, and one `runStatements` per querier: a request on D1, Turso Cloud and libSQL, a transaction elsewhere. Makes a split write on D1 atomic. _Unlocks batching._ [The design](batching.md).
 
-**R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). _Unlocks views, triggers._
-
-**R7b: a fingerprint per derived object.** What the engine reprints from a parse tree never matches the text UQL wrote, so it cannot be compared against the reprint. Triggers and checks needed no fingerprint: each is installed under a name ending in a hash of its SQL, and comparing names is the whole diff. Two kinds cannot carry one, since the name is the author's: a partial index's predicate (indexes compare by columns, never names) and a stored computed column's expression (introspection reads it on every SQL engine; `schemaASTDiffer` skips it). For those, store what was rendered in a `uql_schema_objects` table keyed by table, kind and name, and compare against that. _Unlocks diffable index predicates and generated columns._
+**R7: schema objects as one graph.** `SchemaDiffResult` has a field per kind (`tablesToCreate`, `columnDiffs`, `indexDiffs`, ...), so every new kind adds three fields and a branch in each consumer. Flatten it to `create`/`drop`/`alter` of a `SchemaObject`; ordering is already generic (`createOrder`). Internal (`SchemaDiffResult` is not exported), so it can land after 1.0. _Unlocks views._
 
 ## Features
 
@@ -33,8 +31,6 @@ export const WorkspaceUsage = defineView({
 
 A view is a read-only entity whose definition is its migration, and its field types come from `QueryAggregateResult`. A materialized view is native on Postgres and CockroachDB (`REFRESH ... CONCURRENTLY`). Elsewhere it is emulated as a table that `refresh` empties and refills in one transaction.
 
-**Stored triggers.** Authored triggers and `stored: ['update']` stamps shipped, on every SQL engine, needing neither R7 nor R7b: a trigger is recreated rather than diffed, and the engine keeps the render a rollback puts back. What is left is the maintained aggregate (`computed: (u) => u.resources.count(), stored: true`), held back until an unstored one profiles too slow. MongoDB runs no trigger within a write and refuses them. [The design](triggers.md).
-
 **Batching** (R5). `pool.batch((q) => [q.findMany(...), q.count(...)])`, a typed tuple back, one request where the engine allows it and a transaction elsewhere. [The design](batching.md).
 
 **Read-only queriers** (R2). `ReadonlyQuerierPool<PgQuerier>`, a `Pick` of the read methods, so a write never reaches a replica pool. Types only.
@@ -42,8 +38,8 @@ A view is a read-only entity whose definition is its migration, and its field ty
 ## Later
 
 - **Oracle.** The half of [the design](oracle-mssql.md) not yet built; it inherits `MergeSqlDialect`'s paging and upsert.
-- **Ranked retrieval.** A weighted sum of several vector distances, some over a relation's nearest rows. Each piece renders today; the arithmetic across them waits for a second caller.
-- **JSR.** A `jsr.json` and a publish step, whenever someone asks.
+- **The maintained aggregate**, `computed: (u) => u.resources.count(), stored: true` kept by triggers on the child, once an unstored one profiles too slow. Only `count` and `sum` turn a row change into a delta, and an aggregate's filter is already row-local, so storing one would change no call site.
+- **Schema-scoped objects.** Extensions, functions and domains declared beside the entities (`objects: [{ kind: 'extension', name: 'pg_trgm' }]`), applied by `sync` and `up` before the tables using them; a function is named by its signature. Variability hand-rolls these in four places.
 
 ## Where a composite key still refuses
 
@@ -55,7 +51,7 @@ Each by name, never by taking the first key column: saving a relation (one child
 - **The key is a list, and `assertSoleId` is the only way past it.** A first-column shortcut would address every row that agrees on one column of two.
 - **Keys and indexes compare by columns, not names**, so a naming-convention change rewrites nothing.
 - **A check is compared by name.** It is installed as `_uql_<table>__<label>_<hash>`, the hash of its SQL, as a trigger is: an edited check is a new name, the old one dropped. Safe mode adds the new one and holds the drop, as it does an index. Only a `_uql_` check is ever dropped; any other is warned about on a table declaring checks.
-- **A partial index's predicate and a stored computed column's expression are not diffed until R7b.** Changing one is a written migration - and an index's `where` is spelled as the predicate the query passes, never as `raw`, or the planner will not match the two.
+- **A partial index's predicate and a stored computed column's expression are not diffed**: the engine's reprint never matches what uql wrote, and a fingerprint table is not worth keeping for an edit nobody has made. Changing one is a written migration - and an index's `where` is spelled as the predicate the query passes, never as `raw`, or the planner will not match the two.
 - **SQLite alters a table by rebuilding it, foreign keys off.** Dropping the old table with them on deletes every `CASCADE` child and fails a `NO ACTION` one, and `defer_foreign_keys` stops neither; `PRAGMA foreign_keys` only switches outside a transaction. So the migration session switches it around the transaction and runs `foreign_key_check` before commit, and the rebuild carries a guard failing it wherever they stay on (D1, a remote libSQL).
 - **An enum is a check, not a native type**: a named table constraint, since MariaDB names a column-level one itself. Changing its values replaces the check like any other.
 - **A cursor page compares by the bounded chain `a <= x AND (a < x OR ...)` on every engine**, as a plain `$where`. A row-value comparison wins only on CockroachDB, by under half a millisecond, and only for keys running one way with no null. [The design](cursor-pagination.md).

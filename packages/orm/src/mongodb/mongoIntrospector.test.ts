@@ -1,6 +1,7 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { indexColumns } from '../schema/indexColumns.js';
 import { assertDefined, mongoUri, provisioningTimeout } from '../test/index.js';
+import { validatorCheck } from './mongoCommand.js';
 import { MongoSchemaIntrospector } from './mongoIntrospector.js';
 import { MongodbQuerierPool } from './mongodbQuerierPool.js';
 
@@ -71,6 +72,18 @@ describe('MongoSchemaIntrospector', () => {
     const table = (await introspector.introspect()).getTable('note');
     await pool.withQuerier(({ db }) => db.collection('note').drop());
     expect(table?.indexes.find((index) => index.name === 'note_body_idx')?.config).toBe('english');
+  });
+
+  /** Its one validator, named for its JSON as an owned check is for its SQL, so an edited one reads as another. */
+  it("should read a collection's validator as its check", async () => {
+    const validator = { status: { $in: ['open', null] } };
+    await pool.withQuerier(({ db }) => db.createCollection('task', { validator }));
+    const schema = await introspector.getTableSchema('task');
+    const table = (await introspector.introspect(['task'])).getTable('task');
+    await pool.withQuerier(({ db }) => db.collection('task').drop());
+
+    expect(schema?.checks).toEqual([validatorCheck('task', validator)]);
+    expect(table?.checks).toEqual([validatorCheck('task', validator)]);
   });
 
   it('should read no schema for a collection that does not exist', async () => {

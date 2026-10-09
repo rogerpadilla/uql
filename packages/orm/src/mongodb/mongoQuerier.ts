@@ -1,4 +1,4 @@
-import type { Db } from 'mongodb';
+import type { ClientSession, Db } from 'mongodb';
 import { withQuerierOfKind } from '../migrate/acquireQuerierForMigrations.js';
 import { isSqlQuerier, type Querier, type QuerierPool } from '../type/index.js';
 
@@ -10,6 +10,9 @@ export interface MongoQuerier extends Querier {
    * The MongoDB database instance.
    */
   readonly db: Db;
+
+  /** The open transaction's session, for a raw call through `db` to run inside it: `{ session: querier.session }`. */
+  readonly session: ClientSession | undefined;
 }
 
 /**

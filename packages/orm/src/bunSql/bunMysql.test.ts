@@ -1,5 +1,5 @@
 import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
-import { MySqlQuerierIt } from '../querier/mysqlLikeQuerier-test.js';
+import { MySqlLikeQuerierIt } from '../querier/mysqlLikeQuerier-test.js';
 import { createSpec } from '../test/index.js';
 import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 
@@ -8,5 +8,5 @@ import { BunSqlQuerierPool } from './bunSqlQuerierPool.js';
 // on a throwaway local container. Not a URL parameter: Bun ignores it there.
 const config = () => ({ url: 'mysql://test:test@0.0.0.0:3316/test_bun_mysql', allowPublicKeyRetrieval: true });
 
-createSpec(new MySqlQuerierIt(new BunSqlQuerierPool(config())));
+createSpec(new MySqlLikeQuerierIt(new BunSqlQuerierPool(config())));
 createSpec(new SqlQuerierPoolIt(() => new BunSqlQuerierPool(config())));

@@ -42,6 +42,11 @@ export class SqliteQuerier extends AbstractSqliteQuerier {
     super(dialect, extra);
   }
 
+  /** Every querier of the pool is this one handle's session, so they share its transaction. */
+  protected override get connection(): object {
+    return this.db;
+  }
+
   /** `reader` picks the call: `run()` would discard the rows of a statement that reads, RETURNING included. */
   protected override async execute(query: string, values: SqliteBindValue[]) {
     const stmt = await this.db.prepare(query);

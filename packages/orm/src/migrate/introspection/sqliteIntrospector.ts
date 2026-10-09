@@ -5,8 +5,10 @@ import type {
   IndexColumnSchema,
   IndexSchema,
   PrimaryKeySchema,
+  QueryRaw,
   StoredDefinition,
 } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import {
   AbstractSqlSchemaIntrospector,
   type ReadColumn,
@@ -22,13 +24,13 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     this.dialect.hasVectorIndex() ? ['vector', 'distance'] : [],
   );
 
-  protected triggersQuery(): string {
-    return /*sql*/ `SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ?`;
+  protected triggersQuery(tableName: string): QueryRaw {
+    return raw`SELECT name, sql AS definition FROM sqlite_master WHERE type = 'trigger' AND tbl_name = ${tableName}`;
   }
 
   /** User tables only: skips SQLite's own and libSQL's vector index tables (its metadata and `<index>_shadow`). */
-  protected getTableNamesQuery(): string {
-    return /*sql*/ `
+  protected getTableNamesQuery(): QueryRaw {
+    return raw`
       SELECT name AS table_name
       FROM sqlite_master
       WHERE type = 'table'
@@ -39,8 +41,8 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
     `;
   }
 
-  protected tableExistsQuery(): string {
-    return /*sql*/ `SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ?`;
+  protected tableExistsQuery(tableName: string): QueryRaw {
+    return raw`SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = ${tableName}`;
   }
 
   /**
@@ -49,7 +51,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * SQLite cannot do to an existing table anyway. Also the key, by each column's `pk`: one statement for both.
    */
   private tableInfo(read: TableRowReader, tableName: string): Promise<SqliteColumnRow[]> {
-    return read<SqliteColumnRow>(/*sql*/ `PRAGMA table_xinfo(${this.dialect.escapeId(tableName)})`);
+    return read<SqliteColumnRow>(this.pragma('table_xinfo', tableName));
   }
 
   protected async getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]> {
@@ -78,7 +80,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   protected async getIndexes(read: TableRowReader, tableName: string): Promise<IndexSchema[]> {
-    const list = await read<SqliteIndexRow>(/*sql*/ `PRAGMA index_list(${this.dialect.escapeId(tableName)})`);
+    const list = await read<SqliteIndexRow>(this.pragma('index_list', tableName));
     const statements = new Map((await this.getDefinition(read, tableName)).map(({ name, sql }) => [name, sql]));
     const indexes: IndexSchema[] = [];
     // The key's own index ('pk') is left out; a unique constraint's ('u') is reported as every engine reports one.
@@ -106,9 +108,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
    * AST derives one from the columns, as the entity side does.
    */
   protected async getForeignKeys(read: TableRowReader, tableName: string): Promise<ForeignKeySchema[]> {
-    const rows = await read<SqliteForeignKeyRow>(
-      /*sql*/ `PRAGMA foreign_key_list(${this.dialect.escapeId(tableName)})`,
-    );
+    const rows = await read<SqliteForeignKeyRow>(this.pragma('foreign_key_list', tableName));
     return [...Map.groupBy(rows, (row) => row.id).values()].map((key) => {
       const [first] = key;
       return {
@@ -129,8 +129,7 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   /** Every statement `sqlite_master` keeps for the table, its `CREATE TABLE` first. An automatic index has none. */
   protected override getDefinition(read: TableRowReader, tableName: string): Promise<StoredDefinition[]> {
     return read<StoredDefinition>(
-      /*sql*/ `SELECT type AS kind, name, sql FROM sqlite_master WHERE tbl_name = ? AND sql IS NOT NULL ORDER BY type <> 'table'`,
-      [tableName],
+      raw`SELECT type AS kind, name, sql FROM sqlite_master WHERE tbl_name = ${tableName} AND sql IS NOT NULL ORDER BY type <> 'table'`,
     );
   }
 
@@ -151,7 +150,12 @@ export class SqliteSchemaIntrospector extends AbstractSqlSchemaIntrospector {
   }
 
   private getIndexColumns(read: TableRowReader, indexName: string): Promise<{ name: string | null }[]> {
-    return read<{ name: string | null }>(/*sql*/ `PRAGMA index_info(${this.dialect.escapeId(indexName)})`);
+    return read<{ name: string | null }>(this.pragma('index_info', indexName));
+  }
+
+  /** A PRAGMA takes no parameters, so the name it reads is written into the statement, escaped. */
+  private pragma(name: string, of: string): QueryRaw {
+    return raw.text(`PRAGMA ${name}(${this.dialect.escapeId(of)})`);
   }
 
   protected normalizeType(type: string): string {

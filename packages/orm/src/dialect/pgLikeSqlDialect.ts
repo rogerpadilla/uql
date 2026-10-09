@@ -15,7 +15,8 @@ import {
 } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
-import { escapePgSqlLiteral, escapeSingleQuotes, PG_UTC } from '../util/sqlLiteral.js';
+import { jsonPathKeys } from '../util/field.util.js';
+import { escapePgSqlLiteral, PG_UTC } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
 import { ANSI_SQL_VALUES, AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
@@ -49,8 +50,9 @@ export const PG_FEATURES: SqlDialectFeatures = {
   vectorSupportsLength: true,
   vectorBytes: false,
   supportsTimestamptz: true,
-  stringSizing: 'bounded-text',
+  stringSizing: 'boundedText',
   supportsUnsigned: false,
+  jsonArrivesDecoded: true,
   serverSideCursors: true,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: false, placement: 'suffix' },
@@ -71,6 +73,7 @@ export const PG_FEATURES: SqlDialectFeatures = {
     before: true,
     deferrable: true,
   },
+  namedLocks: 'session',
 };
 
 export const PG_SQL_VALUES: SqlValues = { ...ANSI_SQL_VALUES, uuid: 'gen_random_uuid()' };
@@ -278,10 +281,10 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     if (!path) {
       return mode === 'json' ? escapedColumn : `(${escapedColumn} #>> '{}')`;
     }
-    const segments = path.split('.');
-    return segments.reduce((expr, segment, index) => {
-      const op = mode === 'text' && index === segments.length - 1 ? '->>' : '->';
-      return `(${expr}${op}'${escapeSingleQuotes(segment)}')`;
+    const keys = jsonPathKeys(path);
+    return keys.reduce((expr, key, index) => {
+      const op = mode === 'text' && index === keys.length - 1 ? '->>' : '->';
+      return `(${expr}${op}'${key}')`;
     }, escapedColumn);
   }
 
@@ -363,7 +366,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const slot = { base: escapedCol, path: key };
     const kept = `SELECT JSONB_AGG(${JSON_PULL_ALIAS}.val ORDER BY ${JSON_PULL_ALIAS}.ord) FROM JSONB_ARRAY_ELEMENTS(${this.jsonValue(slot)}) WITH ORDINALITY AS ${JSON_PULL_ALIAS}(val, ord) WHERE ${JSON_PULL_ALIAS}.val <> ${this.jsonVal(ctx, value)}`;
     const pulled = `CASE WHEN ${this.jsonIsArray(slot)} THEN COALESCE((${kept}), '[]'::jsonb) ELSE COALESCE(${this.jsonValue(slot)}, 'null') END`;
-    return `JSONB_SET(${expr}, '{${escapeSingleQuotes(key)}}', ${pulled}, false)`;
+    return `JSONB_SET(${expr}, '{"${key}"}', ${pulled}, false)`;
   }
 
   /**
@@ -380,9 +383,7 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
     const entries = Object.entries(set);
     const merged = this.jsonVal(ctx, Object.fromEntries(entries.filter(([, value]) => !(value instanceof QueryRaw))));
     const raws = entries.flatMap(([key, value]) =>
-      value instanceof QueryRaw
-        ? [` || JSONB_BUILD_OBJECT('${escapeSingleQuotes(key)}', ${this.rawFragment(ctx, value)})`]
-        : [],
+      value instanceof QueryRaw ? [` || JSONB_BUILD_OBJECT('${key}', ${this.rawFragment(ctx, value)})`] : [],
     );
     return `${jsonSetTarget(expr, field, `'{}'::jsonb`)} || ${merged}${raws.join('')}`;
   }
@@ -390,9 +391,8 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
   /** The only fragment that references `expr` twice - safe here because placeholders are numbered. */
   protected override jsonPush(ctx: QueryContext, expr: string, push: Record<string, unknown>): string {
     return Object.entries(push).reduce((acc, [key, value]) => {
-      const escapedKey = escapeSingleQuotes(key);
       const ph = this.jsonVal(ctx, value);
-      return `JSONB_SET(${acc}, '{${escapedKey}}', COALESCE((${acc})->'${escapedKey}', '[]'::jsonb) || JSONB_BUILD_ARRAY(${ph}))`;
+      return `JSONB_SET(${acc}, '{"${key}"}', COALESCE((${acc})->'${key}', '[]'::jsonb) || JSONB_BUILD_ARRAY(${ph}))`;
     }, expr);
   }
 

@@ -1,22 +1,23 @@
 import { describe, expect, it, onTestFinished } from 'bun:test';
 import { probeForeignKeys } from '../test/index.js';
-import { Sqlite3QuerierPool } from './sqliteQuerierPool.js';
+import { raw } from '../util/raw.js';
+import { SqliteQuerierPool } from './sqliteQuerierPool.js';
 
 /**
  * Runs only under `bun test`. The vitest suite never reaches the `bun:sqlite` branch of
- * {@link Sqlite3QuerierPool}, because Node resolves `better-sqlite3` instead, so every assertion
+ * {@link SqliteQuerierPool}, because Node resolves `better-sqlite3` instead, so every assertion
  * about that branch has to live here.
  */
-describe('Sqlite3QuerierPool on bun:sqlite', () => {
+describe('SqliteQuerierPool on bun:sqlite', () => {
   async function open() {
-    const pool = new Sqlite3QuerierPool(':memory:');
+    const pool = new SqliteQuerierPool(':memory:');
     onTestFinished(() => pool.end());
     return pool.getQuerier();
   }
 
   async function seed() {
     const querier = await open();
-    await querier.run('CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, s TEXT)');
+    await querier.run`CREATE TABLE t (id INTEGER PRIMARY KEY AUTOINCREMENT, s TEXT)`;
     return querier;
   }
 
@@ -34,27 +35,27 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
   it('should report inserted ids from a RETURNING statement', async () => {
     const querier = await seed();
 
-    const res = await querier.run("INSERT INTO t (s) VALUES ('a') RETURNING `id` `id`");
+    const res = await querier.run(raw.text("INSERT INTO t (s) VALUES ('a') RETURNING `id` `id`"));
 
     expect(res.changes).toBe(1);
     expect(res.ids).toEqual([1]);
-    expect(res.firstId).toBe(1);
+    expect(res.ids?.[0]).toBe(1);
   });
 
   it('should report changes for a statement without RETURNING', async () => {
     const querier = await seed();
-    await querier.run("INSERT INTO t (s) VALUES ('a')");
+    await querier.run`INSERT INTO t (s) VALUES ('a')`;
 
-    const res = await querier.run("UPDATE t SET s = 'b'");
+    const res = await querier.run`UPDATE t SET s = 'b'`;
 
     expect(res.changes).toBe(1);
   });
 
   it('should bind values and read rows back', async () => {
     const querier = await seed();
-    await querier.run('INSERT INTO t (s) VALUES (?)', ['bound']);
+    await querier.run`INSERT INTO t (s) VALUES (${'bound'})`;
 
-    const rows = await querier.all<{ id: number; s: string }>('SELECT * FROM t WHERE s = ?', ['bound']);
+    const rows = await querier.all<{ id: number; s: string }>`SELECT * FROM t WHERE s = ${'bound'}`;
 
     expect(rows).toEqual([{ id: 1, s: 'bound' }]);
   });
@@ -62,7 +63,7 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
   it('should read an integer past 2^53 exactly', async () => {
     const querier = await open();
 
-    const rows = await querier.all<{ big: unknown }>('SELECT 9007199254740993 AS big');
+    const rows = await querier.all<{ big: unknown }>`SELECT 9007199254740993 AS big`;
 
     expect(rows).toEqual([{ big: '9007199254740993' }]);
   });
@@ -74,11 +75,11 @@ describe('Sqlite3QuerierPool on bun:sqlite', () => {
     onTestFinished(() => source.close());
     source.run('CREATE TABLE t (s TEXT)');
     source.run("INSERT INTO t (s) VALUES ('kept')");
-    const pool = new Sqlite3QuerierPool(Buffer.from(source.serialize()));
+    const pool = new SqliteQuerierPool(Buffer.from(source.serialize()));
     onTestFinished(() => pool.end());
     const querier = await pool.getQuerier();
 
-    const rows = await querier.all('SELECT s FROM t');
+    const rows = await querier.all`SELECT s FROM t`;
 
     expect(rows).toEqual([{ s: 'kept' }]);
   });

@@ -323,7 +323,7 @@ function formatTypeDescription(type: CanonicalType): string {
  * `!`, which an insert leaves out anyway), `| null` where it holds NULL, `readonly` where the database computes it.
  */
 function propertySource(col: ColumnNode, propertyName: string): string {
-  const type = col.type.category === 'json' ? 'Json<unknown>' : canonicalToTypeScript(col.type);
+  const type = col.type.category === 'json' ? 'Json' : canonicalToTypeScript(col.type);
   const written = col.generatedAs === undefined ? '' : 'readonly ';
   if (col.nullable && !col.isPrimaryKey) {
     return `${written}${propertyName}?: ${type} | null`;

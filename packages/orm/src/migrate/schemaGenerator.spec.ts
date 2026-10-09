@@ -2,7 +2,7 @@ import { v7 as uuidv7 } from 'uuid';
 import { afterAll, describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { Entity, Field, getMeta, Id, Index, ManyToOne, removeEntity, Trigger } from '../entity/index.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -141,6 +141,42 @@ describe('SqlSchemaGenerator (Postgres)', () => {
     expect(indexes(new PostgresDialect())).toEqual([
       { name: 'WeightedDoc__title_summary_body_idx', columns: ['title', 'summary', 'body'], type: 'fulltext' },
     ]);
+  });
+
+  /** A plain index declared with its table is built with it: on CockroachDB, a `CREATE INDEX` is a schema change of its own. */
+  describe('a plain index inside CREATE TABLE', () => {
+    @Entity()
+    @Index((doc) => [doc.slug])
+    @Index((doc) => [doc.code], { unique: true })
+    @Index((doc) => [doc.body], { type: 'fulltext' })
+    class InlineDoc {
+      @Id({ type: Number }) id?: number;
+      @Field({ type: String }) slug?: string | null;
+      @Field({ type: String }) code?: string | null;
+      @Field({ type: String }) body?: string | null;
+    }
+    const indexStatements = (dialect: CockroachDialect | MySqlDialect | PostgresDialect) =>
+      new SqlSchemaGenerator(dialect)
+        .generateCreateSchema([InlineDoc])
+        .filter((statement) => /^CREATE (UNIQUE |FULLTEXT )?INDEX/.test(statement));
+
+    it('should declare it among the table definitions where the engine takes one there', () => {
+      const [table] = new SqlSchemaGenerator(new CockroachDialect()).generateCreateSchema([InlineDoc]);
+
+      expect(table).toContain('  INDEX "InlineDoc__slug_idx" ("slug")');
+      expect(indexStatements(new CockroachDialect())).toEqual([
+        `CREATE INDEX "InlineDoc__body_idx" ON "InlineDoc" USING gin (TO_TSVECTOR('simple', COALESCE("body", '')));`,
+        'CREATE UNIQUE INDEX "InlineDoc__code_idx" ON "InlineDoc" ("code");',
+      ]);
+      expect(indexStatements(new MySqlDialect())).toEqual([
+        'CREATE FULLTEXT INDEX `InlineDoc__body_idx` ON `InlineDoc` (`body`);',
+        'CREATE UNIQUE INDEX `InlineDoc__code_idx` ON `InlineDoc` (`code`);',
+      ]);
+    });
+
+    it('should create it on its own where the engine does not', () => {
+      expect(indexStatements(new PostgresDialect())).toHaveLength(3);
+    });
   });
 
   /** InnoDB fills a fulltext index added beside another on a loaded table only once the table is optimized. */
@@ -1455,7 +1491,7 @@ describe('triggers', () => {
 
   /** A table the catalogue says is absent left no function, and CockroachDB refuses one named in a schema not made yet. */
   it('should drop no function for a table the database does not have', () => {
-    expect(generator.generateDropSchema([GenPost], { ifExists: true, existing: new SchemaAST() })).toEqual([
+    expect(generator.generateDropSchema([GenPost], { ifExists: true, present: new Set() })).toEqual([
       'DROP TABLE IF EXISTS "GenPost";',
     ]);
   });

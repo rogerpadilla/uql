@@ -67,7 +67,7 @@ export function inferDialectName(config: SQL.Options): BunSqlDialectName {
     const elsewhere = name && ELSEWHERE.get(name);
     if (elsewhere) {
       throw new UqlUsageError(
-        `uql-orm/bunSql does not drive ${elsewhere}; use the dedicated uql-orm/${elsewhere} pool`,
+        `uql-orm/bun-sql does not drive ${elsewhere}; use the dedicated uql-orm/${elsewhere} pool`,
       );
     }
     const dialect = name && SCHEMES.get(name);
@@ -91,7 +91,7 @@ const SCHEMES: ReadonlyMap<string, BunSqlDialectName> = new Map([
 /**
  * Engines uql drives through another pool. Named rather than left out: Bun's `SQL` falls back to
  * Postgres for any scheme it does not know, so an unlisted `mssql://` would have connected as Postgres
- * and failed on the first statement instead of on the pool. SQLite runs on `Sqlite3QuerierPool`, which
+ * and failed on the first statement instead of on the pool. SQLite runs on `SqliteQuerierPool`, which
  * uses `bun:sqlite` under Bun.
  */
 const ELSEWHERE: ReadonlyMap<string, SqlDialectName> = new Map([

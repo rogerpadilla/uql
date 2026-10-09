@@ -88,6 +88,9 @@ export interface DriverCapabilities {
   readonly nativeArrays: boolean;
 }
 
+/** What a nested transaction asks of its savepoint: to open it, release it as it succeeds, or roll back to it. */
+export type SavepointCommand = 'open' | 'release' | 'rollback';
+
 /** How a dialect reports inserted ids: from the statement per row, or MySQL's first id, the rest inferred. */
 export type InsertIdSource = 'returning' | 'firstId';
 
@@ -126,9 +129,9 @@ export interface DialectFeatures {
   readonly supportsTimestamptz: boolean;
   /**
    * How a string column is sized: always unbounded (`text`, SQLite), bounded where a length is given
-   * (`bounded-text`, the Postgres family), or always bounded, 255 by default (`varchar`).
+   * (`boundedText`, the Postgres family), or always bounded, 255 by default (`varchar`).
    */
-  readonly stringSizing: 'text' | 'bounded-text' | 'varchar';
+  readonly stringSizing: 'text' | 'boundedText' | 'varchar';
   /** Whether the engine has unsigned integers, so `@Field({ unsigned: true })` reaches the column. */
   readonly supportsUnsigned: boolean;
   /**
@@ -182,6 +185,12 @@ export interface SqlDialectFeatures extends DialectFeatures {
    * MySQL's `MATCH` does, which reads only an index over exactly its columns.
    */
   readonly textScoreIndexes: boolean;
+  /**
+   * Whether a JSON column reaches the querier decoded, as the drivers of an engine with a JSON type hand
+   * it, inside a related row's JSON too. Elsewhere it is text, parsed on read; parsing a decoded string
+   * again would read `'123'` as `123`.
+   */
+  readonly jsonArrivesDecoded: boolean;
   /** Whether a multi-row upsert's `RETURNING` lists its rows in payload order; where not, the ids are read back. */
   readonly orderedUpsertReturning: boolean;
   /** Whether a JSON aggregate takes an `ORDER BY` of its own; where not, a relation's rows keep their derived table's order. */
@@ -194,6 +203,12 @@ export interface SqlDialectFeatures extends DialectFeatures {
   readonly serialDeclaresPrimaryKey: boolean;
   /** How the engine spells a trigger. One value rather than a flag each, as {@link rowLocks} is. */
   readonly triggers: TriggerFeatures;
+  /**
+   * What holds a named lock, the one a migration run takes so a second waits for it: a session (Postgres,
+   * MySQL), or a transaction kept open for the run (SQL Server, whose driver keeps a connection only for
+   * one). `false` where there is none: CockroachDB, SQLite, and PGlite, whose queriers share one session.
+   */
+  readonly namedLocks: 'session' | 'transaction' | false;
 }
 
 /**

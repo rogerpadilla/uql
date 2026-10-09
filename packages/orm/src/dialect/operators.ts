@@ -45,9 +45,8 @@ export function groupClauses<E>(key: QueryGroupOp, val: QueryWhereArray<E> | und
 }
 
 /**
- * Whether a `$where` names any rows, as the WHERE it renders would: an `undefined` value, an empty
- * operator map and a group none of whose clauses names one all render nothing, which a write reads as
- * the whole table.
+ * Whether a `$where` names any rows, as the WHERE it renders would: an empty operator map and a group
+ * none of whose clauses names one render nothing, which a write reads as the whole table.
  */
 export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
   return (
@@ -55,7 +54,7 @@ export function namesRows<E>(where: QueryWhere<E> | undefined): boolean {
     someKey(where, (key) =>
       isGroupOp(key)
         ? groupClauses(key, where[key]).some((clause) => clause instanceof QueryRaw || namesRows(clause))
-        : where[key] !== undefined && !(isWhereMap(where[key]) && !hasKeys(where[key])),
+        : !(isWhereMap(where[key]) && !hasKeys(where[key])),
     )
   );
 }

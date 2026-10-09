@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { UqlUsageError } from '../util/uqlError.js';
 import {
   holdsOperator,
   jsonArraySlotArgs,
@@ -31,8 +32,8 @@ describe('jsonPath', () => {
     expect(jsonPath('settings.theme')).toBe("'$.settings.theme'");
   });
 
-  it('should escape a quote in a key so it cannot break out of the literal', () => {
-    expect(jsonPath("it's")).toBe("'$.it''s'");
+  it('should refuse a key that is not an identifier, so none can break out of the literal', () => {
+    expect(() => jsonPath("it's")).toThrow(UqlUsageError);
   });
 
   it('should append an accessor suffix', () => {

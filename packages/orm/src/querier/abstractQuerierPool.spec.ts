@@ -3,6 +3,7 @@ import { getContext, withContext } from '../context/context.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { createMockQuerier, createMockQuerierPool, User } from '../test/index.js';
 import type { Querier, SqlQuerier, UqlContext } from '../type/index.js';
+
 import { AbstractQuerierPool } from './abstractQuerierPool.js';
 import { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
 
@@ -289,8 +290,8 @@ class CountingSqlPool<Q extends SqlQuerier> extends AbstractSqlQuerierPool<Q, Po
 
 it('should delegate all and run to a querier of their own, and release it', async () => {
   const pool = new CountingSqlPool(createSqlStubQuerier);
-  const rows = await pool.all('SELECT 1', []);
-  const res = await pool.run('DELETE FROM x', []);
+  const rows = await pool.all`SELECT 1`;
+  const res = await pool.run`DELETE FROM x`;
   expect(rows).toEqual([{ n: 1 }]);
   expect(res).toEqual({ changes: 1 });
   expect(pool.acquired).toHaveLength(2);
@@ -299,9 +300,15 @@ it('should delegate all and run to a querier of their own, and release it', asyn
   }
 });
 
+it('should take a tagged statement, as a querier does', async () => {
+  const pool = new CountingSqlPool(createSqlStubQuerier);
+  expect(await pool.all`SELECT ${1}`).toEqual([{ n: 1 }]);
+  expect(await pool.run`DELETE FROM x WHERE id = ${1}`).toEqual({ changes: 1 });
+});
+
 it('should acquire a connection per concurrent all()', async () => {
   const pool = new CountingSqlPool(createSqlStubQuerier);
-  await Promise.all([pool.all('SELECT 1'), pool.all('SELECT 2')]);
+  await Promise.all([pool.all`SELECT 1`, pool.all`SELECT 2`]);
   expect(pool.acquired).toHaveLength(2);
 });
 
@@ -323,10 +330,6 @@ it('should release exactly once when a transaction runs inside withQuerier', asy
   });
 
   expect(querier.release).toHaveBeenCalledTimes(1);
-  expect(querier.beginTransaction).toHaveBeenCalledTimes(1);
-  expect(querier.commitTransaction).toHaveBeenCalledTimes(1);
-  // Still reached the connection after the commit, rather than one already back in the pool.
-  expect(querier.count.mock.invocationCallOrder[0]).toBeGreaterThan(
-    querier.commitTransaction.mock.invocationCallOrder[0],
-  );
+  expect(querier.transaction).toHaveBeenCalledTimes(1);
+  expect(querier.count.mock.invocationCallOrder[0]).toBeGreaterThan(querier.insertOne.mock.invocationCallOrder[0]);
 });

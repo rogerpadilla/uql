@@ -59,7 +59,7 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
   }
 
   shouldGetBeginTransactionStatementsWithIsolationLevel() {
-    // MySQL uses 'set-before' strategy - two separate statements
+    // MySQL uses 'setBefore' strategy - two separate statements
     expect(this.dialect.getBeginTransactionStatements('read committed')).toEqual([
       'SET TRANSACTION ISOLATION LEVEL READ COMMITTED',
       'START TRANSACTION',
@@ -186,22 +186,6 @@ export class MySqlDialectSpec extends MySqlFamilySpec {
       values: ['"new-tag"', 123, '1'],
     },
   };
-
-  shouldEscapeSingleQuotesInJsonKeys() {
-    const { sql } = this.exec((ctx) =>
-      this.dialect.update(
-        ctx,
-        Company,
-        { $where: { id: '1' } },
-        {
-          // @ts-expect-error: a key `CompanyKind` does not declare, spelt with a quote
-          kind: { $unset: ["it's"] },
-          updatedAt: 123,
-        },
-      ),
-    );
-    expect(sql).toBe("UPDATE `Company` SET `kind` = JSON_REMOVE(`kind`, '$.it''s'), `updatedAt` = ? WHERE `id` = ?");
-  }
 
   /** Each pull subquery reads the column, so its value binds exactly once, in SQL order. */
   shouldBindTwoJsonPullKeysInOrder() {

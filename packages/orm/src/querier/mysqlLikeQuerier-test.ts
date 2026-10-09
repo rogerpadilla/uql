@@ -2,16 +2,16 @@ import { expect } from 'vitest';
 import { getMeta } from '../entity/index.js';
 import { Coupon, MeasureUnit, MeasureUnitCategory } from '../test/index.js';
 import type { Type } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { VectorQuerierIt } from './vectorQuerier-test.js';
 
 /**
  * The MySQL family, MariaDB among them, on their own drivers and Bun's: `ANALYZE TABLE` statistics, a
  * `group_concat_max_len` a read lifts, a stream drained when left, and a session in UTC.
- * {@link MySqlQuerierIt} adds what MySQL alone has.
  */
 export class MySqlLikeQuerierIt extends VectorQuerierIt {
   protected override async expectEstimatedCount(entity: Type<object>, rows: number) {
-    await this.querier.run(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`);
+    await this.querier.run(raw.text(`ANALYZE TABLE ${this.querier.dialect.escapedTableName(getMeta(entity))}`));
     expect(await this.querier.estimatedCount(entity)).toBe(rows);
   }
 
@@ -21,7 +21,7 @@ export class MySqlLikeQuerierIt extends VectorQuerierIt {
    * would cut every array past four bytes. MariaDB's `JSON_ARRAYAGG` is cut at the same length.
    */
   async shouldReadARelationPastTheConcatLimit() {
-    await this.querier.run('SET SESSION group_concat_max_len = 4');
+    await this.querier.run`SET SESSION group_concat_max_len = 4`;
     try {
       const categoryId = await this.querier.insertOne(MeasureUnitCategory, { name: 'units' });
       await this.querier.insertMany(MeasureUnit, [
@@ -46,7 +46,7 @@ export class MySqlLikeQuerierIt extends VectorQuerierIt {
       expect(category.measureUnits).toEqual(names);
       expect(unit).toMatchObject({ category: { measureUnits: names } });
     } finally {
-      await this.querier.run('SET SESSION group_concat_max_len = DEFAULT');
+      await this.querier.run`SET SESSION group_concat_max_len = DEFAULT`;
     }
   }
 
@@ -67,14 +67,7 @@ export class MySqlLikeQuerierIt extends VectorQuerierIt {
 
   /** A session in UTC, as a `DATETIME` is bound and read, so `NOW()` stamps the same instant a bound date names. */
   async shouldRunTheSessionInUtc() {
-    const [row] = await this.querier.all<{ tz: string }>('SELECT @@session.time_zone AS tz');
+    const [row] = await this.querier.all<{ tz: string }>`SELECT @@session.time_zone AS tz`;
     expect(row?.tz).toBe('+00:00');
-  }
-}
-
-/** MySQL proper: its `affectedRows` tells an upsert's insert from its update, which it counts twice. */
-export class MySqlQuerierIt extends MySqlLikeQuerierIt {
-  protected override upsertReport(inserted: number, updated: number) {
-    return { changes: inserted + 2 * updated, created: updated === 0 };
   }
 }

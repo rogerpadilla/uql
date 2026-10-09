@@ -18,6 +18,7 @@
     "ts": "tsc --noEmit",
     "ts.rename": "bun scripts/type-rename.ts",
     "ts.perf": "bun scripts/type-perf.ts",
+    "ts.floor": "bun scripts/type-floor.ts",
     "build": "bun run --filter '*' build",
     "lint": "oxlint && oxfmt --check",
     "lint.fix": "oxlint --fix && oxfmt",
@@ -41,7 +42,7 @@
     "supertest": "^7.3.1",
     "typescript": "^7.0.2",
     "uuid": "^14.0.2",
-    "vite": "^8.3.3",
+    "vite": "^8.3.4",
     "vitest": "^5.0.3"
   }
 }

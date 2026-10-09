@@ -47,13 +47,6 @@ export function kindOf(value: unknown): string {
 }
 
 /**
- * @deprecated since 0.77.1 - use {@link UqlUsageError}, which every misuse throws, lock or not. The
- * same class under both names, so an existing `instanceof` keeps working.
- */
-export const UqlLockUsageError = UqlUsageError;
-export type UqlLockUsageError = UqlUsageError;
-
-/**
  * Thrown when an update's `@Field({ version })` no longer matches the row: another writer moved it on,
  * or it is gone. `expected` is what the payload carried, `actual` what the row holds now, `undefined`
  * where there is no row left.

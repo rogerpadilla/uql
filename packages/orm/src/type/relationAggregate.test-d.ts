@@ -4,9 +4,6 @@ import { Entity, Field, Id, ManyToOne, OneToMany } from '../entity/index.js';
  * What a relation aggregate checks at compile time: the relation it reads, the target's own fields in
  * its filter and its picked column, and the property, which has to hold exactly what the aggregate
  * reads - `max()` is `null` where the parent has no rows, and a `count` never is.
- *
- * `stored: true` is the shape [triggers](../../../../architecture/triggers.md) settled, so it compiles
- * here; registering one is refused until the triggers that maintain it exist.
  */
 @Entity()
 class Ticket {
@@ -28,10 +25,10 @@ class Board {
   @Field({ computed: (board) => board.tickets.count() })
   readonly ticketCount?: number;
 
-  @Field({ computed: (board) => board.tickets.count({ $where: { open: true } }), stored: true })
+  @Field({ computed: (board) => board.tickets.count({ $where: { open: true } }) })
   readonly openCount?: number;
 
-  @Field({ computed: (board) => board.tickets.sum((ticket) => ticket.points), stored: true })
+  @Field({ computed: (board) => board.tickets.sum((ticket) => ticket.points) })
   readonly totalPoints?: number;
 
   @Field({ computed: (board) => board.tickets.max((ticket) => ticket.points) })
@@ -68,7 +65,7 @@ class Board {
   @Field({ computed: (board) => board.tickets.count() })
   readonly countWithNull?: number | null;
 
-  /** A page needs the order that picks it, and capping the rows is what makes the aggregate unstorable. */
+  /** A page of a value aggregate needs the order that picks it. */
   @Field({ computed: (board) => board.tickets.sum((t) => t.points, { $sort: { points: -1 }, $limit: 5 }) })
   readonly topPoints?: number;
 
@@ -83,16 +80,9 @@ class Board {
   @Field({ computed: (board) => board.tickets.count({ $sort: { points: -1 }, $limit: 5 }) })
   readonly sortedCount?: number;
 
-  // @ts-expect-error - a capped total is not maintained by any row change
-  @Field({
-    computed: (board) => board.tickets.sum((t) => t.points, { $sort: { points: -1 }, $limit: 5 }),
-    stored: true,
-  })
-  readonly storedTop?: number;
-
-  // @ts-expect-error - a rescan on delete is a different cost model, so a max is never stored
-  @Field({ computed: (board) => board.tickets.max((ticket) => ticket.points), stored: true })
-  readonly storedMax?: number | null;
+  // @ts-expect-error - a relation aggregate is read on each query, never stored
+  @Field({ computed: (board) => board.tickets.count(), stored: true })
+  readonly storedCount?: number;
 
   // @ts-expect-error - an event list stamps a value; an aggregate is kept by the rows it reads
   @Field({ computed: (board) => board.tickets.count(), stored: ['update'] })

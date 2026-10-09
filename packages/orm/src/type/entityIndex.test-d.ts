@@ -157,5 +157,5 @@ export class JsonIndexed {
   @Field({ type: String }) title?: string | null;
   @Field({ type: 'json' }) kind?: Json<{ theme: { color: string }; rating: number; ids: number[] }> | null;
   @Field({ type: 'json' }) tags?: Json<string[]> | null;
-  @Field({ type: 'json' }) loose?: Json<unknown> | null;
+  @Field({ type: 'json' }) loose?: Json | null;
 }

@@ -7,7 +7,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { HttpQuerier } from '../browser/querier/httpQuerier.js';
 import { Entity, Field, Id } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
-import { Sqlite3QuerierPool } from '../sqlite/sqliteQuerierPool.js';
+import { SqliteQuerierPool } from '../sqlite/sqliteQuerierPool.js';
 import { createFetchHandler } from './fetchHandler.js';
 
 @Entity()
@@ -24,7 +24,7 @@ class Widget {
 }
 
 describe('the browser client against the fetch handler', () => {
-  const pool = new Sqlite3QuerierPool(':memory:');
+  const pool = new SqliteQuerierPool(':memory:');
   let server: Server;
   let querier: HttpQuerier;
 

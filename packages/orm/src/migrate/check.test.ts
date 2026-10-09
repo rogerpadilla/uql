@@ -5,7 +5,7 @@
 import { describe, expect, it, onTestFinished, vi } from 'vitest';
 import { defineField, Entity, Field, getMeta, Id } from '../entity/index.js';
 import type { EnumValues } from '../schema/types.js';
-import { assertDefined, migrationsDir } from '../test/index.js';
+import { assertDefined, linkUqlOrmSource, migrationsDir } from '../test/index.js';
 import { dropTables, sqlPools, syncedPool } from '../test/sqlPools.js';
 import { raw } from '../util/raw.js';
 import { introspectorFor } from './introspection/registry.js';
@@ -142,10 +142,10 @@ describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { feat
     const before = await installed();
     redeclare('status', { enum: ['draft', 'paid', 'void'] });
 
-    await migrator.generateFromEntities('widen_status');
-    expect(await migrator.up()).toMatchObject([{ success: true }]);
+    await linkUqlOrmSource(await migrator.generateFromEntities('widen_status'));
+    expect(await migrator.up()).toMatchObject([{ direction: 'up' }]);
     expect(await migrator.generateFromEntities('again')).toBe('');
-    expect(await migrator.down()).toMatchObject([{ success: true }]);
+    expect(await migrator.down()).toMatchObject([{ direction: 'down' }]);
 
     expect(await installed()).toEqual(before);
     await expect(insert({ status: 'void' })).rejects.toThrow();
@@ -156,11 +156,11 @@ describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { feat
     const migrator = new Migrator(pool(), { entities: [CkBill], migrationsPath: await migrationsDir() });
     redeclare('status', { name: 'state' });
 
-    await migrator.generateFromEntities('rename_status');
-    expect(await migrator.up()).toMatchObject([{ success: true }]);
+    await linkUqlOrmSource(await migrator.generateFromEntities('rename_status'));
+    expect(await migrator.up()).toMatchObject([{ direction: 'up' }]);
     await insert({ status: 'draft' });
     await expect(insert({ status: 'void' })).rejects.toThrow();
-    expect(await migrator.down()).toMatchObject([{ success: true }]);
+    expect(await migrator.down()).toMatchObject([{ direction: 'down' }]);
   });
 
   // SQLite adds the declared check by rebuilding the table, which has to carry this one along.
@@ -168,7 +168,9 @@ describe.each(sqlPools('test_check'))('a check on %s', (_engine, connect, { feat
     await dropTables(pool(), 'CkHand');
     const id = (name: string) => pool().dialect.escapeId(name);
     await pool().run(
-      `CREATE TABLE ${id('CkHand')} (${id('id')} BIGINT PRIMARY KEY, ${id('n')} BIGINT, CONSTRAINT hand_ck CHECK (n >= 0))`,
+      raw.text(
+        `CREATE TABLE ${id('CkHand')} (${id('id')} BIGINT PRIMARY KEY, ${id('n')} BIGINT, CONSTRAINT hand_ck CHECK (n >= 0))`,
+      ),
     );
     const migrator = new Migrator(pool(), { entities: [CkHand] });
     const warn = vi.spyOn(migrator.logger, 'logWarn');

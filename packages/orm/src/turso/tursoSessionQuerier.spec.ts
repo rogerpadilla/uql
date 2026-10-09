@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest';
+import { raw } from '../util/raw.js';
 import { TursoDialect } from './tursoDialect.js';
 import { type TursoCursorEntry, type TursoSession, TursoSessionQuerier } from './tursoSessionQuerier.js';
 
@@ -21,7 +22,7 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: ['id'], rows: [[1n]], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    await querier.all('SELECT `id` FROM `t` WHERE `id` = ?', [1]);
+    await querier.all`SELECT \`id\` FROM \`t\` WHERE \`id\` = ${1}`;
 
     expect(session.execute).toHaveBeenCalledWith('SELECT `id` FROM `t` WHERE `id` = ?', [1], true);
   });
@@ -30,7 +31,7 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: ['id', 'big'], rows: [[1n, 9007199254740993n]], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const rows = await querier.all('SELECT `id`, `big` FROM `t`');
+    const rows = await querier.all(raw.text('SELECT `id`, `big` FROM `t`'));
 
     expect(rows).toEqual([{ id: 1, big: '9007199254740993' }]);
   });
@@ -39,18 +40,18 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: ['id'], rows: [[7n]], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const res = await querier.run('INSERT INTO `t` DEFAULT VALUES RETURNING `id` `id`');
+    const res = await querier.run(raw.text('INSERT INTO `t` DEFAULT VALUES RETURNING `id` `id`'));
 
-    expect(res).toEqual({ changes: 1, ids: [7], firstId: 7 });
+    expect(res).toEqual({ changes: 1, ids: [7] });
   });
 
   it('should count any other statement by the rows the server says it affected', async () => {
     const session = buildSession({ columns: [], rows: [], rowsAffected: 3 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    const res = await querier.run('UPDATE `t` SET `a` = 1');
+    const res = await querier.run(raw.text('UPDATE `t` SET `a` = 1'));
 
-    expect(res).toEqual({ changes: 3, ids: [], firstId: undefined });
+    expect(res).toEqual({ changes: 3, ids: [] });
   });
 
   /** The rows arrive as the server steps the statement, never held in memory together. */
@@ -108,9 +109,9 @@ describe('TursoSessionQuerier', () => {
     const session = buildSession({ columns: [], rows: [], rowsAffected: 0 });
     const querier = new TursoSessionQuerier(session, new TursoDialect());
 
-    await querier.beginTransaction();
-    await querier.run('UPDATE `t` SET `a` = 1');
-    await querier.commitTransaction();
+    await querier.transaction(async () => {
+      await querier.run(raw.text('UPDATE `t` SET `a` = 1'));
+    });
 
     expect(session.execute.mock.calls.map(([sql]) => sql)).toEqual([
       'BEGIN TRANSACTION',

@@ -5,13 +5,14 @@ import { afterAll, describe, expect, it, onTestFinished } from 'vitest';
 import { CrdbQuerierPool } from '../../cockroachdb/crdbQuerierPool.js';
 import { Entity, Field, Id, Index } from '../../entity/index.js';
 import { LibsqlQuerierPool } from '../../libsql/libsqlQuerierPool.js';
-import { MariadbQuerierPool } from '../../maria/mariadbQuerierPool.js';
+import { MariadbQuerierPool } from '../../mariadb/mariadbQuerierPool.js';
 import { PgQuerierPool } from '../../postgres/pgQuerierPool.js';
 import { buildSchemaAST } from '../../schema/schemaASTBuilder.js';
 import { driftOf } from '../../test/drift.js';
 import { cockroachConnection, mariadbConnection, postgresConnection, provisioningTimeout } from '../../test/index.js';
 import { dropTables } from '../../test/sqlPools.js';
 import type { SqlQuerierPool, Type, VectorDistance, VectorIndexType } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import { Migrator } from '../migrator.js';
 import { detectDrift } from './driftDetector.js';
 
@@ -136,8 +137,8 @@ describe('libSQL vector index drift', () => {
   it('should report a vector index declared over a plain one', async () => {
     const pool = libsqlPool('plain');
     onTestFinished(() => pool.end());
-    await pool.run(`CREATE TABLE ${TABLE} (id INTEGER PRIMARY KEY, vec TEXT)`);
-    await pool.run(`CREATE INDEX ix_drift_vec ON ${TABLE} (vec)`);
+    await pool.run(raw.text(`CREATE TABLE ${TABLE} (id INTEGER PRIMARY KEY, vec TEXT)`));
+    await pool.run(raw.text(`CREATE INDEX ix_drift_vec ON ${TABLE} (vec)`));
 
     expect(await driftOf(pool, cosine, TABLE)).toEqual([
       { type: 'type_mismatch', column: 'vec', expected: 'F32_BLOB(2)', actual: 'TEXT' },

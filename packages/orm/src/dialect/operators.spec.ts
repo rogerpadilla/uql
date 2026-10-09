@@ -13,10 +13,8 @@ class Row {
 it.each<{ where: QueryWhere<Row> | undefined; names: boolean }>([
   { where: undefined, names: false },
   { where: {}, names: false },
-  { where: { id: undefined }, names: false },
   { where: { id: {} }, names: false },
   { where: { $and: [] }, names: false },
-  { where: { $or: [{ id: undefined }] }, names: false },
   { where: { $not: [{}] }, names: false },
   { where: { $and: [{}, { $or: [] }] }, names: false },
   { where: { id: null }, names: true },

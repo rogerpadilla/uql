@@ -2,6 +2,7 @@ import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { Entity, Field, Id, ManyToMany } from '../entity/index.js';
 import { mysqlConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
+import { raw } from '../util/raw.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
 /** Keyed by its column's own default, for which a MySQL insert reports no id. */
@@ -36,7 +37,7 @@ describe('a many-to-many on rows the database keys', () => {
   beforeAll(async () => {
     await dropTables(pool, ...dependentsFirst);
     for (const [table, columns] of Object.entries(tables)) {
-      await pool.run(`CREATE TABLE \`${table}\` (${columns})`);
+      await pool.run(raw.text(`CREATE TABLE \`${table}\` (${columns})`));
     }
   }, provisioningTimeout);
 
@@ -48,7 +49,7 @@ describe('a many-to-many on rows the database keys', () => {
   /** A link needs the target's id, which a row the database keyed reports none of on MySQL. */
   it('should refuse to link rows whose ids the insert could not report', async () => {
     await expect(pool.insertOne(LabelPost, { labels: [{ name: 'x' }] })).rejects.toThrow(
-      "'LinkedLabel' rows saved through 'LabelLink' reported no id, so they cannot be linked",
+      "'LinkedLabel' rows saved through 'LabelPost.labels' reported no id, so they cannot be pointed at",
     );
     expect(await pool.count(LabelLink, {})).toBe(0);
   });

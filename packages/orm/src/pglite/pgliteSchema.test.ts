@@ -7,6 +7,7 @@ import { Migrator } from '../migrate/migrator.js';
 import { added } from '../migrate/schemaChange.js';
 import { SqlSchemaGenerator } from '../migrate/schemaGenerator.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
+import { raw } from '../util/raw.js';
 import type { PgliteQuerier } from './pgliteQuerier.js';
 import { PgliteQuerierPool } from './pgliteQuerierPool.js';
 
@@ -80,7 +81,7 @@ describe('schema against postgres', () => {
     // `CREATE TABLE`s and the derived index and constraint names are exactly what this feature
     // emits, and a name that escapes into two identifiers only fails against a real server.
     for (const sql of new SqlSchemaGenerator(pool.dialect).generateCreateSchema([Customer, Order])) {
-      await querier.run(sql);
+      await querier.run(raw.text(sql));
     }
     await querier.insertOne(Customer, { name: 'acme' });
     await querier.insertOne(Order, { total: 42, customerId: 1 });
@@ -124,9 +125,9 @@ describe('schema against postgres', () => {
       // Each tenant's DDL comes from a generator scoped to that schema, the same way its pool is.
       const scopedDialect = new PostgresDialect({ schema: other });
       for (const sql of new SqlSchemaGenerator(scopedDialect).generateCreateSchema([Ledger])) {
-        await tenant.run(sql);
+        await tenant.run(raw.text(sql));
       }
-      await tenant.run(`INSERT INTO ${other}."Ledger" (total) VALUES (${total})`);
+      await tenant.run`INSERT INTO ${raw.text(other)}."Ledger" (total) VALUES (${total})`;
     }
 
     await expect(tenant.findMany(Ledger, { $select: { total: true } })).resolves.toEqual([{ total: expected }]);
@@ -145,7 +146,7 @@ describe('schema against postgres', () => {
       driftPool = new PgliteQuerierPool('memory://');
       const querier = await driftPool.getQuerier();
       for (const sql of new SqlSchemaGenerator(driftPool.dialect).generateCreateSchema([Customer])) {
-        await querier.run(sql);
+        await querier.run(raw.text(sql));
       }
       await querier.release();
     });

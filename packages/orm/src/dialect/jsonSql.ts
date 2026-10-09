@@ -1,16 +1,14 @@
 import type { FieldOptions, FieldType } from '../type/index.js';
 import { isOperatorMap } from '../util/dialect.util.js';
-import { columnFamily } from '../util/field.util.js';
+import { columnFamily, jsonPathKeys } from '../util/field.util.js';
 import { isOperatorKey, someKey } from '../util/object.util.js';
-import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 
 /**
- * A `'$.a.b'` JSON path literal, each dot-separated segment escaped, and `'$'` for an empty path, the
- * document itself. `suffix` appends an accessor such as `[#]` or `[*]`. Shared across dialects
- * unchanged: no dialect escapes a JSON path key differently from an ANSI string literal.
+ * A `'$.a.b'` JSON path literal, and `'$'` for an empty path, the document itself. `suffix` appends an
+ * accessor such as `[#]` or `[*]`.
  */
 export function jsonPath(path: string, suffix = ''): string {
-  const segments = path && `.${path.split('.').map(escapeSingleQuotes).join('.')}`;
+  const segments = path && `.${jsonPathKeys(path).join('.')}`;
   return `'$${segments}${suffix}'`;
 }
 

@@ -6,6 +6,7 @@ import { driftOf } from '../test/drift.js';
 import { mysqlConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
 import type { Json, QueryWhere } from '../type/index.js';
+import { raw } from '../util/raw.js';
 import { MySql2QuerierPool } from './mysql2QuerierPool.js';
 
 const TABLE = 'mysql_json_array_index';
@@ -38,7 +39,7 @@ describe('MySQL JSON array index', () => {
       JsonArrayIndexed,
       Array.from({ length: ROWS }, (_, n) => ({ tags: [`t${n}`, 'everyrow'] })),
     );
-    await pool.run(`ANALYZE TABLE ${TABLE}`);
+    await pool.run(raw.text(`ANALYZE TABLE ${TABLE}`));
   }, provisioningTimeout);
 
   afterAll(async () => {

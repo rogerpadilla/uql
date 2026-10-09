@@ -23,6 +23,11 @@ export class PgliteQuerier extends AbstractSqlQuerier {
     super(dialect, extra);
   }
 
+  /** Every querier of the pool is this one handle's session, so they share its transaction. */
+  protected override get connection(): object {
+    return this.db;
+  }
+
   override async internalAll<T>(query: string, values?: unknown[]) {
     const res = await this.db.query<T>(query, values);
     return res.rows;

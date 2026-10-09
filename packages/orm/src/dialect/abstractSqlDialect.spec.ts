@@ -185,10 +185,10 @@ describe('AbstractSqlDialect', () => {
     );
   });
 
-  it('should read an undefined group operator as no condition at all', () => {
-    const ctx = dialect.createContext();
-    dialect.where(ctx, Company, { $and: undefined });
-    expect(ctx.sql).toBe('');
+  it('should refuse an undefined group operator, which would otherwise filter by nothing', () => {
+    expect(() => dialect.where(dialect.createContext(), Company, { $and: undefined })).toThrow(
+      "holds undefined at '$and'",
+    );
   });
 
   it('should reject a $sort by relation that is not a map of its fields', () => {
@@ -199,14 +199,14 @@ describe('AbstractSqlDialect', () => {
     );
   });
 
-  it('should emit no HAVING when every condition is undefined', () => {
-    const ctx = dialect.createContext();
-    dialect.aggregate(ctx, User, {
-      $group: { name: true },
-      $select: { n: { $count: '*' } },
-      $having: { n: undefined },
-    });
-    expect(ctx.sql).toBe('SELECT `name`, COUNT(*) `n` FROM `User` GROUP BY `name`');
+  it('should refuse an undefined HAVING condition, which would otherwise filter by nothing', () => {
+    expect(() =>
+      dialect.aggregate(dialect.createContext(), User, {
+        $group: { name: true },
+        $select: { n: { $count: '*' } },
+        $having: { n: undefined },
+      }),
+    ).toThrow("$having holds undefined at 'n'");
   });
 
   it('should hydrate an aggregate as its field does, and a count as a number', () => {
@@ -345,7 +345,31 @@ describe('AbstractSqlDialect', () => {
     });
   });
 
+  describe('raw.join', () => {
+    it('should join fragments with a separator, each binding its own values', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`WHERE ${raw.join([raw`a = ${1}`, raw`b = ${2}`], ' AND ')}` });
+      expect(ctx.sql).toBe('WHERE a = ? AND b = ?');
+      expect(ctx.values).toEqual([1, 2]);
+    });
+
+    it('should separate with a comma by default, and render nothing for no fragment', () => {
+      const ctx = dialect.createContext();
+      dialect.getRawValue(ctx, { value: raw`(${raw.join([raw`${1}`, raw`${2}`])})${raw.join([])}` });
+      expect(ctx.sql).toBe('(?, ?)');
+      expect(ctx.values).toEqual([1, 2]);
+    });
+  });
+
   describe('raw() as a tagged template', () => {
+    it('should refuse an interpolated undefined, which would bind nothing', () => {
+      // As plain JavaScript calls it: the types refuse an undefined before it gets here.
+      const strings = Object.assign(['id = ', ''], { raw: ['id = ', ''] });
+      expect(() => Reflect.apply(raw, undefined, [strings, undefined])).toThrow(
+        'a raw template interpolated undefined',
+      );
+    });
+
     it('should bind an interpolated value instead of inlining it', () => {
       const ctx = dialect.createContext();
       dialect.where(ctx, Company, {

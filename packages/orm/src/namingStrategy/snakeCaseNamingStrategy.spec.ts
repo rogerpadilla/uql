@@ -11,8 +11,4 @@ describe('SnakeCaseNamingStrategy', () => {
   it('should name a column in snake_case', () => {
     expect(strategy.columnName('firstName')).toBe('first_name');
   });
-
-  it('should name a join table in snake_case after both sides', () => {
-    expect(strategy.joinTableName('User', 'Role')).toBe('User_Role');
-  });
 });

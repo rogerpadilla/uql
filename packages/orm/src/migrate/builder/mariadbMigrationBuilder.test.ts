@@ -1,4 +1,4 @@
-import { MariadbQuerierPool } from '../../maria/mariadbQuerierPool.js';
+import { MariadbQuerierPool } from '../../mariadb/mariadbQuerierPool.js';
 import { createSpec, mariadbConnection } from '../../test/index.js';
 import { AlterCapableMigrationBuilderIt } from './abstractMigrationBuilder-test.js';
 

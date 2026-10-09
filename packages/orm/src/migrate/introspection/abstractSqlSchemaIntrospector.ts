@@ -12,12 +12,14 @@ import type {
   IndexSchema,
   PrimaryKeySchema,
   QuerierPool,
+  QueryRaw,
   RawRow,
   SchemaIntrospector,
   SqlQuerier,
   StoredDefinition,
   TableSchema,
 } from '../../type/index.js';
+import { raw } from '../../util/raw.js';
 import { isOwnedName } from '../../util/sql.util.js';
 import { withSqlQuerierForMigrations } from '../acquireQuerierForMigrations.js';
 import { knownDefault } from '../ddl/defaultSql.js';
@@ -27,7 +29,7 @@ import { renamedTable, tableSchemasToAST } from './tableSchemaAST.js';
  * Reads the rows of one statement while introspecting a table, an identical statement sent once: SQLite's
  * `table_info` is both the column list and the key, and on D1 and Turso every PRAGMA is a round trip.
  */
-export type TableRowReader = <T extends RawRow>(sql: string, params?: unknown[]) => Promise<T[]>;
+export type TableRowReader = <T extends RawRow>(sql: QueryRaw) => Promise<T[]>;
 
 /** A column as its engine's catalogue reads it; the key and the indexes say which it belongs to. */
 export type ReadColumn = Except<ColumnSchema, 'isPrimaryKey' | 'isUnique'>;
@@ -61,20 +63,16 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
     this.dialect = pool.dialect as AbstractSqlDialect;
   }
 
-  /**
-   * The schema every catalogue query filters on, as SQL: the one that was asked for, as the engine's
-   * own literal, or its expression for the connection's default. A literal rather than a bind
-   * parameter because these queries are assembled as text and several use it more than once.
-   */
-  protected get schemaExpr(): string {
-    return this.schema === undefined ? this.defaultSchemaExpr : this.dialect.escape(this.schema);
+  /** The schema every catalogue query filters on: the one that was asked for, bound, or the connection's default. */
+  protected get schemaExpr(): QueryRaw {
+    return this.schema === undefined ? this.defaultSchemaExpr : raw`${this.schema}`;
   }
 
   /**
    * How this engine names the connection's current schema (Postgres) or database (MySQL). Empty on
    * an engine with no schemas, whose catalogue queries never reference one.
    */
-  protected readonly defaultSchemaExpr: string = '';
+  protected readonly defaultSchemaExpr: QueryRaw = raw``;
 
   /**
    * The database as a {@link SchemaAST}, or just the tables named. A name nothing matches is left out
@@ -150,14 +148,14 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
 
   /** Whether the base table exists: its query answers a row for it, none for a view or nothing. */
   protected async tableExistsInternal(read: TableRowReader, tableName: string): Promise<boolean> {
-    return (await read(this.tableExistsQuery(), [tableName])).length > 0;
+    return (await read(this.tableExistsQuery(tableName))).length > 0;
   }
 
   /** SQL listing the base tables' names, as `table_name`. */
-  protected abstract getTableNamesQuery(): string;
+  protected abstract getTableNamesQuery(): QueryRaw;
 
-  /** SQL answering a row where the base table its one parameter names exists. */
-  protected abstract tableExistsQuery(): string;
+  /** SQL answering a row where the base table named exists. */
+  protected abstract tableExistsQuery(tableName: string): QueryRaw;
 
   /** The table's columns, in their order. */
   protected abstract getColumns(read: TableRowReader, tableName: string): Promise<ReadColumn[]>;
@@ -179,8 +177,7 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
    */
   protected async getTriggers(read: TableRowReader, tableName: string): Promise<TriggerSchema[]> {
     const rows = await read<{ name: string; definition: string | null; requires?: string | null }>(
-      this.triggersQuery(),
-      [tableName],
+      this.triggersQuery(tableName),
     );
     return rows.flatMap(({ name, requires, definition }) =>
       isOwnedName(name) ? [{ name, statements: [requires, definition].filter((sql) => typeof sql === 'string') }] : [],
@@ -188,11 +185,11 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
   }
 
   /**
-   * SQL listing the triggers on the table named by its single parameter: each one's `name`, its `definition`
+   * SQL listing the triggers on the table named: each one's `name`, its `definition`
    * as the engine reprints it, and what it `requires` to be recreated first. It reads what is installed, not
    * what uql wrote, which is exactly what a rollback restores.
    */
-  protected abstract triggersQuery(): string;
+  protected abstract triggersQuery(tableName: string): QueryRaw;
 
   /** See {@link TableSchema.definition}: none, but where the engine keeps the statements themselves. */
   protected async getDefinition(_read: TableRowReader, _tableName: string): Promise<StoredDefinition[] | undefined> {
@@ -203,12 +200,8 @@ export abstract class AbstractSqlSchemaIntrospector implements SchemaIntrospecto
    * The key `sql` lists a row of for each column, in key order: its `column_name`, and the `constraint_name`
    * where the engine names the key's constraint. Only a `DROP` needs that name, and only the reported one will do.
    */
-  protected async readPrimaryKey(
-    read: TableRowReader,
-    sql: string,
-    tableName: string,
-  ): Promise<PrimaryKeySchema | undefined> {
-    const rows = await read<{ column_name: string; constraint_name?: string | null }>(sql, [tableName]);
+  protected async readPrimaryKey(read: TableRowReader, sql: QueryRaw): Promise<PrimaryKeySchema | undefined> {
+    const rows = await read<{ column_name: string; constraint_name?: string | null }>(sql);
     return rows.length
       ? { columns: rows.map((row) => row.column_name), name: rows[0].constraint_name ?? undefined }
       : undefined;
@@ -264,12 +257,13 @@ function uniqueColumns(indexes: readonly IndexSchema[]): Set<string> {
 function createTableRowReader(querier: SqlQuerier): TableRowReader {
   const sent = new Map<string, Promise<RawRow[]>>();
 
-  return <T extends RawRow>(sql: string, params?: unknown[]): Promise<T[]> => {
-    const key = params?.length ? `${sql}\u0000${JSON.stringify(params)}` : sql;
+  return <T extends RawRow>(sql: QueryRaw): Promise<T[]> => {
+    const ctx = querier.dialect.createContext();
+    querier.dialect.getRawValue(ctx, { value: sql });
+    const key = `${ctx.sql}\u0000${JSON.stringify(ctx.values)}`;
     let rows = sent.get(key);
     if (!rows) {
-      // PRAGMA statements take no parameters at all, so they are sent as a bare statement.
-      rows = params?.length ? querier.all<RawRow>(sql, params) : querier.all<RawRow>(sql);
+      rows = querier.all<RawRow>(sql);
       sent.set(key, rows);
     }
     return rows as Promise<T[]>;

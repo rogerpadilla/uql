@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { Entity, Field, Id } from '../entity/index.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';

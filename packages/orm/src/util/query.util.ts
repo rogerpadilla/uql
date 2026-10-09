@@ -12,7 +12,7 @@ import type {
   QueryWhere,
   QueryWhereArray,
 } from '../type/index.js';
-import { entityName, isScalarId, isWhereMap } from './object.util.js';
+import { entityName, isRecord, isScalarId, isWhereMap } from './object.util.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
@@ -85,6 +85,44 @@ export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
   if (!isWhereMap(where)) {
     throw new UqlUsageError(`$where on '${entityName(meta)}' must be a map of conditions, such as { id: 1 }`);
   }
+}
+
+/**
+ * Throws on an `undefined` anywhere in a filter map (`$where`, `$having`), which would otherwise render
+ * as no condition at all: `{ email: maybeEmail }` reading any row. `what` names the map in the error.
+ */
+export function assertNoUndefined(map: object, what: string): void {
+  const path = undefinedPath(map, []);
+  if (path) {
+    throw new UqlUsageError(
+      `${what} holds undefined at '${path.join('.')}': leave the key out not to filter by it, or name null`,
+    );
+  }
+}
+
+/** The path to the first `undefined` in a plain object or array, read depth first. */
+function undefinedPath(value: unknown, path: readonly string[]): readonly string[] | undefined {
+  if (value === undefined) {
+    return path;
+  }
+  if (!Array.isArray(value) && !isPlainObject(value)) {
+    return undefined;
+  }
+  for (const [key, item] of Object.entries(value)) {
+    const found = undefinedPath(item, [...path, key]);
+    if (found) {
+      return found;
+    }
+  }
+  return undefined;
+}
+
+function isPlainObject(value: unknown): value is object {
+  if (!isRecord(value)) {
+    return false;
+  }
+  const proto: unknown = Object.getPrototypeOf(value);
+  return proto === Object.prototype || proto === null;
 }
 
 /** A parsed `$sort` direction: whether it is descending, and where it puts nulls if it says. */

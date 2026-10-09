@@ -4,6 +4,7 @@ import { Migrator } from '../migrate/migrator.js';
 import { queryPlanOf } from '../querier/jsonPathIndex-test.js';
 import { postgresConnection, provisioningTimeout } from '../test/index.js';
 import { dropTables } from '../test/sqlPools.js';
+import { raw } from '../util/raw.js';
 import { PgQuerierPool } from './pgQuerierPool.js';
 
 const TABLE = 'pg_text_search_index';
@@ -34,7 +35,7 @@ describe('PostgreSQL text search index', () => {
       SearchableDoc,
       Array.from({ length: ROWS }, (_, n) => ({ body: `row ${n} ${n % 500 === 0 ? 'zebrafish' : `filler${n}`}` })),
     );
-    await pool.run(`ANALYZE ${TABLE}`);
+    await pool.run(raw.text(`ANALYZE ${TABLE}`));
   }, provisioningTimeout);
 
   afterAll(async () => {

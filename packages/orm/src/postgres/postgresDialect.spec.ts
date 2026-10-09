@@ -2,13 +2,14 @@ import { expect } from 'vitest';
 import { JSON_UPDATE_PAYLOADS } from '../dialect/abstractSqlDialect-spec.js';
 import { PgFamilySpec } from '../dialect/pgFamilyDialect-spec.js';
 import { Entity, Field, Id } from '../entity/index.js';
+import { PgliteDialect } from '../pglite/pgliteDialect.js';
 import { Company, createSpec, InventoryAdjustment, Item, ItemAdjustment, User } from '../test/index.js';
 import { raw } from '../util/index.js';
 import { PostgresDialect } from './postgresDialect.js';
 
 /** What is Postgres' alone: pgvector's narrower vector types, its wire drivers, `pg_class` stats. */
 class PostgresDialectSpec extends PgFamilySpec {
-  /** A wire driver's binding, as `uql-orm/bunSql` gives it: arrays as literals, JSON re-cast through text. */
+  /** A wire driver's binding, as `uql-orm/bun-sql` gives it: arrays as literals, JSON re-cast through text. */
   readonly wirePostgresDialect = new PostgresDialect({
     driverCapabilities: { nativeArrays: false, explicitJsonCast: true },
   });
@@ -117,9 +118,23 @@ class PostgresDialectSpec extends PgFamilySpec {
       this.wirePostgresDialect,
     );
     expect(sql).toBe(
-      'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY(($1::text)::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
     );
     expect(values).toEqual(['"new-tag"', 123, '1']);
+  }
+
+  /** A path element is quoted: unquoted, a key named `null` is SQL NULL in a `text[]` literal. */
+  shouldQuoteAJsonPathKey() {
+    const { sql } = this.exec((ctx) =>
+      this.dialect.update(
+        ctx,
+        Company,
+        { $where: { id: '1' } },
+        { kind: { $push: { null: 'x' }, $pull: { null: 'y' } } },
+      ),
+    );
+    expect(sql).toContain(`'{"null"}'`);
+    expect(sql).not.toContain(`'{null}'`);
   }
 
   /**
@@ -130,6 +145,10 @@ class PostgresDialectSpec extends PgFamilySpec {
     const { sql, values } = this.exec((ctx) => this.dialect.estimatedCount(ctx, User));
     expect(sql).toBe('SELECT GREATEST(reltuples, 0)::bigint "_uql_value" FROM pg_class WHERE oid = to_regclass($1)');
     expect(values).toEqual(['"User"']);
+  }
+  /** PGlite runs Postgres, but every querier shares its one session, so a lock held there makes none wait. */
+  shouldHaveNoNamedLockOnPglite() {
+    expect(new PgliteDialect().features).toEqual({ ...this.dialect.features, namedLocks: false });
   }
 
   shouldFindWithARawExistsSubquery() {

@@ -11,8 +11,4 @@ export class DefaultNamingStrategy implements NamingStrategy {
   columnName(propertyName: string): string {
     return propertyName;
   }
-
-  joinTableName(source: string, target: string, _propertyName?: string): string {
-    return `${source}_${target}`;
-  }
 }

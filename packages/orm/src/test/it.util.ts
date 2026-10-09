@@ -3,7 +3,8 @@ import { getEntities } from '../entity/index.js';
 import { Migrator } from '../migrate/migrator.js';
 import type { AbstractSqlQuerier } from '../querier/index.js';
 import { buildSchemaAST } from '../schema/schemaASTBuilder.js';
-import type { QuerierPool } from '../type/index.js';
+import type { QuerierPool, QueryRaw } from '../type/index.js';
+import { raw } from '../util/raw.js';
 
 /**
  * Every fixture table dropped and created again as a user's forced sync does it, foreign keys included,
@@ -20,20 +21,18 @@ export function recreateTables(pool: QuerierPool<AbstractSqlQuerier, AbstractSql
  * `bun:sqlite` and Turso to off.
  */
 export async function probeForeignKeys(querier: AbstractSqlQuerier) {
-  await querier.run('CREATE TABLE fkParent (id INTEGER PRIMARY KEY)');
-  await querier.run(
-    'CREATE TABLE fkChild (id INTEGER PRIMARY KEY, parentId INTEGER REFERENCES fkParent(id) ON DELETE CASCADE)',
-  );
-  await querier.run('INSERT INTO fkParent (id) VALUES (1)');
-  await querier.run('INSERT INTO fkChild (id, parentId) VALUES (1, 1)');
+  await querier.run`CREATE TABLE fkParent (id INTEGER PRIMARY KEY)`;
+  await querier.run`CREATE TABLE fkChild (id INTEGER PRIMARY KEY, parentId INTEGER REFERENCES fkParent(id) ON DELETE CASCADE)`;
+  await querier.run`INSERT INTO fkParent (id) VALUES (1)`;
+  await querier.run`INSERT INTO fkChild (id, parentId) VALUES (1, 1)`;
 
-  const dangling = await querier.run('INSERT INTO fkChild (id, parentId) VALUES (2, 999)').then(
+  const dangling = await querier.run`INSERT INTO fkChild (id, parentId) VALUES (2, 999)`.then(
     () => 'accepted' as const,
     () => 'rejected' as const,
   );
 
-  await querier.run('DELETE FROM fkParent WHERE id = 1');
-  const orphans = await querier.all<{ id: number }>('SELECT id FROM fkChild');
+  await querier.run`DELETE FROM fkParent WHERE id = 1`;
+  const orphans = await querier.all<{ id: number }>`SELECT id FROM fkChild`;
 
   return { dangling, orphans: orphans.map((row) => row.id) };
 }
@@ -44,10 +43,10 @@ export async function probeForeignKeys(querier: AbstractSqlQuerier) {
  */
 export async function violateConstraints(querier: AbstractSqlQuerier) {
   const dropPair = async () => {
-    await querier.run('DROP TABLE IF EXISTS uqlConstrainedChild');
-    await querier.run('DROP TABLE IF EXISTS uqlConstrainedParent');
+    await querier.run`DROP TABLE IF EXISTS uqlConstrainedChild`;
+    await querier.run`DROP TABLE IF EXISTS uqlConstrainedParent`;
   };
-  const rejection = (sql: string) =>
+  const rejection = (sql: QueryRaw) =>
     querier.run(sql).then(
       () => undefined,
       (err: unknown) => err,
@@ -55,15 +54,12 @@ export async function violateConstraints(querier: AbstractSqlQuerier) {
 
   await dropPair();
   try {
-    await querier.run('CREATE TABLE uqlConstrainedParent (id INTEGER PRIMARY KEY)');
-    await querier.run(
-      'CREATE TABLE uqlConstrainedChild (id INTEGER PRIMARY KEY, parentId INTEGER, price INTEGER NOT NULL CHECK (price > 0),' +
-        ' FOREIGN KEY (parentId) REFERENCES uqlConstrainedParent (id))',
-    );
+    await querier.run`CREATE TABLE uqlConstrainedParent (id INTEGER PRIMARY KEY)`;
+    await querier.run`CREATE TABLE uqlConstrainedChild (id INTEGER PRIMARY KEY, parentId INTEGER, price INTEGER NOT NULL CHECK (price > 0), FOREIGN KEY (parentId) REFERENCES uqlConstrainedParent (id))`;
     return {
-      foreignKey: await rejection('INSERT INTO uqlConstrainedChild (id, parentId, price) VALUES (1, 999, 1)'),
-      notNull: await rejection('INSERT INTO uqlConstrainedChild (id, price) VALUES (2, NULL)'),
-      check: await rejection('INSERT INTO uqlConstrainedChild (id, price) VALUES (3, 0)'),
+      foreignKey: await rejection(raw`INSERT INTO uqlConstrainedChild (id, parentId, price) VALUES (1, 999, 1)`),
+      notNull: await rejection(raw`INSERT INTO uqlConstrainedChild (id, price) VALUES (2, NULL)`),
+      check: await rejection(raw`INSERT INTO uqlConstrainedChild (id, price) VALUES (3, 0)`),
     };
   } finally {
     await dropPair();
@@ -90,7 +86,7 @@ export async function clearTables(querier: AbstractSqlQuerier) {
 
   await querier.transaction(async () => {
     for (const sql of [...unlinks, ...deletes]) {
-      await querier.run(sql);
+      await querier.run(raw.text(sql));
     }
   });
 }

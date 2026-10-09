@@ -1,9 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { CockroachDialect } from '../../cockroachdb/cockroachDialect.js';
 import type { AbstractDialect } from '../../dialect/abstractDialect.js';
-import { MariaDialect } from '../../maria/mariaDialect.js';
-import { MongoDialect } from '../../mongo/mongoDialect.js';
-import { MongoSchemaIntrospector } from '../../mongo/mongoIntrospector.js';
+import { MariaDialect } from '../../mariadb/mariaDialect.js';
+import { MongoDialect } from '../../mongodb/mongoDialect.js';
+import { MongoSchemaIntrospector } from '../../mongodb/mongoIntrospector.js';
 import { MsSqlDialect } from '../../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../../postgres/postgresDialect.js';

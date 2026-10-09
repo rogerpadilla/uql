@@ -21,10 +21,14 @@ import type {
   QuerySearch,
   QueryUpdateResult,
   RawRow,
+  RawValue,
+  SavepointCommand,
   SqlQuerier,
+  SqlStatement,
   TransactionOptions,
   Type,
   UpdatePayload,
+  QueryRaw,
 } from '../type/index.js';
 import {
   buildUpdateResult,
@@ -37,6 +41,7 @@ import {
   obtainAttrsPaths,
   unflatObject,
 } from '../util/index.js';
+import { statementOf } from '../util/raw.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier } from './abstractQuerier.js';
@@ -98,7 +103,7 @@ function chunkWithinLimits<E extends object>(
 }
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
-  private hasPendingTransaction?: boolean;
+  override hasOpenTransaction = false;
   /** Cached `auto_increment_increment` stride; see {@link loadInsertIdIncrement}. */
   #insertIdIncrement?: number;
 
@@ -137,7 +142,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
    * Only called for `firstId` dialects.
    */
   protected async loadInsertIdIncrement(): Promise<number> {
-    const [row] = await this.all<{ v: number | string }>('SELECT @@auto_increment_increment AS v');
+    const [row] = await this.all<{ v: number | string }>`SELECT @@auto_increment_increment AS v`;
     return Number(row.v);
   }
 
@@ -152,20 +157,22 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
-  async all<T>(query: string, values?: readonly unknown[]): Promise<T[]> {
-    this.assertBindBudget(values);
-    return this.serialize(async () => {
-      await this.lazyConnect();
-      return this.timed(query, values, () => this.internalAll<T>(query, this.dialect.normalizeValues(values)));
-    });
+  all<T extends object = RawRow>(strings: TemplateStringsArray, ...values: RawValue[]): Promise<T[]>;
+  all<T extends object = RawRow>(sql: QueryRaw): Promise<T[]>;
+  all<T extends object = RawRow>(...statement: SqlStatement): Promise<T[]> {
+    return this.query<T>(this.rendering(statement));
   }
 
-  async run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult> {
-    this.assertBindBudget(values);
-    return this.serialize(async () => {
-      await this.lazyConnect();
-      return this.timed(query, values, () => this.internalRun(query, this.dialect.normalizeValues(values)));
-    });
+  run(strings: TemplateStringsArray, ...values: RawValue[]): Promise<QueryUpdateResult>;
+  run(sql: QueryRaw): Promise<QueryUpdateResult>;
+  run(...statement: SqlStatement): Promise<QueryUpdateResult> {
+    return this.exec(this.rendering(statement));
+  }
+
+  /** How a statement handed to `all` or `run` writes itself into a context. */
+  private rendering(statement: SqlStatement): QueryBuildFn {
+    const sql = statementOf(statement);
+    return (ctx) => this.dialect.getRawValue(ctx, { value: sql });
   }
 
   /** Refused before the driver fails it, or PGlite answers it and every read after it wrong. */
@@ -180,16 +187,27 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
 
   /** The rows of a statement the dialect builds. */
   private query<T>(build: QueryBuildFn): Promise<T[]> {
-    const ctx = this.dialect.createContext();
-    build(ctx);
-    return this.all<T>(ctx.sql, ctx.values);
+    return this.send(build, (sql, values) => this.internalAll<T>(sql, values));
   }
 
   /** Runs a statement the dialect builds. */
   private exec(build: QueryBuildFn): Promise<QueryUpdateResult> {
+    return this.send(build, (sql, values) => this.internalRun(sql, values));
+  }
+
+  /** Builds a statement and sends it on the connection, in turn, timed and its failure tagged with it. */
+  private async send<T>(
+    build: QueryBuildFn,
+    task: (sql: string, values: unknown[] | undefined) => Promise<T>,
+  ): Promise<T> {
     const ctx = this.dialect.createContext();
     build(ctx);
-    return this.run(ctx.sql, ctx.values);
+    const { sql, values } = ctx;
+    this.assertBindBudget(values);
+    return this.serialize(async () => {
+      await this.lazyConnect();
+      return this.timed(sql, values, () => task(sql, this.dialect.normalizeValues(values)));
+    });
   }
 
   /**
@@ -204,7 +222,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (!statements.length) {
       return;
     }
-    if (this.dialect.features.vectorTuningNeedsTransaction && !this.hasOpenTransaction) {
+    if (this.dialect.features.vectorTuningNeedsTransaction && !this.scopeHere()) {
       throw new UqlUsageError(
         `$candidates requires an open transaction on ${this.dialect.dialectName}; run the query inside pool.transaction(...)`,
       );
@@ -298,7 +316,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       (sql, params) => this.internalAll<RawRow>(sql, params),
       query,
       values,
-      this.hasOpenTransaction,
+      !!this.scopeHere(),
     );
   }
 
@@ -459,23 +477,14 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return changes;
   }
 
-  protected override async internalUpsertOne<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E,
-    update?: UpdatePayload<E>,
-  ) {
-    return this.internalUpsertMany(entity, conflictPaths, [payload], update);
-  }
-
   protected override async internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<QueryUpdateResult> {
-    if (!payload?.length) {
-      return { changes: 0 };
+  ): Promise<(PrimaryKey | undefined)[] | undefined> {
+    if (!payload.length) {
+      return [];
     }
     payload = clone(payload);
     const meta = getMeta(entity);
@@ -491,26 +500,23 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
     // An upsert's assignment list is the statement's, so rows of different shapes go in statements of their own.
     return this.atomically(async () => {
-      let changes = 0;
       // Placed by index, since grouping by shape reorders the rows. A statement reporting fewer ids
       // than it wrote places none.
       const ids: (PrimaryKey | undefined)[] = new Array(payload.length);
       for (const indexes of statements) {
-        const { changes: written = 0, ids: reported } = await this.runUpsert(
+        const reported = await this.runUpsert(
           entity,
           conflictPaths,
           indexes.map((index) => payload[index]),
           update,
         );
-        changes += written;
         if (reported?.length === indexes.length) {
           for (let position = 0; position < indexes.length; position++) {
             ids[indexes[position]] = reported[position];
           }
         }
       }
-      // No `created`: it speaks for a single statement, and there were several.
-      return { changes, ids };
+      return ids;
     });
   }
 
@@ -519,25 +525,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<QueryUpdateResult> {
+  ): Promise<(PrimaryKey | undefined)[] | undefined> {
     const meta = getMeta(entity);
     // Asked first: the statement fills an `onInsert` key into these rows whether it inserts them or not.
     const unnamed = meta.ids.length === 1 && payload.some((row) => !namesKey(meta, row));
-    const result = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload, update));
+    const { ids } = await this.exec((ctx) => this.dialect.upsert(ctx, entity, conflictPaths, payload, update));
     const ordered =
       payload.length === 1 ||
       (this.dialect.insertIdSource === 'returning' && this.dialect.features.orderedUpsertReturning);
-    if (ordered && result.ids?.length === payload.length) {
-      return result;
+    if (ordered && ids?.length === payload.length) {
+      return ids;
     }
     // The statement's ids name its rows only in order and for every one. A MySQL batch reports a
     // weighted count (1=insert, 2=update) instead, CockroachDB and SQL Server answer out of order, and
     // `DO NOTHING` skips rows, so there the ids are read back by the conflict columns.
-    const { changes } = result;
-    const created = payload.length === 1 ? result.created : undefined;
-    return unnamed
-      ? { changes, created, ids: await this.idsByConflict(entity, conflictPaths, payload) }
-      : { changes, created };
+    return unnamed ? this.idsByConflict(entity, conflictPaths, payload) : undefined;
   }
 
   protected override async internalDeleteMany<E extends object>(
@@ -549,24 +551,35 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     return changes;
   }
 
-  override get hasOpenTransaction() {
-    return !!this.hasPendingTransaction;
-  }
-
   protected override async openTransaction(opts?: TransactionOptions) {
     await this.lazyConnect();
     await this.internalBegin(opts);
-    this.hasPendingTransaction = true;
+    this.hasOpenTransaction = true;
   }
 
   /**
-   * Only an end that succeeded ends the transaction. A `COMMIT` that fails can leave it open (SQLite
-   * answers `SQLITE_BUSY` and keeps it), so the flag has to stay set for the `catch` in
-   * {@link AbstractQuerier.transaction} or {@link AbstractQuerier.release} to roll it back.
+   * A `COMMIT` that fails can leave the transaction open (SQLite answers `SQLITE_BUSY` and keeps it), so the
+   * flag stays for the rollback after it. A `ROLLBACK` always ends it: one the server refuses, a deadlock
+   * victim's on SQL Server, left nothing open to roll back.
    */
   protected override async endTransaction(commit: boolean) {
-    await (commit ? this.internalCommit() : this.internalRollback());
-    this.hasPendingTransaction = false;
+    if (commit) {
+      await this.internalCommit();
+      this.hasOpenTransaction = false;
+      return;
+    }
+    try {
+      await this.internalRollback();
+    } finally {
+      this.hasOpenTransaction = false;
+    }
+  }
+
+  protected override async savepoint(command: SavepointCommand, name: string): Promise<void> {
+    const sql = this.dialect.savepointStatement(command, name);
+    if (sql) {
+      await this.runTransactionCommand(sql);
+    }
   }
 
   /**

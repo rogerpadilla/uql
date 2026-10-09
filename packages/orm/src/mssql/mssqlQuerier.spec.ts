@@ -1,6 +1,7 @@
 import { EventEmitter } from 'node:events';
 import { ISOLATION_LEVEL, Request } from 'mssql';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+
 import { MsSqlDialect } from './mssqlDialect.js';
 import { type MsSqlConnection, MsSqlQuerier } from './mssqlQuerier.js';
 
@@ -42,7 +43,7 @@ describe('MsSqlQuerier', () => {
   it('should bind values by name, matching the placeholders the dialect emits', async () => {
     request.query.mockResolvedValue({ recordset: [{ id: 1 }], rowsAffected: [1] });
 
-    const rows = await querier.all('SELECT * FROM "User" WHERE "id" = @p1 AND "name" = @p2', [7, 'a']);
+    const rows = await querier.all`SELECT * FROM "User" WHERE "id" = ${7} AND "name" = ${'a'}`;
 
     expect(request.input).toHaveBeenNthCalledWith(1, 'p1', 7);
     expect(request.input).toHaveBeenNthCalledWith(2, 'p2', 'a');
@@ -52,7 +53,7 @@ describe('MsSqlQuerier', () => {
   it('should read the ids an OUTPUT clause reported', async () => {
     request.query.mockResolvedValue({ recordset: [{ id: 10 }, { id: 11 }], rowsAffected: [2] });
 
-    const res = await querier.run('INSERT INTO "User" ("name") OUTPUT INSERTED."id" "id" VALUES (@p1), (@p2)');
+    const res = await querier.run`INSERT INTO "User" ("name") OUTPUT INSERTED."id" "id" VALUES (@p1), (@p2)`;
 
     expect(res.ids).toEqual([10, 11]);
     expect(res.changes).toBe(2);
@@ -62,39 +63,38 @@ describe('MsSqlQuerier', () => {
   it('should sum the per-statement affected counts', async () => {
     request.query.mockResolvedValue({ recordset: [], rowsAffected: [1, 2] });
 
-    expect((await querier.run('MERGE ...')).changes).toBe(3);
+    expect((await querier.run`MERGE ...`).changes).toBe(3);
   });
 
   /**
    * The pool hands out a `Request` per call, so a `BEGIN TRANSACTION` sent as text would open one
    * on a connection the next call may not get. The commands are driven through `Transaction` instead.
    */
-  it('should open a transaction through the driver rather than as a statement', async () => {
-    await querier.beginTransaction();
+  it('should open and commit a transaction through the driver rather than as statements', async () => {
+    await querier.transaction(async () => {});
 
     expect(transaction.begin).toHaveBeenCalledOnce();
-    expect(request.query).not.toHaveBeenCalled();
-    expect(querier.hasOpenTransaction).toBe(true);
-
-    await querier.commitTransaction();
-
     expect(transaction.commit).toHaveBeenCalledOnce();
-    expect(querier.hasOpenTransaction).toBe(false);
+    expect(request.query).not.toHaveBeenCalled();
   });
 
   it('should bind a statement to the open transaction', async () => {
-    await querier.beginTransaction();
-    await querier.all('SELECT 1');
+    await querier.transaction(async () => {
+      await querier.all`SELECT 1`;
+    });
 
     expect(transaction.request).toHaveBeenCalled();
   });
 
   it('should roll back through the driver', async () => {
-    await querier.beginTransaction();
-    await querier.rollbackTransaction();
+    await expect(
+      querier.transaction(async () => {
+        throw new Error('callback failed');
+      }),
+    ).rejects.toThrow('callback failed');
 
     expect(transaction.rollback).toHaveBeenCalledOnce();
-    expect(querier.hasOpenTransaction).toBe(false);
+    expect(transaction.commit).not.toHaveBeenCalled();
   });
 
   /** A querier handed back mid-transaction would otherwise leave one open on a pooled connection. */
@@ -102,7 +102,8 @@ describe('MsSqlQuerier', () => {
     await querier.beginTransaction();
     await querier.release();
 
-    expect(transaction.rollback).toHaveBeenCalled();
+    expect(transaction.rollback).toHaveBeenCalledOnce();
+    expect(transaction.commit).not.toHaveBeenCalled();
   });
 
   /** Emits `count` rows and the end, the way `tedious` does once the query is under way. */
@@ -117,7 +118,7 @@ describe('MsSqlQuerier', () => {
 
   it('should stream rows', async () => {
     // `internalStream` is reached through `findManyStream`, which connects first.
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     emitRows(2);
 
     const rows = [];
@@ -131,7 +132,7 @@ describe('MsSqlQuerier', () => {
 
   /** Without it a slow loop holds every row the server sends, which is `all()` with extra steps. */
   it('should pause the request while the loop is behind', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     emitRows(100);
 
     for await (const _row of querier.internalStream('SELECT * FROM "User"')) {
@@ -143,7 +144,7 @@ describe('MsSqlQuerier', () => {
   });
 
   it('should cancel the request when the loop stops early', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     emitRows(100);
 
     for await (const _row of querier.internalStream('SELECT * FROM "User"')) {
@@ -154,7 +155,7 @@ describe('MsSqlQuerier', () => {
   });
 
   it('should surface a streaming failure', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     request.query.mockImplementation(async () => {
       request.emit('error', new Error('boom'));
     });
@@ -168,7 +169,7 @@ describe('MsSqlQuerier', () => {
 
   /** A failure reported through the promise alone would otherwise leave the loop waiting for rows. */
   it('should end the stream when the request rejects without an error event', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     request.query.mockRejectedValue(new Error('connection closed'));
 
     await expect(async () => {
@@ -180,7 +181,7 @@ describe('MsSqlQuerier', () => {
 
   /** Cancelling makes `mssql` report an error on a stream the loop has already left. */
   it('should absorb the error a cancel reports after the loop has gone', async () => {
-    await querier.all('SELECT 1');
+    await querier.all`SELECT 1`;
     emitRows(100);
     request.cancel.mockImplementation(() => request.emit('error', new Error('Canceled.')));
 
@@ -196,14 +197,14 @@ describe('MsSqlQuerier', () => {
    * one the transaction opens on, so it is handed to the driver with the `begin` instead.
    */
   it('should open the transaction at the isolation level asked for', async () => {
-    await querier.beginTransaction({ isolationLevel: 'serializable' });
+    await querier.transaction(async () => {}, { isolationLevel: 'serializable' });
 
     expect(request.query).not.toHaveBeenCalled();
     expect(transaction.begin).toHaveBeenCalledWith(ISOLATION_LEVEL.SERIALIZABLE);
   });
 
   it('should leave the server default when no level is asked for', async () => {
-    await querier.beginTransaction();
+    await querier.transaction(async () => {});
 
     expect(transaction.begin).toHaveBeenCalledWith(undefined);
   });

@@ -25,7 +25,8 @@ function target(): { calls: Call[]; db: MongoCommandTarget } {
   return {
     calls,
     db: {
-      createCollection: (name) => record('createCollection', name),
+      createCollection: (...args) => record('createCollection', ...args),
+      command: (document) => record('command', document),
       renameCollection: (from, to) => record('renameCollection', from, to),
       collection: (name) => ({
         drop: () => record('drop', name),
@@ -48,6 +49,8 @@ describe('mongoCommandSource', () => {
   it('should spell each command as the driver call runMongoCommand makes', () => {
     const commands: MongoCommand[] = [
       { action: 'createCollection', name: 'users' },
+      { action: 'createCollection', name: 'users', validator: { age: { $gte: 0 } } },
+      { action: 'collMod', name: 'users', validator: { age: { $gte: 1 } } },
       { action: 'dropCollection', name: 'users' },
       { action: 'renameCollection', from: 'users', to: 'members' },
       {
@@ -64,6 +67,8 @@ describe('mongoCommandSource', () => {
 
     expect(commands.map((command) => mongoCommandSource(serializeMongoCommand(command), 'db'))).toEqual([
       'db.createCollection("users")',
+      'db.createCollection("users", {"validator":{"age":{"$gte":0}}})',
+      'db.command({"collMod":"users","validator":{"age":{"$gte":1}}})',
       'db.collection("users").drop()',
       'db.renameCollection("users", "members")',
       'db.collection("users").createIndex({"email":1}, {"unique":true,"name":"users__email_idx"})',
@@ -92,6 +97,18 @@ describe('runMongoCommand', () => {
 
   it('should create a collection', async () => {
     expect(await run({ action: 'createCollection', name: 'users' })).toEqual([['createCollection', 'users']]);
+  });
+
+  it('should create a collection with its validator', async () => {
+    expect(await run({ action: 'createCollection', name: 'users', validator: { age: { $gte: 0 } } })).toEqual([
+      ['createCollection', 'users', { validator: { age: { $gte: 0 } } }],
+    ]);
+  });
+
+  it("should replace a collection's validator with collMod", async () => {
+    expect(await run({ action: 'collMod', name: 'users', validator: {} })).toEqual([
+      ['command', { collMod: 'users', validator: {} }],
+    ]);
   });
 
   it('should drop a collection', async () => {

@@ -154,7 +154,7 @@ export type ForeignKeyOptions = Pick<ForeignKeySchema, 'name' | 'onDelete' | 'on
 /**
  * Interface for column builder (fluent API).
  */
-export interface IColumnBuilder {
+export interface ColumnBuilder {
   /** Make column nullable */
   nullable(value?: boolean): this;
   /** Make column NOT NULL (convenience method) */
@@ -178,7 +178,7 @@ export interface IColumnBuilder {
   /** Set as unsigned (MySQL/MariaDB) */
   unsigned(): this;
   /** Add foreign key reference */
-  references(table: string, column?: string): IForeignKeyBuilder;
+  references(table: string, column?: string): ForeignKeyBuilder;
   /** Get the built column definition */
   build(): FullColumnDefinition;
 }
@@ -186,7 +186,7 @@ export interface IColumnBuilder {
 /**
  * Interface for foreign key builder.
  */
-export interface IForeignKeyBuilder extends IColumnBuilder {
+export interface ForeignKeyBuilder extends ColumnBuilder {
   /** Set ON DELETE action */
   onDelete(action: ForeignKeyAction): this;
   /** Set ON UPDATE action */
@@ -194,62 +194,62 @@ export interface IForeignKeyBuilder extends IColumnBuilder {
 }
 
 /** Every column type the builder can declare, name first, handed to `addColumn`/`alterColumn` callbacks too. */
-export interface IColumnFactory {
+export interface ColumnFactory {
   /** Add an auto-incrementing primary key */
-  id(name?: string, options?: BaseColumnOptions): IColumnBuilder;
+  id(name?: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add an integer column */
-  integer(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  integer(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a smallint column */
-  smallint(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  smallint(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a bigint column */
-  bigint(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  bigint(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a float column */
-  float(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  float(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a double column */
-  double(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  double(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a decimal column */
-  decimal(name: string, options?: DecimalColumnOptions): IColumnBuilder;
+  decimal(name: string, options?: DecimalColumnOptions): ColumnBuilder;
 
   /** Add a varchar column */
-  string(name: string, options?: StringColumnOptions): IColumnBuilder;
+  string(name: string, options?: StringColumnOptions): ColumnBuilder;
   /** Add a char column */
-  char(name: string, options?: StringColumnOptions): IColumnBuilder;
+  char(name: string, options?: StringColumnOptions): ColumnBuilder;
   /** Add a text column */
-  text(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  text(name: string, options?: BaseColumnOptions): ColumnBuilder;
 
   /** Add a boolean column */
-  boolean(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  boolean(name: string, options?: BaseColumnOptions): ColumnBuilder;
 
   /** Add a date column */
-  date(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  date(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a time column */
-  time(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  time(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a timestamp column */
-  timestamp(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  timestamp(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a timestamptz column */
-  timestamptz(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  timestamptz(name: string, options?: BaseColumnOptions): ColumnBuilder;
 
   /** Add a JSON column */
-  json(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  json(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a JSONB column (Postgres) */
-  jsonb(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  jsonb(name: string, options?: BaseColumnOptions): ColumnBuilder;
 
   /** Add a UUID column */
-  uuid(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  uuid(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a blob/bytea column */
-  blob(name: string, options?: BaseColumnOptions): IColumnBuilder;
+  blob(name: string, options?: BaseColumnOptions): ColumnBuilder;
   /** Add a vector column (for embeddings) */
-  vector(name: string, options?: VectorColumnOptions): IColumnBuilder;
+  vector(name: string, options?: VectorColumnOptions): ColumnBuilder;
 }
 
 /**
  * Interface for table builder (fluent API).
  */
-export interface ITableBuilder extends IColumnFactory {
+export interface TableBuilder extends ColumnFactory {
   /** Add createdAt timestamp column */
-  createdAt(): IColumnBuilder;
+  createdAt(): ColumnBuilder;
   /** Add updatedAt timestamp column */
-  updatedAt(): IColumnBuilder;
+  updatedAt(): ColumnBuilder;
   /** Add both createdAt and updatedAt columns */
   timestamps(): void;
 
@@ -260,7 +260,7 @@ export interface ITableBuilder extends IColumnFactory {
   /** Add a composite index; takes the same options as `@Index`, or just its name. */
   index(columns: readonly IndexColumnInput[], options?: string | IndexOptions): this;
   /** Add table-level foreign key */
-  foreignKey(columns: string[]): ITableForeignKeyBuilder;
+  foreignKey(columns: string[]): TableForeignKeyBuilder;
 
   /** Add a comment to the table */
   comment(text: string): this;
@@ -271,7 +271,7 @@ export interface ITableBuilder extends IColumnFactory {
 /**
  * Interface for table-level foreign key builder.
  */
-export interface ITableForeignKeyBuilder {
+export interface TableForeignKeyBuilder {
   /** Reference target table and columns */
   references(table: string, columns: string[]): this;
   /** Set ON DELETE action */
@@ -285,15 +285,15 @@ export interface ITableForeignKeyBuilder {
 /**
  * Interface for altering a table.
  */
-export interface IAlterTableBuilder {
+export interface AlterTableBuilder {
   /** Add a column, declared exactly as in `createTable`: `addColumn((c) => c.timestamp('createdAt'))`. */
-  addColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this;
+  addColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this;
   /** Drop a column from the table */
   dropColumn(name: string): this;
   /** Rename a column */
   renameColumn(oldName: string, newName: string): this;
   /** Redeclare a column, named and typed as it should end up. */
-  alterColumn(callback: (columns: IColumnFactory) => IColumnBuilder): this;
+  alterColumn(callback: (columns: ColumnFactory) => ColumnBuilder): this;
   /** Add an index to the table */
   addIndex(columns: readonly IndexColumnInput[], options?: IndexOptions): this;
   /** Drop an index from the table */
@@ -307,21 +307,21 @@ export interface IAlterTableBuilder {
 /**
  * Interface for the main migration builder.
  */
-export interface IMigrationBuilder {
+export interface MigrationBuilder {
   /** Create a table as `callback` declares it; on MongoDB a collection, whose callback declares only indexes. */
-  createTable(name: string, callback: (table: ITableBuilder) => void): Promise<void>;
+  createTable(name: string, callback: (table: TableBuilder) => void): Promise<void>;
   /** Drop a table */
   dropTable(name: string, options?: { ifExists?: boolean; cascade?: boolean }): Promise<void>;
   /** Rename a table */
   renameTable(oldName: string, newName: string): Promise<void>;
   /** Alter an existing table */
-  alterTable(name: string, callback: (table: IAlterTableBuilder) => void): Promise<void>;
+  alterTable(name: string, callback: (table: AlterTableBuilder) => void): Promise<void>;
   /** Add a column, declared exactly as in `createTable`: `addColumn('t', (c) => c.timestamp('at'))`. */
-  addColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
+  addColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void>;
   /** Drop a column from a table */
   dropColumn(tableName: string, columnName: string): Promise<void>;
   /** Redeclare a column, named and typed as it should end up. */
-  alterColumn(tableName: string, callback: (columns: IColumnFactory) => IColumnBuilder): Promise<void>;
+  alterColumn(tableName: string, callback: (columns: ColumnFactory) => ColumnBuilder): Promise<void>;
   /** Rename a column */
   renameColumn(tableName: string, oldName: string, newName: string): Promise<void>;
   /** Create an index; takes the same options as `@Index`, so a generated migration can restate them. */

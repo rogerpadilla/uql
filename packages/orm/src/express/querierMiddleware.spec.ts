@@ -48,7 +48,7 @@ describe('querierMiddleware', () => {
     expect(res.status).toBe(200);
     expect(res.body).toEqual({ data: 1, count: 1 });
     expect(mockQuerier.insertOne).toHaveBeenCalledWith(User, { name: 'John' });
-    expect(mockQuerier.commitTransaction).toHaveBeenCalled();
+    expect(mockQuerier.transaction).toHaveBeenCalled();
   });
 
   it('should route a PUT to saveOne', async () => {

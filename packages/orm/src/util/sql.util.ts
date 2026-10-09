@@ -1,4 +1,4 @@
-import { OWNED_PREFIX, UPSERT_CREATED_ALIAS } from '../dialect/aliases.js';
+import { OWNED_PREFIX } from '../dialect/aliases.js';
 import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
 import { hasKeys, isRecord } from './object.util.js';
@@ -177,11 +177,6 @@ export interface BuildUpdateResultPayload {
    * server (e.g. Galera, group replication) may set `auto_increment_increment` higher.
    */
   insertIdIncrement?: number;
-  /**
-   * Driver-specific upsert detection from the result header.
-   * MySQL/MariaDB `ON DUPLICATE KEY UPDATE` convention: 1 = insert, 2 = update, 0 = no-op.
-   */
-  upsertStatus?: number;
 }
 
 /**
@@ -190,7 +185,7 @@ export interface BuildUpdateResultPayload {
  * (`innodb_autoinc_lock_mode` 0 or 1).
  */
 export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdateResult {
-  const { rows, id, insertIdSource, upsertStatus } = payload;
+  const { rows, id, insertIdSource } = payload;
   const changes = payload.changes ?? rows?.length ?? 0;
   const stride = payload.insertIdIncrement && payload.insertIdIncrement > 0 ? payload.insertIdIncrement : 1;
 
@@ -207,15 +202,7 @@ export function buildUpdateResult(payload: BuildUpdateResultPayload): QueryUpdat
     }
   }
 
-  // Whether the row was created: Postgres's created flag, or MySQL's 1/2/0 `affectedRows`,
-  // which is unreliable under `RETURNING`, so those dialects report nothing.
-  const created =
-    (rows?.length === 1 ? (rows[0]?.[UPSERT_CREATED_ALIAS] as boolean | undefined) : undefined) ??
-    (insertIdSource !== 'returning' && typeof upsertStatus === 'number' && upsertStatus >= 0 && upsertStatus <= 2
-      ? upsertStatus === 1
-      : undefined);
-
-  return { changes, ids, firstId: ids?.[0], created };
+  return { changes, ids };
 }
 
 /** Build `count` ids starting at `first`, incrementing by `step` (bigint- and number-safe). */

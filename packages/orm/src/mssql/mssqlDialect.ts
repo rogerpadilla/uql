@@ -10,11 +10,12 @@ import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import { type JsonAccessMode, jsonArraySlotArgs, jsonPath, type JsonSlot, jsonSlotArgs } from '../dialect/jsonSql.js';
 import { MergeSqlDialect } from '../dialect/mergeSqlDialect.js';
 import { getMeta } from '../entity/index.js';
-import { canonicalToSql, fieldOptionsToCanonical, resolveColumnCanonicalType } from '../schema/canonicalType.js';
+import { canonicalToSql, resolveColumnCanonicalType } from '../schema/canonicalType.js';
 import { QueryRaw } from '../type/index.js';
 import type {
   EntityMeta,
   FieldMeta,
+  SavepointCommand,
   FieldOptions,
   IdKey,
   Query,
@@ -32,7 +33,7 @@ import type {
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
-import { isAutoIncrement } from '../util/field.util.js';
+import { isAutoIncrement, isExactDecimal, jsonPathKeys } from '../util/field.util.js';
 import { assertNonNegativeInteger } from '../util/index.js';
 import { escapeSingleQuotes } from '../util/sqlLiteral.js';
 import { UqlUsageError } from '../util/uqlError.js';
@@ -51,6 +52,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
   supportsTimestamptz: false,
   stringSizing: 'varchar',
   supportsUnsigned: false,
+  jsonArrivesDecoded: false,
   serverSideCursors: false,
   correlatedWrites: true,
   rowLocks: { of: true, withWindow: true, placement: 'tableHint' },
@@ -73,6 +75,7 @@ const MSSQL_FEATURES: SqlDialectFeatures = {
     before: false,
     deferrable: false,
   },
+  namedLocks: 'transaction',
 };
 
 /** The `type` `OPENJSON` reports for the JSON scalar an element is compared with; anything else binds as a string. */
@@ -114,11 +117,21 @@ export class MsSqlDialect extends MergeSqlDialect {
 
   override readonly rollbackTransactionCommand = 'ROLLBACK TRANSACTION';
 
+  /** SQL Server saves a transaction under a name and rolls back to it, and releases none: the commit does. */
+  override savepointStatement(command: SavepointCommand, name: string): string {
+    const statements: Record<SavepointCommand, string> = {
+      open: `SAVE TRANSACTION ${name}`,
+      release: '',
+      rollback: `ROLLBACK TRANSACTION ${name}`,
+    };
+    return statements[command];
+  }
+
   /**
    * T-SQL has no inline form, so the level is set before the `BEGIN`. What a driver that sends these
    * as statements would run; `MsSqlQuerier` opens its transactions through the driver instead.
    */
-  override readonly isolationLevelStrategy = 'set-before';
+  override readonly isolationLevelStrategy = 'setBefore';
 
   override readonly booleanLiteral = 'integer';
 
@@ -144,7 +157,7 @@ export class MsSqlDialect extends MergeSqlDialect {
   override readonly maxInsertRows = 1000;
 
   /** `OUTPUT` has no trailing form: it sits between the target and its rows. */
-  override readonly returningPosition = 'after-target';
+  override readonly returningPosition = 'afterTarget';
 
   /** `OUTPUT` reads the written row off the `INSERTED` pseudo-table. */
   protected override readonly returnedRowPrefix = 'INSERTED.';
@@ -192,10 +205,9 @@ export class MsSqlDialect extends MergeSqlDialect {
     return stated ? this.escapedTableName(meta) : undefined;
   }
 
-  /** A `DECIMAL` declared `String`, converted before it crosses the wire, where `tedious` would round it. */
+  /** An exact decimal, converted before it crosses the wire, where `tedious` would round it. */
   protected override selectFieldExpr(escapedColumn: string, field: FieldOptions): string {
-    const exactDecimal = field.type === String && fieldOptionsToCanonical(field).category === 'decimal';
-    return exactDecimal ? `CONVERT(NVARCHAR(41), ${escapedColumn})` : escapedColumn;
+    return isExactDecimal(field) ? `CONVERT(NVARCHAR(41), ${escapedColumn})` : escapedColumn;
   }
 
   /**
@@ -337,7 +349,6 @@ export class MsSqlDialect extends MergeSqlDialect {
   override createSchemaSql(schema: string): string {
     return `IF SCHEMA_ID(${this.escape(schema)}) IS NULL EXEC(${this.escape(`CREATE SCHEMA ${this.escapeId(schema, true)}`)})`;
   }
-
   /** The estimate the engine already keeps per partition, live without a stats refresh. */
   override estimatedCount<E>(ctx: QueryContext, entity: Type<E>): void {
     const meta = getMeta(entity);
@@ -376,9 +387,9 @@ export class MsSqlDialect extends MergeSqlDialect {
     if (!path) {
       return escapedColumn;
     }
-    const dot = path.lastIndexOf('.');
-    const parent = dot === -1 ? '$' : `$.${path.slice(0, dot).split('.').map(escapeSingleQuotes).join('.')}`;
-    const leaf = escapeSingleQuotes(path.slice(dot + 1));
+    const keys = jsonPathKeys(path);
+    const leaf = keys.pop();
+    const parent = ['$', ...keys].join('.');
     return `(SELECT ${this.#elem.value} FROM OPENJSON(${escapedColumn}, '${parent}') WHERE ${this.#elem.key} = N'${leaf}')`;
   }
 

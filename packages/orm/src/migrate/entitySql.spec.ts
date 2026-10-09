@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import { defineEntity, Entity, Field, Id, Index } from '../entity/index.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { SnakeCaseNamingStrategy } from '../namingStrategy/index.js';
@@ -170,9 +170,9 @@ describe('a SQL Server filtered index', () => {
     );
   });
 
-  it('should pass over an $and left undefined, as the query does', () => {
+  it('should refuse an $and left undefined, as the query does', () => {
     const where: EntityWhere<TicketShape> = { status: 'open', $and: undefined };
-    expect(ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toContain(`WHERE "status" = N'open';`);
+    expect(() => ddl(new MsSqlDialect(), ticketIndexedWhere(where))).toThrow("holds undefined at '$and'");
   });
 
   it('should leave a raw predicate to the server', () => {

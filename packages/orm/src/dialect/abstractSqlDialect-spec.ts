@@ -235,7 +235,6 @@ export abstract class AbstractSqlDialectSpec implements Spec {
       `${this.dialect.dialectName} does not support estimatedCount`,
     );
   }
-
   shouldNotEmitLockOnUpdate() {
     const q = { $where: { id: 1 }, $lock: true };
     // @ts-expect-error: an update takes no lock
@@ -1345,7 +1344,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
    * types forbid it, but `/http` passes client JSON on as a `Query`.
    */
   shouldRejectNonArray$in() {
-    for (const operand of [undefined, null, 'abc', 5, {}]) {
+    for (const operand of [null, 'abc', 5, {}]) {
       expect(() =>
         this.exec((ctx) =>
           this.dialect.find(ctx, User, {

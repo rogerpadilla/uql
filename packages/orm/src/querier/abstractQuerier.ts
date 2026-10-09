@@ -1,9 +1,10 @@
-import { assertSoleId, getMeta, idOf, namesKey, relationOf } from '../entity/index.js';
+import { assertSoleId, getMeta, idOf, namesKey, relationOf, soleIdOf } from '../entity/index.js';
 import type { KeyedRow } from '../entity/metadata/definition.js';
 
 import type { AbstractDialect } from '../dialect/abstractDialect.js';
 import { namesRows } from '../dialect/operators.js';
 import type {
+  BooleanLike,
   CursorPage,
   EntityData,
   EntityId,
@@ -32,16 +33,16 @@ import type {
   QueryProjected,
   QuerySearch,
   PrimaryKey,
-  QueryUpdateResult,
-  QueryUpsertOneResult,
-  QueryUpsertManyResult,
   RelationKey,
   RelationMeta,
   RelationQuery,
+  SavepointCommand,
   TransactionOptions,
   Type,
   UpdatePayload,
   UpdateWrite,
+  ReturningResult,
+  WriteOptions,
   WrittenId,
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
@@ -57,6 +58,7 @@ import {
   forEachRequestedRelation,
   getKeys,
   hasKeys,
+  holdsForeignKey,
   getRelationRequestSummary,
   guardWrite,
   idOnlyQuery,
@@ -64,6 +66,7 @@ import {
   isPagedQuery,
   isScalarId,
   LoggerWrapper,
+  normalizeScalarFieldSelection,
   parentJoins,
   queryLoggerFor,
   parseRelationAtKey,
@@ -82,6 +85,18 @@ import {
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
 import { enrichError } from './queryError.js';
+import {
+  awaitTurn,
+  claim,
+  currentTransaction,
+  depthOf,
+  free,
+  inTransaction,
+  newScope,
+  slotOf,
+  type TransactionScope,
+  type TransactionSlot,
+} from './transaction.js';
 
 /**
  * Refuses a nullish id, which would reduce to no filter at all, and a composite id missing a column,
@@ -196,11 +211,7 @@ function upsertsByReading<E extends object>(
   rows: readonly E[],
   update: UpdatePayload<E> | undefined,
 ): boolean {
-  const relates = (payload: object) => filterPersistableRelationKeys(meta, payload, 'persist').length > 0;
-  return (
-    securityConditions(meta).length > 0 ||
-    (relates(meta.relations) && (rows.some(relates) || (update !== undefined && relates(update))))
-  );
+  return securityConditions(meta).length > 0 || writesRelations(meta, update ? [...rows, update] : rows);
 }
 
 /** What `ON CONFLICT` assigns a row it finds by default: the payload, less the columns it matched on. */
@@ -255,8 +266,57 @@ function isEntityFirst<E, Q>(args: EntityArgs<E, Q>): args is [entity: Type<E>, 
   return typeof first === 'function' && first.prototype !== undefined;
 }
 
+/** The fields `returning` projects, read as `$select` is, or `undefined` where it names none: the write reads nothing back. */
+function returnedKeys<E>(
+  meta: EntityMeta<E>,
+  returning: WriteOptions<E, FieldKey<E>, BooleanLike>['returning'],
+): FieldKey<E>[] | undefined {
+  return hasKeys(returning) ? normalizeScalarFieldSelection(meta, returning) : undefined;
+}
+
+/** How a delete reads the rows it removes: a hard one takes already-soft-deleted rows too, so it has to see them. */
+function deletableRows(opts: QueryOptions | undefined): QueryOptions | undefined {
+  return opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
+}
+
+/** `row` with only the fields `keys` names. */
+function pickFields<E>(row: E, keys: readonly FieldKey<E>[]): Partial<E> {
+  const picked: Partial<E> = {};
+  for (const key of keys) {
+    picked[key] = row[key];
+  }
+  return picked;
+}
+
 /** A parent's id and the value it writes into one of its relations. */
 type RelationWrite<E> = { readonly id: EntityId<E>; readonly value: unknown };
+
+/** Whether any payload writes a relation it cascades to, which makes the write several statements. */
+function writesRelations<E>(meta: EntityMeta<E>, payloads: readonly object[]): boolean {
+  return payloads.some((payload) => filterPersistableRelationKeys(meta, payload, 'persist').length > 0);
+}
+
+/** The relations a payload writes whose rows hold the parent's key: written after the parent, by its id. */
+function childRelationKeys<E>(meta: EntityMeta<E>, payload: object): RelationKey<E>[] {
+  return filterPersistableRelationKeys(meta, payload, 'persist').filter(
+    (relKey) => !holdsForeignKey(relationOf(meta, relKey)),
+  );
+}
+
+/** A relation's value as the rows it lists: a to-many's list, a to-one's row, none for `null`. */
+function listedRows(value: unknown): object[] {
+  return value == null ? [] : Array.isArray(value) ? value : [value as object];
+}
+
+/** What a savepoint the querier names is called, its depth appended. */
+const SAVEPOINT_PREFIX = '_uql_sp';
+
+/** Runs the callbacks a transaction gathered for its commit, in the order they were registered. */
+async function runCallbacks(callbacks: readonly (() => unknown)[]): Promise<void> {
+  for (const callback of callbacks) {
+    await callback();
+  }
+}
 
 const STREAM_HOLDS_QUERIER =
   'a stream is reading on this querier: run the statement after its loop, or on another querier';
@@ -281,8 +341,27 @@ export abstract class AbstractQuerier implements Querier {
   protected readonly logger: LoggerWrapper;
   abstract readonly dialect: AbstractDialect;
 
+  /**
+   * The connection is in a state nothing here can name, so `release` discards it rather than hand it back: a
+   * rollback or a stream's close failed. The one place that decision is kept, whichever failure made it.
+   */
+  #unusable = false;
+
   constructor(readonly extra?: ExtraOptions) {
     this.logger = queryLoggerFor(extra);
+  }
+
+  /**
+   * What the transaction this querier opens belongs to: the querier itself, its own connection, unless every
+   * querier of its pool is one session (SQLite, PGlite), whose queriers then name that handle and share it.
+   */
+  protected get connection(): object {
+    return this;
+  }
+
+  /** The transaction the connection holds, which every querier on it reads. */
+  get #slot(): TransactionSlot {
+    return slotOf(this.connection);
   }
 
   /** What every read is checked for before it runs, whichever backend runs it. */
@@ -301,7 +380,7 @@ export abstract class AbstractQuerier implements Querier {
       return;
     }
     this.dialect.assertLockSupported(entity, q);
-    if (!this.hasOpenTransaction) {
+    if (!this.scopeHere()) {
       throw new UqlUsageError('$lock requires an open transaction');
     }
   }
@@ -480,6 +559,7 @@ export abstract class AbstractQuerier implements Querier {
       querier.#stream = stream;
       try {
         await querier.taskQueue;
+        await querier.#turn();
         for await (const row of rows) {
           if (loaded) {
             await loaded(row);
@@ -631,62 +711,195 @@ export abstract class AbstractQuerier implements Querier {
   /** Abstract outright: nothing is shared to do around it. See {@link UniversalQuerier.estimatedCount}. */
   abstract estimatedCount<E extends object>(entity: Type<E>): Promise<number>;
 
-  async insertOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined> {
-    const [id] = await this.insertMany(entity, [payload]);
-    return id;
+  insertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
+  async insertOne<E extends object>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
+    const [written] = await this.writeReturning(entity, () => this.insertIds(entity, [payload]), opts);
+    return written;
   }
 
-  /**
-   * The `onInsert` values are filled here, before the write, so the after hooks and the ids read the
-   * same rows the statement wrote.
-   */
+  insertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
   async insertMany<E extends object>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
+    return this.writeReturning(entity, () => this.insertIds(entity, payload), opts);
+  }
+
+  /**
+   * The ids of the rows inserted, in payload order. The `onInsert` values are filled before the write, so
+   * the after hooks and the ids read the same rows the statement wrote.
+   */
+  private async insertIds<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
   ): Promise<(WrittenId<E> | undefined)[]> {
-    if (!payload?.length) {
+    if (!payload.length) {
       return [];
     }
     const meta = getMeta(entity);
-    return this.hooked(entity, 'Insert', payload, async (rows) => {
-      await this.insertRows(entity, rows);
-      return writtenIds(meta, rows);
+    const insert = () =>
+      this.hooked(entity, 'Insert', payload, async (rows) => {
+        await this.insertRows(entity, rows);
+        return writtenIds(meta, rows);
+      });
+    return writesRelations(meta, payload) ? this.atomically(insert) : insert();
+  }
+
+  /**
+   * The ids `write` reports, or, where `opts` asks for `returning`, the rows they name, read back in the same
+   * transaction with only the fields it lists.
+   */
+  private writeReturning<E extends object>(
+    entity: Type<E>,
+    write: () => Promise<(WrittenId<E> | undefined)[]>,
+    opts: WriteOptions<E, FieldKey<E>, BooleanLike> | undefined,
+  ): Promise<(WrittenId<E> | undefined)[] | Partial<E>[]> {
+    const keys = returnedKeys(getMeta(entity), opts?.returning);
+    return keys ? this.atomically(async () => this.readWritten(entity, await write(), keys)) : write();
+  }
+
+  /** The rows `q` matches with the fields `keys` names and their keys, through `afterLoad` as a read's are. */
+  private async readReturning<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    keys: readonly FieldKey<E>[],
+    opts?: QueryOptions,
+  ): Promise<E[]> {
+    const $select = keySet<E>([...keys, ...getMeta(entity).ids]);
+    const rows = await this.internalFindMany(entity, { ...q, $select }, opts);
+    if (this.hasHook(entity, 'afterLoad')) {
+      await this.emitHook(entity, 'afterLoad', rows);
+    }
+    return rows;
+  }
+
+  /** The rows `ids` names, in their order, each with only the fields `keys` names. */
+  private async readWritten<E extends object>(
+    entity: Type<E>,
+    ids: readonly (EntityId<E> | undefined)[],
+    keys: readonly FieldKey<E>[],
+    opts?: QueryOptions,
+  ): Promise<Partial<E>[]> {
+    const meta = getMeta(entity);
+    const known = ids.filter((id) => id !== undefined);
+    if (known.length < ids.length) {
+      throw new UqlUsageError(
+        `'returning' reads each written '${entity.name}' back by its key, which ${this.dialect.dialectName} did not report for every row: give the rows their own keys`,
+      );
+    }
+    if (!known.length) {
+      return [];
+    }
+    // The rows this write wrote, whatever a filter says of them: a soft-deleted one inserted is still written.
+    const read = { ...opts, filters: withoutSoftDeleteFilter(opts?.filters) };
+    const rows: E[] = [];
+    for (const batch of chunk(known, this.dialect.keyListCapacity(meta.ids.length))) {
+      rows.push(...(await this.readReturning(entity, { $where: whereIds(meta, batch) }, keys, read)));
+    }
+    const byKey = new Map(rows.map((row) => [rowKey(row, meta.ids), row]));
+    return known.flatMap((id) => {
+      const row = byKey.get(rowKey(whereIds(meta, id), meta.ids));
+      return row ? [pickFields(row, keys)] : [];
     });
   }
 
-  /** Fills and guards `rows`, then writes them and their relations: an insert, and the insert half of a read upsert. */
+  /**
+   * Writes `rows` and their relations: the to-ones they hold the keys of first, so each row inserts
+   * pointing at its own, then the rows, then their children by the keys the rows got. An insert, and the
+   * insert half of a read upsert.
+   */
   private async insertRows<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
     const meta = getMeta(entity);
+    await this.writeHeldReferences(entity, rows);
     fillOnFields(meta, rows, 'onInsert');
     guardWrite(meta, rows, 'insert');
     await this.internalInsertMany(entity, rows);
-    await this.insertRelations(entity, rows);
+    await this.insertChildren(entity, rows);
   }
 
   /** Writes `rows`, its columns only, and onto each one the key the database generated for it, where it can tell. */
   protected abstract internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void>;
 
+  updateOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
   async updateOneById<E extends object>(
     entity: Type<E>,
     id: EntityId<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions,
-  ) {
+    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ): Promise<unknown> {
     assertIdValue(entity, id);
-    return this.updateMany(entity, { $where: whereIds(getMeta(entity), id) }, payload, opts);
+    const updated = await this.updateWhere(entity, { $where: whereIds(getMeta(entity), id) }, payload, opts);
+    return typeof updated === 'number' ? updated : updated[0];
   }
 
-  /** Settles the rows first where the update cascades, so a payload changing what `$where` reads still names them. */
+  updateMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
   async updateMany<E extends object>(
     entity: Type<E>,
     q: QuerySearch<E>,
     payload: UpdateWrite<E>,
-    opts?: QueryOptions,
-  ): Promise<number> {
+    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
+    return this.updateWhere(entity, q, payload, opts);
+  }
+
+  /**
+   * The number of rows the update changed, or the rows `returning` reads back: their ids settled first, so a
+   * payload changing what `$where` reads still names them, and read back by those ids in the same transaction.
+   */
+  private async updateWhere<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdateWrite<E>,
+    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'updateMany', q, opts);
-    return this.hooked(entity, 'Update', [payload], ([row]) =>
-      this.updateRows(entity, q, row, opts, getMeta(entity).version),
-    );
+    const meta = getMeta(entity);
+    const { returning, ...rest } = opts ?? {};
+    const keys = returnedKeys(meta, returning);
+    if (!keys) {
+      return this.updateMatching(entity, q, payload, opts);
+    }
+    return this.atomically(async () => {
+      const ids = await this.settleIds(entity, q, rest);
+      await this.updateMatching(entity, q, payload, rest);
+      return this.readWritten(entity, ids, keys, rest);
+    });
+  }
+
+  /** Updates the rows `q` matches between the update hooks, atomically where the payload writes relations too. */
+  private updateMatching<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    payload: UpdateWrite<E>,
+    opts: QueryOptions | undefined,
+  ): Promise<number> {
+    const meta = getMeta(entity);
+    const update = () =>
+      this.hooked(entity, 'Update', [payload], ([row]) => this.updateRows(entity, q, row, opts, meta.version));
+    return writesRelations(meta, [payload]) ? this.atomically(update) : update();
   }
 
   /**
@@ -701,9 +914,10 @@ export abstract class AbstractQuerier implements Querier {
     lockKey: FieldKey<E> | undefined,
   ): Promise<number> {
     const meta = getMeta(entity);
+    await this.writeHeldReferences(entity, [row]);
     fillOnFields(meta, [row], 'onUpdate');
     guardWrite(meta, [row], 'update');
-    const relKeys = filterPersistableRelationKeys(meta, row, 'persist');
+    const relKeys = childRelationKeys(meta, row);
     const settles = !!relKeys.length || this.settlesWrite(entity, q);
     if (lockKey) {
       assertLockableUpdate(meta, q, settles);
@@ -723,12 +937,7 @@ export abstract class AbstractQuerier implements Querier {
       this.updateColumns(entity, { $where: whereIds(meta, batch) }, row, opts, batch.length),
     );
     for (const relKey of relKeys) {
-      await this.saveRelation(
-        entity,
-        relKey,
-        ids.map((id) => ({ id, value: row[relKey] })),
-        true,
-      );
+      await this.replaceChildren(entity, relKey, ids, row[relKey]);
     }
     return changes;
   }
@@ -803,9 +1012,9 @@ export abstract class AbstractQuerier implements Querier {
     return batches.length > 1 ? this.atomically(each) : each();
   }
 
-  /** Runs a write split into several statements as one, in a transaction that joins an open one. */
+  /** Runs a write of several statements as one: in a transaction of its own, or the one already open. */
   protected atomically<T>(write: () => Promise<T>): Promise<T> {
-    return this.transaction(write);
+    return this.scopeHere() ? write() : this.transaction(write);
   }
 
   /** The ids `q` matches, in its own order and page. */
@@ -861,40 +1070,51 @@ export abstract class AbstractQuerier implements Querier {
     return this.hooked(entity, 'Update', [payload], ([row]) => this.updateRows(entity, q, row, opts, undefined));
   }
 
-  /** Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither the insert's nor the update's pair fits. */
+  upsertOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: EntityWrite<E>,
+    update?: UpdateWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
   async upsertOne<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: EntityWrite<E>,
     update?: UpdateWrite<E>,
-  ): Promise<QueryUpsertOneResult<E>> {
-    const meta = getMeta(entity);
-    assertUnversioned(meta, "'upsertOne'");
-    return this.hooked(entity, 'Upsert', [payload], async (rows) => {
-      const { ids, changes, created } = upsertsByReading(meta, rows, update)
-        ? await this.readThenUpsert(entity, conflictPaths, rows, update)
-        : await this.internalUpsertOne(entity, conflictPaths, rows[0], update);
-      adoptReportedIds(meta, rows, ids);
-      const [id] = writtenIds(meta, rows);
-      return { id, changes, created };
-    });
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ): Promise<unknown> {
+    const [written] = await this.upsertMany(entity, conflictPaths, [payload], update, opts);
+    return written;
   }
 
+  upsertMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    conflictPaths: QueryConflictPaths<E>,
+    payload: readonly EntityWrite<E>[],
+    update?: UpdateWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
   async upsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: readonly EntityWrite<E>[],
     update?: UpdateWrite<E>,
-  ): Promise<QueryUpsertManyResult<E>> {
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
     const meta = getMeta(entity);
-    assertUnversioned(meta, "'upsertMany'");
-    return this.hooked(entity, 'Upsert', payload, async (rows) => {
-      const { ids, changes } = upsertsByReading(meta, rows, update)
-        ? await this.readThenUpsert(entity, conflictPaths, rows, update)
-        : await this.internalUpsertMany(entity, conflictPaths, rows, update);
-      adoptReportedIds(meta, rows, ids);
-      return { ids: writtenIds(meta, rows), changes };
-    });
+    assertUnversioned(meta, "'upsert'");
+    // Fires `beforeUpsert`/`afterUpsert`: which branch a row takes is the database's to decide, so neither
+    // the insert's nor the update's pair fits.
+    const upsert = () =>
+      this.hooked(entity, 'Upsert', payload, async (rows) => {
+        const ids = upsertsByReading(meta, rows, update)
+          ? await this.readThenUpsert(entity, conflictPaths, rows, update)
+          : await this.internalUpsertMany(entity, conflictPaths, rows, update);
+        adoptReportedIds(meta, rows, ids);
+        return writtenIds(meta, rows);
+      });
+    return this.writeReturning(entity, upsert, opts);
   }
 
   /**
@@ -907,86 +1127,118 @@ export abstract class AbstractQuerier implements Querier {
     conflictPaths: QueryConflictPaths<E>,
     rows: E[],
     update?: UpdatePayload<E>,
-  ): Promise<QueryUpdateResult> {
+  ): Promise<(PrimaryKey | undefined)[]> {
     const meta = getMeta(entity);
     guardWrite(meta, rows, 'insert');
     if (!rows.length) {
-      return { changes: 0 };
+      return [];
     }
     const keys = getKeys(conflictPaths);
     const write = async () => {
       const ids = await this.idsByConflict(entity, conflictPaths, rows);
-      let changes = 0;
       for (const [index, row] of rows.entries()) {
         // An empty `update` leaves a found row as it is, as `DO NOTHING` does.
         if (ids[index] !== undefined && (update === undefined || hasKeys(update))) {
           const q = { $where: whereEach(keys, (key) => row[key]) };
           // A copy each: the update fills its `onUpdate` fields into what it is handed.
           const assigned = update ? { ...update } : conflictAssignments(row, conflictPaths);
-          changes += await this.updateRows(entity, q, assigned, undefined, undefined);
+          await this.updateRows(entity, q, assigned, { filters: withoutSoftDeleteFilter(undefined) }, undefined);
         }
       }
       const inserts = rows.filter((_, index) => ids[index] === undefined);
       if (inserts.length) {
         await this.insertRows(entity, inserts);
-        changes += inserts.length;
       }
-      const created = rows.length === 1 ? ids[0] === undefined : undefined;
       // A found row's key is adopted by the caller; an inserted one carries the key its insert wrote.
-      return { changes, created, ids };
+      return ids;
     };
-    return rows.length === 1 ? write() : this.atomically(write);
+    return rows.length > 1 || writesRelations(meta, [...rows, ...(update ? [update] : [])])
+      ? this.atomically(write)
+      : write();
   }
 
-  protected abstract internalUpsertOne<E extends object>(
-    entity: Type<E>,
-    conflictPaths: QueryConflictPaths<E>,
-    payload: E,
-    update?: UpdatePayload<E>,
-  ): Promise<QueryUpdateResult>;
-
+  /** Upserts `payload`, answering each row's key in payload order where the engine reports every one. */
   protected abstract internalUpsertMany<E extends object>(
     entity: Type<E>,
     conflictPaths: QueryConflictPaths<E>,
     payload: E[],
     update?: UpdatePayload<E>,
-  ): Promise<QueryUpdateResult>;
+  ): Promise<(PrimaryKey | undefined)[] | undefined>;
 
-  async deleteOneById<E extends object>(entity: Type<E>, id: EntityId<E>, opts?: QueryOptions) {
+  deleteOneById<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V> | undefined>>;
+  async deleteOneById<E extends object>(
+    entity: Type<E>,
+    id: EntityId<E>,
+    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ): Promise<unknown> {
     assertIdValue(entity, id);
-    return this.deleteMany(entity, { $where: whereIds(getMeta(entity), id) }, opts);
+    const deleted = await this.deleteWhere(entity, { $where: whereIds(getMeta(entity), id) }, opts);
+    return typeof deleted === 'number' ? deleted : deleted[0];
   }
 
   /** Delete records matching the query, the entity passed first or as `$entity`; soft-deletes unless `opts.hardDelete`. */
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
-  async deleteMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<number> {
+  deleteMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
+  async deleteMany<E extends object>(...args: EntityArgs<E, QuerySearch<E>>): Promise<unknown> {
     const [entity, q, opts] = entityArgs(args);
+    return this.deleteWhere(entity, q, opts);
+  }
+
+  /** The number of rows deleted, or the rows `returning` reads as they were, before the delete and in its transaction. */
+  private async deleteWhere<E extends object>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions & WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ): Promise<number | Partial<E>[]> {
     assertNamesRows(entity, 'deleteMany', q, opts);
+    const meta = getMeta(entity);
+    const { returning, ...rest } = opts ?? {};
+    const keys = returnedKeys(meta, returning);
+    if (!keys) {
+      return this.deleteRows(entity, q, opts);
+    }
+    return this.atomically(async () => {
+      const rows = await this.readReturning(entity, q, keys, deletableRows(rest));
+      await this.deleteRows(entity, q, rest);
+      return rows.map((row) => pickFields(row, keys));
+    });
+  }
+
+  private async deleteRows<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
     const meta = getMeta(entity);
     const cascades = cascadesOnDelete(meta);
     const watched = this.hasHook(entity, 'beforeDelete') || this.hasHook(entity, 'afterDelete');
     if (!watched && !cascades && !this.settlesWrite(entity, q)) {
       return this.internalDeleteMany(entity, q, opts);
     }
-    // A hard delete takes already-soft-deleted rows too, so reading them back has to see them.
-    const readOpts = opts?.hardDelete ? { ...opts, filters: withoutSoftDeleteFilter(opts.filters) } : opts;
+    const readOpts = deletableRows(opts);
     // A hook receives the rows themselves; the ids read off them name the same rows a second read might not.
     const doomed = watched ? await this.internalFindMany(entity, q, readOpts) : [];
     const ids = watched ? doomed.map((row) => idOf(meta, row)) : await this.settleIds(entity, q, readOpts);
     if (!ids.length) {
       return 0;
     }
-    await this.emitHook(entity, 'beforeDelete', doomed);
-    const changes = await this.writeBatches(ids, meta.ids.length, async (batch) => {
-      // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
-      if (cascades) {
-        await this.deleteRelations(entity, batch, opts);
-      }
-      return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
-    });
-    await this.emitHook(entity, 'afterDelete', doomed);
-    return changes;
+    const remove = async () => {
+      await this.emitHook(entity, 'beforeDelete', doomed);
+      const changes = await this.writeBatches(ids, meta.ids.length, async (batch) => {
+        // Children first: they hold the foreign key, which a schema without `ON DELETE CASCADE` enforces.
+        if (cascades) {
+          await this.deleteChildren(entity, batch, opts);
+        }
+        return this.internalDeleteMany(entity, { $where: whereIds(meta, batch) }, opts);
+      });
+      await this.emitHook(entity, 'afterDelete', doomed);
+      return changes;
+    };
+    return cascades ? this.atomically(remove) : remove();
   }
 
   /** Runs one DELETE (or soft-delete stamp) over `q`, which names its rows by id wherever {@link deleteMany} settled them. */
@@ -996,9 +1248,31 @@ export abstract class AbstractQuerier implements Querier {
     opts?: QueryOptions,
   ): Promise<number>;
 
-  async saveOne<E extends object>(entity: Type<E>, payload: EntityWrite<E>): Promise<WrittenId<E> | undefined> {
-    const [id] = await this.saveMany(entity, [payload]);
-    return id;
+  saveOne<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, WrittenId<E> | undefined, QueryFindResult<E, S, V>>>;
+  async saveOne<E extends object>(
+    entity: Type<E>,
+    payload: EntityWrite<E>,
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
+    const [written] = await this.writeReturning(entity, () => this.saveIds(entity, [payload]), opts);
+    return written;
+  }
+
+  saveMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, (WrittenId<E> | undefined)[], QueryFindResult<E, S, V>[]>>;
+  async saveMany<E extends object>(
+    entity: Type<E>,
+    payload: readonly EntityWrite<E>[],
+    opts?: WriteOptions<E, FieldKey<E>, BooleanLike>,
+  ) {
+    return this.writeReturning(entity, () => this.saveIds(entity, payload), opts);
   }
 
   /**
@@ -1006,7 +1280,7 @@ export abstract class AbstractQuerier implements Querier {
    * upserts on that key, so a stale id is written rather than silently missed, and an unnamed one
    * inserts. A composite is always named. The hooks follow the statement: a named row fires the upsert pair.
    */
-  async saveMany<E extends object>(
+  private async saveIds<E extends object>(
     entity: Type<E>,
     payload: readonly EntityWrite<E>[],
   ): Promise<(WrittenId<E> | undefined)[]> {
@@ -1038,7 +1312,7 @@ export abstract class AbstractQuerier implements Querier {
 
     const write = async () => {
       if (toInsert.length) {
-        const inserted = await this.insertMany(
+        const inserted = await this.insertIds(
           entity,
           toInsert.map((index) => payload[index]),
         );
@@ -1048,7 +1322,7 @@ export abstract class AbstractQuerier implements Querier {
       }
       if (toUpsert.length) {
         const conflictPaths = keySet<E>(meta.ids);
-        const { ids: upserted } = await this.upsertMany(
+        const upserted = await this.upsertMany(
           entity,
           conflictPaths,
           toUpsert.map((index) => payload[index]),
@@ -1064,134 +1338,320 @@ export abstract class AbstractQuerier implements Querier {
     return ids;
   }
 
-  /** Writes each inserted row's relations, one set of statements per relation whatever the number of rows. */
-  private async insertRelations<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {
+  /**
+   * Writes the target of each to-one `rows` hold the key of, and points each row at its own: a row naming
+   * only its key is a link and writes nothing, any other saves as `saveMany` does, and `null` clears the key.
+   */
+  private async writeHeldReferences<E extends object>(
+    entity: Type<E>,
+    rows: readonly UpdatePayload<E>[],
+  ): Promise<void> {
+    const meta = getMeta(entity);
+    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'persist')) {
+      const relOpts = relationOf(meta, relKey);
+      const holding = rows.filter((row) => row[relKey] !== undefined);
+      if (!holdsForeignKey(relOpts) || !holding.length) {
+        continue;
+      }
+      const relMeta = getMeta(relOpts.entity());
+      const pointing = holding.flatMap((row) => listedRows(row[relKey]).map((target) => ({ row, target })));
+      const ids = await this.saveTargets(
+        entity,
+        relKey,
+        pointing.map(({ target }) => target),
+      );
+      const columns = (target: Record<string, unknown>) =>
+        Object.fromEntries(relOpts.references.map(({ local, foreign }) => [local, target[foreign] ?? null]));
+      for (const row of holding) {
+        Object.assign(row, columns({}));
+      }
+      pointing.forEach(({ row, target }, index) => {
+        Object.assign(row, columns({ ...target, ...whereIds(relMeta, ids[index]) }));
+      });
+    }
+  }
+
+  /** Writes each inserted row's children, one set of statements per relation whatever the number of rows. */
+  private async insertChildren<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
     const meta = getMeta(entity);
     const [idKey] = meta.ids;
-    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'persist')) {
+    for (const relKey of childRelationKeys(meta, meta.relations)) {
       const writes = rows.flatMap((row) => (row[relKey] == null ? [] : [{ id: row[idKey], value: row[relKey] }]));
       if (writes.length) {
-        await this.saveRelation(entity, relKey, writes, false);
+        assertSoleId(meta, 'saving a relation');
+        await this.saveChildren(entity, relKey, writes);
       }
     }
   }
 
-  /** `EntityId` because a settled composite row is an object, which {@link childrenOf} reads each foreign key column out of. */
-  private async deleteRelations<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
+  /**
+   * Makes `value` the children of each parent `ids` names, which it owns: the rows it lists are saved,
+   * keeping what each does not write, and the parent's other children (a junction's other links) go.
+   */
+  private async replaceChildren<E extends object>(
+    entity: Type<E>,
+    relKey: RelationKey<E>,
+    ids: EntityId<E>[],
+    value: unknown,
+  ): Promise<void> {
     const meta = getMeta(entity);
-    const relKeys = filterPersistableRelationKeys(meta, meta.relations, 'delete');
-    // Cascade forwards `opts` (including `hardDelete`); each child soft-deletes only if it can.
-    for (const relKey of relKeys) {
-      const relOpts = relationOf(meta, relKey);
-      const relEntity = relOpts.entity();
-      const target = relOpts.through ? relOpts.through() : relEntity;
-      await this.deleteMany(target, { $where: childrenOf(parentJoins(relOpts, meta.ids.length), ids) }, opts);
+    assertSoleId(meta, 'saving a relation');
+    const relOpts = relationOf(meta, relKey);
+    const relEntity: Type<object> = relOpts.entity();
+    const relMeta = getMeta(relEntity);
+    const parentColumn = soleParentColumn(relOpts);
+    const listed = listedRows(value);
+    if (relOpts.through) {
+      const holder = relOpts.through();
+      const [targetColumn] = targetKeyColumns(relOpts, 1);
+      const targetIds = await this.saveTargets(entity, relKey, listed);
+      await this.writeBatches(ids, 1, (batch) =>
+        this.deleteMany(
+          holder,
+          { $where: { [parentColumn]: batch, ...(targetIds.length && { [targetColumn]: { $nin: targetIds } }) } },
+          { hardDelete: true },
+        ),
+      );
+      const linked = await this.internalFindMany(holder, {
+        $where: { [parentColumn]: ids, [targetColumn]: targetIds },
+      });
+      const has = new Set(linked.map((link) => rowKey(link, [parentColumn, targetColumn])));
+      const links = ids.flatMap((id) =>
+        targetIds.map((targetId) => ({ [parentColumn]: id, [targetColumn]: targetId })),
+      );
+      const missing = links.filter((link) => !has.has(rowKey(link, [parentColumn, targetColumn])));
+      await this.insertMany(holder, missing);
+      return;
     }
+    const keptIds = listed.filter((row) => namesKey(relMeta, row)).map((row) => idOf(relMeta, row));
+    await this.writeBatches(ids, 1, (batch) =>
+      this.deleteMany(relEntity, {
+        $where: {
+          [parentColumn]: batch,
+          ...(keptIds.length && { [soleIdOf(relMeta, 'replacing the rows of a relation')]: { $nin: keptIds } }),
+        },
+      }),
+    );
+    await this.saveChildren(
+      entity,
+      relKey,
+      ids.map((id) => ({ id, value })),
+    );
   }
 
-  /**
-   * Writes each parent's value into one relation. The parent owns what it points at: an update replaces
-   * it, and a `null` only clears it.
-   */
-  private async saveRelation<E extends object>(
+  /** Writes each parent's children: rows pointed at their parent, or targets linked through the junction. */
+  private async saveChildren<E extends object>(
     entity: Type<E>,
     relKey: RelationKey<E>,
     writes: readonly RelationWrite<E>[],
-    isUpdate: boolean,
-  ) {
-    const meta = getMeta(entity);
-    // Writing the parent's key into a child is one column per key, and the helpers below read the first pair.
-    assertSoleId(meta, 'saving a relation');
-    const relOpts = relationOf(meta, relKey);
-    const relEntity = relOpts.entity();
-    if (relOpts.cardinality === 'm1') {
-      return this.saveManyToOne(entity, relEntity, relOpts.references[0].local, writes);
-    }
-    const holder = relOpts.through ? relOpts.through() : relEntity;
+  ): Promise<void> {
+    const relOpts = relationOf(getMeta(entity), relKey);
     const parentColumn = soleParentColumn(relOpts);
-    if (isUpdate) {
-      await this.writeBatches(writes, 1, (batch) =>
-        this.deleteMany(holder, { $where: { [parentColumn]: batch.map(({ id }) => id) } }),
-      );
-    }
     // Each parent gets its own copies, so a row listed for two parents is written twice.
-    const children = writes.flatMap(({ id, value }) => [value ?? []].flat().map((row: object) => ({ id, row })));
+    const children = writes.flatMap(({ id, value }) => listedRows(value).map((row) => ({ id, row })));
     if (!children.length) {
       return;
     }
     if (!relOpts.through) {
       await this.saveMany(
-        relEntity,
+        relOpts.entity(),
         children.map(({ id, row }) => ({ ...row, [parentColumn]: id })),
       );
       return;
     }
-    const savedIds = await this.saveMany(
-      relEntity,
+    const targetIds = await this.saveTargets(
+      entity,
+      relKey,
       children.map(({ row }) => row),
     );
-    // A link needs the target's id, which a MySQL batch mixing supplied and generated keys cannot report.
-    if (savedIds.includes(undefined)) {
-      throw new UqlUsageError(
-        `'${relEntity.name}' rows saved through '${holder.name}' reported no id, so they cannot be linked. ` +
-          'Insert them with their own ids, or save the relation in its own statement.',
-      );
-    }
     const [targetColumn] = targetKeyColumns(relOpts, 1);
     await this.insertMany(
-      holder,
-      children.map(({ id }, index) => ({ [parentColumn]: id, [targetColumn]: savedIds[index] })),
+      relOpts.through(),
+      children.map(({ id }, index) => ({ [parentColumn]: id, [targetColumn]: targetIds[index] })),
     );
   }
 
-  /** Each parent gets its own referenced row, and its own column pointing at it. */
-  private async saveManyToOne<E extends object>(
+  /**
+   * Saves the rows a relation points at, each one's id what the pointer needs: a MySQL batch mixing supplied and
+   * generated keys cannot report it, so one it could not is refused rather than left pointing nowhere.
+   */
+  private async saveTargets<E extends object>(
     entity: Type<E>,
-    relEntity: Type<object>,
-    localColumn: string,
-    writes: readonly RelationWrite<E>[],
-  ) {
-    // Before anything is written: the follow-up that points each row at its new relation carries no
-    // version, and half an insert is worse than a refusal.
-    assertUnversioned(getMeta(entity), 'save a to-one relation of');
-    const pointing = writes.filter(({ value }) => value);
-    const referenceIds = await this.insertMany(
-      relEntity,
-      pointing.map(({ value }) => value as object),
-    );
-    for (const [index, { id }] of pointing.entries()) {
-      assertIdValue(entity, id);
-      await this.unversionedUpdate(
-        entity,
-        { $where: whereIds(getMeta(entity), id) },
-        { [localColumn]: referenceIds[index] },
+    relKey: RelationKey<E>,
+    rows: readonly object[],
+  ): Promise<WrittenId<object>[]> {
+    const relEntity: Type<object> = relationOf(getMeta(entity), relKey).entity();
+    const ids = await this.saveMany(relEntity, rows);
+    if (ids.includes(undefined)) {
+      throw new UqlUsageError(
+        `'${relEntity.name}' rows saved through '${entity.name}.${relKey}' reported no id, so they cannot be pointed at. ` +
+          'Insert them with their own ids, or save the relation in its own statement.',
       );
+    }
+    return ids.filter((id) => id !== undefined);
+  }
+
+  /**
+   * Deletes the children of the parents `ids` names, as the parents go: a hard delete takes them all, a soft
+   * delete stamps those that can be stamped and keeps the rest, junction links included, for a restore.
+   * `EntityId` because a settled composite row is an object, which {@link childrenOf} reads each foreign key column out of.
+   */
+  private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
+    const meta = getMeta(entity);
+    const soft = !!meta.softDelete && !opts?.hardDelete;
+    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'delete')) {
+      const relOpts = relationOf(meta, relKey);
+      const target = relOpts.through ? relOpts.through() : relOpts.entity();
+      if (soft && !getMeta(target).softDelete) {
+        continue;
+      }
+      const $where = childrenOf(parentJoins(relOpts, meta.ids.length), ids);
+      await this.deleteMany(target, { $where }, { ...opts, hardDelete: !soft });
     }
   }
 
   abstract readonly hasOpenTransaction: boolean;
 
   /**
-   * Runs `callback` in a transaction, joining one already open. A rollback that fails is logged, never
-   * thrown over the original error, and the connection stays with whoever acquired it.
+   * The transaction this flow runs in on this connection, the innermost where they nest: the callback's,
+   * or a `beginTransaction` of this querier's. `undefined` outside one, or inside another flow's.
    */
-  async transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions) {
-    if (this.hasOpenTransaction) {
-      return callback();
+  protected scopeHere(): TransactionScope | undefined {
+    const held = this.#slot.held;
+    if (!held) {
+      return undefined;
     }
+    const current = currentTransaction();
+    if (current?.slot === this.#slot) {
+      return current;
+    }
+    return held.manual && held.scope.querier === this ? held.scope : undefined;
+  }
+
+  /**
+   * Runs `callback` in a transaction. Inside one this flow already runs, it is a savepoint: its failure undoes
+   * its own writes alone. A transaction another flow holds on this connection is waited for, never joined.
+   */
+  async transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions): Promise<T> {
+    const here = this.scopeHere();
+    if (here) {
+      return this.nested(here, callback);
+    }
+    const scope = newScope(this, this.#slot);
+    const result = await inTransaction(scope, async () => {
+      await this.open(scope, false, opts);
+      try {
+        const value = await callback();
+        await this.close(true);
+        return value;
+      } catch (err) {
+        // Reported rather than thrown: the error being unwound is the useful one.
+        await this.rollbackTransaction().catch((rollbackErr: unknown) => {
+          this.logger.logError('rollback failed', rollbackErr);
+        });
+        throw err;
+      }
+    });
+    await runCallbacks(scope.onCommit);
+    return result;
+  }
+
+  /** A transaction inside `parent`, after any other it runs: a savepoint where the engine has them. */
+  private nested<T>(parent: TransactionScope, callback: () => Promise<T>): Promise<T> {
+    const scope = newScope(this, this.#slot, parent);
+    const run = parent.nested.then(() => inTransaction(scope, () => this.savepointed(scope, parent, callback)));
+    parent.nested = run.catch(() => undefined);
+    return run;
+  }
+
+  /** `callback` between a savepoint and its release, rolled back to it on failure, its `onCommit` callbacks kept only where it succeeds. */
+  private async savepointed<T>(scope: TransactionScope, parent: TransactionScope, callback: () => Promise<T>) {
+    const name = `${SAVEPOINT_PREFIX}${depthOf(scope)}`;
+    await this.serialize(() => this.savepoint('open', name));
     try {
-      await this.beginTransaction(opts);
-      const res = await callback();
-      await this.commitTransaction();
-      return res;
+      const value = await callback();
+      await this.serialize(() => this.savepoint('release', name));
+      parent.onCommit.push(...scope.onCommit);
+      return value;
     } catch (err) {
-      // Reported rather than thrown: the error being unwound is the useful one. Inline rather than
-      // shared with `release` below, because this method is grafted onto plain objects in tests and
-      // every `this.x` it reaches for has to exist there too.
-      await this.rollbackTransaction().catch((rollbackErr: unknown) => {
-        this.logger.logError('rollback failed', rollbackErr);
-      });
+      await this.serialize(() => this.savepoint('rollback', name));
       throw err;
+    }
+  }
+
+  /**
+   * Opens, releases or rolls back to a savepoint, which a SQL engine overrides. Elsewhere (MongoDB) there is
+   * none, so a transaction inside another is refused: it could not undo its own writes apart.
+   */
+  protected savepoint(_kind: SavepointCommand, _name: string): Promise<void> {
+    return Promise.reject(
+      new UqlUsageError(
+        `${this.dialect.dialectName} has no savepoint to nest a transaction in another: run it on its own`,
+      ),
+    );
+  }
+
+  /**
+   * Runs `callback` once the outermost transaction this flow is in commits, and dropped if it rolls back:
+   * a mail sent for a row that never landed is not sent. With no transaction open it runs now.
+   */
+  async onCommit(callback: () => unknown): Promise<void> {
+    const scope = this.scopeHere();
+    if (scope) {
+      scope.onCommit.push(callback);
+      return;
+    }
+    await callback();
+  }
+
+  /** Waits for the connection's transaction, if another flow holds one, then opens `scope`'s on it. */
+  private async open(scope: TransactionScope, manual: boolean, opts?: TransactionOptions): Promise<void> {
+    await claim(this.#slot, scope, manual);
+    try {
+      await this.serialize(() => this.openTransaction(opts));
+    } catch (err) {
+      free(this.#slot);
+      throw err;
+    }
+  }
+
+  /** Whether the transaction its connection holds is this querier's. */
+  private holds(): boolean {
+    return this.#slot.held?.scope.querier === this;
+  }
+
+  /**
+   * Commits, or rolls back, the transaction this querier holds, in turn on its connection. With none held a
+   * rollback has nothing to do, and a commit refuses: a `release` inside the callback rolled it back.
+   */
+  private close(commit: boolean): Promise<void> {
+    return this.serialize(async () => {
+      if (this.holds()) {
+        return this.end(commit);
+      }
+      if (commit) {
+        throw new UqlUsageError('the querier was released inside its transaction, which rolled back');
+      }
+    });
+  }
+
+  /**
+   * Commits, or rolls back, the transaction this querier holds. A commit that fails can leave it open (SQLite
+   * answers `SQLITE_BUSY` and keeps it) for the rollback after it; a failed rollback ends it, leaving the
+   * connection unusable.
+   */
+  private async end(commit: boolean): Promise<void> {
+    try {
+      if (this.hasOpenTransaction) {
+        await this.endTransaction(commit);
+      }
+    } catch (err) {
+      this.#unusable ||= !commit;
+      throw err;
+    } finally {
+      if (!this.hasOpenTransaction) {
+        free(this.#slot);
+      }
     }
   }
 
@@ -1295,14 +1755,29 @@ export abstract class AbstractQuerier implements Querier {
       await listener[event]?.({ entity, querier: this, payloads, event });
     }
 
-    await runHooks(entity, event, payloads, { querier: this });
+    await runHooks(entity, event, payloads, { querier: this, onCommit: (callback) => this.onCommit(callback) });
   }
 
-  /** Runs `task` after everything already queued, one at a time. Not re-entrant: never nest `serialize` calls. */
+  /**
+   * Runs `task` after everything already queued, one at a time, once no transaction of another flow holds the
+   * connection: a statement from outside one never lands in it. Not re-entrant: never nest `serialize` calls.
+   */
   protected serialize<T>(task: () => Promise<T>): Promise<T> {
+    if (this.#slot.held && !this.scopeHere()) {
+      return this.#turn().then(() => this.serialize(task));
+    }
     if (this.#stream) {
       return Promise.reject(new UqlUsageError(STREAM_HOLDS_QUERIER));
     }
+    return this.enqueue(task);
+  }
+
+  /** Waits for a transaction another flow holds on the connection to end. */
+  #turn(): Promise<void> {
+    return awaitTurn(this.#slot, () => !!this.scopeHere());
+  }
+
+  private enqueue<T>(task: () => Promise<T>): Promise<T> {
     const res = this.taskQueue.then(task);
     this.taskQueue = res.catch(() => {});
     return res;
@@ -1343,38 +1818,34 @@ export abstract class AbstractQuerier implements Querier {
     }
   }
 
-  beginTransaction(opts?: TransactionOptions): Promise<void> {
-    return this.serialize(async () => {
-      if (this.hasOpenTransaction) {
-        throw new UqlUsageError('pending transaction');
-      }
-      await this.openTransaction(opts);
-    });
+  /** Opens a transaction that holds this querier until `commitTransaction` or `rollbackTransaction`, whatever flow calls them. */
+  async beginTransaction(opts?: TransactionOptions): Promise<void> {
+    if (this.scopeHere()) {
+      throw new UqlUsageError('pending transaction');
+    }
+    await this.open(newScope(this, this.#slot), true, opts);
   }
 
   /** Strict: this is the check that catches a forgotten `beginTransaction`. */
-  commitTransaction(): Promise<void> {
-    return this.serialize(async () => {
-      if (!this.hasOpenTransaction) {
-        throw new UqlUsageError('not a pending transaction');
-      }
-      await this.endTransaction(true);
-    });
+  async commitTransaction(): Promise<void> {
+    const held = this.#slot.held;
+    if (!held?.manual || held.scope.querier !== this) {
+      throw new UqlUsageError('not a pending transaction');
+    }
+    await this.close(true);
+    await runCallbacks(held.scope.onCommit);
   }
 
   /**
-   * Rolls the open transaction back, or does nothing when there is none: it is called from `catch` and
-   * `finally`, where the caller cannot know whether `beginTransaction` got far enough to open one.
+   * Rolls back the transaction this querier holds, or does nothing when there is none: it is called from `catch`
+   * and `finally`, where the caller cannot know whether `beginTransaction` got far enough to open one. A
+   * transaction another flow's callback holds is waited for, and so has ended by then.
    */
   rollbackTransaction(): Promise<void> {
-    return this.serialize(async () => {
-      if (this.hasOpenTransaction) {
-        await this.endTransaction(false);
-      }
-    });
+    return this.close(false);
   }
 
-  /** Opens a transaction on the engine, after `beginTransaction` has queued the call and checked none is open. */
+  /** Opens a transaction on the engine, once `open` has claimed the connection for it. */
   protected abstract openTransaction(opts?: TransactionOptions): Promise<void>;
 
   /** Commits the open transaction on the engine, or rolls it back when `commit` is false. */
@@ -1382,27 +1853,24 @@ export abstract class AbstractQuerier implements Querier {
 
   /**
    * Closes a stream left open and rolls back an unfinished transaction, then hands the connection back,
-   * discarding it if either failed: the pool would otherwise take one still reading. Never throws first,
-   * since `await using` has no other way to release.
+   * discarding it where it is unusable: the pool would otherwise take one still reading, or in a state the
+   * next borrower inherits. Never throws first, since `await using` has no other way to release.
    */
   async release(): Promise<void> {
-    let discard = false;
     await this.#stream?.return(undefined).catch((err: unknown) => {
       this.logger.logError('closing an open stream failed; discarding the connection', err);
-      discard = true;
+      this.#unusable = true;
     });
-    if (this.hasOpenTransaction) {
-      this.logger.logWarn('rolling back a transaction left open at release');
-      // The rollback doubles as a health check. One that succeeds proves the connection round-trips and
-      // left no transaction behind, so it is safe to reuse. One that fails leaves a session state
-      // nothing here can name, and the next borrower would inherit it.
-      await this.rollbackTransaction().catch((err: unknown) => {
-        this.logger.logError('rollback failed; discarding the connection', err);
-        discard = true;
-      });
-    }
+    await this.serialize(async () => {
+      if (this.holds()) {
+        this.logger.logWarn('rolling back a transaction left open at release');
+        await this.end(false);
+      }
+    }).catch((err: unknown) => {
+      this.logger.logError('rollback failed; discarding the connection', err);
+    });
     this.released = true;
-    return this.serialize(() => this.internalRelease(discard));
+    return this.enqueue(() => this.internalRelease(this.#unusable));
   }
 
   async [Symbol.asyncDispose](): Promise<void> {

@@ -1,9 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { getMeta } from '../entity/index.js';
+import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
+import { Entity, Field, Filter, getMeta, Id } from '../entity/index.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
+import { MsSqlDialect } from '../mssql/mssqlDialect.js';
+import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
-import { Invoice, User } from '../test/index.js';
+import { SqliteDialect } from '../sqlite/sqliteDialect.js';
+import { Company, Invoice, User } from '../test/index.js';
+import type { QueryWhere } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
 import { escapeSqlId } from '../util/sql.util.js';
+import { UqlUsageError } from '../util/uqlError.js';
 
 describe('escapeSqlId - identifier injection hardening', () => {
   it('should escape double-quote in table name', () => {
@@ -209,13 +216,6 @@ describe('SQL generation - edge cases', () => {
     expect(ctx.sql).not.toContain(';');
   });
 
-  it('should handle undefined value in WHERE', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { name: undefined } });
-    expect(ctx.sql).not.toContain('DROP');
-  });
-
   it('should handle empty string in WHERE', () => {
     const pg = new PostgresDialect();
     const ctx = pg.createContext();
@@ -237,5 +237,94 @@ describe('SQL generation - edge cases', () => {
     const ctx = pg.createContext();
     pg.find(ctx, User, { $where: { id: '123' } });
     expect(ctx.sql).not.toContain('DROP');
+  });
+});
+
+describe('SQL generation - JSON path keys', () => {
+  const dialects = [
+    new PostgresDialect(),
+    new CockroachDialect(),
+    new MySqlDialect(),
+    new MariaDialect(),
+    new SqliteDialect(),
+    new MsSqlDialect(),
+  ];
+  const unsafeKeys = ["x\\'", "it's", 'a"b', 'a b', 'a,b', '{a}', 'a[0]', '$a', ''];
+
+  describe.each(dialects.map((dialect) => [dialect.dialectName, dialect] as const))('%s', (_, dialect) => {
+    it.each(unsafeKeys)('should refuse %j in a $where path', (key) => {
+      const $where: Record<string, unknown> = { [`kind.${key}`]: 'v' };
+      expect(() => dialect.find(dialect.createContext(), Company, { $where })).toThrow(UqlUsageError);
+    });
+
+    it.each(unsafeKeys)('should refuse %j in a $sort path', (key) => {
+      const $sort: Record<string, unknown> = { [`kind.${key}`]: 'asc' };
+      // @ts-expect-error a key the document type does not declare
+      expect(() => dialect.find(dialect.createContext(), Company, { $sort })).toThrow(UqlUsageError);
+    });
+
+    it.each(['$set', '$push', '$pull'])('should refuse an unsafe key in %s', (op) => {
+      const kind: Record<string, unknown> = { [op]: { "x\\'": 1 } };
+      expect(() =>
+        // @ts-expect-error a key the document type does not declare
+        dialect.update(dialect.createContext(), Company, { $where: { id: 1 } }, { kind }),
+      ).toThrow(UqlUsageError);
+    });
+
+    it('should refuse an unsafe key in $unset', () => {
+      const kind: Record<string, unknown> = { $unset: ['a.b'] };
+      expect(() =>
+        // @ts-expect-error a key the document type does not declare
+        dialect.update(dialect.createContext(), Company, { $where: { id: 1 } }, { kind }),
+      ).toThrow(UqlUsageError);
+    });
+
+    it('should take an identifier key of any script', () => {
+      const ctx = dialect.createContext();
+      // @ts-expect-error a key the document type does not declare
+      dialect.find(ctx, Company, { $where: { 'kind.año_2': 1 } });
+      expect(ctx.sql).toContain('año_2');
+    });
+  });
+});
+
+@Filter('tenant', { where: (ctx) => ({ tenantId: ctx?.secureTenantId }), security: true })
+@Entity()
+class LooseTenantRow {
+  @Id({ type: Number })
+  id?: number;
+  @Field({ type: Number })
+  tenantId?: number | null;
+}
+
+describe('SQL generation - undefined in $where', () => {
+  const pg = new PostgresDialect();
+  const render = (where: QueryWhere<User>) => () => pg.find(pg.createContext(), User, { $where: where });
+
+  it('should refuse an undefined value, which would otherwise filter by nothing', () => {
+    expect(render({ name: undefined })).toThrow("$where on 'User' holds undefined at 'name'");
+  });
+
+  it('should refuse an undefined value beside a defined one', () => {
+    expect(render({ name: undefined, companyId: 'c1' })).toThrow("holds undefined at 'name'");
+  });
+
+  it('should refuse an undefined value inside a group', () => {
+    expect(render({ $or: [{ companyId: 'c1' }, { name: undefined }] })).toThrow("holds undefined at '$or.1.name'");
+  });
+
+  it('should refuse an undefined operand', () => {
+    expect(render({ name: { $ne: undefined } })).toThrow("holds undefined at 'name.$ne'");
+    expect(render({ companyId: { $in: ['c1', undefined] } })).toThrow("holds undefined at 'companyId.$in.1'");
+  });
+
+  it('should refuse a filter resolving to undefined, rather than drop it', () => {
+    expect(() => pg.find(pg.createContext(), LooseTenantRow, {})).toThrow("holds undefined at '$and.0.tenantId'");
+  });
+
+  it('should take null, which matches NULL', () => {
+    const ctx = pg.createContext();
+    pg.find(ctx, User, { $where: { name: null } });
+    expect(ctx.sql).toContain('IS NULL');
   });
 });

@@ -2,7 +2,7 @@ import { SQL } from 'bun';
 import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import { type DialectOptions, dialectOptionsFrom } from '../dialect/abstractDialect.js';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { AbstractSqlQuerierPool } from '../querier/index.js';

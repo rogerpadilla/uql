@@ -3,9 +3,19 @@ import type { SqlDialectName } from './dialect.js';
 import type { FieldKey, HookEvent, RelationKey } from './entity.js';
 import type { LoggingOptions } from './logger.js';
 import type { NamingStrategy } from './namingStrategy.js';
-import type { QueryFilter, QueryFindResult, QueryOptions, QueryPage, QuerySearch, QueryUpdateResult } from './query.js';
+import type {
+  QueryFilter,
+  QueryFindResult,
+  QueryOptions,
+  QueryPage,
+  QuerySearch,
+  QueryUpdateResult,
+  ReturningResult,
+  WriteOptions,
+} from './query.js';
+import type { QueryRaw, RawValue } from './queryRaw.js';
 import type { ProjectedQuery, ProjectedRead, ProjectedResult, UniversalQuerier } from './universalQuerier.js';
-import type { Type } from './utility.js';
+import type { BooleanLike, RawRow, Type } from './utility.js';
 import type { QuerierRaw } from './wire.js';
 
 /**
@@ -72,7 +82,11 @@ export interface Querier extends UniversalQuerier {
 
   /** Delete many records, the entity passed first or as `$entity`; soft-deletes where the entity has a soft-delete field. */
   deleteMany<E extends object>(q: QuerySearch<E> & { $entity: Type<E> }, opts?: QueryOptions): Promise<number>;
-  deleteMany<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number>;
+  deleteMany<E extends object, const S extends FieldKey<E> = never, const V extends BooleanLike = true>(
+    entity: Type<E>,
+    q: QuerySearch<E>,
+    opts?: QueryOptions & WriteOptions<E, S, V>,
+  ): Promise<ReturningResult<S, number, QueryFindResult<E, S, V>[]>>;
 
   /**
    * whether this querier is in a transaction or not.
@@ -80,9 +94,16 @@ export interface Querier extends UniversalQuerier {
   readonly hasOpenTransaction: boolean;
 
   /**
-   * run the given callback inside a transaction in this querier.
+   * Runs `callback` in a transaction. Inside one this flow already runs, it is a savepoint, whose failure
+   * undoes its own writes alone; a transaction another flow holds on this connection is waited for.
    */
   transaction<T>(callback: () => Promise<T>, opts?: TransactionOptions): Promise<T>;
+
+  /**
+   * Runs `callback` once the outermost transaction this flow is in commits, never if it rolls back; at
+   * once outside a transaction. For side effects a rollback cannot take back: a mail, a queued job.
+   */
+  onCommit(callback: () => unknown): Promise<void>;
 
   /**
    * starts a new transaction in this querier.
@@ -122,14 +143,15 @@ export interface SqlQuerier extends Querier {
   readonly dialect: AbstractSqlDialect;
 
   /**
-   * Execute a raw SQL query and return results
+   * The rows a statement answers, written as a tag, `all<Row>`SELECT ... WHERE id = ${id}``, each interpolated
+   * value bound, never spliced; or a `raw` built apart.
    */
-  all<T>(query: string, values?: readonly unknown[]): Promise<T[]>;
+  all<T extends object = RawRow>(strings: TemplateStringsArray, ...values: RawValue[]): Promise<T[]>;
+  all<T extends object = RawRow>(sql: QueryRaw): Promise<T[]>;
 
-  /**
-   * Execute a raw SQL command (INSERT, UPDATE, DELETE, DDL)
-   */
-  run(query: string, values?: readonly unknown[]): Promise<QueryUpdateResult>;
+  /** Runs a statement (INSERT, UPDATE, DELETE, DDL), written as a tag or a `raw`, each interpolated value bound. */
+  run(strings: TemplateStringsArray, ...values: RawValue[]): Promise<QueryUpdateResult>;
+  run(sql: QueryRaw): Promise<QueryUpdateResult>;
 }
 
 /**

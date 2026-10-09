@@ -9,7 +9,8 @@ import { type HookContext, runHooks } from './hook.util.js';
  * The event named here is incidental; nothing in `runHooks` branches on it.
  */
 
-const ctx: HookContext = { querier: createMockQuerier() };
+const querier = createMockQuerier();
+const ctx: HookContext = { querier, onCommit: querier.onCommit };
 
 @Entity()
 class Article {

@@ -3,11 +3,12 @@ import type { HookEvent, Querier, Type } from '../type/index.js';
 import { UqlUsageError } from './uqlError.js';
 
 /**
- * Context passed to lifecycle hooks, providing access to the active querier
- * so hooks can perform DB operations within the same transaction.
+ * What a lifecycle hook is handed: the querier, to write in the same transaction, and `onCommit`, for what
+ * must wait until that transaction commits.
  */
 export type HookContext = {
   readonly querier: Querier;
+  readonly onCommit: Querier['onCommit'];
 };
 
 /**

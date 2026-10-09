@@ -4,7 +4,7 @@ import type { ForeignKeyAction } from '../../schema/types.js';
 import { assertDefined, type Spec, type SpecRequirements } from '../../test/index.js';
 import { dropTables } from '../../test/sqlPools.js';
 import type { SchemaIntrospector, SqlQuerier, SqlQuerierPool, TableSchema } from '../../type/index.js';
-import { currentTimestamp } from '../../util/raw.js';
+import { currentTimestamp, raw } from '../../util/raw.js';
 import { migrationBuilderFor } from '../migrationTarget.js';
 import { introspectorFor } from './registry.js';
 
@@ -28,7 +28,7 @@ const DROP_ORDER = Object.values(INTROSPECT_TABLES).toReversed();
 /**
  * Shared integration suite for schema introspectors, covering table/column/PK/FK/index/default-value
  * introspection plus self-references and edge cases. Builds its fixture tables with
- * {@link MigrationBuilder} so the DDL stays dialect-agnostic; subclasses override the hooks below for
+ * {@link MigrationOperationBuilder} so the DDL stays dialect-agnostic; subclasses override the hooks below for
  * dialect-specific setup and add their own dialect-specific tests.
  */
 export abstract class AbstractIntrospectorIt implements Spec {
@@ -252,8 +252,8 @@ export abstract class AbstractIntrospectorIt implements Spec {
   /** A partial unique index keeps its predicate, and makes no column unique. */
   async shouldReadAPartialIndexWithItsPredicate() {
     const schema = await this.probe('introspect_partial', async (querier, table) => {
-      await querier.run(`CREATE TABLE ${table} (code INTEGER)`);
-      await querier.run(`CREATE UNIQUE INDEX introspect_partial_uk ON ${table} (code) WHERE code > 0`);
+      await querier.run(raw.text(`CREATE TABLE ${table} (code INTEGER)`));
+      await querier.run(raw.text(`CREATE UNIQUE INDEX introspect_partial_uk ON ${table} (code) WHERE code > 0`));
     });
 
     expect(this.getIndex(schema, 'introspect_partial_uk').where).toBe(this.expectedPartialPredicate());
@@ -290,7 +290,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
    */
   async shouldLeaveAVirtualGeneratedColumnOut() {
     const schema = await this.probe('introspect_virtual', (querier, table) =>
-      querier.run(`CREATE TABLE ${table} (qty INTEGER, ${this.virtualGeneratedColumn()})`),
+      querier.run(raw.text(`CREATE TABLE ${table} (qty INTEGER, ${this.virtualGeneratedColumn()})`)),
     );
 
     expect(this.getColumn(schema, 'doubled').generatedAs).toBe(undefined);
@@ -376,7 +376,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
   async shouldReportNoPrimaryKeyOnATableWithoutOne() {
     const schema = await this.probe('introspect_keyless', (querier, table) =>
-      querier.run(`CREATE TABLE ${table} (${querier.dialect.escapeId('x')} INTEGER)`),
+      querier.run(raw.text(`CREATE TABLE ${table} (${querier.dialect.escapeId('x')} INTEGER)`)),
     );
 
     expect(schema.primaryKey).toBeUndefined();
@@ -422,7 +422,9 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldPairTheColumnsOfACompositeForeignKey() {
     const schema = await this.probe(INTROSPECT_TABLES.COMPOSITE_FK, (querier, table) =>
       querier.run(
-        `CREATE TABLE ${table} (pb INTEGER, pa INTEGER, FOREIGN KEY (pa, pb) REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.COMPOSITE_PK)} (tenant_id, entity_id) ON DELETE CASCADE)`,
+        raw.text(
+          `CREATE TABLE ${table} (pb INTEGER, pa INTEGER, FOREIGN KEY (pa, pb) REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.COMPOSITE_PK)} (tenant_id, entity_id) ON DELETE CASCADE)`,
+        ),
       ),
     );
 
@@ -451,7 +453,9 @@ export abstract class AbstractIntrospectorIt implements Spec {
   async shouldIntrospectSetDefaultForeignKey() {
     const schema = await this.probe(INTROSPECT_TABLES.SET_DEFAULT, (querier, table) =>
       querier.run(
-        `CREATE TABLE ${table} (parent_id BIGINT DEFAULT 0 REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.NO_FK)} (id) ON DELETE SET DEFAULT)`,
+        raw.text(
+          `CREATE TABLE ${table} (parent_id BIGINT DEFAULT 0 REFERENCES ${querier.dialect.escapeId(INTROSPECT_TABLES.NO_FK)} (id) ON DELETE SET DEFAULT)`,
+        ),
       ),
     );
 
@@ -481,7 +485,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
 
   async shouldNotMarkTheColumnsOfACompositeUniqueAsUnique() {
     const schema = await this.probe('introspect_unique_pair', (querier, table) =>
-      querier.run(`CREATE TABLE ${table} (v INTEGER, w INTEGER, UNIQUE (v, w))`),
+      querier.run(raw.text(`CREATE TABLE ${table} (v INTEGER, w INTEGER, UNIQUE (v, w))`)),
     );
 
     expect(schema.columns.map(({ name, isUnique }) => ({ name, isUnique }))).toEqual([
@@ -530,7 +534,7 @@ export abstract class AbstractIntrospectorIt implements Spec {
   ): Promise<TableSchema> {
     const querier = await this.pool.getQuerier();
     const escapedTable = querier.dialect.escapeId(table);
-    const drop = () => querier.run(`DROP TABLE IF EXISTS ${escapedTable}`);
+    const drop = () => querier.run(raw.text(`DROP TABLE IF EXISTS ${escapedTable}`));
     try {
       await drop();
       await create(querier, escapedTable);

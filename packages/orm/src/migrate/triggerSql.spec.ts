@@ -3,7 +3,7 @@ import { CockroachDialect } from '../cockroachdb/cockroachDialect.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { Entity, Field, Filter, Id, removeEntity } from '../entity/index.js';
 import { getMeta } from '../entity/metadata/definition.js';
-import { MariaDialect } from '../maria/mariaDialect.js';
+import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { MsSqlDialect } from '../mssql/mssqlDialect.js';
 import { MySqlDialect } from '../mysql/mysqlDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
@@ -798,15 +798,15 @@ describe('a write in the body, to another table', () => {
     expect(() =>
       render(new PostgresDialect(), {
         on: 'afterDelete',
-        run: () => deleteFrom(WriteAudit, { $where: { postId: undefined } }),
+        run: () => deleteFrom(WriteAudit, { $where: { $or: [{}] } }),
       }),
     ).toThrow(`a trigger's delete over 'WriteAudit' names no rows, so it would address every one`);
     expect(() =>
       render(new PostgresDialect(), {
         on: 'afterDelete',
-        run: () => deleteFrom(WriteAudit, { $where: { $or: [{ postId: undefined }] } }),
+        run: () => deleteFrom(WriteAudit, { $where: { postId: undefined } }),
       }),
-    ).toThrow(`a trigger's delete over 'WriteAudit' names no rows, so it would address every one`);
+    ).toThrow(`the $where of a trigger's delete over 'WriteAudit' holds undefined at 'postId'`);
   });
 
   it('should refuse a field the table has not got', () => {

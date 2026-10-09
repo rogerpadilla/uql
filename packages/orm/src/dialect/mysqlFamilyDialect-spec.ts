@@ -42,7 +42,6 @@ export abstract class MySqlFamilySpec extends AbstractSqlDialectSpec {
     );
     expect(values).toEqual(['User']);
   }
-
   /** The MySQL family takes an `OFFSET` only behind a `LIMIT`, and its manual gives the largest for every row. */
   override shouldFind$regex() {
     const res = this.exec((ctx) =>

@@ -24,12 +24,6 @@ import { AbstractSqlDialectSpec, type JsonUpdateCaseName } from './abstractSqlDi
  * `MySqlFamilySpec` is the same shape for MySQL and MariaDB.
  */
 export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
-  /**
-   * Postgres reports insert-vs-update from `xmax`, a system column CockroachDB does not have, so its
-   * upserts return the id alone. The only difference between the two in this whole suite.
-   */
-  protected readonly upsertCreatedFlag: string = ', (xmax = 0) AS "_uql_created"';
-
   /** How this engine types a config literal, and the function reading a search's text. */
   protected readonly textConfigCast: string = '::regconfig';
   protected readonly textQueryFn: string = 'WEBSEARCH_TO_TSQUERY';
@@ -211,7 +205,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "User" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "User" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "createdAt" = EXCLUDED."createdAt", "updatedAt" = $1 RETURNING "id" "id"`,
     );
     expect(values).toEqual([expect.any(Number), '1', 'Some Name', 123]);
   }
@@ -254,7 +248,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       this.dialect.upsert(ctx, UpsertFallbackWidget, { email: true }, { email: 'a@b.com' }),
     );
     expect(sql).toBe(
-      `INSERT INTO "UpsertFallbackWidget" ("email") VALUES ($3) ON CONFLICT ("email") DO UPDATE SET "updatedAt" = $1, "version" = $2 RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "UpsertFallbackWidget" ("email") VALUES ($3) ON CONFLICT ("email") DO UPDATE SET "updatedAt" = $1, "version" = $2 RETURNING "id" "id"`,
     );
     expect(values).toEqual([111, 'v2', 'a@b.com']);
   }
@@ -579,7 +573,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "user_profile" ("pk", "image", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("pk") DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = $1 RETURNING "pk" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "user_profile" ("pk", "image", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("pk") DO UPDATE SET "image" = EXCLUDED."image", "updatedAt" = $1 RETURNING "pk" "id"`,
     );
     expect(values).toEqual([expect.any(Number), '1', 'image.jpg', expect.any(Number)]);
   }
@@ -597,7 +591,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "User" ("id", "email", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "User" ("id", "email", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "updatedAt" = $1 RETURNING "id" "id"`,
     );
     expect(values).toEqual([expect.any(Number), '1', 'a@b.com', expect.any(Number)]);
   }
@@ -615,7 +609,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "UserWithNonUpdatableId" ("id", "name") VALUES ($1, $2) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name" RETURNING "id" "id"`,
     );
     expect(values).toEqual([1, 'Some Name']);
   }
@@ -631,9 +625,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
         },
       ),
     );
-    expect(sql).toBe(
-      `INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
-    );
+    expect(sql).toBe(`INSERT INTO "ItemTag" ("id") VALUES ($1) ON CONFLICT ("id") DO NOTHING RETURNING "id" "id"`);
     expect(values).toEqual(['1']);
   }
 
@@ -650,7 +642,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "ItemTag" ("itemId", "tagId", "id") VALUES ($1, $2, $3) ON CONFLICT ("itemId", "tagId") DO NOTHING RETURNING "id" "id"`,
     );
     expect(values).toEqual(['1', '2', anyUuid]);
   }
@@ -687,7 +679,7 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       ),
     );
     expect(sql).toBe(
-      `INSERT INTO "Item" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = $1 RETURNING "id" "id"${this.upsertCreatedFlag}`,
+      `INSERT INTO "Item" ("id", "name", "createdAt") VALUES ($2, $3, $4) ON CONFLICT ("id") DO UPDATE SET "name" = EXCLUDED."name", "updatedAt" = $1 RETURNING "id" "id"`,
     );
     expect(values).toEqual([expect.any(Number), '1', 'Some Item', expect.any(Number)]);
   }
@@ -1344,12 +1336,12 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
       values: ['{"private":1}', ['public'], 123, '1'],
     },
     push: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb)), "updatedAt" = $2 WHERE "id" = $3',
       values: ['"new-tag"', 123, '1'],
     },
     /** `create_if_missing => false` makes a `$pull` on an absent key a no-op. */
     pull: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), "updatedAt" = $2 WHERE "id" = $3`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), "updatedAt" = $2 WHERE "id" = $3`,
       values: ['"a"', 123, '1'],
     },
     /**
@@ -1357,19 +1349,19 @@ export abstract class PgFamilySpec extends AbstractSqlDialectSpec {
      * because `$N` placeholders are numbered, so the reused pull subquery binds its value once.
      */
     pullPushSameKey: {
-      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), '{tags}', COALESCE((JSONB_SET("kind", '{tags}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
+      sql: `UPDATE "Company" SET "kind" = JSONB_SET(JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false), '{"tags"}', COALESCE((JSONB_SET("kind", '{"tags"}', CASE WHEN JSONB_TYPEOF(("kind"->'tags')) = 'array' THEN COALESCE((SELECT JSONB_AGG(_uql_pull.val ORDER BY _uql_pull.ord) FROM JSONB_ARRAY_ELEMENTS(("kind"->'tags')) WITH ORDINALITY AS _uql_pull(val, ord) WHERE _uql_pull.val <> $1::jsonb), '[]'::jsonb) ELSE COALESCE(("kind"->'tags'), 'null') END, false))->'tags', '[]'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4`,
       values: ['"a"', '"b"', 123, '1'],
     },
     setPushCombined: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{"tags"}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
       values: ['{"private":1}', '"new-tag"', 123, '1'],
     },
     setPushSameKey: {
-      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{tags}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = JSONB_SET(COALESCE("kind", \'{}\'::jsonb) || $1::jsonb, \'{"tags"}\', COALESCE((COALESCE("kind", \'{}\'::jsonb) || $1::jsonb)->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($2::jsonb)), "updatedAt" = $3 WHERE "id" = $4',
       values: ['{"tags":["a"]}', '"b"', 123, '1'],
     },
     pushUnsetCombined: {
-      sql: 'UPDATE "Company" SET "kind" = (JSONB_SET("kind", \'{tags}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
+      sql: 'UPDATE "Company" SET "kind" = (JSONB_SET("kind", \'{"tags"}\', COALESCE(("kind")->\'tags\', \'[]\'::jsonb) || JSONB_BUILD_ARRAY($1::jsonb))) - $2::text[], "updatedAt" = $3 WHERE "id" = $4',
       values: ['"new-tag"', ['public'], 123, '1'],
     },
   };

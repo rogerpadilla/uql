@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { loadConfig, tsxApiFor } from './cli-config.js';
+import { importFailure, loadConfig, tsxApiFor } from './cli-config.js';
 
 /** A project holding a stub `tsx` whose `tsImport` answers a config tagged with the loader. */
 async function projectWithTsx(): Promise<string> {
@@ -78,13 +78,42 @@ describe('cli-config', () => {
     await expect(loadConfig()).rejects.toThrow('Could not find uql configuration file');
   });
 
-  it('should name a config that fails to import', async () => {
+  it('should name a config that fails to import, pointing plain Node at a runtime that runs decorators', async () => {
     const brokenPath = path.resolve(process.cwd(), 'broken-uql.config.js');
     try {
       await fs.writeFile(brokenPath, 'export default {');
-      await expect(loadConfig('broken-uql.config.js')).rejects.toThrow(`Could not import ${brokenPath}`);
+      const error = loadConfig('broken-uql.config.js');
+      await expect(error).rejects.toThrow(`Could not import ${brokenPath}`);
+      await expect(error).rejects.toThrow('decorators need a runtime that transforms TypeScript');
     } finally {
       await fs.unlink(brokenPath).catch(() => {});
+    }
+  });
+
+  it.each([
+    ['Bun', { bun: '1.4.2' }, undefined],
+    ['Deno', { deno: '2.5.0' }, undefined],
+    ['tsx', {}, '/app/node_modules/tsx/esm/api'],
+  ])('should not point at a runtime for decorators when %s already runs them', (_name, versions, tsxApi) => {
+    expect(importFailure('/app/uql.config.ts', new Error('boom'), versions, tsxApi).message).toBe(
+      'Could not import /app/uql.config.ts: boom',
+    );
+  });
+
+  it('should name a thrown value that is no Error', () => {
+    expect(importFailure('/app/uql.config.ts', 'boom', { bun: '1.4.2' }, undefined).message).toBe(
+      'Could not import /app/uql.config.ts: boom',
+    );
+  });
+
+  it('should pass on what a config threw as it loaded', async () => {
+    const throwingPath = path.resolve(process.cwd(), 'throwing-uql.config.js');
+    try {
+      await fs.writeFile(throwingPath, "throw new Error('DATABASE_URL is missing');");
+      const error = loadConfig('throwing-uql.config.js');
+      await expect(error).rejects.toThrow(`Could not import ${throwingPath}: DATABASE_URL is missing`);
+    } finally {
+      await fs.unlink(throwingPath).catch(() => {});
     }
   });
 

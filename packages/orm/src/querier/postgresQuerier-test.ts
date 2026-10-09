@@ -1,5 +1,6 @@
 import { expect, onTestFinished } from 'vitest';
 import { Entity, Id, removeEntity } from '../entity/index.js';
+
 import type { AbstractSqlQuerier } from './abstractSqlQuerier.js';
 import { PgLikeQuerierIt } from './pgLikeQuerier-test.js';
 
@@ -10,7 +11,7 @@ import { PgLikeQuerierIt } from './pgLikeQuerier-test.js';
 export class PostgresQuerierIt extends PgLikeQuerierIt {
   /** pgvector's extension exists before the fixture DDL declares a vector column. */
   override async recreateTables(querier: AbstractSqlQuerier) {
-    await querier.run('CREATE EXTENSION IF NOT EXISTS vector');
+    await querier.run`CREATE EXTENSION IF NOT EXISTS vector`;
     await super.recreateTables(querier);
   }
 
@@ -25,10 +26,5 @@ export class PostgresQuerierIt extends PgLikeQuerierIt {
     });
 
     expect(await this.querier.estimatedCount(NeverCreated)).toBe(0);
-  }
-
-  /** The `xmax` system column tells an upsert's insert from its update. */
-  protected override upsertReport(inserted: number, updated: number) {
-    return { ...super.upsertReport(inserted, updated), created: updated === 0 };
   }
 }

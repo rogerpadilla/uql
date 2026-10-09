@@ -1,4 +1,4 @@
-import { DateTime2, ISOLATION_LEVEL } from 'mssql';
+import mssql from 'mssql';
 import { AbstractPoolQuerier } from '../querier/abstractPoolQuerier.js';
 import type { IsolationLevel, QueryUpdateResult, RawRow, TransactionOptions } from '../type/index.js';
 import { decodeWireTypes } from './mssqlWireTypes.js';
@@ -18,7 +18,7 @@ type MsSqlRowStream = AsyncIterable<RawRow> & {
 /** The part of an `mssql` `Request` a querier drives. */
 type MsSqlRequest = {
   input(name: string, value: unknown): unknown;
-  input(name: string, type: typeof DateTime2, value: unknown): unknown;
+  input(name: string, type: typeof mssql.DateTime2, value: unknown): unknown;
   query(command: string): Promise<MsSqlResult>;
   toReadableStream(): MsSqlRowStream;
   cancel(): unknown;
@@ -55,7 +55,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
     const request = this.#transaction ? this.#transaction.request() : this.getConn().request();
     values?.forEach((value, index) => {
       const name = `p${index + 1}`;
-      return value instanceof Date ? request.input(name, DateTime2, value) : request.input(name, value);
+      return value instanceof Date ? request.input(name, mssql.DateTime2, value) : request.input(name, value);
     });
     return request;
   }
@@ -104,7 +104,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
    */
   protected override async internalBegin(opts?: TransactionOptions) {
     const transaction = this.getConn().transaction();
-    await transaction.begin(opts?.isolationLevel && ISOLATION_LEVEL[ISOLATION[opts.isolationLevel]]);
+    await transaction.begin(opts?.isolationLevel && mssql.ISOLATION_LEVEL[ISOLATION[opts.isolationLevel]]);
     this.#transaction = transaction;
   }
 
@@ -128,7 +128,7 @@ export class MsSqlQuerier extends AbstractPoolQuerier<MsSqlConnection> {
 }
 
 /** The driver's constant for each level UQL names; total, so a new level is a compile error here. */
-const ISOLATION: Readonly<Record<IsolationLevel, keyof typeof ISOLATION_LEVEL>> = {
+const ISOLATION: Readonly<Record<IsolationLevel, keyof typeof mssql.ISOLATION_LEVEL>> = {
   'read uncommitted': 'READ_UNCOMMITTED',
   'read committed': 'READ_COMMITTED',
   'repeatable read': 'REPEATABLE_READ',

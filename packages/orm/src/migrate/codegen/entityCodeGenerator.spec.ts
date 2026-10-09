@@ -123,7 +123,7 @@ describe('EntityCodeGenerator', () => {
       const result = generator.generateForTable('test');
       assertDefined(result);
 
-      expect(result.code).toContain('number'); // for decimal
+      expect(result.code).toContain('amount?: string | null;');
       expect(result.code).toContain('boolean');
       expect(result.code).toContain('Date'); // for timestamp
     });

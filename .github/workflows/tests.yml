@@ -48,6 +48,8 @@ jobs:
       # `build` ends with verify-dist.ts (declared paths, browser-safe graphs, runtimes, size budgets).
       - name: Build and verify dist
         run: bun run build
+      - name: Compile on the oldest TypeScript supported
+        run: bun run ts.floor
       - name: Lint package manifest
         run: bunx publint --strict
         working-directory: packages/orm
