@@ -7,12 +7,13 @@ import { UqlUsageError } from '../util/uqlError.js';
 
 type ConfigModule = { default?: unknown };
 
-type TsxApi = { tsImport(specifier: string, parentURL: string): Promise<ConfigModule> };
+type TsxApi = { register(): unknown };
 
 /**
  * The project's own `tsx/esm/api` where Node must load a TypeScript config: Node's type stripping runs
  * no decorators, and Bun and Deno transform them natively. uql bundles no transpiler, so the project's
- * loader reads the project's `tsconfig.json`.
+ * loader reads the project's `tsconfig.json`. Registered for the process, never imported through: an
+ * import of its own would load the config's `uql-orm` apart from the CLI's, whose objects the other misreads.
  */
 export function tsxApiFor(path: string, versions: { bun?: string; deno?: string }): string | undefined {
   if (!/\.[mc]?ts$/.test(path) || versions.bun || versions.deno) {
@@ -29,7 +30,10 @@ async function importConfig(path: string): Promise<unknown> {
   const url = pathToFileURL(path).href;
   const tsxApi = tsxApiFor(path, process.versions);
   const loading: Promise<ConfigModule> = tsxApi
-    ? import(pathToFileURL(tsxApi).href).then((api: TsxApi) => api.tsImport(url, import.meta.url))
+    ? import(pathToFileURL(tsxApi).href).then((api: TsxApi) => {
+        api.register();
+        return import(url);
+      })
     : import(url);
   const mod = await loading.catch((cause: unknown) => {
     throw importFailure(path, cause, process.versions, tsxApi);

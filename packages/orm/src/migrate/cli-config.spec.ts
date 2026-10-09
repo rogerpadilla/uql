@@ -4,7 +4,10 @@ import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { importFailure, loadConfig, tsxApiFor } from './cli-config.js';
 
-/** A project holding a stub `tsx` whose `tsImport` answers a config tagged with the loader. */
+/**
+ * A project holding a stub `tsx` whose `register` marks the process, and a config reading the mark: imported by
+ * the process itself once registered, so it shares the module instances the CLI loaded.
+ */
 async function projectWithTsx(): Promise<string> {
   const dir = await fs.mkdtemp(path.join(tmpdir(), 'uql-tsx-'));
   const tsx = path.join(dir, 'node_modules', 'tsx');
@@ -15,9 +18,12 @@ async function projectWithTsx(): Promise<string> {
   );
   await fs.writeFile(
     path.join(tsx, 'dist', 'api.js'),
-    'export const tsImport = async () => ({ default: { pool: { dialect: { dialectName: "loadedByTsx" } } } });',
+    'export const register = () => { globalThis.uqlTsxRegistered = true; return async () => {}; };',
   );
-  await fs.writeFile(path.join(dir, 'uql.config.ts'), 'export default {};');
+  await fs.writeFile(
+    path.join(dir, 'uql.config.ts'),
+    'export default { pool: { dialect: { dialectName: globalThis.uqlTsxRegistered ? "registeredTsx" : "none" } } };',
+  );
   return dir;
 }
 
@@ -128,11 +134,11 @@ describe('cli-config', () => {
     }
   });
 
-  it('should import a TypeScript config through the tsx the project installed', async () => {
+  it('should import a TypeScript config once the tsx the project installed is registered', async () => {
     const dir = await projectWithTsx();
     try {
       const config = await loadConfig(path.join(dir, 'uql.config.ts'));
-      expect(config.pool.dialect.dialectName).toBe('loadedByTsx');
+      expect(config.pool.dialect.dialectName).toBe('registeredTsx');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

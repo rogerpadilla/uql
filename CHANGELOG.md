@@ -2,6 +2,10 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.100.1] - 2026-10-08
+
+- **Fixed:** the migration CLI on Node with tsx shares the config's `uql-orm` instead of loading a second copy, which failed every command with `this[RAW_VALUE] is not a function`.
+
 ## [0.100.0] - 2026-10-08
 
 - **Breaking:** renamed entries: `uql-orm/mariadb`, `uql-orm/mongodb` and `uql-orm/bun-sql`. `uql-orm/type`, `uql-orm/dialect`, `uql-orm/entity`, `uql-orm/querier` and `uql-orm/namingStrategy` are gone: import from `uql-orm`. [`uql-codemod`](https://uql-orm.dev/codemod) rewrites the imports.
