@@ -4,30 +4,25 @@ Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users,
 
 ## [0.100.1] - 2026-10-08
 
-- **Fixed:** the migration CLI on Node with tsx shares the config's `uql-orm` instead of loading a second copy, which failed every command with `this[RAW_VALUE] is not a function`.
+- **Fixed:** the migration CLI on Node with tsx shares the config's `uql-orm` instead of loading a second copy.
 
 ## [0.100.0] - 2026-10-08
 
 - **Breaking:** renamed entries: `uql-orm/mariadb`, `uql-orm/mongodb` and `uql-orm/bun-sql`. `uql-orm/type`, `uql-orm/dialect`, `uql-orm/entity`, `uql-orm/querier` and `uql-orm/namingStrategy` are gone: import from `uql-orm`. [`uql-codemod`](https://uql-orm.dev/codemod) rewrites the imports.
-- **Breaking:** `uql-orm` exports the documented API only: the abstract dialect and querier classes, `SqlQueryContext` and the metadata helpers (`fieldOf`, `relationOf`, `soleIdOf`, ...) are internal, and `uql-orm/util` is gone. Importing `uql-orm` alone bundles about 9 kB gzipped.
-- **Breaking:** TypeScript 5.7 or newer, and each driver peer is bounded to the majors tested (`pg` 8, `mongodb` 6 to 7, ...).
-- **Breaking:** renamed exports: `Sqlite3QuerierPool` is `SqliteQuerierPool`, the migration builder's `I`-prefixed types drop the prefix (`MigrationBuilder`, `TableBuilder`, ...), its classes are internal, and `/http`'s `HookContext` and `Hook` are `RequestHookContext` and `RequestHook`.
 - **Breaking:** raw SQL: `all` and `run` are tags, ``pool.all`SELECT ... WHERE id = ${id}` ``, binding each interpolated value; they also take a `raw` fragment, never a plain string. ``raw(`... ${value}`)`` no longer compiles. `raw.join(fragments, separator)` composes fragments, and `raw.text(sql)` runs trusted text. An interpolated `undefined` or plain object no longer compiles; `undefined` throws at run time too. Generated migrations write ``querier.run`...` ``.
+- **Breaking:** renamed exports: `Sqlite3QuerierPool` is `SqliteQuerierPool`, the migration builder's `I`-prefixed types drop the prefix (`MigrationBuilder`, `TableBuilder`, ...), its classes are internal, and `/http`'s `HookContext` and `Hook` are `RequestHookContext` and `RequestHook`.
 - **Breaking:** `transaction()` inside another is a savepoint (refused on MongoDB), and a pool call inside a transaction callback joins it. A transaction holds its connection, so other flows wait instead of landing in it.
 - **Breaking:** relation writes follow the payload: a to-many update keeps the children it lists and removes the rest; a to-one holding the key cascades `'persist'` only and is written first; a soft delete cascades only to children that soft-delete.
 - **Breaking:** `upsertOne`/`upsertMany` resolve to ids, like inserts; `created`, `changes` and `firstId` are gone.
 - **Breaking:** a `decimal` reads and writes as exact text (`string`) on every engine; `type: Number` opts in to a number.
 - **Breaking:** an untyped JSON column is a bare `Json`, which takes any JSON value; `Json<unknown>` no longer compiles. `Json<T>` takes a `T` that includes `null`, such as a `JsonValue` type.
 - **Breaking:** an `undefined` in `$where` or `$having` throws instead of matching everything: leave the key out, or name `null`.
-- **Breaking:** `NamingStrategy.joinTableName` is gone; nothing called it.
 - **Breaking:** `generate:entities` renames a column in place only when the two names differ by case or underscores (`firstName`, `first_name`); any other renamed field is a drop and an add, with the rename suggested.
-- **Breaking:** `migrator.down()` reverts the last migration; `JsonMigrationStorage`, the `storage` option, `pending()` and `executed()` are gone (`status()` returns both); `UqlLockUsageError` is `UqlUsageError`.
 - MongoDB enforces entity checks and field enums through a collection validator, which migrations and `sync` create and replace.
 - Every write takes `{ returning: { ...fields } }` and resolves to those rows, typed by the fields named.
 - `querier.onCommit(fn)`, and `onCommit` in a hook's context, run after the outermost commit.
 - A sync creating tables is several times faster on MySQL, MariaDB and CockroachDB, and a forced sync reads less.
-- **Fixed:** a JSON key in a path or update is an identifier; any other is refused (closed an injection on MySQL and MariaDB).
-- **Fixed:** the migration CLI suggests a runtime for decorators only on plain Node, instead of on every config that fails to load.
+- **Fixed:** a JSON key in a path or update is an identifier; any other is refused.
 - **Fixed:** concurrent transactions on SQLite, PGlite and local Turso no longer fail each other; a cascade delete through a to-one no longer deletes an unrelated row; MongoDB upserts keep `onInsert` fields; an upsert writing relations updates the soft-deleted row it conflicts with; `$push`/`$pull` on a JSON key named `null` works on Postgres; JSON strings spelling a number read back as strings; `uql-orm/mssql` loads on Node; `/http` answers 400 to a malformed body.
 
 ## [0.99.0] - 2026-10-07
