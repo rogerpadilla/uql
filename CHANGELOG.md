@@ -2,6 +2,11 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.100.2] - 2026-10-09
+
+- `uql-codemod` package now rewrites `run(sql, [values])` and `all(sql, [values])` written with `?` or `$n` placeholders into tags binding each value.
+- `uql-orm` simplified tag code, and unified some parts.
+
 ## [0.100.1] - 2026-10-08
 
 - **Fixed:** the migration CLI on Node with tsx shares the config's `uql-orm` instead of loading a second copy.

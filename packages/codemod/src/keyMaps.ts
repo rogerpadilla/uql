@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { type Edit, inserted, replaced } from './edits.js';
+import { identifierText, propertyValue } from './syntax.js';
 
 // What replaced member names written as strings: a callback where a definition names them, reading refs
 // (`@Index` columns and `include`) or the key map (`mappedBy`, `references`, `hooks`), and a `{ field: true }`
@@ -26,19 +27,6 @@ export function quoted(text: string): string {
 /** `post.title`, or `post['first-name']` for a key that is no identifier. */
 export function memberAccess(param: string, key: string): string {
   return isIdentifierName(key) ? `${param}.${key}` : `${param}[${quoted(key)}]`;
-}
-
-/** A key's name where it is spelled out, which is every form but a computed one (`{ [k]: v }`). */
-export function propertyKey(name: ts.PropertyName): string | undefined {
-  return ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : undefined;
-}
-
-/** The initializer of the property `name` in an object literal, however its key is written. */
-export function propertyValue(node: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
-  const property = node.properties.find(
-    (prop): prop is ts.PropertyAssignment => ts.isPropertyAssignment(prop) && propertyKey(prop.name) === name,
-  );
-  return property?.initializer;
 }
 
 /** `'amount'` or `['title', 'body']` -> `{ amount: true }`, the key map a statement names fields by. */
@@ -93,7 +81,7 @@ export function referencesEdits(value: ts.Expression, owner: string, target: str
 /** The class an `entity: () => Post` getter returns, as written. */
 export function entityGetterTarget(relation: ts.ObjectLiteralExpression): string | undefined {
   const getter = propertyValue(relation, 'entity');
-  return getter && ts.isArrowFunction(getter) && ts.isIdentifier(getter.body) ? getter.body.text : undefined;
+  return getter && ts.isArrowFunction(getter) ? identifierText(getter.body) : undefined;
 }
 
 /** A column-list entry, its name read off the refs: an expression, or a `column` given otherwise, has none. */

@@ -13,7 +13,7 @@ import type {
   ReturningResult,
   WriteOptions,
 } from './query.js';
-import type { QueryRaw, RawValue } from './queryRaw.js';
+import type { SqlStatement } from './queryRaw.js';
 import type { ProjectedQuery, ProjectedRead, ProjectedResult, UniversalQuerier } from './universalQuerier.js';
 import type { BooleanLike, RawRow, Type } from './utility.js';
 import type { QuerierRaw } from './wire.js';
@@ -146,12 +146,10 @@ export interface SqlQuerier extends Querier {
    * The rows a statement answers, written as a tag, `all<Row>`SELECT ... WHERE id = ${id}``, each interpolated
    * value bound, never spliced; or a `raw` built apart.
    */
-  all<T extends object = RawRow>(strings: TemplateStringsArray, ...values: RawValue[]): Promise<T[]>;
-  all<T extends object = RawRow>(sql: QueryRaw): Promise<T[]>;
+  all<T extends object = RawRow>(...statement: SqlStatement): Promise<T[]>;
 
   /** Runs a statement (INSERT, UPDATE, DELETE, DDL), written as a tag or a `raw`, each interpolated value bound. */
-  run(strings: TemplateStringsArray, ...values: RawValue[]): Promise<QueryUpdateResult>;
-  run(sql: QueryRaw): Promise<QueryUpdateResult>;
+  run(...statement: SqlStatement): Promise<QueryUpdateResult>;
 }
 
 /**

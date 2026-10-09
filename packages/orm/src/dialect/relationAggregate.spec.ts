@@ -91,11 +91,7 @@ describe('relation aggregate', () => {
     dialect.find(ctx, Project, q);
     return ctx.sql;
   };
-  const aggregateOf = (q: QueryAggregate<Project>): { sql: string; values: unknown[] } => {
-    const ctx = dialect.createContext();
-    dialect.aggregate(ctx, Project, q);
-    return { sql: ctx.sql, values: ctx.values };
-  };
+  const aggregateOf = (q: QueryAggregate<Project>) => dialect.compile((ctx) => dialect.aggregate(ctx, Project, q));
 
   it('should read a count as a correlated subquery', () => {
     expect(sqlOf({ $select: { id: true, taskCount: true } })).toBe(

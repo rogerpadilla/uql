@@ -18,11 +18,15 @@ export function memberSource(param: string, property: string): string {
 }
 
 /**
- * SQL as a `raw` tagged template. A database reprints an expression as arbitrary text, and exactly
- * three sequences can end or interpolate a template literal, so escaping those is the whole job.
- * Newlines need none, which keeps a multi-line expression readable in the generated entity.
+ * SQL as a template literal binding nothing. A database reprints an expression as arbitrary text, and
+ * exactly three sequences can end or interpolate a template, so escaping those is the whole job. Newlines
+ * need none, which keeps multi-line SQL readable in the generated file.
  */
+export function templateOf(sql: string): string {
+  return `\`${sql.replace(/[\\`]|\$\{/g, (char) => `\\${char}`)}\``;
+}
+
+/** SQL as a `raw` tagged template. */
 export function rawTag(sql: string): string {
-  const escaped = sql.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${');
-  return `raw\`${escaped}\``;
+  return `raw${templateOf(sql)}`;
 }

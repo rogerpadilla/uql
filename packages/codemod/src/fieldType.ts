@@ -1,9 +1,10 @@
 import ts from 'typescript';
 
-/** A string type carrying more than `string`, e.g. `` type UUID = `${string}-${string}` ``. */
+/** The string types carrying more than `string`, e.g. `` type UUID = `${string}-${string}` ``, still string columns. */
+const BRANDED_STRING = ts.TypeFlags.TemplateLiteral | ts.TypeFlags.StringMapping;
+
 export function isBrandedString(type: ts.Type): boolean {
-  const branded = ts.TypeFlags.TemplateLiteral | ts.TypeFlags.StringMapping;
-  return type.isUnion() ? type.types.some((t) => !!(t.getFlags() & branded)) : !!(type.getFlags() & branded);
+  return (type.isUnion() ? type.types : [type]).some((t) => !!(t.getFlags() & BRANDED_STRING));
 }
 
 /**
@@ -17,14 +18,9 @@ function foldUnion<T>(type: ts.UnionType, read: (arm: ts.Type) => T | undefined)
 }
 
 /**
- * The `FieldType` expression to write for a property declared as `type`, or `undefined` when the shape is
- * one a human has to decide on.
- *
- * Mirrors `TypeFor` in `uql-orm`, in the direction the codemod needs: from the property's TypeScript type
- * to the `type` option that reflection used to supply. Only the cases reflection could actually produce
- * are handled. A `Json<T>` or vector property already had to declare its `type` explicitly, because
- * `design:type` reported the useless `Object`/`Array` for them, so any such property reaching here is
- * genuinely ambiguous and is reported rather than guessed.
+ * The `type` option reflection supplied for a property of `type`, mirroring `TypeFor` in `uql-orm`, or nothing
+ * for a shape a human decides. Only what reflection could produce is read: a `Json<T>` or vector property got
+ * `Object`/`Array` from it, so it already declared its `type`.
  */
 export function fieldTypeFor(type: ts.Type): string | undefined {
   const flags = type.getFlags();
@@ -33,11 +29,7 @@ export function fieldTypeFor(type: ts.Type): string | undefined {
     return foldUnion(type, fieldTypeFor);
   }
 
-  // `TemplateLiteral` and `StringMapping` cover the branded-string types projects use for ids, e.g.
-  // `type UUID = `${string}-${string}-${string}-${string}-${string}``, which are still string columns.
-  const stringLike =
-    ts.TypeFlags.String | ts.TypeFlags.StringLiteral | ts.TypeFlags.TemplateLiteral | ts.TypeFlags.StringMapping;
-  if (flags & stringLike) return 'String';
+  if (flags & (ts.TypeFlags.String | ts.TypeFlags.StringLiteral | BRANDED_STRING)) return 'String';
   if (flags & (ts.TypeFlags.Number | ts.TypeFlags.NumberLiteral)) return 'Number';
   if (flags & (ts.TypeFlags.BigInt | ts.TypeFlags.BigIntLiteral)) return 'BigInt';
   if (flags & (ts.TypeFlags.Boolean | ts.TypeFlags.BooleanLiteral)) return 'Boolean';

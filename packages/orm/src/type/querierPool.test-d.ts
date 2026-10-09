@@ -67,7 +67,7 @@ export async function rawSqlTakesOnlyARawTemplate() {
 }
 
 /** `all` and `run` are tags themselves, typed by the row a read names; a `raw` built apart still fits. */
-export async function rawSqlAsATag(id: number) {
+export async function rawSqlAsATag(id: number, maybeTitle: string | undefined) {
   const rows: { id: number }[] = await sqlPool.all<{ id: number }>`SELECT id FROM article WHERE id = ${id}`;
   await sqlQuerier.run`DELETE FROM article WHERE id = ${id}`;
   await sqlPool.all`SELECT ${raw.join([raw`${1}`, raw`${2}`])}`;
@@ -75,6 +75,8 @@ export async function rawSqlAsATag(id: number) {
   await sqlPool.run(`DELETE FROM article WHERE id = ${id}`);
   // @ts-expect-error `undefined` binds nothing: leave it out, or interpolate `null`
   await sqlPool.run`DELETE FROM article WHERE id = ${undefined}`;
+  // @ts-expect-error a value that may be `undefined` is refused too, in a fragment as in a statement
+  await sqlPool.all`SELECT * FROM article WHERE ${raw`title = ${maybeTitle}`}`;
   // @ts-expect-error a document is bound as JSON text you write, `${JSON.stringify(doc)}`
   await sqlPool.run`UPDATE article SET meta = ${{ a: 1 }}`;
   await sqlPool.all`SELECT * FROM article WHERE id = ANY(${[1, 2]}) AND at > ${new Date()} AND n = ${null}`;

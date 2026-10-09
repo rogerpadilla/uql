@@ -9,29 +9,7 @@ import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { Company, Invoice, User } from '../test/index.js';
 import type { QueryWhere } from '../type/index.js';
 import { normalizeScalarFieldSelection } from '../util/dialect.util.js';
-import { escapeSqlId } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
-
-describe('escapeSqlId - identifier injection hardening', () => {
-  it('should escape double-quote in table name', () => {
-    const payload = 'users"; DROP TABLE users; --';
-    expect(escapeSqlId(payload, '"')).toBe('"users""; DROP TABLE users; --"');
-  });
-
-  it('should escape backtick in table name', () => {
-    const payload = 'users`; DROP TABLE users; --';
-    expect(escapeSqlId(payload, '`')).toBe('`users``; DROP TABLE users; --`');
-  });
-
-  it('should escape single quote (should not be needed for identifiers, but must not break)', () => {
-    const payload = "users' OR 1=1";
-    expect(escapeSqlId(payload, '"')).toBe('"users\' OR 1=1"');
-  });
-
-  it('should handle NULL byte in identifier', () => {
-    expect(escapeSqlId('users\u0000', '"')).toBe('"users\u0000"');
-  });
-});
 
 describe('normalizeScalarFieldSelection - field validation', () => {
   const userMeta = getMeta(User);
@@ -76,48 +54,17 @@ describe('normalizeScalarFieldSelection - field validation', () => {
 });
 
 describe('SQL generation - WHERE parameterization', () => {
-  it('should parameterize WHERE values instead of inlining them', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { name: "'; DROP TABLE users; --" } });
-    // SQL should contain a placeholder, not the injected value
-    expect(ctx.sql).not.toContain('DROP');
-    expect(ctx.sql).not.toContain("'");
-    // The injected value should be in params, not SQL
-    expect(ctx.values).toContain("'; DROP TABLE users; --");
-  });
+  const pg = new PostgresDialect();
 
-  it('should parameterize WHERE values with OR injection', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { name: "admin' OR '1'='1" } });
-    expect(ctx.sql).not.toContain('OR');
-    expect(ctx.values).toContain("admin' OR '1'='1");
-  });
-
-  it('should parameterize WHERE values with UNION injection', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { name: "admin' UNION SELECT * FROM credentials --" } });
-    expect(ctx.sql).not.toContain('UNION');
-    expect(ctx.values).toContain("admin' UNION SELECT * FROM credentials --");
-  });
-
-  it('should handle numeric injection in WHERE', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, { $where: { id: '1 OR 1=1' } });
-    expect(ctx.sql).not.toContain('OR');
-    expect(ctx.values).toContain('1 OR 1=1');
-  });
-
-  it('should escape table names even with injection attempt', () => {
-    const pg = new PostgresDialect();
-    const ctx = pg.createContext();
-    pg.find(ctx, User, {});
-    // User entity table name is properly escaped
-    expect(ctx.sql).toMatch(/FROM\s+"User"/);
-  });
+  it.each(["'; DROP TABLE users; --", "admin' OR '1'='1", "admin' UNION SELECT * FROM credentials --", '1 OR 1=1'])(
+    'should bind %j as a value, never as SQL',
+    (payload) => {
+      expect(pg.compile((ctx) => pg.find(ctx, User, { $select: { id: true }, $where: { name: payload } }))).toEqual({
+        sql: 'SELECT "id" FROM "User" WHERE "name" = $1',
+        values: [payload],
+      });
+    },
+  );
 });
 
 describe('SQL generation - $select field name validation', () => {

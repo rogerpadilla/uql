@@ -13,9 +13,8 @@ import { namedLockSql } from './migrationLock.js';
 
 /** A statement as `dialect` sends it: its SQL and the values it binds. */
 function rendered(dialect: AbstractSqlDialect, sql: QueryRaw) {
-  const ctx = dialect.createContext();
-  dialect.getRawValue(ctx, { value: sql });
-  return { sql: ctx.sql.replace(/\s+/g, ' '), values: ctx.values };
+  const { sql: text, values } = dialect.compile(sql);
+  return { sql: text.replace(/\s+/g, ' '), values };
 }
 
 const MYSQL_LOCK = "LEFT(CONCAT(DATABASE(), '.', ?), 64)";

@@ -279,6 +279,14 @@ describe('escapeSqlId - identifier injection hardening', () => {
     expect(escapeSqlId(evil, '`')).toBe('`t``; DROP TABLE x; --`');
   });
 
+  it('should keep a single quote inside a quoted identifier as it is', () => {
+    expect(escapeSqlId("users' OR 1=1", '"')).toBe('"users\' OR 1=1"');
+  });
+
+  it('should keep a NULL byte inside a quoted identifier', () => {
+    expect(escapeSqlId('users\u0000', '"')).toBe('"users\u0000"');
+  });
+
   it('should qualify each segment so dots in malicious names stay inside quotes', () => {
     const evil = 'a.b"; --';
     expect(escapeSqlId(evil, '"')).toBe('"a"."b""; --"');

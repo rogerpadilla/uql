@@ -161,11 +161,8 @@ describe.each(engines)(
       dialect.pager(ctx, { $limit: limit, $skip: skip }, sorted);
       return ctx.sql;
     };
-    const find = <E extends object>(entity: Type<E>, query: Query<E>) => {
-      const ctx = dialect.createContext();
-      dialect.find(ctx, entity, query);
-      return { sql: ctx.sql, values: ctx.values };
-    };
+    const find = <E extends object>(entity: Type<E>, query: Query<E>) =>
+      dialect.compile((ctx) => dialect.find(ctx, entity, query));
 
     it.each(supported)('should sort by %s', (metric) => {
       const { sql, values } = find(VectorItem, {
@@ -706,11 +703,8 @@ describe('vector query-time tuning', () => {
  */
 describe('libSQL vector index search', () => {
   const libsql = new LibsqlDialect();
-  const find = <E extends object>(dialect: AbstractSqlDialect, entity: Type<E>, query: Query<E>) => {
-    const ctx = dialect.createContext();
-    dialect.find(ctx, entity, query);
-    return { sql: ctx.sql, values: ctx.values };
-  };
+  const find = <E extends object>(dialect: AbstractSqlDialect, entity: Type<E>, query: Query<E>) =>
+    dialect.compile((ctx) => dialect.find(ctx, entity, query));
   const rank = { $select: { id: true }, $sort: { vec: { $vector: [1, 2, 3] } }, $limit: 10 } as const;
   const narrowed = `SELECT \`id\` FROM \`HnswItem\`${TOP_K('HnswItem')} ORDER BY vector_distance_cos(\`vec\`, ?) LIMIT 10`;
 

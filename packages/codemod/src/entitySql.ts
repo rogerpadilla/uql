@@ -1,6 +1,6 @@
 import ts from 'typescript';
 import { type Edit, inserted, replaced } from './edits.js';
-import { propertyValue } from './keyMaps.js';
+import { identifierText, propertyValue } from './syntax.js';
 
 // What replaced SQL a definition writes as text: an index expression is `raw` in its list, reading the
 // list's refs, and a partial-index `where` is `raw` or a predicate, never a string. SQL still naming a
@@ -15,7 +15,7 @@ export function isRaw(node: ts.Node): node is RawSql {
     : ts.isCallExpression(node)
       ? node.expression
       : undefined;
-  return callee !== undefined && ts.isIdentifier(callee) && callee.text === 'raw';
+  return identifierText(callee) === 'raw';
 }
 
 /** The expressions of a column list, written as one or returned by its callback: each entry or `column` that is `raw`. */
@@ -30,12 +30,16 @@ export function columnExpressions(list: ts.Expression | undefined): readonly Raw
 
 /** SQL text as a `raw` tagged template, escaping what would end or interpolate it. */
 export function rawTag(sql: string): string {
-  return `raw${templateOf(sql)}`;
+  return `raw${templateOf([sql])}`;
 }
 
-/** `sql` as a template literal reading the same text: a backslash, a backtick and a `${` escaped. */
-export function templateOf(sql: string): string {
-  return `\`${sql.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${')}\``;
+/**
+ * A template literal reading `texts` with the source of each of `values` interpolated between them, one fewer
+ * than `texts`: in the texts, a backslash, a backtick and a `${` are escaped.
+ */
+export function templateOf(texts: readonly string[], values: readonly string[] = []): string {
+  const escaped = texts.map((text) => text.replace(/\\/g, '\\\\').replace(/`/g, '\\`').replace(/\$\{/g, '\\${'));
+  return `\`${escaped.reduce((template, text, at) => `${template}\${${values[at - 1]}}${text}`)}\``;
 }
 
 /** A partial-index `where` string as `raw`, or nothing for a template that interpolates, whose values `raw` would bind. */

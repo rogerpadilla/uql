@@ -452,6 +452,17 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return new SqlQueryContext(this, [], undefined, options.inlineValues);
   }
 
+  /** A statement as it is sent: the SQL `build` writes, or a `raw` renders, and the values it binds. */
+  compile(build: QueryBuildFn | QueryRaw): { sql: string; values: unknown[] } {
+    const ctx = this.createContext();
+    if (build instanceof QueryRaw) {
+      this.getRawValue(ctx, { value: build });
+    } else {
+      build(ctx);
+    }
+    return { sql: ctx.sql, values: ctx.values };
+  }
+
   /**
    * The SQL `build` writes, as text to embed rather than appended to `ctx`. It binds into `ctx`'s own values
    * and aliases, so `$n` placeholders number against the whole statement.

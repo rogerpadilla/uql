@@ -1,4 +1,5 @@
 import { mongoCommandSource } from '../../mongodb/mongoCommand.js';
+import { templateOf } from './sourceLiteral.js';
 
 /** The querier a migration module is written against. */
 export type MigrationQuerierType = 'SqlQuerier' | 'MongoQuerier';
@@ -16,12 +17,9 @@ export type MigrationModuleOptions = {
   downInner: string;
 };
 
-/**
- * One `await querier.run`...`` line, the SQL a template binding nothing, so its lines and quotes read as
- * written; a backslash, a backtick and a `${` are escaped.
- */
+/** One `await querier.run`...`` line, its SQL as written. */
 export function emitSqlRunCall(sql: string): string {
-  return /*ts*/ `    await querier.run\`${sql.replace(/[\\`]|\$\{/g, (char) => `\\${char}`)}\`;`;
+  return /*ts*/ `    await querier.run${templateOf(sql)};`;
 }
 
 /** Indented `up`/`down` body: one `await querier.run`...`` per SQL string. */

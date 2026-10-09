@@ -13,6 +13,7 @@ import type {
   QueryAggregate,
   QueryAggregateResult,
   QueryBuildFn,
+  QueryRaw,
   QueryConflictPaths,
   QueryPage,
   QueryGroupMap,
@@ -21,14 +22,12 @@ import type {
   QuerySearch,
   QueryUpdateResult,
   RawRow,
-  RawValue,
   SavepointCommand,
   SqlQuerier,
   SqlStatement,
   TransactionOptions,
   Type,
   UpdatePayload,
-  QueryRaw,
 } from '../type/index.js';
 import {
   buildUpdateResult,
@@ -157,22 +156,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     }
   }
 
-  all<T extends object = RawRow>(strings: TemplateStringsArray, ...values: RawValue[]): Promise<T[]>;
-  all<T extends object = RawRow>(sql: QueryRaw): Promise<T[]>;
   all<T extends object = RawRow>(...statement: SqlStatement): Promise<T[]> {
-    return this.query<T>(this.rendering(statement));
+    return this.query<T>(statementOf(statement));
   }
 
-  run(strings: TemplateStringsArray, ...values: RawValue[]): Promise<QueryUpdateResult>;
-  run(sql: QueryRaw): Promise<QueryUpdateResult>;
   run(...statement: SqlStatement): Promise<QueryUpdateResult> {
-    return this.exec(this.rendering(statement));
-  }
-
-  /** How a statement handed to `all` or `run` writes itself into a context. */
-  private rendering(statement: SqlStatement): QueryBuildFn {
-    const sql = statementOf(statement);
-    return (ctx) => this.dialect.getRawValue(ctx, { value: sql });
+    return this.exec(statementOf(statement));
   }
 
   /** Refused before the driver fails it, or PGlite answers it and every read after it wrong. */
@@ -186,23 +175,21 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   /** The rows of a statement the dialect builds. */
-  private query<T>(build: QueryBuildFn): Promise<T[]> {
+  private query<T>(build: QueryBuildFn | QueryRaw): Promise<T[]> {
     return this.send(build, (sql, values) => this.internalAll<T>(sql, values));
   }
 
   /** Runs a statement the dialect builds. */
-  private exec(build: QueryBuildFn): Promise<QueryUpdateResult> {
+  private exec(build: QueryBuildFn | QueryRaw): Promise<QueryUpdateResult> {
     return this.send(build, (sql, values) => this.internalRun(sql, values));
   }
 
   /** Builds a statement and sends it on the connection, in turn, timed and its failure tagged with it. */
   private async send<T>(
-    build: QueryBuildFn,
+    build: QueryBuildFn | QueryRaw,
     task: (sql: string, values: unknown[] | undefined) => Promise<T>,
   ): Promise<T> {
-    const ctx = this.dialect.createContext();
-    build(ctx);
-    const { sql, values } = ctx;
+    const { sql, values } = this.dialect.compile(build);
     this.assertBindBudget(values);
     return this.serialize(async () => {
       await this.lazyConnect();

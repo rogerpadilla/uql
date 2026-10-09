@@ -109,9 +109,7 @@ export abstract class AbstractSqlDialectSpec implements Spec {
     fn: (ctx: QueryContext) => void,
     dialect: AbstractSqlDialect = this.dialect,
   ): { sql: string; values: unknown[] } {
-    const ctx = dialect.createContext();
-    fn(ctx);
-    return { sql: ctx.sql, values: ctx.values };
+    return dialect.compile(fn);
   }
 
   /** The `n`th bound-parameter placeholder: `?` for MySQL-family dialects, `$n` for Postgres-wire ones. */

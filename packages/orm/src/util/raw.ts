@@ -33,32 +33,30 @@ import { UqlUsageError } from './uqlError.js';
  */
 export function raw(strings: TemplateStringsArray, ...values: readonly RawValue[]): QueryRaw;
 export function raw(value: QueryRawFn): QueryRaw;
-export function raw(value: QueryRawFn | TemplateStringsArray, ...rest: readonly RawValue[]): QueryRaw {
-  if (!isTemplateStrings(value)) {
-    return new QueryRaw(value);
+export function raw(source: QueryRawFn | TemplateStringsArray, ...values: readonly RawValue[]): QueryRaw {
+  if (!isTemplateStrings(source)) {
+    return new QueryRaw(source);
   }
-  if (rest.some((value) => value === undefined)) {
+  if (!values.length) {
+    return raw.text(source[0]);
+  }
+  if (values.some((value) => value === undefined)) {
     throw new UqlUsageError('a raw template interpolated undefined, which binds nothing: leave it out, or write null');
   }
   // Writes joined by whitespace alone are still only writes, so a set-based trigger narrows each one.
-  const writes =
-    rest.length > 0 && rest.every((v) => v instanceof TriggerWriteRaw) && value.every((part) => !part.trim());
-  return new (writes ? TriggerWriteRaw : QueryRaw)(
-    (opts) => {
-      const { ctx } = opts;
-      ctx.append(value[0]);
-      rest.forEach((interpolated, i) => {
-        if (interpolated instanceof QueryRaw) {
-          interpolated.render(opts);
-        } else {
-          ctx.addValue(interpolated);
-        }
-        ctx.append(value[i + 1]);
-      });
-    },
-    undefined,
-    rest.length === 0 ? value[0] : undefined,
-  );
+  const writes = values.every((value) => value instanceof TriggerWriteRaw) && source.every((part) => !part.trim());
+  return new (writes ? TriggerWriteRaw : QueryRaw)((opts) => {
+    const { ctx } = opts;
+    ctx.append(source[0]);
+    values.forEach((value, i) => {
+      if (value instanceof QueryRaw) {
+        value.render(opts);
+      } else {
+        ctx.addValue(value);
+      }
+      ctx.append(source[i + 1]);
+    });
+  });
 }
 
 /** `parts` one after another, `separator` between each, every part binding its own values: `raw.join(conditions, ' AND ')`. */
@@ -73,15 +71,15 @@ raw.join = function join(parts: readonly QueryRaw[], separator = ', '): QueryRaw
   });
 };
 
+/** SQL held in a string, run as written, binding nothing: for trusted text only, never built from user input. */
+raw.text = function text(sql: string): QueryRaw {
+  return new QueryRaw(() => sql, { text: sql });
+};
+
 /** The statement `all` or `run` was handed: a tagged template's, or a `raw` built apart. */
 export function statementOf([sql, ...values]: SqlStatement): QueryRaw {
   return sql instanceof QueryRaw ? sql : raw(sql, ...values);
 }
-
-/** SQL held in a string, run as written, binding nothing: for trusted text only, never built from user input. */
-raw.text = function text(sql: string): QueryRaw {
-  return new QueryRaw(() => sql, undefined, sql);
-};
 
 /**
  * The SQL of a `raw` that names a constant, for a DDL clause with no dialect to render against and

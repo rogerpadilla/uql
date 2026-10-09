@@ -11,12 +11,9 @@ export type ParsedArgs = {
 };
 
 /**
- * Reads the command line, rejecting anything it does not recognise.
- *
- * Unknown arguments are an error rather than being ignored: a misspelled `--dry-run` would otherwise
- * rewrite the project for real, which is the one mistake this tool must not let someone make quietly.
- * Only the `--flag=value` form is accepted, so a stray `--project foo` cannot silently fall back to the
- * default config either.
+ * Reads the command line, rejecting anything it does not recognise: a misspelled `--dry-run` would otherwise
+ * rewrite the project for real. Only `--flag=value` is accepted, so a stray `--project foo` cannot fall back
+ * to the default config either.
  */
 export function parseArgs(argv: readonly string[]): ParsedArgs {
   const errors: string[] = [];

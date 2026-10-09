@@ -1,7 +1,7 @@
 import { expect, vi } from 'vitest';
 import { SqlExpression } from '../../schema/sqlExpression.js';
 import { SqliteQuerierPool } from '../../sqlite/sqliteQuerierPool.js';
-import { createMockQuerierPool, createSpec } from '../../test/index.js';
+import { createMockQuerierPool, createSpec, sentStatements } from '../../test/index.js';
 import { raw } from '../../util/raw.js';
 import { AbstractIntrospectorIt, INTROSPECT_TABLES } from './abstractIntrospector-test.js';
 import { SqliteSchemaIntrospector } from './sqliteIntrospector.js';
@@ -42,11 +42,7 @@ class SqliteIntrospectorIt extends AbstractIntrospectorIt {
 
     await new SqliteSchemaIntrospector(pool).getTableSchema(INTROSPECT_TABLES.A);
 
-    const sent = all.mock.calls.map(([sql]) => {
-      const ctx = querier.dialect.createContext();
-      querier.dialect.getRawValue(ctx, { value: sql });
-      return `${ctx.sql}\u0000${JSON.stringify(ctx.values)}`;
-    });
+    const sent = sentStatements(querier.dialect, all).map((statement) => JSON.stringify(statement));
     expect(sent.length).toBe(new Set(sent).size);
   }
 

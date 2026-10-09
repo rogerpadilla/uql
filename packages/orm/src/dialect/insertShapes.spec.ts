@@ -19,11 +19,7 @@ class Shaped {
 describe('insert shapes', () => {
   const dialect = new PostgresDialect();
 
-  const sqlFor = (payload: Shaped | Shaped[]) => {
-    const ctx = dialect.createContext();
-    dialect.insert(ctx, Shaped, payload);
-    return { sql: ctx.sql, values: ctx.values };
-  };
+  const sqlFor = (payload: Shaped | Shaped[]) => dialect.compile((ctx) => dialect.insert(ctx, Shaped, payload));
 
   it('should bind one placeholder per column for a single row', () => {
     expect(sqlFor({ name: 'solo' })).toEqual({

@@ -1,5 +1,6 @@
 import ts from 'typescript';
 import { applyEdits, type Edit, removeFromList } from './edits.js';
+import { propertyAssignment, propertyValue } from './syntax.js';
 
 /** The flags the standard spec has no use for. Their presence is what keeps a project on the old one. */
 const LEGACY_FLAGS = ['experimentalDecorators', 'emitDecoratorMetadata'];
@@ -12,11 +13,8 @@ export type TsconfigResult = {
 };
 
 /**
- * Rewrites a `tsconfig.json` for the standard decorator spec.
- *
- * Edited as text through `ts.parseJsonText`, not by reading and re-serialising: a tsconfig is JSON with
- * comments and someone's formatting, and rewriting the whole file to change two lines would throw both
- * away.
+ * Rewrites a `tsconfig.json` for the standard decorator spec, as text through `ts.parseJsonText` rather than
+ * re-serialised: a tsconfig is JSON with comments and someone's formatting, which a rewrite would throw away.
  */
 export function transformTsconfig(fileName: string, text: string): TsconfigResult {
   const source = ts.parseJsonText(fileName, text);
@@ -57,15 +55,4 @@ export function transformTsconfig(fileName: string, text: string): TsconfigResul
   }
 
   return { text: applyEdits(text, edits), changed: edits.length > 0, unresolved };
-}
-
-function propertyAssignment(object: ts.ObjectLiteralExpression, name: string): ts.PropertyAssignment | undefined {
-  return object.properties.find(
-    (property): property is ts.PropertyAssignment =>
-      ts.isPropertyAssignment(property) && ts.isStringLiteral(property.name) && property.name.text === name,
-  );
-}
-
-function propertyValue(object: ts.ObjectLiteralExpression, name: string): ts.Expression | undefined {
-  return propertyAssignment(object, name)?.initializer;
 }

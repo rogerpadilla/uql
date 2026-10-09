@@ -22,7 +22,7 @@
     "build": "bun run --filter '*' build",
     "lint": "oxlint && oxfmt --check",
     "lint.fix": "oxlint --fix && oxfmt",
-    "test": "bun run test:vitest && bun run test:bun",
+    "test": "bun run test:bun && bun run test:vitest",
     "test:vitest": "vitest run --coverage",
     "test:bun": "bun test --timeout 10000 ./packages/orm/src/bunSql/ ./packages/orm/src/sqlite/sqliteQuerier.bun.test.ts",
     "test.watch": "vitest",

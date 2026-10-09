@@ -59,7 +59,7 @@ export class QueryRaw {
    */
   readonly [RAW_TEXT]?: string;
 
-  constructor(value: QueryRawFn, alias?: string, text?: string) {
+  constructor(value: QueryRawFn, { alias, text }: { readonly alias?: string; readonly text?: string } = {}) {
     this[RAW_VALUE] = value;
     this[RAW_ALIAS] = alias;
     this[RAW_TEXT] = text;
@@ -67,7 +67,7 @@ export class QueryRaw {
 
   /** The same expression under an alias, for a `$select` projection. */
   as(alias: string): QueryRaw {
-    return new QueryRaw(this[RAW_VALUE], alias, this[RAW_TEXT]);
+    return new QueryRaw(this[RAW_VALUE], { alias, text: this[RAW_TEXT] });
   }
 
   /** Writes the expression into `opts.ctx`. The alias is the projection's to write, after the term. */

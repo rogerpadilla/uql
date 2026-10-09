@@ -1,4 +1,4 @@
-import { type Mock, vi } from 'vitest';
+import { type Mock, type MockInstance, vi } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/abstractSqlDialect.js';
 import type { Querier, SqlStatement } from '../type/index.js';
 import { statementOf } from '../util/raw.js';
@@ -53,11 +53,7 @@ export function createMockQuerier<E extends object = Record<never, never>>(extra
 /** The statements a mocked `all` or `run` was sent, as `dialect` renders them: each one's SQL and the values it binds. */
 export function sentStatements(
   dialect: AbstractSqlDialect,
-  method: Mock<(...statement: SqlStatement) => unknown>,
+  method: MockInstance<(...statement: SqlStatement) => unknown>,
 ): { sql: string; values: unknown[] }[] {
-  return method.mock.calls.map((statement) => {
-    const ctx = dialect.createContext();
-    dialect.getRawValue(ctx, { value: statementOf(statement) });
-    return { sql: ctx.sql, values: ctx.values };
-  });
+  return method.mock.calls.map((statement) => dialect.compile(statementOf(statement)));
 }

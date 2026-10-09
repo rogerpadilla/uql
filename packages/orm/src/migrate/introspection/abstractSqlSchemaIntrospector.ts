@@ -258,9 +258,7 @@ function createTableRowReader(querier: SqlQuerier): TableRowReader {
   const sent = new Map<string, Promise<RawRow[]>>();
 
   return <T extends RawRow>(sql: QueryRaw): Promise<T[]> => {
-    const ctx = querier.dialect.createContext();
-    querier.dialect.getRawValue(ctx, { value: sql });
-    const key = `${ctx.sql}\u0000${JSON.stringify(ctx.values)}`;
+    const key = JSON.stringify(querier.dialect.compile(sql));
     let rows = sent.get(key);
     if (!rows) {
       rows = querier.all<RawRow>(sql);

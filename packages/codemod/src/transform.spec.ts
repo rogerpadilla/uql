@@ -771,6 +771,14 @@ class Employee extends Base {
     );
   });
 
+  it('names the callbacks of a class written inline after the class, as a declared one', () => {
+    const { text } = codemod(`
+      defineEntity(class Post { id?: number; title?: string; }, { indexes: [{ columns: ['title'] }] });
+    `);
+
+    expect(text).toContain('indexes: [{ columns: (post) => [post.title] }]');
+  });
+
   it("leaves defineEntity's indexes, relations and fields it cannot read or find as written", () => {
     const body = `
       declare const shared: object;
@@ -1286,11 +1294,11 @@ export const f = (q: SqlQuerier) => [q.all(), q.run(statement)];
     expect(changed).toBe(false);
   });
 
-  it('reports a statement passed with its values, and leaves a run() that is not a querier', () => {
+  it('reports a statement passed with values it cannot read, and leaves a run() that is not a querier', () => {
     const { text, unresolved, changed } = codemodFile(
       `import type { SqlQuerier } from 'uql-orm';
 declare const job: { run(name: string): void };
-export const f = (q: SqlQuerier, id: number) => [q.run('DELETE FROM a WHERE id = $1', [id]), job.run('x')];
+export const f = (q: SqlQuerier, values: number[]) => [q.run('DELETE FROM a WHERE id = $1', values), job.run('x')];
 `,
       UQL_ORM_0_99,
     );
@@ -1300,6 +1308,74 @@ export const f = (q: SqlQuerier, id: number) => [q.run('DELETE FROM a WHERE id =
     expect(unresolved).toEqual([
       '/entities.ts:3: run() takes one raw statement: write the values into it, raw`... ${value}`, which binds them',
     ]);
+  });
+
+  it('writes a statement passed with ? placeholders as a tag interpolating each value', () => {
+    const { text, unresolved } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, user: { id: number }, ids: number[]) =>
+  q.run("UPDATE \`a\` SET b = '\${x}', c = 'it''s' WHERE id = ? AND d = ?", [user.id, ids[0]]);
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, user: { id: number }, ids: number[]) =>
+  q.run\`UPDATE \\\`a\\\` SET b = '\\\${x}', c = 'it''s' WHERE id = \${user.id} AND d = \${ids[0]}\`;
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('writes a statement passed with $n placeholders as a tag, a repeated one repeating its value', () => {
+    const { text, unresolved } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, a: number, b: number) => [
+  q.all<{ n: number }>('SELECT $1::int AS a, $2 AS b WHERE x = $1', [a, b + 1]),
+  q.all('SELECT 1', []),
+];
+`,
+      UQL_ORM_0_99,
+    );
+
+    expect(text).toBe(`import type { SqlQuerier } from 'uql-orm';
+export const f = (q: SqlQuerier, a: number, b: number) => [
+  q.all<{ n: number }>\`SELECT \${a}::int AS a, \${b + 1} AS b WHERE x = \${a}\`,
+  q.all\`SELECT 1\`,
+];
+`);
+    expect(unresolved).toEqual([]);
+  });
+
+  it('reports a statement whose values it cannot place for certain', () => {
+    const { changed, unresolved } = codemodFile(
+      `import type { SqlQuerier } from 'uql-orm';
+declare const extra: unknown;
+export const f = (q: SqlQuerier, id: number, ids: number[], sql: string) => [
+  q.run('DELETE FROM a WHERE id = ? OR id = ?', [id]),
+  q.run('DELETE FROM a WHERE id = $1', [id, id]),
+  q.run('DELETE FROM a WHERE id = $2', [id]),
+  q.run('DELETE FROM a WHERE id IN (?, ?)', [...ids]),
+  q.run('DELETE FROM a WHERE id IN (?, ?)', [id, , id]),
+  q.run('DELETE FROM a WHERE id = ?', [id], extra),
+  q.run("UPDATE a SET b = '?' WHERE id = ?", [id]),
+  q.run('SELECT "a?" FROM a WHERE id = ?', [id]),
+  q.run('DELETE FROM a WHERE id = ? -- or ?', [id]),
+  q.run('DELETE FROM a WHERE id = ? /* or $1 */', [id]),
+  q.run('DELETE FROM a WHERE id = ? OR id = $1', [id]),
+  q.run("UPDATE a SET b = 'it\\\\'s' WHERE id = ?", [id]),
+  q.run('DO $body$ SELECT ? $body$', [id]),
+  q.run('DELETE FROM a WHERE id = $0', [id]),
+  q.run(sql, [id]),
+  q.run('DELETE FROM a', ids),
+];
+`,
+      UQL_ORM_0_99,
+    );
+
+    const report = (line: number) =>
+      `/entities.ts:${line}: run() takes one raw statement: write the values into it, raw\`... \${value}\`, which binds them`;
+    expect(changed).toBe(false);
+    expect(unresolved).toEqual([4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17, 18, 19].map(report));
   });
 
   it('reports the Migrator calls whose name or meaning changed', () => {

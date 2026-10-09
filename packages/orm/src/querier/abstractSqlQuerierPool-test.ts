@@ -1,6 +1,7 @@
 import { expect, onTestFinished } from 'vitest';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import type { SqlQuerier } from '../type/index.js';
+import { raw } from '../util/raw.js';
 
 import { QuerierPoolIt } from './abstractQuerierPool-test.js';
 import type { AbstractSqlQuerierPool } from './abstractSqlQuerierPool.js';
@@ -28,5 +29,20 @@ export class SqlQuerierPoolIt extends QuerierPoolIt<AbstractSqlQuerierPool<SqlQu
 
     expect(inserted.changes).toBe(1);
     expect(reads).toEqual([[{ id: 1 }], [{ id: 1 }]]);
+  }
+
+  /** A value carrying SQL reaches the database as a value, through a tag and a fragment alike. */
+  async shouldBindAValueCarryingSqlAsItIs() {
+    const hostile = "x'); DROP TABLE pool_bind_it; --";
+    await this.pool.run`DROP TABLE IF EXISTS pool_bind_it`;
+    await this.pool.run`CREATE TABLE pool_bind_it (name VARCHAR(64))`;
+    onTestFinished(async () => {
+      await this.pool.run`DROP TABLE pool_bind_it`;
+    });
+
+    await this.pool.run`INSERT INTO pool_bind_it (name) VALUES (${hostile})`;
+    const rows = await this.pool.all<{ name: string }>`SELECT name FROM pool_bind_it WHERE ${raw`name = ${hostile}`}`;
+
+    expect(rows).toEqual([{ name: hostile }]);
   }
 }

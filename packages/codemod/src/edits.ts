@@ -29,12 +29,9 @@ export function appended(node: ts.Node, text: string): Edit {
 }
 
 /**
- * Removes one element of a comma-separated list - a parameter, a named import, a JSON property - taking
- * the separator that would otherwise dangle. The last element gives up the comma before it; any other
- * gives up the one after.
- *
- * The source file is passed explicitly because a tree from `ts.parseJsonText` carries no
- * back-reference, so `getStart()` cannot find one on its own.
+ * Removes one element of a comma-separated list with the separator that would dangle: the comma before the
+ * last element, the one after any other. `source` is passed because a tree from `ts.parseJsonText` carries
+ * no back-reference for `getStart()` to find.
  */
 export function removeFromList(items: readonly ts.Node[], item: ts.Node, source: ts.SourceFile): Edit {
   const at = items.indexOf(item);
@@ -45,4 +42,12 @@ export function removeFromList(items: readonly ts.Node[], item: ts.Node, source:
     end: next ? next.getStart(source) : item.getEnd(),
     text: '',
   };
+}
+
+/** Removes a statement together with the rest of its line, so nothing is left blank behind it. */
+export function removeStatement(node: ts.Node): Edit {
+  const source = node.getSourceFile();
+  const line = source.getLineAndCharacterOfPosition(node.getEnd()).line;
+  const nextLineStart = source.getLineStarts()[line + 1];
+  return { start: node.getStart(), end: nextLineStart ?? node.getEnd(), text: '' };
 }
