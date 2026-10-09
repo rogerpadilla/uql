@@ -2,6 +2,12 @@
 
 Newest first, `[yyyy-mm-dd]`. One short line per change: what changed for users, not how or why. `**Breaking:**` leads when it breaks user code. No internals, sizes or tests.
 
+## [0.100.3] - 2026-10-09
+
+- Reads and writes are faster and allocate less, on every engine.
+- **Fixed:** on Postgres, Neon and CockroachDB, a raw query's `timestamp[]` and `date[]` read as UTC instead of in the process's zone, and a `numeric[]` as exact text instead of rounded floats. On every Postgres driver, Bun included, each `int8[]` element reads as a `BIGINT` does: a number where exact, its text past 2^53.
+- Deno is no longer officialy supported: its team joined Cloudflare, and the runtime gets fixes for one more year only.
+
 ## [0.100.2] - 2026-10-09
 
 - `uql-codemod` package now rewrites `run(sql, [values])` and `all(sql, [values])` written with `?` or `$n` placeholders into tags binding each value.

@@ -12,9 +12,10 @@ export function decodeWideNumber(value: string | bigint): number | string {
 }
 
 /**
- * {@link decodeWideNumber} over every `bigint` cell of a row, for the drivers that hand a BIGINT back as
- * one (`bun:sql`, `mariadb`, and every SQLite driver but D1). In place: the row is the driver's fresh
- * object, and a copy per row cost more than the decode it carried. One argument, so it maps rows as is.
+ * {@link decodeWideNumber} over every `bigint` cell of a row, an array's elements included, for the
+ * drivers that hand a BIGINT back as one (`bun:sql`, `mariadb`, and every SQLite driver but D1). In
+ * place: the row is the driver's fresh object, and a copy per row cost more than the decode it carried.
+ * One argument, so it maps rows as is.
  */
 export function decodeBigInts(row: RawRow): RawRow {
   return decodeBigIntsExcept(row, () => false);
@@ -23,10 +24,21 @@ export function decodeBigInts(row: RawRow): RawRow {
 /** {@link decodeBigInts}, keeping the cells `exact` names: what MongoDB reads a `BigInt` field into. */
 export function decodeBigIntsExcept(row: RawRow, exact: (key: string) => boolean): RawRow {
   for (const key in row) {
-    const value = row[key];
-    if (typeof value === 'bigint' && !exact(key)) {
-      row[key] = decodeWideNumber(value);
+    if (!exact(key)) {
+      row[key] = decodeBigIntsIn(row[key]);
     }
   }
   return row;
+}
+
+function decodeBigIntsIn(value: unknown): unknown {
+  if (typeof value === 'bigint') {
+    return decodeWideNumber(value);
+  }
+  if (Array.isArray(value)) {
+    value.forEach((element, index) => {
+      value[index] = decodeBigIntsIn(element);
+    });
+  }
+  return value;
 }

@@ -1,9 +1,8 @@
 import type { PGliteOptions } from '@electric-sql/pglite';
 import { dialectOptionsFrom } from '../dialect/abstractDialect.js';
+import { PG_DECODERS } from '../postgres/pgWireTypes.js';
 import { AbstractSharedHandleQuerierPool } from '../querier/abstractSharedHandleQuerierPool.js';
 import type { ExtraOptions } from '../type/index.js';
-import { decodeDate } from '../util/date.js';
-import { decodeWideNumber } from '../util/wideNumber.js';
 import { PgliteDialect } from './pgliteDialect.js';
 import { type PgliteDatabase, PgliteQuerier } from './pgliteQuerier.js';
 
@@ -25,18 +24,13 @@ export class PgliteQuerierPool extends AbstractSharedHandleQuerierPool<PgliteDat
   }
 
   protected override async openDb(): Promise<PgliteDatabase> {
-    const { PGlite, types } = await import('@electric-sql/pglite');
-    // INT8 by the one wide-integer rule, where PGlite's own answers a `bigint` past 2^53, and a zoneless
-    // TIMESTAMP or a DATE as UTC, as every pool reads one; a caller's own `parsers` still win. The declared
-    // return type is what checks {@link PgliteDatabase} against the real driver, so no cast is needed below it.
+    const { PGlite } = await import('@electric-sql/pglite');
+    // Every Postgres-wire pool's decoders, which PGlite applies to an array's elements too; a caller's own
+    // `parsers` still win. The declared return type is what checks {@link PgliteDatabase} against the real
+    // driver, so no cast is needed below it.
     return PGlite.create(this.dataDir, {
       ...this.opts,
-      parsers: {
-        [types.INT8]: decodeWideNumber,
-        [types.TIMESTAMP]: decodeDate,
-        [types.DATE]: decodeDate,
-        ...this.opts?.parsers,
-      },
+      parsers: { ...Object.fromEntries(PG_DECODERS), ...this.opts?.parsers },
     });
   }
 

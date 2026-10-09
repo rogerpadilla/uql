@@ -47,18 +47,15 @@ import type {
 } from '../type/index.js';
 import { parseQueryLock } from '../type/index.js';
 import {
-  cascadesOnDelete,
   childrenOf,
   chunk,
   clone,
   entityName,
   fillOnFields,
   filterFieldKeys,
-  filterPersistableRelationKeys,
   forEachRequestedRelation,
   getKeys,
   hasKeys,
-  holdsForeignKey,
   getRelationRequestSummary,
   guardWrite,
   idOnlyQuery,
@@ -81,6 +78,8 @@ import {
   whereKeysIn,
   whereWith,
   withoutSoftDeleteFilter,
+  cascadingRelations,
+  holdsForeignKey,
 } from '../util/index.js';
 import { UqlOptimisticLockError, UqlUsageError } from '../util/uqlError.js';
 import { keysetRead } from './keyset.js';
@@ -293,14 +292,13 @@ type RelationWrite<E> = { readonly id: EntityId<E>; readonly value: unknown };
 
 /** Whether any payload writes a relation it cascades to, which makes the write several statements. */
 function writesRelations<E>(meta: EntityMeta<E>, payloads: readonly object[]): boolean {
-  return payloads.some((payload) => filterPersistableRelationKeys(meta, payload, 'persist').length > 0);
+  const keys = cascadingRelations(meta, 'persist');
+  return payloads.some((payload) => keys.some((key) => Object.hasOwn(payload, key)));
 }
 
-/** The relations a payload writes whose rows hold the parent's key: written after the parent, by its id. */
-function childRelationKeys<E>(meta: EntityMeta<E>, payload: object): RelationKey<E>[] {
-  return filterPersistableRelationKeys(meta, payload, 'persist').filter(
-    (relKey) => !holdsForeignKey(relationOf(meta, relKey)),
-  );
+/** The relations a write cascades to whose rows hold the parent's key: written after the parent, by its id. */
+function ownedRelations<E>(meta: EntityMeta<E>): RelationKey<E>[] {
+  return cascadingRelations(meta, 'persist').filter((relKey) => !holdsForeignKey(relationOf(meta, relKey)));
 }
 
 /** A relation's value as the rows it lists: a to-many's list, a to-one's row, none for `null`. */
@@ -323,11 +321,7 @@ const STREAM_HOLDS_QUERIER =
 
 /** Base class for all database queriers. */
 export abstract class AbstractQuerier implements Querier {
-  /**
-   * Internal promise used to queue database operations.
-   * This ensures that each operation is executed serially, preventing race conditions
-   * and ensuring that the database connection is used safely across concurrent calls.
-   */
+  /** The last task {@link serialize} queued, which the next one runs after. */
   private taskQueue: Promise<unknown> = Promise.resolve();
 
   /** The stream reading on the connection, from its first row asked for until its loop ends. */
@@ -359,9 +353,14 @@ export abstract class AbstractQuerier implements Querier {
     return this;
   }
 
-  /** The transaction the connection holds, which every querier on it reads. */
+  #connectionSlot?: TransactionSlot;
+
+  /**
+   * The transaction the connection holds, which every querier on it reads: the querier's own where it owns
+   * its connection, and the shared session's otherwise, the one case the registry exists for.
+   */
   get #slot(): TransactionSlot {
-    return slotOf(this.connection);
+    return (this.#connectionSlot ??= this.connection === this ? {} : slotOf(this.connection));
   }
 
   /** What every read is checked for before it runs, whichever backend runs it. */
@@ -917,7 +916,7 @@ export abstract class AbstractQuerier implements Querier {
     await this.writeHeldReferences(entity, [row]);
     fillOnFields(meta, [row], 'onUpdate');
     guardWrite(meta, [row], 'update');
-    const relKeys = childRelationKeys(meta, row);
+    const relKeys = ownedRelations(meta).filter((key) => Object.hasOwn(row, key));
     const settles = !!relKeys.length || this.settlesWrite(entity, q);
     if (lockKey) {
       assertLockableUpdate(meta, q, settles);
@@ -1214,7 +1213,7 @@ export abstract class AbstractQuerier implements Querier {
 
   private async deleteRows<E extends object>(entity: Type<E>, q: QuerySearch<E>, opts?: QueryOptions): Promise<number> {
     const meta = getMeta(entity);
-    const cascades = cascadesOnDelete(meta);
+    const cascades = cascadingRelations(meta, 'delete').length > 0;
     const watched = this.hasHook(entity, 'beforeDelete') || this.hasHook(entity, 'afterDelete');
     if (!watched && !cascades && !this.settlesWrite(entity, q)) {
       return this.internalDeleteMany(entity, q, opts);
@@ -1347,7 +1346,7 @@ export abstract class AbstractQuerier implements Querier {
     rows: readonly UpdatePayload<E>[],
   ): Promise<void> {
     const meta = getMeta(entity);
-    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'persist')) {
+    for (const relKey of cascadingRelations(meta, 'persist')) {
       const relOpts = relationOf(meta, relKey);
       const holding = rows.filter((row) => row[relKey] !== undefined);
       if (!holdsForeignKey(relOpts) || !holding.length) {
@@ -1375,7 +1374,7 @@ export abstract class AbstractQuerier implements Querier {
   private async insertChildren<E extends object>(entity: Type<E>, rows: EntityData<E>[]): Promise<void> {
     const meta = getMeta(entity);
     const [idKey] = meta.ids;
-    for (const relKey of childRelationKeys(meta, meta.relations)) {
+    for (const relKey of ownedRelations(meta)) {
       const writes = rows.flatMap((row) => (row[relKey] == null ? [] : [{ id: row[idKey], value: row[relKey] }]));
       if (writes.length) {
         assertSoleId(meta, 'saving a relation');
@@ -1499,7 +1498,7 @@ export abstract class AbstractQuerier implements Querier {
   private async deleteChildren<E extends object>(entity: Type<E>, ids: EntityId<E>[], opts?: QueryOptions) {
     const meta = getMeta(entity);
     const soft = !!meta.softDelete && !opts?.hardDelete;
-    for (const relKey of filterPersistableRelationKeys(meta, meta.relations, 'delete')) {
+    for (const relKey of cascadingRelations(meta, 'delete')) {
       const relOpts = relationOf(meta, relKey);
       const target = relOpts.through ? relOpts.through() : relOpts.entity();
       if (soft && !getMeta(target).softDelete) {

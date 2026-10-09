@@ -1,6 +1,6 @@
 /**
  * The package runs on every runtime we claim to support, with no driver installed: `verify-dist.ts`
- * runs it with Node, Bun and Deno in a consumer project holding `dist` alone.
+ * runs it with Node and Bun in a consumer project holding `dist` alone.
  *
  * The entry list comes from the installed manifest, so a new export in `package.json` is covered here
  * with no edit. Deliberately `.mjs` and dependency-free, so it runs byte-identical on each runtime.
@@ -9,11 +9,7 @@
 import pkg from 'uql-orm/package.json' with { type: 'json' };
 import checks from './peers.json' with { type: 'json' };
 
-const runtime = globalThis.Deno
-  ? `deno ${Deno.version.deno}`
-  : globalThis.Bun
-    ? `bun ${Bun.version}`
-    : `node ${process.versions.node}`;
+const runtime = globalThis.Bun ? `bun ${Bun.version}` : `node ${process.versions.node}`;
 
 /**
  * No peers are installed on purpose: that is what a consumer who uses one dialect actually has. Which
@@ -26,7 +22,7 @@ const { peers, driverEntries } = checks;
  * Matched as a quoted specifier, not as a substring: every runtime quotes the module it could not
  * resolve, and a bare `includes('bun')` also matches the `dist/bunSql/` in the same message, which
  * would let a genuinely broken entry pass as an absent peer. A peer can be imported at a subpath
- * (`mysql2/promise`) and runtimes disagree on which half they name: Node and Deno report the
+ * (`mysql2/promise`) and runtimes disagree on which half they name: Node reports the
  * package, Bun reports the subpath.
  */
 const missingPeer = (message) =>

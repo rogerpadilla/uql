@@ -92,7 +92,7 @@ export function assertWhere<E>(meta: EntityMeta<E>, where: unknown): void {
  * as no condition at all: `{ email: maybeEmail }` reading any row. `what` names the map in the error.
  */
 export function assertNoUndefined(map: object, what: string): void {
-  const path = undefinedPath(map, []);
+  const path = undefinedPath(map);
   if (path) {
     throw new UqlUsageError(
       `${what} holds undefined at '${path.join('.')}': leave the key out not to filter by it, or name null`,
@@ -100,24 +100,32 @@ export function assertNoUndefined(map: object, what: string): void {
   }
 }
 
-/** The path to the first `undefined` in a plain object or array, read depth first. */
-function undefinedPath(value: unknown, path: readonly string[]): readonly string[] | undefined {
+/**
+ * The path to the first `undefined` in a plain object or array, read depth first. Built on the way back out,
+ * so a filter holding none, which is every one that runs, allocates nothing.
+ */
+function undefinedPath(value: unknown): string[] | undefined {
   if (value === undefined) {
-    return path;
+    return [];
   }
-  if (!Array.isArray(value) && !isPlainObject(value)) {
+  if (!isWalkable(value)) {
     return undefined;
   }
-  for (const [key, item] of Object.entries(value)) {
-    const found = undefinedPath(item, [...path, key]);
+  for (const key in value) {
+    const found = undefinedPath(value[key]);
     if (found) {
+      found.unshift(key);
       return found;
     }
   }
   return undefined;
 }
 
-function isPlainObject(value: unknown): value is object {
+/** An array or a plain object: what a filter nests, and not a `Date`, a `raw` or a driver's value. */
+function isWalkable(value: unknown): value is Readonly<Record<string, unknown>> {
+  if (Array.isArray(value)) {
+    return true;
+  }
   if (!isRecord(value)) {
     return false;
   }

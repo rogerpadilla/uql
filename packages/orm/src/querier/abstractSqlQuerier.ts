@@ -1,9 +1,9 @@
+import type { SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, TOTAL_ALIAS } from '../dialect/aliases.js';
-import { decodeColumn } from '../dialect/hydrateColumn.js';
 import type { AbstractSqlDialect } from '../dialect/index.js';
 import { getMeta, namesKey } from '../entity/index.js';
-import { COUNT_RESULT_KEY } from '../type/index.js';
 import type {
+  QueryContext,
   EntityData,
   EntityMeta,
   ExtraOptions,
@@ -29,23 +29,14 @@ import type {
   Type,
   UpdatePayload,
 } from '../type/index.js';
-import {
-  buildUpdateResult,
-  chunk,
-  clone,
-  getInsertFieldKeys,
-  insertShapeOf,
-  isAutoIncrement,
-  isRecord,
-  obtainAttrsPaths,
-  unflatObject,
-} from '../util/index.js';
+import { buildUpdateResult, chunk, clone, getInsertFieldKeys, insertShapeOf, isAutoIncrement } from '../util/index.js';
 import { statementOf } from '../util/raw.js';
 import type { BuildUpdateResultPayload } from '../util/sql.util.js';
 import { UqlUsageError } from '../util/uqlError.js';
 import { AbstractQuerier } from './abstractQuerier.js';
 import { streamViaCursor } from './cursorStream.js';
 import { enrichError } from './queryError.js';
+import { rowReader } from './rowReader.js';
 
 /**
  * Row indexes split by whether the row names its key, the one thing that changes what an insert can
@@ -97,8 +88,13 @@ function chunkWithinLimits<E extends object>(
       meta,
       indexes.map((index) => payload[index]),
     ).length;
-  const size = Math.max(1, Math.min(maxRows, Math.floor(maxBindValues / (width(group) || 1))));
-  return chunk(group, size).flatMap((indexes) => (width(indexes) ? [indexes] : chunk(indexes, 1)));
+  const groupWidth = width(group);
+  if (!groupWidth) {
+    return chunk(group, 1);
+  }
+  const chunks = chunk(group, Math.max(1, Math.min(maxRows, Math.floor(maxBindValues / groupWidth))));
+  // A split can leave a chunk whose rows name no column; one chunk is the whole group, which names some.
+  return chunks.length === 1 ? chunks : chunks.flatMap((indexes) => (width(indexes) ? [indexes] : chunk(indexes, 1)));
 }
 
 export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQuerier {
@@ -193,7 +189,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     this.assertBindBudget(values);
     return this.serialize(async () => {
       await this.lazyConnect();
-      return this.timed(sql, values, () => task(sql, this.dialect.normalizeValues(values)));
+      return this.timed(sql, values, () => task(sql, values));
     });
   }
 
@@ -220,7 +216,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
   }
 
   protected override async internalFindMany<E extends object>(entity: Type<E>, q: Query<E>, opts?: QueryOptions) {
-    return (await this.selectRows(entity, q, opts)).map(this.rowReader(entity));
+    return this.selectRows(entity, q, opts);
   }
 
   /** Every row `q` matches past its page, deduplicated where it reads `$distinct`. */
@@ -244,27 +240,37 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     if (q.$distinct || (q.$lock && !(rowLocks && rowLocks.withWindow))) {
       return Promise.all([this.internalFindMany(entity, q, opts), this.countUnpaged(entity, q, opts)]);
     }
-    const rows = await this.selectRows(entity, q, opts, TOTAL_ALIAS);
+    const rows = await this.selectRows<E, E & { [TOTAL_ALIAS]?: unknown }>(entity, q, opts, TOTAL_ALIAS);
     const total = rows.length ? Number(rows[0][TOTAL_ALIAS]) : await this.countUnpaged(entity, q, opts);
     for (const row of rows) {
       delete row[TOTAL_ALIAS];
     }
-    return [rows.map(this.rowReader(entity)), total];
+    return [rows, total];
   }
 
-  private async selectRows<E extends object>(
+  /** The rows a read of `entity` matches, each as its statement reads it. */
+  private async selectRows<E extends object, T = E>(
     entity: Type<E>,
     q: Query<E>,
     opts?: QueryOptions,
     totalAlias?: string,
-  ): Promise<RawRow[]> {
+  ): Promise<T[]> {
     // Guarded rather than awaited unconditionally, here and in the stream below: an `await` on this
     // path defers a microtask on every read, which reorders the two statements `findManyAndCount`
     // issues concurrently. Keep the guard at any new call site.
     if (q.$candidates !== undefined) {
       await this.applyVectorTuning(entity, q);
     }
-    return this.query<RawRow>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias));
+    return this.readRows<T>((ctx) => this.dialect.find(ctx, entity, q, opts, totalAlias));
+  }
+
+  /** The rows of a read the dialect builds, each as the terms it returns say. */
+  private async readRows<T>(build: (ctx: QueryContext) => readonly SelectTerm[]): Promise<T[]> {
+    let terms: readonly SelectTerm[] = [];
+    const rows = await this.query<RawRow>((ctx) => {
+      terms = build(ctx);
+    });
+    return rows.map(rowReader<T>(terms));
   }
 
   /**
@@ -277,13 +283,12 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     opts?: QueryOptions,
   ) {
     const ctx = this.dialect.createContext();
-    this.dialect.find(ctx, entity, q, opts);
+    const read = rowReader<E>(this.dialect.find(ctx, entity, q, opts));
     this.assertBindBudget(ctx.values);
     if (q.$candidates !== undefined) {
       await this.applyVectorTuning(entity, q);
     }
     await this.lazyConnect();
-    const read = this.rowReader(entity);
     for await (const row of this.timedStream(ctx.sql, ctx.values, this.internalStream(ctx.sql, ctx.values))) {
       yield read(row);
     }
@@ -305,72 +310,6 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
       values,
       !!this.scopeHere(),
     );
-  }
-
-  /**
-   * How each row of one statement becomes the entity's, for a read, a stream and a to-many alike: its dotted
-   * columns nested as the first row names them, and its values decoded as `hydratableFields` says, resolved
-   * once. Both live with the dialect, because a `sparsevec` is only sparse on Postgres.
-   */
-  private rowReader<E extends object>(entity: Type<E>): (row: RawRow) => E {
-    const meta = getMeta(entity);
-    const fields = this.dialect.hydratableFields(entity);
-    let attrsPaths: Record<string, string[]> | undefined;
-    return (row) => {
-      attrsPaths ??= obtainAttrsPaths(row);
-      const found = unflatObject<E>(row, attrsPaths);
-      this.hydrateFields(meta, fields, found);
-      return found;
-    };
-  }
-
-  /**
-   * One row of {@link rowReader}. A related row arrives as its parent's statement read it: a to-one
-   * joined and unflattened, there only when its key is, since an unmatched join still fills a computed
-   * column or a to-many's empty array; a to-many as a JSON array, which a driver may hand over as text.
-   * Each is an object of its own, so the walk reaches none twice.
-   */
-  private hydrateFields<E extends object>(
-    meta: EntityMeta<E>,
-    fields: ReturnType<AbstractSqlDialect['hydratableFields']>,
-    dto: E,
-  ): void {
-    const row = dto as Record<string, unknown>;
-    for (const [key, kind] of fields) {
-      const value = row[key];
-      if (value != null) {
-        row[key] = decodeColumn(value, kind);
-      }
-    }
-    // A tally read inside the statement comes back as its driver reads a COUNT, which on some is text.
-    const counts = row[COUNT_RESULT_KEY];
-    if (isRecord(counts)) {
-      for (const relKey in counts) {
-        counts[relKey] = Number(counts[relKey]);
-      }
-    }
-
-    // The value is read before the relation's target is resolved: a query that populated nothing
-    // still walks every relation the entity declares, and `rel.entity()` is a call per row per
-    // relation that only the populated ones need.
-    for (const key in meta.relations) {
-      const value = row[key];
-      const rel = meta.relations[key];
-      if (!value || !rel) continue;
-      const relEntity = rel.entity();
-      if (isRecord(value)) {
-        const relMeta = getMeta(relEntity);
-        if (value[relMeta.ids[0]] == null) {
-          delete row[key];
-        } else {
-          this.hydrateFields(relMeta, this.dialect.hydratableFields(relEntity), value);
-        }
-      } else {
-        // A to-many's rows, as flat as a statement's own.
-        const rows: RawRow[] = Array.isArray(value) ? value : JSON.parse(String(value));
-        row[key] = rows.map(this.rowReader(relEntity));
-      }
-    }
   }
 
   /**
@@ -396,17 +335,7 @@ export abstract class AbstractSqlQuerier extends AbstractQuerier implements SqlQ
     q: QueryAggregate<E, G, A>,
     opts?: QueryOptions,
   ): Promise<QueryAggregateResult<E, G, A>[]> {
-    const rows = await this.query<QueryAggregateResult<E, G, A>>((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
-    const hydratable = this.dialect.hydratableAggregates(entity, q);
-    for (const row of rows) {
-      const cells: Record<string, unknown> = row;
-      for (const [alias, kind] of hydratable) {
-        if (cells[alias] != null) {
-          cells[alias] = decodeColumn(cells[alias], kind);
-        }
-      }
-    }
-    return rows;
+    return this.readRows((ctx) => this.dialect.aggregate(ctx, entity, q, opts));
   }
 
   override async internalInsertMany<E extends object>(entity: Type<E>, rows: EntityData<E>[]) {

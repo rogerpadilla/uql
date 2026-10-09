@@ -102,7 +102,8 @@ describe('D1 vectors', () => {
   });
 
   it('should read a vector back from its text', () => {
-    expect(dialect.hydratableFields(VectorItem)).toContainEqual(['vec', 'vector']);
+    const terms = dialect.selectTerms(dialect.createContext(), VectorItem, undefined);
+    expect(terms.find(({ key }) => key === 'vec')?.kind).toBe('vector');
   });
 
   /** Its text crosses JSON as it is, rather than as hex bytes. */

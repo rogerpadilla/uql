@@ -24,4 +24,12 @@ describe('decodeBigInts', () => {
     expect(decodeBigInts(row)).toBe(row);
     expect(row).toEqual({ id: 5, big: '9007199254740993', name: 'a', total: 3 });
   });
+
+  it('should decode every bigint element of an array cell, nested ones too', () => {
+    const row = { ids: [1n, 9007199254740993n, null], grid: [[1n], [2n]], names: ['a'] };
+
+    decodeBigInts(row);
+
+    expect(row).toEqual({ ids: [1, '9007199254740993', null], grid: [[1], [2]], names: ['a'] });
+  });
 });

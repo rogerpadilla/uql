@@ -1,6 +1,4 @@
 import { describe, expect, it } from 'vitest';
-import type { Item } from '../test/index.js';
-import type { RawRow } from '../type/index.js';
 import {
   buildUpdateResult,
   derivedForeignKeyName,
@@ -8,15 +6,7 @@ import {
   derivedPrimaryKeyName,
   escapeSqlId,
   isPrimaryKey,
-  obtainAttrsPaths,
-  unflatObject,
 } from './sql.util.js';
-
-/** Every row of one statement nested by the paths its first row names, as the querier reads them. */
-const unflatRows = <T extends object>(rows: RawRow[]): T[] => {
-  const attrsPaths = obtainAttrsPaths(rows[0]);
-  return rows.map((row) => unflatObject<T>(row, attrsPaths));
-};
 
 it('should name a constraint over no parts after its table alone', () => {
   expect(derivedPrimaryKeyName('users', [])).toBe('users_pk');
@@ -26,174 +16,6 @@ it('should name a constraint over no parts after its table alone', () => {
 it('should name by a string key the one row it is reported for, never several', () => {
   expect(buildUpdateResult({ id: 'abc', changes: 1, insertIdSource: 'firstId' }).ids).toEqual(['abc']);
   expect(buildUpdateResult({ id: 'abc', changes: 2, insertIdSource: 'firstId' }).ids).toEqual([]);
-});
-
-it('should unflatten dotted columns into nested objects', () => {
-  const source: RawRow[] = [
-    {
-      id: '1',
-      name: 'Auxiliar',
-      address: null,
-      description: null,
-      createdAt: 1,
-      updatedAt: null,
-      creatorId: '1',
-      companyId: '1',
-    },
-    {
-      id: '2',
-      name: 'Principal',
-      address: null,
-      description: null,
-      createdAt: 1,
-      updatedAt: 1578759519913,
-      creatorId: '1',
-      companyId: '1',
-    },
-  ];
-  const result = unflatRows(source);
-  const expected = [
-    {
-      id: '1',
-      name: 'Auxiliar',
-      address: null,
-      description: null,
-      createdAt: 1,
-      updatedAt: null,
-      creatorId: '1',
-      companyId: '1',
-    },
-    {
-      id: '2',
-      name: 'Principal',
-      address: null,
-      description: null,
-      createdAt: 1,
-      updatedAt: 1578759519913,
-      creatorId: '1',
-      companyId: '1',
-    },
-  ];
-  expect(result).toEqual(expected);
-});
-
-it('should unflatten deeply nested dotted columns', () => {
-  const source = [
-    {
-      id: '9',
-      buyPrice: 1000,
-      number: 10,
-      'item.id': '1',
-      'item.name': 'Arepa de Yuca y Queso x 6',
-      'item.createdAt': 1,
-      'item.buyLedgerAccount': 1,
-      'item.saleLedgerAccount': 1,
-      'item.tax': 1,
-      'item.companyId': '1',
-      'item.measureUnit': 1,
-      'item.inventoryable': 1,
-      'item.buyLedgerAccount.id': '1',
-      'item.buyLedgerAccount.name': 'Ventas',
-      'item.saleLedgerAccount.id': '1',
-      'item.saleLedgerAccount.name': 'Ventas',
-      'item.tax.id': '1',
-      'item.tax.name': 'IVA 0%',
-      'item.tax.percentage': 0,
-      'item.tax.category.pk': '1',
-      'item.tax.category.name': 'Impuestos',
-      'item.tax.category.description': 'Nacionales',
-      'item.measureUnit.id': '1',
-      'item.measureUnit.name': 'Unidad',
-      'item.creatorId': null,
-      'item.creator.id': null,
-      'item.creator.name': null,
-    },
-    {
-      id: '15',
-      buyPrice: 2000,
-      number: 20,
-      'item.id': '2',
-      'item.name': 'Pony Malta 2 litros',
-      'item.createdAt': 1,
-      'item.companyId': '1',
-      'item.creatorId': '5',
-      'item.creator.id': '5',
-      'item.creator.name': 'Roshi Master',
-    },
-  ];
-  const result = unflatRows<Item>(source);
-  const expected = [
-    {
-      id: '9',
-      buyPrice: 1000,
-      number: 10,
-      item: {
-        id: '1',
-        name: 'Arepa de Yuca y Queso x 6',
-        createdAt: 1,
-        buyLedgerAccount: {
-          id: '1',
-          name: 'Ventas',
-        },
-        saleLedgerAccount: {
-          id: '1',
-          name: 'Ventas',
-        },
-        tax: {
-          id: '1',
-          name: 'IVA 0%',
-          percentage: 0,
-          category: {
-            pk: '1',
-            name: 'Impuestos',
-            description: 'Nacionales',
-          },
-        },
-        companyId: '1',
-        measureUnit: {
-          id: '1',
-          name: 'Unidad',
-        },
-        inventoryable: 1,
-        // Kept as read: the querier drops a to-one whose key is null.
-        creatorId: null,
-        creator: { id: null, name: null },
-      },
-    },
-    {
-      id: '15',
-      buyPrice: 2000,
-      number: 20,
-      item: {
-        id: '2',
-        name: 'Pony Malta 2 litros',
-        createdAt: 1,
-        companyId: '1',
-        creatorId: '5',
-        creator: {
-          id: '5',
-          name: 'Roshi Master',
-        },
-      },
-    },
-  ];
-  expect(result).toEqual(expected);
-});
-
-it('should find no paths in an empty row', () => {
-  expect(obtainAttrsPaths({})).toEqual({});
-});
-
-it('should split dotted keys into paths, skipping the rest', () => {
-  const res1 = obtainAttrsPaths({
-    'prop1.a.b': 1,
-    'prop2.c': 2,
-    prop_3: 3,
-  });
-  expect(res1).toEqual({
-    'prop1.a.b': ['prop1', 'a', 'b'],
-    'prop2.c': ['prop2', 'c'],
-  });
 });
 
 it('should escape an identifier with the quote character given', () => {
@@ -291,67 +113,6 @@ describe('escapeSqlId - identifier injection hardening', () => {
     const evil = 'a.b"; --';
     expect(escapeSqlId(evil, '"')).toBe('"a"."b""; --"');
   });
-});
-
-it('should leave underscored keys out of the paths', () => {
-  const res1 = obtainAttrsPaths({
-    prop1_a_b: 1,
-    USER_ID: 2,
-    user_id: 3,
-  });
-  // Underscores are NOT treated as path delimiters (they can appear in property names)
-  expect(res1).toEqual({});
-});
-
-it('should leave underscored keys flat', () => {
-  const source = [
-    {
-      user_id: 1,
-      user_name: 'John',
-      USER_ROLE: 'admin',
-    },
-  ];
-  const result = unflatRows(source);
-  // Underscore columns stay flat (they are NOT treated as nested paths)
-  expect(result).toEqual([
-    {
-      user_id: 1,
-      user_name: 'John',
-      USER_ROLE: 'admin',
-    },
-  ]);
-});
-
-it('should leave a flat row as it is', () => {
-  const attrsPaths = obtainAttrsPaths({ id: 1, name: 'John' });
-  const result = unflatObject<{ id: number; name: string }>({ id: 1, name: 'John' }, attrsPaths);
-  expect(result).toEqual({ id: 1, name: 'John' });
-});
-
-it('should unflatten a deeply nested row', () => {
-  const row = {
-    id: '1',
-    'item.id': '10',
-    'item.name': 'Widget',
-    'item.category.name': 'Tools',
-  };
-  const attrsPaths = obtainAttrsPaths(row);
-  const result = unflatObject(row, attrsPaths);
-  expect(result).toEqual({
-    id: '1',
-    item: {
-      id: '10',
-      name: 'Widget',
-      category: { name: 'Tools' },
-    },
-  });
-});
-
-it('should keep null values, as a flat row does', () => {
-  const row = { id: 1, name: null, 'item.id': null };
-  const attrsPaths = obtainAttrsPaths(row);
-  const result = unflatObject(row, attrsPaths);
-  expect(result).toEqual({ id: 1, name: null, item: { id: null } });
 });
 
 describe('buildUpdateResult', () => {

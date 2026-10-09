@@ -3,7 +3,6 @@ import type {
   EntityMeta,
   InsertIdSource,
   Query,
-  QueryBuildFn,
   QueryConflictPaths,
   QueryContext,
   QueryOptions,
@@ -23,6 +22,7 @@ import {
   type CarriedFields,
   type DerivedRelation,
   type RelationRows,
+  type SelectTerm,
 } from './abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS } from './aliases.js';
 import { BYTES_PREFIX } from './hydrateColumn.js';
@@ -197,15 +197,16 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
    * An ordered `GROUP_CONCAT` of each row's object, which reads as a JSON array: MySQL's `JSON_ARRAYAGG`
    * takes no `ORDER BY`, and as a window over the rows it rebuilds the array for every one of them.
    */
-  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
-    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): readonly SelectTerm[] {
+    const { terms, from, pairs, order } = this.derivedRelation(ctx, rows);
     const objects = `${this.jsonObject(pairs)}${order ? ` ORDER BY ${order}` : ''} SEPARATOR ','`;
     ctx.append(`(SELECT COALESCE(CONCAT('[', GROUP_CONCAT(${objects}), ']'), '[]') FROM ${from})`);
+    return terms;
   }
 
   /** A read's statement, with the settings it needs applied to it alone. */
   override find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryOptions, totalAlias?: string) {
-    this.settled(ctx, entity, q, (statement) => super.find(statement, entity, q, opts, totalAlias));
+    return this.settled(ctx, entity, q, (statement) => super.find(statement, entity, q, opts, totalAlias));
   }
 
   /** A `$distinct` read's count, which reads the relations the read does. */
@@ -213,15 +214,15 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     this.settled(ctx, entity, q, (statement) => super.countDistinct(statement, entity, q, opts));
   }
 
-  private settled<E>(ctx: QueryContext, entity: Type<E>, q: Query<E>, build: QueryBuildFn): void {
+  private settled<E, T>(ctx: QueryContext, entity: Type<E>, q: Query<E>, build: (ctx: QueryContext) => T): T {
     const settings = this.statementSettings(entity, q);
     if (!settings.length) {
-      build(ctx);
-      return;
+      return build(ctx);
     }
     const statement = ctx.createFragment();
-    build(statement);
+    const built = build(statement);
     ctx.append(this.applySettings(statement.sql, settings));
+    return built;
   }
 
   /**
@@ -250,7 +251,7 @@ export abstract class MysqlLikeSqlDialect extends AbstractSqlDialect {
     vector: (expr, field) => this.selectFieldExpr(expr, field),
   } satisfies CarriedFields;
 
-  /** Bytes as the hex text `decodeColumn` reads back, whole. */
+  /** Bytes as the hex text `DECODERS.bytes` reads back, whole. */
   protected bytesAsText(expr: string): string {
     return `CONCAT(${this.escape(BYTES_PREFIX)}, HEX(${expr}))`;
   }

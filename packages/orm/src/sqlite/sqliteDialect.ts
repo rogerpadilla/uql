@@ -4,6 +4,7 @@ import {
   type CarriedFields,
   type DerivedRelation,
   type RelationRows,
+  type SelectTerm,
 } from '../dialect/abstractSqlDialect.js';
 import { BYTES_PREFIX } from '../dialect/hydrateColumn.js';
 import {
@@ -187,9 +188,10 @@ export class SqliteDialect extends AbstractSqlDialect {
   protected override readonly unboundedLimit = '-1';
 
   /** `json_group_array` of each row's object, ordered by the sort terms carried out beside them. */
-  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
-    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): readonly SelectTerm[] {
+    const { terms, from, pairs, order } = this.derivedRelation(ctx, rows);
     ctx.append(`(SELECT json_group_array(${this.jsonObject(pairs)}${order ? ` ORDER BY ${order}` : ''}) FROM ${from})`);
+    return terms;
   }
 
   /**

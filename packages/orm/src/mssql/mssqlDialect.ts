@@ -3,6 +3,7 @@ import {
   type CarriedFields,
   fromRows,
   type RelationRows,
+  type SelectTerm,
   relationTermKey,
 } from '../dialect/abstractSqlDialect.js';
 import { AGGREGATE_VALUE_ALIAS, JSON_PULL_ALIAS } from '../dialect/aliases.js';
@@ -215,11 +216,12 @@ export class MsSqlDialect extends MergeSqlDialect {
    * null out, which is what unflattening a row with a joined column does, so a row with none keeps its
    * nulls. `JSON_QUERY` keeps the array JSON inside a parent's own `FOR JSON`.
    */
-  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): readonly SelectTerm[] {
     const rowsCtx = ctx.createFragment();
     const { terms } = this.read(rowsCtx, rows.entity, rows.query, { alias: rows.alias, json: true }, rows.joins);
     const nulls = terms.some((term) => relationTermKey(term).includes('.')) ? '' : ', INCLUDE_NULL_VALUES';
     ctx.append(`JSON_QUERY(COALESCE((${rowsCtx.sql} FOR JSON PATH${nulls}), '[]'))`);
+    return terms;
   }
 
   /**

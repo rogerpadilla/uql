@@ -1,4 +1,4 @@
-import { type RelationRows, relationTermKey } from '../dialect/abstractSqlDialect.js';
+import { type RelationRows, relationTermKey, type SelectTerm } from '../dialect/abstractSqlDialect.js';
 import { type JsonAccessMode, jsonPath } from '../dialect/jsonSql.js';
 import {
   MYSQL_FEATURES,
@@ -46,7 +46,10 @@ export class MariaDialect extends MysqlLikeSqlDialect {
    * A derived table here reads no column of the statement around it, so the aggregate reads the
    * related table itself, and orders and pages inside `JSON_ARRAYAGG`, which takes both.
    */
-  protected override appendRelationArray(ctx: QueryContext, { entity, query, alias, joins }: RelationRows): void {
+  protected override appendRelationArray(
+    ctx: QueryContext,
+    { entity, query, alias, joins }: RelationRows,
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
     const terms = this.projection(ctx, entity, query, { prefix: alias, json: true }, joins);
     const order = this.buildFragment(ctx, (fragmentCtx) =>
@@ -60,6 +63,7 @@ export class MariaDialect extends MysqlLikeSqlDialect {
     const object = this.jsonObject(terms.map((term) => [relationTermKey(term), term.sql]));
     const rows = `${query.$distinct ? 'DISTINCT ' : ''}${object}${order}${page}`;
     ctx.append(`COALESCE((SELECT JSON_ARRAYAGG(${rows}) FROM ${this.tableRef(meta, alias).ref}${from}), JSON_ARRAY())`);
+    return terms;
   }
 
   /**

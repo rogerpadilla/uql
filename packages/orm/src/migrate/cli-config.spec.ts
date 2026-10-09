@@ -98,7 +98,6 @@ describe('cli-config', () => {
 
   it.each([
     ['Bun', { bun: '1.4.2' }, undefined],
-    ['Deno', { deno: '2.5.0' }, undefined],
     ['tsx', {}, '/app/node_modules/tsx/esm/api'],
   ])('should not point at a runtime for decorators when %s already runs them', (_name, versions, tsxApi) => {
     expect(importFailure('/app/uql.config.ts', new Error('boom'), versions, tsxApi).message).toBe(
@@ -168,15 +167,6 @@ describe('cli-config', () => {
     const dir = await projectWithTsx();
     try {
       expect(tsxApiFor(path.join(dir, 'uql.config.ts'), { bun: '1.4.2' })).toBeUndefined();
-    } finally {
-      await fs.rm(dir, { recursive: true, force: true });
-    }
-  });
-
-  it('should leave a TypeScript config to Deno', async () => {
-    const dir = await projectWithTsx();
-    try {
-      expect(tsxApiFor(path.join(dir, 'uql.config.ts'), { deno: '2.5.0' })).toBeUndefined();
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

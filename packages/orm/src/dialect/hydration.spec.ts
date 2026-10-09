@@ -5,8 +5,10 @@ import { MariaDialect } from '../mariadb/mariaDialect.js';
 import { PostgresDialect } from '../postgres/postgresDialect.js';
 import { SqliteDialect } from '../sqlite/sqliteDialect.js';
 import { JsonRecord, NarrowVectorItem, VectorItem } from '../test/index.js';
+import type { Type } from '../type/index.js';
 import { columnFamily } from '../util/field.util.js';
-import { decodeColumn } from './hydrateColumn.js';
+import type { AbstractSqlDialect } from './abstractSqlDialect.js';
+import { DECODERS } from './hydrateColumn.js';
 
 /**
  * Which columns a dialect decodes on read, and as what: the classification itself, for the columns the
@@ -48,35 +50,47 @@ class LogicalRow {
   @Field({ type: BigInt }) huge?: bigint | null;
 }
 
-describe('hydratableFields', () => {
+/** Each field `dialect` decodes and as what: for a row on the wire, or with `json`, one crossing JSON in its parent's. */
+function decoded(dialect: AbstractSqlDialect, entity: Type<object>, json = false) {
+  return dialect
+    .selectTerms(dialect.createContext(), entity, undefined, { json })
+    .flatMap(({ key, kind }) => (key && kind ? [[key, kind]] : []));
+}
+
+describe('decoded fields', () => {
   const postgres = new PostgresDialect();
 
   it('should list nothing for an entity with no encoded column, so reads skip the loop', () => {
-    expect(postgres.hydratableFields(PlainRow)).toEqual([]);
+    expect(decoded(postgres, PlainRow)).toEqual([]);
   });
 
   it('should parse a JSON column only where it arrives as text', () => {
-    expect(new SqliteDialect().hydratableFields(JsonRecord)).toContainEqual(['entries', 'json']);
-    expect(postgres.hydratableFields(JsonRecord)).not.toContainEqual(['entries', 'json']);
+    expect(decoded(new SqliteDialect(), JsonRecord)).toContainEqual(['entries', 'json']);
+    expect(decoded(postgres, JsonRecord)).not.toContainEqual(['entries', 'json']);
   });
 
   it('should classify a dense vector by the cast the dialect writes', () => {
-    expect(postgres.hydratableFields(VectorItem)).toContainEqual(['vec', 'vector']);
+    expect(decoded(postgres, VectorItem)).toContainEqual(['vec', 'vector']);
   });
 
   it('should classify booleans, which only the entity can disambiguate from a small integer', () => {
     // SQLite stores 0/1 in an INTEGER and MySQL uses TINYINT(1); the column type cannot say.
-    expect(new SqliteDialect().hydratableFields(FlagRow)).toContainEqual(['active', 'boolean']);
-    expect(new MariaDialect().hydratableFields(FlagRow)).toContainEqual(['active', 'boolean']);
+    expect(decoded(new SqliteDialect(), FlagRow)).toContainEqual(['active', 'boolean']);
+    expect(decoded(new MariaDialect(), FlagRow)).toContainEqual(['active', 'boolean']);
   });
 
-  it('should classify every numeric field, since a decimal comes back as text from more than one driver', () => {
+  it('should classify every numeric field crossing JSON, since a decimal comes back as text from more than one driver', () => {
     // Including the id: `type: Number` is BIGINT, and this is the value every consumer indexes by.
-    expect(postgres.hydratableFields(VectorItem)).toContainEqual(['id', 'number']);
+    expect(decoded(postgres, VectorItem, true)).toContainEqual(['id', 'number']);
+    expect(decoded(new SqliteDialect(), VectorItem)).toContainEqual(['id', 'number']);
   });
 
-  it('should classify a column declared by its SQL type, not only by its constructor', () => {
-    expect(postgres.hydratableFields(LogicalRow)).toEqual([
+  it('should leave a Postgres wire row what its pools decode: a boolean, a date and an integer column', () => {
+    expect(decoded(postgres, LogicalRow)).toEqual([
+      ['amount', 'decimal'],
+      ['huge', 'bigint'],
+    ]);
+    expect(decoded(postgres, LogicalRow, true)).toEqual([
       ['id', 'number'],
       ['active', 'boolean'],
       ['amount', 'decimal'],
@@ -90,7 +104,7 @@ describe('hydratableFields', () => {
     ['SQLite', new SqliteDialect()],
     ['MariaDB', new MariaDialect()],
   ])('should read a decimal as its exact text on %s, unless declared `Number`', (_engine, dialect) => {
-    expect(dialect.hydratableFields(PriceRow)).toEqual([
+    expect(decoded(dialect, PriceRow)).toEqual([
       ['price', 'decimal'],
       ['exact', 'decimal'],
       ['rounded', 'number'],
@@ -100,13 +114,12 @@ describe('hydratableFields', () => {
   it('should keep `bigint` apart from `number`, since both declare a BIGINT column', () => {
     // `type: BigInt` promises a bigint where the pg pools decode BIGINT to a number, so it has a kind of
     // its own, which `hydrateKind` answers before the numeric family `BigInt` belongs to.
-    expect(postgres.hydratableFields(LogicalRow)).toContainEqual(['huge', 'bigint']);
+    expect(decoded(postgres, LogicalRow)).toContainEqual(['huge', 'bigint']);
     expect(columnFamily(BigInt)).toBe('numeric');
   });
 
   it('should keep the narrow vector casts on Postgres, the only engine that has them', () => {
-    expect(postgres.hydratableFields(NarrowVectorItem)).toEqual([
-      ['id', 'number'],
+    expect(decoded(postgres, NarrowVectorItem)).toEqual([
       ['half', 'halfvec'],
       ['sparse', 'sparsevec'],
     ]);
@@ -115,7 +128,7 @@ describe('hydratableFields', () => {
   it('should read narrow vectors back as dense everywhere else, because that is how they were written', () => {
     // The bug this prevents: decoding by the field's own declared cast would hunt for a `{1:1}/3`
     // literal on an engine that only ever stored `[0,0,1]`, and hand back the raw text instead.
-    expect(new CockroachDialect().hydratableFields(NarrowVectorItem)).toEqual([
+    expect(decoded(new CockroachDialect(), NarrowVectorItem, true)).toEqual([
       ['id', 'number'],
       ['half', 'vector'],
       ['sparse', 'vector'],
@@ -124,24 +137,16 @@ describe('hydratableFields', () => {
 
   it('should read a vector bound as bytes back as its float32s', () => {
     for (const dialect of [new MariaDialect(), new SqliteDialect()]) {
-      expect(dialect.hydratableFields(NarrowVectorItem)).toEqual([
+      expect(decoded(dialect, NarrowVectorItem)).toEqual([
         ['id', 'number'],
         ['half', 'float32'],
         ['sparse', 'float32'],
       ]);
     }
   });
-
-  it('should compute the list once per entity, since it is a function of the column not the row', () => {
-    // A 1000-row read would otherwise re-answer the same question 1000 times, and `columnFamily`
-    // lowercases a string on every call. The two narrow-vector cases above cover the other half of
-    // this: the cache is per dialect, so a shared one would make the second of them read the first's
-    // answer for the same entity.
-    expect(postgres.hydratableFields(VectorItem)).toBe(postgres.hydratableFields(VectorItem));
-  });
 });
 
-describe('decodeColumn', () => {
+describe('DECODERS', () => {
   /** The text a decimal is declared as, whichever way the driver handed it back. */
   it.each([
     ['text', '12.50', '12.50'],
@@ -149,6 +154,6 @@ describe('decodeColumn', () => {
     ['a float, as the SQLite family stores one', 12.5, '12.5'],
     ['an integer, as `bun:sqlite` hands a whole one', 12n, '12'],
   ])('should read a decimal arriving as %s as its text', (_shape, value, text) => {
-    expect(decodeColumn(value, 'decimal')).toBe(text);
+    expect(DECODERS.decimal(value)).toBe(text);
   });
 });

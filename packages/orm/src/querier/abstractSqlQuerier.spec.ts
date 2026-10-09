@@ -117,28 +117,12 @@ describe('AbstractSqlQuerier JSON hydration', () => {
       },
     ];
 
-    const [found] = await querier.findMany(HydratedParent, {});
+    const [found] = await querier.findMany(HydratedParent, { $populate: { children: true } });
 
     expect(found.children).toEqual([
       { id: 2, payload: { b: 2 } },
       { id: 3, payload: { b: 3 } },
     ]);
-  });
-
-  /** Which columns decode is a fact of the entity, so a page of rows looks it up once. */
-  it('should resolve the columns to decode once per read, not once per row', async () => {
-    const querier = new StubSqlQuerier();
-    querier.rows = [
-      { id: 1, settings: '{"a":1}' },
-      { id: 2, settings: '{"a":2}' },
-      { id: 3, settings: '{"a":3}' },
-    ];
-    const lookups = vi.spyOn(querier.dialect, 'hydratableFields');
-
-    const founds = await querier.findMany(HydratedParent, {});
-
-    expect(founds.map((found) => found.settings)).toEqual([{ a: 1 }, { a: 2 }, { a: 3 }]);
-    expect(lookups).toHaveBeenCalledTimes(1);
   });
 });
 

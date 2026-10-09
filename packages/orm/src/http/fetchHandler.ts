@@ -12,7 +12,7 @@ export type FetchHandlerOptions = RequestHandlerOptions<Request> & {
 /**
  * Web-standard adapter over {@link createRequestHandler}: mount the returned
  * `(request: Request) => Promise<Response>` in any fetch-native runtime
- * (Hono, Next.js route handlers, Bun.serve, Deno.serve, Cloudflare Workers, SvelteKit).
+ * (Hono, Next.js route handlers, Bun.serve, Cloudflare Workers, SvelteKit).
  */
 export function createFetchHandler(opts: FetchHandlerOptions): (request: Request) => Promise<Response> {
   const { basePath = '', ...handlerOpts } = opts;

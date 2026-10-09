@@ -15,12 +15,18 @@ import {
 } from '../type/index.js';
 import { bytesToHex } from '../util/bytes.js';
 import { fulltextConfig, fulltextIndexOver, hasVectorNear, textSearchFields } from '../util/dialect.util.js';
-import { jsonPathKeys } from '../util/field.util.js';
+import { isIntegerColumn, jsonPathKeys } from '../util/field.util.js';
 import { escapePgSqlLiteral, PG_UTC } from '../util/sqlLiteral.js';
 import type { DialectOptions } from './abstractDialect.js';
-import { ANSI_SQL_VALUES, AbstractSqlDialect, type CarriedFields, type RelationRows } from './abstractSqlDialect.js';
+import {
+  ANSI_SQL_VALUES,
+  AbstractSqlDialect,
+  type CarriedFields,
+  type RelationRows,
+  type SelectTerm,
+} from './abstractSqlDialect.js';
 import { JSON_PULL_ALIAS, RELATION_ROW_ALIAS } from './aliases.js';
-import { BYTES_PREFIX } from './hydrateColumn.js';
+import { BYTES_PREFIX, type HydrateKind } from './hydrateColumn.js';
 import { type JsonAccessMode, type JsonSlot, jsonSetTarget } from './jsonSql.js';
 import { resolveVectorCast, toSparsevecLiteral } from './vectorCast.js';
 
@@ -115,12 +121,21 @@ export abstract class PgLikeSqlDialect extends AbstractSqlDialect {
    * builds it, so a wide row meets no argument limit. `json` has no equality, so under a parent's
    * `DISTINCT` the array is compared as `jsonb`.
    */
-  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
-    const { from, pairs, order } = this.derivedRelation(ctx, rows);
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): readonly SelectTerm[] {
+    const { terms, from, pairs, order } = this.derivedRelation(ctx, rows);
     const row = this.escapeId(RELATION_ROW_ALIAS, true);
     const columns = pairs.map(([, column]) => column).join(', ');
     const array = /*sql*/ `(SELECT COALESCE(JSON_AGG(${row}${order ? ` ORDER BY ${order}` : ''}), '[]'::json) FROM ${from} CROSS JOIN LATERAL (SELECT ${columns}) ${row})`;
     ctx.append(rows.distinct ? `${array}::jsonb` : array);
+    return terms;
+  }
+
+  /**
+   * Every Postgres-wire pool hands back a `BOOLEAN`, a date and an integer column decoded (an `INT8` by the
+   * pools' own wide-number rule); a `NUMERIC`, a float and anything crossing JSON still decode as the base says.
+   */
+  protected override decodedAtWire(kind: HydrateKind, field: FieldOptions | undefined): boolean {
+    return kind === 'boolean' || kind === 'date' || (kind === 'number' && !!field && isIntegerColumn(field));
   }
 
   /**

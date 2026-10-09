@@ -21,7 +21,7 @@ Repo-specific rules, read directly by Claude Code, Cursor and other agents. Gene
 ## Verifying a change
 
 - `bun run check` is the gate: `lint`, `ts`, `ts.rename`, `test`, `build` and `check.package`, which inspects `dist` and so needs the build. `bun run lint.fix` fixes instead of reporting.
-- `build` ends with `verify-dist.ts`: declared paths, browser entries free of Node builtins, types resolving with `types: []`, `smoke.mjs` on Node, Bun and Deno with no driver, gzipped size budgets. Raise a budget only once you know which module became reachable.
+- `build` ends with `verify-dist.ts`: declared paths, browser entries free of Node builtins, types resolving with `types: []`, `smoke.mjs` on Node and Bun with no driver, gzipped size budgets. Raise a budget only once you know which module became reachable.
 - `bun run test` runs vitest then Bun **sequentially on purpose**: both drive the same Docker databases. Never pipe a test run into `head`, whose SIGPIPE leaves forks alive; redirect to a file.
 - `bun run ts.perf [calls] [version]` measures what the types cost a consumer, on `dist` (build first), beside a published version when one is given. Compare instantiations, not wall clock.
 

@@ -20,7 +20,12 @@ export abstract class AbstractPoolQuerier<C> extends AbstractSqlQuerier {
 
   protected override async lazyConnect() {
     await super.lazyConnect();
-    this.conn ??= await this.connect();
+    this.conn ??= this.acquired(await this.connect());
+  }
+
+  /** A connection as this querier takes it from its pool, before its first statement: see {@link releaseConn}. */
+  protected acquired(conn: C): C {
+    return conn;
   }
 
   override async internalRelease(discard: boolean) {

@@ -75,6 +75,7 @@ import {
   filterFieldKeys,
   findVectorIndex,
   findVectorSort,
+  definedEntries,
   getKeys,
   holdsForeignKey,
   jsonKey,
@@ -1265,13 +1266,14 @@ export class MongoDialect extends AbstractDialect {
     // number it is where exact and its exact text past 2^53, as every SQL driver decodes one.
     decodeBigIntsExcept(res, (key) => meta.fields[key]?.type === BigInt);
 
-    const relKeys = getKeys(meta.relations).filter((key) => res[key]) as RelationKey<E>[];
-
-    for (const relKey of relKeys) {
-      const relMeta = getMeta(relationOf(meta, relKey).entity());
-      res[relKey] = Array.isArray(res[relKey])
-        ? this.normalizeIds(relMeta, res[relKey] as Document[])
-        : this.normalizeId(relMeta, res[relKey] as Document);
+    for (const [relKey, relation] of definedEntries(meta.relations)) {
+      const value = res[relKey];
+      if (value) {
+        const relMeta = getMeta(relation.entity());
+        res[relKey] = Array.isArray(value)
+          ? this.normalizeIds(relMeta, value as Document[])
+          : this.normalizeId(relMeta, value as Document);
+      }
     }
 
     return res as E;

@@ -100,7 +100,7 @@ export function getInsertFieldKeys<E>(meta: EntityMeta<E>, payloads: EntityData<
   for (const record of payloads) {
     addInsertFieldKeys(meta, record, seen, keys);
   }
-  return [...keys, ...fieldKeys(meta, (field) => field.onInsert !== undefined).filter((key) => !seen.has(key))];
+  return [...keys, ...filledKeys(meta, 'onInsert').filter((key) => !seen.has(key))];
 }
 
 export function getFieldCallbackValue(val: OnFieldCallback) {
@@ -122,9 +122,7 @@ export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   callbackKey: CallbackKey,
 ): R[] {
   const payloads = Array.isArray(payload) ? payload : [payload];
-  // By presence, not truthiness, as `addInsertFieldKeys` above reads it: `onInsert: 0` and `onInsert: ''`
-  // are values a caller meant, and a falsy one was silently never filled.
-  const keys = fieldKeys(meta, (field) => field[callbackKey] !== undefined);
+  const keys = filledKeys(meta, callbackKey);
   if (keys.length === 0) {
     return payloads;
   }
@@ -138,29 +136,16 @@ export function fillOnFields<E, R extends EntityData<E> | UpdatePayload<E>>(
   return payloads;
 }
 
-/**
- * The relation keys present in `payload` whose cascade configuration allows `action`. Only
- * `payload`'s keys are read, so any keys-bearing object works (an entity, an update payload,
- * or `meta.relations` itself to enumerate every cascadable relation).
- */
-export function filterPersistableRelationKeys<E>(
-  meta: EntityMeta<E>,
-  payload: object,
-  action: CascadeType,
-): RelationKey<E>[] {
-  const keys = getKeys(payload);
-  return keys.filter((key) => {
-    const relOpts = meta.relations[key];
-    return relOpts && isCascadable(action, relOpts.cascade);
-  }) as RelationKey<E>[];
+/** The fields `callbackKey` fills where the caller left them unset. By presence: `onInsert: 0` is a value meant. */
+function filledKeys<E>(meta: EntityMeta<E>, callbackKey: CallbackKey): FieldKey<E>[] {
+  return fieldKeys(meta, (field) => field[callbackKey] !== undefined);
 }
 
-/**
- * Whether deleting this entity has to delete anything else, which is the reason a delete resolves the
- * matching ids before issuing anything: a child is reached through the ids of its parent.
- */
-export function cascadesOnDelete<E>(meta: EntityMeta<E>): boolean {
-  return filterPersistableRelationKeys(meta, meta.relations, 'delete').length > 0;
+/** The relations a write cascades `action` to, in declaration order. */
+export function cascadingRelations<E>(meta: EntityMeta<E>, action: CascadeType): RelationKey<E>[] {
+  return getKeys(meta.relations).filter((key): key is RelationKey<E> =>
+    isCascadable(action, meta.relations[key]?.cascade),
+  );
 }
 
 export function isCascadable(action: CascadeType, configuration?: boolean | CascadeType): boolean {

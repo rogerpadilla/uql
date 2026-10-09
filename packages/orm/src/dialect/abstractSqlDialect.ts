@@ -180,7 +180,7 @@ type InsertShape<E> = {
   readonly kinds: PersistKind[];
 };
 
-/** One entry of {@link AbstractSqlDialect.hydratableFields}: a field key and how it decodes. */
+/** A column read by its flat key, and how its value decodes. */
 type HydratableField = readonly [string, HydrateKind];
 
 /**
@@ -210,9 +210,22 @@ export type SortRef = SortOrder & { readonly ref: string };
 
 /**
  * One column of a read's projection: the key its row answers under, none for a raw expression written
- * without an alias, and whether `sql` already answers under it, being a column of that very name.
+ * without an alias, and whether `sql` already answers under it, being a column of that very name. The rest
+ * is how the row reads back, fixed as its SQL is written: see `querier/rowReader.ts`.
  */
-export type SelectTerm = { readonly sql: string; readonly key?: string; readonly bare?: boolean };
+export type SelectTerm = {
+  readonly sql: string;
+  readonly key?: string;
+  readonly bare?: boolean;
+  /** How its value decodes, where the driver leaves that to the field. */
+  readonly kind?: HydrateKind;
+  /** Columns read by their flat key, each with how it decodes: a `*`'s fields, or an aggregate's aliases. */
+  readonly kinds?: readonly HydratableField[];
+  /** A to-many's rows, each answering under these terms. */
+  readonly rows?: readonly SelectTerm[];
+  /** A joined row's key, whose `NULL` says the join matched no row. */
+  readonly joinedKey?: boolean;
+};
 
 /** What an aggregate reads for one entry, and whether a bare column it can name inline. */
 type AggregateValue = { readonly sql: string; readonly bare: boolean };
@@ -248,10 +261,11 @@ export type RelationRows = {
 };
 
 /**
- * A relation's rows as a derived table: `from` is the table clause, `pairs` each key of a row with the
- * column holding it, and `order` what their aggregate orders them by.
+ * A relation's rows as a derived table: `terms` how each reads, `from` the table clause, `pairs` each key of a
+ * row with the column holding it, and `order` what their aggregate orders them by.
  */
 export type DerivedRelation = {
+  readonly terms: readonly SelectTerm[];
   readonly from: string;
   readonly pairs: readonly (readonly [key: string, sql: string])[];
   readonly order: string;
@@ -521,13 +535,6 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return value;
   }
 
-  /**
-   * Normalizes a list of parameter values.
-   */
-  normalizeValues(values: readonly unknown[] | undefined): unknown[] | undefined {
-    return values?.map((v) => this.normalizeValue(v));
-  }
-
   placeholder(_index: number): string {
     return '?';
   }
@@ -597,7 +604,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const missingIds = opts.joined ? meta.ids.filter((key) => !selected.includes(key)) : [];
     const keys = missingIds.length ? [...missingIds, ...selected] : selected;
     if (!keys.length) {
-      return [{ sql: `${this.escapeId(opts.prefix, true, true)}*`, bare: true }];
+      const kinds = definedEntries(meta.fields).flatMap(([key, field]): HydratableField[] => {
+        const kind = this.fieldKind(meta, field);
+        return kind ? [[key, kind]] : [];
+      });
+      return [{ sql: `${this.escapeId(opts.prefix, true, true)}*`, bare: true, kinds }];
     }
     return keys.map((key) =>
       key instanceof QueryRaw
@@ -609,17 +620,18 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   /** One field's column, or the expression an inlined one stands for, as the projection reads it. */
   private fieldTerm<E>(ctx: QueryContext, meta: EntityMeta<E>, key: FieldKey<E>, opts: SelectOptions): SelectTerm {
     const field = fieldOf(meta, key);
+    const kind = this.fieldKind(meta, field, opts.json);
     if (isInlinedExpression(field)) {
       // Qualified even when nothing else in this statement is: the expression is spliced in, and one
       // that opens a correlated subquery has the inner table's columns in scope, so a bare `"id"`
       // would bind to *that* table instead of this one.
       const sql = this.rawFragment(ctx, field.computed, opts.prefix ?? this.resolveTableAlias(meta), meta.entity);
-      return { sql: opts.json ? this.carried(`(${sql})`, field) : sql, key };
+      return { sql: opts.json ? this.carried(`(${sql})`, field) : sql, key, kind };
     }
     const columnName = this.resolveColumnName(key, field);
     const column = this.escapeId(opts.prefix, true, true) + this.escapeId(columnName);
     const sql = opts.json ? this.carried(column, field) : this.selectFieldExpr(column, field);
-    return { sql, key, bare: sql === column && columnName === key };
+    return { sql, key, bare: sql === column && columnName === key, kind };
   }
 
   /**
@@ -869,8 +881,16 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
         ...this.selectTerms(ctx, join.entity, join.query.$select, opts, join.query.$exclude),
         ...this.selectToManyRelations(ctx, join.meta, join.query.$populate, join.alias, distinct),
       ];
+      const [idKey] = join.meta.ids;
       for (const term of row) {
-        terms.push({ sql: term.sql, key: `${join.path}.${relationTermKey(term)}` });
+        const key = relationTermKey(term);
+        terms.push({
+          sql: term.sql,
+          kind: term.kind,
+          rows: term.rows,
+          key: `${join.path}.${key}`,
+          joinedKey: key === idKey,
+        });
       }
     }
     return terms;
@@ -1631,7 +1651,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     entity: Type<E>,
     q: QueryAggregate<E, G, A>,
     opts: QueryRenderOptions = {},
-  ): void {
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
     const entries = parseGroupMap(q.$group, q.$select);
     if (!entries.length) {
@@ -1652,6 +1672,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     // may name these and nothing else, so one map answers both "is this legal?" and "what do I
     // emit for it?".
     const emittedColumns: Record<string, string> = {};
+    const kinds: HydratableField[] = [];
 
     for (const { entry, value } of reads) {
       const column = derived ? this.escapeId(entry.alias) : value.sql;
@@ -1662,6 +1683,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       }
       emittedColumns[entry.alias] = expr;
       selectParts.push(named(expr, entry.alias));
+      const kind = this.groupEntryKind(meta, joins, entry);
+      if (kind) {
+        kinds.push([entry.alias, kind]);
+      }
     }
 
     const columns = reads.flatMap(({ entry, value }) => (value.sql === '*' ? [] : [named(value.sql, entry.alias)]));
@@ -1682,6 +1707,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
 
     const sorted = this.aggregateSort(ctx, q.$sort, emittedColumns);
     this.pager(ctx, q, sorted);
+    return [{ sql: selectParts.join(', '), kinds }];
   }
 
   /**
@@ -1801,20 +1827,27 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    */
   protected readonly totalOverExpr = 'COUNT(*) OVER ()';
 
-  find<E>(ctx: QueryContext, entity: Type<E>, q: Query<E> = {}, opts?: QueryRenderOptions, totalAlias?: string): void {
+  /** A read, answering with the terms its rows answer under, which say how each reads back. */
+  find<E>(
+    ctx: QueryContext,
+    entity: Type<E>,
+    q: Query<E> = {},
+    opts?: QueryRenderOptions,
+    totalAlias?: string,
+  ): readonly SelectTerm[] {
     const meta = getMeta(entity);
     const read = this.readOptions(ctx, meta, opts);
     // The one statement that can join, so the one that resolves the join set; everything else renders
     // against `NO_JOINS` and rejects a `$sort` that would need one. The joins claim their aliases after
     // the table's own.
-    this.read(
+    return this.read(
       ctx,
       entity,
       q,
       read,
       resolveQueryJoins(meta, q, (path) => ctx.claimAlias(path)),
       totalAlias,
-    );
+    ).terms;
   }
 
   /**
@@ -2308,50 +2341,19 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return family === 'json' || family === 'vector' ? family : 'plain';
   }
 
-  /**
-   * The columns a read decodes, and how, cached per entity and revision. They are the ones the wire cannot
-   * decide alone: a boolean stored as an integer, a decimal read as text, a `BigInt`, and a related row's
-   * values, which cross JSON as text.
-   */
-  hydratableFields<E>(entity: Type<E>): readonly HydratableField[] {
-    const meta = getMeta(entity);
-    const cached = this.hydratable.get(entity as Type<object>);
-    // Against the revision, not merely present: a field added to an entity already read - a content
-    // type the admin extended - would otherwise decode by the list its columns are missing from.
-    if (cached?.[0] === meta.revision) {
-      return cached[1];
+  /** How an aggregate's entry decodes: as the column it reads, or a number where it reads none (a tally, a mean). */
+  private groupEntryKind<E>(
+    meta: EntityMeta<E>,
+    joins: QueryJoins,
+    entry: ParsedGroupEntry<E>,
+  ): HydrateKind | undefined {
+    const source = aggregateColumnField(meta, joins, entry);
+    if (!source) {
+      return 'number';
     }
-    const decoded: HydratableField[] = [];
-    for (const [key, field] of Object.entries(meta.fields)) {
-      const kind = this.fieldKind(meta, field);
-      if (kind) {
-        decoded.push([key, kind]);
-      }
-    }
-    this.hydratable.set(entity as Type<object>, [meta.revision, decoded]);
-    return decoded;
-  }
-
-  /** The same for an aggregate's row, per query: each alias decodes by {@link aggregateKind}. */
-  hydratableAggregates<E, G extends QueryGroupMap<E>, A extends QueryAggMap<E>>(
-    entity: Type<E>,
-    q: QueryAggregate<E, G, A>,
-  ): readonly HydratableField[] {
-    const meta = getMeta(entity);
-    const { joins } = resolveGroupJoins(meta, q);
-    const decoded: HydratableField[] = [];
-    for (const entry of parseGroupMap(q.$group, q.$select)) {
-      const source = aggregateColumnField(meta, joins, entry);
-      const kind = !source
-        ? 'number'
-        : source.join
-          ? this.fieldKind(source.join.meta, source.field)
-          : this.fieldKind(meta, source.field);
-      if (kind) {
-        decoded.push([entry.alias, kind]);
-      }
-    }
-    return decoded;
+    return source.join
+      ? this.fieldKind(source.join.meta, source.field, true)
+      : this.fieldKind(meta, source.field, true);
   }
 
   /**
@@ -2366,18 +2368,29 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     return op === '$count' || op === '$avg' ? 'number' : fieldKind;
   }
 
-  /** What a field decodes as: its column's kind, or a relation aggregate's {@link aggregateKind} over the target's column. */
-  private fieldKind<E>(meta: EntityMeta<E>, field: FieldMeta | undefined): HydrateKind | undefined {
+  /**
+   * What a field decodes as: its column's kind, or a relation aggregate's {@link aggregateKind}. `undecoded` is a
+   * value the driver decodes nothing of, one crossing JSON or an aggregate; on the wire it may decode some itself.
+   */
+  private fieldKind<E>(
+    meta: EntityMeta<E>,
+    field: FieldMeta | undefined,
+    undecoded?: boolean,
+  ): HydrateKind | undefined {
     const spec = aggregateOf(field);
     if (!spec) {
-      return this.hydrateKind(field);
+      const kind = this.hydrateKind(field);
+      return kind && !undecoded && this.decodedAtWire(kind, field) ? undefined : kind;
     }
     const target = getMeta(relationOf(meta, spec.relation as RelationKey<E>).entity());
-    return this.aggregateKind(spec.op, spec.field ? this.fieldKind(target, target.fields[spec.field]) : undefined);
+    return this.aggregateKind(
+      spec.op,
+      spec.field ? this.fieldKind(target, target.fields[spec.field], true) : undefined,
+    );
   }
 
   /** What one column decodes as, the inverse of {@link persistKind}. `BigInt` first, since it shares the numeric family. */
-  protected hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
+  private hydrateKind(field: FieldOptions | undefined): HydrateKind | undefined {
     const type = field?.type;
     if (type === BigInt) {
       return 'bigint';
@@ -2403,10 +2416,10 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     }
   }
 
-  private readonly hydratable = new WeakMap<
-    Type<object>,
-    readonly [revision: number, fields: readonly HydratableField[]]
-  >();
+  /** Whether this dialect's drivers hand a column of `kind` back decoded already, as a row on the wire. */
+  protected decodedAtWire(_kind: HydrateKind, _field: FieldOptions | undefined): boolean {
+    return false;
+  }
 
   /** The one type dispatch for a persisted value, over a column kind decided by the caller. */
   private writePersistableValue(
@@ -2788,10 +2801,11 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
   ): SelectTerm[] {
     return getRelationRequestSummary(meta, populate).toManyKeys.map((relKey) => {
       const { query } = parseRelationAtKey(relKey, populate);
-      const sql = this.buildFragment(ctx, (fragmentCtx) =>
-        this.appendToManyRelation(fragmentCtx, meta, relKey, query, parent, distinct),
-      );
-      return { sql, key: relKey };
+      let rows: readonly SelectTerm[] = [];
+      const sql = this.buildFragment(ctx, (fragmentCtx) => {
+        rows = this.appendToManyRelation(fragmentCtx, meta, relKey, query, parent, distinct);
+      });
+      return { sql, key: relKey, rows };
     });
   }
 
@@ -2806,7 +2820,8 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
       const sql = this.buildFragment(ctx, (fragmentCtx) =>
         this.appendRelationSubquery(fragmentCtx, meta, relKey, relation, { prefix: parent }, { op: '$count', where }),
       );
-      return { sql, key: `${COUNT_RESULT_KEY}.${relKey}` };
+      // A tally comes back as its driver reads a COUNT, which on some is text.
+      return { sql, key: `${COUNT_RESULT_KEY}.${relKey}`, kind: 'number' };
     });
   }
 
@@ -2821,7 +2836,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     query: RelationQuery,
     parent: string,
     distinct: boolean,
-  ): void {
+  ): readonly SelectTerm[] {
     const relation = relationOf(meta, relKey);
     const entity = relation.entity();
     const relMeta = getMeta(entity);
@@ -2830,7 +2845,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const correlation = raw(({ ctx: rowsCtx }) => this.appendCorrelation(rowsCtx, meta, relation, parent, alias));
     const rows = { ...query, $where: whereAnd(query.$where, [correlation]) };
     const joins = resolveQueryJoins(relMeta, rows, (path) => ctx.claimAlias(path));
-    this.appendRelationArray(ctx, { entity, query: rows, alias, joins, distinct });
+    return this.appendRelationArray(ctx, { entity, query: rows, alias, joins, distinct });
   }
 
   /**
@@ -2900,7 +2915,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
    * a derived table ({@link derivedRelation}), or over the related table itself where the engine cannot
    * correlate a derived table. [The design](../../../../architecture/relations-in-one-statement.md).
    */
-  protected abstract appendRelationArray(ctx: QueryContext, rows: RelationRows): void;
+  protected abstract appendRelationArray(ctx: QueryContext, rows: RelationRows): readonly SelectTerm[];
 
   /**
    * The rows read as a derived table, their values crossing JSON and, where the aggregate orders, each
@@ -2913,6 +2928,7 @@ export abstract class AbstractSqlDialect extends VectorSqlDialect implements Sql
     const { terms, order = [] } = this.read(rowsCtx, rows.entity, rows.query, readOpts, rows.joins);
     const alias = this.escapeId(rows.alias, true);
     return {
+      terms,
       from: `(${rowsCtx.sql}) ${alias}`,
       pairs: terms.map((term) => {
         const key = relationTermKey(term);

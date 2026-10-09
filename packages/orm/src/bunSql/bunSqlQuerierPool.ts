@@ -55,10 +55,15 @@ export class BunSqlQuerierPool extends AbstractSqlQuerierPool<BunSqlQuerier, Abs
   get pool(): SqlPoolCompat {
     return {
       query: (text: string, values?: unknown[]) =>
-        this.sql.unsafe<BunSqlResult>(text, this.dialect.normalizeValues(values)).then((res) => {
-          const rows = Array.from(res, decodeBigInts);
-          return { rows, rowCount: getAffectedRows(res) ?? rows.length };
-        }),
+        this.sql
+          .unsafe<BunSqlResult>(
+            text,
+            values?.map((value) => this.dialect.normalizeValue(value)),
+          )
+          .then((res) => {
+            const rows = Array.from(res, decodeBigInts);
+            return { rows, rowCount: getAffectedRows(res) ?? rows.length };
+          }),
       on: () => {
         /* no-op for event listeners */
       },

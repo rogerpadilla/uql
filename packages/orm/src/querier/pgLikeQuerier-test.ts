@@ -34,6 +34,22 @@ export class PgLikeQuerierIt extends VectorQuerierIt {
     expect(found).toEqual({ name: 'narrow', half: [1, 0, 0], sparse: [0, 0, 1] });
   }
 
+  /** An array reads each element as its scalar does, on every driver: exact past 2^53, a NUMERIC as text, a zoneless one as UTC. */
+  async shouldDecodeAnArrayAsItsElements() {
+    const [row] = await this.querier.all`SELECT
+      ARRAY[1::int8, 9007199254740993::int8, NULL] AS wide,
+      ARRAY[12345678901234567890.5::numeric] AS exact,
+      ARRAY['2026-09-10 12:30:00.123'::timestamp] AS stamps,
+      ARRAY['2026-09-10'::date] AS days`;
+
+    expect(row).toEqual({
+      wide: [1, '9007199254740993', null],
+      exact: ['12345678901234567890.5'],
+      stamps: [new Date('2026-09-10T12:30:00.123Z')],
+      days: [new Date('2026-09-10T00:00:00.000Z')],
+    });
+  }
+
   /** An inline date is the instant it names whatever the session's zone, as a CHECK or a trigger reads one. */
   async shouldReadAnInlineDateAsTheSameInstantInAnyZone() {
     const at = new Date('2024-01-15T12:30:45.123Z');

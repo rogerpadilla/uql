@@ -1,41 +1,7 @@
 import { OWNED_PREFIX } from '../dialect/aliases.js';
 import type { InsertIdSource, QueryUpdateResult, RawRow } from '../type/index.js';
 import type { PrimaryKey } from '../type/utility.js';
-import { hasKeys, isRecord } from './object.util.js';
 import { fnv1a } from './string.util.js';
-
-/** A row with its dotted columns nested, by paths read once off its statement's first row: the row itself where none is. */
-export function unflatObject<T extends object>(row: RawRow, attrsPaths: Record<string, string[]>): T {
-  if (!hasKeys(attrsPaths)) {
-    return row as T;
-  }
-  const dto: RawRow = {};
-  for (const col in row) {
-    const attrPath = attrsPaths[col];
-    if (attrPath) {
-      let target: Record<string, unknown> = dto;
-      for (let i = 0; i < attrPath.length - 1; i++) {
-        const seg = attrPath[i];
-        const next = target[seg];
-        target = isRecord(next) ? next : (target[seg] = {});
-      }
-      target[attrPath[attrPath.length - 1]] = row[col];
-    } else {
-      dto[col] = row[col];
-    }
-  }
-  return dto as T;
-}
-
-export function obtainAttrsPaths<T extends object>(row: T) {
-  const paths: { [k: string]: string[] } = {};
-  for (const col in row) {
-    if (col.includes('.')) {
-      paths[col] = col.split('.');
-    }
-  }
-  return paths;
-}
 
 /**
  * A name behind its namespace, or bare where there is none: the one place the two are joined, so a

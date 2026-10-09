@@ -1,3 +1,4 @@
+import type { PoolClient } from 'pg';
 import { describe, expect, it, onTestFinished } from 'vitest';
 import { SqlQuerierPoolIt } from '../querier/abstractSqlQuerierPool-test.js';
 import { createSpec, postgresConnection } from '../test/index.js';
@@ -34,5 +35,24 @@ describe('PgQuerierPool', () => {
 
     expect(pool.pool.totalCount).toBe(0);
     expect(await pool.all`SELECT 1 AS one`).toEqual([{ one: 1 }]);
+  });
+
+  /**
+   * One `error` listener at a time, `pg-pool`'s while idle and the querier's while held: a client that
+   * kept both would flip between one listener and two on every checkout, which slows every row `pg` parses.
+   */
+  it('should leave a client one error listener, held or idle', async () => {
+    const pool = new PgQuerierPool(postgresConnection(), { logger: false });
+    onTestFinished(() => pool.end());
+    const client = new Promise<PoolClient>((resolve) => pool.pool.once('acquire', resolve));
+    const errorListeners: number[] = [];
+
+    await pool.withQuerier(async (querier) => {
+      await querier.all`SELECT 1`;
+      errorListeners.push((await client).listenerCount('error'));
+    });
+    errorListeners.push((await client).listenerCount('error'));
+
+    expect(errorListeners).toEqual([1, 1]);
   });
 });

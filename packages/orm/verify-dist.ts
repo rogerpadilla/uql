@@ -203,7 +203,7 @@ function checkPeerReach(): void {
 const BUDGETS: Record<string, number> = {
   // The root is decorators, types and helpers: no querier or dialect is reachable from it.
   '.': 9_400,
-  './postgres': 40_300,
+  './postgres': 41_200,
   './migrate': 63_300,
   './browser': 2_100,
 };
@@ -276,7 +276,7 @@ function checkDeclarationsStandalone(checkDir: string, installed: string): void 
 const specifierOf = (entry: string) => (entry === '.' ? pkg.name : `${pkg.name}/${entry.slice(2)}`);
 
 /** The runtimes the README claims, each running `smoke.mjs` in the consumer project. */
-const RUNTIMES = [['node'], ['bun'], ['deno', 'run']];
+const RUNTIMES = [['node'], ['bun']];
 
 /**
  * Each runtime loads every entry and builds a query where no optional peer is installed: `uql-orm@0.72.2`
@@ -337,8 +337,6 @@ function writeConsumerProject(): { checkDir: string; installed: string } {
   mkdirSync(installed, { recursive: true });
   cpSync(join(pkgDir, 'dist'), join(installed, 'dist'), { recursive: true });
   writeFileSync(join(installed, 'package.json'), JSON.stringify(pkg));
-  // Deno reads `node_modules` only beside a `package.json`.
-  writeFileSync(join(checkDir, 'package.json'), '{"private":true}');
 
   for (const [index, entry] of entries.entries()) {
     writeFileSync(join(checkDir, `entry${index}.ts`), `export * from '${specifierOf(entry)}';\n`);

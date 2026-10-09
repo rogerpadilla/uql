@@ -21,14 +21,6 @@ export type HydrateKind =
   | 'float32'
   | VectorCast;
 
-/**
- * Decodes one non-null cell. A no-op where the driver already decoded it, since that varies per driver,
- * and untouched where it does not match its column's format.
- */
-export function decodeColumn(value: unknown, kind: HydrateKind): unknown {
-  return DECODERS[kind](value);
-}
-
 type Decoder = (value: unknown) => unknown;
 
 /** A decoder of the text a driver returned; anything else it already decoded, and is kept. */
@@ -58,7 +50,8 @@ const float32Decoder: Decoder = (value) => {
   return value instanceof Uint8Array ? decodeFloat32s(value) : denseVector(value);
 };
 
-const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
+/** How a non-null cell of each kind decodes, keeping one already decoded or not in its kind's format. */
+export const DECODERS: Readonly<Record<HydrateKind, Decoder>> = {
   // 0/1 from SQLite's INTEGER or MySQL's TINYINT(1). Already a boolean on Postgres.
   boolean: (value) => (typeof value === 'boolean' ? value : Boolean(value)),
   date: (value) => (typeof value === 'string' ? decodeDate(value) : value),

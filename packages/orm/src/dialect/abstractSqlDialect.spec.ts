@@ -42,9 +42,10 @@ class TestSqlDialect extends AbstractSqlDialect {
 
   override readonly insertIdSource = 'firstId';
 
-  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows): void {
-    const { from, pairs } = this.derivedRelation(ctx, rows);
+  protected override appendRelationArray(ctx: QueryContext, rows: RelationRows) {
+    const { terms, from, pairs } = this.derivedRelation(ctx, rows);
     ctx.append(`(SELECT JSON_ARRAYAGG(JSON_OBJECT(${this.jsonObjectArgs(pairs)})) FROM ${from})`);
+    return terms;
   }
 
   override escape(value: unknown): string {
@@ -117,7 +118,7 @@ describe('AbstractSqlDialect', () => {
   };
 
   it('should select nothing for an empty select list', () => {
-    expect(dialect.selectTerms(dialect.createContext(), User, [])).toEqual([{ sql: '*', bare: true }]);
+    expect(dialect.selectTerms(dialect.createContext(), User, [])).toMatchObject([{ sql: '*', bare: true }]);
   });
 
   it('should match nothing for an empty $in', () => {
@@ -210,12 +211,12 @@ describe('AbstractSqlDialect', () => {
   });
 
   it('should hydrate an aggregate as its field does, and a count as a number', () => {
-    expect(
-      dialect.hydratableAggregates(User, {
-        $group: { name: true },
-        $select: { first: { $min: { createdAt: true } }, n: { $count: '*' } },
-      }),
-    ).toEqual([
+    const [term] = dialect.aggregate(dialect.createContext(), User, {
+      $group: { name: true },
+      $select: { first: { $min: { createdAt: true } }, n: { $count: '*' } },
+    });
+
+    expect(term.kinds).toEqual([
       ['first', 'number'],
       ['n', 'number'],
     ]);

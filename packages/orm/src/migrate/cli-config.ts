@@ -11,12 +11,12 @@ type TsxApi = { register(): unknown };
 
 /**
  * The project's own `tsx/esm/api` where Node must load a TypeScript config: Node's type stripping runs
- * no decorators, and Bun and Deno transform them natively. uql bundles no transpiler, so the project's
+ * no decorators, and Bun transforms them natively. uql bundles no transpiler, so the project's
  * loader reads the project's `tsconfig.json`. Registered for the process, never imported through: an
  * import of its own would load the config's `uql-orm` apart from the CLI's, whose objects the other misreads.
  */
-export function tsxApiFor(path: string, versions: { bun?: string; deno?: string }): string | undefined {
-  if (!/\.[mc]?ts$/.test(path) || versions.bun || versions.deno) {
+export function tsxApiFor(path: string, versions: { bun?: string }): string | undefined {
+  if (!/\.[mc]?ts$/.test(path) || versions.bun) {
     return undefined;
   }
   try {
@@ -43,17 +43,17 @@ async function importConfig(path: string): Promise<unknown> {
 
 /**
  * Why `path` failed to import. Only plain Node, which strips types without running decorators, can fail on
- * those, so only there does it point at a runtime that runs them: Bun, Deno, or the project's tsx.
+ * those, so only there does it point at a runtime that runs them: Bun or the project's tsx.
  */
 export function importFailure(
   path: string,
   cause: unknown,
-  versions: { bun?: string; deno?: string },
+  versions: { bun?: string },
   tsxApi: string | undefined,
 ): UqlUsageError {
   const message = cause instanceof Error ? cause.message : String(cause);
   const hint =
-    tsxApi || versions.bun || versions.deno
+    tsxApi || versions.bun
       ? ''
       : '\nIf it reaches entity classes, their decorators need a runtime that transforms TypeScript, not ' +
         'just one that strips its types. Run the CLI with `bun`, or install tsx (`npm i -D tsx`), which the ' +
