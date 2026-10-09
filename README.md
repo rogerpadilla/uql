@@ -97,13 +97,12 @@ export default { pool, entities: [User, Post] } satisfies Config;
 ```
 
 ```sh
+npm i -D tsx                                # Node only: the CLI loads uql.config.ts through it
 npx uql-migrate generate:entities initial   # diffs the entities against the database into a migration you review
 npx uql-migrate up                          # applies it
 ```
 
-On Node, `npm i -D tsx`: Node's type stripping does not run decorators, and the CLI imports a TypeScript config through the project's `tsx`. Bun needs nothing.
-
-### 3. Query on the server
+### 3. Query
 
 ```ts
 import { Post } from './entities.js';
@@ -123,63 +122,7 @@ const posts = await pool.findMany(Post, {
 
 The result is typed to what the query selected: `posts[0].author?.email` compiles, `posts[0].likes` does not.
 
-### 4. Or serve it over HTTP, scoped to the signed-in user
-
-```ts
-// server.ts: Bun, Deno, Cloudflare Workers, or any framework that takes a fetch handler
-import { defineFilter } from 'uql-orm';
-import { createFetchHandler } from 'uql-orm/http';
-import { authenticate } from './auth.js';
-import { Post } from './entities.js';
-import { pool } from './uql.config.js';
-
-declare module 'uql-orm' {
-  interface UqlContext {
-    userId?: number;
-  }
-}
-
-// Scopes every read and write on Post: no `$where` widens it, a new post gets `authorId`, and with no user it throws.
-defineFilter(Post, 'ownPosts', {
-  where: (ctx) => (ctx?.userId != null ? { authorId: ctx.userId } : undefined),
-  security: true,
-});
-
-export default {
-  fetch: createFetchHandler({
-    pool,
-    include: [Post],
-    // From your verified session, never from client input.
-    getContext: async (request) => ({ userId: (await authenticate(request)).userId }),
-  }),
-};
-```
-
-The client sends a query as JSON and gets the same typed result, never touching the database:
-
-```ts
-// client.ts
-import { HttpQuerier } from 'uql-orm/browser';
-import { Post } from './entities.js';
-
-const api = new HttpQuerier('https://api.example.com');
-
-const { data: posts } = await api.findMany(Post, {
-  $select: { title: true },
-  $where: { likes: { $gte: 10 } },
-  $sort: { likes: 'desc' },
-  $limit: 10,
-});
-```
-
-Only the entities in `include` are served: a `$populate: { author: true }` here is a `400`, as `User` is not. More in [HTTP](https://uql-orm.dev/http) and [multi-tenancy](https://uql-orm.dev/multi-tenancy).
-
-### When CRUD is not enough
-
-- [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, and a migration can be plain SQL.
-- [Computed fields](https://uql-orm.dev/entities/computed-fields) are SQL expressions that you can filter and sort on. [Triggers](https://uql-orm.dev/entities/triggers) run inside the database.
-- [Transactions](https://uql-orm.dev/querying/transactions) hold one connection across many operations, and [lifecycle hooks](https://uql-orm.dev/entities/lifecycle-hooks) run your code around each write.
-- Anything the CRUD routes do not cover goes in a route you write, beside the handler and under the same prefix.
+The same queries run from the browser too: [serve them over HTTP](https://uql-orm.dev/http), scoped to the signed-in user by [filters no `$where` can widen](https://uql-orm.dev/multi-tenancy).
 
 ## Why UQL?
 
@@ -188,17 +131,12 @@ Only the entities in `include` are served: a `$populate: { author: true }` here 
 - **Relations without N+1.** [`$populate`](https://uql-orm.dev/querying/relations) reads a to-many inside the parent's statement, so a read is one round trip. Nothing is lazy, so nothing fires behind your back in a serializer.
 - **Light.** Zero runtime dependencies and every dialect in one package, yet `uql-orm/postgres` is about 27 kB gzipped. See [what we deleted to get there](https://uql-orm.dev/blog/zero-dependencies).
 - **The hard things are built in.** [Semantic and vector search](https://uql-orm.dev/ai-semantic-search), [multi-tenant filters you cannot bypass by accident](https://uql-orm.dev/multi-tenancy), [soft-delete with restore](https://uql-orm.dev/entities/soft-delete), [streaming](https://uql-orm.dev/querying/streaming), and [drift checks](https://uql-orm.dev/migrations) that catch a database that no longer matches.
+- **SQL when you need it.** [`raw()`](https://uql-orm.dev/querying/raw-sql) fits anywhere a value or a field goes, [computed fields](https://uql-orm.dev/entities/computed-fields) are SQL you can filter and sort on, and a migration can be plain SQL.
 - **The fastest ORM.** On a full PostgreSQL round trip it adds the least over hand-written driver code of any ORM in our open-source [benchmark](https://github.com/rogerpadilla/ts-orm-benchmark), on Bun, Node and Deno alike. The same benchmark [scores the types](https://github.com/rogerpadilla/ts-orm-benchmark#type-safety) by compiling ordinary mistakes in each ORM's API: UQL is the only one that catches them all.
 
 ## Get started
 
-**[uql-orm.dev](https://uql-orm.dev)** has the full docs. Good places to start:
-
-- [Quick Start](https://uql-orm.dev/getting-started) - install, define an entity, run a query
-- [Querying](https://uql-orm.dev/querying/querier) - operators, relations, aggregates, transactions
-- [Entities](https://uql-orm.dev/entities/basic) - decorators, relations, hooks, or the decorator-free [imperative API](https://uql-orm.dev/entities/imperative)
-- [Switching to UQL](https://uql-orm.dev/switching-to-uql) - coming from Prisma, Drizzle, TypeORM, or MikroORM
-- [Examples](examples) - runnable apps on [Node](examples/node), [Bun](examples/bun), [Next.js](examples/nextjs) and [Cloudflare D1](examples/cloudflare-d1), each checked in CI
+Follow the [Quick Start](https://uql-orm.dev/getting-started), or [switch from](https://uql-orm.dev/switching-to-uql) Prisma, Drizzle, TypeORM or MikroORM. The [examples](examples) are runnable apps on Node, Bun, Next.js and Cloudflare D1, each checked in CI.
 
 Using a coding agent? The package ships a [skill](skills/uql-orm/SKILL.md) for it, and every docs page is Markdown: [set it up](https://uql-orm.dev/ai-agents).
 
