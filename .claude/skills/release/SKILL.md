@@ -1,55 +1,28 @@
 ---
 name: release
-description: Cut and publish a uql release - review the change, changelog entry, commit, version bump and tag, GitHub Release, npm publish, docs site. Use when asked to release, cut a version, publish a package, or ship a patch/minor/major.
+description: Cut and publish a uql release - review, changelog, commit, version bump and tag, GitHub Release, npm publish, docs site.
+disable-model-invocation: true
 ---
 
 # Releasing uql
 
 "Release" means every step below, not just the bump.
 
-## 1. Review the change
+1. **Review**: run the `review` skill. Here a fix is pinned by exact SQL in a dialect spec, or cross-backend behaviour in the shared suite; a public API change updates `skills/uql-orm/SKILL.md`. `bun run check` needs the databases up (`docker compose up -d --wait`).
+2. **Changelog**: compress the last entry to what users need, related bullets unified. Head it with the version the bump will produce, dated today.
+3. **Level**, from the entry: **minor** for a `**Breaking:**` bullet, new API, or an upgrade-guide step; **patch** otherwise. Pre-1.0 a caret takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked. Prefer patch unless something important ships or breaks.
+4. **Commit** the change.
+5. **Bump, tag, push, GitHub Release**:
+   ```sh
+   bun run release patch --yes   # or minor / major: check, bump, commit, tag, push
+   bun run release.finish        # push again, then the GitHub Release from the changelog entry
+   ```
+6. **npm**: the tag push publishes through [publish.yml](../../../.github/workflows/publish.yml) and npm's trusted publishing, one run per package tagged. Watch it with `gh run list --workflow publish.yml --limit 2` and `gh run watch <id> --exit-status`.
+7. **Docs site**, after a green publish (`~/projects/uql-site` pins `uql-orm` exactly and compiles every example against it): `bun add --exact uql-orm@<version>`, document new or changed behaviour, give a release that asks anything of users a section in `upgrade-guide.mdx` and a new codemod rewrite a bullet in `codemod.md`, then `bun run check`, commit and push.
 
-Everything `git status` lists, untracked files included, focus on the code and the logic, you can omit tests from the review. Understand all of it first, then fix what is wrong, remove/refactor what is unnecesary or over-complicated, unify, simplify, and delete comments the change made stale. Every fix needs a test that failed before it, at the cheapest level that pins it: exact SQL in a dialect spec, cross-backend behaviour in the shared suite. A public API change updates `skills/uql-orm/SKILL.md` too. Avoid putting unnecesary or overcomplicated code, always unify and simplify for the best clean code (refactor if convenient or necessary to unify or simplify).
+## Gotchas
 
-`bun run check` passes, with the databases up (`docker compose up -d --wait`).
-
-## 2. Settle the changelog entry and the level
-
-Compress the last entry, unify related bullets together, simplify for humans, only what a user _really_ needs/wants (and what worth it). Rename the heading to the version the bump will produce, dated today. Summarize, simplify and unify.
-
-Nothing checks the level, so take it from the entry. Pre-1.0 a caret range takes every patch of its minor (`^0.81.0` is `<0.82.0`), so a patch reaches users unasked:
-
-- **minor**: a `**Breaking:**` bullet, new API, or a step for the upgrade guide.
-- **patch**: fixes only.
-
-## 3. Commit
-
-If the review edited anything important/critical, stop and let the user read that unstaged diff first: everything after the commit is public. Only do a minor release when something important really is released or breaks, otherwise use patch.
-
-## 4. Bump, tag, push, GitHub Release
-
-```sh
-bun run release patch --yes    # or minor / major: check, bump, commit, tag, push
-bun run release.finish         # push again, then the GitHub Release from the changelog entry
-```
-
-Run them apart: `release.patch` chains the two, but `lerna version`'s prompt hangs a non-interactive shell, and a script's arguments reach only its last command. The codemod gets no GitHub Release, so its bumps notify nobody who never installed it.
-
-From here, never bump again: fix what failed and rerun that step alone (`release.finish`, `release.github`, `gh run rerun <id>`).
-
-## 5. Publish to npm
-
-The tag push publishes: [publish.yml](../../../.github/workflows/publish.yml) runs once per tag, through npm's trusted publishing. Never publish from a machine, `lerna publish` included; the packages refuse tokens.
-
-```sh
-gh run list --workflow publish.yml --limit 2    # one run per package tagged
-gh run watch <id> --exit-status
-```
-
-## 6. Update the docs site
-
-`~/projects/uql-site` pins `uql-orm` exactly and compiles every example against it, the skill's included, so it follows a green publish; drafts can start earlier.
-
-1. `bun add --exact uql-orm@<version>`.
-2. Document new or changed behaviour; a fix that makes the code match the docs needs nothing. A release that asks anything of users gets a section in `upgrade-guide.mdx`, a new codemod rewrite a bullet in `codemod.md`.
-3. `bun run check`, then commit and push.
+- Run the two release commands apart: `release.patch` chains them, but `lerna version`'s prompt hangs a non-interactive shell, and a script's arguments reach only its last command.
+- After the tag, never bump again: fix what failed and rerun that step alone (`release.finish`, `release.github`, `gh run rerun <id>`).
+- Never publish from a machine, `lerna publish` included; the packages refuse tokens.
+- The codemod gets no GitHub Release, so its bumps notify nobody who never installed it.
