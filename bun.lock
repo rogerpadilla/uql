@@ -74,7 +74,7 @@
     },
     "packages/codemod": {
       "name": "uql-codemod",
-      "version": "0.47.1",
+      "version": "0.48.0",
       "bin": {
         "uql-codemod": "./dist/bin.js",
       },
@@ -84,7 +84,7 @@
     },
     "packages/orm": {
       "name": "uql-orm",
-      "version": "0.100.3",
+      "version": "0.101.0",
       "bin": {
         "uql-migrate": "./dist/migrate/bin.js",
       },

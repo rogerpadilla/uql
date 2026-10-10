@@ -3,7 +3,7 @@
   "homepage": "https://uql-orm.dev",
   "description": "JSON-native TypeScript ORM for Bun, Browsers, Edge, Node, Workers. Supports PostgreSQL, PGlite, MySQL, MariaDB, SQLite, CockroachDB, SQL Server, Turso, Neon, Cloudflare D1 and MongoDB. Queries are plain JSON, typed to the leaf.",
   "license": "MIT",
-  "version": "0.100.3",
+  "version": "0.101.0",
   "type": "module",
   "engines": {
     "node": ">=22.18"
